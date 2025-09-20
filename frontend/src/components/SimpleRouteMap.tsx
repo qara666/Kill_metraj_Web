@@ -5,7 +5,6 @@ interface SimpleRouteMapProps {
   routes: Route[];
   selectedCourier?: string;
   onRouteSelect?: (route: Route) => void;
-  height?: string;
   className?: string;
 }
 
@@ -13,7 +12,6 @@ const SimpleRouteMap: React.FC<SimpleRouteMapProps> = ({
   routes,
   selectedCourier,
   onRouteSelect,
-  height = '400px',
   className = ''
 }) => {
   const filteredRoutes = selectedCourier 
@@ -55,7 +53,7 @@ const SimpleRouteMap: React.FC<SimpleRouteMapProps> = ({
         ) : (
           filteredRoutes.map((route) => (
             <div
-              key={route.id}
+              key={route._id}
               onClick={() => handleRouteClick(route)}
               className={`border rounded-lg p-4 cursor-pointer transition-colors ${
                 route.isActive 
