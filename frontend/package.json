@@ -22,8 +22,7 @@
     "@headlessui/react": "^1.7.17",
     "@heroicons/react": "^2.0.18",
     "clsx": "^2.0.0",
-    "date-fns": "^2.30.0",
-    "@googlemaps/js-api-loader": "^1.16.2"
+    "date-fns": "^2.30.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.15",

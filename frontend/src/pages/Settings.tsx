@@ -15,7 +15,7 @@ export const Settings: React.FC = () => {
   const [isTestingApiKey, setIsTestingApiKey] = useState(false)
   const [apiKeyStatus, setApiKeyStatus] = useState<'unknown' | 'valid' | 'invalid'>('unknown')
 
-  const { register, handleSubmit, watch, setValue } = useForm<SettingsForm>({
+  const { register, handleSubmit, watch } = useForm<SettingsForm>({
     defaultValues: {
       googleMapsApiKey: '',
       defaultStartAddress: 'Макіївська 7, Київ, Україна',
@@ -49,7 +49,7 @@ export const Settings: React.FC = () => {
     }
   }
 
-  const onSubmit = (data: SettingsForm) => {
+  const onSubmit = (_data: SettingsForm) => {
     // Save settings logic here
     toast.success('Settings saved successfully!')
   }

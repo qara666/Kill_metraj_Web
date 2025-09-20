@@ -5,9 +5,7 @@ import {
   DocumentArrowUpIcon, 
   UserGroupIcon, 
   MapIcon, 
-  ChartBarIcon,
   TruckIcon,
-  ClockIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon
 } from '@heroicons/react/24/outline'
@@ -17,7 +15,6 @@ import { RouteMap } from '../components/RouteMap'
 import { StatsCard } from '../components/StatsCard'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import * as api from '../services/api'
-import type { ProcessedOrder } from '../types'
 
 export const Dashboard: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
