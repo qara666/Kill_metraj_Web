@@ -1,40 +1,7 @@
-import mongoose, { Document, Schema } from 'mongoose';
+const mongoose = require('mongoose');
+const { Schema } = mongoose;
 
-export interface IAddress {
-  scannedText: string;
-  formattedAddress: string;
-  latitude?: number;
-  longitude?: number;
-  isDestination: boolean;
-  isWaypoint?: boolean;
-  orderIndex?: number;
-  orderNumber?: string;
-}
-
-export interface IRoute extends Document {
-  startPoint: IAddress;
-  endPoint: IAddress;
-  waypoints: IAddress[];
-  totalDistance: string;
-  totalDuration: string;
-  polyline: string;
-  transportationMode?: string;
-  courier?: mongoose.Types.ObjectId;
-  
-  // Route management
-  isActive: boolean;
-  isCompleted: boolean;
-  isArchived: boolean;
-  completionDate?: Date;
-  notes: string;
-  priority: 'low' | 'normal' | 'high' | 'urgent';
-  estimatedFuelCost: number;
-  actualFuelCost: number;
-  routeRating: number;
-  difficulty: 'easy' | 'medium' | 'hard' | 'expert';
-}
-
-const AddressSchema: Schema = new Schema({
+const AddressSchema = new Schema({
   scannedText: { 
     type: String, 
     required: [true, 'Scanned text is required'],
@@ -72,7 +39,7 @@ const AddressSchema: Schema = new Schema({
   }
 });
 
-const RouteSchema: Schema = new Schema({
+const RouteSchema = new Schema({
   startPoint: { 
     type: AddressSchema, 
     required: [true, 'Start point is required'] 
@@ -179,7 +146,7 @@ RouteSchema.index({ createdAt: -1 });
 
 // Virtual for waypoint count
 RouteSchema.virtual('waypointCount').get(function() {
-  return this.waypoints.filter((wp: IAddress) => wp.isWaypoint).length;
+  return this.waypoints.filter(wp => wp.isWaypoint).length;
 });
 
 // Virtual for total order count
@@ -230,4 +197,4 @@ RouteSchema.pre('save', async function(next) {
   next();
 });
 
-export default mongoose.model<IRoute>('Route', RouteSchema);
+module.exports = mongoose.model('Route', RouteSchema);

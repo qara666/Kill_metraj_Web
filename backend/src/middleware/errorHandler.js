@@ -1,16 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
-
-export interface AppError extends Error {
-  statusCode?: number;
-  isOperational?: boolean;
-}
-
-export const errorHandler = (
-  err: AppError,
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+const errorHandler = (err, req, res, next) => {
   let error = { ...err };
   error.message = err.message;
 
@@ -24,14 +12,14 @@ export const errorHandler = (
   }
 
   // Mongoose duplicate key
-  if (err.name === 'MongoError' && (err as any).code === 11000) {
+  if (err.name === 'MongoError' && error.code === 11000) {
     const message = 'Duplicate field value entered';
     error = { ...error, message, statusCode: 400 };
   }
 
   // Mongoose validation error
   if (err.name === 'ValidationError') {
-    const message = Object.values((err as any).errors).map((val: any) => val.message).join(', ');
+    const message = Object.values(err.errors).map(val => val.message).join(', ');
     error = { ...error, message, statusCode: 400 };
   }
 
@@ -52,3 +40,5 @@ export const errorHandler = (
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 };
+
+module.exports = { errorHandler };

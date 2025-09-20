@@ -1,5 +1,5 @@
-import express from 'express';
-import { CourierController } from '../controllers/CourierController';
+const express = require('express');
+const { CourierController } = require('../controllers/CourierController');
 
 const router = express.Router();
 const courierController = new CourierController();
@@ -22,4 +22,4 @@ router.put('/:id', courierController.updateCourier.bind(courierController));
 // DELETE /api/couriers/:id - Delete (archive) courier
 router.delete('/:id', courierController.deleteCourier.bind(courierController));
 
-export default router;
+module.exports = router;

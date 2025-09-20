@@ -1,25 +1,7 @@
-import mongoose, { Document, Schema } from 'mongoose';
+const mongoose = require('mongoose');
+const { Schema } = mongoose;
 
-export interface ICourier extends Document {
-  name: string;
-  phoneNumber?: string;
-  isActive: boolean;
-  vehicleType: 'car' | 'motorcycle';
-  location: string;
-  isArchived: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-  routes: mongoose.Types.ObjectId[];
-  
-  // Statistics (calculated fields)
-  totalOrders: number;
-  totalDistance: number;
-  totalDistanceWithAdditional: number;
-  averageOrdersPerRoute: number;
-  efficiencyScore: number;
-}
-
-const CourierSchema: Schema = new Schema({
+const CourierSchema = new Schema({
   name: { 
     type: String, 
     required: [true, 'Courier name is required'],
@@ -116,8 +98,8 @@ CourierSchema.methods.updateStatistics = async function() {
   const Route = mongoose.model('Route');
   const routes = await Route.find({ courier: this._id });
   
-  this.totalOrders = routes.reduce((sum: number, route: any) => sum + route.waypoints.length, 0);
-  this.totalDistance = routes.reduce((sum: number, route: any) => {
+  this.totalOrders = routes.reduce((sum, route) => sum + route.waypoints.length, 0);
+  this.totalDistance = routes.reduce((sum, route) => {
     const distance = parseFloat(route.totalDistance.replace(/[^\d.]/g, '')) || 0;
     return sum + distance;
   }, 0);
@@ -131,16 +113,16 @@ CourierSchema.methods.updateStatistics = async function() {
 };
 
 // Method to calculate efficiency score
-CourierSchema.methods.calculateEfficiencyScore = function(routes: any[]) {
+CourierSchema.methods.calculateEfficiencyScore = function(routes) {
   if (routes.length === 0) return 0;
   
-  const completedRoutes = routes.filter((r: any) => r.isCompleted);
+  const completedRoutes = routes.filter(r => r.isCompleted);
   const completionRate = (completedRoutes.length / routes.length) * 40;
   
-  const avgOrders = routes.reduce((sum: number, r: any) => sum + r.waypoints.length, 0) / routes.length;
+  const avgOrders = routes.reduce((sum, r) => sum + r.waypoints.length, 0) / routes.length;
   const orderEfficiency = Math.min(avgOrders * 10, 30);
   
-  const avgDistance = routes.reduce((sum: number, r: any) => {
+  const avgDistance = routes.reduce((sum, r) => {
     const distance = parseFloat(r.totalDistance.replace(/[^\d.]/g, '')) || 0;
     return sum + distance;
   }, 0) / routes.length;
@@ -157,4 +139,4 @@ CourierSchema.pre('save', async function(next) {
   next();
 });
 
-export default mongoose.model<ICourier>('Courier', CourierSchema);
+module.exports = mongoose.model('Courier', CourierSchema);

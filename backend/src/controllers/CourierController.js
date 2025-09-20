@@ -1,11 +1,8 @@
-import { Request, Response } from 'express';
-import Courier from '../models/Courier';
-import Route from '../models/Route';
-import { GoogleMapsService } from '../services/GoogleMapsService';
+const Courier = require('../models/Courier');
+const Route = require('../models/Route');
+const { GoogleMapsService } = require('../services/GoogleMapsService');
 
-export class CourierController {
-  private mapsService: GoogleMapsService;
-
+class CourierController {
   constructor() {
     const apiKey = process.env.GOOGLE_MAPS_API_KEY || '';
     this.mapsService = new GoogleMapsService(apiKey);
@@ -14,7 +11,7 @@ export class CourierController {
   /**
    * Create a new courier
    */
-  async createCourier(req: Request, res: Response) {
+  async createCourier(req, res) {
     try {
       const courier = new Courier(req.body);
       await courier.save();
@@ -27,7 +24,7 @@ export class CourierController {
       res.status(400).json({
         success: false,
         error: 'Failed to create courier',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: error.message
       });
     }
   }
@@ -35,7 +32,7 @@ export class CourierController {
   /**
    * Get all couriers with statistics
    */
-  async getCouriers(req: Request, res: Response) {
+  async getCouriers(req, res) {
     try {
       const { 
         active, 
@@ -48,7 +45,7 @@ export class CourierController {
       } = req.query;
 
       // Build filter
-      const filter: any = {};
+      const filter = {};
       
       if (active !== undefined) {
         filter.isActive = active === 'true';
@@ -61,10 +58,10 @@ export class CourierController {
       if (location) {
         filter.location = { $regex: location, $options: 'i' };
       }
-
+  
       // Build sort
-      const sort: any = {};
-      sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
+      const sort = {};
+      sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
       // Calculate pagination
       const skip = (Number(page) - 1) * Number(limit);
@@ -74,7 +71,7 @@ export class CourierController {
         .sort(sort)
         .skip(skip)
         .limit(Number(limit));
-
+  
       // Calculate statistics for each courier
       const couriersWithStats = await Promise.all(
         couriers.map(async (courier) => {
@@ -122,7 +119,7 @@ export class CourierController {
       res.status(500).json({
         success: false,
         error: 'Failed to fetch couriers',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: error.message
       });
     }
   }
@@ -130,7 +127,7 @@ export class CourierController {
   /**
    * Get courier by ID with detailed statistics
    */
-  async getCourierById(req: Request, res: Response) {
+  async getCourierById(req, res) {
     try {
       const courier = await Courier.findById(req.params.id).populate('routes');
       
@@ -158,7 +155,7 @@ export class CourierController {
       const activeRoutes = routes.filter(r => r.isActive);
       const completedRoutes = routes.filter(r => r.isCompleted);
       const archivedRoutes = routes.filter(r => r.isArchived);
-
+  
       res.json({
         success: true,
         data: {
@@ -183,7 +180,7 @@ export class CourierController {
       res.status(500).json({
         success: false,
         error: 'Failed to fetch courier',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: error.message
       });
     }
   }
@@ -191,7 +188,7 @@ export class CourierController {
   /**
    * Update courier
    */
-  async updateCourier(req: Request, res: Response) {
+  async updateCourier(req, res) {
     try {
       const courier = await Courier.findByIdAndUpdate(
         req.params.id,
@@ -214,7 +211,7 @@ export class CourierController {
       res.status(400).json({
         success: false,
         error: 'Failed to update courier',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: error.message
       });
     }
   }
@@ -222,11 +219,11 @@ export class CourierController {
   /**
    * Delete (archive) courier
    */
-  async deleteCourier(req: Request, res: Response) {
+  async deleteCourier(req, res) {
     try {
       const courier = await Courier.findByIdAndUpdate(
         req.params.id,
-        { isArchived: true, isActive: false },
+        { isArchived: true },
         { new: true }
       );
       
@@ -239,14 +236,13 @@ export class CourierController {
 
       res.json({
         success: true,
-        message: 'Courier archived successfully',
-        data: courier
+        message: 'Courier archived successfully'
       });
     } catch (error) {
       res.status(500).json({
         success: false,
         error: 'Failed to archive courier',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: error.message
       });
     }
   }
@@ -254,7 +250,7 @@ export class CourierController {
   /**
    * Get courier statistics
    */
-  async getCourierStatistics(req: Request, res: Response) {
+  async getCourierStatistics(req, res) {
     try {
       const { courierId } = req.params;
       
@@ -332,7 +328,7 @@ export class CourierController {
       res.status(500).json({
         success: false,
         error: 'Failed to fetch courier statistics',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: error.message
       });
     }
   }
@@ -340,16 +336,16 @@ export class CourierController {
   /**
    * Calculate efficiency score for a courier
    */
-  private calculateEfficiencyScore(courier: any, routes: any[]): number {
+  calculateEfficiencyScore(courier, routes) {
     if (routes.length === 0) return 0;
     
-    const completedRoutes = routes.filter((r: any) => r.isCompleted);
+    const completedRoutes = routes.filter(r => r.isCompleted);
     const completionRate = (completedRoutes.length / routes.length) * 40;
     
-    const avgOrders = routes.reduce((sum: number, r: any) => sum + r.waypoints.length, 0) / routes.length;
+    const avgOrders = routes.reduce((sum, r) => sum + r.waypoints.length, 0) / routes.length;
     const orderEfficiency = Math.min(avgOrders * 10, 30);
     
-    const avgDistance = routes.reduce((sum: number, r: any) => {
+    const avgDistance = routes.reduce((sum, r) => {
       const distance = parseFloat(r.totalDistance.replace(/[^\d.]/g, '')) || 0;
       return sum + distance;
     }, 0) / routes.length;
@@ -358,3 +354,5 @@ export class CourierController {
     return Math.min(completionRate + orderEfficiency + distanceEfficiency, 100);
   }
 }
+
+module.exports = { CourierController };
