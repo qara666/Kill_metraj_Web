@@ -13,7 +13,7 @@ interface FileUploadProps {
 
 export const FileUpload: React.FC<FileUploadProps> = ({
   onFileSelect,
-  accept: acceptedTypes = '.xlsx,.xls,.csv',
+  accept = '.xlsx,.xls,.csv',
   maxSize = 10 * 1024 * 1024, // 10MB
   className
 }) => {

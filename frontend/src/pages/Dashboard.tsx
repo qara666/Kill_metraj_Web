@@ -11,7 +11,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { FileUpload } from '../components/FileUpload'
 import { CourierCard } from '../components/CourierCard'
-import { RouteMap } from '../components/RouteMap'
+import RouteMap from '../components/RouteMap'
 import { StatsCard } from '../components/StatsCard'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import * as api from '../services/api'
