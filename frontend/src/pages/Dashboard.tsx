@@ -287,7 +287,7 @@ export const Dashboard: React.FC = () => {
               
               <RouteMap 
                 routes={routes}
-                selectedCourier={selectedCourier}
+                selectedCourier={selectedCourier || undefined}
                 height="400px"
               />
             </div>

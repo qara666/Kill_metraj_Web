@@ -1,37 +1,11 @@
 import React from 'react';
-
-interface Route {
-  id: string;
-  startPoint: {
-    latitude: number;
-    longitude: number;
-    formattedAddress: string;
-  };
-  endPoint: {
-    latitude: number;
-    longitude: number;
-    formattedAddress: string;
-  };
-  waypoints: Array<{
-    latitude: number;
-    longitude: number;
-    formattedAddress: string;
-    orderNumber: string;
-  }>;
-  totalDistance: string;
-  totalDuration: string;
-  isActive: boolean;
-  isCompleted: boolean;
-  courier?: {
-    name: string;
-    vehicleType: string;
-  };
-}
+import type { Route } from '../types';
 
 interface SimpleRouteMapProps {
   routes: Route[];
   selectedCourier?: string;
   onRouteSelect?: (route: Route) => void;
+  height?: string;
   className?: string;
 }
 
@@ -39,10 +13,16 @@ const SimpleRouteMap: React.FC<SimpleRouteMapProps> = ({
   routes,
   selectedCourier,
   onRouteSelect,
+  height = '400px',
   className = ''
 }) => {
   const filteredRoutes = selectedCourier 
-    ? routes.filter(route => route.courier?.name === selectedCourier)
+    ? routes.filter(route => {
+        if (typeof route.courier === 'string') {
+          return route.courier === selectedCourier;
+        }
+        return route.courier?.name === selectedCourier;
+      })
     : routes;
 
   const handleRouteClick = (route: Route) => {
@@ -95,7 +75,7 @@ const SimpleRouteMap: React.FC<SimpleRouteMapProps> = ({
                       : 'bg-gray-400'
                   }`} />
                   <span className="font-medium text-gray-900">
-                    Маршрут #{route.id.slice(-6)}
+                    Маршрут #{route._id.slice(-6)}
                   </span>
                 </div>
                 <div className="flex space-x-2">
@@ -141,7 +121,7 @@ const SimpleRouteMap: React.FC<SimpleRouteMapProps> = ({
                   </div>
                   {route.courier && (
                     <span className="text-xs text-gray-500">
-                      Курьер: {route.courier.name}
+                      Курьер: {typeof route.courier === 'string' ? route.courier : route.courier.name}
                     </span>
                   )}
                 </div>
