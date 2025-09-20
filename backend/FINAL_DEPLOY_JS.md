@@ -60,6 +60,8 @@
 
 ### 2. Переменные окружения
 
+**⚠️ ВАЖНО: Настройте MongoDB перед деплоем!**
+
 ```
 NODE_ENV=production
 PORT=10000
@@ -68,6 +70,18 @@ GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
 JWT_SECRET=your_super_secret_jwt_key_here
 CORS_ORIGIN=https://kill-metraj-frontend.onrender.com
 ```
+
+**Замените в MONGODB_URI:**
+- `username` - ваш username MongoDB Atlas
+- `password` - ваш password MongoDB Atlas  
+- `cluster` - название вашего кластера
+- `kill_metraj` - название базы данных
+
+**Создайте MongoDB Atlas кластер:**
+1. Перейдите на [MongoDB Atlas](https://www.mongodb.com/atlas)
+2. Создайте кластер
+3. Создайте пользователя базы данных
+4. Добавьте IP адрес Render (0.0.0.0/0) в Network Access
 
 ### 3. Дождитесь успешного деплоя
 

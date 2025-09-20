@@ -23,11 +23,39 @@ const PORT = process.env.PORT || 3001;
 // Connect to MongoDB
 const connectDB = async () => {
   try {
-    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/kill_metraj';
-    await mongoose.connect(mongoURI);
+    let mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/kill_metraj';
+    
+    // If using MongoDB Atlas, ensure proper connection string format
+    if (mongoURI.includes('mongodb+srv://')) {
+      // Add retryWrites and w parameters for better reliability
+      if (!mongoURI.includes('retryWrites')) {
+        mongoURI += '?retryWrites=true&w=majority';
+      }
+    }
+    
+    console.log('🔌 Connecting to MongoDB...');
+    console.log('📍 URI:', mongoURI.replace(/\/\/.*@/, '//***:***@')); // Hide credentials in logs
+    
+    await mongoose.connect(mongoURI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
+      socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
+    });
+    
     console.log('✅ MongoDB connected successfully');
   } catch (error) {
-    console.error('❌ MongoDB connection error:', error);
+    console.error('❌ MongoDB connection error:', error.message);
+    
+    // Provide helpful error messages
+    if (error.message.includes('ENOTFOUND')) {
+      console.error('💡 Tip: Check your MongoDB connection string and network connectivity');
+    } else if (error.message.includes('authentication failed')) {
+      console.error('💡 Tip: Check your MongoDB username and password');
+    } else if (error.message.includes('timeout')) {
+      console.error('💡 Tip: Check your MongoDB cluster status and network connection');
+    }
+    
     process.exit(1);
   }
 };
