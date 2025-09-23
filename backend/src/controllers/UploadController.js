@@ -97,7 +97,7 @@ class UploadController {
     };
 
     try {
-      // Зберігаємо кур'єрів
+      // Зберігаємо курєрів
       for (const courierData of data.couriers) {
         try {
           let courier = await Courier.findOne({ name: courierData.name });
@@ -128,7 +128,7 @@ class UploadController {
       // Зберігаємо замовлення
       for (const orderData of data.orders) {
         try {
-          // Знаходимо кур'єра за ім'ям
+          // Знаходимо курєра за імям
           let courier = null;
           if (orderData.courier) {
             courier = await Courier.findOne({ name: orderData.courier });
@@ -171,7 +171,7 @@ class UploadController {
     const routes = [];
     
     try {
-      // Групуємо замовлення за кур'єрами
+      // Групуємо замовлення за курєрами
       const ordersByCourier = {};
       
       for (const order of orders) {
@@ -184,7 +184,7 @@ class UploadController {
         }
       }
 
-      // Створюємо маршрут для кожного кур'єра
+      // Створюємо маршрут для кожного курєра
       for (const [courierId, courierOrders] of Object.entries(ordersByCourier)) {
         try {
           const courier = couriers.find(c => c._id.toString() === courierId);
@@ -241,19 +241,19 @@ class UploadController {
             courier: courierId,
             isActive: true,
             priority: 'normal',
-            notes: `Маршрут для кур'єра ${courier.name}. Замовлень: ${waypoints.length}`
+            notes: `Маршрут для курєра ${courier.name}. Замовлень: ${waypoints.length}`
           });
 
           await route.save();
           routes.push(route);
 
-          // Оновлюємо статистику кур'єра
+          // Оновлюємо статистику курєра
           if (courier.updateStatistics) {
             await courier.updateStatistics();
           }
 
         } catch (error) {
-          console.error(`Помилка створення маршруту для кур'єра ${courierId}:`, error);
+          console.error(`Помилка створення маршруту для курєра ${courierId}:`, error);
         }
       }
 

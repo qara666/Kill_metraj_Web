@@ -4,7 +4,7 @@ const { Schema } = mongoose;
 const PaymentMethodSchema = new Schema({
   name: {
     type: String,
-    required: [true, 'Назва способу оплати є обов\'язковою'],
+    required: [true, 'Назва способу оплати є обовязковою'],
     unique: true,
     trim: true,
     index: true
@@ -149,3 +149,4 @@ PaymentMethodSchema.statics.getByType = function(type) {
 };
 
 module.exports = mongoose.model('PaymentMethod', PaymentMethodSchema);
+

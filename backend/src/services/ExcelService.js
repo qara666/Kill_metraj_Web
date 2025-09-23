@@ -208,7 +208,7 @@ class ExcelService {
         data: this.processOrderRow(row, headerMap, rowNumber)
       };
     } else if (hasCourier && !hasOrderNumber) {
-      // Це кур'єр
+      // Це курєр
       return {
         type: 'courier',
         data: this.processCourierRow(row, headerMap, rowNumber)
@@ -251,23 +251,23 @@ class ExcelService {
       rowNumber: rowNumber
     };
 
-    // Валідація обов'язкових полів
+    // Валідація обовязкових полів
     if (!order.orderNumber) {
-      throw new Error('Номер замовлення є обов\'язковим');
+      throw new Error('Номер замовлення є обовязковим');
     }
     if (!order.address) {
-      throw new Error('Адреса є обов\'язковою');
+      throw new Error('Адреса є обовязковою');
     }
 
     return order;
   }
 
   /**
-   * Обробляє рядок кур'єра
+   * Обробляє рядок курєра
    * @param {Array} row - Рядок даних
    * @param {Object} headerMap - Мапа заголовків
    * @param {number} rowNumber - Номер рядка
-   * @returns {Object} Дані кур'єра
+   * @returns {Object} Дані курєра
    */
   processCourierRow(row, headerMap, rowNumber) {
     const courier = {
@@ -280,7 +280,7 @@ class ExcelService {
     };
 
     if (!courier.name) {
-      throw new Error('Ім\'я кур\'єра є обов\'язковим');
+      throw new Error('Імя курєра є обовязковим');
     }
 
     return courier;
@@ -302,7 +302,7 @@ class ExcelService {
     };
 
     if (!paymentMethod.name) {
-      throw new Error('Назва способу оплати є обов\'язковою');
+      throw new Error('Назва способу оплати є обовязковою');
     }
 
     return paymentMethod;
@@ -353,7 +353,7 @@ class ExcelService {
       }
     }
 
-    // Валідуємо кур'єрів
+    // Валідуємо курєрів
     for (const courier of data.couriers) {
       try {
         const validatedCourier = await this.validateCourier(courier);
@@ -410,15 +410,15 @@ class ExcelService {
   }
 
   /**
-   * Валідує кур'єра
-   * @param {Object} courier - Кур'єр
-   * @returns {Object} Валідований кур'єр
+   * Валідує курєра
+   * @param {Object} courier - Курєр
+   * @returns {Object} Валідований курєр
    */
   async validateCourier(courier) {
-    // Перевіряємо унікальність кур'єра
+    // Перевіряємо унікальність курєра
     const existingCourier = await mongoose.model('Courier').findOne({ name: courier.name });
     if (existingCourier) {
-      throw new Error('Кур'єр з таким ім'ям вже існує');
+      throw new Error('Курєр з таким імям вже існує');
     }
 
     return {

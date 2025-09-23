@@ -4,14 +4,14 @@ const { Schema } = mongoose;
 const OrderSchema = new Schema({
   orderNumber: {
     type: String,
-    required: [true, 'Номер замовлення є обов\'язковим'],
+    required: [true, 'Номер замовлення є обовязковим'],
     unique: true,
     trim: true,
     index: true
   },
   address: {
     type: String,
-    required: [true, 'Адреса є обов\'язковою'],
+    required: [true, 'Адреса є обовязковою'],
     trim: true
   },
   phone: {
@@ -120,7 +120,7 @@ OrderSchema.virtual('deliveryDelay').get(function() {
   return null;
 });
 
-// Метод для призначення кур'єра
+// Метод для призначення курєра
 OrderSchema.methods.assignCourier = function(courierId) {
   this.courier = courierId;
   this.status = 'assigned';
@@ -160,7 +160,7 @@ OrderSchema.methods.archive = function() {
   return this.save();
 };
 
-// Pre-save middleware для оновлення статистики кур'єра
+// Pre-save middleware для оновлення статистики курєра
 OrderSchema.pre('save', async function(next) {
   if (this.isModified('status') && this.status === 'completed' && this.courier) {
     const Courier = mongoose.model('Courier');
@@ -172,3 +172,4 @@ OrderSchema.pre('save', async function(next) {
 });
 
 module.exports = mongoose.model('Order', OrderSchema);
+
