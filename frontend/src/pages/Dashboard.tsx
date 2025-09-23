@@ -14,6 +14,7 @@ import { CourierCard } from '../components/CourierCard'
 import RouteMap from '../components/RouteMap'
 import { StatsCard } from '../components/StatsCard'
 import { LoadingSpinner } from '../components/LoadingSpinner'
+import { ProcessingResults } from '../components/ProcessingResults'
 import * as api from '../services/api'
 
 export const Dashboard: React.FC = () => {
@@ -119,7 +120,7 @@ export const Dashboard: React.FC = () => {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Панель керування</h1>
             <p className="mt-1 text-sm text-gray-600">
-              Керування маршрутами кур'єрів та відстеження ефективності доставки
+              Керування маршрутами курєрів та відстеження ефективності доставки
             </p>
           </div>
           <div className="flex items-center space-x-3">
@@ -145,7 +146,7 @@ export const Dashboard: React.FC = () => {
             change={`${stats.activeRoutes} активних`}
           />
           <StatsCard
-            title="Всього кур'єрів"
+            title="Всього курєрів"
             value={stats.totalCouriers}
             icon={UserGroupIcon}
             color="success"
@@ -209,7 +210,7 @@ export const Dashboard: React.FC = () => {
                   <p>{processedData.orders.length} замовлень оброблено</p>
                   <p>{processedData.summary.successfulGeocoding} адрес геокодовано</p>
                   <p>{processedData.summary.failedGeocoding} не вдалося геокодувати</p>
-                  <p>{processedData.summary.couriers.length} кур'єрів знайдено</p>
+                  <p>{processedData.summary.couriers.length} курєрів знайдено</p>
                 </div>
                 
                 <button
@@ -246,21 +247,31 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
+        {/* Processing Results */}
+        {processedData && (
+          <div className="lg:col-span-3">
+            <ProcessingResults 
+              data={processedData} 
+              summary={processedData.summary} 
+            />
+          </div>
+        )}
+
         {/* Main Content */}
         <div className="lg:col-span-2">
           <div className="space-y-6">
             {/* Couriers Section */}
             <div className="card p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                Останні кур'єри ({couriers.length})
+                Останні курєри ({couriers.length})
               </h2>
               
               {couriers.length === 0 ? (
                 <div className="text-center py-8">
                   <UserGroupIcon className="mx-auto h-12 w-12 text-gray-400" />
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">Немає кур'єрів</h3>
+                  <h3 className="mt-2 text-sm font-medium text-gray-900">Немає курєрів</h3>
                   <p className="mt-1 text-sm text-gray-500">
-                    Завантажте Excel файл для створення кур'єрів та маршрутів.
+                    Завантажте Excel файл для створення курєрів та маршрутів.
                   </p>
                 </div>
               ) : (
