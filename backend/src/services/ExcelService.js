@@ -253,10 +253,10 @@ class ExcelService {
 
     // Валідація обов'язкових полів
     if (!order.orderNumber) {
-      throw new Error('Номер замовлення є обов'язковим');
+      throw new Error('Номер замовлення є обов\'язковим');
     }
     if (!order.address) {
-      throw new Error('Адреса є обов'язковою');
+      throw new Error('Адреса є обов\'язковою');
     }
 
     return order;
@@ -280,7 +280,7 @@ class ExcelService {
     };
 
     if (!courier.name) {
-      throw new Error('Ім'я кур'єра є обов'язковим');
+      throw new Error('Ім\'я кур\'єра є обов\'язковим');
     }
 
     return courier;
@@ -302,7 +302,7 @@ class ExcelService {
     };
 
     if (!paymentMethod.name) {
-      throw new Error('Назва способу оплати є обов'язковою');
+      throw new Error('Назва способу оплати є обов\'язковою');
     }
 
     return paymentMethod;
