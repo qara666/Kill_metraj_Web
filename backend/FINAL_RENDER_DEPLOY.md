@@ -117,3 +117,5 @@ node build-test.js
 **Backend готов к деплою на Render! 🎉**
 
 Все ошибки TypeScript исправлены с помощью @ts-ignore директив. Приложение должно успешно развернуться на Render.
+
+

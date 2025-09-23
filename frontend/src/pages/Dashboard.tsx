@@ -46,11 +46,11 @@ export const Dashboard: React.FC = () => {
     mutationFn: api.uploadApi.uploadExcelFile,
     onSuccess: (data) => {
       setProcessedData(data.data)
-      toast.success(`Processed ${data.data?.orders.length} orders successfully`)
+      toast.success(`Оброблено ${data.data?.orders.length} замовлень успішно`)
       queryClient.invalidateQueries({ queryKey: ['routes'] })
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.error || 'Failed to process file')
+      toast.error(error.response?.data?.error || 'Не вдалося обробити файл')
     },
   })
 
@@ -58,7 +58,7 @@ export const Dashboard: React.FC = () => {
   const createRoutesMutation = useMutation({
     mutationFn: api.uploadApi.createRoutesFromOrders,
     onSuccess: () => {
-      toast.success('Routes created successfully')
+      toast.success('Маршрути створено успішно')
       queryClient.invalidateQueries({ queryKey: ['routes'] })
       queryClient.invalidateQueries({ queryKey: ['couriers'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
@@ -66,7 +66,7 @@ export const Dashboard: React.FC = () => {
       setSelectedFile(null)
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.error || 'Failed to create routes')
+      toast.error(error.response?.data?.error || 'Не вдалося створити маршрути')
     },
   })
 
@@ -97,9 +97,9 @@ export const Dashboard: React.FC = () => {
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
-      toast.success('Sample template downloaded')
+      toast.success('Зразок шаблону завантажено')
     } catch (error) {
-      toast.error('Failed to download sample template')
+      toast.error('Не вдалося завантажити зразок шаблону')
     }
   }
 
@@ -117,9 +117,9 @@ export const Dashboard: React.FC = () => {
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Панель керування</h1>
             <p className="mt-1 text-sm text-gray-600">
-              Manage courier routes and track delivery performance
+              Керування маршрутами кур'єрів та відстеження ефективності доставки
             </p>
           </div>
           <div className="flex items-center space-x-3">
@@ -128,7 +128,7 @@ export const Dashboard: React.FC = () => {
               className="btn-outline"
             >
               <DocumentArrowUpIcon className="h-4 w-4 mr-2" />
-              Download Sample
+              Завантажити зразок
             </button>
           </div>
         </div>
@@ -138,32 +138,32 @@ export const Dashboard: React.FC = () => {
       {stats && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatsCard
-            title="Total Routes"
+            title="Всього маршрутів"
             value={stats.totalRoutes}
             icon={MapIcon}
             color="primary"
-            change={`${stats.activeRoutes} active`}
+            change={`${stats.activeRoutes} активних`}
           />
           <StatsCard
-            title="Total Couriers"
+            title="Всього кур'єрів"
             value={stats.totalCouriers}
             icon={UserGroupIcon}
             color="success"
-            change={`${stats.activeCouriers} active`}
+            change={`${stats.activeCouriers} активних`}
           />
           <StatsCard
-            title="Total Orders"
+            title="Всього замовлень"
             value={stats.totalOrders}
             icon={TruckIcon}
             color="warning"
-            change={`${stats.averageOrdersPerRoute.toFixed(1)} avg/route`}
+            change={`${stats.averageOrdersPerRoute.toFixed(1)} середнє/маршрут`}
           />
           <StatsCard
-            title="Completion Rate"
+            title="Відсоток виконання"
             value={`${stats.completionRate.toFixed(1)}%`}
             icon={CheckCircleIcon}
             color="success"
-            change={`${stats.completedRoutes} completed`}
+            change={`${stats.completedRoutes} завершено`}
           />
         </div>
       )}
@@ -173,7 +173,7 @@ export const Dashboard: React.FC = () => {
         <div className="lg:col-span-1">
           <div className="card p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              Upload Excel File
+              Завантажити Excel файл
             </h2>
             
             <FileUpload onFileSelect={handleFileSelect} />
@@ -188,12 +188,12 @@ export const Dashboard: React.FC = () => {
                   {processFileMutation.isPending ? (
                     <>
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                      Processing...
+                      Обробка...
                     </>
                   ) : (
                     <>
                       <DocumentArrowUpIcon className="h-4 w-4 mr-2" />
-                      Process File
+                      Обробити файл
                     </>
                   )}
                 </button>
@@ -203,13 +203,13 @@ export const Dashboard: React.FC = () => {
             {processedData && (
               <div className="mt-4 p-4 bg-success-50 rounded-lg border border-success-200">
                 <h3 className="font-medium text-success-800 mb-2">
-                  File Processed Successfully
+                  Файл успішно оброблено
                 </h3>
                 <div className="space-y-1 text-sm text-success-600">
-                  <p>{processedData.orders.length} orders processed</p>
-                  <p>{processedData.summary.successfulGeocoding} addresses geocoded</p>
-                  <p>{processedData.summary.failedGeocoding} failed geocoding</p>
-                  <p>{processedData.summary.couriers.length} couriers found</p>
+                  <p>{processedData.orders.length} замовлень оброблено</p>
+                  <p>{processedData.summary.successfulGeocoding} адрес геокодовано</p>
+                  <p>{processedData.summary.failedGeocoding} не вдалося геокодувати</p>
+                  <p>{processedData.summary.couriers.length} кур'єрів знайдено</p>
                 </div>
                 
                 <button
@@ -220,12 +220,12 @@ export const Dashboard: React.FC = () => {
                   {createRoutesMutation.isPending ? (
                     <>
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                      Creating Routes...
+                      Створення маршрутів...
                     </>
                   ) : (
                     <>
                       <MapIcon className="h-4 w-4 mr-2" />
-                      Create Routes
+                      Створити маршрути
                     </>
                   )}
                 </button>
@@ -236,10 +236,10 @@ export const Dashboard: React.FC = () => {
               <div className="mt-4 p-4 bg-warning-50 rounded-lg border border-warning-200">
                 <h3 className="font-medium text-warning-800 mb-2 flex items-center">
                   <ExclamationTriangleIcon className="h-4 w-4 mr-2" />
-                  Processing Warnings
+                  Попередження обробки
                 </h3>
                 <div className="text-sm text-warning-600">
-                  <p>{processedData.summary.errors.length} errors occurred during processing</p>
+                  <p>{processedData.summary.errors.length} помилок виникло під час обробки</p>
                 </div>
               </div>
             )}
@@ -252,15 +252,15 @@ export const Dashboard: React.FC = () => {
             {/* Couriers Section */}
             <div className="card p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                Recent Couriers ({couriers.length})
+                Останні кур'єри ({couriers.length})
               </h2>
               
               {couriers.length === 0 ? (
                 <div className="text-center py-8">
                   <UserGroupIcon className="mx-auto h-12 w-12 text-gray-400" />
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">No couriers</h3>
+                  <h3 className="mt-2 text-sm font-medium text-gray-900">Немає кур'єрів</h3>
                   <p className="mt-1 text-sm text-gray-500">
-                    Upload an Excel file to create couriers and routes.
+                    Завантажте Excel файл для створення кур'єрів та маршрутів.
                   </p>
                 </div>
               ) : (
@@ -282,7 +282,7 @@ export const Dashboard: React.FC = () => {
             {/* Map Section */}
             <div className="card p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                Route Map
+                Карта маршрутів
               </h2>
               
               <RouteMap 

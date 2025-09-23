@@ -32,3 +32,5 @@ router.post('/:id/archive', routeController.archiveRoute.bind(routeController));
 router.post('/optimize', routeController.optimizeRoute.bind(routeController));
 
 module.exports = router;
+
+

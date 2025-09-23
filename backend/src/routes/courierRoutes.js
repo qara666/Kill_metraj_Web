@@ -23,3 +23,5 @@ router.put('/:id', courierController.updateCourier.bind(courierController));
 router.delete('/:id', courierController.deleteCourier.bind(courierController));
 
 module.exports = router;
+
+

@@ -1,13 +1,13 @@
 const multer = require('multer');
-const xlsx = require('xlsx');
-const { GoogleMapsService } = require('../services/GoogleMapsService');
+const ExcelService = require('../services/ExcelService');
 const Courier = require('../models/Courier');
 const Route = require('../models/Route');
+const Order = require('../models/Order');
+const PaymentMethod = require('../models/PaymentMethod');
 
 class UploadController {
   constructor() {
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY || '';
-    this.mapsService = new GoogleMapsService(apiKey);
+    this.excelService = ExcelService;
   }
 
   /**
@@ -22,7 +22,7 @@ class UploadController {
           file.mimetype === 'text/csv') {
         cb(null, true);
       } else {
-        cb(new Error('Only Excel and CSV files are allowed'), false);
+        cb(new Error('Дозволені тільки Excel та CSV файли'), false);
       }
     };
 
@@ -36,146 +36,181 @@ class UploadController {
   }
 
   /**
-   * Upload and process Excel file
+   * Завантажити та обробити Excel файл
    */
   async uploadExcel(req, res) {
     try {
       if (!req.file) {
         return res.status(400).json({
           success: false,
-          error: 'No file uploaded'
+          error: 'Файл не завантажено'
         });
       }
 
-      // Parse Excel file
-      const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const data = xlsx.utils.sheet_to_json(worksheet);
+      // Обробляємо Excel файл
+      const result = await this.excelService.processExcelFile(req.file.buffer, req.file.originalname);
 
-      if (data.length === 0) {
+      if (!result.success) {
         return res.status(400).json({
           success: false,
-          error: 'Excel file is empty'
+          error: result.error
         });
       }
 
-      // Process data
-      const processedData = await this.processExcelData(data);
+      // Зберігаємо дані в базу даних
+      const savedData = await this.saveProcessedData(result.data);
+
+      // Генеруємо звіт
+      const report = this.excelService.generateReport({
+        success: true,
+        data: savedData,
+        summary: result.summary
+      });
 
       res.json({
         success: true,
-        data: processedData,
-        message: `Successfully processed ${data.length} rows`
+        data: savedData,
+        summary: result.summary,
+        report: report,
+        message: `Файл успішно оброблено! Замовлень: ${savedData.orders.length}, Кур'єрів: ${savedData.couriers.length}, Спосібів оплати: ${savedData.paymentMethods.length}`
       });
     } catch (error) {
+      console.error('Помилка обробки Excel файлу:', error);
       res.status(500).json({
         success: false,
-        error: 'Failed to process Excel file',
+        error: 'Не вдалося обробити Excel файл',
         details: error.message
       });
     }
   }
 
   /**
-   * Process Excel data and create routes
+   * Зберегти оброблені дані в базу даних
    */
-  async processExcelData(data) {
+  async saveProcessedData(data) {
     const results = {
+      orders: [],
       couriers: [],
+      paymentMethods: [],
       routes: [],
       errors: []
     };
 
-    // Group data by courier
-    const courierGroups = {};
-    
-    for (let i = 0; i < data.length; i++) {
-      const row = data[i];
-      const courierName = row['Курьер'] || row['Courier'] || row['courier'];
-      
-      if (!courierName) {
-        results.errors.push(`Row ${i + 1}: Missing courier name`);
-        continue;
-      }
-
-      if (!courierGroups[courierName]) {
-        courierGroups[courierName] = [];
-      }
-
-      courierGroups[courierName].push(row);
-    }
-
-    // Process each courier group
-    for (const [courierName, orders] of Object.entries(courierGroups)) {
-      try {
-        // Find or create courier
-        let courier = await Courier.findOne({ name: courierName });
-        if (!courier) {
-          courier = new Courier({
-            name: courierName,
-            isActive: true,
-            vehicleType: 'car',
-            location: 'Київ'
-          });
-          await courier.save();
+    try {
+      // Зберігаємо кур'єрів
+      for (const courierData of data.couriers) {
+        try {
+          let courier = await Courier.findOne({ name: courierData.name });
+          if (!courier) {
+            courier = new Courier(courierData);
+            await courier.save();
+          }
           results.couriers.push(courier);
+        } catch (error) {
+          results.errors.push(`Кур'єр ${courierData.name}: ${error.message}`);
         }
-
-        // Process orders for this courier
-        const routeData = await this.processCourierOrders(orders, courier._id);
-        if (routeData) {
-          results.routes.push(routeData);
-        }
-      } catch (error) {
-        results.errors.push(`Courier ${courierName}: ${error.message}`);
       }
+
+      // Зберігаємо способи оплати
+      for (const paymentData of data.paymentMethods) {
+        try {
+          let paymentMethod = await PaymentMethod.findOne({ name: paymentData.name });
+          if (!paymentMethod) {
+            paymentMethod = new PaymentMethod(paymentData);
+            await paymentMethod.save();
+          }
+          results.paymentMethods.push(paymentMethod);
+        } catch (error) {
+          results.errors.push(`Спосіб оплати ${paymentData.name}: ${error.message}`);
+        }
+      }
+
+      // Зберігаємо замовлення
+      for (const orderData of data.orders) {
+        try {
+          // Знаходимо кур'єра за ім'ям
+          let courier = null;
+          if (orderData.courier) {
+            courier = await Courier.findOne({ name: orderData.courier });
+          }
+
+          // Знаходимо спосіб оплати за назвою
+          let paymentMethod = null;
+          if (orderData.paymentMethod) {
+            paymentMethod = await PaymentMethod.findOne({ name: orderData.paymentMethod });
+          }
+
+          const order = new Order({
+            ...orderData,
+            courier: courier ? courier._id : null,
+            paymentMethod: paymentMethod ? paymentMethod._id : null
+          });
+
+          await order.save();
+          results.orders.push(order);
+        } catch (error) {
+          results.errors.push(`Замовлення ${orderData.orderNumber}: ${error.message}`);
+        }
+      }
+
+      // Створюємо маршрути на основі замовлень
+      const routeData = await this.createRoutesFromOrders(results.orders, results.couriers);
+      results.routes = routeData;
+
+    } catch (error) {
+      results.errors.push(`Помилка збереження даних: ${error.message}`);
     }
 
     return results;
   }
 
   /**
-   * Process orders for a specific courier
+   * Створити маршрути на основі замовлень
    */
-  async processCourierOrders(orders, courierId) {
+  async createRoutesFromOrders(orders, couriers) {
+    const routes = [];
+    
     try {
-      const waypoints = [];
-      let startPoint = null;
-      let endPoint = null;
-
-      // Process each order
+      // Групуємо замовлення за кур'єрами
+      const ordersByCourier = {};
+      
       for (const order of orders) {
-        const address = order['Адрес'] || order['Address'] || order['address'];
-        const orderNumber = order['Номер заказа'] || order['Order Number'] || order['orderNumber'];
-        
-        if (!address) {
-          continue;
+        if (order.courier) {
+          const courierId = order.courier.toString();
+          if (!ordersByCourier[courierId]) {
+            ordersByCourier[courierId] = [];
+          }
+          ordersByCourier[courierId].push(order);
         }
+      }
 
-        // Geocode address
-        const geocodedAddress = await this.mapsService.geocodeAddress(address);
-        
-        if (!geocodedAddress) {
-          continue;
-        }
+      // Створюємо маршрут для кожного кур'єра
+      for (const [courierId, courierOrders] of Object.entries(ordersByCourier)) {
+        try {
+          const courier = couriers.find(c => c._id.toString() === courierId);
+          if (!courier) continue;
 
-        const waypoint = {
-          scannedText: address,
-          formattedAddress: geocodedAddress.formatted_address,
-          latitude: geocodedAddress.geometry.location.lat,
-          longitude: geocodedAddress.geometry.location.lng,
-          isWaypoint: true,
-          orderNumber: orderNumber || `ORDER_${Date.now()}`,
-          orderIndex: waypoints.length
-        };
+          const waypoints = [];
+          
+          // Створюємо waypoints з замовлень
+          for (const order of courierOrders) {
+            const waypoint = {
+              scannedText: order.address,
+              formattedAddress: order.address,
+              latitude: 50.4501, // Заглушка - в реальному проекті потрібно геокодування
+              longitude: 30.5234,
+              isWaypoint: true,
+              orderNumber: order.orderNumber,
+              orderIndex: waypoints.length
+            };
+            waypoints.push(waypoint);
+          }
 
-        waypoints.push(waypoint);
+          if (waypoints.length === 0) continue;
 
-        // Set start and end points
-        if (!startPoint) {
-          startPoint = {
-            scannedText: 'Стартовая точка',
+          // Створюємо стартову та кінцеву точки
+          const startPoint = {
+            scannedText: 'Стартова точка',
             formattedAddress: 'Київ, Україна',
             latitude: 50.4501,
             longitude: 30.5234,
@@ -183,58 +218,53 @@ class UploadController {
             isWaypoint: false,
             orderIndex: -1
           };
+
+          const endPoint = {
+            scannedText: 'Кінцева точка',
+            formattedAddress: 'Київ, Україна',
+            latitude: 50.4501,
+            longitude: 30.5234,
+            isDestination: true,
+            isWaypoint: false,
+            orderIndex: waypoints.length
+          };
+
+          // Створюємо маршрут
+          const route = new Route({
+            startPoint,
+            endPoint,
+            waypoints,
+            totalDistance: '0 км', // Заглушка
+            totalDuration: '0 хв', // Заглушка
+            polyline: '',
+            transportationMode: 'driving',
+            courier: courierId,
+            isActive: true,
+            priority: 'normal',
+            notes: `Маршрут для кур'єра ${courier.name}. Замовлень: ${waypoints.length}`
+          });
+
+          await route.save();
+          routes.push(route);
+
+          // Оновлюємо статистику кур'єра
+          if (courier.updateStatistics) {
+            await courier.updateStatistics();
+          }
+
+        } catch (error) {
+          console.error(`Помилка створення маршруту для кур'єра ${courierId}:`, error);
         }
       }
 
-      if (waypoints.length === 0) {
-        return null;
-      }
-
-      // Set end point
-      endPoint = {
-        scannedText: 'Конечная точка',
-        formattedAddress: 'Київ, Україна',
-        latitude: 50.4501,
-        longitude: 30.5234,
-        isDestination: true,
-        isWaypoint: false,
-        orderIndex: waypoints.length
-      };
-
-      // Get optimized route
-      const optimizedRoute = await this.mapsService.getOptimizedRoute(
-        startPoint,
-        endPoint,
-        waypoints.map(wp => ({ lat: wp.latitude, lng: wp.longitude }))
-      );
-
-      // Create route
-      const route = new Route({
-        startPoint,
-        endPoint,
-        waypoints,
-        totalDistance: optimizedRoute.totalDistance || '0 км',
-        totalDuration: optimizedRoute.totalDuration || '0 мин',
-        polyline: optimizedRoute.polyline || '',
-        transportationMode: 'driving',
-        courier: courierId,
-        isActive: true,
-        priority: 'normal'
-      });
-
-      await route.save();
-
-      // Update courier statistics
-      const courier = await Courier.findById(courierId);
-      if (courier) {
-        await courier.updateStatistics();
-      }
-
-      return route;
     } catch (error) {
-      throw new Error(`Failed to process orders: ${error.message}`);
+      console.error('Помилка створення маршрутів:', error);
     }
+
+    return routes;
   }
 }
 
 module.exports = { UploadController };
+
+

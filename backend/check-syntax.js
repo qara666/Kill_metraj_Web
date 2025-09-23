@@ -68,3 +68,5 @@ if (hasErrors) {
   console.log('\n✅ All files passed basic syntax check');
   console.log('🚀 Ready for deployment on Render');
 }
+
+

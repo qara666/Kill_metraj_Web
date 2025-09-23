@@ -103,3 +103,5 @@ frontend/
 **Frontend готов к деплою на Render! 🎉**
 
 Все ошибки TypeScript исправлены, Google Maps зависимости убраны.
+
+

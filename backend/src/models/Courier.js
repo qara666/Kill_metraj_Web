@@ -140,3 +140,5 @@ CourierSchema.pre('save', async function(next) {
 });
 
 module.exports = mongoose.model('Courier', CourierSchema);
+
+
