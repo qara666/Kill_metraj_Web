@@ -111,52 +111,37 @@ class ExcelService {
       warnings: []
     };
 
-    console.log(`\n📊 Обработка листа "${sheetName}":`);
-    console.log(`📋 Всего строк: ${data.length}`);
-
     try {
       // Знаходимо заголовки (перший рядок)
       const headers = data[0] || [];
       const headerMap = this.mapHeaders(headers);
 
-      console.log(`\n🔄 Обработка строк данных (${data.length - 1} строк):`);
-
+      console.log(`📊 Обрабатываем ${data.length - 1} строк данных...`);
+      
       // Обробляємо кожен рядок даних
       for (let i = 1; i < data.length; i++) {
         const row = data[i];
-        if (!row || row.length === 0) {
-          console.log(`  ⏭️ Строка ${i + 1}: Пропущена (пустая)`);
-          continue;
-        }
+        if (!row || row.length === 0) continue;
 
         try {
           const processedRow = this.processRow(row, headerMap, i + 1);
           
           if (processedRow.type === 'order') {
             result.orders.push(processedRow.data);
-            console.log(`  📦 Добавлен заказ: ${processedRow.data.orderNumber}`);
           } else if (processedRow.type === 'courier') {
             result.couriers.push(processedRow.data);
-            console.log(`  🚚 Добавлен курьер: ${processedRow.data.name}`);
           } else if (processedRow.type === 'payment') {
             result.paymentMethods.push(processedRow.data);
-            console.log(`  💳 Добавлен способ оплаты: ${processedRow.data.name}`);
           } else if (processedRow.type === 'route') {
             result.routes.push(processedRow.data);
-            console.log(`  🗺️ Добавлен маршрут`);
           }
         } catch (rowError) {
-          console.log(`  ❌ Ошибка в строке ${i + 1}: ${rowError.message}`);
+          console.log(`❌ Ошибка в строке ${i + 1}: ${rowError.message}`);
           result.errors.push(`Рядок ${i + 1}: ${rowError.message}`);
         }
       }
-
-      console.log(`\n📈 Итоги по листу "${sheetName}":`);
-      console.log(`  📦 Заказов: ${result.orders.length}`);
-      console.log(`  🚚 Курьеров: ${result.couriers.length}`);
-      console.log(`  💳 Способов оплаты: ${result.paymentMethods.length}`);
-      console.log(`  🗺️ Маршрутов: ${result.routes.length}`);
-      console.log(`  ❌ Ошибок: ${result.errors.length}`);
+      
+      console.log(`📈 Результаты обработки листа: заказов=${result.orders.length}, курьеров=${result.couriers.length}, способов оплаты=${result.paymentMethods.length}, ошибок=${result.errors.length}`);
 
     } catch (error) {
       result.errors.push(`Лист "${sheetName}": ${error.message}`);
@@ -189,73 +174,32 @@ class ExcelService {
       const includesAny = (s, arr) => arr.some(k => s.includes(k));
 
       // Мапимо українські, російські та англійські заголовки
-      if (includesAny(noApostrophes, ['номер', 'номер заказа', 'номер замовлення', 'no', '№', 'number', 'order', 'id', 'заказ', 'замовлення'])) {
-        if (headerMap.orderNumber === undefined) {
-          headerMap.orderNumber = index;
-          console.log(`  ✅ Номер заказа: колонка ${index} ("${header}")`);
-        }
-      } else if (includesAny(noApostrophes, ['адреса', 'адрес', 'address', 'адрес доставки', 'адреса доставки', 'адреса клиента', 'адрес клиента'])) {
-        if (headerMap.address === undefined) {
-          headerMap.address = index;
-          console.log(`  ✅ Адрес: колонка ${index} ("${header}")`);
-        }
-      } else if (includesAny(noApostrophes, ['телефон', 'phone', 'моб', 'mobile', 'тел', 'телефон клиента', 'контакт'])) {
-        if (headerMap.phone === undefined) {
-          headerMap.phone = index;
-          console.log(`  ✅ Телефон: колонка ${index} ("${header}")`);
-        }
-      } else if (includesAny(noApostrophes, ['курєр', 'курер', 'курьер', 'courier', 'доставщик', 'доставка', 'водитель'])) {
-        if (headerMap.courier === undefined) {
-          headerMap.courier = index;
-          console.log(`  ✅ Курьер: колонка ${index} ("${header}")`);
-        }
-      } else if (includesAny(noApostrophes, ['оплата', 'способ оплаты', 'payment', 'оплат', 'сплата', 'способ оплаты', 'тип оплаты', 'оплата заказа'])) {
-        if (headerMap.paymentMethod === undefined) {
-          headerMap.paymentMethod = index;
-          console.log(`  ✅ Способ оплаты: колонка ${index} ("${header}")`);
-        }
-      } else if (includesAny(noApostrophes, ['сума', 'сумма', 'amount', 'price', 'стоимость', 'вартість', 'сумма заказа', 'к оплате', 'сумма к оплате', 'цена', 'стоимость заказа'])) {
-        if (headerMap.amount === undefined) {
-          headerMap.amount = index;
-          console.log(`  ✅ Сумма: колонка ${index} ("${header}")`);
-        }
-      } else if (includesAny(noApostrophes, ['тип заказа', 'тип замовлення', 'order type', 'категория', 'тип'])) {
-        if (headerMap.orderType === undefined) {
-          headerMap.orderType = index;
-          console.log(`  ✅ Тип заказа: колонка ${index} ("${header}")`);
-        }
-      } else if (includesAny(noApostrophes, ['имя', 'імя', 'name', 'клиент', 'заказчик', 'получатель', 'фио'])) {
-        if (headerMap.customerName === undefined) {
-          headerMap.customerName = index;
-          console.log(`  ✅ Имя клиента: колонка ${index} ("${header}")`);
-        }
-      } else if (includesAny(noApostrophes, ['примітка', 'примечание', 'note', 'comment', 'комментарий', 'заметка'])) {
-        if (headerMap.note === undefined) {
-          headerMap.note = index;
-          console.log(`  ✅ Примечание: колонка ${index} ("${header}")`);
-        }
-      } else if (includesAny(noApostrophes, ['пріоритет', 'приоритет', 'priority', 'важность'])) {
-        if (headerMap.priority === undefined) {
-          headerMap.priority = index;
-          console.log(`  ✅ Приоритет: колонка ${index} ("${header}")`);
-        }
-      } else if (includesAny(noApostrophes, ['статус', 'status', 'состояние'])) {
-        if (headerMap.status === undefined) {
-          headerMap.status = index;
-          console.log(`  ✅ Статус: колонка ${index} ("${header}")`);
-        }
-      } else if (includesAny(noApostrophes, ['дата', 'date', 'дата заказа', 'дата создания'])) {
-        if (headerMap.date === undefined) {
-          headerMap.date = index;
-          console.log(`  ✅ Дата: колонка ${index} ("${header}")`);
-        }
-      } else if (includesAny(noApostrophes, ['час', 'время', 'time', 'время доставки'])) {
-        if (headerMap.time === undefined) {
-          headerMap.time = index;
-          console.log(`  ✅ Время: колонка ${index} ("${header}")`);
-        }
-      } else {
-        console.log(`  ❓ Неизвестный заголовок: колонка ${index} ("${header}")`);
+      if (includesAny(noApostrophes, ['номер', 'номер заказа', 'номер замовлення', 'no', '№', 'number', 'order', 'id'])) {
+        if (headerMap.orderNumber === undefined) headerMap.orderNumber = index;
+      } else if (includesAny(noApostrophes, ['адреса', 'адрес', 'address', 'адрес доставки'])) {
+        if (headerMap.address === undefined) headerMap.address = index;
+      } else if (includesAny(noApostrophes, ['телефон', 'phone', 'моб', 'mobile'])) {
+        if (headerMap.phone === undefined) headerMap.phone = index;
+      } else if (includesAny(noApostrophes, ['курєр', 'курер', 'курьер', 'courier', 'доставщик'])) {
+        if (headerMap.courier === undefined) headerMap.courier = index;
+      } else if (includesAny(noApostrophes, ['оплата', 'способ оплаты', 'payment', 'оплат', 'сплата'])) {
+        if (headerMap.paymentMethod === undefined) headerMap.paymentMethod = index;
+      } else if (includesAny(noApostrophes, ['сума', 'сумма', 'amount', 'price', 'стоимость', 'вартість', 'сумма заказа', 'к оплате'])) {
+        if (headerMap.amount === undefined) headerMap.amount = index;
+      } else if (includesAny(noApostrophes, ['тип заказа', 'тип замовлення', 'order type'])) {
+        if (headerMap.orderType === undefined) headerMap.orderType = index;
+      } else if (includesAny(noApostrophes, ['имя', 'імя', 'name'])) {
+        if (headerMap.customerName === undefined) headerMap.customerName = index;
+      } else if (includesAny(noApostrophes, ['примітка', 'примечание', 'note', 'comment'])) {
+        if (headerMap.note === undefined) headerMap.note = index;
+      } else if (includesAny(noApostrophes, ['пріоритет', 'приоритет', 'priority'])) {
+        if (headerMap.priority === undefined) headerMap.priority = index;
+      } else if (includesAny(noApostrophes, ['статус', 'status'])) {
+        if (headerMap.status === undefined) headerMap.status = index;
+      } else if (includesAny(noApostrophes, ['дата', 'date'])) {
+        if (headerMap.date === undefined) headerMap.date = index;
+      } else if (includesAny(noApostrophes, ['час', 'время', 'time'])) {
+        if (headerMap.time === undefined) headerMap.time = index;
       }
     });
 
@@ -287,21 +231,21 @@ class ExcelService {
       courier: hasCourier ? row[headerMap.courier] : 'нет'
     });
 
-    if (hasOrderNumber && hasAddress) {
-      // Це замовлення
-      console.log(`✅ Строка ${rowNumber}: Определена как ЗАКАЗ`);
+    if (hasAddress) {
+      // Це замовлення (если есть адрес, создаем заказ)
+      console.log(`✅ Строка ${rowNumber}: Определена как ЗАКАЗ (по адресу)`);
       return {
         type: 'order',
         data: this.processOrderRow(row, headerMap, rowNumber)
       };
-    } else if (hasCourier && !hasOrderNumber) {
+    } else if (hasCourier && !hasAddress) {
       // Це курєр
       console.log(`✅ Строка ${rowNumber}: Определена как КУРЬЕР`);
       return {
         type: 'courier',
         data: this.processCourierRow(row, headerMap, rowNumber)
       };
-    } else if (hasPaymentMethod && !hasOrderNumber) {
+    } else if (hasPaymentMethod && !hasAddress) {
       // Це спосіб оплати
       console.log(`✅ Строка ${rowNumber}: Определена как СПОСОБ ОПЛАТЫ`);
       return {
@@ -309,16 +253,8 @@ class ExcelService {
         data: this.processPaymentMethodRow(row, headerMap, rowNumber)
       };
     } else {
-      // Якщо немає чітких полів, спробуємо створити замовлення за адресою
-      if (hasAddress) {
-        console.log(`⚠️ Строка ${rowNumber}: Создаем заказ только по адресу (без номера)`);
-        return {
-          type: 'order',
-          data: this.processOrderRow(row, headerMap, rowNumber)
-        };
-      }
       // Інакше маркуємо як помилку, щоб користувач бачив проблему
-      console.log(`❌ Строка ${rowNumber}: НЕ ОПРЕДЕЛЕНА - нет адресы и номера заказа`);
+      console.log(`❌ Строка ${rowNumber}: НЕ ОПРЕДЕЛЕНА - нет адресы`);
       throw new Error('Неможливо визначити тип рядка — перевірте заголовки та дані');
     }
   }
