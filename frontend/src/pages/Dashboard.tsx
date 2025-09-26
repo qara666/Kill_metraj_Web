@@ -72,17 +72,16 @@ export const Dashboard: React.FC = () => {
   // Process Excel file mutation
   const processFileMutation = useMutation({
     mutationFn: api.uploadApi.uploadExcelFile,
-    onSuccess: (resp) => {
+    onSuccess: (resp: any) => {
       // Normalize backend response to UI-friendly shape
-      const data = resp?.data || {}
-      const orders = Array.isArray(data.orders) ? data.orders : []
-      const couriers = Array.isArray(data.couriers) ? data.couriers : []
-      const paymentMethods = Array.isArray(data.paymentMethods) ? data.paymentMethods : []
-      const routes = Array.isArray(data.routes) ? data.routes : []
-      const errorsArr = Array.isArray(data.errors) ? data.errors : []
-      const summaryRaw = resp?.summary || {}
+      const data: any = resp?.data || {}
+      const orders = Array.isArray((data as any).orders) ? (data as any).orders : []
+      const couriers = Array.isArray((data as any).couriers) ? (data as any).couriers : []
+      const paymentMethods = Array.isArray((data as any).paymentMethods) ? (data as any).paymentMethods : []
+      const routes = Array.isArray((data as any).routes) ? (data as any).routes : []
+      const errorsArr = Array.isArray((data as any).errors) ? (data as any).errors : []
 
-      const normalized = {
+      const normalized: any = {
         orders,
         couriers,
         paymentMethods,
@@ -100,9 +99,9 @@ export const Dashboard: React.FC = () => {
       }
 
       setProcessedData(normalized)
-      const ordersCount = orders.length
+      const ordersCount = (orders as any[]).length
       toast.success(`Оброблено ${ordersCount} замовлень успішно`)
-      log(`Файл оброблено: замовлень=${ordersCount}, геокодовано=${normalized.summary.successfulGeocoding}, помилок=${normalized.summary.errors.length}`)
+      log(`Файл оброблено: замовлень=${ordersCount}, геокодовано=${normalized.summary.successfulGeocoding}, помилок=${(normalized.summary.errors as any[]).length}`)
       queryClient.invalidateQueries({ queryKey: ['routes'] })
     },
     onError: (error: any) => {

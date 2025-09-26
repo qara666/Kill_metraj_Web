@@ -164,28 +164,32 @@ class ExcelService {
       const includesAny = (s, arr) => arr.some(k => s.includes(k));
 
       // Мапимо українські, російські та англійські заголовки
-      if (includesAny(noApostrophes, ['номер', 'номер заказа', 'номер замовлення', '№', 'number', 'order', 'id'])) {
-        headerMap.orderNumber = index;
+      if (includesAny(noApostrophes, ['номер', 'номер заказа', 'номер замовлення', 'no', '№', 'number', 'order', 'id'])) {
+        if (headerMap.orderNumber === undefined) headerMap.orderNumber = index;
       } else if (includesAny(noApostrophes, ['адреса', 'адрес', 'address', 'адрес доставки'])) {
-        headerMap.address = index;
+        if (headerMap.address === undefined) headerMap.address = index;
       } else if (includesAny(noApostrophes, ['телефон', 'phone', 'моб', 'mobile'])) {
-        headerMap.phone = index;
+        if (headerMap.phone === undefined) headerMap.phone = index;
       } else if (includesAny(noApostrophes, ['курєр', 'курер', 'курьер', 'courier', 'доставщик'])) {
-        headerMap.courier = index;
+        if (headerMap.courier === undefined) headerMap.courier = index;
       } else if (includesAny(noApostrophes, ['оплата', 'способ оплаты', 'payment', 'оплат', 'сплата'])) {
-        headerMap.paymentMethod = index;
-      } else if (includesAny(noApostrophes, ['сума', 'сумма', 'amount', 'price', 'стоимость', 'вартість'])) {
-        headerMap.amount = index;
+        if (headerMap.paymentMethod === undefined) headerMap.paymentMethod = index;
+      } else if (includesAny(noApostrophes, ['сума', 'сумма', 'amount', 'price', 'стоимость', 'вартість', 'сумма заказа', 'к оплате'])) {
+        if (headerMap.amount === undefined) headerMap.amount = index;
+      } else if (includesAny(noApostrophes, ['тип заказа', 'тип замовлення', 'order type'])) {
+        if (headerMap.orderType === undefined) headerMap.orderType = index;
+      } else if (includesAny(noApostrophes, ['имя', 'імя', 'name'])) {
+        if (headerMap.customerName === undefined) headerMap.customerName = index;
       } else if (includesAny(noApostrophes, ['примітка', 'примечание', 'note', 'comment'])) {
-        headerMap.note = index;
+        if (headerMap.note === undefined) headerMap.note = index;
       } else if (includesAny(noApostrophes, ['пріоритет', 'приоритет', 'priority'])) {
-        headerMap.priority = index;
+        if (headerMap.priority === undefined) headerMap.priority = index;
       } else if (includesAny(noApostrophes, ['статус', 'status'])) {
-        headerMap.status = index;
+        if (headerMap.status === undefined) headerMap.status = index;
       } else if (includesAny(noApostrophes, ['дата', 'date'])) {
-        headerMap.date = index;
+        if (headerMap.date === undefined) headerMap.date = index;
       } else if (includesAny(noApostrophes, ['час', 'время', 'time'])) {
-        headerMap.time = index;
+        if (headerMap.time === undefined) headerMap.time = index;
       }
     });
 
