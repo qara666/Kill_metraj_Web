@@ -216,10 +216,10 @@ class ExcelService {
    */
   processRow(row, headerMap, rowNumber) {
     // Визначаємо тип рядка на основі наявних даних
-    const hasOrderNumber = headerMap.orderNumber !== undefined && row[headerMap.orderNumber];
-    const hasAddress = headerMap.address !== undefined && row[headerMap.address];
-    const hasCourier = headerMap.courier !== undefined && row[headerMap.courier];
-    const hasPaymentMethod = headerMap.paymentMethod !== undefined && row[headerMap.paymentMethod];
+    const hasOrderNumber = headerMap.orderNumber !== undefined && row[headerMap.orderNumber] && row[headerMap.orderNumber].toString().trim() !== '';
+    const hasAddress = headerMap.address !== undefined && row[headerMap.address] && row[headerMap.address].toString().trim() !== '';
+    const hasCourier = headerMap.courier !== undefined && row[headerMap.courier] && row[headerMap.courier].toString().trim() !== '';
+    const hasPaymentMethod = headerMap.paymentMethod !== undefined && row[headerMap.paymentMethod] && row[headerMap.paymentMethod].toString().trim() !== '';
 
     console.log(`📊 Обработка строки ${rowNumber}:`, {
       hasOrderNumber,
@@ -228,7 +228,9 @@ class ExcelService {
       hasPaymentMethod,
       orderNumber: hasOrderNumber ? row[headerMap.orderNumber] : 'нет',
       address: hasAddress ? row[headerMap.address] : 'нет',
-      courier: hasCourier ? row[headerMap.courier] : 'нет'
+      courier: hasCourier ? row[headerMap.courier] : 'нет',
+      rawRow: row,
+      headerMap: headerMap
     });
 
     if (hasAddress) {
