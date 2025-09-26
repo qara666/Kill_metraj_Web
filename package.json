@@ -1,0 +1,12 @@
+{
+  "name": "kill-metraj-web",
+  "version": "1.0.0",
+  "description": "Kill Metraj Web Application",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node test_excel_parsing.js"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

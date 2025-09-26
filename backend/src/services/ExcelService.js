@@ -230,9 +230,30 @@ class ExcelService {
       
       console.log(`📈 Результаты обработки листа: заказов=${result.orders.length}, курьеров=${result.couriers.length}, способов оплаты=${result.paymentMethods.length}, ошибок=${result.errors.length}`);
       
+      // Дополнительная диагностика
+      if (result.orders.length === 0) {
+        console.log(`\n⚠️  ДИАГНОСТИКА: Заказы не созданы!`);
+        console.log(`📍 Есть колонка адресов: ${headerMap.address !== undefined ? 'ДА' : 'НЕТ'} (индекс: ${headerMap.address})`);
+        console.log(`🔢 Есть колонка номеров: ${headerMap.orderNumber !== undefined ? 'ДА' : 'НЕТ'} (индекс: ${headerMap.orderNumber})`);
+        console.log(`📋 Всего строк данных: ${data.length - 1}`);
+        
+        if (headerMap.address === undefined) {
+          console.log(`❌ ПРОБЛЕМА: Нет колонки с адресами! Проверьте названия заголовков.`);
+        } else {
+          console.log(`❌ ПРОБЛЕМА: Колонка адресов есть, но все ячейки пустые или содержат только пробелы.`);
+        }
+      }
+      
       // Добавляем в debug логи
       if (global.addDebugLog) {
         global.addDebugLog(`📈 Результаты обработки листа: заказов=${result.orders.length}, курьеров=${result.couriers.length}, способов оплаты=${result.paymentMethods.length}, ошибок=${result.errors.length}`);
+        
+        if (result.orders.length === 0) {
+          global.addDebugLog(`⚠️  ДИАГНОСТИКА: Заказы не созданы!`);
+          global.addDebugLog(`📍 Есть колонка адресов: ${headerMap.address !== undefined ? 'ДА' : 'НЕТ'} (индекс: ${headerMap.address})`);
+          global.addDebugLog(`🔢 Есть колонка номеров: ${headerMap.orderNumber !== undefined ? 'ДА' : 'НЕТ'} (индекс: ${headerMap.orderNumber})`);
+          global.addDebugLog(`📋 Всего строк данных: ${data.length - 1}`);
+        }
       }
 
     } catch (error) {
@@ -271,34 +292,75 @@ class ExcelService {
       // Helpers
       const includesAny = (s, arr) => arr.some(k => s.includes(k));
 
-      // Мапимо українські, російські та англійські заголовки
-      if (includesAny(noApostrophes, ['номер', 'номер заказа', 'номер замовлення', 'no', '№', 'number', 'order', 'id'])) {
-        if (headerMap.orderNumber === undefined) headerMap.orderNumber = index;
-      } else if (includesAny(noApostrophes, ['адреса', 'адрес', 'address', 'адрес доставки'])) {
-        if (headerMap.address === undefined) headerMap.address = index;
-      } else if (includesAny(noApostrophes, ['телефон', 'phone', 'моб', 'mobile'])) {
-        if (headerMap.phone === undefined) headerMap.phone = index;
-      } else if (includesAny(noApostrophes, ['курєр', 'курер', 'курьер', 'courier', 'доставщик'])) {
-        if (headerMap.courier === undefined) headerMap.courier = index;
-      } else if (includesAny(noApostrophes, ['оплата', 'способ оплаты', 'payment', 'оплат', 'сплата'])) {
-        if (headerMap.paymentMethod === undefined) headerMap.paymentMethod = index;
-      } else if (includesAny(noApostrophes, ['сума', 'сумма', 'amount', 'price', 'стоимость', 'вартість', 'сумма заказа', 'к оплате'])) {
-        if (headerMap.amount === undefined) headerMap.amount = index;
-      } else if (includesAny(noApostrophes, ['тип заказа', 'тип замовлення', 'order type'])) {
-        if (headerMap.orderType === undefined) headerMap.orderType = index;
-      } else if (includesAny(noApostrophes, ['имя', 'імя', 'name'])) {
-        if (headerMap.customerName === undefined) headerMap.customerName = index;
-      } else if (includesAny(noApostrophes, ['примітка', 'примечание', 'note', 'comment'])) {
-        if (headerMap.note === undefined) headerMap.note = index;
-      } else if (includesAny(noApostrophes, ['пріоритет', 'приоритет', 'priority'])) {
-        if (headerMap.priority === undefined) headerMap.priority = index;
-      } else if (includesAny(noApostrophes, ['статус', 'status'])) {
-        if (headerMap.status === undefined) headerMap.status = index;
-      } else if (includesAny(noApostrophes, ['дата', 'date'])) {
-        if (headerMap.date === undefined) headerMap.date = index;
-      } else if (includesAny(noApostrophes, ['час', 'время', 'time'])) {
-        if (headerMap.time === undefined) headerMap.time = index;
+    // Мапимо українські, російські та англійські заголовки
+    if (includesAny(noApostrophes, ['номер', 'номер заказа', 'номер замовлення', 'no', '№', 'number', 'order', 'id'])) {
+      if (headerMap.orderNumber === undefined) {
+        headerMap.orderNumber = index;
+        console.log(`    ✅ Распознан как orderNumber: ${index}`);
       }
+    } else if (includesAny(noApostrophes, ['адреса', 'адрес', 'address', 'адрес доставки', 'location', 'место', 'місце', 'адреса доставки', 'адреса клиента'])) {
+      if (headerMap.address === undefined) {
+        headerMap.address = index;
+        console.log(`    ✅ Распознан как address: ${index}`);
+      }
+    } else if (includesAny(noApostrophes, ['телефон', 'phone', 'моб', 'mobile', 'телефоны', 'phones', 'контакт', 'contact'])) {
+      if (headerMap.phone === undefined) {
+        headerMap.phone = index;
+        console.log(`    ✅ Распознан как phone: ${index}`);
+      }
+    } else if (includesAny(noApostrophes, ['курєр', 'курер', 'курьер', 'courier', 'доставщик', 'курьеры', 'couriers'])) {
+      if (headerMap.courier === undefined) {
+        headerMap.courier = index;
+        console.log(`    ✅ Распознан как courier: ${index}`);
+      }
+    } else if (includesAny(noApostrophes, ['оплата', 'способ оплаты', 'payment', 'оплат', 'сплата', 'способ', 'метод оплаты', 'payment method'])) {
+      if (headerMap.paymentMethod === undefined) {
+        headerMap.paymentMethod = index;
+        console.log(`    ✅ Распознан как paymentMethod: ${index}`);
+      }
+    } else if (includesAny(noApostrophes, ['сума', 'сумма', 'amount', 'price', 'стоимость', 'вартість', 'сумма заказа', 'к оплате', 'суммы', 'amounts', 'prices'])) {
+      if (headerMap.amount === undefined) {
+        headerMap.amount = index;
+        console.log(`    ✅ Распознан как amount: ${index}`);
+      }
+    } else if (includesAny(noApostrophes, ['тип заказа', 'тип замовлення', 'order type', 'типы заказов', 'order types'])) {
+      if (headerMap.orderType === undefined) {
+        headerMap.orderType = index;
+        console.log(`    ✅ Распознан как orderType: ${index}`);
+      }
+    } else if (includesAny(noApostrophes, ['имя', 'імя', 'name', 'имена', 'names', 'клиент', 'client', 'заказчик', 'customer'])) {
+      if (headerMap.customerName === undefined) {
+        headerMap.customerName = index;
+        console.log(`    ✅ Распознан как customerName: ${index}`);
+      }
+    } else if (includesAny(noApostrophes, ['примітка', 'примечание', 'note', 'comment', 'комментарий', 'заметка'])) {
+      if (headerMap.note === undefined) {
+        headerMap.note = index;
+        console.log(`    ✅ Распознан как note: ${index}`);
+      }
+    } else if (includesAny(noApostrophes, ['пріоритет', 'приоритет', 'priority'])) {
+      if (headerMap.priority === undefined) {
+        headerMap.priority = index;
+        console.log(`    ✅ Распознан как priority: ${index}`);
+      }
+    } else if (includesAny(noApostrophes, ['статус', 'status'])) {
+      if (headerMap.status === undefined) {
+        headerMap.status = index;
+        console.log(`    ✅ Распознан как status: ${index}`);
+      }
+    } else if (includesAny(noApostrophes, ['дата', 'date'])) {
+      if (headerMap.date === undefined) {
+        headerMap.date = index;
+        console.log(`    ✅ Распознан как date: ${index}`);
+      }
+    } else if (includesAny(noApostrophes, ['час', 'время', 'time'])) {
+      if (headerMap.time === undefined) {
+        headerMap.time = index;
+        console.log(`    ✅ Распознан как time: ${index}`);
+      }
+    } else {
+      console.log(`    ❌ НЕ РАСПОЗНАН: "${noApostrophes}"`);
+    }
     });
 
     console.log('🗺️ Результат маппинга заголовков:', headerMap);
