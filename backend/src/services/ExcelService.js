@@ -153,12 +153,17 @@ class ExcelService {
   mapHeaders(headers) {
     const headerMap = {};
     
+    console.log('🔍 Анализ заголовков Excel файла:');
+    console.log('📋 Исходные заголовки:', headers);
+    
     headers.forEach((header, index) => {
       if (!header) return;
       
       const normalizedHeader = header.toString().toLowerCase().trim();
       // Also normalize by removing apostrophes to be robust to variations
-      const noApostrophes = normalizedHeader.replace(/['’`]/g, '');
+      const noApostrophes = normalizedHeader.replace(/[''`]/g, '');
+      
+      console.log(`  ${index}: "${header}" -> "${normalizedHeader}" -> "${noApostrophes}"`);
       
       // Helpers
       const includesAny = (s, arr) => arr.some(k => s.includes(k));
@@ -193,6 +198,7 @@ class ExcelService {
       }
     });
 
+    console.log('🗺️ Результат маппинга заголовков:', headerMap);
     return headerMap;
   }
 
@@ -210,20 +216,33 @@ class ExcelService {
     const hasCourier = headerMap.courier !== undefined && row[headerMap.courier];
     const hasPaymentMethod = headerMap.paymentMethod !== undefined && row[headerMap.paymentMethod];
 
+    console.log(`📊 Обработка строки ${rowNumber}:`, {
+      hasOrderNumber,
+      hasAddress,
+      hasCourier,
+      hasPaymentMethod,
+      orderNumber: hasOrderNumber ? row[headerMap.orderNumber] : 'нет',
+      address: hasAddress ? row[headerMap.address] : 'нет',
+      courier: hasCourier ? row[headerMap.courier] : 'нет'
+    });
+
     if (hasOrderNumber && hasAddress) {
       // Це замовлення
+      console.log(`✅ Строка ${rowNumber}: Определена как ЗАКАЗ`);
       return {
         type: 'order',
         data: this.processOrderRow(row, headerMap, rowNumber)
       };
     } else if (hasCourier && !hasOrderNumber) {
       // Це курєр
+      console.log(`✅ Строка ${rowNumber}: Определена как КУРЬЕР`);
       return {
         type: 'courier',
         data: this.processCourierRow(row, headerMap, rowNumber)
       };
     } else if (hasPaymentMethod && !hasOrderNumber) {
       // Це спосіб оплати
+      console.log(`✅ Строка ${rowNumber}: Определена как СПОСОБ ОПЛАТЫ`);
       return {
         type: 'payment',
         data: this.processPaymentMethodRow(row, headerMap, rowNumber)
@@ -231,12 +250,14 @@ class ExcelService {
     } else {
       // Якщо немає чітких полів, спробуємо створити замовлення за адресою
       if (hasAddress) {
+        console.log(`⚠️ Строка ${rowNumber}: Создаем заказ только по адресу (без номера)`);
         return {
           type: 'order',
           data: this.processOrderRow(row, headerMap, rowNumber)
         };
       }
       // Інакше маркуємо як помилку, щоб користувач бачив проблему
+      console.log(`❌ Строка ${rowNumber}: НЕ ОПРЕДЕЛЕНА - нет адресы и номера заказа`);
       throw new Error('Неможливо визначити тип рядка — перевірте заголовки та дані');
     }
   }
@@ -266,12 +287,14 @@ class ExcelService {
 
     // Валідація обовязкових полів
     if (!order.orderNumber) {
-      throw new Error('Номер замовлення є обовязковим');
+      console.log(`⚠️ Строка ${rowNumber}: Нет номера заказа, создаем временный номер`);
+      order.orderNumber = `TEMP_${rowNumber}`;
     }
     if (!order.address) {
       throw new Error('Адреса є обовязковою');
     }
 
+    console.log(`📦 Создан заказ: ${order.orderNumber} - ${order.address}`);
     return order;
   }
 
