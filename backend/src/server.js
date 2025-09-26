@@ -20,6 +20,38 @@ dotenv.config({ path: './backend/.env' });
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Массив для хранения логов
+const debugLogs = [];
+const MAX_LOGS = 100;
+
+// Функция для добавления логов
+function addDebugLog(message, data = null) {
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    message,
+    data
+  };
+  debugLogs.push(logEntry);
+  
+  // Ограничиваем количество логов
+  if (debugLogs.length > MAX_LOGS) {
+    debugLogs.shift();
+  }
+  
+  // Также выводим в консоль
+  console.log(`[DEBUG] ${message}`, data || '');
+}
+
+// Перехватываем console.log для сохранения логов
+const originalConsoleLog = console.log;
+console.log = function(...args) {
+  const message = args.join(' ');
+  if (message.includes('🔍') || message.includes('📊') || message.includes('✅') || message.includes('❌') || message.includes('📦')) {
+    addDebugLog(message);
+  }
+  originalConsoleLog.apply(console, args);
+};
+
 // Connect to MongoDB
 const connectDB = async () => {
   try {
@@ -98,6 +130,25 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV
+  });
+});
+
+// Debug endpoint для просмотра логов
+app.get('/debug/logs', (req, res) => {
+  res.status(200).json({
+    message: 'Последние логи обработки Excel файлов',
+    logs: debugLogs,
+    count: debugLogs.length,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Debug endpoint для очистки логов
+app.post('/debug/logs/clear', (req, res) => {
+  debugLogs.length = 0;
+  res.status(200).json({
+    message: 'Логи очищены',
+    timestamp: new Date().toISOString()
   });
 });
 
