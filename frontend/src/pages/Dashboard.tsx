@@ -73,12 +73,36 @@ export const Dashboard: React.FC = () => {
   const processFileMutation = useMutation({
     mutationFn: api.uploadApi.uploadExcelFile,
     onSuccess: (resp) => {
-      // Backend returns { success, data, summary, report, message }
-      const ordersCount = resp?.data?.orders?.length ?? 0
-      const summary = resp?.summary ?? {}
-      setProcessedData({ ...(resp?.data || {}), summary })
+      // Normalize backend response to UI-friendly shape
+      const data = resp?.data || {}
+      const orders = Array.isArray(data.orders) ? data.orders : []
+      const couriers = Array.isArray(data.couriers) ? data.couriers : []
+      const paymentMethods = Array.isArray(data.paymentMethods) ? data.paymentMethods : []
+      const routes = Array.isArray(data.routes) ? data.routes : []
+      const errorsArr = Array.isArray(data.errors) ? data.errors : []
+      const summaryRaw = resp?.summary || {}
+
+      const normalized = {
+        orders,
+        couriers,
+        paymentMethods,
+        routes,
+        errors: errorsArr,
+        summary: {
+          totalRows: orders.length + couriers.length + paymentMethods.length + routes.length,
+          successfulGeocoding: 0,
+          failedGeocoding: 0,
+          orders: orders.length,
+          couriers: couriers.length,
+          paymentMethods: paymentMethods.length,
+          errors: errorsArr
+        }
+      }
+
+      setProcessedData(normalized)
+      const ordersCount = orders.length
       toast.success(`Оброблено ${ordersCount} замовлень успішно`)
-      log(`Файл оброблено: замовлень=${ordersCount}, геокодовано=${summary?.successfulGeocoding ?? 0}, помилок=${summary?.errors?.length ?? 0}`)
+      log(`Файл оброблено: замовлень=${ordersCount}, геокодовано=${normalized.summary.successfulGeocoding}, помилок=${normalized.summary.errors.length}`)
       queryClient.invalidateQueries({ queryKey: ['routes'] })
     },
     onError: (error: any) => {
@@ -278,7 +302,16 @@ export const Dashboard: React.FC = () => {
         {/* Logs panel */}
         <div className="lg:col-span-2">
           <div className="card p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Логи</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Логи</h2>
+              <button
+                onClick={() => setLogs([])}
+                className="btn-outline"
+                title="Очистити логи"
+              >
+                Очистити логи
+              </button>
+            </div>
             {logs.length === 0 ? (
               <p className="text-sm text-gray-500">Поки що немає логів</p>
             ) : (
