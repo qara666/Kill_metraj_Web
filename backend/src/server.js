@@ -145,6 +145,36 @@ app.post('/debug/logs/clear', (req, res) => {
   });
 });
 
+// Test endpoint для проверки распознавания заголовков
+app.get('/debug/test-headers', (req, res) => {
+  const ExcelService = require('./src/services/ExcelService');
+  const excelService = new ExcelService();
+  
+  // Тестовые заголовки
+  const testHeaders = [
+    '№',           // 0
+    'Адрес',       // 1  
+    'Телефон',     // 2
+    'имя',         // 3
+    'Тип заказа',  // 4
+    'Способ оплаты', // 5
+    'Курьер',      // 6
+    'Сумма заказа' // 7
+  ];
+  
+  const headerMap = excelService.mapHeaders(testHeaders);
+  
+  res.status(200).json({
+    message: 'Тест распознавания заголовков',
+    testHeaders,
+    headerMap,
+    hasAddress: headerMap.address !== undefined,
+    hasOrderNumber: headerMap.orderNumber !== undefined,
+    canCreateOrders: headerMap.address !== undefined,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Root endpoint - helpful landing instead of 404
 app.get('/', (req, res) => {
   res.status(200).json({
