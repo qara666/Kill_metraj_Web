@@ -18,14 +18,14 @@ export const ExcelTemplates: React.FC = () => {
       name: 'Базовый шаблон',
       description: 'Основные поля: адрес, номер заказа, курьер, способ оплаты, сумма',
       fields: ['№', 'Адрес', 'Курьер', 'Способ оплаты', 'Сумма'],
-      fileName: 'template_basic.xlsx'
+      fileName: 'template_basic.csv'
     },
     {
       id: 'extended',
       name: 'Расширенный шаблон',
       description: 'Все поля: включая телефон, имя клиента, комментарии, зоны',
       fields: ['№', 'Адрес', 'Курьер', 'Способ оплаты', 'Сумма', 'Телефон', 'Имя клиента', 'Комментарий', 'Зона доставки'],
-      fileName: 'template_extended.xlsx'
+      fileName: 'template_extended.csv'
     },
     {
       id: 'csv',
@@ -43,17 +43,16 @@ export const ExcelTemplates: React.FC = () => {
       // Создаем тестовые данные для шаблона
       const sampleData = createSampleData(template.fields)
       
-      // Создаем Excel файл
-      const XLSX = await import('xlsx')
-      const worksheet = XLSX.utils.aoa_to_sheet(sampleData)
-      const workbook = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Заказы')
+      // Создаем CSV файл (более простой подход)
+      const csvContent = sampleData.map(row => 
+        row.map(cell => `"${cell}"`).join(',')
+      ).join('\n')
       
-      // Генерируем файл
-      const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })
-      const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      // Создаем и скачиваем файл
+      const blob = new Blob([csvContent], { 
+        type: template.id === 'csv' ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      })
       
-      // Скачиваем файл
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url

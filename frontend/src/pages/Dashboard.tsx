@@ -113,21 +113,6 @@ export const Dashboard: React.FC = () => {
     },
   })
 
-  // Create routes mutation
-  const createRoutesMutation = useMutation({
-    mutationFn: api.uploadApi.createRoutesFromOrders,
-    onSuccess: () => {
-      toast.success('Маршрути створено успішно')
-      queryClient.invalidateQueries({ queryKey: ['routes'] })
-      queryClient.invalidateQueries({ queryKey: ['couriers'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      setProcessedData(null)
-      setSelectedFile(null)
-    },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.error || 'Не вдалося створити маршрути')
-    },
-  })
 
 
   const handleDownloadSample = async () => {
