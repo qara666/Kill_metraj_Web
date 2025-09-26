@@ -142,6 +142,11 @@ class ExcelService {
       }
       
       console.log(`📈 Результаты обработки листа: заказов=${result.orders.length}, курьеров=${result.couriers.length}, способов оплаты=${result.paymentMethods.length}, ошибок=${result.errors.length}`);
+      
+      // Добавляем в debug логи
+      if (global.addDebugLog) {
+        global.addDebugLog(`📈 Результаты обработки листа: заказов=${result.orders.length}, курьеров=${result.couriers.length}, способов оплаты=${result.paymentMethods.length}, ошибок=${result.errors.length}`);
+      }
 
     } catch (error) {
       result.errors.push(`Лист "${sheetName}": ${error.message}`);
@@ -160,6 +165,12 @@ class ExcelService {
     
     console.log('🔍 Анализ заголовков Excel файла:');
     console.log('📋 Исходные заголовки:', headers);
+    
+    // Добавляем в debug логи
+    if (global.addDebugLog) {
+      global.addDebugLog('🔍 Анализ заголовков Excel файла');
+      global.addDebugLog('📋 Исходные заголовки', headers);
+    }
     
     headers.forEach((header, index) => {
       if (!header) return;
@@ -204,6 +215,12 @@ class ExcelService {
     });
 
     console.log('🗺️ Результат маппинга заголовков:', headerMap);
+    
+    // Добавляем в debug логи
+    if (global.addDebugLog) {
+      global.addDebugLog('🗺️ Результат маппинга заголовков', headerMap);
+    }
+    
     return headerMap;
   }
 
@@ -294,6 +311,12 @@ class ExcelService {
     }
 
     console.log(`📦 Создан заказ: ${order.orderNumber} - ${order.address}`);
+    
+    // Добавляем в debug логи
+    if (global.addDebugLog) {
+      global.addDebugLog(`📦 Создан заказ: ${order.orderNumber} - ${order.address}`);
+    }
+    
     return order;
   }
 

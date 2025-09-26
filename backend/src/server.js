@@ -42,15 +42,8 @@ function addDebugLog(message, data = null) {
   console.log(`[DEBUG] ${message}`, data || '');
 }
 
-// Перехватываем console.log для сохранения логов
-const originalConsoleLog = console.log;
-console.log = function(...args) {
-  const message = args.join(' ');
-  if (message.includes('🔍') || message.includes('📊') || message.includes('✅') || message.includes('❌') || message.includes('📦')) {
-    addDebugLog(message);
-  }
-  originalConsoleLog.apply(console, args);
-};
+// Экспортируем функцию для добавления логов (безопасная версия)
+global.addDebugLog = addDebugLog;
 
 // Connect to MongoDB
 const connectDB = async () => {
