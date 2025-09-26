@@ -4,11 +4,9 @@ import {
   DocumentTextIcon,
   TableCellsIcon,
   InformationCircleIcon,
-  CheckCircleIcon,
   XMarkIcon
 } from '@heroicons/react/24/outline'
 import { toast } from 'react-hot-toast'
-import * as api from '../services/api'
 
 export const ExcelTemplates: React.FC = () => {
   const [showTemplates, setShowTemplates] = useState(false)
@@ -46,7 +44,7 @@ export const ExcelTemplates: React.FC = () => {
       const sampleData = createSampleData(template.fields)
       
       // Создаем Excel файл
-      const XLSX = require('xlsx')
+      const XLSX = await import('xlsx')
       const worksheet = XLSX.utils.aoa_to_sheet(sampleData)
       const workbook = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Заказы')

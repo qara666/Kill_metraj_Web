@@ -6,10 +6,8 @@ import {
   UserGroupIcon, 
   MapIcon, 
   TruckIcon,
-  CheckCircleIcon,
-  ExclamationTriangleIcon
+  CheckCircleIcon
 } from '@heroicons/react/24/outline'
-import { FileUpload } from '../components/FileUpload'
 import { CourierCard } from '../components/CourierCard'
 import RouteMap from '../components/RouteMap'
 import { StatsCard } from '../components/StatsCard'
@@ -131,24 +129,6 @@ export const Dashboard: React.FC = () => {
     },
   })
 
-  const handleFileSelect = (file: File) => {
-    setSelectedFile(file)
-    log(`Файл обрано: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`) 
-  }
-
-  const handleProcessFile = () => {
-    if (selectedFile) {
-      log('Початок завантаження та обробки файлу')
-      processFileMutation.mutate(selectedFile)
-    }
-  }
-
-  const handleCreateRoutes = () => {
-    if (processedData) {
-      log('Створення маршрутів з оброблених замовлень')
-      createRoutesMutation.mutate({ orders: processedData.orders })
-    }
-  }
 
   const handleDownloadSample = async () => {
     try {
