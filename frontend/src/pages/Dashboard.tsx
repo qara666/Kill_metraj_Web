@@ -15,6 +15,7 @@ import RouteMap from '../components/RouteMap'
 import { StatsCard } from '../components/StatsCard'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { ProcessingResults } from '../components/ProcessingResults'
+import { ApiKeyNotification } from '../components/ApiKeyNotification'
 import * as api from '../services/api'
 
 export const Dashboard: React.FC = () => {
@@ -173,6 +174,9 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* API Key Notification */}
+      <ApiKeyNotification />
+      
       {/* Header */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <div className="flex items-center justify-end">
