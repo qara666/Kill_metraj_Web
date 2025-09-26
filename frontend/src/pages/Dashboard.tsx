@@ -16,6 +16,9 @@ import { StatsCard } from '../components/StatsCard'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { ProcessingResults } from '../components/ProcessingResults'
 import { ApiKeyNotification } from '../components/ApiKeyNotification'
+import { ExcelUploadSection } from '../components/ExcelUploadSection'
+import { ExcelResultsDisplay } from '../components/ExcelResultsDisplay'
+import { ExcelTemplates } from '../components/ExcelTemplates'
 import * as api from '../services/api'
 
 export const Dashboard: React.FC = () => {
@@ -164,6 +167,25 @@ export const Dashboard: React.FC = () => {
     }
   }
 
+  const handleExcelFileSelect = (file: File) => {
+    setSelectedFile(file)
+    setProcessedData(null) // Очищаем предыдущие результаты
+    log(`Выбран Excel файл: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`)
+  }
+
+  const handleExcelProcessFile = () => {
+    if (selectedFile) {
+      log(`Начинаем обработку файла: ${selectedFile.name}`)
+      processFileMutation.mutate(selectedFile)
+    }
+  }
+
+  const handleClearExcelResults = () => {
+    setProcessedData(null)
+    setSelectedFile(null)
+    log('Результаты Excel обработки очищены')
+  }
+
   if (dashboardLoading || couriersLoading || routesLoading) {
     return <LoadingSpinner />
   }
@@ -224,83 +246,28 @@ export const Dashboard: React.FC = () => {
         </div>
       )}
 
+      {/* Excel Upload Section */}
+      <ExcelUploadSection
+        onFileSelect={handleExcelFileSelect}
+        onProcessFile={handleExcelProcessFile}
+        selectedFile={selectedFile}
+        isProcessing={processFileMutation.isPending}
+        processedData={processedData}
+        onClearResults={handleClearExcelResults}
+      />
+
+      {/* Excel Templates */}
+      <ExcelTemplates />
+
+      {/* Excel Results Display */}
+      {processedData && (
+        <ExcelResultsDisplay 
+          data={processedData} 
+          summary={processedData.summary} 
+        />
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* File Upload Section */}
-        <div className="lg:col-span-1">
-          <div className="card p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              Завантажити Excel файл
-            </h2>
-            
-            <FileUpload onFileSelect={handleFileSelect} />
-            
-            {selectedFile && (
-              <div className="mt-4 space-y-3">
-                <button
-                  onClick={handleProcessFile}
-                  disabled={processFileMutation.isPending}
-                  className="btn-primary w-full"
-                >
-                  {processFileMutation.isPending ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                      Обробка...
-                    </>
-                  ) : (
-                    <>
-                      <DocumentArrowUpIcon className="h-4 w-4 mr-2" />
-                      Обробити файл
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
-
-            {processedData?.summary && (
-              <div className="mt-4 p-4 bg-success-50 rounded-lg border border-success-200">
-                <h3 className="font-medium text-success-800 mb-2">
-                  Файл успішно оброблено
-                </h3>
-                <div className="space-y-1 text-sm text-success-600">
-                  <p>{processedData.orders.length} замовлень оброблено</p>
-                  <p>{processedData.summary?.successfulGeocoding ?? 0} адрес геокодовано</p>
-                  <p>{processedData.summary?.failedGeocoding ?? 0} не вдалося геокодувати</p>
-                  <p>{processedData.summary?.couriers?.length ?? 0} курєрів знайдено</p>
-                </div>
-                
-                <button
-                  onClick={handleCreateRoutes}
-                  disabled={createRoutesMutation.isPending}
-                  className="mt-3 btn-success w-full"
-                >
-                  {createRoutesMutation.isPending ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                      Створення маршрутів...
-                    </>
-                  ) : (
-                    <>
-                      <MapIcon className="h-4 w-4 mr-2" />
-                      Створити маршрути
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
-
-            {processedData?.summary?.errors?.length > 0 && (
-              <div className="mt-4 p-4 bg-warning-50 rounded-lg border border-warning-200">
-                <h3 className="font-medium text-warning-800 mb-2 flex items-center">
-                  <ExclamationTriangleIcon className="h-4 w-4 mr-2" />
-                  Попередження обробки
-                </h3>
-                <div className="text-sm text-warning-600">
-                  <p>{processedData.summary?.errors?.length ?? 0} помилок виникло під час обробки</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
 
         {/* Logs panel */}
         <div className="lg:col-span-2">
