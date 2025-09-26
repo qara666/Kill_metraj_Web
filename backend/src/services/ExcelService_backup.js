@@ -63,21 +63,12 @@ class ExcelService {
         }
       }
 
-      // Рассчитываем статистику
-      this.calculateStatistics(result);
+      // Структурируем данные
+      this.structureData(result);
 
       return {
         success: true,
-        data: result,
-        summary: {
-          totalOrders: result.orders.length,
-          totalCouriers: result.couriers.length,
-          totalPaymentMethods: result.paymentMethods.length,
-          successfulGeocoding: result.orders.filter(order => order.geocoded).length,
-          failedGeocoding: result.orders.filter(order => !order.geocoded).length,
-          errors: result.errors.length,
-          warnings: result.warnings.length
-        }
+        data: result
       };
 
     } catch (error) {
@@ -89,32 +80,202 @@ class ExcelService {
     }
   }
 
+  structureData(result) {
+    // Создаем структурированные данные
+    const structuredOrders = [];
+    const courierMap = new Map();
+    const paymentMap = new Map();
+    const addressMap = new Map();
+
+    // Обрабатываем заказы
+    result.orders.forEach(order => {
+      // Структурируем заказ
+      const structuredOrder = {
+        id: order.orderNumber,
+        status: order.status,
+        type: order.orderType,
+        customer: {
+          name: order.customerName,
+          phone: order.phone,
+          totalOrders: order.totalOrders,
+          comment: order.customerComment
+        },
+        address: {
+          full: order.address,
+          comment: order.addressComment,
+          zone: order.deliveryZone,
+          deliveryTime: order.deliveryTime
+        },
+        timing: {
+          created: order.creationDate,
+          kitchen: order.kitchenTime,
+          deliverBy: order.deliverBy,
+          planned: order.plannedTime,
+          total: order.totalTime
+        },
+        financial: {
+          amount: order.amount,
+          discount: order.discountPercent,
+          change: order.changeAmount,
+          paymentMethod: order.paymentMethod
+        },
+        courier: order.courier,
+        comment: order.orderComment,
+        coordinates: order.coordinates,
+        geocoded: order.geocoded
+      };
+
+      structuredOrders.push(structuredOrder);
+
+      // Группируем по курьерам
+      if (order.courier) {
+        if (!courierMap.has(order.courier)) {
+          courierMap.set(order.courier, {
+            name: order.courier,
+            orders: [],
+            totalAmount: 0,
+            orderCount: 0,
+            zones: new Set(),
+            paymentMethods: new Set()
+          });
+        }
+        
+        const courier = courierMap.get(order.courier);
+        courier.orders.push({
+          id: order.orderNumber,
+          customer: order.customerName,
+          address: order.address,
+          amount: order.amount,
+          status: order.status,
+          type: order.orderType
+        });
+        courier.totalAmount += order.amount;
+        courier.orderCount++;
+        courier.zones.add(order.deliveryZone);
+        courier.paymentMethods.add(order.paymentMethod);
+      }
+
+      // Группируем по способам оплаты
+      if (order.paymentMethod) {
+        if (!paymentMap.has(order.paymentMethod)) {
+          paymentMap.set(order.paymentMethod, {
+            method: order.paymentMethod,
+            orders: [],
+            totalAmount: 0,
+            orderCount: 0,
+            averageAmount: 0
+          });
+        }
+        
+        const payment = paymentMap.get(order.paymentMethod);
+        payment.orders.push({
+          id: order.orderNumber,
+          customer: order.customerName,
+          amount: order.amount,
+          status: order.status
+        });
+        payment.totalAmount += order.amount;
+        payment.orderCount++;
+        payment.averageAmount = payment.totalAmount / payment.orderCount;
+      }
+
+      // Группируем по адресам
+      if (order.address) {
+        const addressKey = order.address.toLowerCase().trim();
+        if (!addressMap.has(addressKey)) {
+          addressMap.set(addressKey, {
+            address: order.address,
+            orders: [],
+            totalAmount: 0,
+            orderCount: 0,
+            zones: new Set(),
+            couriers: new Set()
+          });
+        }
+        
+        const address = addressMap.get(addressKey);
+        address.orders.push({
+          id: order.orderNumber,
+          customer: order.customerName,
+          courier: order.courier,
+          amount: order.amount,
+          status: order.status
+        });
+        address.totalAmount += order.amount;
+        address.orderCount++;
+        address.zones.add(order.deliveryZone);
+        if (order.courier) address.couriers.add(order.courier);
+      }
+    });
+
+    // Обновляем результат
+    result.orders = structuredOrders;
+    result.couriers = Array.from(courierMap.values()).map(courier => ({
+      ...courier,
+      zones: Array.from(courier.zones),
+      paymentMethods: Array.from(courier.paymentMethods)
+    }));
+    result.paymentMethods = Array.from(paymentMap.values());
+    result.addresses = Array.from(addressMap.values()).map(address => ({
+      ...address,
+      zones: Array.from(address.zones),
+      couriers: Array.from(address.couriers)
+    }));
+
+    // Рассчитываем статистику
+    this.calculateStatistics(result);
+  }
+
   calculateStatistics(result) {
     const stats = result.statistics;
     
     stats.totalOrders = result.orders.length;
-    stats.totalAmount = result.orders.reduce((sum, order) => sum + (order.amount || 0), 0);
+    stats.totalAmount = result.orders.reduce((sum, order) => sum + order.financial.amount, 0);
     stats.averageAmount = stats.totalOrders > 0 ? stats.totalAmount / stats.totalOrders : 0;
     
-    stats.deliveryCount = result.orders.filter(order => order.orderType === 'Доставка').length;
-    stats.pickupCount = result.orders.filter(order => order.orderType === 'Самовивіз').length;
+    stats.deliveryCount = result.orders.filter(order => order.type === 'Доставка').length;
+    stats.pickupCount = result.orders.filter(order => order.type === 'Самовивіз').length;
     
     // Статистика по курьерам
     result.couriers.forEach(courier => {
       stats.courierStats[courier.name] = {
-        orderCount: courier.orderCount || 0,
-        totalAmount: courier.totalAmount || 0,
-        averageAmount: courier.orderCount > 0 ? (courier.totalAmount || 0) / courier.orderCount : 0
+        orderCount: courier.orderCount,
+        totalAmount: courier.totalAmount,
+        averageAmount: courier.orderCount > 0 ? courier.totalAmount / courier.orderCount : 0,
+        zones: courier.zones.length,
+        paymentMethods: courier.paymentMethods.length
       };
     });
     
     // Статистика по способам оплаты
     result.paymentMethods.forEach(payment => {
-      stats.paymentStats[payment.name] = {
-        orderCount: payment.orderCount || 0,
-        totalAmount: payment.totalAmount || 0,
-        averageAmount: payment.orderCount > 0 ? (payment.totalAmount || 0) / payment.orderCount : 0
+      stats.paymentStats[payment.method] = {
+        orderCount: payment.orderCount,
+        totalAmount: payment.totalAmount,
+        averageAmount: payment.averageAmount
       };
+    });
+    
+    // Статистика по зонам
+    result.orders.forEach(order => {
+      const zone = order.address.zone;
+      if (zone) {
+        if (!stats.zoneStats[zone]) {
+          stats.zoneStats[zone] = {
+            orderCount: 0,
+            totalAmount: 0,
+            couriers: new Set()
+          };
+        }
+        stats.zoneStats[zone].orderCount++;
+        stats.zoneStats[zone].totalAmount += order.financial.amount;
+        if (order.courier) stats.zoneStats[zone].couriers.add(order.courier);
+      }
+    });
+    
+    // Конвертируем Set в Array для зон
+    Object.keys(stats.zoneStats).forEach(zone => {
+      stats.zoneStats[zone].couriers = Array.from(stats.zoneStats[zone].couriers);
     });
   }
 
@@ -170,9 +331,6 @@ class ExcelService {
         }
       }
 
-      // Создаем уникальные списки курьеров и способов оплаты
-      this.createUniqueCouriersAndPayments(result);
-
       if (result.orders.length === 0 && totalRows > 0) {
         result.warnings.push(`Лист "${sheetName}": Заказы не созданы. Проверьте данные в колонке адресов (колонка ${headerMap.address})`);
         
@@ -191,58 +349,6 @@ class ExcelService {
     }
 
     return result;
-  }
-
-  createUniqueCouriersAndPayments(result) {
-    // Создаем уникальные курьеры из заказов
-    const courierMap = new Map();
-    const paymentMap = new Map();
-
-    result.orders.forEach(order => {
-      // Обрабатываем курьера
-      if (order.courier && order.courier.trim()) {
-        if (!courierMap.has(order.courier)) {
-          courierMap.set(order.courier, {
-            name: order.courier,
-            orderCount: 0,
-            totalAmount: 0,
-            orders: []
-          });
-        }
-        const courier = courierMap.get(order.courier);
-        courier.orderCount++;
-        courier.totalAmount += order.amount || 0;
-        courier.orders.push({
-          orderNumber: order.orderNumber,
-          address: order.address,
-          amount: order.amount
-        });
-      }
-
-      // Обрабатываем способ оплаты
-      if (order.paymentMethod && order.paymentMethod.trim()) {
-        if (!paymentMap.has(order.paymentMethod)) {
-          paymentMap.set(order.paymentMethod, {
-            name: order.paymentMethod,
-            orderCount: 0,
-            totalAmount: 0,
-            orders: []
-          });
-        }
-        const payment = paymentMap.get(order.paymentMethod);
-        payment.orderCount++;
-        payment.totalAmount += order.amount || 0;
-        payment.orders.push({
-          orderNumber: order.orderNumber,
-          address: order.address,
-          amount: order.amount
-        });
-      }
-    });
-
-    // Обновляем списки
-    result.couriers = Array.from(courierMap.values());
-    result.paymentMethods = Array.from(paymentMap.values());
   }
 
   mapHeaders(headers) {
