@@ -1,9 +1,10 @@
-// Простой тест Excel обработки без API
+// Тест Excel обработки через curl
 const fs = require('fs');
 const path = require('path');
 const XLSX = require('xlsx');
+const { exec } = require('child_process');
 
-console.log('🔍 Простой тест Excel обработки...\n');
+console.log('🔍 Тест Excel обработки через curl...\n');
 
 // 1. Создаем тестовый Excel файл
 const testData = [
@@ -17,23 +18,26 @@ const worksheet = XLSX.utils.aoa_to_sheet(testData);
 const workbook = XLSX.utils.book_new();
 XLSX.utils.book_append_sheet(workbook, worksheet, 'Заказы');
 
-const testFilePath = path.join(__dirname, 'test_simple.xlsx');
+const testFilePath = path.join(__dirname, 'test_curl.xlsx');
 XLSX.writeFile(workbook, testFilePath);
 
 console.log('✅ Создан тестовый Excel файл:', testFilePath);
 
-// 2. Тестируем ExcelService напрямую
-try {
-  const ExcelService = require('./backend/src/services/ExcelService');
-  const excelService = new ExcelService();
+// 2. Тестируем через curl
+exec(`curl -X POST -F "file=@${testFilePath}" http://localhost:5001/api/upload/excel`, (error, stdout, stderr) => {
+  if (error) {
+    console.error('❌ Ошибка curl:', error.message);
+    return;
+  }
   
-  console.log('✅ ExcelService создан');
+  if (stderr) {
+    console.error('❌ Ошибка stderr:', stderr);
+    return;
+  }
   
-  const buffer = fs.readFileSync(testFilePath);
-  console.log('✅ Файл прочитан, размер:', buffer.length, 'байт');
-  
-  excelService.processExcelFile(buffer).then(result => {
-    console.log('\n📊 Результат обработки:');
+  try {
+    const result = JSON.parse(stdout);
+    console.log('\n📊 Результат API:');
     console.log('Успех:', result.success);
     
     if (result.success && result.data) {
@@ -83,22 +87,16 @@ try {
       console.log('❌ Ошибка обработки:', result.error);
     }
     
-  }).catch(error => {
-    console.error('❌ Ошибка ExcelService:', error.message);
-    console.error('Stack:', error.stack);
-  });
+  } catch (parseError) {
+    console.log('❌ Ошибка парсинга JSON:', parseError.message);
+    console.log('Ответ сервера:', stdout);
+  }
   
-} catch (error) {
-  console.error('❌ Ошибка создания ExcelService:', error.message);
-  console.error('Stack:', error.stack);
-}
-
-// Очистка
-setTimeout(() => {
+  // Очистка
   try {
     fs.unlinkSync(testFilePath);
     console.log('\n🧹 Тестовый файл удален');
   } catch (e) {
     console.log('\n⚠️ Не удалось удалить тестовый файл');
   }
-}, 5000);
+});
