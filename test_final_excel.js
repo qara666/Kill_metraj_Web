@@ -1,101 +1,102 @@
-// Финальный тест с реальным Excel файлом новой структуры
-
-const ExcelService = require('./backend/src/services/ExcelService');
+// Финальный тест Excel обработки
+const fs = require('fs');
+const path = require('path');
 const XLSX = require('xlsx');
+const { exec } = require('child_process');
 
-// Создаем тестовый Excel файл с новой структурой
+console.log('🔍 Финальный тест Excel обработки...\n');
+
+// 1. Создаем тестовый Excel файл
 const testData = [
-  ['Номер', 'Состояние', 'Тип заказа', 'Телефон', 'Заказчик', 'Всего заказов', 'Комментарий к заказчику', 'Адрес', 'Комментарий к адресу', 'Зона доставки', 'Время доставки', 'Дата создания', 'Время на кухню', 'Доставить к', 'Плановое время', 'Комментарий к заказу', 'Общее время', 'Скидка %', 'К оплате', 'Сдача', 'Способ оплаты', 'Курьер'],
-  ['9086195', 'Исполнен', 'Доставка', '+380501234567', 'Денис Дзюба', '5', 'VIP клиент', 'Київ, вул. Сергія Данченка, 32', 'Зустріч з кур\'єром на заправці ОККО', 'Зона 1 Ближние', '15мин', '22.09.2025 08:55', '09:00', '11:00', '12:00', 'GLOVO: 101436402710, CODE: 028', '45мин', '0', '679,00', '0', 'Готівка', 'Негода Юрій'],
-  ['9086320', 'Исполнен', 'Самовивіз', '+380507654321', 'Трегубов Всеслав', '12', '', 'Київ, вул. Автозаводська, 9а', 'Зателефонувати за 5 хв', 'Зона 0', '10мин', '22.09.2025 10:19', '10:30', '11:30', '11:30', '', '1ч. 12мин', '31,00', '1620,00', '48,00', 'Готівка', 'Онищенко Андрій'],
-  ['9086243', 'Исполнен', 'Доставка', '+380509876543', 'Maria', '3', '', 'Київ, вул. Хрещатик, 1', 'Очікувати біля світлофору', 'Зона 2 Средние', '25мин', '22.09.2025 10:05', '10:15', '11:15', '11:15', 'Специальные требования', '1ч. 30мин', '0', '3815,00', '0', 'безготівка Портмоне', 'Осадченко Іван'],
-  ['9086165', 'Исполнен', 'Доставка', '+380501112233', 'Крістіна', '8', 'Постоянный клиент', 'Київ, вул. Шевченка, 15', 'Код домофона: 1234', 'Зона пешие ресторан', '20мин', '22.09.2025 11:30', '11:45', '12:45', '12:45', 'Без лука', '1ч. 15мин', '15,00', '450,00', '0', 'тормінал Кухня', 'Якушев Глеб']
+  ['№', 'Адрес', 'Курьер', 'Способ оплаты', 'Сумма', 'Телефон', 'Имя клиента'],
+  ['001', 'ул. Крещатик 1, Киев', 'Иван Петров', 'Наличные', '500', '+380501234567', 'Петр Иванов'],
+  ['002', 'пр. Победы 10, Киев', 'Мария Сидорова', 'Карта', '750', '+380509876543', 'Анна Петрова'],
+  ['003', 'ул. Шевченко 5, Киев', 'Иван Петров', 'Наличные', '300', '+380501112233', 'Сергей Козлов']
 ];
 
-// Создаем Excel файл
 const worksheet = XLSX.utils.aoa_to_sheet(testData);
 const workbook = XLSX.utils.book_new();
-XLSX.utils.book_append_sheet(workbook, worksheet, 'Orders');
+XLSX.utils.book_append_sheet(workbook, worksheet, 'Заказы');
 
-// Конвертируем в buffer
-const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+const testFilePath = path.join(__dirname, 'test_final.xlsx');
+XLSX.writeFile(workbook, testFilePath);
 
-async function testFinalExcel() {
-  console.log('🧪 ФИНАЛЬНЫЙ ТЕСТ С НОВОЙ СТРУКТУРОЙ...\n');
+console.log('✅ Создан тестовый Excel файл:', testFilePath);
+
+// 2. Тестируем через curl
+exec(`curl -X POST -F "file=@${testFilePath}" http://localhost:5001/api/upload/excel`, (error, stdout, stderr) => {
+  if (error) {
+    console.error('❌ Ошибка curl:', error.message);
+    return;
+  }
   
-  const excelService = new ExcelService();
+  if (stderr) {
+    console.error('❌ Ошибка stderr:', stderr);
+    return;
+  }
   
   try {
-    const result = await excelService.processExcelFile(excelBuffer);
+    const result = JSON.parse(stdout);
+    console.log('\n📊 Результат API:');
+    console.log('Успех:', result.success);
     
-    console.log('🎯 РЕЗУЛЬТАТ:');
-    console.log(`✅ Успешно: ${result.success}`);
-    
-    if (result.success) {
-      console.log(`📊 Заказов: ${result.data.orders.length}`);
-      console.log(`👥 Курьеров: ${result.data.couriers.length}`);
-      console.log(`💳 Способов оплаты: ${result.data.paymentMethods.length}`);
-      console.log(`❌ Ошибок: ${result.data.errors.length}`);
-      console.log(`⚠️  Предупреждений: ${result.data.warnings.length}`);
+    if (result.success && result.data) {
+      const data = result.data;
+      console.log('\n📈 Статистика:');
+      console.log('Заказы:', data.orders?.length || 0);
+      console.log('Курьеры:', data.couriers?.length || 0);
+      console.log('Способы оплаты:', data.paymentMethods?.length || 0);
+      console.log('Ошибки:', data.errors?.length || 0);
+      console.log('Предупреждения:', data.warnings?.length || 0);
       
-      if (result.data.orders.length > 0) {
-        console.log('\n📋 СВОДКА ЗАКАЗОВ:');
-        result.data.orders.forEach((order, i) => {
-          console.log(`\n${i + 1}. Заказ #${order.orderNumber} (${order.status})`);
-          console.log(`   Клиент: ${order.customerName} | Телефон: ${order.phone}`);
-          console.log(`   Адрес: ${order.address}`);
-          console.log(`   Зона: ${order.deliveryZone} | Время: ${order.deliveryTime}`);
-          console.log(`   Сумма: ${order.amount} грн | Скидка: ${order.discountPercent}%`);
-          console.log(`   Оплата: ${order.paymentMethod} | Курьер: ${order.courier}`);
-          if (order.orderComment) console.log(`   Комментарий: ${order.orderComment}`);
-        });
-        
-        console.log('\n📊 СТАТИСТИКА:');
-        const totalAmount = result.data.orders.reduce((sum, order) => sum + order.amount, 0);
-        const avgAmount = totalAmount / result.data.orders.length;
-        const deliveryCount = result.data.orders.filter(o => o.orderType === 'Доставка').length;
-        const pickupCount = result.data.orders.filter(o => o.orderType === 'Самовивіз').length;
-        
-        console.log(`💰 Общая сумма: ${totalAmount.toFixed(2)} грн`);
-        console.log(`📈 Средняя сумма: ${avgAmount.toFixed(2)} грн`);
-        console.log(`🚚 Доставка: ${deliveryCount} заказов`);
-        console.log(`🏪 Самовывоз: ${pickupCount} заказов`);
-        
-        // Группировка по курьерам
-        const courierStats = {};
-        result.data.orders.forEach(order => {
-          if (order.courier) {
-            courierStats[order.courier] = (courierStats[order.courier] || 0) + 1;
-          }
-        });
-        
-        console.log('\n👥 СТАТИСТИКА КУРЬЕРОВ:');
-        Object.entries(courierStats).forEach(([courier, count]) => {
-          console.log(`   ${courier}: ${count} заказов`);
-        });
+      if (result.summary) {
+        console.log('\n📋 Сводка:');
+        console.log('Всего заказов:', result.summary.totalOrders);
+        console.log('Всего курьеров:', result.summary.totalCouriers);
+        console.log('Всего способов оплаты:', result.summary.totalPaymentMethods);
       }
       
-      if (result.data.errors.length > 0) {
-        console.log('\n❌ Ошибки:');
-        result.data.errors.forEach((error, i) => {
-          console.log(`  ${i + 1}. ${error}`);
+      if (data.orders && data.orders.length > 0) {
+        console.log('\n✅ Заказы:');
+        data.orders.forEach((order, index) => {
+          console.log(`  ${index + 1}. ${order.orderNumber} - ${order.address}`);
+          console.log(`     Курьер: ${order.courier}, Оплата: ${order.paymentMethod}, Сумма: ${order.amount}`);
         });
+      } else {
+        console.log('\n❌ Заказы не найдены!');
+        
+        if (data.debug) {
+          console.log('\n🔍 Отладочная информация:');
+          console.log('Листы:', data.debug.sheets);
+          console.log('Всего строк:', data.debug.totalRows);
+          console.log('Обработано строк:', data.debug.processedRows);
+          console.log('Маппинг заголовков:', data.debug.headerMap);
+        }
+        
+        if (data.errors && data.errors.length > 0) {
+          console.log('\n❌ Ошибки:');
+          data.errors.forEach(error => console.log('  -', error));
+        }
+        
+        if (data.warnings && data.warnings.length > 0) {
+          console.log('\n⚠️ Предупреждения:');
+          data.warnings.forEach(warning => console.log('  -', warning));
+        }
       }
-      
-      if (result.data.warnings.length > 0) {
-        console.log('\n⚠️  Предупреждения:');
-        result.data.warnings.forEach((warning, i) => {
-          console.log(`  ${i + 1}. ${warning}`);
-        });
-      }
-      
     } else {
-      console.log(`❌ Ошибка: ${result.error}`);
+      console.log('❌ Ошибка обработки:', result.error);
     }
     
-  } catch (error) {
-    console.error('❌ Ошибка тестирования:', error);
+  } catch (parseError) {
+    console.log('❌ Ошибка парсинга JSON:', parseError.message);
+    console.log('Ответ сервера:', stdout);
   }
-}
-
-testFinalExcel();
+  
+  // Очистка
+  try {
+    fs.unlinkSync(testFilePath);
+    console.log('\n🧹 Тестовый файл удален');
+  } catch (e) {
+    console.log('\n⚠️ Не удалось удалить тестовый файл');
+  }
+});
