@@ -95,6 +95,10 @@ export interface ApiResponse<T> {
   data?: T;
   error?: string;
   details?: string;
+  // Optional fields some endpoints return (e.g., upload controller)
+  summary?: any;
+  message?: string;
+  report?: any;
   pagination?: {
     page: number;
     limit: number;
