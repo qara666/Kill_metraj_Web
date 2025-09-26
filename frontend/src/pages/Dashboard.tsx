@@ -21,7 +21,14 @@ export const Dashboard: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [processedData, setProcessedData] = useState<any>(null)
   const [selectedCourier, setSelectedCourier] = useState<string | null>(null)
+  const [logs, setLogs] = useState<string[]>([])
   const queryClient = useQueryClient()
+
+  const log = (message: string) => {
+    console.log('[Dashboard]', message)
+    const entry = `${new Date().toLocaleTimeString()} — ${message}`
+    setLogs(prev => [entry, ...prev].slice(0, 200))
+  }
 
   // Fetch dashboard data
   const { data: dashboardData, isLoading: dashboardLoading } = useQuery({
@@ -47,12 +54,17 @@ export const Dashboard: React.FC = () => {
     mutationFn: api.uploadApi.uploadExcelFile,
     onSuccess: (resp) => {
       // Backend returns { success, data, summary, report, message }
-      setProcessedData({ ...resp.data, summary: resp.summary })
-      toast.success(`Оброблено ${resp.data?.orders.length} замовлень успішно`)
+      const ordersCount = resp?.data?.orders?.length ?? 0
+      const summary = resp?.summary ?? {}
+      setProcessedData({ ...(resp?.data || {}), summary })
+      toast.success(`Оброблено ${ordersCount} замовлень успішно`)
+      log(`Файл оброблено: замовлень=${ordersCount}, геокодовано=${summary?.successfulGeocoding ?? 0}, помилок=${summary?.errors?.length ?? 0}`)
       queryClient.invalidateQueries({ queryKey: ['routes'] })
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.error || 'Не вдалося обробити файл')
+      const msg = error?.response?.data?.error || 'Не вдалося обробити файл'
+      toast.error(msg)
+      log(`Помилка обробки файлу: ${msg}`)
     },
   })
 
@@ -74,16 +86,19 @@ export const Dashboard: React.FC = () => {
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file)
+    log(`Файл обрано: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`) 
   }
 
   const handleProcessFile = () => {
     if (selectedFile) {
+      log('Початок завантаження та обробки файлу')
       processFileMutation.mutate(selectedFile)
     }
   }
 
   const handleCreateRoutes = () => {
     if (processedData) {
+      log('Створення маршрутів з оброблених замовлень')
       createRoutesMutation.mutate({ orders: processedData.orders })
     }
   }
@@ -194,16 +209,16 @@ export const Dashboard: React.FC = () => {
               </div>
             )}
 
-            {processedData && (
+            {processedData?.summary && (
               <div className="mt-4 p-4 bg-success-50 rounded-lg border border-success-200">
                 <h3 className="font-medium text-success-800 mb-2">
                   Файл успішно оброблено
                 </h3>
                 <div className="space-y-1 text-sm text-success-600">
                   <p>{processedData.orders.length} замовлень оброблено</p>
-                  <p>{processedData.summary.successfulGeocoding} адрес геокодовано</p>
-                  <p>{processedData.summary.failedGeocoding} не вдалося геокодувати</p>
-                  <p>{processedData.summary.couriers.length} курєрів знайдено</p>
+                  <p>{processedData.summary?.successfulGeocoding ?? 0} адрес геокодовано</p>
+                  <p>{processedData.summary?.failedGeocoding ?? 0} не вдалося геокодувати</p>
+                  <p>{processedData.summary?.couriers?.length ?? 0} курєрів знайдено</p>
                 </div>
                 
                 <button
@@ -226,22 +241,40 @@ export const Dashboard: React.FC = () => {
               </div>
             )}
 
-            {processedData?.summary.errors.length > 0 && (
+            {processedData?.summary?.errors?.length > 0 && (
               <div className="mt-4 p-4 bg-warning-50 rounded-lg border border-warning-200">
                 <h3 className="font-medium text-warning-800 mb-2 flex items-center">
                   <ExclamationTriangleIcon className="h-4 w-4 mr-2" />
                   Попередження обробки
                 </h3>
                 <div className="text-sm text-warning-600">
-                  <p>{processedData.summary.errors.length} помилок виникло під час обробки</p>
+                  <p>{processedData.summary?.errors?.length ?? 0} помилок виникло під час обробки</p>
                 </div>
               </div>
             )}
           </div>
         </div>
 
+        {/* Logs panel */}
+        <div className="lg:col-span-2">
+          <div className="card p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Логи</h2>
+            {logs.length === 0 ? (
+              <p className="text-sm text-gray-500">Поки що немає логів</p>
+            ) : (
+              <div className="max-h-64 overflow-y-auto space-y-2">
+                {logs.map((line, idx) => (
+                  <div key={idx} className="text-xs font-mono bg-gray-50 border border-gray-200 rounded p-2">
+                    {line}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Processing Results */}
-        {processedData && (
+        {processedData?.summary && (
           <div className="lg:col-span-3">
             <ProcessingResults 
               data={processedData} 
