@@ -45,9 +45,10 @@ export const Dashboard: React.FC = () => {
   // Process Excel file mutation
   const processFileMutation = useMutation({
     mutationFn: api.uploadApi.uploadExcelFile,
-    onSuccess: (data) => {
-      setProcessedData(data.data)
-      toast.success(`Оброблено ${data.data?.orders.length} замовлень успішно`)
+    onSuccess: (resp) => {
+      // Backend returns { success, data, summary, report, message }
+      setProcessedData({ ...resp.data, summary: resp.summary })
+      toast.success(`Оброблено ${resp.data?.orders.length} замовлень успішно`)
       queryClient.invalidateQueries({ queryKey: ['routes'] })
     },
     onError: (error: any) => {
@@ -116,22 +117,14 @@ export const Dashboard: React.FC = () => {
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Панель керування</h1>
-            <p className="mt-1 text-sm text-gray-600">
-              Керування маршрутами курєрів та відстеження ефективності доставки
-            </p>
-          </div>
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={handleDownloadSample}
-              className="btn-outline"
-            >
-              <DocumentArrowUpIcon className="h-4 w-4 mr-2" />
-              Завантажити зразок
-            </button>
-          </div>
+        <div className="flex items-center justify-end">
+          <button
+            onClick={handleDownloadSample}
+            className="btn-outline"
+          >
+            <DocumentArrowUpIcon className="h-4 w-4 mr-2" />
+            Завантажити зразок
+          </button>
         </div>
       </div>
 
