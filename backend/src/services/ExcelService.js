@@ -337,9 +337,30 @@ class ExcelService {
       headerMap: headerMap
     });
 
+    // Добавляем в debug логи
+    if (global.addDebugLog) {
+      global.addDebugLog(`📊 Обработка строки ${rowNumber}`, {
+        hasOrderNumber,
+        hasAddress,
+        hasCourier,
+        hasPaymentMethod,
+        orderNumber: hasOrderNumber ? row[headerMap.orderNumber] : 'нет',
+        address: hasAddress ? row[headerMap.address] : 'нет',
+        courier: hasCourier ? row[headerMap.courier] : 'нет',
+        rawRow: row,
+        headerMap: headerMap
+      });
+    }
+
     if (hasAddress) {
       // Це замовлення (если есть адрес, создаем заказ)
       console.log(`✅ Строка ${rowNumber}: Определена как ЗАКАЗ (по адресу)`);
+      
+      // Добавляем в debug логи
+      if (global.addDebugLog) {
+        global.addDebugLog(`✅ Строка ${rowNumber}: Определена как ЗАКАЗ (по адресу)`);
+      }
+      
       return {
         type: 'order',
         data: this.processOrderRow(row, headerMap, rowNumber)
@@ -347,6 +368,12 @@ class ExcelService {
     } else if (hasCourier && !hasAddress) {
       // Це курєр
       console.log(`✅ Строка ${rowNumber}: Определена как КУРЬЕР`);
+      
+      // Добавляем в debug логи
+      if (global.addDebugLog) {
+        global.addDebugLog(`✅ Строка ${rowNumber}: Определена как КУРЬЕР`);
+      }
+      
       return {
         type: 'courier',
         data: this.processCourierRow(row, headerMap, rowNumber)
@@ -354,6 +381,12 @@ class ExcelService {
     } else if (hasPaymentMethod && !hasAddress) {
       // Це спосіб оплати
       console.log(`✅ Строка ${rowNumber}: Определена как СПОСОБ ОПЛАТЫ`);
+      
+      // Добавляем в debug логи
+      if (global.addDebugLog) {
+        global.addDebugLog(`✅ Строка ${rowNumber}: Определена как СПОСОБ ОПЛАТЫ`);
+      }
+      
       return {
         type: 'payment',
         data: this.processPaymentMethodRow(row, headerMap, rowNumber)
@@ -361,6 +394,12 @@ class ExcelService {
     } else {
       // Інакше маркуємо як помилку, щоб користувач бачив проблему
       console.log(`❌ Строка ${rowNumber}: НЕ ОПРЕДЕЛЕНА - нет адресы`);
+      
+      // Добавляем в debug логи
+      if (global.addDebugLog) {
+        global.addDebugLog(`❌ Строка ${rowNumber}: НЕ ОПРЕДЕЛЕНА - нет адресы`);
+      }
+      
       throw new Error('Неможливо визначити тип рядка — перевірте заголовки та дані');
     }
   }

@@ -147,7 +147,7 @@ app.post('/debug/logs/clear', (req, res) => {
 
 // Test endpoint для проверки распознавания заголовков
 app.get('/debug/test-headers', (req, res) => {
-  const ExcelService = require('./src/services/ExcelService');
+  const ExcelService = require('./services/ExcelService');
   const excelService = new ExcelService();
   
   // Тестовые заголовки
@@ -173,6 +173,43 @@ app.get('/debug/test-headers', (req, res) => {
     canCreateOrders: headerMap.address !== undefined,
     timestamp: new Date().toISOString()
   });
+});
+
+// Test endpoint для проверки обработки тестовых данных
+app.get('/debug/test-processing', (req, res) => {
+  const ExcelService = require('./services/ExcelService');
+  const excelService = new ExcelService();
+  
+  // Тестовые данные
+  const testData = [
+    ['№', 'Адрес', 'Телефон', 'имя', 'Тип заказа', 'Способ оплаты', 'Курьер', 'Сумма заказа'],
+    ['1', 'ул. Пушкина 1', '+380501234567', 'Иван', 'Доставка', 'Наличные', 'Курьер1', '100'],
+    ['2', 'ул. Ленина 2', '+380507654321', 'Петр', 'Самовывоз', 'Карта', 'Курьер2', '200'],
+    ['', '', '', '', '', '', 'Курьер3', ''], // Пустая строка
+    ['3', '', '+380509876543', 'Сидор', 'Доставка', 'Наличные', '', '300'] // Без адреса
+  ];
+  
+  // Очищаем логи
+  debugLogs.length = 0;
+  
+  // Обрабатываем данные
+  excelService.processSheetData(testData, 'test')
+    .then(result => {
+      res.status(200).json({
+        message: 'Тест обработки данных',
+        result,
+        debugLogs: debugLogs.slice(-20), // Последние 20 логов
+        timestamp: new Date().toISOString()
+      });
+    })
+    .catch(error => {
+      res.status(500).json({
+        message: 'Ошибка тестирования',
+        error: error.message,
+        debugLogs: debugLogs.slice(-20),
+        timestamp: new Date().toISOString()
+      });
+    });
 });
 
 // Root endpoint - helpful landing instead of 404
