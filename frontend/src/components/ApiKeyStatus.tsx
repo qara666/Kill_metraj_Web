@@ -1,5 +1,5 @@
 import React from 'react'
-import { KeyIcon, ExclamationTriangleIcon, CheckCircleIcon } from '@heroicons/react/24/outline'
+import { ExclamationTriangleIcon, CheckCircleIcon } from '@heroicons/react/24/outline'
 import { useApiKey } from '../hooks/useApiKey'
 import { Link } from 'react-router-dom'
 
@@ -12,7 +12,7 @@ export const ApiKeyStatus: React.FC<ApiKeyStatusProps> = ({
   showLink = true, 
   className = '' 
 }) => {
-  const { apiKey, hasApiKey } = useApiKey()
+  const { hasApiKey } = useApiKey()
 
   if (!hasApiKey()) {
     return (
