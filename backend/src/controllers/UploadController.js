@@ -40,15 +40,40 @@ class UploadController {
    */
   async uploadExcel(req, res) {
     try {
+      console.log('🚀 UploadController: Начало обработки Excel файла');
+      
+      if (global.addDebugLog) {
+        global.addDebugLog('🚀 UploadController: Начало обработки Excel файла');
+      }
+      
       if (!req.file) {
+        console.log('❌ UploadController: Файл не загружен');
+        if (global.addDebugLog) {
+          global.addDebugLog('❌ UploadController: Файл не загружен');
+        }
         return res.status(400).json({
           success: false,
           error: 'Файл не завантажено'
         });
       }
 
+      console.log(`📁 UploadController: Файл получен - ${req.file.originalname}, размер: ${req.file.size} байт`);
+      if (global.addDebugLog) {
+        global.addDebugLog(`📁 UploadController: Файл получен - ${req.file.originalname}, размер: ${req.file.size} байт`);
+      }
+
       // Обробляємо Excel файл
+      console.log('🔄 UploadController: Вызываем ExcelService.processExcelFile');
+      if (global.addDebugLog) {
+        global.addDebugLog('🔄 UploadController: Вызываем ExcelService.processExcelFile');
+      }
+      
       const result = await this.excelService.processExcelFile(req.file.buffer, req.file.originalname);
+      
+      console.log('✅ UploadController: ExcelService вернул результат:', result.success);
+      if (global.addDebugLog) {
+        global.addDebugLog('✅ UploadController: ExcelService вернул результат', { success: result.success, error: result.error });
+      }
 
       if (!result.success) {
         return res.status(400).json({

@@ -15,15 +15,35 @@ class ExcelService {
    */
   async processExcelFile(fileBuffer, filename) {
     try {
+      console.log('🚀 ExcelService: Начало обработки файла:', filename);
+      if (global.addDebugLog) {
+        global.addDebugLog('🚀 ExcelService: Начало обработки файла', { filename, size: fileBuffer.length });
+      }
+      
       // Перевіряємо формат файлу
       const fileExtension = this.getFileExtension(filename);
+      console.log('📄 ExcelService: Расширение файла:', fileExtension);
+      if (global.addDebugLog) {
+        global.addDebugLog('📄 ExcelService: Расширение файла', fileExtension);
+      }
+      
       if (!this.supportedFormats.includes(fileExtension)) {
         throw new Error(`Непідтримуваний формат файлу: ${fileExtension}. Підтримувані формати: ${this.supportedFormats.join(', ')}`);
       }
 
       // Читаємо Excel файл
+      console.log('📖 ExcelService: Читаем Excel файл...');
+      if (global.addDebugLog) {
+        global.addDebugLog('📖 ExcelService: Читаем Excel файл...');
+      }
+      
       const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
       const sheetNames = workbook.SheetNames;
+      
+      console.log('📋 ExcelService: Найдено листов:', sheetNames.length, sheetNames);
+      if (global.addDebugLog) {
+        global.addDebugLog('📋 ExcelService: Найдено листов', { count: sheetNames.length, names: sheetNames });
+      }
       
       if (sheetNames.length === 0) {
         throw new Error('Файл не містить жодного листа');
@@ -40,6 +60,11 @@ class ExcelService {
       };
 
       for (const sheetName of sheetNames) {
+        console.log(`📊 ExcelService: Обрабатываем лист: "${sheetName}"`);
+        if (global.addDebugLog) {
+          global.addDebugLog(`📊 ExcelService: Обрабатываем лист: "${sheetName}"`);
+        }
+        
         const worksheet = workbook.Sheets[sheetName];
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
           header: 1,
@@ -47,17 +72,36 @@ class ExcelService {
           raw: false
         });
 
+        console.log(`📋 ExcelService: Сырые данные из листа (${jsonData.length} строк):`, jsonData.slice(0, 3));
+        if (global.addDebugLog) {
+          global.addDebugLog(`📋 ExcelService: Сырые данные из листа (${jsonData.length} строк)`, jsonData.slice(0, 3));
+        }
+
         // Пропускаємо порожні рядки
         const cleanData = jsonData.filter(row => 
           row.some(cell => cell && cell.toString().trim() !== '')
         );
 
+        console.log(`🧹 ExcelService: После очистки: ${cleanData.length} строк`);
+        if (global.addDebugLog) {
+          global.addDebugLog(`🧹 ExcelService: После очистки: ${cleanData.length} строк`);
+        }
+
         if (cleanData.length === 0) {
+          console.log(`⚠️ ExcelService: Лист "${sheetName}" пустой`);
+          if (global.addDebugLog) {
+            global.addDebugLog(`⚠️ ExcelService: Лист "${sheetName}" пустой`);
+          }
           processedData.warnings.push(`Лист "${sheetName}" порожній`);
           continue;
         }
 
         // Обробляємо дані з листа
+        console.log(`🔄 ExcelService: Вызываем processSheetData для листа "${sheetName}"`);
+        if (global.addDebugLog) {
+          global.addDebugLog(`🔄 ExcelService: Вызываем processSheetData для листа "${sheetName}"`);
+        }
+        
         const sheetResult = await this.processSheetData(cleanData, sheetName);
         
         // Об'єднуємо результати
@@ -69,8 +113,48 @@ class ExcelService {
         processedData.warnings.push(...sheetResult.warnings);
       }
 
+      console.log(`\n📈 ExcelService: Итоги обработки всех листов:`);
+      console.log(`📦 Заказов: ${processedData.orders.length}`);
+      console.log(`🚚 Курьеров: ${processedData.couriers.length}`);
+      console.log(`💳 Способов оплаты: ${processedData.paymentMethods.length}`);
+      console.log(`🗺️ Маршрутов: ${processedData.routes.length}`);
+      console.log(`❌ Ошибок: ${processedData.errors.length}`);
+      console.log(`⚠️ Предупреждений: ${processedData.warnings.length}`);
+      
+      if (global.addDebugLog) {
+        global.addDebugLog(`📈 ExcelService: Итоги обработки всех листов`, {
+          orders: processedData.orders.length,
+          couriers: processedData.couriers.length,
+          paymentMethods: processedData.paymentMethods.length,
+          routes: processedData.routes.length,
+          errors: processedData.errors.length,
+          warnings: processedData.warnings.length
+        });
+      }
+
       // Валідуємо та обробляємо дані
+      console.log('🔄 ExcelService: Вызываем validateAndProcessData');
+      if (global.addDebugLog) {
+        global.addDebugLog('🔄 ExcelService: Вызываем validateAndProcessData');
+      }
+      
       const validationResult = await this.validateAndProcessData(processedData);
+      
+      console.log(`\n✅ ExcelService: Финальные результаты:`);
+      console.log(`📦 Валидных заказов: ${validationResult.orders.length}`);
+      console.log(`🚚 Валидных курьеров: ${validationResult.couriers.length}`);
+      console.log(`💳 Валидных способов оплаты: ${validationResult.paymentMethods.length}`);
+      
+      if (global.addDebugLog) {
+        global.addDebugLog(`✅ ExcelService: Финальные результаты`, {
+          orders: validationResult.orders.length,
+          couriers: validationResult.couriers.length,
+          paymentMethods: validationResult.paymentMethods.length,
+          routes: validationResult.routes.length,
+          errors: validationResult.errors.length,
+          warnings: validationResult.warnings.length
+        });
+      }
       
       return {
         success: true,
@@ -86,7 +170,10 @@ class ExcelService {
       };
 
     } catch (error) {
-      console.error('Помилка обробки Excel файлу:', error);
+      console.error('❌ ExcelService: Помилка обробки Excel файлу:', error);
+      if (global.addDebugLog) {
+        global.addDebugLog('❌ ExcelService: Помилка обробки Excel файлу', { error: error.message, stack: error.stack });
+      }
       return {
         success: false,
         error: error.message,
