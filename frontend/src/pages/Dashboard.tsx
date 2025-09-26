@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
 import { 
@@ -29,6 +29,26 @@ export const Dashboard: React.FC = () => {
     const entry = `${new Date().toLocaleTimeString()} — ${message}`
     setLogs(prev => [entry, ...prev].slice(0, 200))
   }
+
+  // Hydrate logs from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('km_dashboard_logs')
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        if (Array.isArray(parsed)) {
+          setLogs(parsed)
+        }
+      }
+    } catch {}
+  }, [])
+
+  // Persist logs to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem('km_dashboard_logs', JSON.stringify(logs))
+    } catch {}
+  }, [logs])
 
   // Fetch dashboard data
   const { data: dashboardData, isLoading: dashboardLoading } = useQuery({

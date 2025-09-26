@@ -101,6 +101,37 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Root endpoint - helpful landing instead of 404
+app.get('/', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    service: 'Kill_metraj API',
+    message: 'Backend is running',
+    endpoints: {
+      health: '/health',
+      api: '/api',
+      couriers: '/api/couriers',
+      routes: '/api/routes',
+      upload: '/api/upload',
+      analytics: '/api/analytics'
+    }
+  });
+});
+
+// API root helper
+app.get('/api', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    message: 'Kill_metraj API root',
+    endpoints: {
+      couriers: '/api/couriers',
+      routes: '/api/routes',
+      upload: '/api/upload',
+      analytics: '/api/analytics'
+    }
+  });
+});
+
 // API routes
 app.use('/api/couriers', courierRoutes);
 app.use('/api/routes', routeRoutes);
