@@ -157,29 +157,34 @@ class ExcelService {
       if (!header) return;
       
       const normalizedHeader = header.toString().toLowerCase().trim();
+      // Also normalize by removing apostrophes to be robust to variations
+      const noApostrophes = normalizedHeader.replace(/['’`]/g, '');
       
-      // Мапимо українські та англійські заголовки
-      if (normalizedHeader.includes('номер') || normalizedHeader.includes('number') || normalizedHeader.includes('id')) {
+      // Helpers
+      const includesAny = (s, arr) => arr.some(k => s.includes(k));
+
+      // Мапимо українські, російські та англійські заголовки
+      if (includesAny(noApostrophes, ['номер', 'номер заказа', 'номер замовлення', '№', 'number', 'order', 'id'])) {
         headerMap.orderNumber = index;
-      } else if (normalizedHeader.includes('адреса') || normalizedHeader.includes('address')) {
+      } else if (includesAny(noApostrophes, ['адреса', 'адрес', 'address', 'адрес доставки'])) {
         headerMap.address = index;
-      } else if (normalizedHeader.includes('телефон') || normalizedHeader.includes('phone')) {
+      } else if (includesAny(noApostrophes, ['телефон', 'phone', 'моб', 'mobile'])) {
         headerMap.phone = index;
-      } else if (normalizedHeader.includes('кур\'єр') || normalizedHeader.includes('courier')) {
+      } else if (includesAny(noApostrophes, ['курєр', 'курер', 'курьер', 'courier', 'доставщик'])) {
         headerMap.courier = index;
-      } else if (normalizedHeader.includes('оплата') || normalizedHeader.includes('payment')) {
+      } else if (includesAny(noApostrophes, ['оплата', 'способ оплаты', 'payment', 'оплат', 'сплата'])) {
         headerMap.paymentMethod = index;
-      } else if (normalizedHeader.includes('сума') || normalizedHeader.includes('amount') || normalizedHeader.includes('price')) {
+      } else if (includesAny(noApostrophes, ['сума', 'сумма', 'amount', 'price', 'стоимость', 'вартість'])) {
         headerMap.amount = index;
-      } else if (normalizedHeader.includes('примітка') || normalizedHeader.includes('note') || normalizedHeader.includes('comment')) {
+      } else if (includesAny(noApostrophes, ['примітка', 'примечание', 'note', 'comment'])) {
         headerMap.note = index;
-      } else if (normalizedHeader.includes('пріоритет') || normalizedHeader.includes('priority')) {
+      } else if (includesAny(noApostrophes, ['пріоритет', 'приоритет', 'priority'])) {
         headerMap.priority = index;
-      } else if (normalizedHeader.includes('статус') || normalizedHeader.includes('status')) {
+      } else if (includesAny(noApostrophes, ['статус', 'status'])) {
         headerMap.status = index;
-      } else if (normalizedHeader.includes('дата') || normalizedHeader.includes('date')) {
+      } else if (includesAny(noApostrophes, ['дата', 'date'])) {
         headerMap.date = index;
-      } else if (normalizedHeader.includes('час') || normalizedHeader.includes('time')) {
+      } else if (includesAny(noApostrophes, ['час', 'время', 'time'])) {
         headerMap.time = index;
       }
     });
@@ -220,11 +225,15 @@ class ExcelService {
         data: this.processPaymentMethodRow(row, headerMap, rowNumber)
       };
     } else {
-      // Це маршрут або невідомий тип
-      return {
-        type: 'route',
-        data: this.processRouteRow(row, headerMap, rowNumber)
-      };
+      // Якщо немає чітких полів, спробуємо створити замовлення за адресою
+      if (hasAddress) {
+        return {
+          type: 'order',
+          data: this.processOrderRow(row, headerMap, rowNumber)
+        };
+      }
+      // Інакше маркуємо як помилку, щоб користувач бачив проблему
+      throw new Error('Неможливо визначити тип рядка — перевірте заголовки та дані');
     }
   }
 

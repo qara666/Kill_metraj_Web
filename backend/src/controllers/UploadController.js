@@ -70,9 +70,16 @@ class UploadController {
       res.json({
         success: true,
         data: savedData,
-        summary: result.summary,
+        summary: {
+          totalOrders: savedData.orders.length,
+          totalCouriers: savedData.couriers.length,
+          totalPaymentMethods: savedData.paymentMethods.length,
+          totalRoutes: savedData.routes.length,
+          errors: savedData.errors.length,
+          warnings: savedData.warnings ? savedData.warnings.length : 0
+        },
         report: report,
-        message: `Файл успішно оброблено! Замовлень: ${savedData.orders.length}, Кур'єрів: ${savedData.couriers.length}, Спосібів оплати: ${savedData.paymentMethods.length}`
+        message: `Файл успішно оброблено! Замовлень: ${savedData.orders.length}, Курєрів: ${savedData.couriers.length}, Спосібів оплати: ${savedData.paymentMethods.length}`
       });
     } catch (error) {
       console.error('Помилка обробки Excel файлу:', error);
