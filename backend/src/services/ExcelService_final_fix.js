@@ -1,6 +1,6 @@
 const XLSX = require('xlsx');
 
-class ExcelService {
+class ExcelServiceFinalFix {
   constructor() {
     this.debugLogs = [];
   }
@@ -568,4 +568,4 @@ class ExcelService {
   }
 }
 
-module.exports = ExcelService;
+module.exports = ExcelServiceFinalFix;

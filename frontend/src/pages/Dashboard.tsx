@@ -17,6 +17,7 @@ import { ApiKeyNotification } from '../components/ApiKeyNotification'
 import { ExcelUploadSection } from '../components/ExcelUploadSection'
 import { ExcelResultsDisplay } from '../components/ExcelResultsDisplay'
 import { ExcelTemplates } from '../components/ExcelTemplates'
+import { ExcelDebugLogs } from '../components/ExcelDebugLogs'
 import * as api from '../services/api'
 
 export const Dashboard: React.FC = () => {
@@ -24,6 +25,8 @@ export const Dashboard: React.FC = () => {
   const [processedData, setProcessedData] = useState<any>(null)
   const [selectedCourier, setSelectedCourier] = useState<string | null>(null)
   const [logs, setLogs] = useState<string[]>([])
+  const [excelLogs, setExcelLogs] = useState<any[]>([])
+  const [showExcelLogs, setShowExcelLogs] = useState(false)
   const queryClient = useQueryClient()
 
   const log = (message: string) => {
@@ -101,6 +104,14 @@ export const Dashboard: React.FC = () => {
       }
 
       setProcessedData(normalized)
+      
+      // Extract Excel debug logs if available
+      const responseData = resp as any;
+      if (responseData?.data?.debug?.logs) {
+        setExcelLogs(responseData.data.debug.logs);
+        log(`Excel логи отримано: ${responseData.data.debug.logs.length} записів`);
+      }
+      
       const ordersCount = (orders as any[]).length
       toast.success(`Оброблено ${ordersCount} замовлень успішно`)
       log(`Файл оброблено: замовлень=${ordersCount}, геокодовано=${normalized.summary.successfulGeocoding}, помилок=${(normalized.summary.errors as any[]).length}`)
@@ -239,13 +250,24 @@ export const Dashboard: React.FC = () => {
           <div className="card p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">Логи</h2>
-              <button
-                onClick={() => setLogs([])}
-                className="btn-outline"
-                title="Очистити логи"
-              >
-                Очистити логи
-              </button>
+              <div className="space-x-2">
+                {excelLogs.length > 0 && (
+                  <button
+                    onClick={() => setShowExcelLogs(true)}
+                    className="btn-primary text-sm"
+                    title="Показати детальні логи Excel обробки"
+                  >
+                    Excel логи ({excelLogs.length})
+                  </button>
+                )}
+                <button
+                  onClick={() => setLogs([])}
+                  className="btn-outline"
+                  title="Очистити логи"
+                >
+                  Очистити логи
+                </button>
+              </div>
             </div>
             {logs.length === 0 ? (
               <p className="text-sm text-gray-500">Поки що немає логів</p>
@@ -318,6 +340,13 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Excel Debug Logs Modal */}
+      <ExcelDebugLogs 
+        logs={excelLogs}
+        isVisible={showExcelLogs}
+        onClose={() => setShowExcelLogs(false)}
+      />
     </div>
   )
 }
