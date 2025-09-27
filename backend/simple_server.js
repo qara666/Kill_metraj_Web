@@ -10,8 +10,8 @@ const PORT = 5001;
 app.use(cors({
   origin: [
     'http://localhost:3000',
-    'https://your-frontend-service.onrender.com',
-    // Добавьте сюда URL вашего фронтенда на Render
+    'https://kill-metraj-frontend.onrender.com',
+   
   ],
   credentials: true
 }));
