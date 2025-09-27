@@ -280,9 +280,24 @@ class ExcelService_v2 {
       
       this.addDebugLog(`Анализ заголовка ${index}: "${originalHeader}" -> "${normalizedHeader}"`);
       
-      // НОМЕР ЗАКАЗА - проверяем ПЕРВЫМ, но исключаем "заказчик"
-      if (includesAny(noApostrophes, ['номер', '№', 'number', 'id', 'заказ', 'замовлення']) &&
-          !includesAny(noApostrophes, ['сумма', 'amount', 'price', 'стоимость', 'оплате', 'заказчик', 'клиент'])) {
+      // ИМЯ КЛИЕНТА - проверяем ПЕРВЫМ с точными совпадениями
+      if (includesAny(noApostrophes, ['заказчик (имя)', 'клиент (имя)'])) {
+        if (headerMap.customerName === undefined) {
+          headerMap.customerName = index;
+          this.addDebugLog(`Найден имя клиента в колонке ${index}: "${originalHeader}"`);
+        }
+      }
+      // СУММА - проверяем с точными критериями!
+      else if (includesAny(noApostrophes, ['сумма заказа', 'сумма', 'amount', 'price', 'стоимость', 'вартість', 'суммы', 'amounts', 'prices', 'цена', 'стоимость заказа', 'к оплате', 'to pay', 'оплате', 'pay', 'сумма к оплате', 'к оплате сумма']) &&
+               !includesAny(noApostrophes, ['номер', '№', 'number', 'id'])) { // исключаем номера
+        if (headerMap.amount === undefined) {
+          headerMap.amount = index;
+          this.addDebugLog(`Найден сумма в колонке ${index}: "${originalHeader}"`);
+        }
+      }
+      // НОМЕР ЗАКАЗА - проверяем после суммы, но исключаем "заказчик"
+      else if (includesAny(noApostrophes, ['номер', '№', 'number', 'id', 'заказ', 'замовлення']) &&
+               !includesAny(noApostrophes, ['сумма', 'amount', 'price', 'стоимость', 'оплате', 'заказчик', 'клиент'])) {
         if (headerMap.orderNumber === undefined) {
           headerMap.orderNumber = index;
           this.addDebugLog(`Найден номер заказа в колонке ${index}: "${originalHeader}"`);
@@ -316,14 +331,6 @@ class ExcelService_v2 {
           this.addDebugLog(`Найден способ оплаты в колонке ${index}: "${originalHeader}"`);
         }
       }
-      // СУММА - проверяем с точными критериями!
-      else if (includesAny(noApostrophes, ['сумма заказа', 'сумма', 'amount', 'price', 'стоимость', 'вартість', 'суммы', 'amounts', 'prices', 'цена', 'стоимость заказа', 'к оплате', 'to pay', 'оплате', 'pay', 'сумма к оплате', 'к оплате сумма']) &&
-               !includesAny(noApostrophes, ['номер', '№', 'number', 'id'])) { // исключаем номера
-        if (headerMap.amount === undefined) {
-          headerMap.amount = index;
-          this.addDebugLog(`Найден сумма в колонке ${index}: "${originalHeader}"`);
-        }
-      }
       // ТЕЛЕФОН
       else if (includesAny(noApostrophes, ['телефон', 'phone', 'тел', 'мобильный', 'mobile'])) {
         if (headerMap.phone === undefined) {
@@ -331,8 +338,8 @@ class ExcelService_v2 {
           this.addDebugLog(`Найден телефон в колонке ${index}: "${originalHeader}"`);
         }
       }
-      // ИМЯ КЛИЕНТА - проверяем ПЕРЕД номером заказа
-      else if (includesAny(noApostrophes, ['заказчик (имя)', 'клиент (имя)', 'заказчик', 'клиент', 'имя', 'customer', 'name']) &&
+      // ИМЯ КЛИЕНТА - общие совпадения (если не найдено точное)
+      else if (includesAny(noApostrophes, ['заказчик', 'клиент', 'имя', 'customer', 'name']) &&
                !includesAny(noApostrophes, ['номер', '№', 'number', 'id', 'заказ', 'замовлення'])) {
         if (headerMap.customerName === undefined) {
           headerMap.customerName = index;
@@ -366,7 +373,9 @@ class ExcelService_v2 {
       addressValue: row[headerMap.address] || ''
     });
     
-    return hasOrderNumber && hasAddress && hasCourier && hasPaymentMethod;
+    // Если нет номера заказа, но есть адрес, курьер и способ оплаты - считаем валидным
+    // Номер заказа будет сгенерирован автоматически
+    return hasAddress && hasCourier && hasPaymentMethod;
   }
 
   processOrderRow(row, headerMap, rowNumber) {
@@ -391,9 +400,12 @@ class ExcelService_v2 {
         }
       }
 
+      // Генерируем номер заказа если его нет
+      const orderNumber = row[headerMap.orderNumber]?.toString().trim() || `AUTO_${rowNumber}`;
+      
       const order = {
         id: `ORDER_${rowNumber}`,
-        orderNumber: row[headerMap.orderNumber]?.toString().trim() || '',
+        orderNumber: orderNumber,
         status: row[headerMap.status]?.toString().trim() || 'Неизвестно',
         type: row[headerMap.type]?.toString().trim() || 'Доставка',
         customer: {
@@ -513,7 +525,7 @@ class ExcelService_v2 {
 
 // Вспомогательная функция
 function includesAny(text, keywords) {
-  return keywords.some(keyword => text.includes(keyword.toLowerCase()));
+  return keywords.some(keyword => text.includes(keyword));
 }
 
 module.exports = ExcelService_v2;
