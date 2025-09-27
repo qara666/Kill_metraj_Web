@@ -18,6 +18,7 @@ import { ExcelUploadSection } from '../components/ExcelUploadSection'
 import { ExcelResultsDisplay } from '../components/ExcelResultsDisplay'
 import { ExcelTemplates } from '../components/ExcelTemplates'
 import { ExcelDebugLogs } from '../components/ExcelDebugLogs'
+import { ExcelDataPreview } from '../components/ExcelDataPreview'
 import * as api from '../services/api'
 
 export const Dashboard: React.FC = () => {
@@ -27,6 +28,8 @@ export const Dashboard: React.FC = () => {
   const [logs, setLogs] = useState<string[]>([])
   const [excelLogs, setExcelLogs] = useState<any[]>([])
   const [showExcelLogs, setShowExcelLogs] = useState(false)
+  const [showDataPreview, setShowDataPreview] = useState(false)
+  const [previewData, setPreviewData] = useState<any>(null)
   const queryClient = useQueryClient()
 
   const log = (message: string) => {
@@ -112,8 +115,11 @@ export const Dashboard: React.FC = () => {
         log(`Excel логи отримано: ${responseData.data.debug.logs.length} записів`);
       }
       
+      // Показываем предпросмотр данных
+      setPreviewData(data);
+      setShowDataPreview(true);
+      
       const ordersCount = (orders as any[]).length
-      toast.success(`Оброблено ${ordersCount} замовлень успішно`)
       log(`Файл оброблено: замовлень=${ordersCount}, геокодовано=${normalized.summary.successfulGeocoding}, помилок=${(normalized.summary.errors as any[]).length}`)
       queryClient.invalidateQueries({ queryKey: ['routes'] })
     },
@@ -159,7 +165,15 @@ export const Dashboard: React.FC = () => {
   const handleClearExcelResults = () => {
     setProcessedData(null)
     setSelectedFile(null)
+    setPreviewData(null)
+    setShowDataPreview(false)
     log('Результаты Excel обработки очищены')
+  }
+
+  const handleConfirmPreview = () => {
+    setShowDataPreview(false)
+    toast.success('Данные успешно сохранены!')
+    log('Пользователь подтвердил сохранение данных из Excel')
   }
 
   if (dashboardLoading || couriersLoading || routesLoading) {
@@ -346,6 +360,14 @@ export const Dashboard: React.FC = () => {
         logs={excelLogs}
         isVisible={showExcelLogs}
         onClose={() => setShowExcelLogs(false)}
+      />
+
+      {/* Excel Data Preview Modal */}
+      <ExcelDataPreview 
+        data={previewData}
+        isVisible={showDataPreview}
+        onClose={() => setShowDataPreview(false)}
+        onConfirm={handleConfirmPreview}
       />
     </div>
   )

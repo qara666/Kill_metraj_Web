@@ -53,11 +53,33 @@ app.post('/api/upload/excel', upload.single('file'), async (req, res) => {
     addLog(`Результат: успех=${result.success}, заказов=${result.data?.orders?.length || 0}`);
     
     if (result.success) {
+      // Добавляем дополнительную информацию для предпросмотра
+      const enhancedData = {
+        ...result.data,
+        fileInfo: {
+          name: req.file.originalname,
+          size: req.file.size,
+          uploadedAt: new Date().toISOString()
+        },
+        preview: {
+          totalOrders: result.data.orders.length,
+          totalCouriers: result.data.couriers.length,
+          totalPaymentMethods: result.data.paymentMethods.length,
+          totalAddresses: result.data.addresses.length,
+          hasErrors: result.data.errors.length > 0,
+          hasWarnings: result.data.warnings.length > 0,
+          sampleOrders: result.data.orders.slice(0, 5), // Первые 5 заказов для предпросмотра
+          uniqueCouriers: result.data.couriers.map(c => c.name),
+          uniquePaymentMethods: result.data.paymentMethods.map(p => p.method),
+          statistics: result.data.statistics
+        }
+      };
+
       res.json({
         success: true,
-        data: result.data,
+        data: enhancedData,
         summary: result.summary,
-        message: 'Файл успешно обработан'
+        message: 'Файл успешно обработан и готов к предпросмотру'
       });
     } else {
       addLog(`Ошибка: ${result.error}`);
