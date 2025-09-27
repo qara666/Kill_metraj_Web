@@ -1,29 +1,59 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
 import { 
   DocumentArrowUpIcon, 
   UserGroupIcon, 
   MapIcon, 
-  ChartBarIcon,
   TruckIcon,
-  ClockIcon,
-  CheckCircleIcon,
-  ExclamationTriangleIcon
+  CheckCircleIcon
 } from '@heroicons/react/24/outline'
-import { FileUpload } from '../components/FileUpload'
 import { CourierCard } from '../components/CourierCard'
-import { RouteMap } from '../components/RouteMap'
+import RouteMap from '../components/RouteMap'
 import { StatsCard } from '../components/StatsCard'
 import { LoadingSpinner } from '../components/LoadingSpinner'
+import { ProcessingResults } from '../components/ProcessingResults'
+import { ApiKeyNotification } from '../components/ApiKeyNotification'
+import { ExcelUploadSection } from '../components/ExcelUploadSection'
+import { ExcelResultsDisplay } from '../components/ExcelResultsDisplay'
+import { ExcelTemplates } from '../components/ExcelTemplates'
+import { ExcelDebugLogs } from '../components/ExcelDebugLogs'
 import * as api from '../services/api'
-import type { ProcessedOrder } from '../types'
 
 export const Dashboard: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [processedData, setProcessedData] = useState<any>(null)
   const [selectedCourier, setSelectedCourier] = useState<string | null>(null)
+  const [logs, setLogs] = useState<string[]>([])
+  const [excelLogs, setExcelLogs] = useState<any[]>([])
+  const [showExcelLogs, setShowExcelLogs] = useState(false)
   const queryClient = useQueryClient()
+
+  const log = (message: string) => {
+    console.log('[Dashboard]', message)
+    const entry = `${new Date().toLocaleTimeString()} — ${message}`
+    setLogs(prev => [entry, ...prev].slice(0, 200))
+  }
+
+  // Hydrate logs from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('km_dashboard_logs')
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        if (Array.isArray(parsed)) {
+          setLogs(parsed)
+        }
+      }
+    } catch {}
+  }, [])
+
+  // Persist logs to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem('km_dashboard_logs', JSON.stringify(logs))
+    } catch {}
+  }, [logs])
 
   // Fetch dashboard data
   const { data: dashboardData, isLoading: dashboardLoading } = useQuery({
@@ -47,47 +77,54 @@ export const Dashboard: React.FC = () => {
   // Process Excel file mutation
   const processFileMutation = useMutation({
     mutationFn: api.uploadApi.uploadExcelFile,
-    onSuccess: (data) => {
-      setProcessedData(data.data)
-      toast.success(`Processed ${data.data?.orders.length} orders successfully`)
+    onSuccess: (resp: any) => {
+      // Normalize backend response to UI-friendly shape
+      const data: any = resp?.data || {}
+      const orders = Array.isArray((data as any).orders) ? (data as any).orders : []
+      const couriers = Array.isArray((data as any).couriers) ? (data as any).couriers : []
+      const paymentMethods = Array.isArray((data as any).paymentMethods) ? (data as any).paymentMethods : []
+      const routes = Array.isArray((data as any).routes) ? (data as any).routes : []
+      const errorsArr = Array.isArray((data as any).errors) ? (data as any).errors : []
+
+      const normalized: any = {
+        orders,
+        couriers,
+        paymentMethods,
+        routes,
+        errors: errorsArr,
+        summary: {
+          totalRows: orders.length + couriers.length + paymentMethods.length + routes.length,
+          successfulGeocoding: 0,
+          failedGeocoding: 0,
+          orders: orders.length,
+          couriers: couriers.length,
+          paymentMethods: paymentMethods.length,
+          errors: errorsArr
+        }
+      }
+
+      setProcessedData(normalized)
+      
+      // Extract Excel debug logs if available
+      const responseData = resp as any;
+      if (responseData?.data?.debug?.logs) {
+        setExcelLogs(responseData.data.debug.logs);
+        log(`Excel логи отримано: ${responseData.data.debug.logs.length} записів`);
+      }
+      
+      const ordersCount = (orders as any[]).length
+      toast.success(`Оброблено ${ordersCount} замовлень успішно`)
+      log(`Файл оброблено: замовлень=${ordersCount}, геокодовано=${normalized.summary.successfulGeocoding}, помилок=${(normalized.summary.errors as any[]).length}`)
       queryClient.invalidateQueries({ queryKey: ['routes'] })
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.error || 'Failed to process file')
+      const msg = error?.response?.data?.error || 'Не вдалося обробити файл'
+      toast.error(msg)
+      log(`Помилка обробки файлу: ${msg}`)
     },
   })
 
-  // Create routes mutation
-  const createRoutesMutation = useMutation({
-    mutationFn: api.uploadApi.createRoutesFromOrders,
-    onSuccess: () => {
-      toast.success('Routes created successfully')
-      queryClient.invalidateQueries({ queryKey: ['routes'] })
-      queryClient.invalidateQueries({ queryKey: ['couriers'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      setProcessedData(null)
-      setSelectedFile(null)
-    },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.error || 'Failed to create routes')
-    },
-  })
 
-  const handleFileSelect = (file: File) => {
-    setSelectedFile(file)
-  }
-
-  const handleProcessFile = () => {
-    if (selectedFile) {
-      processFileMutation.mutate(selectedFile)
-    }
-  }
-
-  const handleCreateRoutes = () => {
-    if (processedData) {
-      createRoutesMutation.mutate({ orders: processedData.orders })
-    }
-  }
 
   const handleDownloadSample = async () => {
     try {
@@ -100,10 +137,29 @@ export const Dashboard: React.FC = () => {
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
-      toast.success('Sample template downloaded')
+      toast.success('Зразок шаблону завантажено')
     } catch (error) {
-      toast.error('Failed to download sample template')
+      toast.error('Не вдалося завантажити зразок шаблону')
     }
+  }
+
+  const handleExcelFileSelect = (file: File) => {
+    setSelectedFile(file)
+    setProcessedData(null) // Очищаем предыдущие результаты
+    log(`Выбран Excel файл: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`)
+  }
+
+  const handleExcelProcessFile = () => {
+    if (selectedFile) {
+      log(`Начинаем обработку файла: ${selectedFile.name}`)
+      processFileMutation.mutate(selectedFile)
+    }
+  }
+
+  const handleClearExcelResults = () => {
+    setProcessedData(null)
+    setSelectedFile(null)
+    log('Результаты Excel обработки очищены')
   }
 
   if (dashboardLoading || couriersLoading || routesLoading) {
@@ -116,24 +172,19 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* API Key Notification */}
+      <ApiKeyNotification />
+      
       {/* Header */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-            <p className="mt-1 text-sm text-gray-600">
-              Manage courier routes and track delivery performance
-            </p>
-          </div>
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={handleDownloadSample}
-              className="btn-outline"
-            >
-              <DocumentArrowUpIcon className="h-4 w-4 mr-2" />
-              Download Sample
-            </button>
-          </div>
+        <div className="flex items-center justify-end">
+          <button
+            onClick={handleDownloadSample}
+            className="btn-outline"
+          >
+            <DocumentArrowUpIcon className="h-4 w-4 mr-2" />
+            Завантажити зразок
+          </button>
         </div>
       </div>
 
@@ -141,113 +192,106 @@ export const Dashboard: React.FC = () => {
       {stats && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatsCard
-            title="Total Routes"
+            title="Всього маршрутів"
             value={stats.totalRoutes}
             icon={MapIcon}
             color="primary"
-            change={`${stats.activeRoutes} active`}
+            change={`${stats.activeRoutes} активних`}
           />
           <StatsCard
-            title="Total Couriers"
+            title="Всього курєрів"
             value={stats.totalCouriers}
             icon={UserGroupIcon}
             color="success"
-            change={`${stats.activeCouriers} active`}
+            change={`${stats.activeCouriers} активних`}
           />
           <StatsCard
-            title="Total Orders"
+            title="Всього замовлень"
             value={stats.totalOrders}
             icon={TruckIcon}
             color="warning"
-            change={`${stats.averageOrdersPerRoute.toFixed(1)} avg/route`}
+            change={`${stats.averageOrdersPerRoute.toFixed(1)} середнє/маршрут`}
           />
           <StatsCard
-            title="Completion Rate"
+            title="Відсоток виконання"
             value={`${stats.completionRate.toFixed(1)}%`}
             icon={CheckCircleIcon}
             color="success"
-            change={`${stats.completedRoutes} completed`}
+            change={`${stats.completedRoutes} завершено`}
           />
         </div>
       )}
 
+      {/* Excel Upload Section */}
+      <ExcelUploadSection
+        onFileSelect={handleExcelFileSelect}
+        onProcessFile={handleExcelProcessFile}
+        selectedFile={selectedFile}
+        isProcessing={processFileMutation.isPending}
+        processedData={processedData}
+        onClearResults={handleClearExcelResults}
+      />
+
+      {/* Excel Templates */}
+      <ExcelTemplates />
+
+      {/* Excel Results Display */}
+      {processedData && (
+        <ExcelResultsDisplay 
+          data={processedData} 
+          summary={processedData.summary} 
+        />
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* File Upload Section */}
-        <div className="lg:col-span-1">
+
+        {/* Logs panel */}
+        <div className="lg:col-span-2">
           <div className="card p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              Upload Excel File
-            </h2>
-            
-            <FileUpload onFileSelect={handleFileSelect} />
-            
-            {selectedFile && (
-              <div className="mt-4 space-y-3">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Логи</h2>
+              <div className="space-x-2">
+                {excelLogs.length > 0 && (
+                  <button
+                    onClick={() => setShowExcelLogs(true)}
+                    className="btn-primary text-sm"
+                    title="Показати детальні логи Excel обробки"
+                  >
+                    Excel логи ({excelLogs.length})
+                  </button>
+                )}
                 <button
-                  onClick={handleProcessFile}
-                  disabled={processFileMutation.isPending}
-                  className="btn-primary w-full"
+                  onClick={() => setLogs([])}
+                  className="btn-outline"
+                  title="Очистити логи"
                 >
-                  {processFileMutation.isPending ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <DocumentArrowUpIcon className="h-4 w-4 mr-2" />
-                      Process File
-                    </>
-                  )}
+                  Очистити логи
                 </button>
               </div>
-            )}
-
-            {processedData && (
-              <div className="mt-4 p-4 bg-success-50 rounded-lg border border-success-200">
-                <h3 className="font-medium text-success-800 mb-2">
-                  File Processed Successfully
-                </h3>
-                <div className="space-y-1 text-sm text-success-600">
-                  <p>{processedData.orders.length} orders processed</p>
-                  <p>{processedData.summary.successfulGeocoding} addresses geocoded</p>
-                  <p>{processedData.summary.failedGeocoding} failed geocoding</p>
-                  <p>{processedData.summary.couriers.length} couriers found</p>
-                </div>
-                
-                <button
-                  onClick={handleCreateRoutes}
-                  disabled={createRoutesMutation.isPending}
-                  className="mt-3 btn-success w-full"
-                >
-                  {createRoutesMutation.isPending ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                      Creating Routes...
-                    </>
-                  ) : (
-                    <>
-                      <MapIcon className="h-4 w-4 mr-2" />
-                      Create Routes
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
-
-            {processedData?.summary.errors.length > 0 && (
-              <div className="mt-4 p-4 bg-warning-50 rounded-lg border border-warning-200">
-                <h3 className="font-medium text-warning-800 mb-2 flex items-center">
-                  <ExclamationTriangleIcon className="h-4 w-4 mr-2" />
-                  Processing Warnings
-                </h3>
-                <div className="text-sm text-warning-600">
-                  <p>{processedData.summary.errors.length} errors occurred during processing</p>
-                </div>
+            </div>
+            {logs.length === 0 ? (
+              <p className="text-sm text-gray-500">Поки що немає логів</p>
+            ) : (
+              <div className="max-h-64 overflow-y-auto space-y-2">
+                {logs.map((line, idx) => (
+                  <div key={idx} className="text-xs font-mono bg-gray-50 border border-gray-200 rounded p-2">
+                    {line}
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </div>
+
+        {/* Processing Results */}
+        {processedData?.summary && (
+          <div className="lg:col-span-3">
+            <ProcessingResults 
+              data={processedData} 
+              summary={processedData.summary} 
+            />
+          </div>
+        )}
 
         {/* Main Content */}
         <div className="lg:col-span-2">
@@ -255,15 +299,15 @@ export const Dashboard: React.FC = () => {
             {/* Couriers Section */}
             <div className="card p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                Recent Couriers ({couriers.length})
+                Останні курєри ({couriers.length})
               </h2>
               
               {couriers.length === 0 ? (
                 <div className="text-center py-8">
                   <UserGroupIcon className="mx-auto h-12 w-12 text-gray-400" />
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">No couriers</h3>
+                  <h3 className="mt-2 text-sm font-medium text-gray-900">Немає курєрів</h3>
                   <p className="mt-1 text-sm text-gray-500">
-                    Upload an Excel file to create couriers and routes.
+                    Завантажте Excel файл для створення курєрів та маршрутів.
                   </p>
                 </div>
               ) : (
@@ -285,18 +329,24 @@ export const Dashboard: React.FC = () => {
             {/* Map Section */}
             <div className="card p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                Route Map
+                Карта маршрутів
               </h2>
               
               <RouteMap 
                 routes={routes}
-                selectedCourier={selectedCourier}
-                height="400px"
+                selectedCourier={selectedCourier || undefined}
               />
             </div>
           </div>
         </div>
       </div>
+
+      {/* Excel Debug Logs Modal */}
+      <ExcelDebugLogs 
+        logs={excelLogs}
+        isVisible={showExcelLogs}
+        onClose={() => setShowExcelLogs(false)}
+      />
     </div>
   )
 }

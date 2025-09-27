@@ -6,14 +6,12 @@ import { clsx } from 'clsx'
 
 interface FileUploadProps {
   onFileSelect: (file: File) => void
-  accept?: string
   maxSize?: number
   className?: string
 }
 
 export const FileUpload: React.FC<FileUploadProps> = ({
   onFileSelect,
-  accept = '.xlsx,.xls,.csv',
   maxSize = 10 * 1024 * 1024, // 10MB
   className
 }) => {

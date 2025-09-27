@@ -1,9 +1,10 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-hot-toast'
 import { CogIcon, KeyIcon, MapIcon } from '@heroicons/react/24/outline'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import * as api from '../services/api'
+import { localStorageUtils } from '../utils/localStorage'
 
 interface SettingsForm {
   googleMapsApiKey: string
@@ -23,6 +24,35 @@ export const Settings: React.FC = () => {
     }
   })
 
+  // Load settings from localStorage on component mount
+  useEffect(() => {
+    const settings = localStorageUtils.getAllSettings()
+    
+    setValue('googleMapsApiKey', settings.googleMapsApiKey)
+    setValue('defaultStartAddress', settings.defaultStartAddress)
+    setValue('defaultEndAddress', settings.defaultEndAddress)
+    
+    // Check if API key is valid when loading
+    if (settings.googleMapsApiKey) {
+      checkApiKeyStatus(settings.googleMapsApiKey)
+    }
+  }, [setValue])
+
+  const checkApiKeyStatus = async (apiKey: string) => {
+    if (!apiKey.trim()) return
+    
+    try {
+      const result = await api.uploadApi.testApiKey(apiKey)
+      if (result.data?.isValid) {
+        setApiKeyStatus('valid')
+      } else {
+        setApiKeyStatus('invalid')
+      }
+    } catch (error) {
+      setApiKeyStatus('invalid')
+    }
+  }
+
   const googleMapsApiKey = watch('googleMapsApiKey')
 
   const testApiKey = async () => {
@@ -36,7 +66,9 @@ export const Settings: React.FC = () => {
       const result = await api.uploadApi.testApiKey(googleMapsApiKey)
       if (result.data?.isValid) {
         setApiKeyStatus('valid')
-        toast.success('API key is valid!')
+        // Save API key to localStorage when it's valid
+        localStorageUtils.setApiKey(googleMapsApiKey)
+        toast.success('API key is valid and saved!')
       } else {
         setApiKeyStatus('invalid')
         toast.error('API key is invalid or quota exceeded')
@@ -50,7 +82,14 @@ export const Settings: React.FC = () => {
   }
 
   const onSubmit = (data: SettingsForm) => {
-    // Save settings logic here
+    // Save settings to localStorage
+    localStorageUtils.setAllSettings(data)
+    
+    // Check API key status after saving
+    if (data.googleMapsApiKey.trim()) {
+      checkApiKeyStatus(data.googleMapsApiKey)
+    }
+    
     toast.success('Settings saved successfully!')
   }
 
