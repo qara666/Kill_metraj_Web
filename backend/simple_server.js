@@ -7,7 +7,14 @@ const app = express();
 const PORT = 5001;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'https://your-frontend-service.onrender.com',
+    // Добавьте сюда URL вашего фронтенда на Render
+  ],
+  credentials: true
+}));
 app.use(express.json());
 
 // Настройка multer
