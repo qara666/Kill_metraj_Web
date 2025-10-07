@@ -63,6 +63,21 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     setEndAddress(settings.defaultEndAddress)
   }, [])
 
+  // Загружаем сохраненные маршруты
+  useEffect(() => {
+    try {
+      const savedRoutes = localStorage.getItem('km_routes')
+      if (savedRoutes) {
+        const parsedRoutes = JSON.parse(savedRoutes)
+        if (Array.isArray(parsedRoutes)) {
+          setRoutes(parsedRoutes)
+        }
+      }
+    } catch (error) {
+      console.warn('Ошибка загрузки маршрутов из localStorage:', error)
+    }
+  }, [])
+
   // Проверяем готовность Google Maps
   useEffect(() => {
     const checkGoogleMaps = () => {
@@ -74,6 +89,15 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     }
     checkGoogleMaps()
   }, [])
+
+  // Сохраняем маршруты в localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('km_routes', JSON.stringify(routes))
+    } catch (error) {
+      console.warn('Ошибка сохранения маршрутов в localStorage:', error)
+    }
+  }, [routes])
 
   // Обновляем данные о маршрутах в контексте
   useEffect(() => {
@@ -119,6 +143,29 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     setSelectedCourier(courierName)
   }
 
+  // Проверяем, существует ли уже маршрут для данного курьера с теми же заказами
+  const isRouteDuplicate = (courierName: string, selectedOrderIds: Set<string>) => {
+    return routes.some(route => {
+      if (route.courier !== courierName) return false
+      
+      const routeOrderIds = new Set(route.orders.map(order => order.id))
+      if (routeOrderIds.size !== selectedOrderIds.size) return false
+      
+      for (const id of selectedOrderIds) {
+        if (!routeOrderIds.has(id)) return false
+      }
+      
+      return true
+    })
+  }
+
+  // Проверяем, включен ли заказ в существующий маршрут
+  const isOrderInExistingRoute = (orderId: string) => {
+    return routes.some(route => 
+      route.orders.some(order => order.id === orderId)
+    )
+  }
+
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set())
 
   const handleOrderSelect = (orderId: string) => {
@@ -141,6 +188,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     const selectedOrdersList = courierOrders[selectedCourier].filter(order => selectedOrders.has(order.id))
     if (selectedOrdersList.length === 0) {
       alert('Выберите заказы для создания маршрута')
+      return
+    }
+
+    // Проверяем на дубликаты
+    if (isRouteDuplicate(selectedCourier, selectedOrders)) {
+      alert('Маршрут с такими же заказами для этого курьера уже существует')
       return
     }
 
@@ -218,7 +271,15 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   }
 
   const deleteRoute = (routeId: string) => {
-    setRoutes(prev => prev.filter(route => route.id !== routeId))
+    if (window.confirm('Вы уверены, что хотите удалить этот маршрут?')) {
+      setRoutes(prev => prev.filter(route => route.id !== routeId))
+    }
+  }
+
+  const clearAllRoutes = () => {
+    if (window.confirm('Вы уверены, что хотите удалить все маршруты?')) {
+      setRoutes([])
+    }
   }
 
   const openRouteInGoogleMaps = (route: Route) => {
@@ -310,25 +371,37 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                 </h3>
                 <button
                   onClick={createRoute}
-                  disabled={selectedOrders.size === 0}
-                  className="btn-primary flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={selectedOrders.size === 0 || isRouteDuplicate(selectedCourier, selectedOrders)}
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium ${
+                    selectedOrders.size === 0 || isRouteDuplicate(selectedCourier, selectedOrders)
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
                 >
                   <PlusIcon className="h-4 w-4" />
-                  <span>Создать маршрут ({selectedOrders.size})</span>
+                  <span>
+                    {isRouteDuplicate(selectedCourier, selectedOrders) 
+                      ? 'Маршрут уже существует' 
+                      : `Создать маршрут (${selectedOrders.size})`
+                    }
+                  </span>
                 </button>
               </div>
 
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {courierOrders[selectedCourier]?.map(order => {
                   const isSelected = selectedOrders.has(order.id)
+                  const isInExistingRoute = isOrderInExistingRoute(order.id)
                   return (
                     <div
                       key={order.id}
-                      onClick={() => handleOrderSelect(order.id)}
-                      className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                        isSelected
-                          ? 'bg-blue-50 border-blue-200 ring-2 ring-blue-500'
-                          : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                      onClick={() => !isInExistingRoute && handleOrderSelect(order.id)}
+                      className={`p-3 rounded-lg border transition-colors ${
+                        isInExistingRoute
+                          ? 'bg-yellow-50 border-yellow-200 cursor-not-allowed opacity-60'
+                          : isSelected
+                          ? 'bg-blue-50 border-blue-200 ring-2 ring-blue-500 cursor-pointer'
+                          : 'bg-gray-50 border-gray-200 hover:bg-gray-100 cursor-pointer'
                       }`}
                     >
                       <div className="flex items-start justify-between">
@@ -339,6 +412,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                             </span>
                             {isSelected && (
                               <CheckCircleIcon className="h-4 w-4 text-blue-600" />
+                            )}
+                            {isInExistingRoute && (
+                              <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
+                                В маршруте
+                              </span>
                             )}
                           </div>
                           <p className="text-sm text-gray-600 mt-1">{order.address}</p>
@@ -359,8 +437,18 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
         {/* Маршруты */}
         <div className="space-y-4">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Созданные маршруты</h2>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Созданные маршруты</h2>
+            {routes.length > 0 && (
+              <button
+                onClick={clearAllRoutes}
+                className="text-sm text-red-600 hover:text-red-800 font-medium"
+              >
+                Очистить все
+              </button>
+            )}
+          </div>
             
             {routes.length === 0 ? (
               <div className="text-center py-8">
