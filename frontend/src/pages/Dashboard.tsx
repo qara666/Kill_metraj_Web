@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
 import { 
-  DocumentArrowUpIcon, 
   UserGroupIcon, 
   MapIcon, 
   TruckIcon,
@@ -12,11 +11,9 @@ import { CourierCard } from '../components/CourierCard'
 import RouteMap from '../components/RouteMap'
 import { StatsCard } from '../components/StatsCard'
 import { LoadingSpinner } from '../components/LoadingSpinner'
-import { ProcessingResults } from '../components/ProcessingResults'
 import { ApiKeyNotification } from '../components/ApiKeyNotification'
 import { ExcelUploadSection } from '../components/ExcelUploadSection'
 import { ExcelResultsDisplay } from '../components/ExcelResultsDisplay'
-import { ExcelTemplates } from '../components/ExcelTemplates'
 import { ExcelDebugLogs } from '../components/ExcelDebugLogs'
 import { ExcelDataPreview } from '../components/ExcelDataPreview'
 import * as api from '../services/api'
@@ -101,7 +98,7 @@ export const Dashboard: React.FC = () => {
   const { data: dashboardData, isLoading: dashboardLoading } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => api.analyticsApi.getDashboardAnalytics(),
-    refetchInterval: 30000, // Refetch every 30 seconds
+    // Убрали автоматическое обновление каждые 30 секунд
   })
 
   // Fetch couriers
@@ -171,22 +168,6 @@ export const Dashboard: React.FC = () => {
 
 
 
-  const handleDownloadSample = async () => {
-    try {
-      const blob = await api.uploadApi.getSampleTemplate()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'sample_orders.xlsx'
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-      toast.success('Зразок шаблону завантажено')
-    } catch (error) {
-      toast.error('Не вдалося завантажити зразок шаблону')
-    }
-  }
 
   const handleExcelFileSelect = (file: File) => {
     setSelectedFile(file)
@@ -238,18 +219,6 @@ export const Dashboard: React.FC = () => {
       {/* API Key Notification */}
       <ApiKeyNotification />
       
-      {/* Header */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-end">
-          <button
-            onClick={handleDownloadSample}
-            className="btn-outline"
-          >
-            <DocumentArrowUpIcon className="h-4 w-4 mr-2" />
-            Завантажити зразок
-          </button>
-        </div>
-      </div>
 
       {/* Stats Overview */}
       {stats && (
@@ -295,8 +264,6 @@ export const Dashboard: React.FC = () => {
         onClearResults={handleClearExcelResults}
       />
 
-      {/* Excel Templates */}
-      <ExcelTemplates />
 
       {/* Excel Results Display */}
       {processedData && (
@@ -346,15 +313,6 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Processing Results */}
-        {processedData?.summary && (
-          <div className="lg:col-span-3">
-            <ProcessingResults 
-              data={processedData} 
-              summary={processedData.summary} 
-            />
-          </div>
-        )}
 
         {/* Main Content */}
         <div className="lg:col-span-2">
