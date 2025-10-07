@@ -6,8 +6,9 @@ import {
   UserIcon,
   TruckIcon,
   MapPinIcon,
-  PhoneIcon,
-  EnvelopeIcon
+  XMarkIcon,
+  MapIcon,
+  ClockIcon
 } from '@heroicons/react/24/outline'
 import { useExcelData } from '../contexts/ExcelDataContext'
 
@@ -34,6 +35,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingCourier, setEditingCourier] = useState<Courier | null>(null)
   const [filter, setFilter] = useState<'all' | 'car' | 'motorcycle'>('all')
+  const [selectedCourierForRoutes, setSelectedCourierForRoutes] = useState<Courier | null>(null)
 
   // Рассчитываем расстояние для каждого курьера на основе маршрутов
   const calculateCourierDistance = useMemo(() => {
@@ -80,10 +82,25 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     }
   }, [excelData, calculateCourierDistance])
 
-  const filteredCouriers = couriers.filter(courier => {
-    if (filter === 'all') return true
-    return courier.vehicleType === filter
-  })
+  // Обновляем расстояния курьеров при изменении маршрутов
+  useEffect(() => {
+    setCouriers(prev => prev.map(courier => ({
+      ...courier,
+      totalDistance: calculateCourierDistance(courier.name)
+    })))
+  }, [calculateCourierDistance])
+
+  const filteredCouriers = couriers
+    .filter(courier => {
+      if (filter === 'all') return true
+      return courier.vehicleType === filter
+    })
+    .sort((a, b) => {
+      // Сначала активные курьеры, потом неактивные
+      if (a.isActive && !b.isActive) return -1
+      if (!a.isActive && b.isActive) return 1
+      return 0
+    })
 
   const handleAddCourier = (courierData: Omit<Courier, 'id' | 'totalDistance'>) => {
     const newCourier: Courier = {
@@ -116,6 +133,20 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     setCouriers(prev => prev.map(courier => 
       courier.id === id ? { ...courier, isActive: !courier.isActive } : courier
     ))
+  }
+
+  const getCourierRoutes = (courierName: string) => {
+    if (!contextData?.routes || !Array.isArray(contextData.routes)) {
+      return []
+    }
+    return contextData.routes.filter((route: any) => route.courier === courierName)
+  }
+
+  const handleCourierClick = (courier: Courier) => {
+    const routes = getCourierRoutes(courier.name)
+    if (routes.length > 0) {
+      setSelectedCourierForRoutes(courier)
+    }
   }
 
   return (
@@ -193,8 +224,22 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredCouriers.map((courier) => (
-            <div key={courier.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          {filteredCouriers.map((courier) => {
+            const courierRoutes = getCourierRoutes(courier.name)
+            const hasRoutes = courierRoutes.length > 0
+            
+            return (
+            <div 
+              key={courier.id} 
+              className={`bg-white rounded-lg shadow-sm border border-gray-200 p-6 transition-all ${
+                !courier.isActive 
+                  ? 'opacity-60 bg-gray-50' 
+                  : hasRoutes 
+                    ? 'cursor-pointer hover:shadow-md hover:border-blue-300' 
+                    : ''
+              }`}
+              onClick={() => hasRoutes && courier.isActive && handleCourierClick(courier)}
+            >
               <div className="flex items-start justify-between">
                 <div className="flex items-center space-x-3">
                   <div className="flex-shrink-0">
@@ -271,27 +316,14 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 </div>
               </div>
 
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <div className="flex items-center justify-between text-sm">
-                  <div className="flex items-center space-x-1">
-                    <PhoneIcon className="h-4 w-4 text-gray-400" />
-                    <span className="text-gray-600">Телефон</span>
+              {hasRoutes && (
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <div className="flex items-center justify-center text-sm text-blue-600">
+                    <MapPinIcon className="h-4 w-4 mr-1" />
+                    <span>Кликните для просмотра маршрутов ({courierRoutes.length})</span>
                   </div>
-                  <span className="font-medium text-gray-900">
-                    {courier.phone || 'Не указан'}
-                  </span>
                 </div>
-                
-                <div className="mt-2 flex items-center justify-between text-sm">
-                  <div className="flex items-center space-x-1">
-                    <EnvelopeIcon className="h-4 w-4 text-gray-400" />
-                    <span className="text-gray-600">Email</span>
-                  </div>
-                  <span className="font-medium text-gray-900 truncate">
-                    {courier.email || 'Не указан'}
-                  </span>
-                </div>
-              </div>
+              )}
 
               <div className="mt-4 flex space-x-2">
                 <button
@@ -312,8 +344,18 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 </button>
               </div>
             </div>
-          ))}
+            )
+          })}
         </div>
+      )}
+
+      {/* Routes Modal */}
+      {selectedCourierForRoutes && (
+        <CourierRoutesModal
+          courier={selectedCourierForRoutes}
+          routes={getCourierRoutes(selectedCourierForRoutes.name)}
+          onClose={() => setSelectedCourierForRoutes(null)}
+        />
       )}
 
       {/* Add/Edit Modal */}
@@ -461,6 +503,105 @@ const CourierModal: React.FC<CourierModalProps> = ({ courier, onSave, onClose })
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  )
+}
+
+// Modal component for displaying courier routes
+interface CourierRoutesModalProps {
+  courier: Courier
+  routes: any[]
+  onClose: () => void
+}
+
+const CourierRoutesModal: React.FC<CourierRoutesModalProps> = ({ courier, routes, onClose }) => {
+  const formatDuration = (minutes: number) => {
+    const hours = Math.floor(minutes / 60)
+    const mins = Math.floor(minutes % 60)
+    return hours > 0 ? `${hours}ч ${mins}мин` : `${mins}мин`
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-medium text-gray-900">
+              Маршруты курьера: {courier.name}
+            </h3>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <XMarkIcon className="h-6 w-6" />
+            </button>
+          </div>
+        </div>
+        
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+          {routes.length === 0 ? (
+            <div className="text-center py-8">
+              <MapIcon className="mx-auto h-12 w-12 text-gray-400" />
+              <p className="mt-2 text-sm text-gray-500">У этого курьера нет маршрутов</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {routes.map((route, index) => (
+                <div key={route.id} className="border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <h4 className="font-medium text-gray-900">Маршрут #{index + 1}</h4>
+                      <p className="text-sm text-gray-500">
+                        {route.orders?.length || 0} заказов
+                      </p>
+                    </div>
+                    <div className="flex space-x-2">
+                      {route.isOptimized && (
+                        <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                          Оптимизирован
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 mb-4">
+                    {route.orders?.map((order: any, orderIndex: number) => (
+                      <div key={order.id} className="flex items-center space-x-2 text-sm">
+                        <span className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium">
+                          {orderIndex + 1}
+                        </span>
+                        <span className="text-gray-600">#{order.orderNumber}</span>
+                        <span className="text-gray-500 truncate">{order.address}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {route.isOptimized && (
+                    <div className="pt-3 border-t border-gray-200">
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div className="flex items-center space-x-1">
+                          <MapPinIcon className="h-4 w-4 text-gray-400" />
+                          <span className="text-gray-600">Расстояние</span>
+                          <span className="font-medium text-gray-900">
+                            {route.totalDistance?.toFixed(1) || 0} км
+                          </span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <ClockIcon className="h-4 w-4 text-gray-400" />
+                          <span className="text-gray-600">Время</span>
+                          <span className="font-medium text-gray-900">
+                            {route.totalDuration ? formatDuration(route.totalDuration) : 'N/A'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
