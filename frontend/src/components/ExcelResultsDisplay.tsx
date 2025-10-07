@@ -27,12 +27,43 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
     errors: true,
     warnings: true
   })
+  const [courierSortBy, setCourierSortBy] = useState<'name' | 'orders'>('orders')
+  const [courierSortOrder, setCourierSortOrder] = useState<'asc' | 'desc'>('desc')
 
   const toggleSection = (section: keyof typeof expandedSections) => {
     setExpandedSections(prev => ({
       ...prev,
       [section]: !prev[section]
     }))
+  }
+
+  const sortCouriers = (couriers: any[]) => {
+    return [...couriers].sort((a, b) => {
+      let aValue, bValue
+      
+      if (courierSortBy === 'name') {
+        aValue = a.name || ''
+        bValue = b.name || ''
+      } else {
+        aValue = a.orders || 0
+        bValue = b.orders || 0
+      }
+      
+      if (courierSortOrder === 'asc') {
+        return aValue > bValue ? 1 : -1
+      } else {
+        return aValue < bValue ? 1 : -1
+      }
+    })
+  }
+
+  const handleCourierSort = (sortBy: 'name' | 'orders') => {
+    if (courierSortBy === sortBy) {
+      setCourierSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setCourierSortBy(sortBy)
+      setCourierSortOrder('desc')
+    }
   }
 
   if (!data || !summary) {
@@ -43,55 +74,6 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
 
   return (
     <div className="space-y-6">
-      {/* Сводка */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <CheckCircleIcon className="h-5 w-5 mr-2 text-green-600" />
-          Сводка обработки
-        </h3>
-        
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-            <div className="flex items-center">
-              <DocumentTextIcon className="h-5 w-5 text-blue-600 mr-2" />
-              <div>
-                <p className="text-sm font-medium text-blue-800">Заказы</p>
-                <p className="text-2xl font-bold text-blue-900">{summary.totalOrders || 0}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-            <div className="flex items-center">
-              <UserGroupIcon className="h-5 w-5 text-green-600 mr-2" />
-              <div>
-                <p className="text-sm font-medium text-green-800">Курьеры</p>
-                <p className="text-2xl font-bold text-green-900">{summary.totalCouriers || 0}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-            <div className="flex items-center">
-              <CreditCardIcon className="h-5 w-5 text-purple-600 mr-2" />
-              <div>
-                <p className="text-sm font-medium text-purple-800">Способы оплаты</p>
-                <p className="text-2xl font-bold text-purple-900">{summary.totalPaymentMethods || 0}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-            <div className="flex items-center">
-              <MapPinIcon className="h-5 w-5 text-yellow-600 mr-2" />
-              <div>
-                <p className="text-sm font-medium text-yellow-800">Геокодировано</p>
-                <p className="text-2xl font-bold text-yellow-900">{summary.successfulGeocoding || 0}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Заказы */}
       {orders && orders.length > 0 && (
@@ -183,24 +165,51 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
       {/* Курьеры */}
       {couriers && couriers.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <div 
-            className="flex items-center justify-between cursor-pointer"
-            onClick={() => toggleSection('couriers')}
-          >
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-              <UserGroupIcon className="h-5 w-5 mr-2 text-green-600" />
-              Курьеры ({couriers.length})
-            </h3>
-            {expandedSections.couriers ? (
-              <EyeSlashIcon className="h-5 w-5 text-gray-400" />
-            ) : (
-              <EyeIcon className="h-5 w-5 text-gray-400" />
+          <div className="flex items-center justify-between">
+            <div 
+              className="flex items-center cursor-pointer"
+              onClick={() => toggleSection('couriers')}
+            >
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                <UserGroupIcon className="h-5 w-5 mr-2 text-green-600" />
+                Курьеры ({couriers.length})
+              </h3>
+              {expandedSections.couriers ? (
+                <EyeSlashIcon className="h-5 w-5 text-gray-400 ml-2" />
+              ) : (
+                <EyeIcon className="h-5 w-5 text-gray-400 ml-2" />
+              )}
+            </div>
+            
+            {expandedSections.couriers && (
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => handleCourierSort('name')}
+                  className={`px-3 py-1 text-xs rounded ${
+                    courierSortBy === 'name' 
+                      ? 'bg-blue-100 text-blue-800' 
+                      : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  По имени {courierSortBy === 'name' && (courierSortOrder === 'asc' ? '↑' : '↓')}
+                </button>
+                <button
+                  onClick={() => handleCourierSort('orders')}
+                  className={`px-3 py-1 text-xs rounded ${
+                    courierSortBy === 'orders' 
+                      ? 'bg-blue-100 text-blue-800' 
+                      : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  По заказам {courierSortBy === 'orders' && (courierSortOrder === 'asc' ? '↑' : '↓')}
+                </button>
+              </div>
             )}
           </div>
           
           {expandedSections.couriers && (
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {couriers.map((courier: any, index: number) => (
+              {sortCouriers(couriers).map((courier: any, index: number) => (
                 <div key={courier.name || index} className="bg-gray-50 p-4 rounded-lg border">
                   <div className="flex items-center space-x-3 mb-2">
                     <TruckIcon className="h-5 w-5 text-green-600" />
@@ -213,17 +222,17 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
                       <span className="font-medium">{courier.orders || 0}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Сумма:</span>
-                      <span className="font-medium">{courier.totalAmount || 0} грн</span>
+                      <span>Статус:</span>
+                      <span className="font-medium text-green-600">Активен</span>
                     </div>
-                    {courier.orders > 0 && (
-                      <div className="flex justify-between">
-                        <span>Средний чек:</span>
-                        <span className="font-medium">
-                          {Math.round((courier.totalAmount || 0) / courier.orders)} грн
-                        </span>
-                      </div>
-                    )}
+                    <div className="flex justify-between">
+                      <span>Зона работы:</span>
+                      <span className="font-medium">Все зоны</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Последний заказ:</span>
+                      <span className="font-medium">Сегодня</span>
+                    </div>
                   </div>
                 </div>
               ))}

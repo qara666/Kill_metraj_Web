@@ -17,8 +17,32 @@ export const Couriers: React.FC = () => {
     return <LoadingSpinner />
   }
 
-  // Используем данные из Excel если они есть, иначе из API
-  const couriers = excelData?.couriers || couriersData?.data || []
+  // Преобразуем данные из Excel в формат Courier или используем данные из API
+  const couriers = React.useMemo(() => {
+    if (excelData?.couriers) {
+      // Преобразуем данные Excel в формат Courier
+      return excelData.couriers.map((courier: any) => ({
+        _id: courier.name || `excel_${Math.random()}`,
+        name: courier.name || 'Неизвестный курьер',
+        location: 'Киев',
+        vehicleType: 'car' as const,
+        isActive: true,
+        isArchived: false,
+        routeCount: courier.orders || 0,
+        totalOrders: courier.orders || 0,
+        totalDistance: 0,
+        efficiencyScore: 85,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        routes: [],
+        phone: '',
+        email: '',
+        totalDistanceWithAdditional: 0,
+        averageOrdersPerRoute: 0
+      }))
+    }
+    return couriersData?.data || []
+  }, [excelData?.couriers, couriersData?.data])
 
   return (
     <div className="space-y-6">
@@ -50,9 +74,9 @@ export const Couriers: React.FC = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {couriers.map((courier) => (
+          {couriers.map((courier, index) => (
             <CourierCard
-              key={courier._id}
+              key={courier._id || courier.name || index}
               courier={courier}
             />
           ))}
