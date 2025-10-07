@@ -38,17 +38,38 @@ export const Dashboard: React.FC = () => {
     setLogs(prev => [entry, ...prev].slice(0, 200))
   }
 
-  // Hydrate logs from localStorage on mount
+  // Hydrate state from localStorage on mount
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('km_dashboard_logs')
-      if (stored) {
-        const parsed = JSON.parse(stored)
+      // Восстанавливаем логи
+      const storedLogs = localStorage.getItem('km_dashboard_logs')
+      if (storedLogs) {
+        const parsed = JSON.parse(storedLogs)
         if (Array.isArray(parsed)) {
           setLogs(parsed)
         }
       }
-    } catch {}
+
+      // Восстанавливаем обработанные данные
+      const storedData = localStorage.getItem('km_dashboard_processed_data')
+      if (storedData) {
+        const parsed = JSON.parse(storedData)
+        if (parsed && typeof parsed === 'object') {
+          setProcessedData(parsed)
+        }
+      }
+
+      // Восстанавливаем Excel логи
+      const storedExcelLogs = localStorage.getItem('km_dashboard_excel_logs')
+      if (storedExcelLogs) {
+        const parsed = JSON.parse(storedExcelLogs)
+        if (Array.isArray(parsed)) {
+          setExcelLogs(parsed)
+        }
+      }
+    } catch (error) {
+      console.warn('Ошибка восстановления состояния из localStorage:', error)
+    }
   }, [])
 
   // Persist logs to localStorage whenever they change
@@ -57,6 +78,24 @@ export const Dashboard: React.FC = () => {
       localStorage.setItem('km_dashboard_logs', JSON.stringify(logs))
     } catch {}
   }, [logs])
+
+  // Persist processed data to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      if (processedData) {
+        localStorage.setItem('km_dashboard_processed_data', JSON.stringify(processedData))
+      }
+    } catch {}
+  }, [processedData])
+
+  // Persist Excel logs to localStorage whenever they change
+  useEffect(() => {
+    try {
+      if (excelLogs.length > 0) {
+        localStorage.setItem('km_dashboard_excel_logs', JSON.stringify(excelLogs))
+      }
+    } catch {}
+  }, [excelLogs])
 
   // Fetch dashboard data
   const { data: dashboardData, isLoading: dashboardLoading } = useQuery({
@@ -167,6 +206,16 @@ export const Dashboard: React.FC = () => {
     setSelectedFile(null)
     setPreviewData(null)
     setShowDataPreview(false)
+    setExcelLogs([])
+    
+    // Очищаем localStorage
+    try {
+      localStorage.removeItem('km_dashboard_processed_data')
+      localStorage.removeItem('km_dashboard_excel_logs')
+    } catch (error) {
+      console.warn('Ошибка очистки localStorage:', error)
+    }
+    
     log('Результаты Excel обработки очищены')
   }
 
