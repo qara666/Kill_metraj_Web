@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { 
   PlusIcon, 
   PencilIcon, 
@@ -9,6 +9,7 @@ import {
   PhoneIcon,
   EnvelopeIcon
 } from '@heroicons/react/24/outline'
+import { useExcelData } from '../contexts/ExcelDataContext'
 
 interface Courier {
   id: string
@@ -20,6 +21,7 @@ interface Courier {
   isActive: boolean
   orders: number
   totalAmount: number
+  totalDistance: number
 }
 
 interface CourierManagementProps {
@@ -27,46 +29,79 @@ interface CourierManagementProps {
 }
 
 export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData }) => {
+  const { excelData: contextData } = useExcelData()
   const [couriers, setCouriers] = useState<Courier[]>([])
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingCourier, setEditingCourier] = useState<Courier | null>(null)
   const [filter, setFilter] = useState<'all' | 'car' | 'motorcycle'>('all')
 
+  // Рассчитываем расстояние для каждого курьера на основе маршрутов
+  const calculateCourierDistance = useMemo(() => {
+    return (courierName: string) => {
+      if (!contextData?.routes || !Array.isArray(contextData.routes)) {
+        return 0
+      }
+
+      const courierRoutes = contextData.routes.filter((route: any) => route.courier === courierName)
+      let totalDistance = 0
+
+      courierRoutes.forEach((route: any) => {
+        if (route.isOptimized && route.totalDistance) {
+          totalDistance += route.totalDistance
+        } else {
+          // Если маршрут не оптимизирован, считаем 500м за каждый заказ
+          totalDistance += (route.orders?.length || 0) * 0.5
+        }
+      })
+
+      return totalDistance
+    }
+  }, [contextData?.routes])
+
   // Создаем курьеров из данных Excel при загрузке
   useEffect(() => {
     if (excelData?.couriers && Array.isArray(excelData.couriers)) {
-      const couriersFromExcel = excelData.couriers.map((courier: any, index: number) => ({
-        id: `excel_${index}`,
-        name: courier.name || 'Неизвестный курьер',
-        phone: '',
-        email: '',
-        vehicleType: 'car' as const,
-        location: 'Киев',
-        isActive: true,
-        orders: courier.orders || 0,
-        totalAmount: courier.totalAmount || 0
-      }))
+      const couriersFromExcel = excelData.couriers.map((courier: any, index: number) => {
+        const courierName = courier.name || 'Неизвестный курьер'
+        return {
+          id: `excel_${index}`,
+          name: courierName,
+          phone: '',
+          email: '',
+          vehicleType: 'car' as const,
+          location: 'Киев',
+          isActive: true,
+          orders: courier.orders || 0,
+          totalAmount: courier.totalAmount || 0,
+          totalDistance: calculateCourierDistance(courierName)
+        }
+      })
       setCouriers(couriersFromExcel)
     }
-  }, [excelData])
+  }, [excelData, calculateCourierDistance])
 
   const filteredCouriers = couriers.filter(courier => {
     if (filter === 'all') return true
     return courier.vehicleType === filter
   })
 
-  const handleAddCourier = (courierData: Omit<Courier, 'id'>) => {
+  const handleAddCourier = (courierData: Omit<Courier, 'id' | 'totalDistance'>) => {
     const newCourier: Courier = {
       ...courierData,
-      id: `courier_${Date.now()}`
+      id: `courier_${Date.now()}`,
+      totalDistance: calculateCourierDistance(courierData.name)
     }
     setCouriers(prev => [...prev, newCourier])
     setShowAddModal(false)
   }
 
   const handleEditCourier = (courierData: Courier) => {
+    const updatedCourier = {
+      ...courierData,
+      totalDistance: calculateCourierDistance(courierData.name)
+    }
     setCouriers(prev => prev.map(courier => 
-      courier.id === courierData.id ? courierData : courier
+      courier.id === courierData.id ? updatedCourier : courier
     ))
     setEditingCourier(null)
   }
@@ -227,10 +262,11 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 </div>
                 <div className="text-center">
                   <div className="flex items-center justify-center space-x-1">
-                    <span className="text-sm text-gray-600">Сумма</span>
+                    <MapPinIcon className="h-4 w-4 text-gray-400" />
+                    <span className="text-sm text-gray-600">Километры</span>
                   </div>
                   <p className="text-lg font-semibold text-gray-900">
-                    {courier.totalAmount.toLocaleString()} грн
+                    {courier.totalDistance.toFixed(1)} км
                   </p>
                 </div>
               </div>
@@ -318,7 +354,8 @@ const CourierModal: React.FC<CourierModalProps> = ({ courier, onSave, onClose })
       ...formData,
       id: courier?.id || '',
       orders: courier?.orders || 0,
-      totalAmount: courier?.totalAmount || 0
+      totalAmount: courier?.totalAmount || 0,
+      totalDistance: courier?.totalDistance || 0
     })
   }
 

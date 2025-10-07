@@ -9,6 +9,7 @@ import {
   CheckCircleIcon
 } from '@heroicons/react/24/outline'
 import { localStorageUtils } from '../utils/localStorage'
+import { useExcelData } from '../contexts/ExcelDataContext'
 
 // Google Maps types
 declare global {
@@ -47,6 +48,7 @@ interface RouteManagementProps {
 }
 
 export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) => {
+  const { updateRouteData } = useExcelData()
   const [selectedCourier, setSelectedCourier] = useState<string | null>(null)
   const [routes, setRoutes] = useState<Route[]>([])
   const [isCalculating, setIsCalculating] = useState(false)
@@ -72,6 +74,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     }
     checkGoogleMaps()
   }, [])
+
+  // Обновляем данные о маршрутах в контексте
+  useEffect(() => {
+    if (routes.length > 0) {
+      updateRouteData(routes)
+    }
+  }, [routes, updateRouteData])
 
   // Группируем заказы по курьерам
   const courierOrders = useMemo(() => {
@@ -210,6 +219,21 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
   const deleteRoute = (routeId: string) => {
     setRoutes(prev => prev.filter(route => route.id !== routeId))
+  }
+
+  const openRouteInGoogleMaps = (route: Route) => {
+    if (!route.isOptimized || route.orders.length === 0) {
+      alert('Сначала рассчитайте маршрут')
+      return
+    }
+
+    const waypoints = route.orders.map(order => order.address).join('|')
+    const origin = encodeURIComponent(route.startAddress)
+    const destination = encodeURIComponent(route.endAddress)
+    const waypointsEncoded = encodeURIComponent(waypoints)
+    
+    const googleMapsUrl = `https://www.google.com/maps/dir/${origin}/${waypointsEncoded}/${destination}`
+    window.open(googleMapsUrl, '_blank')
   }
 
   const formatDuration = (minutes: number) => {
@@ -356,10 +380,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                       </div>
                       <div className="flex space-x-2">
                         <button
-                          onClick={() => calculateRouteDistance(route)}
+                          onClick={() => route.isOptimized ? openRouteInGoogleMaps(route) : calculateRouteDistance(route)}
                           disabled={isCalculating}
                           className="p-1 text-gray-400 hover:text-blue-600 disabled:opacity-50"
-                          title="Рассчитать расстояние"
+                          title={route.isOptimized ? "Открыть маршрут в Google Maps" : "Рассчитать расстояние"}
                         >
                           <MapIcon className="h-4 w-4" />
                         </button>
