@@ -48,14 +48,6 @@ export const Dashboard: React.FC = () => {
         }
       }
 
-      // Восстанавливаем обработанные данные
-      const storedData = localStorage.getItem('km_dashboard_processed_data')
-      if (storedData) {
-        const parsed = JSON.parse(storedData)
-        if (parsed && typeof parsed === 'object') {
-          setProcessedData(parsed)
-        }
-      }
 
       // Восстанавливаем Excel логи
       const storedExcelLogs = localStorage.getItem('km_dashboard_excel_logs')
@@ -77,14 +69,6 @@ export const Dashboard: React.FC = () => {
     } catch {}
   }, [logs])
 
-  // Persist processed data to localStorage whenever it changes
-  useEffect(() => {
-    try {
-      if (processedData) {
-        localStorage.setItem('km_dashboard_processed_data', JSON.stringify(processedData))
-      }
-    } catch {}
-  }, [processedData])
 
   // Persist Excel logs to localStorage whenever they change
   useEffect(() => {

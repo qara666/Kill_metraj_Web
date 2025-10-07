@@ -39,7 +39,7 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
     return null
   }
 
-  const { orders, couriers, paymentMethods, errors, warnings } = data
+  const { orders, couriers, errors, warnings } = data
 
   return (
     <div className="space-y-6">
