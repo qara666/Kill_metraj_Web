@@ -14,6 +14,8 @@ import { localStorageUtils } from '../utils/localStorage'
 declare global {
   interface Window {
     google: any
+    googleMapsLoaded: boolean
+    initGoogleMaps: () => void
   }
 }
 
@@ -50,12 +52,25 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   const [isCalculating, setIsCalculating] = useState(false)
   const [startAddress, setStartAddress] = useState('')
   const [endAddress, setEndAddress] = useState('')
+  const [googleMapsReady, setGoogleMapsReady] = useState(false)
 
   // Загружаем настройки адресов
   useEffect(() => {
     const settings = localStorageUtils.getAllSettings()
     setStartAddress(settings.defaultStartAddress)
     setEndAddress(settings.defaultEndAddress)
+  }, [])
+
+  // Проверяем готовность Google Maps
+  useEffect(() => {
+    const checkGoogleMaps = () => {
+      if (window.googleMapsLoaded && window.google && window.google.maps) {
+        setGoogleMapsReady(true)
+      } else {
+        setTimeout(checkGoogleMaps, 500)
+      }
+    }
+    checkGoogleMaps()
   }, [])
 
   // Группируем заказы по курьерам
@@ -111,7 +126,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     })
   }
 
-  const createRoute = () => {
+  const createRoute = async () => {
     if (!selectedCourier) return
 
     const selectedOrdersList = courierOrders[selectedCourier].filter(order => selectedOrders.has(order.id))
@@ -135,11 +150,16 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     
     // Сбрасываем выбор заказов
     setSelectedOrders(new Set())
+
+    // Автоматически рассчитываем расстояние для нового маршрута
+    setTimeout(() => {
+      calculateRouteDistance(newRoute)
+    }, 100)
   }
 
   const calculateRouteDistance = async (route: Route) => {
-    if (!window.google || !window.google.maps) {
-      alert('Google Maps API не загружен')
+    if (!googleMapsReady) {
+      alert('Google Maps API загружается... Попробуйте через несколько секунд')
       return
     }
 
@@ -209,8 +229,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
               Создавайте маршруты для курьеров и рассчитывайте расстояния
             </p>
           </div>
-          <div className="text-sm text-gray-500">
-            {couriers.length} курьеров, {routes.length} маршрутов
+          <div className="flex items-center space-x-4 text-sm text-gray-500">
+            <span>{couriers.length} курьеров, {routes.length} маршрутов</span>
+            <div className="flex items-center space-x-1">
+              <div className={`w-2 h-2 rounded-full ${googleMapsReady ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+              <span>{googleMapsReady ? 'Google Maps готов' : 'Загрузка Google Maps...'}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -361,28 +385,37 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                       ))}
                     </div>
 
-                    {route.isOptimized && (
-                      <div className="mt-3 pt-3 border-t border-gray-200">
-                        <div className="flex items-center justify-between text-sm">
-                          <div className="flex items-center space-x-1">
-                            <MapPinIcon className="h-4 w-4 text-gray-400" />
-                            <span className="text-gray-600">Расстояние</span>
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      {route.isOptimized ? (
+                        <>
+                          <div className="flex items-center justify-between text-sm">
+                            <div className="flex items-center space-x-1">
+                              <MapPinIcon className="h-4 w-4 text-gray-400" />
+                              <span className="text-gray-600">Расстояние</span>
+                            </div>
+                            <span className="font-medium text-gray-900">
+                              {route.totalDistance.toFixed(1)} км
+                            </span>
                           </div>
-                          <span className="font-medium text-gray-900">
-                            {route.totalDistance.toFixed(1)} км
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm mt-1">
-                          <div className="flex items-center space-x-1">
-                            <ClockIcon className="h-4 w-4 text-gray-400" />
-                            <span className="text-gray-600">Время</span>
+                          <div className="flex items-center justify-between text-sm mt-1">
+                            <div className="flex items-center space-x-1">
+                              <ClockIcon className="h-4 w-4 text-gray-400" />
+                              <span className="text-gray-600">Время</span>
+                            </div>
+                            <span className="font-medium text-gray-900">
+                              {formatDuration(route.totalDuration)}
+                            </span>
                           </div>
-                          <span className="font-medium text-gray-900">
-                            {formatDuration(route.totalDuration)}
-                          </span>
+                          <div className="text-xs text-green-600 mt-1">
+                            ✓ Маршрут оптимизирован
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-sm text-gray-500">
+                          {isCalculating ? 'Расчет расстояния...' : 'Нажмите на карту для расчета расстояния'}
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
