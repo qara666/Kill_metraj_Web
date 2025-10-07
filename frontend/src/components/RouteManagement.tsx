@@ -30,6 +30,7 @@ interface Order {
   customerName: string
   isSelected?: boolean
   routeOrder?: number
+  plannedTime?: string
 }
 
 interface Route {
@@ -55,6 +56,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   const [startAddress, setStartAddress] = useState('')
   const [endAddress, setEndAddress] = useState('')
   const [googleMapsReady, setGoogleMapsReady] = useState(false)
+  const [courierFilter, setCourierFilter] = useState<string>('all')
+  const [courierPage, setCourierPage] = useState(0)
 
   // Загружаем настройки адресов
   useEffect(() => {
@@ -77,6 +80,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
       console.warn('Ошибка загрузки маршрутов из localStorage:', error)
     }
   }, [])
+
+  // Загружаем маршруты из контекста при инициализации
+  useEffect(() => {
+    if (excelData?.routes && Array.isArray(excelData.routes) && excelData.routes.length > 0) {
+      setRoutes(excelData.routes)
+    }
+  }, [excelData?.routes])
 
   // Проверяем готовность Google Maps
   useEffect(() => {
@@ -129,6 +139,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
           amount: order.amount || 0,
           phone: order.phone || '',
           customerName: order.customerName || '',
+          plannedTime: order.plannedTime || '',
           isSelected: false
         })
       }
@@ -139,8 +150,42 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
   const couriers = Object.keys(courierOrders)
 
+  // Определяем тип транспорта курьера
+  const getCourierVehicleType = (courierName: string) => {
+    if (!excelData?.couriers || !Array.isArray(excelData.couriers)) {
+      return 'car'
+    }
+    const courier = excelData.couriers.find((c: any) => c.name === courierName)
+    return courier?.vehicleType || 'car'
+  }
+
+  // Фильтруем курьеров по типу транспорта
+  const filteredCouriers = couriers.filter(courierName => {
+    if (courierFilter === 'all') return true
+    const vehicleType = getCourierVehicleType(courierName)
+    return vehicleType === courierFilter
+  })
+
+  // Пагинация курьеров (8 на страницу)
+  const COURIERS_PER_PAGE = 8
+  const totalPages = Math.ceil(filteredCouriers.length / COURIERS_PER_PAGE)
+  const paginatedCouriers = filteredCouriers.slice(
+    courierPage * COURIERS_PER_PAGE,
+    (courierPage + 1) * COURIERS_PER_PAGE
+  )
+
   const handleCourierSelect = (courierName: string) => {
     setSelectedCourier(courierName)
+  }
+
+  // Сортируем заказы по плановому времени
+  const sortOrdersByTime = (orders: Order[]) => {
+    return [...orders].sort((a, b) => {
+      if (!a.plannedTime && !b.plannedTime) return 0
+      if (!a.plannedTime) return 1
+      if (!b.plannedTime) return -1
+      return a.plannedTime.localeCompare(b.plannedTime)
+    })
   }
 
   // Проверяем, существует ли уже маршрут для данного курьера с теми же заказами
@@ -328,36 +373,112 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
         {/* Курьеры и заказы */}
         <div className="space-y-4">
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Курьеры</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Курьеры</h2>
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => setCourierFilter('all')}
+                  className={`px-3 py-1 text-xs rounded-full ${
+                    courierFilter === 'all'
+                      ? 'bg-blue-100 text-blue-800'
+                      : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  Все
+                </button>
+                <button
+                  onClick={() => setCourierFilter('car')}
+                  className={`px-3 py-1 text-xs rounded-full flex items-center space-x-1 ${
+                    courierFilter === 'car'
+                      ? 'bg-green-100 text-green-800'
+                      : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  <TruckIcon className="h-3 w-3" />
+                  <span>Авто</span>
+                </button>
+                <button
+                  onClick={() => setCourierFilter('motorcycle')}
+                  className={`px-3 py-1 text-xs rounded-full flex items-center space-x-1 ${
+                    courierFilter === 'motorcycle'
+                      ? 'bg-orange-100 text-orange-800'
+                      : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  <TruckIcon className="h-3 w-3" />
+                  <span>Мото</span>
+                </button>
+              </div>
+            </div>
             
-            {couriers.length === 0 ? (
+            {paginatedCouriers.length === 0 ? (
               <div className="text-center py-8">
                 <TruckIcon className="mx-auto h-12 w-12 text-gray-400" />
-                <p className="mt-2 text-sm text-gray-500">Загрузите Excel файл для отображения курьеров</p>
+                <p className="mt-2 text-sm text-gray-500">
+                  {couriers.length === 0 
+                    ? 'Загрузите Excel файл для отображения курьеров'
+                    : 'Нет курьеров выбранного типа'
+                  }
+                </p>
               </div>
             ) : (
               <div className="space-y-2">
-                {couriers.map(courierName => (
-                  <button
-                    key={courierName}
-                    onClick={() => handleCourierSelect(courierName)}
-                    className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                      selectedCourier === courierName
-                        ? 'bg-blue-50 border-blue-200 text-blue-900'
-                        : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <TruckIcon className="h-5 w-5 text-gray-600" />
-                        <span className="font-medium">{courierName}</span>
+                {paginatedCouriers.map(courierName => {
+                  const vehicleType = getCourierVehicleType(courierName)
+                  return (
+                    <button
+                      key={courierName}
+                      onClick={() => handleCourierSelect(courierName)}
+                      className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                        selectedCourier === courierName
+                          ? 'bg-blue-50 border-blue-200 text-blue-900'
+                          : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <TruckIcon className={`h-5 w-5 ${
+                            vehicleType === 'car' ? 'text-green-600' : 'text-orange-600'
+                          }`} />
+                          <span className="font-medium">{courierName}</span>
+                          <span className={`text-xs px-2 py-1 rounded-full ${
+                            vehicleType === 'car' 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-orange-100 text-orange-800'
+                          }`}>
+                            {vehicleType === 'car' ? 'Авто' : 'Мото'}
+                          </span>
+                        </div>
+                        <span className="text-sm text-gray-500">
+                          {courierOrders[courierName]?.length || 0} заказов
+                        </span>
                       </div>
-                      <span className="text-sm text-gray-500">
-                        {courierOrders[courierName]?.length || 0} заказов
-                      </span>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Пагинация */}
+            {totalPages > 1 && (
+              <div className="mt-4 flex items-center justify-between">
+                <button
+                  onClick={() => setCourierPage(Math.max(0, courierPage - 1))}
+                  disabled={courierPage === 0}
+                  className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  ← Назад
+                </button>
+                <span className="text-sm text-gray-500">
+                  Страница {courierPage + 1} из {totalPages}
+                </span>
+                <button
+                  onClick={() => setCourierPage(Math.min(totalPages - 1, courierPage + 1))}
+                  disabled={courierPage >= totalPages - 1}
+                  className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Вперед →
+                </button>
               </div>
             )}
           </div>
@@ -389,7 +510,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
               </div>
 
               <div className="space-y-2 max-h-96 overflow-y-auto">
-                {courierOrders[selectedCourier]?.map(order => {
+                {sortOrdersByTime(courierOrders[selectedCourier] || []).map(order => {
                   const isSelected = selectedOrders.has(order.id)
                   const isInExistingRoute = isOrderInExistingRoute(order.id)
                   return (
@@ -424,6 +545,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                             <span>{order.customerName}</span>
                             <span>{order.phone}</span>
                             <span>{order.amount} грн</span>
+                            {order.plannedTime && (
+                              <span className="text-blue-600 font-medium">
+                                {order.plannedTime}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -460,11 +586,23 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                 {routes.map(route => (
                   <div key={route.id} className="border border-gray-200 rounded-lg p-4">
                     <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <h3 className="font-medium text-gray-900">{route.courier}</h3>
-                        <p className="text-sm text-gray-500">
-                          {route.orders.length} заказов
-                        </p>
+                      <div className="flex items-center space-x-2">
+                        <TruckIcon className={`h-5 w-5 ${
+                          getCourierVehicleType(route.courier) === 'car' ? 'text-green-600' : 'text-orange-600'
+                        }`} />
+                        <div>
+                          <h3 className="font-medium text-gray-900">{route.courier}</h3>
+                          <p className="text-sm text-gray-500">
+                            {route.orders.length} заказов
+                          </p>
+                        </div>
+                        <span className={`text-xs px-2 py-1 rounded-full ${
+                          getCourierVehicleType(route.courier) === 'car' 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-orange-100 text-orange-800'
+                        }`}>
+                          {getCourierVehicleType(route.courier) === 'car' ? 'Авто' : 'Мото'}
+                        </span>
                       </div>
                       <div className="flex space-x-2">
                         <button
