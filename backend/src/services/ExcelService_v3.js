@@ -17,7 +17,7 @@ class ExcelService_v3 {
 
   async processExcelFile(buffer) {
     this.debugLogs = [];
-    this.addDebugLog('Начало обработки Excel файла v3 (гибкий парсер)');
+    this.addDebugLog('Начало обработки Excel файла v3');
     
     try {
       const workbook = XLSX.read(buffer, { 
@@ -33,13 +33,119 @@ class ExcelService_v3 {
         totalSheets: workbook.SheetNames.length
       });
 
-      const result = {
+      const result = this.initializeResult();
+
+      // Обрабатываем все листы
+      workbook.SheetNames.forEach(sheetName => {
+        const sheet = workbook.Sheets[sheetName];
+        const sheetResult = this.processSheet(sheet, sheetName);
+        
+        this.mergeSheetResults(result, sheetResult);
+      });
+
+      // Финальная обработка
+      this.finalizeResult(result);
+
+      this.addDebugLog('Обработка завершена', {
+        totalOrders: result.orders.length,
+        totalCouriers: result.couriers.length,
+        totalPaymentMethods: result.paymentMethods.length,
+        errors: result.errors.length,
+        warnings: result.warnings.length
+      });
+
+      return {
+        success: true,
+        data: result,
+        summary: this.createSummary(result),
+        message: 'Файл успешно обработан v3'
+      };
+
+    } catch (error) {
+      this.addDebugLog('Ошибка обработки файла', { error: error.message });
+      return this.createErrorResult(error.message);
+    }
+  }
+
+  initializeResult() {
+    return {
+      orders: [],
+      couriers: [],
+      paymentMethods: [],
+      addresses: [],
+      routes: [],
+      errors: [],
+      warnings: [],
+      statistics: {
+        totalOrders: 0,
+        totalAmount: 0,
+        averageAmount: 0,
+        deliveryCount: 0,
+        pickupCount: 0,
+        courierStats: {},
+        paymentStats: {},
+        zoneStats: {}
+      },
+      debug: {
+        logs: this.debugLogs,
+        sheets: [],
+        headerMap: {},
+        rawData: [],
+        totalRows: 0,
+        processedRows: 0
+      }
+    };
+  }
+
+  mergeSheetResults(result, sheetResult) {
+    result.orders.push(...sheetResult.orders);
+    result.couriers.push(...sheetResult.couriers);
+    result.paymentMethods.push(...sheetResult.paymentMethods);
+    result.addresses.push(...sheetResult.addresses);
+    result.errors.push(...sheetResult.errors);
+    result.warnings.push(...sheetResult.warnings);
+    
+    result.debug.sheets.push({
+      name: sheetResult.sheetName || 'Unknown',
+      totalRows: sheetResult.totalRows || 0,
+      processedRows: sheetResult.processedRows || 0
+    });
+  }
+
+  finalizeResult(result) {
+    // Удаляем дубликаты
+    result.couriers = this.removeDuplicates(result.couriers, 'name');
+    result.paymentMethods = this.removeDuplicates(result.paymentMethods, 'method');
+    result.addresses = this.removeDuplicates(result.addresses, 'address');
+
+    // Рассчитываем статистику
+    result.statistics = this.calculateStatistics(result.orders);
+    result.debug.totalRows = result.orders.length;
+    result.debug.processedRows = result.orders.length;
+  }
+
+  createSummary(result) {
+    return {
+      totalOrders: result.orders.length,
+      totalCouriers: result.couriers.length,
+      totalPaymentMethods: result.paymentMethods.length,
+      successfulGeocoding: 0,
+      failedGeocoding: result.orders.length,
+      errors: result.errors.length,
+      warnings: result.warnings.length
+    };
+  }
+
+  createErrorResult(errorMessage) {
+    return {
+      success: false,
+      data: {
         orders: [],
         couriers: [],
         paymentMethods: [],
         addresses: [],
         routes: [],
-        errors: [],
+        errors: [errorMessage],
         warnings: [],
         statistics: {
           totalOrders: 0,
@@ -59,103 +165,18 @@ class ExcelService_v3 {
           totalRows: 0,
           processedRows: 0
         }
-      };
-
-      // Обрабатываем все листы
-      workbook.SheetNames.forEach(sheetName => {
-        const sheet = workbook.Sheets[sheetName];
-        const sheetResult = this.processSheet(sheet, sheetName);
-        
-        result.orders.push(...sheetResult.orders);
-        result.couriers.push(...sheetResult.couriers);
-        result.paymentMethods.push(...sheetResult.paymentMethods);
-        result.addresses.push(...sheetResult.addresses);
-        result.errors.push(...sheetResult.errors);
-        result.warnings.push(...sheetResult.warnings);
-        
-        result.debug.sheets.push({
-          name: sheetName,
-          totalRows: sheetResult.totalRows || 0,
-          processedRows: sheetResult.processedRows || 0
-        });
-      });
-
-      // Удаляем дубликаты
-      result.couriers = this.removeDuplicateCouriers(result.couriers);
-      result.paymentMethods = this.removeDuplicatePaymentMethods(result.paymentMethods);
-      result.addresses = this.removeDuplicateAddresses(result.addresses);
-
-      // Рассчитываем статистику
-      result.statistics = this.calculateStatistics(result.orders);
-      result.debug.totalRows = result.orders.length;
-      result.debug.processedRows = result.orders.length;
-
-      this.addDebugLog('Обработка завершена', {
-        totalOrders: result.orders.length,
-        totalCouriers: result.couriers.length,
-        totalPaymentMethods: result.paymentMethods.length,
-        errors: result.errors.length,
-        warnings: result.warnings.length
-      });
-
-      return {
-        success: true,
-        data: result,
-        summary: {
-          totalOrders: result.orders.length,
-          totalCouriers: result.couriers.length,
-          totalPaymentMethods: result.paymentMethods.length,
-          successfulGeocoding: 0,
-          failedGeocoding: result.orders.length,
-          errors: result.errors.length,
-          warnings: result.warnings.length
-        },
-        message: 'Файл успешно обработан v3 (гибкий парсер)'
-      };
-
-    } catch (error) {
-      this.addDebugLog('Ошибка обработки файла', { error: error.message });
-      return {
-        success: false,
-        data: {
-          orders: [],
-          couriers: [],
-          paymentMethods: [],
-          addresses: [],
-          routes: [],
-          errors: [error.message],
-          warnings: [],
-          statistics: {
-            totalOrders: 0,
-            totalAmount: 0,
-            averageAmount: 0,
-            deliveryCount: 0,
-            pickupCount: 0,
-            courierStats: {},
-            paymentStats: {},
-            zoneStats: {}
-          },
-          debug: {
-            logs: this.debugLogs,
-            sheets: [],
-            headerMap: {},
-            rawData: [],
-            totalRows: 0,
-            processedRows: 0
-          }
-        },
-        summary: {
-          totalOrders: 0,
-          totalCouriers: 0,
-          totalPaymentMethods: 0,
-          successfulGeocoding: 0,
-          failedGeocoding: 0,
-          errors: 1,
-          warnings: 0
-        },
-        message: `Ошибка обработки файла: ${error.message}`
-      };
-    }
+      },
+      summary: {
+        totalOrders: 0,
+        totalCouriers: 0,
+        totalPaymentMethods: 0,
+        successfulGeocoding: 0,
+        failedGeocoding: 0,
+        errors: 1,
+        warnings: 0
+      },
+      message: `Ошибка обработки файла: ${errorMessage}`
+    };
   }
 
   processSheet(sheet, sheetName) {
@@ -165,19 +186,10 @@ class ExcelService_v3 {
     
     if (jsonData.length === 0) {
       this.addDebugLog(`Лист "${sheetName}" пуст`);
-      return {
-        orders: [],
-        couriers: [],
-        paymentMethods: [],
-        addresses: [],
-        errors: [],
-        warnings: [],
-        totalRows: 0,
-        processedRows: 0
-      };
+      return this.createEmptySheetResult(sheetName);
     }
 
-    // Ищем заголовки - они могут быть в разных строках
+    // Ищем заголовки
     const headerInfo = this.findHeaders(jsonData);
     const headers = headerInfo.headers;
     const dataStartRow = headerInfo.dataStartRow;
@@ -189,11 +201,32 @@ class ExcelService_v3 {
       headersString: headers.join(' | ')
     });
 
-    // Гибкий маппинг заголовков
+    // Маппинг заголовков
     const headerMap = this.flexibleMapHeaders(headers);
-    
     this.addDebugLog(`Маппинг заголовков для "${sheetName}"`, headerMap);
 
+    // Обрабатываем строки данных
+    const result = this.processDataRows(dataRows, headerMap, sheetName);
+    
+    this.addDebugLog(`Обработано строк: ${result.orders.length} из ${dataRows.length}`);
+    return result;
+  }
+
+  createEmptySheetResult(sheetName) {
+    return {
+      orders: [],
+      couriers: [],
+      paymentMethods: [],
+      addresses: [],
+      errors: [],
+      warnings: [],
+      totalRows: 0,
+      processedRows: 0,
+      sheetName
+    };
+  }
+
+  processDataRows(dataRows, headerMap, sheetName) {
     const orders = [];
     const couriers = [];
     const paymentMethods = [];
@@ -203,10 +236,9 @@ class ExcelService_v3 {
 
     this.addDebugLog(`Начинаем обработку ${dataRows.length} строк данных`);
 
-    // Обрабатываем каждую строку данных
     dataRows.forEach((row, index) => {
       try {
-        const rowNumber = index + 2; // +2 потому что начинаем с 1 и пропускаем заголовки
+        const rowNumber = index + 2;
         
         this.addDebugLog(`Обработка строки ${rowNumber}`, {
           row,
@@ -214,7 +246,6 @@ class ExcelService_v3 {
           hasData: row.some(cell => cell !== undefined && cell !== '')
         });
 
-        // Более гибкая проверка валидности строки
         if (!this.flexibleIsValidOrderRow(row, headerMap)) {
           this.addDebugLog(`Строка ${rowNumber} пропущена - недостаточно данных`);
           return;
@@ -224,30 +255,7 @@ class ExcelService_v3 {
         
         if (order) {
           orders.push(order);
-          
-          // Добавляем курьера
-          if (order.courier) {
-            couriers.push({
-              name: order.courier,
-              orders: 1
-            });
-          }
-          
-          // Добавляем способ оплаты
-          if (order.paymentMethod) {
-            paymentMethods.push({
-              method: order.paymentMethod,
-              orders: 1
-            });
-          }
-          
-          // Добавляем адрес
-          if (order.address) {
-            addresses.push({
-              address: order.address,
-              orders: 1
-            });
-          }
+          this.addRelatedData(order, couriers, paymentMethods, addresses);
         }
         
       } catch (error) {
@@ -257,8 +265,6 @@ class ExcelService_v3 {
       }
     });
 
-    this.addDebugLog(`Обработано строк: ${orders.length} из ${dataRows.length}`);
-
     return {
       orders,
       couriers,
@@ -267,14 +273,142 @@ class ExcelService_v3 {
       errors,
       warnings,
       totalRows: dataRows.length,
-      processedRows: orders.length
+      processedRows: orders.length,
+      sheetName
     };
+  }
+
+  addRelatedData(order, couriers, paymentMethods, addresses) {
+    if (order.courier) {
+      couriers.push({ name: order.courier, orders: 1 });
+    }
+    
+    if (order.paymentMethod) {
+      paymentMethods.push({ method: order.paymentMethod, orders: 1 });
+    }
+    
+    if (order.address) {
+      addresses.push({ address: order.address, orders: 1 });
+    }
+  }
+
+  findHeaders(jsonData) {
+    this.addDebugLog('Поиск заголовков в Excel файле');
+    
+    const headerKeywords = [
+      'номер', 'состояние', 'тип', 'телефон', 'заказчик', 'адрес', 'зона', 'время', 
+      'дата', 'скидка', 'оплате', 'сдача', 'способ', 'курьер', 'имя', 'создания',
+      'кухню', 'доставить', 'плановое', 'общее', 'сумма', 'процент'
+    ];
+    
+    let bestHeaderRow = 0;
+    let bestHeaderScore = 0;
+    let bestHeaders = [];
+    
+    // Проверяем первые 10 строк
+    for (let rowIndex = 0; rowIndex < Math.min(10, jsonData.length); rowIndex++) {
+      const row = jsonData[rowIndex];
+      if (!row) continue;
+      
+      const { score, foundHeaders } = this.analyzeRowForHeaders(row, headerKeywords);
+      
+      this.addDebugLog(`Строка ${rowIndex + 1}: найдено ${score} заголовков`, {
+        row: row.slice(0, 10),
+        score,
+        foundHeaders: foundHeaders.filter(Boolean)
+      });
+      
+      if (score > bestHeaderScore) {
+        bestHeaderScore = score;
+        bestHeaderRow = rowIndex;
+        bestHeaders = foundHeaders;
+      }
+    }
+    
+    // Пытаемся объединить с следующей строкой
+    const { finalHeaders, dataStartRow } = this.tryCombineHeaders(
+      bestHeaders, 
+      bestHeaderRow, 
+      jsonData, 
+      bestHeaderScore
+    );
+    
+    this.addDebugLog('Найдены заголовки', {
+      headerRow: bestHeaderRow + 1,
+      dataStartRow: dataStartRow + 1,
+      headers: finalHeaders,
+      score: bestHeaderScore
+    });
+    
+    return {
+      headers: finalHeaders,
+      dataStartRow: dataStartRow,
+      headerRow: bestHeaderRow
+    };
+  }
+
+  analyzeRowForHeaders(row, headerKeywords) {
+    let score = 0;
+    const foundHeaders = [];
+    
+    row.forEach((cell, colIndex) => {
+      if (cell && typeof cell === 'string') {
+        const cellLower = cell.toLowerCase().trim();
+        const hasKeyword = headerKeywords.some(keyword => cellLower.includes(keyword));
+        if (hasKeyword) {
+          score++;
+          foundHeaders[colIndex] = cell;
+        }
+      }
+    });
+    
+    return { score, foundHeaders };
+  }
+
+  tryCombineHeaders(bestHeaders, bestHeaderRow, jsonData, bestHeaderScore) {
+    let finalHeaders = bestHeaders;
+    let dataStartRow = bestHeaderRow + 1;
+    
+    if (bestHeaderScore > 0 && bestHeaderRow + 1 < jsonData.length) {
+      const nextRow = jsonData[bestHeaderRow + 1];
+      const combinedHeaders = this.combineHeaders(bestHeaders, nextRow);
+      
+      if (combinedHeaders.filter(Boolean).length > bestHeaders.filter(Boolean).length) {
+        finalHeaders = combinedHeaders;
+        dataStartRow = bestHeaderRow + 2;
+        this.addDebugLog('Объединили заголовки из двух строк');
+      }
+    }
+    
+    return {
+      finalHeaders: finalHeaders.map(header => header || ''),
+      dataStartRow
+    };
+  }
+
+  combineHeaders(row1, row2) {
+    const combined = [];
+    const maxLength = Math.max(row1.length, row2.length);
+    
+    for (let i = 0; i < maxLength; i++) {
+      const cell1 = row1[i] || '';
+      const cell2 = row2[i] || '';
+      
+      if (cell1 && cell2) {
+        combined[i] = `${cell1} ${cell2}`.trim();
+      } else {
+        combined[i] = cell1 || cell2;
+      }
+    }
+    
+    return combined;
   }
 
   flexibleMapHeaders(headers) {
     this.addDebugLog('Начинаем гибкий маппинг заголовков', { headers });
     
     const headerMap = {};
+    const mappingRules = this.getHeaderMappingRules();
     
     headers.forEach((header, index) => {
       if (!header) return;
@@ -285,102 +419,60 @@ class ExcelService_v3 {
       
       this.addDebugLog(`Анализ заголовка ${index}: "${originalHeader}" -> "${normalizedHeader}"`);
       
-      // ИМЯ КЛИЕНТА - очень гибкий поиск
-      if (this.includesAny(noApostrophes, [
-        'заказчик', 'клиент', 'имя', 'customer', 'name', 'покупатель', 'покупатель (имя)',
-        'заказчик (имя)', 'клиент (имя)', 'покупатель (имя)', 'заказчик имя', 'клиент имя',
-        'заказчик имя', 'заказчик имя', 'заказчик имя', 'заказчик имя', 'заказчик имя'
-      ]) && !this.includesAny(noApostrophes, ['номер', '№', 'number', 'id', 'заказ', 'замовлення', 'всего заказов'])) {
-        if (headerMap.customerName === undefined) {
-          headerMap.customerName = index;
-          this.addDebugLog(`Найден имя клиента в колонке ${index}: "${originalHeader}"`);
-        }
-      }
-      // СУММА - очень гибкий поиск
-      else if (this.includesAny(noApostrophes, [
-        'сумма', 'amount', 'price', 'стоимость', 'вартість', 'цена', 'суммы', 'amounts', 'prices',
-        'сумма заказа', 'стоимость заказа', 'к оплате', 'to pay', 'оплате', 'pay', 'сумма к оплате',
-        'к оплате сумма', 'сумма замовлення', 'сумма замовлення', 'сумма заказа', 'сумма заказа',
-        'к оплате', 'оплате', 'сумма сдачи', 'сдача', 'сумма сдачи'
-      ]) && !this.includesAny(noApostrophes, ['номер', '№', 'number', 'id', 'процент', '%'])) {
-        if (headerMap.amount === undefined) {
-          headerMap.amount = index;
-          this.addDebugLog(`Найден сумма в колонке ${index}: "${originalHeader}"`);
-        }
-      }
-      // НОМЕР ЗАКАЗА - гибкий поиск
-      else if (this.includesAny(noApostrophes, [
-        'номер', '№', 'number', 'id', 'заказ', 'замовлення', 'номер заказа', 'номер замовлення',
-        'заказ номер', 'замовлення номер', 'order', 'order number', 'order id'
-      ]) && !this.includesAny(noApostrophes, ['сумма', 'amount', 'price', 'стоимость', 'оплате', 'заказчик', 'клиент'])) {
-        if (headerMap.orderNumber === undefined) {
-          headerMap.orderNumber = index;
-          this.addDebugLog(`Найден номер заказа в колонке ${index}: "${originalHeader}"`);
-        }
-      }
-      // АДРЕС - очень гибкий поиск
-      else if (this.includesAny(noApostrophes, [
-        'адрес', 'address', 'доставки', 'delivery', 'адрес доставки', 'адрес доставки',
-        'адрес доставки', 'адрес доставки', 'адрес доставки', 'адрес доставки', 'адрес доставки',
-        'адрес доставки', 'адрес доставки', 'адрес доставки', 'адрес доставки', 'адрес доставки',
-        'адрес', 'адрес', 'адрес', 'адрес', 'адрес'
-      ])) {
-        if (headerMap.address === undefined) {
-          headerMap.address = index;
-          this.addDebugLog(`Найден адрес в колонке ${index}: "${originalHeader}"`);
-        }
-      }
-      // КУРЬЕР - гибкий поиск
-      else if (this.includesAny(noApostrophes, [
-        'курьер', 'courier', 'доставщик', 'delivery', 'driver', 'курьер доставки', 'курьер доставки',
-        'курьер доставки', 'курьер доставки', 'курьер доставки', 'курьер доставки', 'курьер доставки',
-        'курьер', 'курьер', 'курьер', 'курьер', 'курьер'
-      ])) {
-        if (headerMap.courier === undefined) {
-          headerMap.courier = index;
-          this.addDebugLog(`Найден курьер в колонке ${index}: "${originalHeader}"`);
-        }
-      }
-      // СПОСОБ ОПЛАТЫ - гибкий поиск
-      else if (this.includesAny(noApostrophes, [
-        'оплаты', 'payment', 'способ', 'method', 'оплата', 'pay', 'способ оплаты', 'способ оплаты',
-        'способ оплаты', 'способ оплаты', 'способ оплаты', 'способ оплаты', 'способ оплаты',
-        'способ оплаты', 'способ оплаты', 'способ оплаты', 'способ оплаты', 'способ оплаты'
-      ])) {
-        if (headerMap.paymentMethod === undefined) {
-          headerMap.paymentMethod = index;
-          this.addDebugLog(`Найден способ оплаты в колонке ${index}: "${originalHeader}"`);
-        }
-      }
-      // ТЕЛЕФОН - гибкий поиск
-      else if (this.includesAny(noApostrophes, [
-        'телефон', 'phone', 'тел', 'мобильный', 'mobile', 'телефон клиента', 'телефон клиента',
-        'телефон клиента', 'телефон клиента', 'телефон клиента', 'телефон клиента', 'телефон клиента',
-        'телефон', 'телефон', 'телефон', 'телефон', 'телефон'
-      ])) {
-        if (headerMap.phone === undefined) {
-          headerMap.phone = index;
-          this.addDebugLog(`Найден телефон в колонке ${index}: "${originalHeader}"`);
-        }
-      }
-      // КОММЕНТАРИИ - гибкий поиск
-      else if (this.includesAny(noApostrophes, [
-        'комментарии', 'комментарий', 'comment', 'примечание', 'note', 'комментарий к заказу',
-        'комментарий к заказу', 'комментарий к заказу', 'комментарий к заказу', 'комментарий к заказу'
-      ])) {
-        if (headerMap.comment === undefined) {
-          headerMap.comment = index;
-          this.addDebugLog(`Найден комментарий в колонке ${index}: "${originalHeader}"`);
-        }
-      }
+      this.applyMappingRules(headerMap, index, noApostrophes, originalHeader, mappingRules);
     });
     
     this.addDebugLog('Гибкий маппинг заголовков завершен', headerMap);
     return headerMap;
   }
 
+  getHeaderMappingRules() {
+    return {
+      customerName: {
+        keywords: ['заказчик', 'клиент', 'имя', 'customer', 'name', 'покупатель'],
+        exclusions: ['номер', '№', 'number', 'id', 'заказ', 'замовлення', 'всего заказов']
+      },
+      amount: {
+        keywords: ['сумма', 'amount', 'price', 'стоимость', 'вартість', 'цена', 'к оплате', 'оплате', 'сумма сдачи', 'сдача'],
+        exclusions: ['номер', '№', 'number', 'id', 'процент', '%']
+      },
+      orderNumber: {
+        keywords: ['номер', '№', 'number', 'id', 'заказ', 'замовлення'],
+        exclusions: ['сумма', 'amount', 'price', 'стоимость', 'оплате', 'заказчик', 'клиент']
+      },
+      address: {
+        keywords: ['адрес', 'address', 'доставки', 'delivery']
+      },
+      courier: {
+        keywords: ['курьер', 'courier', 'доставщик', 'delivery', 'driver']
+      },
+      paymentMethod: {
+        keywords: ['оплаты', 'payment', 'способ', 'method', 'оплата', 'pay']
+      },
+      phone: {
+        keywords: ['телефон', 'phone', 'тел', 'мобильный', 'mobile']
+      },
+      comment: {
+        keywords: ['комментарии', 'комментарий', 'comment', 'примечание', 'note']
+      }
+    };
+  }
+
+  applyMappingRules(headerMap, index, noApostrophes, originalHeader, mappingRules) {
+    Object.entries(mappingRules).forEach(([field, rule]) => {
+      if (headerMap[field] !== undefined) return;
+      
+      const hasKeyword = this.includesAny(noApostrophes, rule.keywords);
+      const hasExclusion = rule.exclusions && this.includesAny(noApostrophes, rule.exclusions);
+      
+      if (hasKeyword && !hasExclusion) {
+        headerMap[field] = index;
+        this.addDebugLog(`Найден ${field} в колонке ${index}: "${originalHeader}"`);
+      }
+    });
+  }
+
   flexibleIsValidOrderRow(row, headerMap) {
-    // Считаем строку валидной если есть хотя бы адрес ИЛИ курьер ИЛИ способ оплаты
     const hasAddress = headerMap.address !== undefined && row[headerMap.address] && row[headerMap.address].toString().trim();
     const hasCourier = headerMap.courier !== undefined && row[headerMap.courier] && row[headerMap.courier].toString().trim();
     const hasPaymentMethod = headerMap.paymentMethod !== undefined && row[headerMap.paymentMethod] && row[headerMap.paymentMethod].toString().trim();
@@ -408,27 +500,7 @@ class ExcelService_v3 {
 
   processOrderRow(row, headerMap, rowNumber) {
     try {
-      // Парсинг суммы
-      let amount = 0;
-      if (headerMap.amount !== undefined && row[headerMap.amount]) {
-        const amountValue = row[headerMap.amount];
-        this.addDebugLog(`Парсинг суммы из строки ${rowNumber}`, { 
-          rawValue: amountValue, 
-          type: typeof amountValue,
-          stringValue: amountValue.toString()
-        });
-        
-        if (typeof amountValue === 'number') {
-          amount = amountValue;
-        } else {
-          const stringValue = amountValue.toString().trim();
-          const cleanValue = stringValue.replace(/[^\d.,]/g, '');
-          const normalizedValue = cleanValue.replace(',', '.');
-          amount = parseFloat(normalizedValue) || 0;
-        }
-      }
-
-      // Генерируем номер заказа если его нет
+      const amount = this.parseAmount(row, headerMap, rowNumber);
       const orderNumber = row[headerMap.orderNumber]?.toString().trim() || `AUTO_${rowNumber}`;
       
       const order = {
@@ -464,8 +536,6 @@ class ExcelService_v3 {
       };
 
       this.addDebugLog(`Обработан заказ из строки ${rowNumber}`, order);
-      this.addDebugLog(`Создан заказ #${order.orderNumber}`, order);
-      
       return order;
       
     } catch (error) {
@@ -474,150 +544,45 @@ class ExcelService_v3 {
     }
   }
 
-  findHeaders(jsonData) {
-    this.addDebugLog('Поиск заголовков в Excel файле');
-    
-    // Ищем строки с заголовками - они содержат ключевые слова
-    const headerKeywords = [
-      'номер', 'состояние', 'тип', 'телефон', 'заказчик', 'адрес', 'зона', 'время', 
-      'дата', 'скидка', 'оплате', 'сдача', 'способ', 'курьер', 'имя', 'создания',
-      'кухню', 'доставить', 'плановое', 'общее', 'сумма', 'процент'
-    ];
-    
-    let bestHeaderRow = 0;
-    let bestHeaderScore = 0;
-    let bestHeaders = [];
-    
-    // Проверяем первые 10 строк на наличие заголовков
-    for (let rowIndex = 0; rowIndex < Math.min(10, jsonData.length); rowIndex++) {
-      const row = jsonData[rowIndex];
-      if (!row) continue;
-      
-      let score = 0;
-      const foundHeaders = [];
-      
-      row.forEach((cell, colIndex) => {
-        if (cell && typeof cell === 'string') {
-          const cellLower = cell.toLowerCase().trim();
-          const hasKeyword = headerKeywords.some(keyword => cellLower.includes(keyword));
-          if (hasKeyword) {
-            score++;
-            foundHeaders[colIndex] = cell;
-          }
-        }
+  parseAmount(row, headerMap, rowNumber) {
+    let amount = 0;
+    if (headerMap.amount !== undefined && row[headerMap.amount]) {
+      const amountValue = row[headerMap.amount];
+      this.addDebugLog(`Парсинг суммы из строки ${rowNumber}`, { 
+        rawValue: amountValue, 
+        type: typeof amountValue,
+        stringValue: amountValue.toString()
       });
       
-      this.addDebugLog(`Строка ${rowIndex + 1}: найдено ${score} заголовков`, {
-        row: row.slice(0, 10), // первые 10 колонок
-        score,
-        foundHeaders: foundHeaders.filter(Boolean)
-      });
-      
-      if (score > bestHeaderScore) {
-        bestHeaderScore = score;
-        bestHeaderRow = rowIndex;
-        bestHeaders = foundHeaders;
-      }
-    }
-    
-    // Если нашли заголовки, попробуем объединить с следующей строкой
-    let finalHeaders = bestHeaders;
-    let dataStartRow = bestHeaderRow + 1;
-    
-    if (bestHeaderScore > 0 && bestHeaderRow + 1 < jsonData.length) {
-      const nextRow = jsonData[bestHeaderRow + 1];
-      const combinedHeaders = this.combineHeaders(bestHeaders, nextRow);
-      
-      if (combinedHeaders.filter(Boolean).length > bestHeaders.filter(Boolean).length) {
-        finalHeaders = combinedHeaders;
-        dataStartRow = bestHeaderRow + 2;
-        this.addDebugLog('Объединили заголовки из двух строк');
-      }
-    }
-    
-    // Очищаем заголовки от undefined
-    const cleanHeaders = finalHeaders.map(header => header || '');
-    
-    this.addDebugLog('Найдены заголовки', {
-      headerRow: bestHeaderRow + 1,
-      dataStartRow: dataStartRow + 1,
-      headers: cleanHeaders,
-      score: bestHeaderScore
-    });
-    
-    return {
-      headers: cleanHeaders,
-      dataStartRow: dataStartRow,
-      headerRow: bestHeaderRow
-    };
-  }
-
-  combineHeaders(row1, row2) {
-    const combined = [];
-    const maxLength = Math.max(row1.length, row2.length);
-    
-    for (let i = 0; i < maxLength; i++) {
-      const cell1 = row1[i] || '';
-      const cell2 = row2[i] || '';
-      
-      if (cell1 && cell2) {
-        // Объединяем если оба не пустые
-        combined[i] = `${cell1} ${cell2}`.trim();
+      if (typeof amountValue === 'number') {
+        amount = amountValue;
       } else {
-        // Берем непустую ячейку
-        combined[i] = cell1 || cell2;
+        const stringValue = amountValue.toString().trim();
+        const cleanValue = stringValue.replace(/[^\d.,]/g, '');
+        const normalizedValue = cleanValue.replace(',', '.');
+        amount = parseFloat(normalizedValue) || 0;
       }
     }
-    
-    return combined;
+    return amount;
   }
 
   includesAny(text, keywords) {
     return keywords.some(keyword => text.includes(keyword));
   }
 
-  removeDuplicateCouriers(couriers) {
-    this.addDebugLog('Создание уникальных курьеров и способов оплаты');
-    const uniqueCouriers = [];
-    const seenCouriers = new Set();
+  removeDuplicates(items, keyField) {
+    const unique = [];
+    const seen = new Set();
     
-    couriers.forEach(courier => {
-      if (!seenCouriers.has(courier.name)) {
-        seenCouriers.add(courier.name);
-        uniqueCouriers.push(courier);
+    items.forEach(item => {
+      const key = item[keyField];
+      if (!seen.has(key)) {
+        seen.add(key);
+        unique.push(item);
       }
     });
     
-    this.addDebugLog('Созданы уникальные списки', { couriers: uniqueCouriers.length });
-    return uniqueCouriers;
-  }
-
-  removeDuplicatePaymentMethods(paymentMethods) {
-    const uniqueMethods = [];
-    const seenMethods = new Set();
-    
-    paymentMethods.forEach(method => {
-      if (!seenMethods.has(method.method)) {
-        seenMethods.add(method.method);
-        uniqueMethods.push(method);
-      }
-    });
-    
-    return uniqueMethods;
-  }
-
-  removeDuplicateAddresses(addresses) {
-    const uniqueAddresses = [];
-    const seenAddresses = new Set();
-    
-    addresses.forEach(address => {
-      if (!seenAddresses.has(address.address)) {
-        seenAddresses.add(address.address);
-        uniqueAddresses.push(address);
-      }
-    });
-    
-    return uniqueAddresses;
+    return unique;
   }
 
   calculateStatistics(orders) {
