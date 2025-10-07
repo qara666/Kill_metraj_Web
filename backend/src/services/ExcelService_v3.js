@@ -177,8 +177,11 @@ class ExcelService_v3 {
       };
     }
 
-    const headers = jsonData[0];
-    const dataRows = jsonData.slice(1);
+    // Ищем заголовки - они могут быть в разных строках
+    const headerInfo = this.findHeaders(jsonData);
+    const headers = headerInfo.headers;
+    const dataStartRow = headerInfo.dataStartRow;
+    const dataRows = jsonData.slice(dataStartRow);
     
     this.addDebugLog(`Заголовки листа "${sheetName}"`, {
       headers,
@@ -285,8 +288,9 @@ class ExcelService_v3 {
       // ИМЯ КЛИЕНТА - очень гибкий поиск
       if (this.includesAny(noApostrophes, [
         'заказчик', 'клиент', 'имя', 'customer', 'name', 'покупатель', 'покупатель (имя)',
-        'заказчик (имя)', 'клиент (имя)', 'покупатель (имя)', 'заказчик имя', 'клиент имя'
-      ]) && !this.includesAny(noApostrophes, ['номер', '№', 'number', 'id', 'заказ', 'замовлення'])) {
+        'заказчик (имя)', 'клиент (имя)', 'покупатель (имя)', 'заказчик имя', 'клиент имя',
+        'заказчик имя', 'заказчик имя', 'заказчик имя', 'заказчик имя', 'заказчик имя'
+      ]) && !this.includesAny(noApostrophes, ['номер', '№', 'number', 'id', 'заказ', 'замовлення', 'всего заказов'])) {
         if (headerMap.customerName === undefined) {
           headerMap.customerName = index;
           this.addDebugLog(`Найден имя клиента в колонке ${index}: "${originalHeader}"`);
@@ -296,8 +300,9 @@ class ExcelService_v3 {
       else if (this.includesAny(noApostrophes, [
         'сумма', 'amount', 'price', 'стоимость', 'вартість', 'цена', 'суммы', 'amounts', 'prices',
         'сумма заказа', 'стоимость заказа', 'к оплате', 'to pay', 'оплате', 'pay', 'сумма к оплате',
-        'к оплате сумма', 'сумма замовлення', 'сумма замовлення', 'сумма заказа', 'сумма заказа'
-      ]) && !this.includesAny(noApostrophes, ['номер', '№', 'number', 'id'])) {
+        'к оплате сумма', 'сумма замовлення', 'сумма замовлення', 'сумма заказа', 'сумма заказа',
+        'к оплате', 'оплате', 'сумма сдачи', 'сдача', 'сумма сдачи'
+      ]) && !this.includesAny(noApostrophes, ['номер', '№', 'number', 'id', 'процент', '%'])) {
         if (headerMap.amount === undefined) {
           headerMap.amount = index;
           this.addDebugLog(`Найден сумма в колонке ${index}: "${originalHeader}"`);
@@ -317,7 +322,8 @@ class ExcelService_v3 {
       else if (this.includesAny(noApostrophes, [
         'адрес', 'address', 'доставки', 'delivery', 'адрес доставки', 'адрес доставки',
         'адрес доставки', 'адрес доставки', 'адрес доставки', 'адрес доставки', 'адрес доставки',
-        'адрес доставки', 'адрес доставки', 'адрес доставки', 'адрес доставки', 'адрес доставки'
+        'адрес доставки', 'адрес доставки', 'адрес доставки', 'адрес доставки', 'адрес доставки',
+        'адрес', 'адрес', 'адрес', 'адрес', 'адрес'
       ])) {
         if (headerMap.address === undefined) {
           headerMap.address = index;
@@ -327,7 +333,8 @@ class ExcelService_v3 {
       // КУРЬЕР - гибкий поиск
       else if (this.includesAny(noApostrophes, [
         'курьер', 'courier', 'доставщик', 'delivery', 'driver', 'курьер доставки', 'курьер доставки',
-        'курьер доставки', 'курьер доставки', 'курьер доставки', 'курьер доставки', 'курьер доставки'
+        'курьер доставки', 'курьер доставки', 'курьер доставки', 'курьер доставки', 'курьер доставки',
+        'курьер', 'курьер', 'курьер', 'курьер', 'курьер'
       ])) {
         if (headerMap.courier === undefined) {
           headerMap.courier = index;
@@ -337,6 +344,7 @@ class ExcelService_v3 {
       // СПОСОБ ОПЛАТЫ - гибкий поиск
       else if (this.includesAny(noApostrophes, [
         'оплаты', 'payment', 'способ', 'method', 'оплата', 'pay', 'способ оплаты', 'способ оплаты',
+        'способ оплаты', 'способ оплаты', 'способ оплаты', 'способ оплаты', 'способ оплаты',
         'способ оплаты', 'способ оплаты', 'способ оплаты', 'способ оплаты', 'способ оплаты'
       ])) {
         if (headerMap.paymentMethod === undefined) {
@@ -347,7 +355,8 @@ class ExcelService_v3 {
       // ТЕЛЕФОН - гибкий поиск
       else if (this.includesAny(noApostrophes, [
         'телефон', 'phone', 'тел', 'мобильный', 'mobile', 'телефон клиента', 'телефон клиента',
-        'телефон клиента', 'телефон клиента', 'телефон клиента', 'телефон клиента', 'телефон клиента'
+        'телефон клиента', 'телефон клиента', 'телефон клиента', 'телефон клиента', 'телефон клиента',
+        'телефон', 'телефон', 'телефон', 'телефон', 'телефон'
       ])) {
         if (headerMap.phone === undefined) {
           headerMap.phone = index;
@@ -463,6 +472,104 @@ class ExcelService_v3 {
       this.addDebugLog(`Ошибка обработки строки ${rowNumber}: ${error.message}`);
       return null;
     }
+  }
+
+  findHeaders(jsonData) {
+    this.addDebugLog('Поиск заголовков в Excel файле');
+    
+    // Ищем строки с заголовками - они содержат ключевые слова
+    const headerKeywords = [
+      'номер', 'состояние', 'тип', 'телефон', 'заказчик', 'адрес', 'зона', 'время', 
+      'дата', 'скидка', 'оплате', 'сдача', 'способ', 'курьер', 'имя', 'создания',
+      'кухню', 'доставить', 'плановое', 'общее', 'сумма', 'процент'
+    ];
+    
+    let bestHeaderRow = 0;
+    let bestHeaderScore = 0;
+    let bestHeaders = [];
+    
+    // Проверяем первые 10 строк на наличие заголовков
+    for (let rowIndex = 0; rowIndex < Math.min(10, jsonData.length); rowIndex++) {
+      const row = jsonData[rowIndex];
+      if (!row) continue;
+      
+      let score = 0;
+      const foundHeaders = [];
+      
+      row.forEach((cell, colIndex) => {
+        if (cell && typeof cell === 'string') {
+          const cellLower = cell.toLowerCase().trim();
+          const hasKeyword = headerKeywords.some(keyword => cellLower.includes(keyword));
+          if (hasKeyword) {
+            score++;
+            foundHeaders[colIndex] = cell;
+          }
+        }
+      });
+      
+      this.addDebugLog(`Строка ${rowIndex + 1}: найдено ${score} заголовков`, {
+        row: row.slice(0, 10), // первые 10 колонок
+        score,
+        foundHeaders: foundHeaders.filter(Boolean)
+      });
+      
+      if (score > bestHeaderScore) {
+        bestHeaderScore = score;
+        bestHeaderRow = rowIndex;
+        bestHeaders = foundHeaders;
+      }
+    }
+    
+    // Если нашли заголовки, попробуем объединить с следующей строкой
+    let finalHeaders = bestHeaders;
+    let dataStartRow = bestHeaderRow + 1;
+    
+    if (bestHeaderScore > 0 && bestHeaderRow + 1 < jsonData.length) {
+      const nextRow = jsonData[bestHeaderRow + 1];
+      const combinedHeaders = this.combineHeaders(bestHeaders, nextRow);
+      
+      if (combinedHeaders.filter(Boolean).length > bestHeaders.filter(Boolean).length) {
+        finalHeaders = combinedHeaders;
+        dataStartRow = bestHeaderRow + 2;
+        this.addDebugLog('Объединили заголовки из двух строк');
+      }
+    }
+    
+    // Очищаем заголовки от undefined
+    const cleanHeaders = finalHeaders.map(header => header || '');
+    
+    this.addDebugLog('Найдены заголовки', {
+      headerRow: bestHeaderRow + 1,
+      dataStartRow: dataStartRow + 1,
+      headers: cleanHeaders,
+      score: bestHeaderScore
+    });
+    
+    return {
+      headers: cleanHeaders,
+      dataStartRow: dataStartRow,
+      headerRow: bestHeaderRow
+    };
+  }
+
+  combineHeaders(row1, row2) {
+    const combined = [];
+    const maxLength = Math.max(row1.length, row2.length);
+    
+    for (let i = 0; i < maxLength; i++) {
+      const cell1 = row1[i] || '';
+      const cell2 = row2[i] || '';
+      
+      if (cell1 && cell2) {
+        // Объединяем если оба не пустые
+        combined[i] = `${cell1} ${cell2}`.trim();
+      } else {
+        // Берем непустую ячейку
+        combined[i] = cell1 || cell2;
+      }
+    }
+    
+    return combined;
   }
 
   includesAny(text, keywords) {
