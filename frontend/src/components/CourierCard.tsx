@@ -55,16 +55,16 @@ export const CourierCard: React.FC<CourierCardProps> = ({
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-medium text-gray-900 truncate">
-              {courier.name}
+              {courier.name || 'Неизвестный курьер'}
             </h3>
-            <p className="text-sm text-gray-500">{courier.location}</p>
+            <p className="text-sm text-gray-500">{courier.location || 'Не указано'}</p>
             <div className="flex items-center space-x-2 mt-1">
-              <span className="text-lg">{getVehicleIcon(courier.vehicleType)}</span>
+              <span className="text-lg">{getVehicleIcon(courier.vehicleType || 'car')}</span>
               <span className={clsx(
                 'badge',
-                getStatusColor(courier.isActive) === 'success' ? 'badge-success' : 'badge-danger'
+                getStatusColor(courier.isActive !== false) === 'success' ? 'badge-success' : 'badge-danger'
               )}>
-                {courier.isActive ? 'Active' : 'Inactive'}
+                {courier.isActive !== false ? 'Active' : 'Inactive'}
               </span>
             </div>
           </div>
@@ -87,7 +87,7 @@ export const CourierCard: React.FC<CourierCardProps> = ({
             <span className="text-sm text-gray-600">Orders</span>
           </div>
           <p className="text-lg font-semibold text-gray-900">
-            {courier.totalOrders}
+            {courier.totalOrders || 0}
           </p>
         </div>
       </div>
@@ -99,7 +99,7 @@ export const CourierCard: React.FC<CourierCardProps> = ({
             <span className="text-gray-600">Distance</span>
           </div>
           <span className="font-medium text-gray-900">
-            {formatDistance(courier.totalDistance)}
+            {formatDistance(courier.totalDistance || 0)}
           </span>
         </div>
         
@@ -109,7 +109,7 @@ export const CourierCard: React.FC<CourierCardProps> = ({
             <span className="text-gray-600">Efficiency</span>
           </div>
           <span className="font-medium text-gray-900">
-            {courier.efficiencyScore.toFixed(1)}%
+            {(courier.efficiencyScore || 0).toFixed(1)}%
           </span>
         </div>
       </div>
