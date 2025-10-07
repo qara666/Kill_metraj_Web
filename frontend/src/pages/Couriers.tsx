@@ -19,29 +19,34 @@ export const Couriers: React.FC = () => {
 
   // Преобразуем данные из Excel в формат Courier или используем данные из API
   const couriers = React.useMemo(() => {
-    if (excelData?.couriers) {
-      // Преобразуем данные Excel в формат Courier
-      return excelData.couriers.map((courier: any) => ({
-        _id: courier.name || `excel_${Math.random()}`,
-        name: courier.name || 'Неизвестный курьер',
-        location: 'Киев',
-        vehicleType: 'car' as const,
-        isActive: true,
-        isArchived: false,
-        routeCount: courier.orders || 0,
-        totalOrders: courier.orders || 0,
-        totalDistance: 0,
-        efficiencyScore: 85,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        routes: [],
-        phone: '',
-        email: '',
-        totalDistanceWithAdditional: 0,
-        averageOrdersPerRoute: 0
-      }))
+    try {
+      if (excelData?.couriers && Array.isArray(excelData.couriers)) {
+        // Преобразуем данные Excel в формат Courier
+        return excelData.couriers.map((courier: any, index: number) => ({
+          _id: courier.name || `excel_${index}`,
+          name: courier.name || 'Неизвестный курьер',
+          location: 'Киев',
+          vehicleType: 'car' as const,
+          isActive: true,
+          isArchived: false,
+          routeCount: courier.orders || 0,
+          totalOrders: courier.orders || 0,
+          totalDistance: 0,
+          efficiencyScore: 85,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          routes: [],
+          phone: '',
+          email: '',
+          totalDistanceWithAdditional: 0,
+          averageOrdersPerRoute: 0
+        }))
+      }
+      return couriersData?.data || []
+    } catch (error) {
+      console.error('Ошибка обработки данных курьеров:', error)
+      return []
     }
-    return couriersData?.data || []
   }, [excelData?.couriers, couriersData?.data])
 
   return (
@@ -74,12 +79,15 @@ export const Couriers: React.FC = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {couriers.map((courier, index) => (
-            <CourierCard
-              key={courier._id || courier.name || index}
-              courier={courier}
-            />
-          ))}
+          {couriers.map((courier, index) => {
+            if (!courier) return null
+            return (
+              <CourierCard
+                key={courier._id || courier.name || index}
+                courier={courier}
+              />
+            )
+          })}
         </div>
       )}
     </div>
