@@ -3,9 +3,11 @@ import { useQuery } from '@tanstack/react-query'
 import { UserGroupIcon } from '@heroicons/react/24/outline'
 import { CourierCard } from '../components/CourierCard'
 import { LoadingSpinner } from '../components/LoadingSpinner'
+import { useExcelData } from '../contexts/ExcelDataContext'
 import * as api from '../services/api'
 
 export const Couriers: React.FC = () => {
+  const { excelData } = useExcelData()
   const { data: couriersData, isLoading } = useQuery({
     queryKey: ['couriers'],
     queryFn: () => api.courierApi.getCouriers(),
@@ -15,7 +17,8 @@ export const Couriers: React.FC = () => {
     return <LoadingSpinner />
   }
 
-  const couriers = couriersData?.data || []
+  // Используем данные из Excel если они есть, иначе из API
+  const couriers = excelData?.couriers || couriersData?.data || []
 
   return (
     <div className="space-y-6">

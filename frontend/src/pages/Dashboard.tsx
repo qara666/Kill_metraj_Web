@@ -16,11 +16,12 @@ import { ExcelUploadSection } from '../components/ExcelUploadSection'
 import { ExcelResultsDisplay } from '../components/ExcelResultsDisplay'
 import { ExcelDebugLogs } from '../components/ExcelDebugLogs'
 import { ExcelDataPreview } from '../components/ExcelDataPreview'
+import { useExcelData } from '../contexts/ExcelDataContext'
 import * as api from '../services/api'
 
 export const Dashboard: React.FC = () => {
+  const { excelData, setExcelData, clearExcelData } = useExcelData()
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [processedData, setProcessedData] = useState<any>(null)
   const [selectedCourier, setSelectedCourier] = useState<string | null>(null)
   const [logs, setLogs] = useState<string[]>([])
   const [excelLogs, setExcelLogs] = useState<any[]>([])
@@ -142,7 +143,7 @@ export const Dashboard: React.FC = () => {
         }
       }
 
-      setProcessedData(normalized)
+      setExcelData(normalized)
       
       // Extract Excel debug logs if available
       const responseData = resp as any;
@@ -171,7 +172,7 @@ export const Dashboard: React.FC = () => {
 
   const handleExcelFileSelect = (file: File) => {
     setSelectedFile(file)
-    setProcessedData(null) // Очищаем предыдущие результаты
+    clearExcelData() // Очищаем предыдущие результаты
     log(`Выбран Excel файл: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`)
   }
 
@@ -183,7 +184,7 @@ export const Dashboard: React.FC = () => {
   }
 
   const handleClearExcelResults = () => {
-    setProcessedData(null)
+    clearExcelData()
     setSelectedFile(null)
     setPreviewData(null)
     setShowDataPreview(false)
@@ -191,7 +192,6 @@ export const Dashboard: React.FC = () => {
     
     // Очищаем localStorage
     try {
-      localStorage.removeItem('km_dashboard_processed_data')
       localStorage.removeItem('km_dashboard_excel_logs')
     } catch (error) {
       console.warn('Ошибка очистки localStorage:', error)
@@ -260,16 +260,16 @@ export const Dashboard: React.FC = () => {
         onProcessFile={handleExcelProcessFile}
         selectedFile={selectedFile}
         isProcessing={processFileMutation.isPending}
-        processedData={processedData}
+        processedData={excelData}
         onClearResults={handleClearExcelResults}
       />
 
 
       {/* Excel Results Display */}
-      {processedData && (
+      {excelData && (
         <ExcelResultsDisplay 
-          data={processedData} 
-          summary={processedData.summary} 
+          data={excelData} 
+          summary={excelData.summary} 
         />
       )}
 

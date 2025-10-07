@@ -210,17 +210,17 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
                   <div className="space-y-1 text-sm text-gray-600">
                     <div className="flex justify-between">
                       <span>Заказов:</span>
-                      <span className="font-medium">{courier.orderCount || 0}</span>
+                      <span className="font-medium">{courier.orders || 0}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Сумма:</span>
                       <span className="font-medium">{courier.totalAmount || 0} грн</span>
                     </div>
-                    {courier.orderCount > 0 && (
+                    {courier.orders > 0 && (
                       <div className="flex justify-between">
                         <span>Средний чек:</span>
                         <span className="font-medium">
-                          {Math.round((courier.totalAmount || 0) / courier.orderCount)} грн
+                          {Math.round((courier.totalAmount || 0) / courier.orders)} грн
                         </span>
                       </div>
                     )}
@@ -232,57 +232,6 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
         </div>
       )}
 
-      {/* Способы оплаты */}
-      {paymentMethods && paymentMethods.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <div 
-            className="flex items-center justify-between cursor-pointer"
-            onClick={() => toggleSection('paymentMethods')}
-          >
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-              <CreditCardIcon className="h-5 w-5 mr-2 text-purple-600" />
-              Способы оплаты ({paymentMethods.length})
-            </h3>
-            {expandedSections.paymentMethods ? (
-              <EyeSlashIcon className="h-5 w-5 text-gray-400" />
-            ) : (
-              <EyeIcon className="h-5 w-5 text-gray-400" />
-            )}
-          </div>
-          
-          {expandedSections.paymentMethods && (
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {paymentMethods.map((payment: any, index: number) => (
-                <div key={payment.name || index} className="bg-gray-50 p-4 rounded-lg border">
-                  <div className="flex items-center space-x-3 mb-2">
-                    <CreditCardIcon className="h-5 w-5 text-purple-600" />
-                    <span className="font-medium text-gray-900">{payment.name}</span>
-                  </div>
-                  
-                  <div className="space-y-1 text-sm text-gray-600">
-                    <div className="flex justify-between">
-                      <span>Заказов:</span>
-                      <span className="font-medium">{payment.orderCount || 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Сумма:</span>
-                      <span className="font-medium">{payment.totalAmount || 0} грн</span>
-                    </div>
-                    {payment.orderCount > 0 && (
-                      <div className="flex justify-between">
-                        <span>Средний чек:</span>
-                        <span className="font-medium">
-                          {Math.round((payment.totalAmount || 0) / payment.orderCount)} грн
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Ошибки */}
       {errors && errors.length > 0 && (

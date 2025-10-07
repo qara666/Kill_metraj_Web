@@ -280,15 +280,48 @@ class ExcelService_v3 {
 
   addRelatedData(order, couriers, paymentMethods, addresses) {
     if (order.courier) {
-      couriers.push({ name: order.courier, orders: 1 });
+      // Ищем существующего курьера
+      const existingCourier = couriers.find(c => c.name === order.courier);
+      if (existingCourier) {
+        existingCourier.orders += 1;
+        existingCourier.totalAmount = (existingCourier.totalAmount || 0) + (order.amount || 0);
+      } else {
+        couriers.push({ 
+          name: order.courier, 
+          orders: 1,
+          totalAmount: order.amount || 0
+        });
+      }
     }
     
     if (order.paymentMethod) {
-      paymentMethods.push({ method: order.paymentMethod, orders: 1 });
+      // Ищем существующий способ оплаты
+      const existingPayment = paymentMethods.find(p => p.method === order.paymentMethod);
+      if (existingPayment) {
+        existingPayment.orders += 1;
+        existingPayment.totalAmount = (existingPayment.totalAmount || 0) + (order.amount || 0);
+      } else {
+        paymentMethods.push({ 
+          method: order.paymentMethod, 
+          orders: 1,
+          totalAmount: order.amount || 0
+        });
+      }
     }
     
     if (order.address) {
-      addresses.push({ address: order.address, orders: 1 });
+      // Ищем существующий адрес
+      const existingAddress = addresses.find(a => a.address === order.address);
+      if (existingAddress) {
+        existingAddress.orders += 1;
+        existingAddress.totalAmount = (existingAddress.totalAmount || 0) + (order.amount || 0);
+      } else {
+        addresses.push({ 
+          address: order.address, 
+          orders: 1,
+          totalAmount: order.amount || 0
+        });
+      }
     }
   }
 
