@@ -93,6 +93,31 @@ export const Settings: React.FC = () => {
     toast.success('Settings saved successfully!')
   }
 
+  const handleClearAllData = () => {
+    if (window.confirm('Вы уверены, что хотите очистить все данные? Это действие нельзя отменить.')) {
+      try {
+        // Очищаем все данные из localStorage
+        localStorage.removeItem('km_dashboard_logs')
+        localStorage.removeItem('km_dashboard_processed_data')
+        localStorage.removeItem('km_dashboard_excel_logs')
+        localStorage.removeItem('km_google_maps_api_key')
+        localStorage.removeItem('km_default_start_address')
+        localStorage.removeItem('km_default_end_address')
+        
+        // Очищаем все настройки
+        localStorageUtils.clearAllSettings()
+        
+        toast.success('Все данные очищены!')
+        
+        // Перезагружаем страницу для полной очистки состояния
+        window.location.reload()
+      } catch (error) {
+        console.error('Ошибка очистки данных:', error)
+        toast.error('Ошибка при очистке данных')
+      }
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -190,8 +215,16 @@ export const Settings: React.FC = () => {
             </div>
           </div>
 
-          {/* Save Button */}
-          <div className="flex justify-end">
+          {/* Action Buttons */}
+          <div className="flex justify-between">
+            <button 
+              type="button" 
+              onClick={handleClearAllData}
+              className="btn-danger"
+            >
+              <CogIcon className="h-4 w-4 mr-2" />
+              Очистить все данные
+            </button>
             <button type="submit" className="btn-primary">
               <CogIcon className="h-4 w-4 mr-2" />
               Save Settings

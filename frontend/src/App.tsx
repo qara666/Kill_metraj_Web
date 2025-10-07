@@ -5,18 +5,21 @@ import { Routes as RoutesPage } from './pages/Routes'
 import { Analytics } from './pages/Analytics'
 import { Settings } from './pages/Settings'
 import { Layout } from './components/Layout'
+import { ExcelDataProvider } from './contexts/ExcelDataContext'
 
 function App() {
   return (
-    <Layout>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/couriers" element={<Couriers />} />
-        <Route path="/routes" element={<RoutesPage />} />
-        <Route path="/analytics" element={<Analytics />} />
-        <Route path="/settings" element={<Settings />} />
-      </Routes>
-    </Layout>
+    <ExcelDataProvider>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/couriers" element={<Couriers />} />
+          <Route path="/routes" element={<RoutesPage />} />
+          <Route path="/analytics" element={<Analytics />} />
+          <Route path="/settings" element={<Settings />} />
+        </Routes>
+      </Layout>
+    </ExcelDataProvider>
   )
 }
 

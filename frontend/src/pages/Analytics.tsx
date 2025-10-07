@@ -2,9 +2,11 @@ import React from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChartBarIcon } from '@heroicons/react/24/outline'
 import { LoadingSpinner } from '../components/LoadingSpinner'
+import { useExcelData } from '../contexts/ExcelDataContext'
 import * as api from '../services/api'
 
 export const Analytics: React.FC = () => {
+  const { excelData } = useExcelData()
   const { data: analyticsData, isLoading } = useQuery({
     queryKey: ['analytics'],
     queryFn: () => api.analyticsApi.getDashboardAnalytics(),
@@ -14,7 +16,8 @@ export const Analytics: React.FC = () => {
     return <LoadingSpinner />
   }
 
-  const analytics = analyticsData?.data
+  // Используем данные из Excel если они есть, иначе из API
+  const analytics = excelData?.statistics || analyticsData?.data
 
   return (
     <div className="space-y-6">

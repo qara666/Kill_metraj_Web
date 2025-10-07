@@ -2,9 +2,11 @@ import React from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { MapIcon } from '@heroicons/react/24/outline'
 import { LoadingSpinner } from '../components/LoadingSpinner'
+import { useExcelData } from '../contexts/ExcelDataContext'
 import * as api from '../services/api'
 
 export const Routes: React.FC = () => {
+  const { excelData } = useExcelData()
   const { data: routesData, isLoading } = useQuery({
     queryKey: ['routes'],
     queryFn: () => api.routeApi.getRoutes(),
@@ -14,7 +16,8 @@ export const Routes: React.FC = () => {
     return <LoadingSpinner />
   }
 
-  const routes = routesData?.data || []
+  // Используем данные из Excel если они есть, иначе из API
+  const routes = excelData?.routes || routesData?.data || []
 
   return (
     <div className="space-y-6">
