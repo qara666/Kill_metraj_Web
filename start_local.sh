@@ -68,7 +68,25 @@ log "Frontend готов"
 
 URL="http://localhost:${FRONTEND_PORT}"
 log "Открываю Safari: ${URL}"
-open -a "Safari" "${URL}" || open "${URL}"
+# 1) Пробуем стандартный способ
+if open -a "Safari" "${URL}"; then
+  log "Safari открыт через open -a"
+else
+  log "Не удалось открыть через open -a, пробую AppleScript"
+  # 2) Пробуем AppleScript
+  if command -v osascript >/dev/null 2>&1; then
+    if osascript -e "tell application \"Safari\" to make new document with properties {URL:\"${URL}\"}" -e "tell application \"Safari\" to activate"; then
+      log "Safari открыт через AppleScript"
+    else
+      log "AppleScript не сработал, открываю в браузере по умолчанию"
+      # 3) Открываем в браузере по умолчанию
+      open "${URL}" || true
+    fi
+  else
+    log "osascript недоступен, открываю в браузере по умолчанию"
+    open "${URL}" || true
+  fi
+fi
 
 log "Запущено. Для остановки закройте это окно или нажмите Ctrl+C."
 wait
