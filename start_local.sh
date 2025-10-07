@@ -46,6 +46,12 @@ if [[ -f package.json ]]; then
     log "Устанавливаю зависимости фронтенда..."
     npm install --silent
   fi
+  # Освобождаем порт, если кто-то держит 5173 (например, предыдущий Vite)
+  if lsof -i :${FRONTEND_PORT} -sTCP:LISTEN -Pn >/dev/null 2>&1; then
+    log "Порт ${FRONTEND_PORT} занят, освобождаю..."
+    lsof -ti :${FRONTEND_PORT} | xargs kill -9 || true
+    sleep 1
+  fi
   nohup npm run dev > "$ROOT_DIR/.frontend.out.log" 2>&1 &
   FRONTEND_PID=$!
   log "Frontend PID: ${FRONTEND_PID} (логи: $ROOT_DIR/.frontend.out.log)"
@@ -54,12 +60,13 @@ else
   exit 1
 fi
 
-# Ждем пока Vite поднимется
+# Ждем пока Vite поднимется (ищем готовность через http и через лог-файл)
 ATTEMPTS=0
-until curl -s "http://localhost:${FRONTEND_PORT}" >/dev/null; do
+until curl -s "http://localhost:${FRONTEND_PORT}" >/dev/null || grep -qi "Local:.*${FRONTEND_PORT}" "$ROOT_DIR/.frontend.out.log" 2>/dev/null; do
   ATTEMPTS=$((ATTEMPTS+1))
-  if [[ $ATTEMPTS -gt 90 ]]; then
+  if [[ $ATTEMPTS -gt 120 ]]; then
     log "Frontend не стартовал за разумное время"
+    tail -n 50 "$ROOT_DIR/.frontend.out.log" 2>/dev/null || true
     exit 1
   fi
   sleep 1
