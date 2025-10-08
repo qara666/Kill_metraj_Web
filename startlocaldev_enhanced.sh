@@ -7,7 +7,7 @@ echo "🚀 Запуск Kill Metraj локального сервера разр
 check_server() {
     local url=$1
     local name=$2
-    local max_attempts=30
+    local max_attempts=60
     local attempt=1
     
     echo "⏳ Проверка $name..."
@@ -84,6 +84,12 @@ if check_server "http://localhost:5001/api/health" "Backend сервер" && \
 else
     echo ""
     echo "❌ Не удалось запустить серверы. Проверьте логи выше."
+    echo "📜 Последние строки лога backend:" 
+    if [ -f ".backend.out.log" ]; then
+      tail -n 200 ".backend.out.log"
+    else
+      echo "Лог .backend.out.log не найден."
+    fi
     kill $SERVER_PID 2>/dev/null || true
     exit 1
 fi
