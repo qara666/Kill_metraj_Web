@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useTheme } from '../contexts/ThemeContext'
-import { clsx } from 'clsx'
+import clsx from 'clsx'
 import { 
   MapPinIcon, 
   ClockIcon, 
