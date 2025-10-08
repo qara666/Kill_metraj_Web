@@ -3,7 +3,6 @@ import { useTheme } from '../contexts/ThemeContext'
 import clsx from 'clsx'
 import { 
   MapPinIcon, 
-  ClockIcon, 
   UserIcon, 
   CurrencyDollarIcon,
   PhoneIcon,
