@@ -137,6 +137,37 @@ export const Zones: React.FC = () => {
     
     console.log('Processing Excel data:', rawData.length, 'rows')
     addLog(`Старт обработки Excel: ${rawData.length} строк`)
+
+    const isLikelyAddress = (value: any): boolean => {
+      if (typeof value !== 'string') return false
+      const v = value.trim().toLowerCase()
+      if (v.length < 5) return false
+      // эвристики адреса
+      return /[a-zа-яіїє]/i.test(v) && (
+        v.includes('ул') || v.includes('вул') || v.includes('пр') || v.includes('просп') || v.includes('str') ||
+        v.includes('улица') || v.includes('street') || v.includes('проспект') || v.includes('пл') || v.includes('площад')
+      )
+    }
+
+    const extractAddress = (row: any[]): string => {
+      // приоритетная колонка H (индекс 7)
+      const primary = String(row[7] ?? '').trim()
+      if (isLikelyAddress(primary)) return primary
+      // альтернативы рядом
+      const candidatesIdx = [6, 8, 5, 9, 4]
+      for (const idx of candidatesIdx) {
+        const cand = String(row[idx] ?? '').trim()
+        if (isLikelyAddress(cand)) return cand
+      }
+      // перебор всей строки как последний шанс
+      for (let i = 0; i < row.length; i++) {
+        const cand = String(row[i] ?? '').trim()
+        if (isLikelyAddress(cand)) return cand
+      }
+      return primary
+    }
+
+    let emptyAddressCount = 0
     
     // Пропускаем заголовок и обрабатываем данные
     for (let i = 1; i < rawData.length; i++) {
@@ -150,7 +181,7 @@ export const Zones: React.FC = () => {
       try {
         // Безопасное извлечение данных с проверками
         const orderNumber = String(row[0] || '').trim()
-        const address = String(row[7] || '').trim()
+        const address = extractAddress(row)
         const courier = String(row[15] || 'Не назначен').trim()
         const amount = parseFloat(String(row[13] || '0')) || 0
         const paymentMethod = String(row[14] || 'Неизвестно').trim()
@@ -164,6 +195,7 @@ export const Zones: React.FC = () => {
         if (!address) {
           console.warn(`Skipping order ${orderNumber}: no address`)
           addLog(`Строка ${i} пропущена: пустой адрес (order ${orderNumber})`)
+          emptyAddressCount++
           continue
         }
         
@@ -195,7 +227,7 @@ export const Zones: React.FC = () => {
     }
     
     console.log(`Processed ${orders.length} orders, ${couriers.length} couriers`)
-    addLog(`Итог: заказов ${orders.length}, курьеров ${couriers.length}`)
+    addLog(`Итог: заказов ${orders.length}, курьеров ${couriers.length}, без адреса: ${emptyAddressCount}`)
     
     return {
       orders,
@@ -277,6 +309,7 @@ export const Zones: React.FC = () => {
       })
 
       console.log(`Processing ${orders.length} orders for zones`)
+      addLog(`К зонеобразованию допущено заказов: ${orders.length}`)
 
       // Группируем заказы по районам/зонам
       const zoneGroups: { [key: string]: ZoneOrder[] } = {}
