@@ -1,2 +1,0 @@
-Force redeploy - $(date)
-This file forces Render to redeploy the frontend
