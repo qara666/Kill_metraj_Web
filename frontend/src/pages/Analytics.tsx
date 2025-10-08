@@ -9,17 +9,23 @@ import {
 } from '@heroicons/react/24/outline'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { useExcelData } from '../contexts/ExcelDataContext'
+import { useTheme } from '../contexts/ThemeContext'
+import { clsx } from 'clsx'
 
 export const Analytics: React.FC = () => {
   const { excelData } = useExcelData()
+  const { isDark } = useTheme()
 
   // Показываем загрузку только если нет данных Excel
   if (!excelData) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className={clsx(
+        'flex items-center justify-center h-64',
+        isDark ? 'text-gray-400' : 'text-gray-600'
+      )}>
         <div className="text-center">
           <LoadingSpinner />
-          <p className="mt-4 text-gray-600">Загрузите Excel файл для просмотра аналитики</p>
+          <p className="mt-4">Загрузите Excel файл для просмотра аналитики</p>
         </div>
       </div>
     )

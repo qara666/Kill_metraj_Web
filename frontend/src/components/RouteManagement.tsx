@@ -10,6 +10,8 @@ import {
 } from '@heroicons/react/24/outline'
 import { localStorageUtils } from '../utils/localStorage'
 import { useExcelData } from '../contexts/ExcelDataContext'
+import { useTheme } from '../contexts/ThemeContext'
+import { clsx } from 'clsx'
 
 // Google Maps types
 declare global {
@@ -50,6 +52,7 @@ interface RouteManagementProps {
 
 export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) => {
   const { updateRouteData } = useExcelData()
+  const { isDark } = useTheme()
   const [selectedCourier, setSelectedCourier] = useState<string | null>(null)
   const [routes, setRoutes] = useState<Route[]>([])
   const [isCalculating, setIsCalculating] = useState(false)
@@ -396,15 +399,27 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+      <div className={clsx(
+        'rounded-lg shadow-sm border p-6',
+        isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+      )}>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Управление маршрутами</h1>
-            <p className="mt-1 text-sm text-gray-600">
+            <h1 className={clsx(
+              'text-2xl font-bold',
+              isDark ? 'text-gray-100' : 'text-gray-900'
+            )}>Управление маршрутами</h1>
+            <p className={clsx(
+              'mt-1 text-sm',
+              isDark ? 'text-gray-400' : 'text-gray-600'
+            )}>
               Создавайте маршруты для курьеров и рассчитывайте расстояния
             </p>
           </div>
-          <div className="flex items-center space-x-4 text-sm text-gray-500">
+          <div className={clsx(
+            'flex items-center space-x-4 text-sm',
+            isDark ? 'text-gray-400' : 'text-gray-500'
+          )}>
             <span>{couriers.length} курьеров, {routes.length} маршрутов</span>
             <div className="flex items-center space-x-1">
               <div className={`w-2 h-2 rounded-full ${googleMapsReady ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
@@ -417,9 +432,15 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Курьеры и заказы */}
         <div className="space-y-4">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className={clsx(
+            'rounded-lg shadow-sm border p-6',
+            isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+          )}>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">Курьеры</h2>
+              <h2 className={clsx(
+                'text-lg font-semibold',
+                isDark ? 'text-gray-100' : 'text-gray-900'
+              )}>Курьеры</h2>
               <div className="flex space-x-2">
                 <button
                   onClick={() => setCourierFilter('all')}
