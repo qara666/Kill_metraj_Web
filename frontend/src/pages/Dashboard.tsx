@@ -324,28 +324,28 @@ export const Dashboard: React.FC = () => {
       {stats && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatsCard
-            title="Всього маршрутів"
+            title="Всего маршрутов"
             value={stats.totalRoutes}
             icon={MapIcon}
             color="primary"
-            change={`${stats.activeRoutes} активних`}
+            change={`${stats.activeRoutes} активных`}
           />
           <StatsCard
-            title="Всього курєрів"
+            title="Всего курьеров"
             value={stats.totalCouriers}
             icon={UserGroupIcon}
             color="success"
-            change={`${stats.activeCouriers} активних`}
+            change={`${stats.activeCouriers} активных`}
           />
           <StatsCard
-            title="Всього замовлень"
+            title="Всего заказов"
             value={stats.totalOrders}
             icon={TruckIcon}
             color="warning"
-            change={`${stats.averageOrdersPerRoute.toFixed(1)} середнє/маршрут`}
+            change={`${stats.averageOrdersPerRoute.toFixed(1)} среднее/маршрут`}
           />
           <StatsCard
-            title="Відсоток виконання"
+            title="Процент выполнения"
             value={`${stats.completionRate.toFixed(1)}%`}
             icon={CheckCircleIcon}
             color="success"
@@ -393,9 +393,9 @@ export const Dashboard: React.FC = () => {
                 <button
                   onClick={() => setLogs([])}
                   className="btn-outline"
-                  title="Очистити логи"
+                  title="Очистить логи"
                 >
-                  Очистити логи
+                  Очистить логи
                 </button>
                 {excelData && (
                   <button
@@ -418,7 +418,7 @@ export const Dashboard: React.FC = () => {
               </div>
             </div>
             {logs.length === 0 ? (
-              <p className="text-sm text-gray-500">Поки що немає логів</p>
+              <p className="text-sm text-gray-500">Пока что нет логов</p>
             ) : (
               <div className="max-h-64 overflow-y-auto space-y-2">
                 {logs.map((line, idx) => (
@@ -438,15 +438,15 @@ export const Dashboard: React.FC = () => {
             {/* Couriers Section */}
             <div className="card p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                Останні курєри ({couriers.length})
+                Последние курьеры ({couriers.length})
               </h2>
               
               {couriers.length === 0 ? (
                 <div className="text-center py-8">
                   <UserGroupIcon className="mx-auto h-12 w-12 text-gray-400" />
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">Немає курєрів</h3>
+                  <h3 className="mt-2 text-sm font-medium text-gray-900">Нет курьеров</h3>
                   <p className="mt-1 text-sm text-gray-500">
-                    Завантажте Excel файл для створення курєрів та маршрутів.
+                    Загрузите Excel файл для создания курьеров и маршрутов.
                   </p>
                 </div>
               ) : (

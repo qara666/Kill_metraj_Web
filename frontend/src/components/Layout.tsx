@@ -16,11 +16,11 @@ interface LayoutProps {
 }
 
 const navigation = [
-  { name: 'Dashboard', href: '/', icon: HomeIcon },
-  { name: 'Routes', href: '/routes', icon: MapIcon },
-  { name: 'Couriers', href: '/couriers', icon: UserGroupIcon },
-  { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
-  { name: 'Settings', href: '/settings', icon: CogIcon },
+  { name: 'Панель управления', href: '/', icon: HomeIcon },
+  { name: 'Маршруты', href: '/routes', icon: MapIcon },
+  { name: 'Курьеры', href: '/couriers', icon: UserGroupIcon },
+  { name: 'Аналитика', href: '/analytics', icon: ChartBarIcon },
+  { name: 'Настройки', href: '/settings', icon: CogIcon },
 ]
 
 export function Layout({ children }: LayoutProps) {
@@ -96,7 +96,7 @@ export function Layout({ children }: LayoutProps) {
               </div>
               <div className="ml-3">
                 <h1 className="text-lg font-semibold text-gray-900">Kill_metraj</h1>
-                <p className="text-xs text-gray-500">Route Management</p>
+                <p className="text-xs text-gray-500">Управление маршрутами</p>
               </div>
             </div>
           </div>
@@ -146,7 +146,7 @@ export function Layout({ children }: LayoutProps) {
               {/* Status indicator */}
               <div className="flex items-center gap-x-2">
                 <div className="h-2 w-2 bg-green-400 rounded-full" />
-                <span className="text-sm text-gray-500">System Online</span>
+                <span className="text-sm text-gray-500">Система онлайн</span>
               </div>
             </div>
           </div>

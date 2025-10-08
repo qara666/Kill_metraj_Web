@@ -19,8 +19,8 @@ export const Settings: React.FC = () => {
   const { register, handleSubmit, watch, setValue } = useForm<SettingsForm>({
     defaultValues: {
       googleMapsApiKey: '',
-      defaultStartAddress: 'Макіївська 7, Київ, Україна',
-      defaultEndAddress: 'Макіївська 7, Київ, Україна'
+      defaultStartAddress: 'Макеевская 7, Киев, Украина',
+      defaultEndAddress: 'Макеевская 7, Киев, Украина'
     }
   })
 
@@ -57,7 +57,7 @@ export const Settings: React.FC = () => {
 
   const testApiKey = async () => {
     if (!googleMapsApiKey.trim()) {
-      toast.error('Please enter a Google Maps API key')
+      toast.error('Пожалуйста, введите Google Maps API ключ')
       return
     }
 
@@ -68,14 +68,14 @@ export const Settings: React.FC = () => {
         setApiKeyStatus('valid')
         // Save API key to localStorage when it's valid
         localStorageUtils.setApiKey(googleMapsApiKey)
-        toast.success('API key is valid and saved!')
+        toast.success('API ключ действителен и сохранен!')
       } else {
         setApiKeyStatus('invalid')
-        toast.error('API key is invalid or quota exceeded')
+        toast.error('API ключ недействителен или превышена квота')
       }
     } catch (error) {
       setApiKeyStatus('invalid')
-      toast.error('Failed to test API key')
+      toast.error('Не удалось проверить API ключ')
     } finally {
       setIsTestingApiKey(false)
     }
@@ -90,22 +90,29 @@ export const Settings: React.FC = () => {
       checkApiKeyStatus(data.googleMapsApiKey)
     }
     
-    toast.success('Settings saved successfully!')
+    toast.success('Настройки успешно сохранены!')
   }
 
   const handleClearAllData = () => {
     if (window.confirm('Вы уверены, что хотите очистить все данные? Это действие нельзя отменить.')) {
       try {
+        // Сохраняем Google Maps API Key перед очисткой
+        const currentApiKey = localStorageUtils.getApiKey()
+        
         // Очищаем все данные из localStorage
         localStorage.removeItem('km_dashboard_logs')
         localStorage.removeItem('km_dashboard_processed_data')
         localStorage.removeItem('km_dashboard_excel_logs')
-        localStorage.removeItem('km_google_maps_api_key')
         localStorage.removeItem('km_default_start_address')
         localStorage.removeItem('km_default_end_address')
         
         // Очищаем все настройки
         localStorageUtils.clearAllSettings()
+        
+        // Восстанавливаем Google Maps API Key
+        if (currentApiKey) {
+          localStorageUtils.setApiKey(currentApiKey)
+        }
         
         toast.success('Все данные очищены!')
         
@@ -124,9 +131,9 @@ export const Settings: React.FC = () => {
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Настройки</h1>
             <p className="mt-1 text-sm text-gray-600">
-              Configure application settings and API keys
+              Настройка приложения и API ключей
             </p>
           </div>
         </div>
@@ -139,13 +146,13 @@ export const Settings: React.FC = () => {
           <div>
             <label className="label">
               <KeyIcon className="h-4 w-4 inline mr-2" />
-              Google Maps API Key
+              Google Maps API Ключ
             </label>
             <div className="mt-1 flex rounded-md shadow-sm">
               <input
                 type="password"
                 className="input rounded-r-none"
-                placeholder="Enter your Google Maps API key"
+                placeholder="Введите ваш Google Maps API ключ"
                 {...register('googleMapsApiKey', { required: true })}
               />
               <button
@@ -157,18 +164,18 @@ export const Settings: React.FC = () => {
                 {isTestingApiKey ? (
                   <LoadingSpinner size="sm" />
                 ) : (
-                  'Test'
+                  'Проверить'
                 )}
               </button>
             </div>
             {apiKeyStatus === 'valid' && (
-              <p className="mt-1 text-sm text-success-600">✓ API key is valid</p>
+              <p className="mt-1 text-sm text-success-600">✓ API ключ действителен</p>
             )}
             {apiKeyStatus === 'invalid' && (
-              <p className="mt-1 text-sm text-danger-600">✗ API key is invalid</p>
+              <p className="mt-1 text-sm text-danger-600">✗ API ключ недействителен</p>
             )}
             <p className="mt-1 text-xs text-gray-500">
-              Required for geocoding addresses and calculating routes. Get your API key from{' '}
+              Необходим для геокодирования адресов и расчета маршрутов. Получите API ключ в{' '}
               <a 
                 href="https://console.cloud.google.com/" 
                 target="_blank" 
@@ -185,32 +192,32 @@ export const Settings: React.FC = () => {
             <div>
               <label className="label">
                 <MapIcon className="h-4 w-4 inline mr-2" />
-                Default Start Address
+                Адрес начала по умолчанию
               </label>
               <input
                 type="text"
                 className="input"
-                placeholder="Enter default start address"
+                placeholder="Введите адрес начала по умолчанию"
                 {...register('defaultStartAddress')}
               />
               <p className="mt-1 text-xs text-gray-500">
-                Default starting point for all routes
+                Точка начала по умолчанию для всех маршрутов
               </p>
             </div>
 
             <div>
               <label className="label">
                 <MapIcon className="h-4 w-4 inline mr-2" />
-                Default End Address
+                Адрес окончания по умолчанию
               </label>
               <input
                 type="text"
                 className="input"
-                placeholder="Enter default end address"
+                placeholder="Введите адрес окончания по умолчанию"
                 {...register('defaultEndAddress')}
               />
               <p className="mt-1 text-xs text-gray-500">
-                Default ending point for all routes
+                Точка окончания по умолчанию для всех маршрутов
               </p>
             </div>
           </div>
@@ -227,35 +234,12 @@ export const Settings: React.FC = () => {
             </button>
             <button type="submit" className="btn-primary">
               <CogIcon className="h-4 w-4 mr-2" />
-              Save Settings
+              Сохранить настройки
             </button>
           </div>
         </form>
       </div>
 
-      {/* API Setup Instructions */}
-      <div className="bg-blue-50 rounded-lg border border-blue-200 p-6">
-        <h3 className="text-lg font-medium text-blue-900 mb-4">
-          Google Maps API Setup
-        </h3>
-        <div className="text-sm text-blue-800 space-y-2">
-          <p>To use this application, you need to set up a Google Maps API key:</p>
-          <ol className="list-decimal list-inside space-y-1 ml-4">
-            <li>Go to <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" className="underline">Google Cloud Console</a></li>
-            <li>Create a new project or select an existing one</li>
-            <li>Enable the following APIs:
-              <ul className="list-disc list-inside ml-4 mt-1">
-                <li>Geocoding API</li>
-                <li>Directions API</li>
-                <li>Maps JavaScript API</li>
-              </ul>
-            </li>
-            <li>Create credentials (API Key)</li>
-            <li>Restrict the API key to your domain for security</li>
-            <li>Enter the API key in the field above</li>
-          </ol>
-        </div>
-      </div>
     </div>
   )
 }
