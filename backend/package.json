@@ -2,11 +2,11 @@
   "name": "kill-metraj-backend",
   "version": "1.0.0",
   "description": "Backend API for Kill_metraj web application",
-  "main": "src/server.js",
+  "main": "src/server_no_db.js",
   "scripts": {
-    "dev": "nodemon src/server.js",
+    "dev": "node simple_server.js",
     "build": "echo 'No build step needed for JavaScript'",
-    "start": "node src/server.js",
+    "start": "node simple_server.js",
     "test": "jest"
   },
   "dependencies": {

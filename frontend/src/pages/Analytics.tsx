@@ -1,5 +1,4 @@
 import React, { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { 
   ChartBarIcon, 
   TruckIcon, 
@@ -10,17 +9,20 @@ import {
 } from '@heroicons/react/24/outline'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { useExcelData } from '../contexts/ExcelDataContext'
-import * as api from '../services/api'
 
 export const Analytics: React.FC = () => {
   const { excelData } = useExcelData()
-  const { isLoading } = useQuery({
-    queryKey: ['analytics'],
-    queryFn: () => api.analyticsApi.getDashboardAnalytics(),
-  })
 
-  if (isLoading) {
-    return <LoadingSpinner />
+  // Показываем загрузку только если нет данных Excel
+  if (!excelData) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <LoadingSpinner />
+          <p className="mt-4 text-gray-600">Загрузите Excel файл для просмотра аналитики</p>
+        </div>
+      </div>
+    )
   }
 
   // Используем данные из Excel если они есть, иначе из API
