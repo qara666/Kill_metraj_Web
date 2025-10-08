@@ -63,7 +63,7 @@ export const Zones: React.FC = () => {
   })
   const [maxDistance, setMaxDistance] = useState(5) // км
   const [minOrdersPerRoute, setMinOrdersPerRoute] = useState(3)
-  const [routes, setRoutes] = useState<any[]>([])
+  const setRoutes = useState<any[]>([])[1]
   const [showOptimized, setShowOptimized] = useState(false)
   const [debugLog, setDebugLog] = useState<string[]>([])
   const [mapKey, setMapKey] = useState(0)
