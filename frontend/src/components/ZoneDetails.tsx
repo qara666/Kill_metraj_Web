@@ -25,6 +25,11 @@ interface ZoneOrder {
   customerName: string
   distance?: number
   priority: number
+  confidence: number // Уровень уверенности в определении зоны
+  kitchenTime?: number // Время на кухне в минутах
+  deliveryTime?: string // Плановое время доставки
+  courierType?: 'car' | 'motorcycle' // Рекомендуемый тип курьера
+  routeId?: string // ID маршрута, если заказ уже в маршруте
 }
 
 interface ZoneDetailsProps {
