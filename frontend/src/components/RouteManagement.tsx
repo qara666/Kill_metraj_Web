@@ -148,6 +148,24 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     return grouped
   }, [excelData?.orders])
 
+  // Функция для подсчета доступных заказов (исключая те, что уже в маршрутах)
+  const getAvailableOrdersCount = (courierName: string) => {
+    const allOrders = courierOrders[courierName] || []
+    const ordersInRoutes = new Set()
+    
+    // Собираем ID всех заказов, которые уже в маршрутах
+    routes.forEach(route => {
+      if (route.courier === courierName) {
+        route.orders.forEach(order => {
+          ordersInRoutes.add(order.id)
+        })
+      }
+    })
+    
+    // Возвращаем количество заказов, которые НЕ в маршрутах
+    return allOrders.filter(order => !ordersInRoutes.has(order.id)).length
+  }
+
   const couriers = Object.keys(courierOrders)
 
   // Определяем тип транспорта курьера
@@ -469,7 +487,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                           </span>
                         </div>
                         <span className="text-sm text-gray-500">
-                          {courierOrders[courierName]?.length || 0} заказов
+                          {getAvailableOrdersCount(courierName)} заказов
                         </span>
                       </div>
                     </button>
