@@ -48,14 +48,15 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
       let totalDistance = 0
 
       courierRoutes.forEach((route: any) => {
+        const ordersCount = route.orders?.length || 0
+        
         if (route.isOptimized && route.totalDistance) {
-          // Для оптимизированных маршрутов используем рассчитанное расстояние
-          totalDistance += route.totalDistance
+          // Для оптимизированных маршрутов используем рассчитанное расстояние + дополнительные 500м за каждый заказ
+          totalDistance += route.totalDistance + (ordersCount * 0.5)
         } else {
           // Для неоптимизированных маршрутов считаем базовое расстояние + 500м за каждый заказ
-          // Базовое расстояние (например, 1км) + дополнительные 500м за каждый заказ
           const baseDistance = 1.0 // 1км базовое расстояние
-          const additionalDistance = (route.orders?.length || 0) * 0.5 // 500м за каждый заказ
+          const additionalDistance = ordersCount * 0.5 // 500м за каждый заказ
           totalDistance += baseDistance + additionalDistance
         }
       })
@@ -125,10 +126,12 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
           // Для оптимизированных маршрутов используем рассчитанное расстояние как базовое
           baseDistance += route.totalDistance
         } else {
-          // Для неоптимизированных маршрутов считаем базовое расстояние + дополнительные 500м за каждый заказ
+          // Для неоптимизированных маршрутов считаем базовое расстояние
           baseDistance += 1.0 // 1км базовое расстояние за маршрут
-          additionalDistance += ordersCount * 0.5 // 500м за каждый заказ
         }
+        
+        // Дополнительные 500м добавляются к каждому заказу независимо от типа маршрута
+        additionalDistance += ordersCount * 0.5 // 500м за каждый заказ
       })
 
       return {
