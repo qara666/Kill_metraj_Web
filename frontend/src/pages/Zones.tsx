@@ -77,10 +77,27 @@ export const Zones: React.FC = () => {
       reader.onload = (e) => {
         try {
           const data = e.target?.result
+          if (!data) {
+            throw new Error('No data received from file')
+          }
+          
+          console.log('Reading Excel file:', file.name, file.size, 'bytes')
+          
           const workbook = XLSX.read(data, { type: 'binary' })
           const sheetName = workbook.SheetNames[0]
+          
+          if (!sheetName) {
+            throw new Error('No sheets found in Excel file')
+          }
+          
           const worksheet = workbook.Sheets[sheetName]
           const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
+          
+          console.log('Excel data converted to JSON:', jsonData.length, 'rows')
+          
+          if (!Array.isArray(jsonData) || jsonData.length < 2) {
+            throw new Error('Invalid Excel file format or empty data')
+          }
           
           // Обрабатываем данные (аналогично основной системе, но изолированно)
           const processedData = processZoneExcelData(jsonData)
@@ -91,7 +108,11 @@ export const Zones: React.FC = () => {
         }
       }
       
-      reader.onerror = () => reject(new Error('Failed to read file'))
+      reader.onerror = () => {
+        console.error('FileReader error')
+        reject(new Error('Failed to read file'))
+      }
+      
       reader.readAsBinaryString(file)
     })
   }
@@ -101,37 +122,62 @@ export const Zones: React.FC = () => {
     const orders: ZoneOrder[] = []
     const couriers: string[] = []
     
+    console.log('Processing Excel data:', rawData.length, 'rows')
+    
     // Пропускаем заголовок и обрабатываем данные
     for (let i = 1; i < rawData.length; i++) {
       const row = rawData[i]
-      if (!row || row.length < 10) continue
+      if (!row || !Array.isArray(row) || row.length < 5) {
+        console.warn(`Skipping row ${i}: invalid format`, row)
+        continue
+      }
       
       try {
+        // Безопасное извлечение данных с проверками
+        const orderNumber = String(row[0] || '').trim()
+        const address = String(row[7] || '').trim()
+        const courier = String(row[15] || 'Не назначен').trim()
+        const amount = parseFloat(String(row[13] || '0')) || 0
+        const paymentMethod = String(row[14] || 'Неизвестно').trim()
+        const phone = String(row[3] || '').trim()
+        const customerName = String(row[4] || '').trim()
+        const kitchenTimeStr = String(row[9] || '0').replace(/[^\d]/g, '')
+        const kitchenTime = parseInt(kitchenTimeStr) || 0
+        const deliveryTime = String(row[10] || '').trim()
+        
+        // Пропускаем заказы без адреса
+        if (!address) {
+          console.warn(`Skipping order ${orderNumber}: no address`)
+          continue
+        }
+        
         const order: ZoneOrder = {
           id: `zone_order_${i}`,
-          orderNumber: String(row[0] || ''),
-          address: String(row[7] || ''),
-          courier: String(row[15] || 'Не назначен'),
-          amount: parseFloat(row[13]) || 0,
-          paymentMethod: String(row[14] || 'Неизвестно'),
-          phone: String(row[3] || ''),
-          customerName: String(row[4] || ''),
+          orderNumber,
+          address,
+          courier,
+          amount,
+          paymentMethod,
+          phone,
+          customerName,
           priority: Math.random() * 100,
           confidence: 0,
-          kitchenTime: parseInt(String(row[9] || '0').replace('мин', '')) || 0,
-          deliveryTime: String(row[10] || ''),
-          courierType: determineCourierType(String(row[7] || ''), parseFloat(row[13]) || 0)
+          kitchenTime,
+          deliveryTime,
+          courierType: determineCourierType(address, amount)
         }
         
         orders.push(order)
         
-        if (order.courier && order.courier !== 'Не назначен' && !couriers.includes(order.courier)) {
-          couriers.push(order.courier)
+        if (courier && courier !== 'Не назначен' && !couriers.includes(courier)) {
+          couriers.push(courier)
         }
       } catch (error) {
-        console.warn('Error processing row:', error, row)
+        console.warn(`Error processing row ${i}:`, error, row)
       }
     }
+    
+    console.log(`Processed ${orders.length} orders, ${couriers.length} couriers`)
     
     return {
       orders,
