@@ -264,6 +264,19 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     }, 100)
   }
 
+  // Функция для очистки адреса от лишней информации
+  const cleanAddress = (address: string) => {
+    if (!address) return address
+    
+    // Удаляем информацию после номера дома (подъезд, этаж, подвал и т.д.)
+    const cleaned = address
+      .replace(/,\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
+      .replace(/,\s*\d+\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
+      .trim()
+    
+    return cleaned
+  }
+
   const calculateRouteDistance = async (route: Route) => {
     if (!googleMapsReady) {
       alert('Google Maps API загружается... Попробуйте через несколько секунд')
@@ -275,7 +288,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     try {
       const directionsService = new window.google.maps.DirectionsService()
       const waypoints = route.orders.map(order => ({
-        location: order.address,
+        location: cleanAddress(order.address),
         stopover: true
       }))
 
@@ -335,9 +348,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
     // Создаем массив адресов для маршрута
     const addresses = [
-      route.startAddress,
-      ...route.orders.map(order => order.address),
-      route.endAddress
+      cleanAddress(route.startAddress),
+      ...route.orders.map(order => cleanAddress(order.address)),
+      cleanAddress(route.endAddress)
     ]
     
     // Кодируем каждый адрес отдельно
