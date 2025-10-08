@@ -10,13 +10,19 @@ cd "/Users/msun/Desktop/Project apps/Kill_metraj_Web"
 npm run startlocaldev
 ```
 
-### Способ 2: Через скрипт
+### Способ 2: Через улучшенный скрипт (рекомендуется)
+```bash
+cd "/Users/msun/Desktop/Project apps/Kill_metraj_Web"
+./startlocaldev_enhanced.sh
+```
+
+### Способ 3: Через простой скрипт
 ```bash
 cd "/Users/msun/Desktop/Project apps/Kill_metraj_Web"
 ./startlocaldev.sh
 ```
 
-### Способ 3: Ручной запуск
+### Способ 4: Ручной запуск
 ```bash
 # Terminal 1 - Backend
 cd "/Users/msun/Desktop/Project apps/Kill_metraj_Web/backend"
@@ -43,11 +49,17 @@ npm run install:all
 
 ## 📋 Доступные команды
 
+### NPM команды
 - `npm run startlocaldev` - Запуск обоих серверов одновременно
 - `npm run dev` - Алиас для startlocaldev
 - `npm run dev:frontend` - Запуск только frontend
 - `npm run dev:backend` - Запуск только backend
 - `npm run build` - Сборка frontend для продакшена
+
+### Скрипты запуска
+- `./startlocaldev_enhanced.sh` - **Рекомендуется** - Улучшенный скрипт с проверкой статуса
+- `./startlocaldev.sh` - Простой скрипт запуска
+- `./check_servers.sh` - Проверка статуса серверов
 - `npm run install:all` - Установка всех зависимостей
 
 ## 🔧 Структура проекта
