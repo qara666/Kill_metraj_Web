@@ -997,5 +997,3 @@ export const Zones: React.FC = () => {
     </div>
   )
 }
-
-export { Zones }

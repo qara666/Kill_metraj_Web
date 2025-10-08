@@ -424,5 +424,3 @@ export const ZoneDetails: React.FC<ZoneDetailsProps> = ({
     </div>
   )
 }
-
-export { ZoneDetails }
