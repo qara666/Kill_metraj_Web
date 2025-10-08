@@ -9,7 +9,8 @@ import {
   Bars3Icon,
   XMarkIcon,
   SunIcon,
-  MoonIcon
+  MoonIcon,
+  MapPinIcon
 } from '@heroicons/react/24/outline'
 import { clsx } from 'clsx'
 import { useTheme } from '../contexts/ThemeContext'
@@ -22,6 +23,7 @@ const navigation = [
   { name: 'Панель управления', href: '/', icon: HomeIcon },
   { name: 'Маршруты', href: '/routes', icon: MapIcon },
   { name: 'Курьеры', href: '/couriers', icon: UserGroupIcon },
+  { name: 'Зоны', href: '/zones', icon: MapPinIcon },
   { name: 'Аналитика', href: '/analytics', icon: ChartBarIcon },
   { name: 'Настройки', href: '/settings', icon: CogIcon },
 ]
