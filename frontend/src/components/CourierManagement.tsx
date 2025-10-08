@@ -11,6 +11,8 @@ import {
   ClockIcon
 } from '@heroicons/react/24/outline'
 import { useExcelData } from '../contexts/ExcelDataContext'
+import { useTheme } from '../contexts/ThemeContext'
+import { clsx } from 'clsx'
 
 interface Courier {
   id: string
@@ -31,6 +33,7 @@ interface CourierManagementProps {
 
 export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData }) => {
   const { excelData: contextData, updateCourierData } = useExcelData()
+  const { isDark } = useTheme()
   const [couriers, setCouriers] = useState<Courier[]>([])
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingCourier, setEditingCourier] = useState<Courier | null>(null)
@@ -292,11 +295,20 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+      <div className={clsx(
+        'rounded-lg shadow-sm border p-6',
+        isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+      )}>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Управление курьерами</h1>
-            <p className="mt-1 text-sm text-gray-600">
+            <h1 className={clsx(
+              'text-2xl font-bold',
+              isDark ? 'text-gray-100' : 'text-gray-900'
+            )}>Управление курьерами</h1>
+            <p className={clsx(
+              'mt-1 text-sm',
+              isDark ? 'text-gray-400' : 'text-gray-600'
+            )}>
               Управляйте информацией о курьерах и их заказах
             </p>
           </div>
@@ -311,36 +323,54 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+      <div className={clsx(
+        'rounded-lg shadow-sm border p-4',
+        isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+      )}>
         <div className="flex space-x-4">
           <button
             onClick={() => setFilter('all')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium ${
+            className={clsx(
+              'px-4 py-2 rounded-lg text-sm font-medium',
               filter === 'all' 
-                ? 'bg-blue-100 text-blue-800' 
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
+                ? isDark 
+                  ? 'bg-blue-900 text-blue-200' 
+                  : 'bg-blue-100 text-blue-800'
+                : isDark
+                  ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            )}
           >
             Все курьеры ({couriers.length})
           </button>
           <button
             onClick={() => setFilter('car')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2 ${
+            className={clsx(
+              'px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2',
               filter === 'car' 
-                ? 'bg-green-100 text-green-800' 
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
+                ? isDark
+                  ? 'bg-green-900 text-green-200'
+                  : 'bg-green-100 text-green-800'
+                : isDark
+                  ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            )}
           >
             <TruckIcon className="h-4 w-4" />
             <span>Авто курьеры ({couriers.filter(c => c.vehicleType === 'car').length})</span>
           </button>
           <button
             onClick={() => setFilter('motorcycle')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2 ${
+            className={clsx(
+              'px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2',
               filter === 'motorcycle' 
-                ? 'bg-orange-100 text-orange-800' 
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
+                ? isDark
+                  ? 'bg-orange-900 text-orange-200'
+                  : 'bg-orange-100 text-orange-800'
+                : isDark
+                  ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            )}
           >
             <TruckIcon className="h-4 w-4" />
             <span>Мото курьеры ({couriers.filter(c => c.vehicleType === 'motorcycle').length})</span>
@@ -350,11 +380,23 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
 
       {/* Couriers Grid */}
       {filteredCouriers.length === 0 ? (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12">
+        <div className={clsx(
+          'rounded-lg shadow-sm border p-12',
+          isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+        )}>
           <div className="text-center">
-            <UserIcon className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">Нет курьеров</h3>
-            <p className="mt-1 text-sm text-gray-500">
+            <UserIcon className={clsx(
+              'mx-auto h-12 w-12',
+              isDark ? 'text-gray-500' : 'text-gray-400'
+            )} />
+            <h3 className={clsx(
+              'mt-2 text-sm font-medium',
+              isDark ? 'text-gray-200' : 'text-gray-900'
+            )}>Нет курьеров</h3>
+            <p className={clsx(
+              'mt-1 text-sm',
+              isDark ? 'text-gray-400' : 'text-gray-500'
+            )}>
               {filter === 'all' 
                 ? 'Добавьте курьеров или загрузите Excel файл с данными'
                 : `Нет курьеров типа ${filter === 'car' ? 'авто' : 'мото'}`
@@ -371,11 +413,12 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
             return (
             <div 
               key={courier.id} 
-              className={`bg-white rounded-lg shadow-sm border border-gray-200 p-6 transition-all ${
-                !courier.isActive 
-                  ? 'opacity-60 bg-gray-50' 
-                  : ''
-              }`}
+              className={clsx(
+                'rounded-lg shadow-sm border p-6 transition-all',
+                isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200',
+                !courier.isActive && isDark ? 'opacity-60 bg-gray-900' : '',
+                !courier.isActive && !isDark ? 'opacity-60 bg-gray-50' : ''
+              )}
             >
               <div className="flex items-start justify-between">
                 <div className="flex items-center space-x-3">
@@ -385,39 +428,68 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                         e.stopPropagation()
                         toggleCourierVehicleType(courier.id)
                       }}
-                      className={`h-12 w-12 rounded-full flex items-center justify-center transition-colors hover:scale-105 ${
-                        courier.vehicleType === 'car' ? 'bg-green-100 hover:bg-green-200' : 'bg-orange-100 hover:bg-orange-200'
-                      }`}
+                      className={clsx(
+                        'h-12 w-12 rounded-full flex items-center justify-center transition-colors hover:scale-105',
+                        courier.vehicleType === 'car' 
+                          ? isDark 
+                            ? 'bg-green-900 hover:bg-green-800' 
+                            : 'bg-green-100 hover:bg-green-200'
+                          : isDark
+                            ? 'bg-orange-900 hover:bg-orange-800'
+                            : 'bg-orange-100 hover:bg-orange-200'
+                      )}
                       title={`Переключить на ${courier.vehicleType === 'car' ? 'мотоцикл' : 'автомобиль'}`}
                     >
                       {courier.vehicleType === 'car' ? (
-                        <TruckIcon className="h-6 w-6 text-green-600" />
+                        <TruckIcon className={clsx(
+                          'h-6 w-6',
+                          isDark ? 'text-green-400' : 'text-green-600'
+                        )} />
                       ) : (
-                        <TruckIcon className="h-6 w-6 text-orange-600" />
+                        <TruckIcon className={clsx(
+                          'h-6 w-6',
+                          isDark ? 'text-orange-400' : 'text-orange-600'
+                        )} />
                       )}
                     </button>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-lg font-medium text-gray-900 truncate">
+                    <h3 className={clsx(
+                      'text-lg font-medium truncate',
+                      isDark ? 'text-gray-100' : 'text-gray-900'
+                    )}>
                       {courier.name}
                     </h3>
-                    <p className="text-sm text-gray-500 flex items-center">
+                    <p className={clsx(
+                      'text-sm flex items-center',
+                      isDark ? 'text-gray-400' : 'text-gray-500'
+                    )}>
                       <MapPinIcon className="h-4 w-4 mr-1" />
                       {courier.location}
                     </p>
                     <div className="flex items-center space-x-2 mt-1">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      <span className={clsx(
+                        'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
                         courier.isActive 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}>
+                          ? isDark
+                            ? 'bg-green-900 text-green-200'
+                            : 'bg-green-100 text-green-800'
+                          : isDark
+                            ? 'bg-red-900 text-red-200'
+                            : 'bg-red-100 text-red-800'
+                      )}>
                         {courier.isActive ? 'Активен' : 'Неактивен'}
                       </span>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      <span className={clsx(
+                        'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
                         courier.vehicleType === 'car' 
-                          ? 'bg-blue-100 text-blue-800' 
-                          : 'bg-orange-100 text-orange-800'
-                      }`}>
+                          ? isDark
+                            ? 'bg-blue-900 text-blue-200'
+                            : 'bg-blue-100 text-blue-800'
+                          : isDark
+                            ? 'bg-orange-900 text-orange-200'
+                            : 'bg-orange-100 text-orange-800'
+                      )}>
                         {courier.vehicleType === 'car' ? 'Авто' : 'Мото'}
                       </span>
                     </div>
@@ -426,13 +498,19 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 <div className="flex space-x-1">
                   <button
                     onClick={() => setEditingCourier(courier)}
-                    className="p-1 text-gray-400 hover:text-blue-600"
+                    className={clsx(
+                      'p-1 transition-colors',
+                      isDark ? 'text-gray-400 hover:text-blue-400' : 'text-gray-400 hover:text-blue-600'
+                    )}
                   >
                     <PencilIcon className="h-4 w-4" />
                   </button>
                   <button
                     onClick={() => handleDeleteCourier(courier.id)}
-                    className="p-1 text-gray-400 hover:text-red-600"
+                    className={clsx(
+                      'p-1 transition-colors',
+                      isDark ? 'text-gray-400 hover:text-red-400' : 'text-gray-400 hover:text-red-600'
+                    )}
                   >
                     <TrashIcon className="h-4 w-4" />
                   </button>
@@ -441,24 +519,48 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
 
               <div className="mt-4 space-y-3">
                 {/* Заказы */}
-                <div className="bg-gray-50 rounded-lg p-3">
+                <div className={clsx(
+                  'rounded-lg p-3',
+                  isDark ? 'bg-gray-700' : 'bg-gray-50'
+                )}>
                   <div className="flex items-center justify-center space-x-1 mb-2">
-                    <TruckIcon className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm font-medium text-gray-700">Заказы</span>
+                    <TruckIcon className={clsx(
+                      'h-4 w-4',
+                      isDark ? 'text-gray-400' : 'text-gray-400'
+                    )} />
+                    <span className={clsx(
+                      'text-sm font-medium',
+                      isDark ? 'text-gray-300' : 'text-gray-700'
+                    )}>Заказы</span>
                   </div>
                   <div className="text-center">
-                    <p className="text-xs text-gray-500">Посчитанных заказов</p>
-                    <p className="text-lg font-semibold text-blue-600">
+                    <p className={clsx(
+                      'text-xs',
+                      isDark ? 'text-gray-400' : 'text-gray-500'
+                    )}>Посчитанных заказов</p>
+                    <p className={clsx(
+                      'text-lg font-semibold',
+                      isDark ? 'text-blue-400' : 'text-blue-600'
+                    )}>
                       {calculateCourierOrdersInRoutes(courier.name)}
                     </p>
                   </div>
                 </div>
 
                 {/* Километры */}
-                <div className="bg-gray-50 rounded-lg p-3">
+                <div className={clsx(
+                  'rounded-lg p-3',
+                  isDark ? 'bg-gray-700' : 'bg-gray-50'
+                )}>
                   <div className="flex items-center justify-center space-x-1 mb-2">
-                    <MapPinIcon className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm font-medium text-gray-700">Километры</span>
+                    <MapPinIcon className={clsx(
+                      'h-4 w-4',
+                      isDark ? 'text-gray-400' : 'text-gray-400'
+                    )} />
+                    <span className={clsx(
+                      'text-sm font-medium',
+                      isDark ? 'text-gray-300' : 'text-gray-700'
+                    )}>Километры</span>
                   </div>
                   {(() => {
                     const distanceDetails = calculateCourierDistanceDetails(courier.name)
@@ -466,26 +568,50 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                       <div className="space-y-2">
                         <div className="grid grid-cols-2 gap-2 text-center">
                           <div>
-                            <p className="text-xs text-gray-500">Основные</p>
-                            <p className="text-sm font-semibold text-gray-900">
+                            <p className={clsx(
+                              'text-xs',
+                              isDark ? 'text-gray-400' : 'text-gray-500'
+                            )}>Основные</p>
+                            <p className={clsx(
+                              'text-sm font-semibold',
+                              isDark ? 'text-gray-200' : 'text-gray-900'
+                            )}>
                               {distanceDetails.baseDistance.toFixed(1)} км
                             </p>
                           </div>
                           <div>
-                            <p className="text-xs text-gray-500">Дополнительные</p>
-                            <p className="text-sm font-semibold text-orange-600">
+                            <p className={clsx(
+                              'text-xs',
+                              isDark ? 'text-gray-400' : 'text-gray-500'
+                            )}>Дополнительные</p>
+                            <p className={clsx(
+                              'text-sm font-semibold',
+                              isDark ? 'text-orange-400' : 'text-orange-600'
+                            )}>
                               +{distanceDetails.additionalDistance.toFixed(1)} км
                             </p>
                           </div>
                         </div>
-                        <div className="border-t pt-2 text-center">
-                          <p className="text-xs text-gray-500">Общий пробег</p>
-                          <p className="text-lg font-bold text-blue-600">
+                        <div className={clsx(
+                          'border-t pt-2 text-center',
+                          isDark ? 'border-gray-600' : 'border-gray-200'
+                        )}>
+                          <p className={clsx(
+                            'text-xs',
+                            isDark ? 'text-gray-400' : 'text-gray-500'
+                          )}>Общий пробег</p>
+                          <p className={clsx(
+                            'text-lg font-bold',
+                            isDark ? 'text-blue-400' : 'text-blue-600'
+                          )}>
                             {distanceDetails.totalDistance.toFixed(1)} км
                           </p>
                         </div>
                         {distanceDetails.ordersInRoutes > 0 && (
-                          <p className="text-xs text-gray-500 text-center">
+                          <p className={clsx(
+                            'text-xs text-center',
+                            isDark ? 'text-gray-400' : 'text-gray-500'
+                          )}>
                             (+500м к каждому из {distanceDetails.ordersInRoutes} заказов)
                           </p>
                         )}

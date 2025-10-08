@@ -5,6 +5,8 @@ import { CogIcon, KeyIcon, MapIcon } from '@heroicons/react/24/outline'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import * as api from '../services/api'
 import { localStorageUtils } from '../utils/localStorage'
+import { useTheme } from '../contexts/ThemeContext'
+import { clsx } from 'clsx'
 
 interface SettingsForm {
   googleMapsApiKey: string
@@ -13,6 +15,7 @@ interface SettingsForm {
 }
 
 export const Settings: React.FC = () => {
+  const { isDark } = useTheme()
   const [isTestingApiKey, setIsTestingApiKey] = useState(false)
   const [apiKeyStatus, setApiKeyStatus] = useState<'unknown' | 'valid' | 'invalid'>('unknown')
 
@@ -126,13 +129,25 @@ export const Settings: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className={clsx(
+      'space-y-6 transition-colors duration-300',
+      isDark ? 'text-gray-100' : 'text-gray-900'
+    )}>
       {/* Header */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+      <div className={clsx(
+        'rounded-lg shadow-sm border p-6',
+        isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+      )}>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Настройки</h1>
-            <p className="mt-1 text-sm text-gray-600">
+            <h1 className={clsx(
+              'text-2xl font-bold',
+              isDark ? 'text-gray-100' : 'text-gray-900'
+            )}>Настройки</h1>
+            <p className={clsx(
+              'mt-1 text-sm',
+              isDark ? 'text-gray-400' : 'text-gray-600'
+            )}>
               Настройка приложения и API ключей
             </p>
           </div>
@@ -140,7 +155,10 @@ export const Settings: React.FC = () => {
       </div>
 
       {/* Settings Form */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+      <div className={clsx(
+        'rounded-lg shadow-sm border p-6',
+        isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+      )}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           {/* Google Maps API Key */}
           <div>
