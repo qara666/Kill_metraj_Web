@@ -196,9 +196,17 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     setSelectedCourier(courierName)
   }
 
-  // Сортируем заказы по плановому времени
+  // Сортируем заказы: сначала доступные по времени, потом заказы в маршрутах
   const sortOrdersByTime = (orders: Order[]) => {
     return [...orders].sort((a, b) => {
+      const aInRoute = isOrderInExistingRoute(a.id)
+      const bInRoute = isOrderInExistingRoute(b.id)
+      
+      // Сначала сортируем по статусу: доступные заказы сверху, в маршрутах снизу
+      if (aInRoute && !bInRoute) return 1
+      if (!aInRoute && bInRoute) return -1
+      
+      // Если оба в одном статусе, сортируем по времени
       if (!a.plannedTime && !b.plannedTime) return 0
       if (!a.plannedTime) return 1
       if (!b.plannedTime) return -1
@@ -546,53 +554,112 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                 </button>
               </div>
 
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {sortOrdersByTime(courierOrders[selectedCourier] || []).map(order => {
-                  const isSelected = selectedOrders.has(order.id)
-                  const isInExistingRoute = isOrderInExistingRoute(order.id)
+              <div className="max-h-96 overflow-y-auto">
+                {(() => {
+                  const allOrders = sortOrdersByTime(courierOrders[selectedCourier] || [])
+                  const availableOrders = allOrders.filter(order => !isOrderInExistingRoute(order.id))
+                  const ordersInRoutes = allOrders.filter(order => isOrderInExistingRoute(order.id))
+                  
                   return (
-                    <div
-                      key={order.id}
-                      onClick={() => !isInExistingRoute && handleOrderSelect(order.id)}
-                      className={`p-3 rounded-lg border transition-colors ${
-                        isInExistingRoute
-                          ? 'bg-yellow-50 border-yellow-200 cursor-not-allowed opacity-60'
-                          : isSelected
-                          ? 'bg-blue-50 border-blue-200 ring-2 ring-blue-500 cursor-pointer'
-                          : 'bg-gray-50 border-gray-200 hover:bg-gray-100 cursor-pointer'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2">
-                            <span className="font-medium text-gray-900">
-                              Заказ #{order.orderNumber}
+                    <div className="space-y-4">
+                      {/* Доступные заказы */}
+                      {availableOrders.length > 0 && (
+                        <div>
+                          <div className="flex items-center space-x-2 mb-2">
+                            <CheckCircleIcon className="h-4 w-4 text-green-600" />
+                            <span className="text-sm font-medium text-green-800">
+                              Доступные заказы ({availableOrders.length})
                             </span>
-                            {isSelected && (
-                              <CheckCircleIcon className="h-4 w-4 text-blue-600" />
-                            )}
-                            {isInExistingRoute && (
-                              <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
-                                В маршруте
-                              </span>
-                            )}
                           </div>
-                          <p className="text-sm text-gray-600 mt-1">{order.address}</p>
-                          <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
-                            <span>{order.customerName}</span>
-                            <span>{order.phone}</span>
-                            <span>{order.amount} грн</span>
-                            {order.plannedTime && (
-                              <span className="text-blue-600 font-medium">
-                                {order.plannedTime}
-                              </span>
-                            )}
+                          <div className="space-y-2">
+                            {availableOrders.map(order => {
+                              const isSelected = selectedOrders.has(order.id)
+                              return (
+                                <div
+                                  key={order.id}
+                                  onClick={() => handleOrderSelect(order.id)}
+                                  className={`p-3 rounded-lg border transition-colors ${
+                                    isSelected
+                                      ? 'bg-blue-50 border-blue-200 ring-2 ring-blue-500 cursor-pointer'
+                                      : 'bg-gray-50 border-gray-200 hover:bg-gray-100 cursor-pointer'
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between">
+                                    <div className="flex-1">
+                                      <div className="flex items-center space-x-2">
+                                        <span className="font-medium text-gray-900">
+                                          Заказ #{order.orderNumber}
+                                        </span>
+                                        {isSelected && (
+                                          <CheckCircleIcon className="h-4 w-4 text-blue-600" />
+                                        )}
+                                      </div>
+                                      <p className="text-sm text-gray-600 mt-1">{order.address}</p>
+                                      <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
+                                        <span>{order.customerName}</span>
+                                        <span>{order.phone}</span>
+                                        <span>{order.amount} грн</span>
+                                        {order.plannedTime && (
+                                          <span className="text-blue-600 font-medium">
+                                            {order.plannedTime}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })}
                           </div>
                         </div>
-                      </div>
+                      )}
+                      
+                      {/* Заказы в маршрутах */}
+                      {ordersInRoutes.length > 0 && (
+                        <div>
+                          <div className="flex items-center space-x-2 mb-2">
+                            <ClockIcon className="h-4 w-4 text-yellow-600" />
+                            <span className="text-sm font-medium text-yellow-800">
+                              Заказы в маршрутах ({ordersInRoutes.length})
+                            </span>
+                          </div>
+                          <div className="space-y-2">
+                            {ordersInRoutes.map(order => (
+                              <div
+                                key={order.id}
+                                className="p-3 rounded-lg border bg-yellow-50 border-yellow-200 cursor-not-allowed opacity-60"
+                              >
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <div className="flex items-center space-x-2">
+                                      <span className="font-medium text-gray-900">
+                                        Заказ #{order.orderNumber}
+                                      </span>
+                                      <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
+                                        В маршруте
+                                      </span>
+                                    </div>
+                                    <p className="text-sm text-gray-600 mt-1">{order.address}</p>
+                                    <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
+                                      <span>{order.customerName}</span>
+                                      <span>{order.phone}</span>
+                                      <span>{order.amount} грн</span>
+                                      {order.plannedTime && (
+                                        <span className="text-blue-600 font-medium">
+                                          {order.plannedTime}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )
-                })}
+                })()}
               </div>
             </div>
           )}
