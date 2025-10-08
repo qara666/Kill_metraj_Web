@@ -69,6 +69,12 @@ export const Zones: React.FC = () => {
   const [minOrdersPerRoute, setMinOrdersPerRoute] = useState(3)
   const [routes, setRoutes] = useState<any[]>([])
   const [showOptimized, setShowOptimized] = useState(false)
+  const [debugLog, setDebugLog] = useState<string[]>([])
+
+  const addLog = (message: string) => {
+    const ts = new Date().toLocaleTimeString()
+    setDebugLog(prev => [...prev, `[${ts}] ${message}`])
+  }
 
   // Функция обработки Excel файла (изолированная)
   const processExcelFile = async (file: File): Promise<ZoneExcelData> => {
@@ -83,6 +89,7 @@ export const Zones: React.FC = () => {
           }
           
           console.log('Reading Excel file:', file.name, file.size, 'bytes')
+          addLog(`Файл прочитан: ${file.name} (${file.size} байт)`) 
           
           const workbook = XLSX.read(data, { type: 'binary' })
           const sheetName = workbook.SheetNames[0]
@@ -95,6 +102,7 @@ export const Zones: React.FC = () => {
           const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
           
           console.log('Excel data converted to JSON:', jsonData.length, 'rows')
+          addLog(`Конвертация Excel → JSON: ${jsonData.length} строк`) 
           
           if (!Array.isArray(jsonData) || jsonData.length < 2) {
             throw new Error('Invalid Excel file format or empty data')
@@ -105,12 +113,14 @@ export const Zones: React.FC = () => {
           resolve(processedData)
         } catch (error) {
           console.error('Error processing Excel file:', error)
+          addLog(`Ошибка при обработке Excel: ${(error as Error).message}`)
           reject(error)
         }
       }
       
       reader.onerror = () => {
         console.error('FileReader error')
+        addLog('Ошибка чтения файла (FileReader)')
         reject(new Error('Failed to read file'))
       }
       
@@ -124,12 +134,14 @@ export const Zones: React.FC = () => {
     const couriers: string[] = []
     
     console.log('Processing Excel data:', rawData.length, 'rows')
+    addLog(`Старт обработки Excel: ${rawData.length} строк`)
     
     // Пропускаем заголовок и обрабатываем данные
     for (let i = 1; i < rawData.length; i++) {
       const row = rawData[i]
       if (!row || !Array.isArray(row) || row.length < 5) {
         console.warn(`Skipping row ${i}: invalid format`, row)
+        addLog(`Строка ${i} пропущена: неверный формат`)
         continue
       }
       
@@ -149,6 +161,7 @@ export const Zones: React.FC = () => {
         // Пропускаем заказы без адреса
         if (!address) {
           console.warn(`Skipping order ${orderNumber}: no address`)
+          addLog(`Строка ${i} пропущена: пустой адрес (order ${orderNumber})`)
           continue
         }
         
@@ -175,10 +188,12 @@ export const Zones: React.FC = () => {
         }
       } catch (error) {
         console.warn(`Error processing row ${i}:`, error, row)
+        addLog(`Ошибка строки ${i}: ${(error as Error).message}`)
       }
     }
     
     console.log(`Processed ${orders.length} orders, ${couriers.length} couriers`)
+    addLog(`Итог: заказов ${orders.length}, курьеров ${couriers.length}`)
     
     return {
       orders,
@@ -221,10 +236,13 @@ export const Zones: React.FC = () => {
     onSuccess: (data) => {
       setZoneExcelData(data)
       toast.success(`Обработано ${data.orders.length} заказов для анализа зон`)
+      addLog(`Успех: получено заказов ${data.orders.length}`)
+      setShowOptimized(true)
     },
     onError: (error) => {
       console.error('Error processing file:', error)
       toast.error('Ошибка обработки файла')
+      addLog('Ошибка: файл не обработан')
     }
   })
 
@@ -423,7 +441,7 @@ export const Zones: React.FC = () => {
   // Алгоритм оптимизации маршрутов
   const optimizedRoutes = useMemo(() => {
     try {
-      if (!showOptimized || zones.length === 0) return []
+      if (zones.length === 0) return []
 
       const routes: Array<{
         id: string
@@ -471,12 +489,13 @@ export const Zones: React.FC = () => {
       })
     })
 
-      return routes.sort((a, b) => b.efficiency - a.efficiency)
+      const result = routes.sort((a, b) => b.efficiency - a.efficiency)
+      return result
     } catch (error) {
       console.error('Error optimizing routes:', error)
       return []
     }
-  }, [zones, showOptimized, minOrdersPerRoute])
+  }, [zones, minOrdersPerRoute])
 
   const selectedZoneData = zones.find(z => z.id === selectedZone)
 
@@ -793,6 +812,29 @@ export const Zones: React.FC = () => {
           )}>
             Система автоматически проанализирует заказы и распределит их по зонам доставки на основе адресов
           </p>
+          {/* Панель статусов и подсказок */}
+          <div className={clsx(
+            'mt-6 text-left rounded-lg p-4 border',
+            isDark ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50 border-gray-200'
+          )}>
+            <h4 className={clsx('font-semibold mb-2', isDark ? 'text-gray-100' : 'text-gray-900')}>Шаги обработки</h4>
+            <ol className={clsx('list-decimal pl-5 space-y-1', isDark ? 'text-gray-300' : 'text-gray-700')}>
+              <li>Загрузка Excel файла</li>
+              <li>Чтение и конвертация в JSON</li>
+              <li>Парсинг строк и фильтрация пустых адресов</li>
+              <li>Группировка заказов по зонам</li>
+              <li>Построение оптимизированных маршрутов</li>
+            </ol>
+            <div className={clsx('mt-3 text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>
+              Подсказки: убедитесь, что адреса в колонке H, сумма в колонке N.
+            </div>
+            {/* Живой лог */}
+            <div className={clsx('mt-3 max-h-36 overflow-auto rounded border text-xs', isDark ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white')}>
+              <pre className={clsx('p-2 whitespace-pre-wrap', isDark ? 'text-gray-300' : 'text-gray-700')}>
+                {debugLog.length ? debugLog.join('\n') : 'Лог пуст — загрузите файл, чтобы увидеть шаги.'}
+              </pre>
+            </div>
+          </div>
           {/* Кнопка переключения отображения оптимизированных маршрутов */}
           <button
             type="button"
