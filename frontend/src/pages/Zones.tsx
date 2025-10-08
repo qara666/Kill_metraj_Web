@@ -403,7 +403,7 @@ export const Zones: React.FC = () => {
     })
 
     // Создаем объекты зон с дополнительной защитой
-    const zonesList: Zone[] = Object.entries(zoneGroups).map(([name, orders], index) => {
+    let zonesList: Zone[] = Object.entries(zoneGroups).map(([name, orders], index) => {
       try {
         // Безопасное извлечение курьеров
         const couriers = [...new Set(orders
@@ -452,7 +452,20 @@ export const Zones: React.FC = () => {
         }
       }
     })
-    addLog(`Определено зон: ${zonesList.length}. Детали: ` + zonesList.map(z => `${z.name}=${z.orders.length}`).join(', '))
+    if (zonesList.length === 0 && orders.length > 0) {
+      // Фолбэк: если не распознали зоны, показываем все заказы одной зоной
+      zonesList = [{
+        id: 'zone_fallback_all',
+        name: 'Все заказы',
+        center: getZoneCenter('Другое'),
+        radius: 2,
+        orders: orders,
+        couriers: [...new Set(orders.map(o => o.courier).filter(c => c && c !== 'Не назначен'))],
+        totalAmount: orders.reduce((sum, o) => sum + (typeof o.amount === 'number' ? o.amount : 0), 0),
+        averageTime: orders.length * 15
+      }]
+    }
+    addLog(`Определено зон: ${zonesList.length}. Детали: ` + (zonesList.length ? zonesList.map(z => `${z.name}=${z.orders.length}`).join(', ') : 'нет'))
     return zonesList
     } catch (error) {
       console.error('Error processing zones:', error)
