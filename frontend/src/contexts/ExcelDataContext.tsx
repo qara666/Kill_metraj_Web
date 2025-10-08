@@ -17,6 +17,7 @@ interface ExcelDataContextType {
   setExcelData: (data: ExcelData | null) => void
   clearExcelData: () => void
   updateRouteData: (routes: any[]) => void
+  updateCourierData: (couriers: any[]) => void
 }
 
 const ExcelDataContext = createContext<ExcelDataContextType | undefined>(undefined)
@@ -84,8 +85,17 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     }
   }
 
+  const updateCourierData = (couriers: any[]) => {
+    if (excelData) {
+      setExcelDataState({
+        ...excelData,
+        couriers: couriers
+      })
+    }
+  }
+
   return (
-    <ExcelDataContext.Provider value={{ excelData, setExcelData, clearExcelData, updateRouteData }}>
+    <ExcelDataContext.Provider value={{ excelData, setExcelData, clearExcelData, updateRouteData, updateCourierData }}>
       {children}
     </ExcelDataContext.Provider>
   )

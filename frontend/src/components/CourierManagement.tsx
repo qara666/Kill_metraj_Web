@@ -30,7 +30,7 @@ interface CourierManagementProps {
 }
 
 export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData }) => {
-  const { excelData: contextData } = useExcelData()
+  const { excelData: contextData, updateCourierData } = useExcelData()
   const [couriers, setCouriers] = useState<Courier[]>([])
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingCourier, setEditingCourier] = useState<Courier | null>(null)
@@ -166,17 +166,37 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   }
 
   const toggleCourierVehicleType = (id: string) => {
-    setCouriers(prev => prev.map(courier => {
-      if (courier.id === id) {
-        const newVehicleType = courier.vehicleType === 'car' ? 'motorcycle' : 'car'
-        return {
-          ...courier,
-          vehicleType: newVehicleType,
-          totalDistance: calculateCourierDistance(courier.name)
+    setCouriers(prev => {
+      const updatedCouriers = prev.map(courier => {
+        if (courier.id === id) {
+          const newVehicleType = courier.vehicleType === 'car' ? 'motorcycle' : 'car'
+          return {
+            ...courier,
+            vehicleType: newVehicleType as 'car' | 'motorcycle',
+            totalDistance: calculateCourierDistance(courier.name)
+          }
         }
+        return courier
+      })
+      
+      // Сохраняем изменения в контексте
+      if (contextData) {
+        const updatedContextCouriers = contextData.couriers.map((courier: any) => {
+          const localCourier = updatedCouriers.find(c => c.name === courier.name)
+          if (localCourier) {
+            return {
+              ...courier,
+              vehicleType: localCourier.vehicleType,
+              totalDistance: localCourier.totalDistance
+            }
+          }
+          return courier
+        })
+        updateCourierData(updatedContextCouriers)
       }
-      return courier
-    }))
+      
+      return updatedCouriers
+    })
   }
 
   const getCourierRoutes = (courierName: string) => {
