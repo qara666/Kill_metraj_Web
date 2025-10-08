@@ -555,6 +555,25 @@ export const Zones: React.FC = () => {
     }
   }, [zones, minOrdersPerRoute])
 
+  // Диагностика на основании зон (даже если маршруты не построены)
+  useEffect(() => {
+    const totalZones = zones.length
+    let zonesEligible = 0
+    let courierGroupsEligible = 0
+    zones.forEach(zone => {
+      if (zone.orders.length >= minOrdersPerRoute) {
+        zonesEligible++
+        const groups: { [k: string]: number } = {}
+        zone.orders.forEach(o => {
+          const c = o.courier === 'Не назначен' ? 'Автоматический' : o.courier || 'Автоматический'
+          groups[c] = (groups[c] || 0) + 1
+        })
+        Object.values(groups).forEach(count => { if (count >= minOrdersPerRoute) courierGroupsEligible++ })
+      }
+    })
+    setRoutesDiag({ totalZones, zonesEligible, courierGroupsEligible, threshold: minOrdersPerRoute })
+  }, [zones, minOrdersPerRoute])
+
   const selectedZoneData = zones.find(z => z.id === selectedZone)
 
   const handleCreateRoute = (orders: ZoneOrder[], courier: string) => {
