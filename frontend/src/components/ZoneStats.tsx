@@ -27,27 +27,30 @@ interface ZoneStatsProps {
 export const ZoneStats: React.FC<ZoneStatsProps> = ({ zones }) => {
   const { isDark } = useTheme()
 
+  // Безопасная обработка данных
+  const safeZones = zones || []
+  
   const totalStats = {
-    totalOrders: zones.reduce((sum, zone) => sum + zone.orders.length, 0),
-    totalAmount: zones.reduce((sum, zone) => sum + zone.totalAmount, 0),
-    totalCouriers: new Set(zones.flatMap(zone => zone.couriers)).size,
-    averageEfficiency: zones.length > 0 
-      ? zones.reduce((sum, zone) => sum + (zone.totalAmount / zone.averageTime), 0) / zones.length 
+    totalOrders: safeZones.reduce((sum, zone) => sum + (zone.orders?.length || 0), 0),
+    totalAmount: safeZones.reduce((sum, zone) => sum + (zone.totalAmount || 0), 0),
+    totalCouriers: new Set(safeZones.flatMap(zone => zone.couriers || [])).size,
+    averageEfficiency: safeZones.length > 0 
+      ? safeZones.reduce((sum, zone) => sum + ((zone.totalAmount || 0) / (zone.averageTime || 1)), 0) / safeZones.length 
       : 0
   }
 
-  const topZone = zones.reduce((top, zone) => 
-    zone.totalAmount > top.totalAmount ? zone : top, 
-    zones[0] || { name: 'Нет данных', totalAmount: 0 }
+  const topZone = safeZones.reduce((top, zone) => 
+    (zone.totalAmount || 0) > (top.totalAmount || 0) ? zone : top, 
+    safeZones[0] || { name: 'Нет данных', totalAmount: 0 }
   )
 
-  const courierStats = zones.reduce((acc, zone) => {
-    zone.couriers.forEach(courier => {
+  const courierStats = safeZones.reduce((acc, zone) => {
+    (zone.couriers || []).forEach(courier => {
       if (!acc[courier]) {
         acc[courier] = { orders: 0, amount: 0, zones: 0 }
       }
-      acc[courier].orders += zone.orders.filter(o => o.courier === courier).length
-      acc[courier].amount += zone.orders.filter(o => o.courier === courier).reduce((sum, o) => sum + o.amount, 0)
+      acc[courier].orders += (zone.orders || []).filter(o => o.courier === courier).length
+      acc[courier].amount += (zone.orders || []).filter(o => o.courier === courier).reduce((sum, o) => sum + (o.amount || 0), 0)
       acc[courier].zones += 1
     })
     return acc
@@ -230,7 +233,7 @@ export const ZoneStats: React.FC<ZoneStatsProps> = ({ zones }) => {
         </h4>
         
         <div className="space-y-3">
-          {zones.map((zone) => (
+          {safeZones.map((zone) => (
             <div
               key={zone.id}
               className={clsx(
@@ -251,7 +254,7 @@ export const ZoneStats: React.FC<ZoneStatsProps> = ({ zones }) => {
                     'text-sm',
                     isDark ? 'text-gray-400' : 'text-gray-600'
                   )}>
-                    {zone.orders.length} заказов • {zone.couriers.length} курьеров
+                    {zone.orders?.length || 0} заказов • {zone.couriers?.length || 0} курьеров
                   </div>
                 </div>
               </div>
@@ -261,13 +264,13 @@ export const ZoneStats: React.FC<ZoneStatsProps> = ({ zones }) => {
                   'font-semibold',
                   isDark ? 'text-gray-200' : 'text-gray-800'
                 )}>
-                  {zone.totalAmount.toLocaleString()} ₴
+                  {(zone.totalAmount || 0).toLocaleString()} ₴
                 </div>
                 <div className={clsx(
                   'text-sm',
                   isDark ? 'text-gray-400' : 'text-gray-600'
                 )}>
-                  ~{zone.averageTime} мин
+                  ~{zone.averageTime || 0} мин
                 </div>
               </div>
             </div>

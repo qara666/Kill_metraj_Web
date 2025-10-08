@@ -52,6 +52,18 @@ export const ZoneDetails: React.FC<ZoneDetailsProps> = ({
   const [selectedCourier, setSelectedCourier] = useState<string>('')
   const [showOptimization, setShowOptimization] = useState(false)
 
+  // Безопасная обработка данных зоны
+  const safeZone = zone || {
+    id: '',
+    name: 'Неизвестная зона',
+    center: { lat: 0, lng: 0 },
+    radius: 0,
+    orders: [],
+    couriers: [],
+    totalAmount: 0,
+    averageTime: 0
+  }
+
   const toggleOrderSelection = (orderId: string) => {
     setSelectedOrders(prev => 
       prev.includes(orderId) 
@@ -61,7 +73,7 @@ export const ZoneDetails: React.FC<ZoneDetailsProps> = ({
   }
 
   const selectAllOrders = () => {
-    setSelectedOrders(zone.orders.map(order => order.id))
+    setSelectedOrders((safeZone.orders || []).map(order => order.id))
   }
 
   const clearSelection = () => {
@@ -69,7 +81,7 @@ export const ZoneDetails: React.FC<ZoneDetailsProps> = ({
   }
 
   const getSelectedOrdersData = () => {
-    return zone.orders.filter(order => selectedOrders.includes(order.id))
+    return (safeZone.orders || []).filter(order => selectedOrders.includes(order.id))
   }
 
   const calculateRouteStats = () => {
@@ -108,13 +120,13 @@ export const ZoneDetails: React.FC<ZoneDetailsProps> = ({
                 'text-xl font-bold',
                 isDark ? 'text-gray-100' : 'text-gray-900'
               )}>
-                {zone.name}
+                {safeZone.name}
               </h2>
               <p className={clsx(
                 'text-sm',
                 isDark ? 'text-gray-400' : 'text-gray-600'
               )}>
-                {zone.orders.length} заказов • {zone.couriers.length} курьеров
+                {safeZone.orders?.length || 0} заказов • {safeZone.couriers?.length || 0} курьеров
               </p>
             </div>
           </div>
@@ -158,7 +170,7 @@ export const ZoneDetails: React.FC<ZoneDetailsProps> = ({
             </div>
 
             <div className="space-y-3">
-              {zone.orders.map((order) => (
+              {(safeZone.orders || []).map((order) => (
                 <div
                   key={order.id}
                   onClick={() => toggleOrderSelection(order.id)}
@@ -265,7 +277,7 @@ export const ZoneDetails: React.FC<ZoneDetailsProps> = ({
                 )}
               >
                 <option value="">Выберите курьера</option>
-                {zone.couriers.map((courier) => (
+                {(safeZone.couriers || []).map((courier) => (
                   <option key={courier} value={courier}>
                     {courier}
                   </option>
@@ -377,8 +389,8 @@ export const ZoneDetails: React.FC<ZoneDetailsProps> = ({
               <button
                 onClick={() => {
                   // Автоматически выбрать оптимальные заказы
-                  const optimalOrders = zone.orders
-                    .sort((a, b) => b.priority - a.priority)
+                  const optimalOrders = (safeZone.orders || [])
+                    .sort((a, b) => (b.priority || 0) - (a.priority || 0))
                     .slice(0, 5)
                     .map(o => o.id)
                   setSelectedOrders(optimalOrders)
@@ -391,8 +403,8 @@ export const ZoneDetails: React.FC<ZoneDetailsProps> = ({
               <button
                 onClick={() => {
                   // Выбрать заказы с высокой суммой
-                  const highValueOrders = zone.orders
-                    .filter(o => o.amount > 1000)
+                  const highValueOrders = (safeZone.orders || [])
+                    .filter(o => (o.amount || 0) > 1000)
                     .map(o => o.id)
                   setSelectedOrders(highValueOrders)
                 }}

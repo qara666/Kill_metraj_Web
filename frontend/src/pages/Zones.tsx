@@ -54,13 +54,18 @@ export const Zones: React.FC = () => {
 
   // Определяем зоны на основе адресов заказов
   const zones = useMemo(() => {
-    if (!excelData?.orders || !Array.isArray(excelData.orders)) {
-      return []
-    }
+    try {
+      if (!excelData?.orders || !Array.isArray(excelData.orders)) {
+        return []
+      }
 
-    const orders = excelData.orders.filter((order: any) => 
-      order.address && order.address.trim() !== ''
-    )
+      const orders = excelData.orders.filter((order: any) => 
+        order && 
+        typeof order === 'object' && 
+        order.address && 
+        typeof order.address === 'string' && 
+        order.address.trim() !== ''
+      )
 
     // Группируем заказы по районам/зонам
     const zoneGroups: { [key: string]: ZoneOrder[] } = {}
@@ -87,12 +92,12 @@ export const Zones: React.FC = () => {
       }
 
       zoneGroups[zoneKey].push({
-        id: order.id || `order_${order.orderNumber}`,
+        id: order.id || `order_${order.orderNumber || 'unknown'}`,
         orderNumber: order.orderNumber || 'N/A',
         address: order.address,
         plannedTime: order.plannedTime,
         courier: order.courier || 'Не назначен',
-        amount: order.amount || 0,
+        amount: typeof order.amount === 'number' ? order.amount : 0,
         paymentMethod: order.paymentMethod || 'Неизвестно',
         phone: order.phone || '',
         customerName: order.customerName || '',
@@ -118,6 +123,10 @@ export const Zones: React.FC = () => {
     })
 
     return zonesList
+    } catch (error) {
+      console.error('Error processing zones:', error)
+      return []
+    }
   }, [excelData?.orders])
 
   // Получаем центр зоны по названию
@@ -135,18 +144,19 @@ export const Zones: React.FC = () => {
 
   // Алгоритм оптимизации маршрутов
   const optimizedRoutes = useMemo(() => {
-    if (!showOptimized || zones.length === 0) return []
+    try {
+      if (!showOptimized || zones.length === 0) return []
 
-    const routes: Array<{
-      id: string
-      courier: string
-      zone: string
-      orders: ZoneOrder[]
-      totalDistance: number
-      totalAmount: number
-      estimatedTime: number
-      efficiency: number
-    }> = []
+      const routes: Array<{
+        id: string
+        courier: string
+        zone: string
+        orders: ZoneOrder[]
+        totalDistance: number
+        totalAmount: number
+        estimatedTime: number
+        efficiency: number
+      }> = []
 
     zones.forEach(zone => {
       if (zone.orders.length < minOrdersPerRoute) return
@@ -183,7 +193,11 @@ export const Zones: React.FC = () => {
       })
     })
 
-    return routes.sort((a, b) => b.efficiency - a.efficiency)
+      return routes.sort((a, b) => b.efficiency - a.efficiency)
+    } catch (error) {
+      console.error('Error optimizing routes:', error)
+      return []
+    }
   }, [zones, showOptimized, minOrdersPerRoute])
 
   const selectedZoneData = zones.find(z => z.id === selectedZone)
@@ -192,6 +206,21 @@ export const Zones: React.FC = () => {
     console.log('Creating route:', { orders, courier })
     // Здесь будет логика создания маршрута
     // Можно интегрировать с существующей системой маршрутов
+  }
+
+  // Показываем состояние загрузки если нет данных
+  if (!excelData) {
+    return (
+      <div className={clsx(
+        'flex items-center justify-center h-64',
+        isDark ? 'text-gray-400' : 'text-gray-600'
+      )}>
+        <div className="text-center">
+          <MapPinIcon className="mx-auto h-12 w-12 mb-4" />
+          <p>Загрузите Excel файл для просмотра зон</p>
+        </div>
+      </div>
+    )
   }
 
   return (
