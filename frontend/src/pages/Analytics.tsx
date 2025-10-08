@@ -30,10 +30,9 @@ export const Analytics: React.FC = () => {
   const enhancedAnalytics = useMemo(() => {
     if (!excelData) return null
 
-    try {
-      const orders = excelData.orders || []
-      const couriers = excelData.couriers || []
-      const routes = excelData.routes || []
+    const orders = excelData.orders || []
+    const couriers = excelData.couriers || []
+    const routes = excelData.routes || []
 
     // Анализ курьеров
     const courierStats = Array.isArray(couriers) ? couriers.map((courier: any) => {
@@ -109,10 +108,6 @@ export const Analytics: React.FC = () => {
       totalAmount: Array.isArray(orders) ? orders.reduce((sum: number, order: any) => sum + (order.amount || 0), 0) : 0,
       averageOrderValue: Array.isArray(orders) && orders.length > 0 ? 
         orders.reduce((sum: number, order: any) => sum + (order.amount || 0), 0) / orders.length : 0
-    }
-    } catch (error) {
-      console.error('Ошибка при расчете аналитики:', error)
-      return null
     }
   }, [excelData])
 
