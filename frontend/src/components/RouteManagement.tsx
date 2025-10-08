@@ -333,12 +333,18 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
       return
     }
 
-    const waypoints = route.orders.map(order => order.address).join('|')
-    const origin = encodeURIComponent(route.startAddress)
-    const destination = encodeURIComponent(route.endAddress)
-    const waypointsEncoded = encodeURIComponent(waypoints)
+    // Создаем массив адресов для маршрута
+    const addresses = [
+      route.startAddress,
+      ...route.orders.map(order => order.address),
+      route.endAddress
+    ]
     
-    const googleMapsUrl = `https://www.google.com/maps/dir/${origin}/${waypointsEncoded}/${destination}`
+    // Кодируем каждый адрес отдельно
+    const encodedAddresses = addresses.map(addr => encodeURIComponent(addr))
+    
+    // Создаем URL для Google Maps с несколькими точками
+    const googleMapsUrl = `https://www.google.com/maps/dir/${encodedAddresses.join('/')}`
     window.open(googleMapsUrl, '_blank')
   }
 

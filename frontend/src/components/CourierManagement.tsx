@@ -60,6 +60,30 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     }
   }, [contextData?.routes])
 
+  // Рассчитываем количество заказов курьера с учетом маршрутов
+  const calculateCourierOrders = useMemo(() => {
+    return (courierName: string) => {
+      if (!excelData?.orders || !Array.isArray(excelData.orders)) {
+        return 0
+      }
+
+      // Общее количество заказов курьера
+      const totalOrders = excelData.orders.filter((order: any) => order.courier === courierName).length
+
+      // Количество заказов в маршрутах
+      let ordersInRoutes = 0
+      if (contextData?.routes && Array.isArray(contextData.routes)) {
+        const courierRoutes = contextData.routes.filter((route: any) => route.courier === courierName)
+        courierRoutes.forEach((route: any) => {
+          ordersInRoutes += route.orders?.length || 0
+        })
+      }
+
+      // Возвращаем количество заказов, которые НЕ в маршрутах
+      return Math.max(0, totalOrders - ordersInRoutes)
+    }
+  }, [excelData?.orders, contextData?.routes])
+
   // Создаем курьеров из данных Excel при загрузке
   useEffect(() => {
     if (excelData?.couriers && Array.isArray(excelData.couriers)) {
@@ -73,22 +97,23 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
           vehicleType: 'car' as const,
           location: 'Киев',
           isActive: true,
-          orders: courier.orders || 0,
+          orders: calculateCourierOrders(courierName),
           totalAmount: courier.totalAmount || 0,
           totalDistance: calculateCourierDistance(courierName)
         }
       })
       setCouriers(couriersFromExcel)
     }
-  }, [excelData, calculateCourierDistance])
+  }, [excelData, calculateCourierDistance, calculateCourierOrders])
 
-  // Обновляем расстояния курьеров при изменении маршрутов
+  // Обновляем расстояния и заказы курьеров при изменении маршрутов
   useEffect(() => {
     setCouriers(prev => prev.map(courier => ({
       ...courier,
-      totalDistance: calculateCourierDistance(courier.name)
+      totalDistance: calculateCourierDistance(courier.name),
+      orders: calculateCourierOrders(courier.name)
     })))
-  }, [calculateCourierDistance])
+  }, [calculateCourierDistance, calculateCourierOrders])
 
   const filteredCouriers = couriers
     .filter(courier => {
@@ -106,7 +131,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     const newCourier: Courier = {
       ...courierData,
       id: `courier_${Date.now()}`,
-      totalDistance: calculateCourierDistance(courierData.name)
+      totalDistance: calculateCourierDistance(courierData.name),
+      orders: calculateCourierOrders(courierData.name)
     }
     setCouriers(prev => [...prev, newCourier])
     setShowAddModal(false)
@@ -115,7 +141,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   const handleEditCourier = (courierData: Courier) => {
     const updatedCourier = {
       ...courierData,
-      totalDistance: calculateCourierDistance(courierData.name)
+      totalDistance: calculateCourierDistance(courierData.name),
+      orders: calculateCourierOrders(courierData.name)
     }
     setCouriers(prev => prev.map(courier => 
       courier.id === courierData.id ? updatedCourier : courier
@@ -522,6 +549,21 @@ const CourierRoutesModal: React.FC<CourierRoutesModalProps> = ({ courier, routes
     return hours > 0 ? `${hours}ч ${mins}мин` : `${mins}мин`
   }
 
+  const openRouteInGoogleMaps = (route: any) => {
+    if (!route.orders || route.orders.length === 0) return
+
+    // Создаем массив адресов для маршрута
+    const addresses = route.orders.map((order: any) => order.address)
+    
+    // Кодируем каждый адрес отдельно
+    const encodedAddresses = addresses.map((addr: string) => encodeURIComponent(addr))
+    
+    // Создаем URL для Google Maps с несколькими точками
+    const googleMapsUrl = `https://www.google.com/maps/dir/${encodedAddresses.join('/')}`
+    
+    window.open(googleMapsUrl, '_blank')
+  }
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden">
@@ -562,6 +604,13 @@ const CourierRoutesModal: React.FC<CourierRoutesModalProps> = ({ courier, routes
                           Оптимизирован
                         </span>
                       )}
+                      <button
+                        onClick={() => openRouteInGoogleMaps(route)}
+                        className="p-1 text-gray-400 hover:text-blue-600"
+                        title="Открыть маршрут в Google Maps"
+                      >
+                        <MapIcon className="h-4 w-4" />
+                      </button>
                     </div>
                   </div>
 
