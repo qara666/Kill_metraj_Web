@@ -70,6 +70,8 @@ export const Zones: React.FC = () => {
   const [routes, setRoutes] = useState<any[]>([])
   const [showOptimized, setShowOptimized] = useState(false)
   const [debugLog, setDebugLog] = useState<string[]>([])
+  const [mapKey, setMapKey] = useState(0)
+  const [routesDiag, setRoutesDiag] = useState<{ totalZones: number; zonesEligible: number; courierGroupsEligible: number; threshold: number }>({ totalZones: 0, zonesEligible: 0, courierGroupsEligible: 0, threshold: 3 })
 
   const addLog = (message: string) => {
     const ts = new Date().toLocaleTimeString()
@@ -499,6 +501,7 @@ export const Zones: React.FC = () => {
       } else {
         addLog(`Построено маршрутов: ${result.length}`)
       }
+      setRoutesDiag({ totalZones: zones.length, zonesEligible, courierGroupsEligible, threshold: minOrdersPerRoute })
       return result
     } catch (error) {
       console.error('Error optimizing routes:', error)
@@ -946,7 +949,24 @@ export const Zones: React.FC = () => {
           </h3>
           
           <div className="card p-0 overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 dark:border-gray-700">
+              <span className={clsx('text-sm', isDark ? 'text-gray-300' : 'text-gray-700')}>Google карта зон</span>
+              <div className="flex items-center gap-2">
+                <a
+                  href="https://www.google.com/maps/d/viewer?mid=1ylEgzXxEdNkh0zxDAb3iGCBBw2QM3xk"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-blue-600 hover:underline"
+                >Открыть в новой вкладке</a>
+                <button
+                  type="button"
+                  onClick={() => setMapKey(k => k + 1)}
+                  className="text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+                >Обновить</button>
+              </div>
+            </div>
             <iframe
+              key={mapKey}
               src="https://www.google.com/maps/d/embed?mid=1ylEgzXxEdNkh0zxDAb3iGCBBw2QM3xk&ehbc=2E312F"
               width="100%"
               height="400"
@@ -961,7 +981,7 @@ export const Zones: React.FC = () => {
       </div>
 
       {/* Optimized Routes */}
-      {showOptimized && optimizedRoutes.length > 0 && (
+      {showOptimized && (
         <div className="space-y-4">
           <h3 className={clsx(
             'text-lg font-semibold',
@@ -969,7 +989,19 @@ export const Zones: React.FC = () => {
           )}>
             Оптимизированные маршруты ({optimizedRoutes.length})
           </h3>
-          
+          {optimizedRoutes.length === 0 && (
+            <div className={clsx('text-sm rounded-lg p-4 border', isDark ? 'border-gray-700 bg-gray-800 text-gray-300' : 'border-gray-200 bg-gray-50 text-gray-700')}>
+              <div className="font-medium mb-1">Маршруты пока не построены</div>
+              <div>Проверки:</div>
+              <ul className="list-disc pl-5 mt-1 space-y-1">
+                <li>Всего зон: {routesDiag.totalZones}</li>
+                <li>Зон с достаточным числом заказов (≥ {routesDiag.threshold}): {routesDiag.zonesEligible}</li>
+                <li>Групп по курьерам, проходящих порог: {routesDiag.courierGroupsEligible}</li>
+              </ul>
+              <div className="mt-2">Рекомендации: снизьте порог до 2-3, проверьте назначение курьеров или оставьте "Не назначен".</div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {optimizedRoutes.map((route) => (
               <div
