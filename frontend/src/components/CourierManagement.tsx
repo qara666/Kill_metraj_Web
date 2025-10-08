@@ -88,6 +88,58 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     }
   }, [excelData?.orders, contextData?.routes])
 
+  // Рассчитываем количество заказов курьера в маршрутах
+  const calculateCourierOrdersInRoutes = useMemo(() => {
+    return (courierName: string) => {
+      if (!contextData?.routes || !Array.isArray(contextData.routes)) {
+        return 0
+      }
+
+      let ordersInRoutes = 0
+      const courierRoutes = contextData.routes.filter((route: any) => route.courier === courierName)
+      courierRoutes.forEach((route: any) => {
+        ordersInRoutes += route.orders?.length || 0
+      })
+
+      return ordersInRoutes
+    }
+  }, [contextData?.routes])
+
+  // Рассчитываем детальную информацию о километрах курьера
+  const calculateCourierDistanceDetails = useMemo(() => {
+    return (courierName: string) => {
+      if (!contextData?.routes || !Array.isArray(contextData.routes)) {
+        return { baseDistance: 0, additionalDistance: 0, totalDistance: 0, ordersInRoutes: 0 }
+      }
+
+      const courierRoutes = contextData.routes.filter((route: any) => route.courier === courierName)
+      let baseDistance = 0
+      let additionalDistance = 0
+      let totalOrdersInRoutes = 0
+
+      courierRoutes.forEach((route: any) => {
+        const ordersCount = route.orders?.length || 0
+        totalOrdersInRoutes += ordersCount
+
+        if (route.isOptimized && route.totalDistance) {
+          // Для оптимизированных маршрутов используем рассчитанное расстояние как базовое
+          baseDistance += route.totalDistance
+        } else {
+          // Для неоптимизированных маршрутов считаем базовое расстояние + дополнительные 500м за каждый заказ
+          baseDistance += 1.0 // 1км базовое расстояние за маршрут
+          additionalDistance += ordersCount * 0.5 // 500м за каждый заказ
+        }
+      })
+
+      return {
+        baseDistance,
+        additionalDistance,
+        totalDistance: baseDistance + additionalDistance,
+        ordersInRoutes: totalOrdersInRoutes
+      }
+    }
+  }, [contextData?.routes])
+
   // Создаем курьеров из данных Excel при загрузке
   useEffect(() => {
     if (excelData?.couriers && Array.isArray(excelData.couriers)) {
@@ -384,24 +436,67 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 </div>
               </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-4">
-                <div className="text-center">
-                  <div className="flex items-center justify-center space-x-1">
+              <div className="mt-4 space-y-3">
+                {/* Заказы */}
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="flex items-center justify-center space-x-1 mb-2">
                     <TruckIcon className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm text-gray-600">Заказов</span>
+                    <span className="text-sm font-medium text-gray-700">Заказы</span>
                   </div>
-                  <p className="text-lg font-semibold text-gray-900">
-                    {courier.orders}
-                  </p>
+                  <div className="grid grid-cols-2 gap-2 text-center">
+                    <div>
+                      <p className="text-xs text-gray-500">Всего</p>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {courier.orders}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">В маршрутах</p>
+                      <p className="text-lg font-semibold text-blue-600">
+                        {calculateCourierOrdersInRoutes(courier.name)}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-center">
-                  <div className="flex items-center justify-center space-x-1">
+
+                {/* Километры */}
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="flex items-center justify-center space-x-1 mb-2">
                     <MapPinIcon className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm text-gray-600">Километры</span>
+                    <span className="text-sm font-medium text-gray-700">Километры</span>
                   </div>
-                  <p className="text-lg font-semibold text-gray-900">
-                    {courier.totalDistance.toFixed(1)} км
-                  </p>
+                  {(() => {
+                    const distanceDetails = calculateCourierDistanceDetails(courier.name)
+                    return (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-2 text-center">
+                          <div>
+                            <p className="text-xs text-gray-500">Основные</p>
+                            <p className="text-sm font-semibold text-gray-900">
+                              {distanceDetails.baseDistance.toFixed(1)} км
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Дополнительные</p>
+                            <p className="text-sm font-semibold text-orange-600">
+                              +{distanceDetails.additionalDistance.toFixed(1)} км
+                            </p>
+                          </div>
+                        </div>
+                        <div className="border-t pt-2 text-center">
+                          <p className="text-xs text-gray-500">Общий пробег</p>
+                          <p className="text-lg font-bold text-blue-600">
+                            {distanceDetails.totalDistance.toFixed(1)} км
+                          </p>
+                        </div>
+                        {distanceDetails.ordersInRoutes > 0 && (
+                          <p className="text-xs text-gray-500 text-center">
+                            (+500м к каждому из {distanceDetails.ordersInRoutes} заказов)
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
 
