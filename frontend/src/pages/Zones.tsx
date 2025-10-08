@@ -10,10 +10,13 @@ import {
   SparklesIcon,
   AdjustmentsHorizontalIcon,
   EyeIcon,
-  EyeSlashIcon
+  EyeSlashIcon,
+  DocumentArrowUpIcon
 } from '@heroicons/react/24/outline'
 import { ZoneDetails } from '../components/ZoneDetails'
 import { ZoneStats } from '../components/ZoneStats'
+import { ExcelUploadSection } from '../components/ExcelUploadSection'
+import { LoadingSpinner } from '../components/LoadingSpinner'
 
 interface ZoneOrder {
   id: string
@@ -56,53 +59,65 @@ export const Zones: React.FC = () => {
   const zones = useMemo(() => {
     try {
       if (!excelData?.orders || !Array.isArray(excelData.orders)) {
+        console.log('No orders data available')
         return []
       }
 
-      const orders = excelData.orders.filter((order: any) => 
-        order && 
-        typeof order === 'object' && 
-        order.address && 
-        typeof order.address === 'string' && 
-        order.address.trim() !== ''
-      )
+      const orders = excelData.orders.filter((order: any) => {
+        try {
+          return order && 
+            typeof order === 'object' && 
+            order.address && 
+            typeof order.address === 'string' && 
+            order.address.trim() !== ''
+        } catch (error) {
+          console.warn('Error filtering order:', error, order)
+          return false
+        }
+      })
 
-    // Группируем заказы по районам/зонам
-    const zoneGroups: { [key: string]: ZoneOrder[] } = {}
+      console.log(`Processing ${orders.length} orders for zones`)
+
+      // Группируем заказы по районам/зонам
+      const zoneGroups: { [key: string]: ZoneOrder[] } = {}
     
     orders.forEach((order: any) => {
-      const address = order.address.toLowerCase()
-      let zoneKey = 'Другое'
-      
-      // Определяем зону по ключевым словам в адресе
-      if (address.includes('героїв полку') || address.includes('малиновського')) {
-        zoneKey = 'Зона Азов'
-      } else if (address.includes('дубровицька') || address.includes('дубровицкая')) {
-        zoneKey = 'Зона Дубровицкая'
-      } else if (address.includes('новокостянтинівська')) {
-        zoneKey = 'Зона Новокостянтиновская'
-      } else if (address.includes('кирилівська') || address.includes('фрунзе')) {
-        zoneKey = 'Зона Кириловская'
-      } else if (address.includes('центр') || address.includes('khreshchatyk')) {
-        zoneKey = 'Зона Центр'
-      }
+      try {
+        const address = order.address.toLowerCase()
+        let zoneKey = 'Другое'
+        
+        // Определяем зону по ключевым словам в адресе
+        if (address.includes('героїв полку') || address.includes('малиновського')) {
+          zoneKey = 'Зона Азов'
+        } else if (address.includes('дубровицька') || address.includes('дубровицкая')) {
+          zoneKey = 'Зона Дубровицкая'
+        } else if (address.includes('новокостянтинівська')) {
+          zoneKey = 'Зона Новокостянтиновская'
+        } else if (address.includes('кирилівська') || address.includes('фрунзе')) {
+          zoneKey = 'Зона Кириловская'
+        } else if (address.includes('центр') || address.includes('khreshchatyk')) {
+          zoneKey = 'Зона Центр'
+        }
 
-      if (!zoneGroups[zoneKey]) {
-        zoneGroups[zoneKey] = []
-      }
+        if (!zoneGroups[zoneKey]) {
+          zoneGroups[zoneKey] = []
+        }
 
-      zoneGroups[zoneKey].push({
-        id: order.id || `order_${order.orderNumber || 'unknown'}`,
-        orderNumber: order.orderNumber || 'N/A',
-        address: order.address,
-        plannedTime: order.plannedTime,
-        courier: order.courier || 'Не назначен',
-        amount: typeof order.amount === 'number' ? order.amount : 0,
-        paymentMethod: order.paymentMethod || 'Неизвестно',
-        phone: order.phone || '',
-        customerName: order.customerName || '',
-        priority: Math.random() * 100 // Временный приоритет
-      })
+        zoneGroups[zoneKey].push({
+          id: order.id || `order_${order.orderNumber || 'unknown'}`,
+          orderNumber: order.orderNumber || 'N/A',
+          address: order.address,
+          plannedTime: order.plannedTime,
+          courier: order.courier || 'Не назначен',
+          amount: typeof order.amount === 'number' ? order.amount : 0,
+          paymentMethod: order.paymentMethod || 'Неизвестно',
+          phone: order.phone || '',
+          customerName: order.customerName || '',
+          priority: Math.random() * 100 // Временный приоритет
+        })
+      } catch (error) {
+        console.warn('Error processing order for zones:', error, order)
+      }
     })
 
     // Создаем объекты зон
@@ -212,12 +227,51 @@ export const Zones: React.FC = () => {
   if (!excelData) {
     return (
       <div className={clsx(
-        'flex items-center justify-center h-64',
-        isDark ? 'text-gray-400' : 'text-gray-600'
+        'space-y-6 transition-colors duration-300',
+        isDark ? 'text-gray-100' : 'text-gray-900'
       )}>
-        <div className="text-center">
-          <MapPinIcon className="mx-auto h-12 w-12 mb-4" />
-          <p>Загрузите Excel файл для просмотра зон</p>
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className={clsx(
+              'text-2xl font-bold',
+              isDark ? 'text-gray-100' : 'text-gray-900'
+            )}>
+              Управление зонами
+            </h1>
+            <p className={clsx(
+              'mt-1 text-sm',
+              isDark ? 'text-gray-400' : 'text-gray-600'
+            )}>
+              Автоматическая оптимизация маршрутов по зонам доставки
+            </p>
+          </div>
+        </div>
+
+        {/* Excel Upload Section */}
+        <div className={clsx(
+          'rounded-lg shadow-sm border p-6',
+          isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+        )}>
+          <div className="text-center">
+            <DocumentArrowUpIcon className={clsx(
+              'mx-auto h-12 w-12 mb-4',
+              isDark ? 'text-gray-500' : 'text-gray-400'
+            )} />
+            <h3 className={clsx(
+              'text-lg font-medium mb-2',
+              isDark ? 'text-gray-200' : 'text-gray-900'
+            )}>
+              Загрузите Excel файл для работы с зонами
+            </h3>
+            <p className={clsx(
+              'text-sm mb-6',
+              isDark ? 'text-gray-400' : 'text-gray-600'
+            )}>
+              Для создания зон и оптимизации маршрутов необходимо загрузить файл с данными заказов
+            </p>
+            <ExcelUploadSection />
+          </div>
         </div>
       </div>
     )
