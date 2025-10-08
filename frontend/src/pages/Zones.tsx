@@ -14,7 +14,6 @@ import {
   DocumentArrowUpIcon
 } from '@heroicons/react/24/outline'
 import { ZoneDetails } from '../components/ZoneDetails'
-import { ZoneStats } from '../components/ZoneStats'
 import { ExcelUploadSection } from '../components/ExcelUploadSection'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 
@@ -30,6 +29,7 @@ interface ZoneOrder {
   customerName: string
   distance?: number
   priority: number
+  confidence: number // Уровень уверенности в определении зоны
 }
 
 interface Zone {
@@ -83,20 +83,61 @@ export const Zones: React.FC = () => {
     
     orders.forEach((order: any) => {
       try {
+        // Улучшенное определение зоны по ключевым словам в адресе
         const address = order.address.toLowerCase()
         let zoneKey = 'Другое'
+        let confidence = 0
         
-        // Определяем зону по ключевым словам в адресе
-        if (address.includes('героїв полку') || address.includes('малиновського')) {
+        // Зона Азов - Героїв полку "АЗОВ", Маршала Малиновського
+        if (address.includes('героїв полку') || address.includes('малиновського') || 
+            address.includes('азов') || address.includes('малиновського')) {
           zoneKey = 'Зона Азов'
-        } else if (address.includes('дубровицька') || address.includes('дубровицкая')) {
+          confidence = 0.9
+        }
+        // Зона Дубровицкая - Дубровицька, Дубровицкая
+        else if (address.includes('дубровицька') || address.includes('дубровицкая') ||
+                 address.includes('дубровиц') || address.includes('дубров')) {
           zoneKey = 'Зона Дубровицкая'
-        } else if (address.includes('новокостянтинівська')) {
+          confidence = 0.9
+        }
+        // Зона Новокостянтиновская - Новокостянтинівська
+        else if (address.includes('новокостянтинівська') || address.includes('новокостянтинов') ||
+                 address.includes('новокостянтин')) {
           zoneKey = 'Зона Новокостянтиновская'
-        } else if (address.includes('кирилівська') || address.includes('фрунзе')) {
+          confidence = 0.9
+        }
+        // Зона Кириловская - Кирилівська, Фрунзе
+        else if (address.includes('кирилівська') || address.includes('фрунзе') ||
+                 address.includes('кирил') || address.includes('фрунз')) {
           zoneKey = 'Зона Кириловская'
-        } else if (address.includes('центр') || address.includes('khreshchatyk')) {
+          confidence = 0.9
+        }
+        // Зона Центр - центр, хрещатик, майдан
+        else if (address.includes('центр') || address.includes('khreshchatyk') ||
+                 address.includes('хрещатик') || address.includes('майдан') ||
+                 address.includes('центральна') || address.includes('центральная')) {
           zoneKey = 'Зона Центр'
+          confidence = 0.8
+        }
+        // Дополнительные проверки для более точного определения
+        else if (address.includes('печерськ') || address.includes('печерск')) {
+          zoneKey = 'Зона Печерск'
+          confidence = 0.7
+        }
+        else if (address.includes('подільськ') || address.includes('подольск')) {
+          zoneKey = 'Зона Подольск'
+          confidence = 0.7
+        }
+        else if (address.includes('оболонь') || address.includes('оболон')) {
+          zoneKey = 'Зона Оболонь'
+          confidence = 0.7
+        }
+        else {
+          // Попытка определить зону по району или улице
+          if (address.includes('вул.') || address.includes('улица')) {
+            zoneKey = 'Зона Другое'
+            confidence = 0.3
+          }
         }
 
         if (!zoneGroups[zoneKey]) {
@@ -113,7 +154,8 @@ export const Zones: React.FC = () => {
           paymentMethod: order.paymentMethod || 'Неизвестно',
           phone: order.phone || '',
           customerName: order.customerName || '',
-          priority: Math.random() * 100 // Временный приоритет
+          priority: Math.random() * 100, // Временный приоритет
+          confidence: confidence // Уровень уверенности в определении зоны
         })
       } catch (error) {
         console.warn('Error processing order for zones:', error, order)
@@ -124,6 +166,13 @@ export const Zones: React.FC = () => {
     const zonesList: Zone[] = Object.entries(zoneGroups).map(([name, orders], index) => {
       const couriers = [...new Set(orders.map(o => o.courier).filter(c => c !== 'Не назначен'))]
       const totalAmount = orders.reduce((sum, o) => sum + o.amount, 0)
+      
+      // Анализируем качество определения зоны
+      const avgConfidence = orders.reduce((sum, o) => sum + (o.confidence || 0), 0) / orders.length
+      const highConfidenceOrders = orders.filter(o => (o.confidence || 0) > 0.7).length
+      const lowConfidenceOrders = orders.filter(o => (o.confidence || 0) < 0.5).length
+      
+      console.log(`Zone ${name}: ${orders.length} orders, avg confidence: ${avgConfidence.toFixed(2)}, high: ${highConfidenceOrders}, low: ${lowConfidenceOrders}`)
       
       return {
         id: `zone_${index}`,
@@ -408,8 +457,31 @@ export const Zones: React.FC = () => {
         </div>
       </div>
 
-      {/* Zone Statistics */}
-      <ZoneStats zones={zones} />
+      {/* Excel Upload Section */}
+      <div className={clsx(
+        'rounded-lg shadow-sm border p-6',
+        isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+      )}>
+        <div className="text-center">
+          <DocumentArrowUpIcon className={clsx(
+            'mx-auto h-12 w-12 mb-4',
+            isDark ? 'text-gray-500' : 'text-gray-400'
+          )} />
+          <h3 className={clsx(
+            'text-lg font-medium mb-2',
+            isDark ? 'text-gray-200' : 'text-gray-900'
+          )}>
+            Загрузите Excel файл для анализа заказов по зонам
+          </h3>
+          <p className={clsx(
+            'text-sm mb-6',
+            isDark ? 'text-gray-400' : 'text-gray-600'
+          )}>
+            Система автоматически проанализирует заказы и распределит их по зонам доставки на основе адресов
+          </p>
+          <ExcelUploadSection />
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Zones List */}
