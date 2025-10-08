@@ -417,7 +417,7 @@ export const Zones: React.FC = () => {
         }
       }
     })
-
+    addLog(`Определено зон: ${zonesList.length}. Детали: ` + zonesList.map(z => `${z.name}=${z.orders.length}`).join(', '))
     return zonesList
     } catch (error) {
       console.error('Error processing zones:', error)
@@ -454,8 +454,11 @@ export const Zones: React.FC = () => {
         efficiency: number
       }> = []
 
+    let zonesEligible = 0
+    let courierGroupsEligible = 0
     zones.forEach(zone => {
       if (zone.orders.length < minOrdersPerRoute) return
+      zonesEligible++
 
       // Группируем заказы по курьерам
       const courierGroups: { [key: string]: ZoneOrder[] } = {}
@@ -471,6 +474,7 @@ export const Zones: React.FC = () => {
       // Создаем маршруты для каждого курьера
       Object.entries(courierGroups).forEach(([courier, orders]) => {
         if (orders.length >= minOrdersPerRoute) {
+          courierGroupsEligible++
           const totalAmount = orders.reduce((sum, o) => sum + o.amount, 0)
           const estimatedTime = orders.length * 15 + orders.length * 5 // 15 мин на заказ + 5 мин на дорогу
           const efficiency = totalAmount / estimatedTime // Гривны в минуту
@@ -490,6 +494,11 @@ export const Zones: React.FC = () => {
     })
 
       const result = routes.sort((a, b) => b.efficiency - a.efficiency)
+      if (result.length === 0) {
+        addLog(`Маршруты не построены: зон с достаточным числом заказов ${zonesEligible}, групп по курьерам ${courierGroupsEligible}, порог ${minOrdersPerRoute}`)
+      } else {
+        addLog(`Построено маршрутов: ${result.length}`)
+      }
       return result
     } catch (error) {
       console.error('Error optimizing routes:', error)
