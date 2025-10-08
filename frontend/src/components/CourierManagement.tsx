@@ -39,7 +39,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
 
   // Рассчитываем расстояние для каждого курьера на основе маршрутов
   const calculateCourierDistance = useMemo(() => {
-    return (courierName: string) => {
+    return (courierName: string, vehicleType: 'car' | 'motorcycle' = 'car') => {
       if (!contextData?.routes || !Array.isArray(contextData.routes)) {
         return 0
       }
@@ -52,7 +52,10 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
           totalDistance += route.totalDistance
         } else {
           // Если маршрут не оптимизирован, считаем 500м за каждый заказ
-          totalDistance += (route.orders?.length || 0) * 0.5
+          // Для мотоциклов добавляем дополнительные 500м на заказ
+          const baseDistance = (route.orders?.length || 0) * 0.5
+          const additionalDistance = vehicleType === 'motorcycle' ? (route.orders?.length || 0) * 0.5 : 0
+          totalDistance += baseDistance + additionalDistance
         }
       })
 
@@ -99,7 +102,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
           isActive: true,
           orders: calculateCourierOrders(courierName),
           totalAmount: courier.totalAmount || 0,
-          totalDistance: calculateCourierDistance(courierName)
+          totalDistance: calculateCourierDistance(courierName, 'car')
         }
       })
       setCouriers(couriersFromExcel)
@@ -110,7 +113,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   useEffect(() => {
     setCouriers(prev => prev.map(courier => ({
       ...courier,
-      totalDistance: calculateCourierDistance(courier.name),
+      totalDistance: calculateCourierDistance(courier.name, courier.vehicleType),
       orders: calculateCourierOrders(courier.name)
     })))
   }, [calculateCourierDistance, calculateCourierOrders])
@@ -131,7 +134,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     const newCourier: Courier = {
       ...courierData,
       id: `courier_${Date.now()}`,
-      totalDistance: calculateCourierDistance(courierData.name),
+      totalDistance: calculateCourierDistance(courierData.name, courierData.vehicleType),
       orders: calculateCourierOrders(courierData.name)
     }
     setCouriers(prev => [...prev, newCourier])
@@ -141,7 +144,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   const handleEditCourier = (courierData: Courier) => {
     const updatedCourier = {
       ...courierData,
-      totalDistance: calculateCourierDistance(courierData.name),
+      totalDistance: calculateCourierDistance(courierData.name, courierData.vehicleType),
       orders: calculateCourierOrders(courierData.name)
     }
     setCouriers(prev => prev.map(courier => 
@@ -160,6 +163,20 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     setCouriers(prev => prev.map(courier => 
       courier.id === id ? { ...courier, isActive: !courier.isActive } : courier
     ))
+  }
+
+  const toggleCourierVehicleType = (id: string) => {
+    setCouriers(prev => prev.map(courier => {
+      if (courier.id === id) {
+        const newVehicleType = courier.vehicleType === 'car' ? 'motorcycle' : 'car'
+        return {
+          ...courier,
+          vehicleType: newVehicleType,
+          totalDistance: calculateCourierDistance(courier.name, newVehicleType)
+        }
+      }
+      return courier
+    }))
   }
 
   const getCourierRoutes = (courierName: string) => {
@@ -352,22 +369,35 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 </div>
               )}
 
-              <div className="mt-4 flex space-x-2">
+              <div className="mt-4 space-y-2">
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => toggleCourierStatus(courier.id)}
+                    className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg ${
+                      courier.isActive
+                        ? 'bg-red-100 text-red-800 hover:bg-red-200'
+                        : 'bg-green-100 text-green-800 hover:bg-green-200'
+                    }`}
+                  >
+                    {courier.isActive ? 'Деактивировать' : 'Активировать'}
+                  </button>
+                  <button
+                    onClick={() => setEditingCourier(courier)}
+                    className="flex-1 px-3 py-2 text-sm font-medium text-blue-800 bg-blue-100 hover:bg-blue-200 rounded-lg"
+                  >
+                    Редактировать
+                  </button>
+                </div>
                 <button
-                  onClick={() => toggleCourierStatus(courier.id)}
-                  className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg ${
-                    courier.isActive
-                      ? 'bg-red-100 text-red-800 hover:bg-red-200'
+                  onClick={() => toggleCourierVehicleType(courier.id)}
+                  className={`w-full px-3 py-2 text-sm font-medium rounded-lg flex items-center justify-center space-x-2 ${
+                    courier.vehicleType === 'car'
+                      ? 'bg-orange-100 text-orange-800 hover:bg-orange-200'
                       : 'bg-green-100 text-green-800 hover:bg-green-200'
                   }`}
                 >
-                  {courier.isActive ? 'Деактивировать' : 'Активировать'}
-                </button>
-                <button
-                  onClick={() => setEditingCourier(courier)}
-                  className="flex-1 px-3 py-2 text-sm font-medium text-blue-800 bg-blue-100 hover:bg-blue-200 rounded-lg"
-                >
-                  Редактировать
+                  <TruckIcon className="h-4 w-4" />
+                  <span>Переключить на {courier.vehicleType === 'car' ? 'Мото' : 'Авто'}</span>
                 </button>
               </div>
             </div>
