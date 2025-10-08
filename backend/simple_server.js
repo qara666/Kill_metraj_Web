@@ -109,9 +109,44 @@ app.post('/api/upload/excel', upload.single('file'), async (req, res) => {
 
 // Minimal placeholder routes for frontend api.ts expectations
 app.get('/api/health', (req, res) => res.json({ ok: true }))
+
+// Couriers
 app.get('/api/couriers', (_req, res) => res.json({ success: true, data: [] }))
+app.get('/api/couriers/:id', (_req, res) => res.json({ success: true, data: { id: _req.params.id } }))
+app.get('/api/couriers/:id/statistics', (_req, res) => res.json({ success: true, data: { id: _req.params.id, stats: {} } }))
+app.post('/api/couriers', (_req, res) => res.json({ success: true, data: { ..._req.body, id: 'new' } }))
+app.put('/api/couriers/:id', (_req, res) => res.json({ success: true, data: { id: _req.params.id, ..._req.body } }))
+app.delete('/api/couriers/:id', (_req, res) => res.json({ success: true }))
+
+// Routes
 app.get('/api/routes', (_req, res) => res.json({ success: true, data: [] }))
+app.get('/api/routes/:id', (_req, res) => res.json({ success: true, data: { id: _req.params.id } }))
+app.get('/api/routes/statistics', (_req, res) => res.json({ success: true, data: {} }))
+app.post('/api/routes', (_req, res) => res.json({ success: true, data: { ..._req.body, id: 'route_new' } }))
+app.post('/api/routes/from-waypoints', (_req, res) => res.json({ success: true, data: { id: 'route_from_waypoints', input: _req.body } }))
+app.put('/api/routes/:id', (_req, res) => res.json({ success: true, data: { id: _req.params.id, ..._req.body } }))
+app.put('/api/routes/:id/complete', (_req, res) => res.json({ success: true, data: { id: _req.params.id, status: 'completed' } }))
+app.put('/api/routes/:id/archive', (_req, res) => res.json({ success: true, data: { id: _req.params.id, archived: true } }))
+app.delete('/api/routes/:id', (_req, res) => res.json({ success: true }))
+
+// Upload
+app.post('/api/upload/create-routes', (_req, res) => res.json({ success: true, data: { created: true, input: _req.body } }))
+app.get('/api/upload/sample-template', (_req, res) => {
+  const sample = 'orderNumber,address,plannedTime,amount,courier\n123,Улица Пушкина 1,10:30,500,Иванов';
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="sample-template.csv"');
+  res.send(sample);
+})
+app.post('/api/upload/batch-geocode', (_req, res) => {
+  const addresses = Array.isArray(_req.body?.addresses) ? _req.body.addresses : [];
+  const results = addresses.map((addr, idx) => ({ address: addr, lat: 59.9 + idx * 0.001, lng: 30.3 + idx * 0.001 }));
+  res.json({ success: true, data: { results } });
+})
+
+// Analytics
 app.get('/api/analytics/dashboard', (_req, res) => res.json({ success: true, data: {} }))
+app.get('/api/analytics/courier-performance', (_req, res) => res.json({ success: true, data: [] }))
+app.get('/api/analytics/route-analytics', (_req, res) => res.json({ success: true, data: {} }))
 
 app.get('/debug/logs', (req, res) => {
   res.json({
