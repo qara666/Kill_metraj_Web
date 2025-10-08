@@ -22,7 +22,7 @@ trap cleanup EXIT INT TERM
 
 log "Старт backend на порту ${BACKEND_PORT}"
 cd "$BACKEND_DIR"
-nohup node simple_server.js > "$ROOT_DIR/.backend.out.log" 2>&1 &
+PORT=${BACKEND_PORT} nohup node simple_server.js > "$ROOT_DIR/.backend.out.log" 2>&1 &
 BACKEND_PID=$!
 log "Backend PID: ${BACKEND_PID} (логи: $ROOT_DIR/.backend.out.log)"
 
