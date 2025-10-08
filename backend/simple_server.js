@@ -4,7 +4,7 @@ const multer = require('multer');
 const ExcelService = require('./src/services/ExcelService_v3');
 
 const app = express();
-const PORT = 5001;
+const PORT = process.env.PORT || 10000;
 
 // Middleware
 app.use(cors({
@@ -127,7 +127,7 @@ app.post('/api/upload/test-api-key', (req, res) => {
 });
 
 // Запуск
-app.listen(PORT, () => {
-  console.log(`🚀 Простой сервер запущен на порту ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Простой сервер запущен на 0.0.0.0:${PORT}`);
   addLog('Сервер запущен');
 });
