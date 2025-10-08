@@ -96,7 +96,7 @@ export function Layout({ children }: LayoutProps) {
               </div>
               <div className="ml-3">
                 <h1 className="text-lg font-semibold text-gray-900">Kill_metraj</h1>
-                <p className="text-xs text-gray-500">Управление маршрутами</p>
+                <p className="text-xs text-gray-500">Создаю маршруты (почти автоматизировано все), потому что руками то лень</p>
               </div>
             </div>
           </div>
@@ -146,7 +146,7 @@ export function Layout({ children }: LayoutProps) {
               {/* Status indicator */}
               <div className="flex items-center gap-x-2">
                 <div className="h-2 w-2 bg-green-400 rounded-full" />
-                <span className="text-sm text-gray-500">Система онлайн</span>
+                <span className="text-sm text-gray-500">Система работает - ОПы не ловятся</span>
               </div>
             </div>
           </div>
