@@ -39,7 +39,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
 
   // Рассчитываем расстояние для каждого курьера на основе маршрутов
   const calculateCourierDistance = useMemo(() => {
-    return (courierName: string, vehicleType: 'car' | 'motorcycle' = 'car') => {
+    return (courierName: string) => {
       if (!contextData?.routes || !Array.isArray(contextData.routes)) {
         return 0
       }
@@ -52,9 +52,9 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
           totalDistance += route.totalDistance
         } else {
           // Если маршрут не оптимизирован, считаем 500м за каждый заказ
-          // Для мотоциклов добавляем дополнительные 500м на заказ
+          // Все курьеры получают дополнительные 500м на заказ
           const baseDistance = (route.orders?.length || 0) * 0.5
-          const additionalDistance = vehicleType === 'motorcycle' ? (route.orders?.length || 0) * 0.5 : 0
+          const additionalDistance = (route.orders?.length || 0) * 0.5
           totalDistance += baseDistance + additionalDistance
         }
       })
@@ -102,7 +102,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
           isActive: true,
           orders: calculateCourierOrders(courierName),
           totalAmount: courier.totalAmount || 0,
-          totalDistance: calculateCourierDistance(courierName, 'car')
+          totalDistance: calculateCourierDistance(courierName)
         }
       })
       setCouriers(couriersFromExcel)
@@ -113,7 +113,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   useEffect(() => {
     setCouriers(prev => prev.map(courier => ({
       ...courier,
-      totalDistance: calculateCourierDistance(courier.name, courier.vehicleType),
+      totalDistance: calculateCourierDistance(courier.name),
       orders: calculateCourierOrders(courier.name)
     })))
   }, [calculateCourierDistance, calculateCourierOrders])
@@ -134,7 +134,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     const newCourier: Courier = {
       ...courierData,
       id: `courier_${Date.now()}`,
-      totalDistance: calculateCourierDistance(courierData.name, courierData.vehicleType),
+      totalDistance: calculateCourierDistance(courierData.name),
       orders: calculateCourierOrders(courierData.name)
     }
     setCouriers(prev => [...prev, newCourier])
@@ -144,7 +144,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   const handleEditCourier = (courierData: Courier) => {
     const updatedCourier = {
       ...courierData,
-      totalDistance: calculateCourierDistance(courierData.name, courierData.vehicleType),
+      totalDistance: calculateCourierDistance(courierData.name),
       orders: calculateCourierOrders(courierData.name)
     }
     setCouriers(prev => prev.map(courier => 
@@ -172,7 +172,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
         return {
           ...courier,
           vehicleType: newVehicleType,
-          totalDistance: calculateCourierDistance(courier.name, newVehicleType)
+          totalDistance: calculateCourierDistance(courier.name)
         }
       }
       return courier
@@ -278,24 +278,28 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
               className={`bg-white rounded-lg shadow-sm border border-gray-200 p-6 transition-all ${
                 !courier.isActive 
                   ? 'opacity-60 bg-gray-50' 
-                  : hasRoutes 
-                    ? 'cursor-pointer hover:shadow-md hover:border-blue-300' 
-                    : ''
+                  : ''
               }`}
-              onClick={() => hasRoutes && courier.isActive && handleCourierClick(courier)}
             >
               <div className="flex items-start justify-between">
                 <div className="flex items-center space-x-3">
                   <div className="flex-shrink-0">
-                    <div className={`h-12 w-12 rounded-full flex items-center justify-center ${
-                      courier.vehicleType === 'car' ? 'bg-green-100' : 'bg-orange-100'
-                    }`}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleCourierVehicleType(courier.id)
+                      }}
+                      className={`h-12 w-12 rounded-full flex items-center justify-center transition-colors hover:scale-105 ${
+                        courier.vehicleType === 'car' ? 'bg-green-100 hover:bg-green-200' : 'bg-orange-100 hover:bg-orange-200'
+                      }`}
+                      title={`Переключить на ${courier.vehicleType === 'car' ? 'мотоцикл' : 'автомобиль'}`}
+                    >
                       {courier.vehicleType === 'car' ? (
                         <TruckIcon className="h-6 w-6 text-green-600" />
                       ) : (
                         <TruckIcon className="h-6 w-6 text-orange-600" />
                       )}
-                    </div>
+                    </button>
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="text-lg font-medium text-gray-900 truncate">
@@ -360,15 +364,6 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 </div>
               </div>
 
-              {hasRoutes && (
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <div className="flex items-center justify-center text-sm text-blue-600">
-                    <MapPinIcon className="h-4 w-4 mr-1" />
-                    <span>Кликните для просмотра маршрутов ({courierRoutes.length})</span>
-                  </div>
-                </div>
-              )}
-
               <div className="mt-4 space-y-2">
                 <div className="flex space-x-2">
                   <button
@@ -388,17 +383,15 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                     Редактировать
                   </button>
                 </div>
-                <button
-                  onClick={() => toggleCourierVehicleType(courier.id)}
-                  className={`w-full px-3 py-2 text-sm font-medium rounded-lg flex items-center justify-center space-x-2 ${
-                    courier.vehicleType === 'car'
-                      ? 'bg-orange-100 text-orange-800 hover:bg-orange-200'
-                      : 'bg-green-100 text-green-800 hover:bg-green-200'
-                  }`}
-                >
-                  <TruckIcon className="h-4 w-4" />
-                  <span>Переключить на {courier.vehicleType === 'car' ? 'Мото' : 'Авто'}</span>
-                </button>
+                {hasRoutes && (
+                  <button
+                    onClick={() => handleCourierClick(courier)}
+                    className="w-full px-3 py-2 text-sm font-medium text-blue-800 bg-blue-100 hover:bg-blue-200 rounded-lg flex items-center justify-center space-x-2"
+                  >
+                    <MapPinIcon className="h-4 w-4" />
+                    <span>Показать маршруты ({courierRoutes.length})</span>
+                  </button>
+                )}
               </div>
             </div>
             )
@@ -579,11 +572,28 @@ const CourierRoutesModal: React.FC<CourierRoutesModalProps> = ({ courier, routes
     return hours > 0 ? `${hours}ч ${mins}мин` : `${mins}мин`
   }
 
+  // Функция для очистки адреса от лишней информации
+  const cleanAddress = (address: string) => {
+    if (!address) return address
+    
+    // Удаляем информацию после номера дома (подъезд, этаж, подвал и т.д.)
+    const cleaned = address
+      .replace(/,\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
+      .replace(/,\s*\d+\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
+      .trim()
+    
+    return cleaned
+  }
+
   const openRouteInGoogleMaps = (route: any) => {
     if (!route.orders || route.orders.length === 0) return
 
     // Создаем массив адресов для маршрута
-    const addresses = route.orders.map((order: any) => order.address)
+    const addresses = [
+      cleanAddress(route.startAddress || ''),
+      ...route.orders.map((order: any) => cleanAddress(order.address)),
+      cleanAddress(route.endAddress || '')
+    ].filter(addr => addr) // Убираем пустые адреса
     
     // Кодируем каждый адрес отдельно
     const encodedAddresses = addresses.map((addr: string) => encodeURIComponent(addr))
