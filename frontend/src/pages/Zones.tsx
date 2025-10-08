@@ -323,45 +323,79 @@ export const Zones: React.FC = () => {
           zoneGroups[zoneKey] = []
         }
 
-        zoneGroups[zoneKey].push({
-          id: order.id || `order_${order.orderNumber || 'unknown'}`,
-          orderNumber: order.orderNumber || 'N/A',
-          address: order.address,
-          plannedTime: order.plannedTime,
-          courier: order.courier || 'Не назначен',
-          amount: typeof order.amount === 'number' ? order.amount : 0,
-          paymentMethod: order.paymentMethod || 'Неизвестно',
-          phone: order.phone || '',
-          customerName: order.customerName || '',
+        // Безопасное создание объекта заказа
+        const safeOrder: ZoneOrder = {
+          id: order?.id || `order_${order?.orderNumber || 'unknown'}`,
+          orderNumber: order?.orderNumber || 'N/A',
+          address: order?.address || '',
+          plannedTime: order?.plannedTime,
+          courier: order?.courier || 'Не назначен',
+          amount: typeof order?.amount === 'number' ? order.amount : 0,
+          paymentMethod: order?.paymentMethod || 'Неизвестно',
+          phone: order?.phone || '',
+          customerName: order?.customerName || '',
           priority: Math.random() * 100, // Временный приоритет
-          confidence: confidence // Уровень уверенности в определении зоны
-        })
+          confidence: confidence, // Уровень уверенности в определении зоны
+          kitchenTime: order?.kitchenTime,
+          deliveryTime: order?.deliveryTime,
+          courierType: order?.courierType,
+          routeId: order?.routeId
+        }
+
+        zoneGroups[zoneKey].push(safeOrder)
       } catch (error) {
         console.warn('Error processing order for zones:', error, order)
       }
     })
 
-    // Создаем объекты зон
+    // Создаем объекты зон с дополнительной защитой
     const zonesList: Zone[] = Object.entries(zoneGroups).map(([name, orders], index) => {
-      const couriers = [...new Set(orders.map(o => o.courier).filter(c => c !== 'Не назначен'))]
-      const totalAmount = orders.reduce((sum, o) => sum + o.amount, 0)
-      
-      // Анализируем качество определения зоны
-      const avgConfidence = orders.reduce((sum, o) => sum + (o.confidence || 0), 0) / orders.length
-      const highConfidenceOrders = orders.filter(o => (o.confidence || 0) > 0.7).length
-      const lowConfidenceOrders = orders.filter(o => (o.confidence || 0) < 0.5).length
-      
-      console.log(`Zone ${name}: ${orders.length} orders, avg confidence: ${avgConfidence.toFixed(2)}, high: ${highConfidenceOrders}, low: ${lowConfidenceOrders}`)
-      
-      return {
-        id: `zone_${index}`,
-        name,
-        center: getZoneCenter(name),
-        radius: 2, // км
-        orders: orders.sort((a, b) => (b.priority || 0) - (a.priority || 0)),
-        couriers,
-        totalAmount,
-        averageTime: orders.length * 15 // Примерное время в минутах
+      try {
+        // Безопасное извлечение курьеров
+        const couriers = [...new Set(orders
+          .map(o => o?.courier)
+          .filter(c => c && c !== 'Не назначен')
+          .filter(Boolean)
+        )]
+        
+        // Безопасный расчет суммы
+        const totalAmount = orders.reduce((sum, o) => {
+          const amount = typeof o?.amount === 'number' ? o.amount : 0
+          return sum + amount
+        }, 0)
+        
+        // Анализируем качество определения зоны
+        const validOrders = orders.filter(o => o && typeof o === 'object')
+        const avgConfidence = validOrders.length > 0 
+          ? validOrders.reduce((sum, o) => sum + (o.confidence || 0), 0) / validOrders.length 
+          : 0
+        const highConfidenceOrders = validOrders.filter(o => (o.confidence || 0) > 0.7).length
+        const lowConfidenceOrders = validOrders.filter(o => (o.confidence || 0) < 0.5).length
+        
+        console.log(`Zone ${name}: ${validOrders.length} orders, avg confidence: ${avgConfidence.toFixed(2)}, high: ${highConfidenceOrders}, low: ${lowConfidenceOrders}`)
+        
+        return {
+          id: `zone_${index}`,
+          name,
+          center: getZoneCenter(name),
+          radius: 2, // км
+          orders: validOrders.sort((a, b) => (b.priority || 0) - (a.priority || 0)),
+          couriers,
+          totalAmount,
+          averageTime: validOrders.length * 15 // Примерное время в минутах
+        }
+      } catch (error) {
+        console.warn(`Error creating zone ${name}:`, error)
+        return {
+          id: `zone_${index}`,
+          name,
+          center: getZoneCenter(name),
+          radius: 2,
+          orders: [],
+          couriers: [],
+          totalAmount: 0,
+          averageTime: 0
+        }
       }
     })
 
@@ -773,19 +807,25 @@ export const Zones: React.FC = () => {
           </h3>
           
           <div className="space-y-3">
-            {zones.map((zone) => (
-              <div
-                key={zone.id}
-                onClick={() => setSelectedZone(zone.id)}
-                className={clsx(
-                  'card p-4 cursor-pointer transition-all duration-200 hover:shadow-lg',
-                  selectedZone === zone.id
-                    ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                    : isDark 
-                      ? 'bg-gray-800 border-gray-700 hover:bg-gray-700' 
-                      : 'bg-white border-gray-200 hover:bg-gray-50'
-                )}
-              >
+            {zones && Array.isArray(zones) ? zones.map((zone) => {
+              if (!zone || typeof zone !== 'object') {
+                console.warn('Invalid zone object:', zone)
+                return null
+              }
+              
+              return (
+                <div
+                  key={zone.id || `zone_${Math.random()}`}
+                  onClick={() => setSelectedZone(zone.id)}
+                  className={clsx(
+                    'card p-4 cursor-pointer transition-all duration-200 hover:shadow-lg',
+                    selectedZone === zone.id
+                      ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                      : isDark 
+                        ? 'bg-gray-800 border-gray-700 hover:bg-gray-700' 
+                        : 'bg-white border-gray-200 hover:bg-gray-50'
+                  )}
+                >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
                     <MapPinIcon className="h-5 w-5 text-blue-500" />
@@ -821,7 +861,15 @@ export const Zones: React.FC = () => {
                   </div>
                 </div>
               </div>
-            ))}
+              )
+            }) : (
+              <div className={clsx(
+                'text-center py-8',
+                isDark ? 'text-gray-400' : 'text-gray-500'
+              )}>
+                Нет данных о зонах
+              </div>
+            )}
           </div>
         </div>
 
@@ -939,7 +987,7 @@ export const Zones: React.FC = () => {
       )}
 
       {/* Zone Details Modal */}
-      {selectedZoneData && (
+      {selectedZoneData && selectedZoneData.id && (
         <ZoneDetails
           zone={selectedZoneData}
           onClose={() => setSelectedZone(null)}
