@@ -3,12 +3,8 @@ import { useTheme } from '../contexts/ThemeContext'
 import clsx from 'clsx'
 import { 
   MapPinIcon, 
-  ClockIcon, 
-  UserGroupIcon, 
   TruckIcon,
   AdjustmentsHorizontalIcon,
-  EyeIcon,
-  EyeSlashIcon,
   DocumentArrowUpIcon,
   ExclamationTriangleIcon
 } from '@heroicons/react/24/outline'
