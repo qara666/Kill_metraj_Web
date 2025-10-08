@@ -68,6 +68,7 @@ export const Zones: React.FC = () => {
   const [maxDistance, setMaxDistance] = useState(5) // км
   const [minOrdersPerRoute, setMinOrdersPerRoute] = useState(3)
   const [routes, setRoutes] = useState<any[]>([])
+  const [showOptimized, setShowOptimized] = useState(false)
 
   // Функция обработки Excel файла (изолированная)
   const processExcelFile = async (file: File): Promise<ZoneExcelData> => {
@@ -792,7 +793,18 @@ export const Zones: React.FC = () => {
           )}>
             Система автоматически проанализирует заказы и распределит их по зонам доставки на основе адресов
           </p>
-          <ExcelUploadSection />
+          {/* Кнопка переключения отображения оптимизированных маршрутов */}
+          <button
+            type="button"
+            onClick={() => setShowOptimized(prev => !prev)}
+            className={clsx(
+              'mt-4 inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+              showOptimized ? 'bg-blue-600 text-white hover:bg-blue-700' :
+              isDark ? 'bg-gray-700 text-gray-100 hover:bg-gray-600' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+            )}
+          >
+            {showOptimized ? 'Скрыть оптимизированные маршруты' : 'Показать оптимизированные маршруты'}
+          </button>
         </div>
       </div>
 
