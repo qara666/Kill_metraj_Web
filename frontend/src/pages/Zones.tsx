@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { clsx } from 'clsx'
 import { 
@@ -7,15 +6,17 @@ import {
   ClockIcon, 
   UserGroupIcon, 
   TruckIcon,
-  SparklesIcon,
   AdjustmentsHorizontalIcon,
   EyeIcon,
   EyeSlashIcon,
-  DocumentArrowUpIcon
+  DocumentArrowUpIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/outline'
 import { ZoneDetails } from '../components/ZoneDetails'
-import { ExcelUploadSection } from '../components/ExcelUploadSection'
 import { LoadingSpinner } from '../components/LoadingSpinner'
+import { useMutation } from '@tanstack/react-query'
+import { toast } from 'react-hot-toast'
+import * as XLSX from 'xlsx'
 
 interface ZoneOrder {
   id: string
@@ -30,6 +31,10 @@ interface ZoneOrder {
   distance?: number
   priority: number
   confidence: number // Уровень уверенности в определении зоны
+  kitchenTime?: number // Время на кухне в минутах
+  deliveryTime?: string // Плановое время доставки
+  courierType?: 'car' | 'motorcycle' // Рекомендуемый тип курьера
+  routeId?: string // ID маршрута, если заказ уже в маршруте
 }
 
 interface Zone {
@@ -41,29 +46,157 @@ interface Zone {
   couriers: string[]
   totalAmount: number
   averageTime: number
+  recommendedCourierType?: 'car' | 'motorcycle' // Рекомендуемый тип курьера для зоны
+}
+
+interface ZoneExcelData {
+  orders: ZoneOrder[]
+  couriers: string[]
+  routes: any[]
+  statistics: any
 }
 
 export const Zones: React.FC = () => {
-  const { excelData } = useExcelData()
   const { isDark } = useTheme()
   const [selectedZone, setSelectedZone] = useState<string | null>(null)
-  const [showOptimized, setShowOptimized] = useState(true)
+  const [zoneExcelData, setZoneExcelData] = useState<ZoneExcelData | null>(null)
+  const [isProcessingFile, setIsProcessingFile] = useState(false)
   const [timeRange, setTimeRange] = useState<{ start: string; end: string }>({
     start: '08:00',
     end: '20:00'
   })
   const [maxDistance, setMaxDistance] = useState(5) // км
   const [minOrdersPerRoute, setMinOrdersPerRoute] = useState(3)
+  const [routes, setRoutes] = useState<any[]>([])
 
-  // Определяем зоны на основе адресов заказов
+  // Функция обработки Excel файла (изолированная)
+  const processExcelFile = async (file: File): Promise<ZoneExcelData> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      
+      reader.onload = (e) => {
+        try {
+          const data = e.target?.result
+          const workbook = XLSX.read(data, { type: 'binary' })
+          const sheetName = workbook.SheetNames[0]
+          const worksheet = workbook.Sheets[sheetName]
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
+          
+          // Обрабатываем данные (аналогично основной системе, но изолированно)
+          const processedData = processZoneExcelData(jsonData)
+          resolve(processedData)
+        } catch (error) {
+          console.error('Error processing Excel file:', error)
+          reject(error)
+        }
+      }
+      
+      reader.onerror = () => reject(new Error('Failed to read file'))
+      reader.readAsBinaryString(file)
+    })
+  }
+
+  // Обработка данных Excel для зон
+  const processZoneExcelData = (rawData: any[]): ZoneExcelData => {
+    const orders: ZoneOrder[] = []
+    const couriers: string[] = []
+    
+    // Пропускаем заголовок и обрабатываем данные
+    for (let i = 1; i < rawData.length; i++) {
+      const row = rawData[i]
+      if (!row || row.length < 10) continue
+      
+      try {
+        const order: ZoneOrder = {
+          id: `zone_order_${i}`,
+          orderNumber: String(row[0] || ''),
+          address: String(row[7] || ''),
+          courier: String(row[15] || 'Не назначен'),
+          amount: parseFloat(row[13]) || 0,
+          paymentMethod: String(row[14] || 'Неизвестно'),
+          phone: String(row[3] || ''),
+          customerName: String(row[4] || ''),
+          priority: Math.random() * 100,
+          confidence: 0,
+          kitchenTime: parseInt(String(row[9] || '0').replace('мин', '')) || 0,
+          deliveryTime: String(row[10] || ''),
+          courierType: determineCourierType(String(row[7] || ''), parseFloat(row[13]) || 0)
+        }
+        
+        orders.push(order)
+        
+        if (order.courier && order.courier !== 'Не назначен' && !couriers.includes(order.courier)) {
+          couriers.push(order.courier)
+        }
+      } catch (error) {
+        console.warn('Error processing row:', error, row)
+      }
+    }
+    
+    return {
+      orders,
+      couriers,
+      routes: [],
+      statistics: {
+        totalOrders: orders.length,
+        totalAmount: orders.reduce((sum, o) => sum + o.amount, 0),
+        averageAmount: orders.length > 0 ? orders.reduce((sum, o) => sum + o.amount, 0) / orders.length : 0
+      }
+    }
+  }
+
+  // Определение типа курьера на основе адреса и суммы заказа
+  const determineCourierType = (address: string, amount: number): 'car' | 'motorcycle' => {
+    const addressLower = address.toLowerCase()
+    
+    // Если сумма заказа большая (>1000 грн) - автомобиль
+    if (amount > 1000) return 'car'
+    
+    // Если адрес содержит ключевые слова для автомобиля
+    if (addressLower.includes('центр') || addressLower.includes('хрещатик') || 
+        addressLower.includes('майдан') || addressLower.includes('печерськ')) {
+      return 'car'
+    }
+    
+    // Если адрес содержит ключевые слова для мотоцикла
+    if (addressLower.includes('героїв полку') || addressLower.includes('дубровицька') ||
+        addressLower.includes('новокостянтинівська') || addressLower.includes('кирилівська')) {
+      return 'motorcycle'
+    }
+    
+    // По умолчанию - мотоцикл для небольших заказов
+    return 'motorcycle'
+  }
+
+  // Мутация для обработки файла
+  const processFileMutation = useMutation({
+    mutationFn: processExcelFile,
+    onSuccess: (data) => {
+      setZoneExcelData(data)
+      toast.success(`Обработано ${data.orders.length} заказов для анализа зон`)
+    },
+    onError: (error) => {
+      console.error('Error processing file:', error)
+      toast.error('Ошибка обработки файла')
+    }
+  })
+
+  const handleFileUpload = (file: File) => {
+    setIsProcessingFile(true)
+    processFileMutation.mutate(file, {
+      onSettled: () => setIsProcessingFile(false)
+    })
+  }
+
+  // Определяем зоны на основе адресов заказов (изолированные данные)
   const zones = useMemo(() => {
     try {
-      if (!excelData?.orders || !Array.isArray(excelData.orders)) {
-        console.log('No orders data available')
+      if (!zoneExcelData?.orders || !Array.isArray(zoneExcelData.orders)) {
+        console.log('No zone orders data available')
         return []
       }
 
-      const orders = excelData.orders.filter((order: any) => {
+      const orders = zoneExcelData.orders.filter((order: ZoneOrder) => {
         try {
           return order && 
             typeof order === 'object' && 
@@ -191,7 +324,7 @@ export const Zones: React.FC = () => {
       console.error('Error processing zones:', error)
       return []
     }
-  }, [excelData?.orders])
+  }, [zoneExcelData?.orders])
 
   // Получаем центр зоны по названию
   const getZoneCenter = (zoneName: string): { lat: number; lng: number } => {
@@ -268,12 +401,69 @@ export const Zones: React.FC = () => {
 
   const handleCreateRoute = (orders: ZoneOrder[], courier: string) => {
     console.log('Creating route:', { orders, courier })
-    // Здесь будет логика создания маршрута
-    // Можно интегрировать с существующей системой маршрутов
+    
+    // Создаем маршрут с учетом времени на кухне и планового времени
+    const route = {
+      id: `route_${Date.now()}`,
+      courier,
+      orders: orders.map(order => ({
+        ...order,
+        routeId: `route_${Date.now()}`
+      })),
+      totalDistance: calculateRouteDistance(orders),
+      totalAmount: orders.reduce((sum, o) => sum + o.amount, 0),
+      estimatedTime: calculateRouteTime(orders),
+      efficiency: calculateRouteEfficiency(orders),
+      createdAt: new Date().toISOString(),
+      status: 'created'
+    }
+    
+    // Добавляем маршрут в локальное состояние (изолированно)
+    setRoutes(prev => [...prev, route])
+    
+    // Обновляем заказы, помечая их как в маршруте
+    setZoneExcelData(prev => {
+      if (!prev) return prev
+      
+      const updatedOrders = prev.orders.map(order => {
+        const routeOrder = orders.find(o => o.id === order.id)
+        return routeOrder ? { ...order, routeId: route.id } : order
+      })
+      
+      return {
+        ...prev,
+        orders: updatedOrders
+      }
+    })
+    
+    toast.success(`Создан маршрут для ${courier} с ${orders.length} заказами`)
+  }
+
+  // Расчет расстояния маршрута
+  const calculateRouteDistance = (orders: ZoneOrder[]): number => {
+    // Базовая логика расчета расстояния
+    const baseDistance = 1.0 // 1км базовое расстояние
+    const additionalDistance = orders.length * 0.5 // 500м за каждый заказ
+    return baseDistance + additionalDistance
+  }
+
+  // Расчет времени маршрута
+  const calculateRouteTime = (orders: ZoneOrder[]): number => {
+    const kitchenTime = orders.reduce((sum, o) => sum + (o.kitchenTime || 0), 0)
+    const deliveryTime = orders.length * 15 // 15 минут на доставку каждого заказа
+    const travelTime = orders.length * 5 // 5 минут на дорогу между заказами
+    return kitchenTime + deliveryTime + travelTime
+  }
+
+  // Расчет эффективности маршрута
+  const calculateRouteEfficiency = (orders: ZoneOrder[]): number => {
+    const totalAmount = orders.reduce((sum, o) => sum + o.amount, 0)
+    const totalTime = calculateRouteTime(orders)
+    return totalTime > 0 ? totalAmount / totalTime : 0
   }
 
   // Показываем состояние загрузки если нет данных
-  if (!excelData) {
+  if (!zoneExcelData) {
     return (
       <div className={clsx(
         'space-y-6 transition-colors duration-300',
@@ -294,6 +484,13 @@ export const Zones: React.FC = () => {
             )}>
               Автоматическая оптимизация маршрутов по зонам доставки
             </p>
+            <div className={clsx(
+              'mt-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
+              isDark ? 'bg-orange-900 text-orange-200' : 'bg-orange-100 text-orange-800'
+            )}>
+              <ExclamationTriangleIcon className="h-3 w-3 mr-1" />
+              Альфа версия билда
+            </div>
           </div>
         </div>
 
@@ -311,15 +508,61 @@ export const Zones: React.FC = () => {
               'text-lg font-medium mb-2',
               isDark ? 'text-gray-200' : 'text-gray-900'
             )}>
-              Загрузите Excel файл для работы с зонами
+              Загрузите Excel файл для анализа заказов по зонам
             </h3>
             <p className={clsx(
               'text-sm mb-6',
               isDark ? 'text-gray-400' : 'text-gray-600'
             )}>
-              Для создания зон и оптимизации маршрутов необходимо загрузить файл с данными заказов
+              Система автоматически проанализирует заказы и распределит их по зонам доставки на основе адресов
             </p>
-            <ExcelUploadSection />
+            
+            {/* Custom File Upload */}
+            <div className="max-w-md mx-auto">
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) {
+                    handleFileUpload(file)
+                  }
+                }}
+                className="hidden"
+                id="zone-file-upload"
+                disabled={isProcessingFile}
+              />
+              <label
+                htmlFor="zone-file-upload"
+                className={clsx(
+                  'flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors',
+                  isProcessingFile
+                    ? isDark
+                      ? 'border-gray-600 bg-gray-700 cursor-not-allowed'
+                      : 'border-gray-300 bg-gray-100 cursor-not-allowed'
+                    : isDark
+                      ? 'border-gray-600 bg-gray-800 hover:bg-gray-700'
+                      : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
+                )}
+              >
+                {isProcessingFile ? (
+                  <LoadingSpinner />
+                ) : (
+                  <>
+                    <DocumentArrowUpIcon className={clsx(
+                      'w-8 h-8 mb-2',
+                      isDark ? 'text-gray-400' : 'text-gray-500'
+                    )} />
+                    <p className={clsx(
+                      'text-sm',
+                      isDark ? 'text-gray-400' : 'text-gray-500'
+                    )}>
+                      Нажмите для выбора файла
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
           </div>
         </div>
       </div>
@@ -346,23 +589,13 @@ export const Zones: React.FC = () => {
           )}>
             Автоматическая оптимизация маршрутов по зонам доставки
           </p>
-        </div>
-        
-        <div className="flex items-center space-x-4">
-          <button
-            onClick={() => setShowOptimized(!showOptimized)}
-            className={clsx(
-              'flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200',
-              showOptimized
-                ? 'bg-gradient-to-r from-blue-600 to-pink-500 text-white shadow-lg'
-                : isDark
-                  ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            )}
-          >
-            <SparklesIcon className="h-5 w-5" />
-            <span>{showOptimized ? 'Оптимизация включена' : 'Включить оптимизацию'}</span>
-          </button>
+          <div className={clsx(
+            'mt-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
+            isDark ? 'bg-orange-900 text-orange-200' : 'bg-orange-100 text-orange-800'
+          )}>
+            <ExclamationTriangleIcon className="h-3 w-3 mr-1" />
+            Альфа версия билда
+          </div>
         </div>
       </div>
 
