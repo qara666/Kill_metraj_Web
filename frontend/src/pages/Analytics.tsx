@@ -28,9 +28,9 @@ export const Analytics: React.FC = () => {
 
   // Расширенная аналитика на основе данных Excel
   const enhancedAnalytics = useMemo(() => {
-    try {
-      if (!excelData) return null
+    if (!excelData) return null
 
+    try {
       const orders = excelData.orders || []
       const couriers = excelData.couriers || []
       const routes = excelData.routes || []
