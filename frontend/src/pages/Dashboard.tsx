@@ -17,10 +17,13 @@ import { ExcelResultsDisplay } from '../components/ExcelResultsDisplay'
 import { ExcelDebugLogs } from '../components/ExcelDebugLogs'
 import { ExcelDataPreview } from '../components/ExcelDataPreview'
 import { useExcelData } from '../contexts/ExcelDataContext'
+import { useTheme } from '../contexts/ThemeContext'
+import { clsx } from 'clsx'
 import * as api from '../services/api'
 
 export const Dashboard: React.FC = () => {
   const { excelData, setExcelData, clearExcelData } = useExcelData()
+  const { isDark } = useTheme()
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [selectedCourier, setSelectedCourier] = useState<string | null>(null)
   const [logs, setLogs] = useState<string[]>([])
@@ -315,7 +318,10 @@ export const Dashboard: React.FC = () => {
   const routes = routesData?.data || []
 
   return (
-    <div className="space-y-6">
+    <div className={clsx(
+      'space-y-6 transition-colors duration-300',
+      isDark ? 'text-gray-100' : 'text-gray-900'
+    )}>
       {/* API Key Notification */}
       <ApiKeyNotification />
       
@@ -418,11 +424,19 @@ export const Dashboard: React.FC = () => {
               </div>
             </div>
             {logs.length === 0 ? (
-              <p className="text-sm text-gray-500">Пока что нет логов</p>
+              <p className={clsx(
+                'text-sm',
+                isDark ? 'text-gray-400' : 'text-gray-500'
+              )}>Пока что нет логов</p>
             ) : (
               <div className="max-h-64 overflow-y-auto space-y-2">
                 {logs.map((line, idx) => (
-                  <div key={idx} className="text-xs font-mono bg-gray-50 border border-gray-200 rounded p-2">
+                  <div key={idx} className={clsx(
+                    'text-xs font-mono border rounded p-2',
+                    isDark 
+                      ? 'bg-gray-800 border-gray-700 text-gray-300' 
+                      : 'bg-gray-50 border-gray-200 text-gray-800'
+                  )}>
                     {line}
                   </div>
                 ))}
@@ -437,15 +451,27 @@ export const Dashboard: React.FC = () => {
           <div className="space-y-6">
             {/* Couriers Section */}
             <div className="card p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+              <h2 className={clsx(
+                'text-lg font-semibold mb-4',
+                isDark ? 'text-gray-100' : 'text-gray-900'
+              )}>
                 Последние курьеры ({couriers.length})
               </h2>
               
               {couriers.length === 0 ? (
                 <div className="text-center py-8">
-                  <UserGroupIcon className="mx-auto h-12 w-12 text-gray-400" />
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">Нет курьеров</h3>
-                  <p className="mt-1 text-sm text-gray-500">
+                  <UserGroupIcon className={clsx(
+                    'mx-auto h-12 w-12',
+                    isDark ? 'text-gray-500' : 'text-gray-400'
+                  )} />
+                  <h3 className={clsx(
+                    'mt-2 text-sm font-medium',
+                    isDark ? 'text-gray-200' : 'text-gray-900'
+                  )}>Нет курьеров</h3>
+                  <p className={clsx(
+                    'mt-1 text-sm',
+                    isDark ? 'text-gray-400' : 'text-gray-500'
+                  )}>
                     Загрузите Excel файл для создания курьеров и маршрутов.
                   </p>
                 </div>
@@ -467,7 +493,10 @@ export const Dashboard: React.FC = () => {
 
             {/* Map Section */}
             <div className="card p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+              <h2 className={clsx(
+                'text-lg font-semibold mb-4',
+                isDark ? 'text-gray-100' : 'text-gray-900'
+              )}>
                 Карта маршрутів
               </h2>
               
