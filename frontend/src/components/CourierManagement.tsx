@@ -97,7 +97,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
           name: courierName,
           phone: '',
           email: '',
-          vehicleType: 'car' as const,
+          vehicleType: (courier.vehicleType || 'car') as 'car' | 'motorcycle',
           location: 'Киев',
           isActive: true,
           orders: calculateCourierOrders(courierName),
@@ -117,6 +117,23 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
       orders: calculateCourierOrders(courier.name)
     })))
   }, [calculateCourierDistance, calculateCourierOrders])
+
+  // Синхронизируем изменения типа курьера из контекста
+  useEffect(() => {
+    if (contextData?.couriers && Array.isArray(contextData.couriers)) {
+      setCouriers(prev => prev.map(courier => {
+        const contextCourier = contextData.couriers.find((c: any) => c.name === courier.name)
+        if (contextCourier && contextCourier.vehicleType !== courier.vehicleType) {
+          return {
+            ...courier,
+            vehicleType: contextCourier.vehicleType as 'car' | 'motorcycle',
+            totalDistance: calculateCourierDistance(courier.name)
+          }
+        }
+        return courier
+      }))
+    }
+  }, [contextData?.couriers, calculateCourierDistance])
 
   const filteredCouriers = couriers
     .filter(courier => {
@@ -166,10 +183,12 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   }
 
   const toggleCourierVehicleType = (id: string) => {
+    console.log('Переключение типа курьера:', id)
     setCouriers(prev => {
       const updatedCouriers = prev.map(courier => {
         if (courier.id === id) {
           const newVehicleType = courier.vehicleType === 'car' ? 'motorcycle' : 'car'
+          console.log(`Курьер ${courier.name}: ${courier.vehicleType} -> ${newVehicleType}`)
           return {
             ...courier,
             vehicleType: newVehicleType as 'car' | 'motorcycle',
@@ -192,6 +211,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
           }
           return courier
         })
+        console.log('Обновляем контекст:', updatedContextCouriers)
         updateCourierData(updatedContextCouriers)
       }
       
