@@ -443,19 +443,11 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                     <TruckIcon className="h-4 w-4 text-gray-400" />
                     <span className="text-sm font-medium text-gray-700">Заказы</span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 text-center">
-                    <div>
-                      <p className="text-xs text-gray-500">Всего</p>
-                      <p className="text-lg font-semibold text-gray-900">
-                        {courier.orders}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">В маршрутах</p>
-                      <p className="text-lg font-semibold text-blue-600">
-                        {calculateCourierOrdersInRoutes(courier.name)}
-                      </p>
-                    </div>
+                  <div className="text-center">
+                    <p className="text-xs text-gray-500">Посчитанных заказов</p>
+                    <p className="text-lg font-semibold text-blue-600">
+                      {calculateCourierOrdersInRoutes(courier.name)}
+                    </p>
                   </div>
                 </div>
 
