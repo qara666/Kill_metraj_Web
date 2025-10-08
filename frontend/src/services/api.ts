@@ -13,8 +13,11 @@ import type {
 } from '../types';
 
 // Create axios instance with base configuration
+const runtimeBase = (typeof window !== 'undefined' && window.location.host.includes('onrender.com'))
+  ? 'https://kill-metraj-backend.onrender.com/api'
+  : ''
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  baseURL: (import.meta.env.VITE_API_BASE_URL as string) || runtimeBase || '/api',
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',

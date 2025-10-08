@@ -107,6 +107,12 @@ app.post('/api/upload/excel', upload.single('file'), async (req, res) => {
   }
 });
 
+// Minimal placeholder routes for frontend api.ts expectations
+app.get('/api/health', (req, res) => res.json({ ok: true }))
+app.get('/api/couriers', (_req, res) => res.json({ success: true, data: [] }))
+app.get('/api/routes', (_req, res) => res.json({ success: true, data: [] }))
+app.get('/api/analytics/dashboard', (_req, res) => res.json({ success: true, data: {} }))
+
 app.get('/debug/logs', (req, res) => {
   res.json({
     logs: logs,
