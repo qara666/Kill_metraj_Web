@@ -2,12 +2,11 @@
   "name": "kill-metraj-frontend",
   "version": "1.0.0",
   "description": "Frontend for Kill_metraj web application",
-  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview --host 0.0.0.0 --port ${PORT:-4173}",
-    "start": "node simple-server.js",
+    "start": "node server.js",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
