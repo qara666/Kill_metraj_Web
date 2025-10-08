@@ -279,7 +279,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
       isOptimized: false
     }
 
-    setRoutes(prev => [...prev, newRoute])
+    setRoutes(prev => [newRoute, ...prev])
     
     // Сбрасываем выбор заказов
     setSelectedOrders(new Set())
@@ -761,7 +761,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                             </span>
                           </div>
                           <div className="text-xs text-green-600 mt-1">
-                            ✓ Маршрут оптимизирован
+                            ✓ Маршрут создан
                           </div>
                         </>
                       ) : (
