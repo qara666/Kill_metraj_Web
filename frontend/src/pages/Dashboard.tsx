@@ -36,6 +36,120 @@ export const Dashboard: React.FC = () => {
     setLogs(prev => [entry, ...prev].slice(0, 200))
   }
 
+  // Функция для объединения данных с проверкой дубликатов
+  const mergeExcelData = (newData: any, existingData: any) => {
+    if (!existingData) {
+      return newData
+    }
+
+    // Объединяем заказы, исключая дубликаты по номеру заказа
+    const existingOrders = existingData.orders || []
+    const newOrders = newData.orders || []
+    const mergedOrders = [...existingOrders]
+    
+    let addedOrders = 0
+    let duplicateOrders = 0
+    
+    newOrders.forEach((newOrder: any) => {
+      const isDuplicate = existingOrders.some((existingOrder: any) => 
+        existingOrder.orderNumber === newOrder.orderNumber
+      )
+      
+      if (!isDuplicate) {
+        mergedOrders.push(newOrder)
+        addedOrders++
+      } else {
+        duplicateOrders++
+      }
+    })
+
+    // Объединяем курьеров, исключая дубликаты по имени
+    const existingCouriers = existingData.couriers || []
+    const newCouriers = newData.couriers || []
+    const mergedCouriers = [...existingCouriers]
+    
+    let addedCouriers = 0
+    let duplicateCouriers = 0
+    
+    newCouriers.forEach((newCourier: any) => {
+      const isDuplicate = existingCouriers.some((existingCourier: any) => 
+        existingCourier.name === newCourier.name
+      )
+      
+      if (!isDuplicate) {
+        mergedCouriers.push(newCourier)
+        addedCouriers++
+      } else {
+        duplicateCouriers++
+      }
+    })
+
+    // Объединяем способы оплаты, исключая дубликаты
+    const existingPaymentMethods = existingData.paymentMethods || []
+    const newPaymentMethods = newData.paymentMethods || []
+    const mergedPaymentMethods = [...existingPaymentMethods]
+    
+    let addedPaymentMethods = 0
+    let duplicatePaymentMethods = 0
+    
+    newPaymentMethods.forEach((newPaymentMethod: any) => {
+      const isDuplicate = existingPaymentMethods.some((existingPaymentMethod: any) => 
+        existingPaymentMethod.name === newPaymentMethod.name
+      )
+      
+      if (!isDuplicate) {
+        mergedPaymentMethods.push(newPaymentMethod)
+        addedPaymentMethods++
+      } else {
+        duplicatePaymentMethods++
+      }
+    })
+
+    // Объединяем маршруты, исключая дубликаты по ID
+    const existingRoutes = existingData.routes || []
+    const newRoutes = newData.routes || []
+    const mergedRoutes = [...existingRoutes]
+    
+    let addedRoutes = 0
+    let duplicateRoutes = 0
+    
+    newRoutes.forEach((newRoute: any) => {
+      const isDuplicate = existingRoutes.some((existingRoute: any) => 
+        existingRoute.id === newRoute.id
+      )
+      
+      if (!isDuplicate) {
+        mergedRoutes.push(newRoute)
+        addedRoutes++
+      } else {
+        duplicateRoutes++
+      }
+    })
+
+    // Объединяем ошибки
+    const mergedErrors = [...(existingData.errors || []), ...(newData.errors || [])]
+
+    // Логируем результаты объединения
+    log(`Объединение данных: +${addedOrders} заказов (${duplicateOrders} дубликатов), +${addedCouriers} курьеров (${duplicateCouriers} дубликатов), +${addedPaymentMethods} способов оплаты (${duplicatePaymentMethods} дубликатов), +${addedRoutes} маршрутов (${duplicateRoutes} дубликатов)`)
+
+    return {
+      orders: mergedOrders,
+      couriers: mergedCouriers,
+      paymentMethods: mergedPaymentMethods,
+      routes: mergedRoutes,
+      errors: mergedErrors,
+      summary: {
+        totalRows: mergedOrders.length + mergedCouriers.length + mergedPaymentMethods.length + mergedRoutes.length,
+        successfulGeocoding: 0,
+        failedGeocoding: 0,
+        orders: mergedOrders.length,
+        couriers: mergedCouriers.length,
+        paymentMethods: mergedPaymentMethods.length,
+        errors: mergedErrors
+      }
+    }
+  }
+
   // Hydrate state from localStorage on mount
   useEffect(() => {
     try {
@@ -110,7 +224,7 @@ export const Dashboard: React.FC = () => {
       const routes = Array.isArray((data as any).routes) ? (data as any).routes : []
       const errorsArr = Array.isArray((data as any).errors) ? (data as any).errors : []
 
-      const normalized: any = {
+      const newData: any = {
         orders,
         couriers,
         paymentMethods,
@@ -127,7 +241,9 @@ export const Dashboard: React.FC = () => {
         }
       }
 
-      setExcelData(normalized)
+      // Объединяем новые данные с существующими
+      const mergedData = mergeExcelData(newData, excelData)
+      setExcelData(mergedData)
       
       // Extract Excel debug logs if available
       const responseData = resp as any;
@@ -141,7 +257,7 @@ export const Dashboard: React.FC = () => {
       setShowDataPreview(true);
       
       const ordersCount = (orders as any[]).length
-      log(`Файл оброблено: замовлень=${ordersCount}, геокодовано=${normalized.summary.successfulGeocoding}, помилок=${(normalized.summary.errors as any[]).length}`)
+      log(`Файл оброблено: замовлень=${ordersCount}, геокодовано=${newData.summary.successfulGeocoding}, помилок=${(newData.summary.errors as any[]).length}. Данные объединены с существующими.`)
       queryClient.invalidateQueries({ queryKey: ['routes'] })
     },
     onError: (error: any) => {
@@ -156,7 +272,7 @@ export const Dashboard: React.FC = () => {
 
   const handleExcelFileSelect = (file: File) => {
     setSelectedFile(file)
-    clearExcelData() // Очищаем предыдущие результаты
+    // НЕ очищаем предыдущие результаты - будем объединять данные
     log(`Выбран Excel файл: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`)
   }
 
@@ -181,7 +297,7 @@ export const Dashboard: React.FC = () => {
       console.warn('Ошибка очистки localStorage:', error)
     }
     
-    log('Результаты Excel обработки очищены')
+    log('Результаты Excel обработки очищены (можно загрузить новые файлы)')
   }
 
   const handleConfirmPreview = () => {
@@ -281,6 +397,24 @@ export const Dashboard: React.FC = () => {
                 >
                   Очистити логи
                 </button>
+                {excelData && (
+                  <button
+                    onClick={() => {
+                      if (window.confirm('Вы уверены, что хотите полностью очистить все данные Excel? Это действие нельзя отменить.')) {
+                        clearExcelData()
+                        setPreviewData(null)
+                        setShowDataPreview(false)
+                        setExcelLogs([])
+                        log('Все данные Excel полностью очищены')
+                        toast.success('Все данные Excel очищены')
+                      }
+                    }}
+                    className="btn-outline text-red-600 border-red-300 hover:bg-red-50"
+                    title="Полностью очистить все данные Excel"
+                  >
+                    Очистить все данные
+                  </button>
+                )}
               </div>
             </div>
             {logs.length === 0 ? (
