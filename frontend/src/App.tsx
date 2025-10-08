@@ -6,20 +6,23 @@ import { Analytics } from './pages/Analytics'
 import { Settings } from './pages/Settings'
 import { Layout } from './components/Layout'
 import { ExcelDataProvider } from './contexts/ExcelDataContext'
+import { ThemeProvider } from './contexts/ThemeContext'
 
 function App() {
   return (
-    <ExcelDataProvider>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/couriers" element={<Couriers />} />
-          <Route path="/routes" element={<RoutesPage />} />
-          <Route path="/analytics" element={<Analytics />} />
-          <Route path="/settings" element={<Settings />} />
-        </Routes>
-      </Layout>
-    </ExcelDataProvider>
+    <ThemeProvider>
+      <ExcelDataProvider>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/couriers" element={<Couriers />} />
+            <Route path="/routes" element={<RoutesPage />} />
+            <Route path="/analytics" element={<Analytics />} />
+            <Route path="/settings" element={<Settings />} />
+          </Routes>
+        </Layout>
+      </ExcelDataProvider>
+    </ThemeProvider>
   )
 }
 
