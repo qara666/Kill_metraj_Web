@@ -514,143 +514,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
         </div>
       </div>
 
+      {/* Верхняя часть: Курьеры и заказы */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Маршруты */}
-        <div className="space-y-4">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">Созданные маршруты</h2>
-              {routes.length > 0 && (
-                <button
-                  onClick={clearAllRoutes}
-                  className="text-sm text-red-600 hover:text-red-800 font-medium"
-                >
-                  Очистить все
-                </button>
-              )}
-            </div>
-              
-              {routes.length === 0 ? (
-                <div className="text-center py-8">
-                  <MapIcon className="mx-auto h-12 w-12 text-gray-400" />
-                  <p className="mt-2 text-sm text-gray-500">Создайте маршруты для курьеров</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {paginatedRoutes.map(route => (
-                    <div key={route.id} className="border border-gray-200 rounded-lg p-4">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center space-x-2">
-                          <TruckIcon className={`h-5 w-5 ${
-                            getCourierVehicleType(route.courier) === 'car' ? 'text-green-600' : 'text-orange-600'
-                          }`} />
-                          <div>
-                            <h3 className="font-medium text-gray-900">{route.courier}</h3>
-                            <p className="text-sm text-gray-500">
-                              {route.orders.length} заказов
-                            </p>
-                          </div>
-                          <span className={`text-xs px-2 py-1 rounded-full ${
-                            getCourierVehicleType(route.courier) === 'car' 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-orange-100 text-orange-800'
-                          }`}>
-                            {getCourierVehicleType(route.courier) === 'car' ? 'Авто' : 'Мото'}
-                          </span>
-                        </div>
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => route.isOptimized ? openRouteInGoogleMaps(route) : calculateRouteDistance(route)}
-                            disabled={isCalculating}
-                            className="p-1 text-gray-400 hover:text-blue-600 disabled:opacity-50"
-                            title={route.isOptimized ? "Открыть маршрут в Google Maps" : "Рассчитать расстояние"}
-                          >
-                            <MapIcon className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => deleteRoute(route.id)}
-                            className="p-1 text-gray-400 hover:text-red-600"
-                            title="Удалить маршрут"
-                          >
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        {route.orders.map((order, index) => (
-                          <div key={order.id} className="flex items-center space-x-2 text-sm">
-                            <span className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium">
-                              {index + 1}
-                            </span>
-                            <span className="text-gray-600">#{order.orderNumber}</span>
-                            <span className="text-gray-500 truncate">{order.address}</span>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="mt-3 pt-3 border-t border-gray-200">
-                        {route.isOptimized ? (
-                          <>
-                            <div className="flex items-center justify-between text-sm">
-                              <div className="flex items-center space-x-1">
-                                <MapPinIcon className="h-4 w-4 text-gray-400" />
-                                <span className="text-gray-600">Расстояние</span>
-                              </div>
-                              <span className="font-medium text-gray-900">
-                                {route.totalDistance.toFixed(1)} км
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between text-sm mt-1">
-                              <div className="flex items-center space-x-1">
-                                <ClockIcon className="h-4 w-4 text-gray-400" />
-                                <span className="text-gray-600">Время</span>
-                              </div>
-                              <span className="font-medium text-gray-900">
-                                {formatDuration(route.totalDuration)}
-                              </span>
-                            </div>
-                            <div className="text-xs text-green-600 mt-1">
-                              ✓ Маршрут создан
-                            </div>
-                          </>
-                        ) : (
-                          <div className="text-sm text-gray-500">
-                            {isCalculating ? 'Расчет расстояния...' : 'Нажмите на карту для расчета расстояния'}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Пагинация маршрутов */}
-              {totalRoutePages > 1 && (
-                <div className="mt-4 flex items-center justify-between">
-                  <button
-                    onClick={() => setRoutePage(Math.max(0, routePage - 1))}
-                    disabled={routePage === 0}
-                    className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    ← Назад
-                  </button>
-                  <span className="text-sm text-gray-500">
-                    Страница {routePage + 1} из {totalRoutePages}
-                  </span>
-                  <button
-                    onClick={() => setRoutePage(Math.min(totalRoutePages - 1, routePage + 1))}
-                    disabled={routePage >= totalRoutePages - 1}
-                    className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Вперед →
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-        {/* Курьеры и заказы */}
+        {/* Курьеры */}
         <div className="space-y-4">
           <div className={clsx(
             'rounded-lg shadow-sm border p-6',
@@ -769,7 +635,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
             )}
           </div>
 
-          {/* Заказы выбранного курьера */}
+        </div>
+
+        {/* Заказы выбранного курьера */}
+        <div className="space-y-4">
           {selectedCourier && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <div className="flex items-center justify-between mb-4">
@@ -1017,7 +886,141 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
             </div>
           )}
         </div>
+      </div>
 
+      {/* Нижняя часть: Созданные маршруты */}
+      <div className="mt-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Созданные маршруты</h2>
+            {routes.length > 0 && (
+              <button
+                onClick={clearAllRoutes}
+                className="text-sm text-red-600 hover:text-red-800 font-medium"
+              >
+                Очистить все
+              </button>
+            )}
+          </div>
+            
+          {routes.length === 0 ? (
+            <div className="text-center py-8">
+              <MapIcon className="mx-auto h-12 w-12 text-gray-400" />
+              <p className="mt-2 text-sm text-gray-500">Создайте маршруты для курьеров</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {paginatedRoutes.map(route => (
+                <div key={route.id} className="border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center space-x-2">
+                      <TruckIcon className={`h-5 w-5 ${
+                        getCourierVehicleType(route.courier) === 'car' ? 'text-green-600' : 'text-orange-600'
+                      }`} />
+                      <div>
+                        <h3 className="font-medium text-gray-900">{route.courier}</h3>
+                        <p className="text-sm text-gray-500">
+                          {route.orders.length} заказов
+                        </p>
+                      </div>
+                      <span className={`text-xs px-2 py-1 rounded-full ${
+                        getCourierVehicleType(route.courier) === 'car' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-orange-100 text-orange-800'
+                      }`}>
+                        {getCourierVehicleType(route.courier) === 'car' ? 'Авто' : 'Мото'}
+                      </span>
+                    </div>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => route.isOptimized ? openRouteInGoogleMaps(route) : calculateRouteDistance(route)}
+                        disabled={isCalculating}
+                        className="p-1 text-gray-400 hover:text-blue-600 disabled:opacity-50"
+                        title={route.isOptimized ? "Открыть маршрут в Google Maps" : "Рассчитать расстояние"}
+                      >
+                        <MapIcon className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => deleteRoute(route.id)}
+                        className="p-1 text-gray-400 hover:text-red-600"
+                        title="Удалить маршрут"
+                      >
+                        <TrashIcon className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {route.orders.map((order, index) => (
+                      <div key={order.id} className="flex items-center space-x-2 text-sm">
+                        <span className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium">
+                          {index + 1}
+                        </span>
+                        <span className="text-gray-600">#{order.orderNumber}</span>
+                        <span className="text-gray-500 truncate">{order.address}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-3 pt-3 border-t border-gray-200">
+                    {route.isOptimized ? (
+                      <>
+                        <div className="flex items-center justify-between text-sm">
+                          <div className="flex items-center space-x-1">
+                            <MapPinIcon className="h-4 w-4 text-gray-400" />
+                            <span className="text-gray-600">Расстояние</span>
+                          </div>
+                          <span className="font-medium text-gray-900">
+                            {route.totalDistance.toFixed(1)} км
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm mt-1">
+                          <div className="flex items-center space-x-1">
+                            <ClockIcon className="h-4 w-4 text-gray-400" />
+                            <span className="text-gray-600">Время</span>
+                          </div>
+                          <span className="font-medium text-gray-900">
+                            {formatDuration(route.totalDuration)}
+                          </span>
+                        </div>
+                        <div className="text-xs text-green-600 mt-1">
+                          ✓ Маршрут создан
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-sm text-gray-500">
+                        {isCalculating ? 'Расчет расстояния...' : 'Нажмите на карту для расчета расстояния'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Пагинация маршрутов */}
+          {totalRoutePages > 1 && (
+            <div className="mt-4 flex items-center justify-between">
+              <button
+                onClick={() => setRoutePage(Math.max(0, routePage - 1))}
+                disabled={routePage === 0}
+                className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                ← Назад
+              </button>
+              <span className="text-sm text-gray-500">
+                Страница {routePage + 1} из {totalRoutePages}
+              </span>
+              <button
+                onClick={() => setRoutePage(Math.min(totalRoutePages - 1, routePage + 1))}
+                disabled={routePage >= totalRoutePages - 1}
+                className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Вперед →
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
