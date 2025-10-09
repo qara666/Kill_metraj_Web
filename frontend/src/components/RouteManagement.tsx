@@ -61,6 +61,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   const [googleMapsReady, setGoogleMapsReady] = useState(false)
   const [courierFilter, setCourierFilter] = useState<string>('all')
   const [courierPage, setCourierPage] = useState(0)
+  const [routePage, setRoutePage] = useState(0)
+  const [routesPerPage] = useState(5) // Количество маршрутов на странице
+  const [orderSearchTerm, setOrderSearchTerm] = useState('')
+  const [timeFilter, setTimeFilter] = useState<string>('all') // all, morning, afternoon, evening
 
   // Загружаем настройки адресов
   useEffect(() => {
@@ -189,14 +193,57 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
   // Пагинация курьеров (8 на страницу)
   const COURIERS_PER_PAGE = 8
-  const totalPages = Math.ceil(filteredCouriers.length / COURIERS_PER_PAGE)
+  const totalCourierPages = Math.ceil(filteredCouriers.length / COURIERS_PER_PAGE)
   const paginatedCouriers = filteredCouriers.slice(
     courierPage * COURIERS_PER_PAGE,
     (courierPage + 1) * COURIERS_PER_PAGE
   )
 
+  // Пагинация маршрутов
+  const totalRoutePages = Math.ceil(routes.length / routesPerPage)
+  const paginatedRoutes = routes.slice(
+    routePage * routesPerPage,
+    (routePage + 1) * routesPerPage
+  )
+
   const handleCourierSelect = (courierName: string) => {
     setSelectedCourier(courierName)
+  }
+
+  // Функция для фильтрации заказов по времени
+  const filterOrdersByTime = (orders: Order[]) => {
+    if (timeFilter === 'all') return orders
+    
+    return orders.filter(order => {
+      if (!order.plannedTime) return timeFilter === 'all'
+      
+      const time = order.plannedTime.toLowerCase()
+      switch (timeFilter) {
+        case 'morning':
+          return time.includes('утро') || time.includes('morning') || 
+                 (time.includes(':') && parseInt(time.split(':')[0]) >= 6 && parseInt(time.split(':')[0]) < 12)
+        case 'afternoon':
+          return time.includes('день') || time.includes('afternoon') || 
+                 (time.includes(':') && parseInt(time.split(':')[0]) >= 12 && parseInt(time.split(':')[0]) < 18)
+        case 'evening':
+          return time.includes('вечер') || time.includes('evening') || 
+                 (time.includes(':') && parseInt(time.split(':')[0]) >= 18)
+        default:
+          return true
+      }
+    })
+  }
+
+  // Функция для поиска заказов по номеру
+  const searchOrders = (orders: Order[]) => {
+    if (!orderSearchTerm.trim()) return orders
+    
+    const searchTerm = orderSearchTerm.toLowerCase().trim()
+    return orders.filter(order => 
+      order.orderNumber.toLowerCase().includes(searchTerm) ||
+      order.customerName.toLowerCase().includes(searchTerm) ||
+      order.address.toLowerCase().includes(searchTerm)
+    )
   }
 
   // Сортируем заказы: сначала доступные по времени, потом заказы в маршрутах
@@ -526,7 +573,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
             )}
 
             {/* Пагинация */}
-            {totalPages > 1 && (
+            {totalCourierPages > 1 && (
               <div className="mt-4 flex items-center justify-between">
                 <button
                   onClick={() => setCourierPage(Math.max(0, courierPage - 1))}
@@ -536,11 +583,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                   ← Назад
                 </button>
                 <span className="text-sm text-gray-500">
-                  Страница {courierPage + 1} из {totalPages}
+                  Страница {courierPage + 1} из {totalCourierPages}
                 </span>
                 <button
-                  onClick={() => setCourierPage(Math.min(totalPages - 1, courierPage + 1))}
-                  disabled={courierPage >= totalPages - 1}
+                  onClick={() => setCourierPage(Math.min(totalCourierPages - 1, courierPage + 1))}
+                  disabled={courierPage >= totalCourierPages - 1}
                   className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Вперед →
@@ -575,9 +622,79 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                 </button>
               </div>
 
+              {/* Фильтры заказов */}
+              <div className="mb-4 space-y-3">
+                {/* Поиск по номеру заказа */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Поиск заказа
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Номер заказа, имя клиента или адрес..."
+                    value={orderSearchTerm}
+                    onChange={(e) => setOrderSearchTerm(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+
+                {/* Фильтр по времени */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Время доставки
+                  </label>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => setTimeFilter('all')}
+                      className={`px-3 py-1 text-xs rounded-full ${
+                        timeFilter === 'all'
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      Все
+                    </button>
+                    <button
+                      onClick={() => setTimeFilter('morning')}
+                      className={`px-3 py-1 text-xs rounded-full ${
+                        timeFilter === 'morning'
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      Утро (6-12)
+                    </button>
+                    <button
+                      onClick={() => setTimeFilter('afternoon')}
+                      className={`px-3 py-1 text-xs rounded-full ${
+                        timeFilter === 'afternoon'
+                          ? 'bg-orange-100 text-orange-800'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      День (12-18)
+                    </button>
+                    <button
+                      onClick={() => setTimeFilter('evening')}
+                      className={`px-3 py-1 text-xs rounded-full ${
+                        timeFilter === 'evening'
+                          ? 'bg-purple-100 text-purple-800'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      Вечер (18+)
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               <div className="max-h-96 overflow-y-auto">
                 {(() => {
-                  const allOrders = sortOrdersByTime(courierOrders[selectedCourier] || [])
+                  const allOrders = sortOrdersByTime(
+                    searchOrders(
+                      filterOrdersByTime(courierOrders[selectedCourier] || [])
+                    )
+                  )
                   const availableOrders = allOrders.filter(order => !isOrderInExistingRoute(order.id))
                   const ordersInRoutes = allOrders.filter(order => isOrderInExistingRoute(order.id))
                   
@@ -708,7 +825,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
               </div>
             ) : (
               <div className="space-y-4">
-                {routes.map(route => (
+                {paginatedRoutes.map(route => (
                   <div key={route.id} className="border border-gray-200 rounded-lg p-4">
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center space-x-2">
@@ -793,6 +910,29 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Пагинация маршрутов */}
+            {totalRoutePages > 1 && (
+              <div className="mt-4 flex items-center justify-between">
+                <button
+                  onClick={() => setRoutePage(Math.max(0, routePage - 1))}
+                  disabled={routePage === 0}
+                  className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  ← Назад
+                </button>
+                <span className="text-sm text-gray-500">
+                  Страница {routePage + 1} из {totalRoutePages}
+                </span>
+                <button
+                  onClick={() => setRoutePage(Math.min(totalRoutePages - 1, routePage + 1))}
+                  disabled={routePage >= totalRoutePages - 1}
+                  className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Вперед →
+                </button>
               </div>
             )}
           </div>

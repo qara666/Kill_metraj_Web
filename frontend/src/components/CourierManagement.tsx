@@ -8,7 +8,9 @@ import {
   MapPinIcon,
   XMarkIcon,
   MapIcon,
-  ClockIcon
+  ClockIcon,
+  ChevronUpIcon,
+  ChevronDownIcon
 } from '@heroicons/react/24/outline'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
@@ -39,6 +41,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   const [editingCourier, setEditingCourier] = useState<Courier | null>(null)
   const [filter, setFilter] = useState<'all' | 'car' | 'motorcycle'>('all')
   const [selectedCourierForRoutes, setSelectedCourierForRoutes] = useState<Courier | null>(null)
+  const [sortField, setSortField] = useState<'name' | 'orders' | 'distance' | 'status'>('name')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
 
   // Рассчитываем расстояние для каждого курьера на основе маршрутов
   const calculateCourierDistance = useMemo(() => {
@@ -159,23 +163,23 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
           vehicleType: (courier.vehicleType || 'car') as 'car' | 'motorcycle',
           location: 'Киев',
           isActive: true,
-          orders: calculateCourierOrders(courierName),
+          orders: calculateCourierOrdersInRoutes(courierName),
           totalAmount: courier.totalAmount || 0,
           totalDistance: calculateCourierDistance(courierName)
         }
       })
       setCouriers(couriersFromExcel)
     }
-  }, [excelData, calculateCourierDistance, calculateCourierOrders])
+  }, [excelData, calculateCourierDistance, calculateCourierOrdersInRoutes])
 
   // Обновляем расстояния и заказы курьеров при изменении маршрутов
   useEffect(() => {
     setCouriers(prev => prev.map(courier => ({
       ...courier,
       totalDistance: calculateCourierDistance(courier.name),
-      orders: calculateCourierOrders(courier.name)
+      orders: calculateCourierOrdersInRoutes(courier.name) // Используем заказы В маршрутах
     })))
-  }, [calculateCourierDistance, calculateCourierOrders])
+  }, [calculateCourierDistance, calculateCourierOrdersInRoutes])
 
   // Синхронизируем изменения типа курьера из контекста
   useEffect(() => {
@@ -194,24 +198,49 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     }
   }, [contextData?.couriers, calculateCourierDistance])
 
+  // Функция для сортировки курьеров
+  const sortCouriers = (a: Courier, b: Courier) => {
+    let aValue: any, bValue: any
+    
+    switch (sortField) {
+      case 'name':
+        aValue = a.name.toLowerCase()
+        bValue = b.name.toLowerCase()
+        break
+      case 'orders':
+        aValue = calculateCourierOrdersInRoutes(a.name)
+        bValue = calculateCourierOrdersInRoutes(b.name)
+        break
+      case 'distance':
+        aValue = calculateCourierDistance(a.name)
+        bValue = calculateCourierDistance(b.name)
+        break
+      case 'status':
+        aValue = a.isActive ? 1 : 0
+        bValue = b.isActive ? 1 : 0
+        break
+      default:
+        return 0
+    }
+    
+    if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
+    if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
+    return 0
+  }
+
   const filteredCouriers = couriers
     .filter(courier => {
       if (filter === 'all') return true
       return courier.vehicleType === filter
     })
-    .sort((a, b) => {
-      // Сначала активные курьеры, потом неактивные
-      if (a.isActive && !b.isActive) return -1
-      if (!a.isActive && b.isActive) return 1
-      return 0
-    })
+    .sort(sortCouriers)
 
   const handleAddCourier = (courierData: Omit<Courier, 'id' | 'totalDistance'>) => {
     const newCourier: Courier = {
       ...courierData,
       id: `courier_${Date.now()}`,
       totalDistance: calculateCourierDistance(courierData.name),
-      orders: calculateCourierOrders(courierData.name)
+      orders: calculateCourierOrdersInRoutes(courierData.name)
     }
     setCouriers(prev => [...prev, newCourier])
     setShowAddModal(false)
@@ -221,7 +250,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     const updatedCourier = {
       ...courierData,
       totalDistance: calculateCourierDistance(courierData.name),
-      orders: calculateCourierOrders(courierData.name)
+      orders: calculateCourierOrdersInRoutes(courierData.name)
     }
     setCouriers(prev => prev.map(courier => 
       courier.id === courierData.id ? updatedCourier : courier
@@ -289,6 +318,15 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     const routes = getCourierRoutes(courier.name)
     if (routes.length > 0) {
       setSelectedCourierForRoutes(courier)
+    }
+  }
+
+  const handleSort = (field: 'name' | 'orders' | 'distance' | 'status') => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDirection('asc')
     }
   }
 
@@ -405,8 +443,69 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredCouriers.map((courier) => {
+        <div className="space-y-4">
+          {/* Заголовки с сортировкой */}
+          <div className={clsx(
+            'grid grid-cols-4 gap-4 p-4 rounded-lg',
+            isDark ? 'bg-gray-700' : 'bg-gray-100'
+          )}>
+            <button
+              onClick={() => handleSort('name')}
+              className="flex items-center space-x-1 text-left font-medium text-sm"
+            >
+              <span className={clsx(
+                isDark ? 'text-gray-200' : 'text-gray-700'
+              )}>Имя курьера</span>
+              {sortField === 'name' && (
+                sortDirection === 'asc' ? 
+                  <ChevronUpIcon className="h-4 w-4 text-blue-600" /> : 
+                  <ChevronDownIcon className="h-4 w-4 text-blue-600" />
+              )}
+            </button>
+            <button
+              onClick={() => handleSort('orders')}
+              className="flex items-center space-x-1 text-left font-medium text-sm"
+            >
+              <span className={clsx(
+                isDark ? 'text-gray-200' : 'text-gray-700'
+              )}>Заказы</span>
+              {sortField === 'orders' && (
+                sortDirection === 'asc' ? 
+                  <ChevronUpIcon className="h-4 w-4 text-blue-600" /> : 
+                  <ChevronDownIcon className="h-4 w-4 text-blue-600" />
+              )}
+            </button>
+            <button
+              onClick={() => handleSort('distance')}
+              className="flex items-center space-x-1 text-left font-medium text-sm"
+            >
+              <span className={clsx(
+                isDark ? 'text-gray-200' : 'text-gray-700'
+              )}>Километры</span>
+              {sortField === 'distance' && (
+                sortDirection === 'asc' ? 
+                  <ChevronUpIcon className="h-4 w-4 text-blue-600" /> : 
+                  <ChevronDownIcon className="h-4 w-4 text-blue-600" />
+              )}
+            </button>
+            <button
+              onClick={() => handleSort('status')}
+              className="flex items-center space-x-1 text-left font-medium text-sm"
+            >
+              <span className={clsx(
+                isDark ? 'text-gray-200' : 'text-gray-700'
+              )}>Статус</span>
+              {sortField === 'status' && (
+                sortDirection === 'asc' ? 
+                  <ChevronUpIcon className="h-4 w-4 text-blue-600" /> : 
+                  <ChevronDownIcon className="h-4 w-4 text-blue-600" />
+              )}
+            </button>
+          </div>
+
+          {/* Сетка курьеров */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredCouriers.map((courier) => {
             const courierRoutes = getCourierRoutes(courier.name)
             const hasRoutes = courierRoutes.length > 0
             
@@ -653,6 +752,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
             </div>
             )
           })}
+          </div>
         </div>
       )}
 
