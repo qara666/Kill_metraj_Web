@@ -72,29 +72,6 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     }
   }, [contextData?.routes])
 
-  // Рассчитываем количество заказов курьера с учетом маршрутов
-  const calculateCourierOrders = useMemo(() => {
-    return (courierName: string) => {
-      if (!excelData?.orders || !Array.isArray(excelData.orders)) {
-        return 0
-      }
-
-      // Общее количество заказов курьера
-      const totalOrders = excelData.orders.filter((order: any) => order.courier === courierName).length
-
-      // Количество заказов в маршрутах
-      let ordersInRoutes = 0
-      if (contextData?.routes && Array.isArray(contextData.routes)) {
-        const courierRoutes = contextData.routes.filter((route: any) => route.courier === courierName)
-        courierRoutes.forEach((route: any) => {
-          ordersInRoutes += route.orders?.length || 0
-        })
-      }
-
-      // Возвращаем количество заказов, которые НЕ в маршрутах
-      return Math.max(0, totalOrders - ordersInRoutes)
-    }
-  }, [excelData?.orders, contextData?.routes])
 
   // Рассчитываем количество заказов курьера в маршрутах
   const calculateCourierOrdersInRoutes = useMemo(() => {
