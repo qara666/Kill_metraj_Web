@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, memo } from 'react'
 import { 
   MapIcon, 
   TruckIcon, 
@@ -52,6 +52,96 @@ interface RouteManagementProps {
   excelData?: any
 }
 
+// Мемоизированный компонент для заказа
+const OrderItem = memo(({ 
+  order, 
+  isSelected, 
+  selectionOrder, 
+  onSelect, 
+  onMoveUp, 
+  onMoveDown, 
+  isInRoute 
+}: {
+  order: Order
+  isSelected: boolean
+  selectionOrder: number
+  onSelect: (id: string) => void
+  onMoveUp: (id: string) => void
+  onMoveDown: (id: string) => void
+  isInRoute: boolean
+}) => {
+  return (
+    <div
+      onClick={() => onSelect(order.id)}
+      className={`p-3 rounded-lg border transition-all duration-200 ease-in-out transform hover:scale-[1.01] ${
+        isSelected
+          ? 'bg-blue-50 border-blue-200 ring-2 ring-blue-500 cursor-pointer shadow-md'
+          : isInRoute
+          ? 'bg-yellow-50 border-yellow-200 cursor-not-allowed opacity-60'
+          : 'bg-gray-50 border-gray-200 hover:bg-gray-100 cursor-pointer hover:shadow-sm'
+      }`}
+    >
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          <div className="flex items-center space-x-2">
+            <span className="font-medium text-gray-900">
+              Заказ #{order.orderNumber}
+            </span>
+            {isSelected && (
+              <div className="flex items-center space-x-2">
+                <span className="bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-full">
+                  {selectionOrder}
+                </span>
+                <div className="flex flex-col space-y-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onMoveUp(order.id)
+                    }}
+                    disabled={selectionOrder === 1}
+                    className="p-1 text-blue-600 hover:text-blue-800 disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Переместить вверх"
+                  >
+                    <ChevronUpIcon className="h-3 w-3" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onMoveDown(order.id)
+                    }}
+                    disabled={selectionOrder === 0}
+                    className="p-1 text-blue-600 hover:text-blue-800 disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Переместить вниз"
+                  >
+                    <ChevronDownIcon className="h-3 w-3" />
+                  </button>
+                </div>
+                <CheckCircleIcon className="h-4 w-4 text-blue-600" />
+              </div>
+            )}
+            {isInRoute && (
+              <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
+                В маршруте
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-gray-600 mt-1">{order.address}</p>
+          <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
+            <span>{order.customerName}</span>
+            <span>{order.phone}</span>
+            <span>{order.amount} грн</span>
+            {order.plannedTime && (
+              <span className="text-blue-600 font-medium">
+                {order.plannedTime}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+})
+
 export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) => {
   const { updateRouteData } = useExcelData()
   const { isDark } = useTheme()
@@ -65,8 +155,18 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   const [courierPage, setCourierPage] = useState(0)
   const [routePage, setRoutePage] = useState(0)
   const [routesPerPage] = useState(5) // Количество маршрутов на странице
+  const [visibleOrdersCount, setVisibleOrdersCount] = useState(20) // Начальное количество видимых заказов
   const [orderSearchTerm, setOrderSearchTerm] = useState('')
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
   const [timeFilter, setTimeFilter] = useState<string>('all') // all, morning, afternoon, evening
+
+  // Дебаунсинг для поиска
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(orderSearchTerm)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [orderSearchTerm])
 
   // Загружаем настройки адресов
   useEffect(() => {
@@ -210,12 +310,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     (routePage + 1) * routesPerPage
   )
 
-  const handleCourierSelect = (courierName: string) => {
+  const handleCourierSelect = useCallback((courierName: string) => {
     setSelectedCourier(courierName)
-  }
+  }, [])
 
   // Функция для фильтрации заказов по времени
-  const filterOrdersByTime = (orders: Order[]) => {
+  const filterOrdersByTime = useCallback((orders: Order[]) => {
     if (timeFilter === 'all') return orders
     
     return orders.filter(order => {
@@ -236,19 +336,19 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
           return true
       }
     })
-  }
+  }, [timeFilter])
 
   // Функция для поиска заказов по номеру
-  const searchOrders = (orders: Order[]) => {
-    if (!orderSearchTerm.trim()) return orders
+  const searchOrders = useCallback((orders: Order[]) => {
+    if (!debouncedSearchTerm.trim()) return orders
     
-    const searchTerm = orderSearchTerm.toLowerCase().trim()
+    const searchTerm = debouncedSearchTerm.toLowerCase().trim()
     return orders.filter(order => 
       order.orderNumber.toLowerCase().includes(searchTerm) ||
       order.customerName.toLowerCase().includes(searchTerm) ||
       order.address.toLowerCase().includes(searchTerm)
     )
-  }
+  }, [debouncedSearchTerm])
 
   // Сортируем заказы: сначала доступные по времени, потом заказы в маршрутах
   const sortOrdersByTime = (orders: Order[]) => {
@@ -294,7 +394,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set())
   const [selectedOrdersOrder, setSelectedOrdersOrder] = useState<string[]>([])
 
-  const handleOrderSelect = (orderId: string) => {
+  const handleOrderSelect = useCallback((orderId: string) => {
     if (!selectedCourier) return
 
     // Проверяем, что заказ не находится уже в маршруте
@@ -315,26 +415,31 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
       }
       return newSet
     })
-  }
+  }, [selectedCourier, isOrderInExistingRoute])
 
   // Функции для изменения порядка выбранных заказов
-  const moveOrderUp = (orderId: string) => {
+  const moveOrderUp = useCallback((orderId: string) => {
     const currentIndex = selectedOrdersOrder.indexOf(orderId)
     if (currentIndex > 0) {
       const newOrder = [...selectedOrdersOrder]
       ;[newOrder[currentIndex - 1], newOrder[currentIndex]] = [newOrder[currentIndex], newOrder[currentIndex - 1]]
       setSelectedOrdersOrder(newOrder)
     }
-  }
+  }, [selectedOrdersOrder])
 
-  const moveOrderDown = (orderId: string) => {
+  const moveOrderDown = useCallback((orderId: string) => {
     const currentIndex = selectedOrdersOrder.indexOf(orderId)
     if (currentIndex < selectedOrdersOrder.length - 1) {
       const newOrder = [...selectedOrdersOrder]
       ;[newOrder[currentIndex], newOrder[currentIndex + 1]] = [newOrder[currentIndex + 1], newOrder[currentIndex]]
       setSelectedOrdersOrder(newOrder)
     }
-  }
+  }, [selectedOrdersOrder])
+
+  // Функция для загрузки большего количества заказов
+  const loadMoreOrders = useCallback(() => {
+    setVisibleOrdersCount(prev => prev + 20)
+  }, [])
 
   const createRoute = async () => {
     if (!selectedCourier) return
@@ -581,10 +686,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                     <button
                       key={courierName}
                       onClick={() => handleCourierSelect(courierName)}
-                      className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                      className={`w-full text-left p-3 rounded-lg border transition-all duration-200 ease-in-out transform hover:scale-[1.02] ${
                         selectedCourier === courierName
-                          ? 'bg-blue-50 border-blue-200 text-blue-900'
-                          : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                          ? 'bg-blue-50 border-blue-200 text-blue-900 shadow-md'
+                          : 'bg-gray-50 border-gray-200 hover:bg-gray-100 hover:shadow-sm'
                       }`}
                     >
                       <div className="flex items-center justify-between">
@@ -742,7 +847,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                 </div>
               </div>
 
-              <div className="max-h-96 overflow-y-auto">
+              <div className="max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                 {(() => {
                   const allOrders = sortOrdersByTime(
                     searchOrders(
@@ -764,74 +869,32 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                             </span>
                           </div>
                           <div className="space-y-2">
-                            {availableOrders.map(order => {
+                            {availableOrders.slice(0, visibleOrdersCount).map(order => {
                               const isSelected = selectedOrders.has(order.id)
                               const selectionOrder = selectedOrdersOrder.indexOf(order.id) + 1
                               return (
-                                <div
+                                <OrderItem
                                   key={order.id}
-                                  onClick={() => handleOrderSelect(order.id)}
-                                  className={`p-3 rounded-lg border transition-colors ${
-                                    isSelected
-                                      ? 'bg-blue-50 border-blue-200 ring-2 ring-blue-500 cursor-pointer'
-                                      : 'bg-gray-50 border-gray-200 hover:bg-gray-100 cursor-pointer'
-                                  }`}
-                                >
-                                  <div className="flex items-start justify-between">
-                                    <div className="flex-1">
-                                      <div className="flex items-center space-x-2">
-                                        <span className="font-medium text-gray-900">
-                                          Заказ #{order.orderNumber}
-                                        </span>
-                                        {isSelected && (
-                                          <div className="flex items-center space-x-2">
-                                            <span className="bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-full">
-                                              {selectionOrder}
-                                            </span>
-                                            <div className="flex flex-col space-y-1">
-                                              <button
-                                                onClick={(e) => {
-                                                  e.stopPropagation()
-                                                  moveOrderUp(order.id)
-                                                }}
-                                                disabled={selectionOrder === 1}
-                                                className="p-1 text-blue-600 hover:text-blue-800 disabled:opacity-30 disabled:cursor-not-allowed"
-                                                title="Переместить вверх"
-                                              >
-                                                <ChevronUpIcon className="h-3 w-3" />
-                                              </button>
-                                              <button
-                                                onClick={(e) => {
-                                                  e.stopPropagation()
-                                                  moveOrderDown(order.id)
-                                                }}
-                                                disabled={selectionOrder === selectedOrdersOrder.length}
-                                                className="p-1 text-blue-600 hover:text-blue-800 disabled:opacity-30 disabled:cursor-not-allowed"
-                                                title="Переместить вниз"
-                                              >
-                                                <ChevronDownIcon className="h-3 w-3" />
-                                              </button>
-                                            </div>
-                                            <CheckCircleIcon className="h-4 w-4 text-blue-600" />
-                                          </div>
-                                        )}
-                                      </div>
-                                      <p className="text-sm text-gray-600 mt-1">{order.address}</p>
-                                      <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
-                                        <span>{order.customerName}</span>
-                                        <span>{order.phone}</span>
-                                        <span>{order.amount} грн</span>
-                                        {order.plannedTime && (
-                                          <span className="text-blue-600 font-medium">
-                                            {order.plannedTime}
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
+                                  order={order}
+                                  isSelected={isSelected}
+                                  selectionOrder={selectionOrder}
+                                  onSelect={handleOrderSelect}
+                                  onMoveUp={moveOrderUp}
+                                  onMoveDown={moveOrderDown}
+                                  isInRoute={false}
+                                />
                               )
                             })}
+                            {availableOrders.length > visibleOrdersCount && (
+                              <div className="text-center py-4">
+                                <button
+                                  onClick={loadMoreOrders}
+                                  className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors duration-200"
+                                >
+                                  Показать еще {Math.min(20, availableOrders.length - visibleOrdersCount)} заказов
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}
@@ -847,34 +910,16 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                           </div>
                           <div className="space-y-2">
                             {ordersInRoutes.map(order => (
-                              <div
+                              <OrderItem
                                 key={order.id}
-                                className="p-3 rounded-lg border bg-yellow-50 border-yellow-200 cursor-not-allowed opacity-60"
-                              >
-                                <div className="flex items-start justify-between">
-                                  <div className="flex-1">
-                                    <div className="flex items-center space-x-2">
-                                      <span className="font-medium text-gray-900">
-                                        Заказ #{order.orderNumber}
-                                      </span>
-                                      <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
-                                        В маршруте
-                                      </span>
-                                    </div>
-                                    <p className="text-sm text-gray-600 mt-1">{order.address}</p>
-                                    <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
-                                      <span>{order.customerName}</span>
-                                      <span>{order.phone}</span>
-                                      <span>{order.amount} грн</span>
-                                      {order.plannedTime && (
-                                        <span className="text-blue-600 font-medium">
-                                          {order.plannedTime}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
+                                order={order}
+                                isSelected={false}
+                                selectionOrder={0}
+                                onSelect={() => {}}
+                                onMoveUp={() => {}}
+                                onMoveDown={() => {}}
+                                isInRoute={true}
+                              />
                             ))}
                           </div>
                         </div>
@@ -910,8 +955,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
             </div>
           ) : (
             <div className="space-y-4">
-              {paginatedRoutes.map(route => (
-                <div key={route.id} className="border border-gray-200 rounded-lg p-4">
+                {paginatedRoutes.map(route => (
+                  <div key={route.id} className="border border-gray-200 rounded-lg p-4 transition-all duration-200 ease-in-out hover:shadow-md hover:scale-[1.01]">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center space-x-2">
                       <TruckIcon className={`h-5 w-5 ${
