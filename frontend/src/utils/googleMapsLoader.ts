@@ -1,0 +1,120 @@
+// Утилита для динамической загрузки Google Maps API с ключом из настроек
+
+import { localStorageUtils } from './localStorage'
+
+interface GoogleMapsLoader {
+  isLoaded: boolean
+  isLoading: boolean
+  loadPromise: Promise<void> | null
+}
+
+class GoogleMapsLoaderClass {
+  private state: GoogleMapsLoader = {
+    isLoaded: false,
+    isLoading: false,
+    loadPromise: null
+  }
+
+  private callbacks: (() => void)[] = []
+
+  // Проверяем, загружен ли Google Maps API
+  isLoaded(): boolean {
+    return this.state.isLoaded && window.google && window.google.maps
+  }
+
+  // Загружаем Google Maps API с ключом из настроек
+  async load(): Promise<void> {
+    // Если уже загружен, возвращаем успех
+    if (this.isLoaded()) {
+      return Promise.resolve()
+    }
+
+    // Если уже загружается, ждем завершения
+    if (this.state.isLoading && this.state.loadPromise) {
+      return this.state.loadPromise
+    }
+
+    // Получаем API ключ из настроек
+    const apiKey = localStorageUtils.getApiKey()
+    if (!apiKey.trim()) {
+      throw new Error('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ в настройках.')
+    }
+
+    // Начинаем загрузку
+    this.state.isLoading = true
+    this.state.loadPromise = this.loadScript(apiKey)
+
+    try {
+      await this.state.loadPromise
+      this.state.isLoaded = true
+      this.state.isLoading = false
+      
+      // Вызываем все колбэки
+      this.callbacks.forEach(callback => callback())
+      this.callbacks = []
+    } catch (error) {
+      this.state.isLoading = false
+      this.state.loadPromise = null
+      throw error
+    }
+  }
+
+  // Добавляем колбэк, который будет вызван после загрузки
+  onLoaded(callback: () => void): void {
+    if (this.isLoaded()) {
+      callback()
+    } else {
+      this.callbacks.push(callback)
+    }
+  }
+
+  // Загружаем скрипт Google Maps API
+  private loadScript(apiKey: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      // Проверяем, не загружен ли уже скрипт
+      const existingScript = document.querySelector('script[src*="maps.googleapis.com"]')
+      if (existingScript) {
+        existingScript.remove()
+      }
+
+      // Создаем новый скрипт
+      const script = document.createElement('script')
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
+      script.async = true
+      script.defer = true
+
+      // Обработчики загрузки
+      script.onload = () => {
+        // Устанавливаем глобальную переменную
+        window.googleMapsLoaded = true
+        console.log('Google Maps API загружен с ключом из настроек')
+        resolve()
+      }
+
+      script.onerror = () => {
+        console.error('Ошибка загрузки Google Maps API')
+        reject(new Error('Не удалось загрузить Google Maps API. Проверьте правильность API ключа.'))
+      }
+
+      // Добавляем скрипт в DOM
+      document.head.appendChild(script)
+    })
+  }
+
+  // Получаем текущее состояние
+  getState(): GoogleMapsLoader {
+    return { ...this.state }
+  }
+}
+
+// Создаем единственный экземпляр
+export const googleMapsLoader = new GoogleMapsLoaderClass()
+
+// Расширяем Window интерфейс
+declare global {
+  interface Window {
+    googleMapsLoaded: boolean
+    google: any
+    initGoogleMaps: () => void
+  }
+}

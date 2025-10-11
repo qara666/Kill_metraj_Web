@@ -11,6 +11,7 @@ import {
   ChevronDownIcon
 } from '@heroicons/react/24/outline'
 import { localStorageUtils } from '../utils/localStorage'
+import { googleMapsLoader } from '../utils/googleMapsLoader'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { clsx } from 'clsx'
@@ -199,14 +200,23 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
   // Проверяем готовность Google Maps
   useEffect(() => {
-    const checkGoogleMaps = () => {
-      if (window.googleMapsLoaded && window.google && window.google.maps) {
+    const initGoogleMaps = async () => {
+      try {
+        await googleMapsLoader.load()
         setGoogleMapsReady(true)
-      } else {
-        setTimeout(checkGoogleMaps, 500)
+      } catch (error) {
+        console.error('Ошибка загрузки Google Maps API:', error)
+        setGoogleMapsReady(false)
       }
     }
-    checkGoogleMaps()
+
+    // Проверяем, есть ли API ключ в настройках
+    if (localStorageUtils.hasApiKey()) {
+      initGoogleMaps()
+    } else {
+      console.warn('Google Maps API ключ не найден в настройках')
+      setGoogleMapsReady(false)
+    }
   }, [])
 
   // Сохраняем маршруты в localStorage
@@ -460,6 +470,17 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
       return
     }
 
+    // Проверяем готовность Google Maps API
+    if (!googleMapsReady) {
+      try {
+        await googleMapsLoader.load()
+        setGoogleMapsReady(true)
+      } catch (error) {
+        alert('Ошибка загрузки Google Maps API. Проверьте настройки API ключа.')
+        return
+      }
+    }
+
     const newRoute: Route = {
       id: `route_${Date.now()}`,
       courier: selectedCourier,
@@ -498,8 +519,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
   const calculateRouteDistance = async (route: Route) => {
     if (!googleMapsReady) {
-      alert('Google Maps API загружается... Попробуйте через несколько секунд')
-      return
+      // Пытаемся загрузить Google Maps API если он не готов
+      try {
+        await googleMapsLoader.load()
+        setGoogleMapsReady(true)
+      } catch (error) {
+        alert('Ошибка загрузки Google Maps API. Проверьте настройки API ключа.')
+        return
+      }
     }
 
     setIsCalculating(true)
