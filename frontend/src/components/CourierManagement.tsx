@@ -7,10 +7,13 @@ import {
   TruckIcon,
   MapPinIcon,
   XMarkIcon,
-  ClockIcon
+  ClockIcon,
+  MapIcon
 } from '@heroicons/react/24/outline'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
+import { localStorageUtils } from '../utils/localStorage'
+import { googleMapsLoader } from '../utils/googleMapsLoader'
 import { clsx } from 'clsx'
 
 interface Courier {
@@ -39,6 +42,9 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   const [filter, setFilter] = useState<'all' | 'car' | 'motorcycle'>('all')
   const [selectedCourierForRoutes, setSelectedCourierForRoutes] = useState<Courier | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
+  const [, setGoogleMapsReady] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [routeToDelete, setRouteToDelete] = useState<any>(null)
 
   // Рассчитываем расстояние для каждого курьера на основе маршрутов
   const calculateCourierDistance = useMemo(() => {
@@ -171,6 +177,25 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     }
   }, [contextData?.couriers, calculateCourierDistance])
 
+  // Проверяем готовность Google Maps
+  useEffect(() => {
+    const initGoogleMaps = async () => {
+      try {
+        if (!localStorageUtils.hasApiKey()) {
+          console.warn('Google Maps API ключ не найден в настройках')
+          setGoogleMapsReady(false)
+          return
+        }
+        await googleMapsLoader.load()
+        setGoogleMapsReady(true)
+      } catch (error) {
+        console.error('Ошибка загрузки Google Maps API:', error)
+        setGoogleMapsReady(false)
+      }
+    }
+    initGoogleMaps()
+  }, [])
+
   // Функция для поиска курьеров
   const searchCouriers = (courier: Courier) => {
     if (!searchTerm.trim()) return true
@@ -272,6 +297,78 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     if (routes.length > 0) {
       setSelectedCourierForRoutes(courier)
     }
+  }
+
+  // Функция для очистки адреса от лишней информации
+  const cleanAddress = (address: string) => {
+    if (!address) return address
+    
+    const cleaned = address
+      .replace(/,\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
+      .replace(/,\s*\d+\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
+      .trim()
+    
+    return cleaned
+  }
+
+  // Функция для открытия маршрута в Google Maps
+  const openRouteInGoogleMaps = (route: any) => {
+    if (!route.isOptimized || route.orders.length === 0) {
+      alert('Сначала рассчитайте маршрут')
+      return
+    }
+
+    const addresses = [
+      cleanAddress(route.startAddress),
+      ...route.orders.map((order: any) => cleanAddress(order.address)),
+      cleanAddress(route.endAddress)
+    ]
+    
+    const encodedAddresses = addresses.map(addr => encodeURIComponent(addr))
+    const googleMapsUrl = `https://www.google.com/maps/dir/${encodedAddresses.join('/')}`
+    window.open(googleMapsUrl, '_blank')
+  }
+
+  // Функция для удаления маршрута
+  const deleteRoute = (routeId: string) => {
+    const route = contextData?.routes?.find((r: any) => r.id === routeId)
+    if (route) {
+      setRouteToDelete(route)
+      setShowDeleteModal(true)
+    }
+  }
+
+  // Функции для подтверждения/отмены удаления маршрута
+  const confirmDeleteRoute = () => {
+    if (routeToDelete && contextData?.routes) {
+      const updatedRoutes = contextData.routes.filter((route: any) => route.id !== routeToDelete.id)
+      // Обновляем данные в контексте, включая маршруты
+      if (contextData) {
+        const updatedData = { ...contextData, routes: updatedRoutes }
+        // Сохраняем в localStorage
+        try {
+          localStorage.setItem('km_excel_data', JSON.stringify(updatedData))
+        } catch (error) {
+          console.error('Ошибка сохранения данных:', error)
+        }
+        // Обновляем контекст через updateCourierData (передаем только курьеров)
+        updateCourierData(contextData.couriers || [])
+      }
+      setShowDeleteModal(false)
+      setRouteToDelete(null)
+    }
+  }
+
+  const cancelDeleteRoute = () => {
+    setShowDeleteModal(false)
+    setRouteToDelete(null)
+  }
+
+  // Функция для форматирования времени
+  const formatDuration = (minutes: number) => {
+    const hours = Math.floor(minutes / 60)
+    const mins = Math.floor(minutes % 60)
+    return hours > 0 ? `${hours}ч ${mins}мин` : `${mins}мин`
   }
 
 
@@ -804,60 +901,113 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
       {/* Routes Modal */}
       {selectedCourierForRoutes && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-96 overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900">
-                Маршруты курьера {selectedCourierForRoutes.name}
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-medium text-gray-900">
+                  Маршруты курьера {selectedCourierForRoutes.name}
+                </h3>
+                <button
+                  onClick={() => setSelectedCourierForRoutes(null)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
             </div>
             
             <div className="px-6 py-4">
               {getCourierRoutes(selectedCourierForRoutes.name).length === 0 ? (
-                <p className="text-gray-500 text-center py-8">
-                  У этого курьера нет маршрутов
-                </p>
+                <div className="text-center py-8">
+                  <MapIcon className="mx-auto h-12 w-12 text-gray-400" />
+                  <p className="mt-2 text-sm text-gray-500">У этого курьера нет маршрутов</p>
+                </div>
               ) : (
                 <div className="space-y-4">
                   {getCourierRoutes(selectedCourierForRoutes.name).map((route: any, index: number) => (
-                    <div key={index} className="border border-gray-200 rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="font-medium text-gray-900">
-                          Маршрут #{index + 1}
-                        </h4>
-                        <span className="text-sm text-gray-500">
-                          {route.orders?.length || 0} заказов
-                        </span>
+                    <div key={route.id || index} className="border border-gray-200 rounded-lg p-4 transition-all duration-200 hover:shadow-md">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center space-x-2">
+                          <TruckIcon className={`h-5 w-5 ${
+                            selectedCourierForRoutes.vehicleType === 'car' ? 'text-green-600' : 'text-orange-600'
+                          }`} />
+                          <div>
+                            <h4 className="font-medium text-gray-900">
+                              Маршрут #{index + 1}
+                            </h4>
+                            <p className="text-sm text-gray-500">
+                              {route.orders?.length || 0} заказов
+                            </p>
+                          </div>
+                          <span className={`text-xs px-2 py-1 rounded-full ${
+                            selectedCourierForRoutes.vehicleType === 'car' 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-orange-100 text-orange-800'
+                          }`}>
+                            {selectedCourierForRoutes.vehicleType === 'car' ? 'Авто' : 'Мото'}
+                          </span>
+                        </div>
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => openRouteInGoogleMaps(route)}
+                            disabled={!route.isOptimized}
+                            className={clsx(
+                              'p-2 rounded-lg transition-all duration-200',
+                              route.isOptimized 
+                                ? 'text-blue-600 hover:text-blue-800 hover:bg-blue-50' 
+                                : 'text-gray-400 cursor-not-allowed'
+                            )}
+                            title={route.isOptimized ? "Открыть маршрут в Google Maps" : "Маршрут не рассчитан"}
+                          >
+                            <MapIcon className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => deleteRoute(route.id)}
+                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200"
+                            title="Удалить маршрут"
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
                       
                       {route.orders && route.orders.length > 0 && (
-                        <div className="space-y-2">
-                          {route.orders.map((order: any, orderIndex: number) => (
-                            <div key={orderIndex} className="flex items-center space-x-2 text-sm">
-                              <span className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium">
-                                {orderIndex + 1}
-                              </span>
-                              <span className="text-gray-600">#{order.orderNumber}</span>
-                              <span className="text-gray-500 truncate">{order.address}</span>
-                            </div>
-                          ))}
+                        <div className="space-y-2 mb-3">
+                          <h5 className="text-sm font-medium text-gray-700">Заказы в маршруте:</h5>
+                          <div className="space-y-1">
+                            {route.orders.map((order: any, orderIndex: number) => (
+                              <div key={orderIndex} className="flex items-center space-x-2 text-sm">
+                                <span className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium">
+                                  {orderIndex + 1}
+                                </span>
+                                <span className="text-gray-600 font-medium">#{order.orderNumber}</span>
+                                <span className="text-gray-500 truncate">{order.address}</span>
+                                {order.customerName && (
+                                  <span className="text-gray-400 text-xs">({order.customerName})</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
                       
                       {route.isOptimized && (
                         <div className="mt-3 pt-3 border-t border-gray-200">
-                          <div className="flex items-center space-x-1">
-                            <MapPinIcon className="h-4 w-4 text-gray-400" />
-                            <span className="text-gray-600">Расстояние</span>
-                            <span className="font-medium text-gray-900">
-                              {route.totalDistance ? `${route.totalDistance.toFixed(1)} км` : 'N/A'}
-                            </span>
-                          </div>
-                          <div className="flex items-center space-x-1">
-                            <ClockIcon className="h-4 w-4 text-gray-400" />
-                            <span className="text-gray-600">Время</span>
-                            <span className="font-medium text-gray-900">
-                              {route.totalDuration ? `${Math.floor(route.totalDuration / 60)}ч ${Math.floor(route.totalDuration % 60)}м` : 'N/A'}
-                            </span>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="flex items-center space-x-2">
+                              <MapPinIcon className="h-4 w-4 text-gray-400" />
+                              <span className="text-sm text-gray-600">Расстояние:</span>
+                              <span className="text-sm font-medium text-gray-900">
+                                {route.totalDistance ? `${route.totalDistance.toFixed(1)} км` : 'N/A'}
+                              </span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <ClockIcon className="h-4 w-4 text-gray-400" />
+                              <span className="text-sm text-gray-600">Время:</span>
+                              <span className="text-sm font-medium text-gray-900">
+                                {route.totalDuration ? formatDuration(route.totalDuration) : 'N/A'}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       )}
@@ -873,6 +1023,55 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg"
               >
                 Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модальное окно подтверждения удаления маршрута */}
+      {showDeleteModal && routeToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="flex-shrink-0">
+                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                  <TrashIcon className="w-6 h-6 text-red-600" />
+                </div>
+              </div>
+              <div>
+                <h3 className="text-lg font-medium text-gray-900">
+                  Удалить маршрут
+                </h3>
+                <p className="text-sm text-gray-500">
+                  Это действие нельзя отменить
+                </p>
+              </div>
+            </div>
+            
+            <div className="mb-6">
+              <p className="text-sm text-gray-600">
+                Вы уверены, что хотите удалить маршрут курьера <strong>{routeToDelete.courier}</strong>?
+              </p>
+              {routeToDelete.orders && routeToDelete.orders.length > 0 && (
+                <p className="text-sm text-gray-500 mt-2">
+                  В маршруте {routeToDelete.orders.length} заказов
+                </p>
+              )}
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={cancelDeleteRoute}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={confirmDeleteRoute}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+              >
+                Удалить
               </button>
             </div>
           </div>
