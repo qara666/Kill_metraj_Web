@@ -8,9 +8,7 @@ import {
   MapPinIcon,
   XMarkIcon,
   MapIcon,
-  ClockIcon,
-  ChevronUpIcon,
-  ChevronDownIcon
+  ClockIcon
 } from '@heroicons/react/24/outline'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
@@ -41,8 +39,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   const [editingCourier, setEditingCourier] = useState<Courier | null>(null)
   const [filter, setFilter] = useState<'all' | 'car' | 'motorcycle'>('all')
   const [selectedCourierForRoutes, setSelectedCourierForRoutes] = useState<Courier | null>(null)
-  const [sortField, setSortField] = useState<'name' | 'orders' | 'distance' | 'status'>('name')
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [searchTerm, setSearchTerm] = useState('')
 
   // Рассчитываем расстояние для каждого курьера на основе маршрутов
   const calculateCourierDistance = useMemo(() => {
@@ -175,34 +172,13 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     }
   }, [contextData?.couriers, calculateCourierDistance])
 
-  // Функция для сортировки курьеров
-  const sortCouriers = (a: Courier, b: Courier) => {
-    let aValue: any, bValue: any
-    
-    switch (sortField) {
-      case 'name':
-        aValue = a.name.toLowerCase()
-        bValue = b.name.toLowerCase()
-        break
-      case 'orders':
-        aValue = calculateCourierOrdersInRoutes(a.name)
-        bValue = calculateCourierOrdersInRoutes(b.name)
-        break
-      case 'distance':
-        aValue = calculateCourierDistance(a.name)
-        bValue = calculateCourierDistance(b.name)
-        break
-      case 'status':
-        aValue = a.isActive ? 1 : 0
-        bValue = b.isActive ? 1 : 0
-        break
-      default:
-        return 0
-    }
-    
-    if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
-    if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
-    return 0
+  // Функция для поиска курьеров
+  const searchCouriers = (courier: Courier) => {
+    if (!searchTerm.trim()) return true
+    const searchLower = searchTerm.toLowerCase()
+    return courier.name.toLowerCase().includes(searchLower) ||
+           courier.phone.includes(searchTerm) ||
+           courier.email.toLowerCase().includes(searchLower)
   }
 
   const filteredCouriers = couriers
@@ -210,7 +186,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
       if (filter === 'all') return true
       return courier.vehicleType === filter
     })
-    .sort(sortCouriers)
+    .filter(searchCouriers)
 
   const handleAddCourier = (courierData: Omit<Courier, 'id' | 'totalDistance'>) => {
     const newCourier: Courier = {
@@ -298,186 +274,284 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     }
   }
 
-  const handleSort = (field: 'name' | 'orders' | 'distance' | 'status') => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortField(field)
-      setSortDirection('asc')
-    }
-  }
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className={clsx(
-        'rounded-lg shadow-sm border p-6',
-        isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+        'rounded-xl shadow-lg border p-8 relative overflow-hidden',
+        isDark ? 'bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700' : 'bg-gradient-to-br from-white to-gray-50 border-gray-200'
       )}>
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className={clsx(
-              'text-2xl font-bold',
-              isDark ? 'text-gray-100' : 'text-gray-900'
-            )}>Управление курьерами</h1>
-            <p className={clsx(
-              'mt-1 text-sm',
-              isDark ? 'text-gray-400' : 'text-gray-600'
-            )}>
-              Управляйте информацией о курьерах и их заказах
-            </p>
+        {/* Background decoration */}
+        <div className="absolute top-0 right-0 w-32 h-32 opacity-10">
+          <div className={clsx(
+            'w-full h-full rounded-full',
+            isDark ? 'bg-blue-500' : 'bg-blue-400'
+          )}></div>
+        </div>
+        
+        <div className="relative z-10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <div className={clsx(
+                'p-3 rounded-xl',
+                isDark ? 'bg-blue-900/50' : 'bg-blue-100'
+              )}>
+                <UserIcon className={clsx(
+                  'h-8 w-8',
+                  isDark ? 'text-blue-400' : 'text-blue-600'
+                )} />
+              </div>
+              <div>
+                <h1 className={clsx(
+                  'text-3xl font-bold bg-gradient-to-r bg-clip-text text-transparent',
+                  isDark ? 'from-gray-100 to-gray-300' : 'from-gray-900 to-gray-700'
+                )}>
+                  Управление курьерами
+                </h1>
+                <p className={clsx(
+                  'mt-2 text-base',
+                  isDark ? 'text-gray-300' : 'text-gray-600'
+                )}>
+                  Управляйте информацией о курьерах и их заказах
+                </p>
+                <div className="flex items-center space-x-4 mt-3">
+                  <div className="flex items-center space-x-2">
+                    <div className={clsx(
+                      'w-2 h-2 rounded-full',
+                      isDark ? 'bg-green-400' : 'bg-green-500'
+                    )}></div>
+                    <span className={clsx(
+                      'text-sm font-medium',
+                      isDark ? 'text-gray-300' : 'text-gray-600'
+                    )}>
+                      {couriers.filter(c => c.isActive).length} активных
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className={clsx(
+                      'w-2 h-2 rounded-full',
+                      isDark ? 'bg-blue-400' : 'bg-blue-500'
+                    )}></div>
+                    <span className={clsx(
+                      'text-sm font-medium',
+                      isDark ? 'text-gray-300' : 'text-gray-600'
+                    )}>
+                      {couriers.length} всего
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className={clsx(
+                'px-6 py-3 rounded-xl font-medium transition-all duration-200 transform hover:scale-105 shadow-lg',
+                'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800',
+                'text-white flex items-center space-x-2'
+              )}
+            >
+              <PlusIcon className="h-5 w-5" />
+              <span>Добавить курьера</span>
+            </button>
           </div>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="btn-primary flex items-center space-x-2"
-          >
-            <PlusIcon className="h-5 w-5" />
-            <span>Добавить курьера</span>
-          </button>
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Filters & Search */}
       <div className={clsx(
-        'rounded-lg shadow-sm border p-4',
-        isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+        'rounded-xl shadow-lg border p-6',
+        isDark ? 'bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700' : 'bg-gradient-to-br from-white to-gray-50 border-gray-200'
       )}>
-        <div className="flex space-x-4">
-          <button
-            onClick={() => setFilter('all')}
-            className={clsx(
-              'px-4 py-2 rounded-lg text-sm font-medium',
-              filter === 'all' 
-                ? isDark 
-                  ? 'bg-blue-900 text-blue-200' 
-                  : 'bg-blue-100 text-blue-800'
-                : isDark
-                  ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            )}
-          >
-            Все курьеры ({couriers.length})
-          </button>
-          <button
-            onClick={() => setFilter('car')}
-            className={clsx(
-              'px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2',
-              filter === 'car' 
-                ? isDark
-                  ? 'bg-green-900 text-green-200'
-                  : 'bg-green-100 text-green-800'
-                : isDark
-                  ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            )}
-          >
-            <TruckIcon className="h-4 w-4" />
-            <span>Авто курьеры ({couriers.filter(c => c.vehicleType === 'car').length})</span>
-          </button>
-          <button
-            onClick={() => setFilter('motorcycle')}
-            className={clsx(
-              'px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2',
-              filter === 'motorcycle' 
-                ? isDark
-                  ? 'bg-orange-900 text-orange-200'
-                  : 'bg-orange-100 text-orange-800'
-                : isDark
-                  ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            )}
-          >
-            <TruckIcon className="h-4 w-4" />
-            <span>Мото курьеры ({couriers.filter(c => c.vehicleType === 'motorcycle').length})</span>
-          </button>
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0 lg:space-x-6">
+          {/* Filter Buttons */}
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => setFilter('all')}
+              className={clsx(
+                'px-6 py-3 rounded-xl text-sm font-medium transition-all duration-200 transform hover:scale-105 shadow-md',
+                filter === 'all' 
+                  ? isDark 
+                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg' 
+                    : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg'
+                  : isDark
+                    ? 'bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-100 hover:text-gray-900 border border-gray-200'
+              )}
+            >
+              <div className="flex items-center space-x-2">
+                <UserIcon className="h-4 w-4" />
+                <span>Все курьеры</span>
+                <span className={clsx(
+                  'px-2 py-1 rounded-full text-xs font-bold',
+                  filter === 'all' ? 'bg-white/20' : isDark ? 'bg-gray-600' : 'bg-gray-200'
+                )}>
+                  {couriers.length}
+                </span>
+              </div>
+            </button>
+            <button
+              onClick={() => setFilter('car')}
+              className={clsx(
+                'px-6 py-3 rounded-xl text-sm font-medium transition-all duration-200 transform hover:scale-105 shadow-md flex items-center space-x-2',
+                filter === 'car' 
+                  ? isDark
+                    ? 'bg-gradient-to-r from-green-600 to-green-700 text-white shadow-lg'
+                    : 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-lg'
+                  : isDark
+                    ? 'bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-100 hover:text-gray-900 border border-gray-200'
+              )}
+            >
+              <TruckIcon className="h-4 w-4" />
+              <span>Авто курьеры</span>
+              <span className={clsx(
+                'px-2 py-1 rounded-full text-xs font-bold',
+                filter === 'car' ? 'bg-white/20' : isDark ? 'bg-gray-600' : 'bg-gray-200'
+              )}>
+                {couriers.filter(c => c.vehicleType === 'car').length}
+              </span>
+            </button>
+            <button
+              onClick={() => setFilter('motorcycle')}
+              className={clsx(
+                'px-6 py-3 rounded-xl text-sm font-medium transition-all duration-200 transform hover:scale-105 shadow-md flex items-center space-x-2',
+                filter === 'motorcycle' 
+                  ? isDark
+                    ? 'bg-gradient-to-r from-orange-600 to-orange-700 text-white shadow-lg'
+                    : 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg'
+                  : isDark
+                    ? 'bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-100 hover:text-gray-900 border border-gray-200'
+              )}
+            >
+              <TruckIcon className="h-4 w-4" />
+              <span>Мото курьеры</span>
+              <span className={clsx(
+                'px-2 py-1 rounded-full text-xs font-bold',
+                filter === 'motorcycle' ? 'bg-white/20' : isDark ? 'bg-gray-600' : 'bg-gray-200'
+              )}>
+                {couriers.filter(c => c.vehicleType === 'motorcycle').length}
+              </span>
+            </button>
+          </div>
+          
+          {/* Search Field */}
+          <div className="flex-1 max-w-md">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Поиск по имени, телефону или email..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className={clsx(
+                  'w-full px-4 py-3 pl-12 rounded-xl border text-sm transition-all duration-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent',
+                  isDark 
+                    ? 'bg-gray-700 border-gray-600 text-gray-200 placeholder-gray-400 focus:bg-gray-600' 
+                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500 focus:bg-white shadow-md'
+                )}
+              />
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute inset-y-0 right-0 pr-4 flex items-center hover:bg-gray-100 rounded-r-xl transition-colors"
+                >
+                  <XMarkIcon className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Couriers Grid */}
       {filteredCouriers.length === 0 ? (
         <div className={clsx(
-          'rounded-lg shadow-sm border p-12',
-          isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+          'rounded-xl shadow-lg border p-16 text-center relative overflow-hidden',
+          isDark 
+            ? 'bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700' 
+            : 'bg-gradient-to-br from-white to-gray-50 border-gray-200'
         )}>
-          <div className="text-center">
-            <UserIcon className={clsx(
-              'mx-auto h-12 w-12',
-              isDark ? 'text-gray-500' : 'text-gray-400'
-            )} />
+          {/* Background decoration */}
+          <div className="absolute top-0 right-0 w-24 h-24 opacity-5">
+            <div className={clsx(
+              'w-full h-full rounded-full',
+              isDark ? 'bg-blue-500' : 'bg-blue-400'
+            )}></div>
+          </div>
+          
+          <div className="relative z-10">
+            <div className={clsx(
+              'mx-auto w-20 h-20 rounded-full flex items-center justify-center mb-6',
+              isDark ? 'bg-gray-700' : 'bg-gray-100'
+            )}>
+              <UserIcon className={clsx(
+                'h-10 w-10',
+                isDark ? 'text-gray-400' : 'text-gray-500'
+              )} />
+            </div>
             <h3 className={clsx(
-              'mt-2 text-sm font-medium',
+              'text-xl font-bold mb-2',
               isDark ? 'text-gray-200' : 'text-gray-900'
-            )}>Нет курьеров</h3>
+            )}>
+              {filter === 'all' ? 'Нет курьеров' : `Нет ${filter === 'car' ? 'авто' : 'мото'} курьеров`}
+            </h3>
             <p className={clsx(
-              'mt-1 text-sm',
+              'text-base mb-6 max-w-md mx-auto',
               isDark ? 'text-gray-400' : 'text-gray-500'
             )}>
               {filter === 'all' 
-                ? 'Добавьте курьеров или загрузите Excel файл с данными'
-                : `Нет курьеров типа ${filter === 'car' ? 'авто' : 'мото'}`
+                ? 'Добавьте курьеров или загрузите Excel файл с данными для начала работы'
+                : `В данный момент нет курьеров с типом транспорта "${filter === 'car' ? 'автомобиль' : 'мотоцикл'}"`
               }
             </p>
+            {filter === 'all' && (
+              <button
+                onClick={() => setShowAddModal(true)}
+                className={clsx(
+                  'px-6 py-3 rounded-xl font-medium transition-all duration-200 transform hover:scale-105 shadow-lg',
+                  'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800',
+                  'text-white flex items-center space-x-2 mx-auto'
+                )}
+              >
+                <PlusIcon className="h-5 w-5" />
+                <span>Добавить первого курьера</span>
+              </button>
+            )}
           </div>
         </div>
       ) : (
         <div className="space-y-4">
-          {/* Заголовки с сортировкой */}
+          {/* Простые заголовки без сортировки */}
           <div className={clsx(
             'grid grid-cols-4 gap-4 p-4 rounded-lg',
             isDark ? 'bg-gray-700' : 'bg-gray-100'
           )}>
-            <button
-              onClick={() => handleSort('name')}
-              className="flex items-center space-x-1 text-left font-medium text-sm"
-            >
+            <div className="text-left font-medium text-sm">
               <span className={clsx(
                 isDark ? 'text-gray-200' : 'text-gray-700'
               )}>Имя курьера</span>
-              {sortField === 'name' && (
-                sortDirection === 'asc' ? 
-                  <ChevronUpIcon className="h-4 w-4 text-blue-600" /> : 
-                  <ChevronDownIcon className="h-4 w-4 text-blue-600" />
-              )}
-            </button>
-            <button
-              onClick={() => handleSort('orders')}
-              className="flex items-center space-x-1 text-left font-medium text-sm"
-            >
+            </div>
+            <div className="text-left font-medium text-sm">
               <span className={clsx(
                 isDark ? 'text-gray-200' : 'text-gray-700'
               )}>Заказы</span>
-              {sortField === 'orders' && (
-                sortDirection === 'asc' ? 
-                  <ChevronUpIcon className="h-4 w-4 text-blue-600" /> : 
-                  <ChevronDownIcon className="h-4 w-4 text-blue-600" />
-              )}
-            </button>
-            <button
-              onClick={() => handleSort('distance')}
-              className="flex items-center space-x-1 text-left font-medium text-sm"
-            >
+            </div>
+            <div className="text-left font-medium text-sm">
               <span className={clsx(
                 isDark ? 'text-gray-200' : 'text-gray-700'
               )}>Километры</span>
-              {sortField === 'distance' && (
-                sortDirection === 'asc' ? 
-                  <ChevronUpIcon className="h-4 w-4 text-blue-600" /> : 
-                  <ChevronDownIcon className="h-4 w-4 text-blue-600" />
-              )}
-            </button>
-            <button
-              onClick={() => handleSort('status')}
-              className="flex items-center space-x-1 text-left font-medium text-sm"
-            >
+            </div>
+            <div className="text-left font-medium text-sm">
               <span className={clsx(
                 isDark ? 'text-gray-200' : 'text-gray-700'
               )}>Статус</span>
-              {sortField === 'status' && (
-                sortDirection === 'asc' ? 
-                  <ChevronUpIcon className="h-4 w-4 text-blue-600" /> : 
-                  <ChevronDownIcon className="h-4 w-4 text-blue-600" />
-              )}
-            </button>
+            </div>
           </div>
 
           {/* Сетка курьеров */}
@@ -490,133 +564,151 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
             <div 
               key={courier.id} 
               className={clsx(
-                'rounded-lg shadow-sm border p-6 transition-all',
-                isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200',
-                !courier.isActive && isDark ? 'opacity-60 bg-gray-900' : '',
-                !courier.isActive && !isDark ? 'opacity-60 bg-gray-50' : ''
+                'group rounded-xl shadow-lg border p-6 transition-all duration-300 transform hover:scale-105 hover:shadow-xl',
+                isDark 
+                  ? 'bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700 hover:from-gray-700 hover:to-gray-800' 
+                  : 'bg-gradient-to-br from-white to-gray-50 border-gray-200 hover:from-gray-50 hover:to-white',
+                !courier.isActive && isDark ? 'opacity-60' : '',
+                !courier.isActive && !isDark ? 'opacity-60' : ''
               )}
             >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="flex-shrink-0">
+              {/* Header with avatar and actions */}
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center space-x-4">
+                  <div className="relative">
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
                         toggleCourierVehicleType(courier.id)
                       }}
                       className={clsx(
-                        'h-12 w-12 rounded-full flex items-center justify-center transition-colors hover:scale-105',
+                        'h-16 w-16 rounded-2xl flex items-center justify-center transition-all duration-200 hover:scale-110 shadow-lg',
                         courier.vehicleType === 'car' 
                           ? isDark 
-                            ? 'bg-green-900 hover:bg-green-800' 
-                            : 'bg-green-100 hover:bg-green-200'
+                            ? 'bg-gradient-to-br from-green-600 to-green-700 hover:from-green-700 hover:to-green-800' 
+                            : 'bg-gradient-to-br from-green-500 to-green-600 hover:from-green-600 hover:to-green-700'
                           : isDark
-                            ? 'bg-orange-900 hover:bg-orange-800'
-                            : 'bg-orange-100 hover:bg-orange-200'
+                            ? 'bg-gradient-to-br from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800'
+                            : 'bg-gradient-to-br from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700'
                       )}
                       title={`Переключить на ${courier.vehicleType === 'car' ? 'мотоцикл' : 'автомобиль'}`}
                     >
                       {courier.vehicleType === 'car' ? (
-                        <TruckIcon className={clsx(
-                          'h-6 w-6',
-                          isDark ? 'text-green-400' : 'text-green-600'
-                        )} />
+                        <TruckIcon className="h-8 w-8 text-white" />
                       ) : (
-                        <TruckIcon className={clsx(
-                          'h-6 w-6',
-                          isDark ? 'text-orange-400' : 'text-orange-600'
-                        )} />
+                        <TruckIcon className="h-8 w-8 text-white" />
                       )}
                     </button>
+                    {/* Status indicator */}
+                    <div className={clsx(
+                      'absolute -top-1 -right-1 w-4 h-4 rounded-full border-2',
+                      courier.isActive 
+                        ? 'bg-green-500 border-white' 
+                        : 'bg-red-500 border-white'
+                    )}></div>
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className={clsx(
-                      'text-lg font-medium truncate',
+                      'text-xl font-bold truncate',
                       isDark ? 'text-gray-100' : 'text-gray-900'
                     )}>
                       {courier.name}
                     </h3>
                     <p className={clsx(
-                      'text-sm flex items-center',
+                      'text-sm flex items-center mt-1',
                       isDark ? 'text-gray-400' : 'text-gray-500'
                     )}>
-                      <MapPinIcon className="h-4 w-4 mr-1" />
+                      <MapPinIcon className="h-4 w-4 mr-2" />
                       {courier.location}
                     </p>
-                    <div className="flex items-center space-x-2 mt-1">
+                    <div className="flex items-center space-x-2 mt-2">
                       <span className={clsx(
-                        'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
+                        'inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold',
                         courier.isActive 
                           ? isDark
-                            ? 'bg-green-900 text-green-200'
-                            : 'bg-green-100 text-green-800'
+                            ? 'bg-green-900/50 text-green-300 border border-green-700'
+                            : 'bg-green-100 text-green-800 border border-green-200'
                           : isDark
-                            ? 'bg-red-900 text-red-200'
-                            : 'bg-red-100 text-red-800'
+                            ? 'bg-red-900/50 text-red-300 border border-red-700'
+                            : 'bg-red-100 text-red-800 border border-red-200'
                       )}>
                         {courier.isActive ? 'Активен' : 'Неактивен'}
                       </span>
                       <span className={clsx(
-                        'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
+                        'inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold',
                         courier.vehicleType === 'car' 
                           ? isDark
-                            ? 'bg-blue-900 text-blue-200'
-                            : 'bg-blue-100 text-blue-800'
+                            ? 'bg-blue-900/50 text-blue-300 border border-blue-700'
+                            : 'bg-blue-100 text-blue-800 border border-blue-200'
                           : isDark
-                            ? 'bg-orange-900 text-orange-200'
-                            : 'bg-orange-100 text-orange-800'
+                            ? 'bg-orange-900/50 text-orange-300 border border-orange-700'
+                            : 'bg-orange-100 text-orange-800 border border-orange-200'
                       )}>
                         {courier.vehicleType === 'car' ? 'Авто' : 'Мото'}
                       </span>
                     </div>
                   </div>
                 </div>
-                <div className="flex space-x-1">
+                <div className="flex space-x-2">
                   <button
                     onClick={() => setEditingCourier(courier)}
                     className={clsx(
-                      'p-1 transition-colors',
-                      isDark ? 'text-gray-400 hover:text-blue-400' : 'text-gray-400 hover:text-blue-600'
+                      'p-2 rounded-lg transition-all duration-200 hover:scale-110',
+                      isDark 
+                        ? 'text-gray-400 hover:text-blue-400 hover:bg-blue-900/20' 
+                        : 'text-gray-400 hover:text-blue-600 hover:bg-blue-100'
                     )}
+                    title="Редактировать курьера"
                   >
-                    <PencilIcon className="h-4 w-4" />
+                    <PencilIcon className="h-5 w-5" />
                   </button>
                   <button
                     onClick={() => handleDeleteCourier(courier.id)}
                     className={clsx(
-                      'p-1 transition-colors',
-                      isDark ? 'text-gray-400 hover:text-red-400' : 'text-gray-400 hover:text-red-600'
+                      'p-2 rounded-lg transition-all duration-200 hover:scale-110',
+                      isDark 
+                        ? 'text-gray-400 hover:text-red-400 hover:bg-red-900/20' 
+                        : 'text-gray-400 hover:text-red-600 hover:bg-red-100'
                     )}
+                    title="Удалить курьера"
                   >
-                    <TrashIcon className="h-4 w-4" />
+                    <TrashIcon className="h-5 w-5" />
                   </button>
                 </div>
               </div>
 
-              <div className="mt-4 space-y-3">
+              {/* Statistics Grid */}
+              <div className="grid grid-cols-2 gap-4 mt-6">
                 {/* Заказы */}
                 <div className={clsx(
-                  'rounded-lg p-3',
-                  isDark ? 'bg-gray-700' : 'bg-gray-50'
+                  'rounded-xl p-4 text-center transition-all duration-200 hover:scale-105',
+                  isDark 
+                    ? 'bg-gradient-to-br from-blue-900/30 to-blue-800/20 border border-blue-700/50' 
+                    : 'bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200'
                 )}>
-                  <div className="flex items-center justify-center space-x-1 mb-2">
-                    <TruckIcon className={clsx(
-                      'h-4 w-4',
-                      isDark ? 'text-gray-400' : 'text-gray-400'
-                    )} />
+                  <div className="flex items-center justify-center space-x-2 mb-2">
+                    <div className={clsx(
+                      'p-2 rounded-lg',
+                      isDark ? 'bg-blue-800/50' : 'bg-blue-200'
+                    )}>
+                      <TruckIcon className={clsx(
+                        'h-5 w-5',
+                        isDark ? 'text-blue-300' : 'text-blue-600'
+                      )} />
+                    </div>
                     <span className={clsx(
-                      'text-sm font-medium',
-                      isDark ? 'text-gray-300' : 'text-gray-700'
+                      'text-sm font-semibold',
+                      isDark ? 'text-blue-200' : 'text-blue-800'
                     )}>Заказы</span>
                   </div>
                   <div className="text-center">
                     <p className={clsx(
-                      'text-xs',
-                      isDark ? 'text-gray-400' : 'text-gray-500'
-                    )}>Посчитанных заказов</p>
+                      'text-xs mb-1',
+                      isDark ? 'text-blue-300/70' : 'text-blue-600/70'
+                    )}>В маршрутах</p>
                     <p className={clsx(
-                      'text-lg font-semibold',
-                      isDark ? 'text-blue-400' : 'text-blue-600'
+                      'text-2xl font-bold',
+                      isDark ? 'text-blue-300' : 'text-blue-700'
                     )}>
                       {calculateCourierOrdersInRoutes(courier.name)}
                     </p>
@@ -625,76 +717,53 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
 
                 {/* Километры */}
                 <div className={clsx(
-                  'rounded-lg p-3',
-                  isDark ? 'bg-gray-700' : 'bg-gray-50'
+                  'rounded-xl p-4 text-center transition-all duration-200 hover:scale-105',
+                  isDark 
+                    ? 'bg-gradient-to-br from-green-900/30 to-green-800/20 border border-green-700/50' 
+                    : 'bg-gradient-to-br from-green-50 to-green-100 border border-green-200'
                 )}>
-                  <div className="flex items-center justify-center space-x-1 mb-2">
-                    <MapPinIcon className={clsx(
-                      'h-4 w-4',
-                      isDark ? 'text-gray-400' : 'text-gray-400'
-                    )} />
+                  <div className="flex items-center justify-center space-x-2 mb-2">
+                    <div className={clsx(
+                      'p-2 rounded-lg',
+                      isDark ? 'bg-green-800/50' : 'bg-green-200'
+                    )}>
+                      <MapPinIcon className={clsx(
+                        'h-5 w-5',
+                        isDark ? 'text-green-300' : 'text-green-600'
+                      )} />
+                    </div>
                     <span className={clsx(
-                      'text-sm font-medium',
-                      isDark ? 'text-gray-300' : 'text-gray-700'
-                    )}>Километры</span>
+                      'text-sm font-semibold',
+                      isDark ? 'text-green-200' : 'text-green-800'
+                    )}>Пробег</span>
                   </div>
                   {(() => {
                     const distanceDetails = calculateCourierDistanceDetails(courier.name)
                     return (
-                      <div className="space-y-2">
-                        <div className="grid grid-cols-2 gap-2 text-center">
-                          <div>
-                            <p className={clsx(
-                              'text-xs',
-                              isDark ? 'text-gray-400' : 'text-gray-500'
-                            )}>Основные</p>
-                            <p className={clsx(
-                              'text-sm font-semibold',
-                              isDark ? 'text-gray-200' : 'text-gray-900'
-                            )}>
-                              {distanceDetails.baseDistance.toFixed(1)} км
-                            </p>
-                          </div>
-                          <div>
-                            <p className={clsx(
-                              'text-xs',
-                              isDark ? 'text-gray-400' : 'text-gray-500'
-                            )}>Дополнительные</p>
-                            <p className={clsx(
-                              'text-sm font-semibold',
-                              isDark ? 'text-orange-400' : 'text-orange-600'
-                            )}>
-                              +{distanceDetails.additionalDistance.toFixed(1)} км
-                            </p>
-                          </div>
-                        </div>
-                        <div className={clsx(
-                          'border-t pt-2 text-center',
-                          isDark ? 'border-gray-600' : 'border-gray-200'
+                      <div className="text-center">
+                        <p className={clsx(
+                          'text-xs mb-1',
+                          isDark ? 'text-green-300/70' : 'text-green-600/70'
+                        )}>Общий пробег</p>
+                        <p className={clsx(
+                          'text-2xl font-bold',
+                          isDark ? 'text-green-300' : 'text-green-700'
                         )}>
-                          <p className={clsx(
-                            'text-xs',
-                            isDark ? 'text-gray-400' : 'text-gray-500'
-                          )}>Общий пробег</p>
-                          <p className={clsx(
-                            'text-lg font-bold',
-                            isDark ? 'text-blue-400' : 'text-blue-600'
-                          )}>
-                            {distanceDetails.totalDistance.toFixed(1)} км
-                          </p>
-                        </div>
+                          {distanceDetails.totalDistance.toFixed(1)} км
+                        </p>
                         {distanceDetails.ordersInRoutes > 0 && (
                           <p className={clsx(
-                            'text-xs text-center',
-                            isDark ? 'text-gray-400' : 'text-gray-500'
+                            'text-xs mt-1',
+                            isDark ? 'text-green-300/60' : 'text-green-600/60'
                           )}>
-                            (+500м к каждому из {distanceDetails.ordersInRoutes} заказов)
+                            +{distanceDetails.ordersInRoutes} заказов
                           </p>
                         )}
                       </div>
                     )
                   })()}
                 </div>
+              </div>
               </div>
 
               <div className="mt-4 space-y-2">

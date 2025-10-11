@@ -160,6 +160,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   const [orderSearchTerm, setOrderSearchTerm] = useState('')
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
   const [timeFilter, setTimeFilter] = useState<string>('all') // all, morning, afternoon, evening
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [routeToDelete, setRouteToDelete] = useState<Route | null>(null)
 
   // Дебаунсинг для поиска
   useEffect(() => {
@@ -588,9 +590,24 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   }
 
   const deleteRoute = (routeId: string) => {
-    if (window.confirm('Вы уверены, что хотите удалить этот маршрут?')) {
-      setRoutes(prev => prev.filter(route => route.id !== routeId))
+    const route = routes.find(r => r.id === routeId)
+    if (route) {
+      setRouteToDelete(route)
+      setShowDeleteModal(true)
     }
+  }
+
+  const confirmDeleteRoute = () => {
+    if (routeToDelete) {
+      setRoutes(prev => prev.filter(route => route.id !== routeToDelete.id))
+      setShowDeleteModal(false)
+      setRouteToDelete(null)
+    }
+  }
+
+  const cancelDeleteRoute = () => {
+    setShowDeleteModal(false)
+    setRouteToDelete(null)
   }
 
   const clearAllRoutes = () => {
@@ -1029,7 +1046,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                       </button>
                       <button
                         onClick={() => deleteRoute(route.id)}
-                        className="p-1 text-gray-400 hover:text-red-600"
+                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 ease-in-out transform hover:scale-110"
                         title="Удалить маршрут"
                       >
                         <TrashIcon className="h-4 w-4" />
@@ -1109,6 +1126,75 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
           )}
         </div>
       </div>
+
+      {/* Модальное окно подтверждения удаления маршрута */}
+      {showDeleteModal && routeToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="flex-shrink-0">
+                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                  <TrashIcon className="w-6 h-6 text-red-600" />
+                </div>
+              </div>
+              <div>
+                <h3 className="text-lg font-medium text-gray-900">
+                  Удалить маршрут
+                </h3>
+                <p className="text-sm text-gray-500">
+                  Это действие нельзя отменить
+                </p>
+              </div>
+            </div>
+            
+            <div className="mb-6">
+              <p className="text-gray-700 mb-2">
+                Вы уверены, что хотите удалить маршрут для курьера <strong>{routeToDelete.courier}</strong>?
+              </p>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-sm text-gray-600">
+                  <strong>Заказов в маршруте:</strong> {routeToDelete.orders.length}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <strong>Расстояние:</strong> {routeToDelete.isOptimized ? `${routeToDelete.totalDistance.toFixed(1)} км` : 'Не рассчитано'}
+                </p>
+                {routeToDelete.orders.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-xs text-gray-500 mb-1">Заказы:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {routeToDelete.orders.slice(0, 3).map((order) => (
+                        <span key={order.id} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                          #{order.orderNumber}
+                        </span>
+                      ))}
+                      {routeToDelete.orders.length > 3 && (
+                        <span className="text-xs text-gray-500">
+                          +{routeToDelete.orders.length - 3} еще
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={cancelDeleteRoute}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={confirmDeleteRoute}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
+              >
+                Удалить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
