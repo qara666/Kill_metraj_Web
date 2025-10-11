@@ -22,4 +22,16 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    chunkSizeWarningLimit: 1000, // Увеличиваем лимит до 1000 кБ
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Разделяем vendor библиотеки на отдельные чанки
+          vendor: ['react', 'react-dom'],
+          utils: ['clsx', 'axios'],
+        },
+      },
+    },
+  },
 });

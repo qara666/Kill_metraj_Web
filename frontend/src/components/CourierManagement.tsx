@@ -45,6 +45,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   const [, setGoogleMapsReady] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [routeToDelete, setRouteToDelete] = useState<any>(null)
+  const [showDistanceModal, setShowDistanceModal] = useState(false)
+  const [selectedCourierForDistance, setSelectedCourierForDistance] = useState<Courier | null>(null)
 
   // Рассчитываем расстояние для каждого курьера на основе маршрутов
   const calculateCourierDistance = useMemo(() => {
@@ -371,6 +373,12 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     return hours > 0 ? `${hours}ч ${mins}мин` : `${mins}мин`
   }
 
+  // Функция для открытия модального окна с подробной информацией о пробеге
+  const handleDistanceClick = (courier: Courier) => {
+    setSelectedCourierForDistance(courier)
+    setShowDistanceModal(true)
+  }
+
 
   return (
     <div className="space-y-6">
@@ -624,33 +632,6 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
         </div>
       ) : (
         <div className="space-y-4">
-          {/* Простые заголовки без сортировки */}
-          <div className={clsx(
-            'grid grid-cols-4 gap-4 p-4 rounded-lg',
-            isDark ? 'bg-gray-700' : 'bg-gray-100'
-          )}>
-            <div className="text-left font-medium text-sm">
-              <span className={clsx(
-                isDark ? 'text-gray-200' : 'text-gray-700'
-              )}>Имя курьера</span>
-            </div>
-            <div className="text-left font-medium text-sm">
-              <span className={clsx(
-                isDark ? 'text-gray-200' : 'text-gray-700'
-              )}>Заказы</span>
-            </div>
-            <div className="text-left font-medium text-sm">
-              <span className={clsx(
-                isDark ? 'text-gray-200' : 'text-gray-700'
-              )}>Километры</span>
-            </div>
-            <div className="text-left font-medium text-sm">
-              <span className={clsx(
-                isDark ? 'text-gray-200' : 'text-gray-700'
-              )}>Статус</span>
-            </div>
-          </div>
-
           {/* Сетка курьеров */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredCouriers.map((courier) => {
@@ -813,12 +794,15 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 </div>
 
                 {/* Километры */}
-                <div className={clsx(
-                  'rounded-xl p-4 text-center transition-all duration-200 hover:scale-105',
-                  isDark 
-                    ? 'bg-gradient-to-br from-green-900/30 to-green-800/20 border border-green-700/50' 
-                    : 'bg-gradient-to-br from-green-50 to-green-100 border border-green-200'
-                )}>
+                <button
+                  onClick={() => handleDistanceClick(courier)}
+                  className={clsx(
+                    'rounded-xl p-4 text-center transition-all duration-200 hover:scale-105 cursor-pointer',
+                    isDark 
+                      ? 'bg-gradient-to-br from-green-900/30 to-green-800/20 border border-green-700/50 hover:from-green-800/40 hover:to-green-700/30' 
+                      : 'bg-gradient-to-br from-green-50 to-green-100 border border-green-200 hover:from-green-100 hover:to-green-200'
+                  )}
+                >
                   <div className="flex items-center justify-center space-x-2 mb-2">
                     <div className={clsx(
                       'p-2 rounded-lg',
@@ -853,13 +837,13 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                             'text-xs mt-1',
                             isDark ? 'text-green-300/60' : 'text-green-600/60'
                           )}>
-                            +{distanceDetails.ordersInRoutes} заказов
+                            +{distanceDetails.ordersInRoutes} дополнительных заказов
                           </p>
                         )}
                       </div>
                     )
                   })()}
-                </div>
+                </button>
               </div>
 
               <div className="mt-4 space-y-2">
@@ -1072,6 +1056,160 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
               >
                 Удалить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модальное окно с подробной информацией о пробеге */}
+      {showDistanceModal && selectedCourierForDistance && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-medium text-gray-900">
+                  Подробная информация о пробеге - {selectedCourierForDistance.name}
+                </h3>
+                <button
+                  onClick={() => setShowDistanceModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="px-6 py-4">
+              {(() => {
+                const distanceDetails = calculateCourierDistanceDetails(selectedCourierForDistance.name)
+                const courierRoutes = getCourierRoutes(selectedCourierForDistance.name)
+                
+                return (
+                  <div className="space-y-6">
+                    {/* Общая статистика */}
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="text-center p-4 bg-blue-50 rounded-lg">
+                        <div className="text-2xl font-bold text-blue-600">
+                          {distanceDetails.totalDistance.toFixed(1)} км
+                        </div>
+                        <div className="text-sm text-blue-600">Общий пробег</div>
+                      </div>
+                      <div className="text-center p-4 bg-green-50 rounded-lg">
+                        <div className="text-2xl font-bold text-green-600">
+                          {distanceDetails.baseDistance.toFixed(1)} км
+                        </div>
+                        <div className="text-sm text-green-600">Базовое расстояние</div>
+                      </div>
+                      <div className="text-center p-4 bg-orange-50 rounded-lg">
+                        <div className="text-2xl font-bold text-orange-600">
+                          {distanceDetails.additionalDistance.toFixed(1)} км
+                        </div>
+                        <div className="text-sm text-orange-600">Дополнительное расстояние</div>
+                      </div>
+                    </div>
+
+                    {/* Детали по маршрутам */}
+                    {courierRoutes.length > 0 ? (
+                      <div>
+                        <h4 className="text-lg font-medium text-gray-900 mb-4">
+                          Детали по маршрутам ({courierRoutes.length})
+                        </h4>
+                        <div className="space-y-3">
+                          {courierRoutes.map((route: any, index: number) => {
+                            const ordersCount = route.orders?.length || 0
+                            const routeBaseDistance = route.isOptimized && route.totalDistance 
+                              ? route.totalDistance 
+                              : 1.0
+                            const routeAdditionalDistance = ordersCount * 0.5
+                            const routeTotalDistance = routeBaseDistance + routeAdditionalDistance
+                            
+                            return (
+                              <div key={route.id || index} className="border border-gray-200 rounded-lg p-4">
+                                <div className="flex items-center justify-between mb-3">
+                                  <h5 className="font-medium text-gray-900">
+                                    Маршрут #{index + 1}
+                                  </h5>
+                                  <span className="text-sm text-gray-500">
+                                    {ordersCount} заказов
+                                  </span>
+                                </div>
+                                
+                                <div className="grid grid-cols-3 gap-3 text-sm">
+                                  <div className="text-center">
+                                    <div className="font-semibold text-gray-900">
+                                      {routeTotalDistance.toFixed(1)} км
+                                    </div>
+                                    <div className="text-gray-500">Общий пробег</div>
+                                  </div>
+                                  <div className="text-center">
+                                    <div className="font-semibold text-gray-900">
+                                      {routeBaseDistance.toFixed(1)} км
+                                    </div>
+                                    <div className="text-gray-500">
+                                      {route.isOptimized ? 'Рассчитанное' : 'Базовое'} расстояние
+                                    </div>
+                                  </div>
+                                  <div className="text-center">
+                                    <div className="font-semibold text-gray-900">
+                                      {routeAdditionalDistance.toFixed(1)} км
+                                    </div>
+                                    <div className="text-gray-500">+500м за заказ</div>
+                                  </div>
+                                </div>
+                                
+                                {route.isOptimized && (
+                                  <div className="mt-3 pt-3 border-t border-gray-200">
+                                    <div className="flex items-center justify-center space-x-4 text-sm">
+                                      <div className="flex items-center space-x-1">
+                                        <MapPinIcon className="h-4 w-4 text-gray-400" />
+                                        <span className="text-gray-600">Расстояние:</span>
+                                        <span className="font-medium text-gray-900">
+                                          {route.totalDistance ? `${route.totalDistance.toFixed(1)} км` : 'N/A'}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center space-x-1">
+                                        <ClockIcon className="h-4 w-4 text-gray-400" />
+                                        <span className="text-gray-600">Время:</span>
+                                        <span className="font-medium text-gray-900">
+                                          {route.totalDuration ? formatDuration(route.totalDuration) : 'N/A'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center py-8">
+                        <MapPinIcon className="mx-auto h-12 w-12 text-gray-400" />
+                        <p className="mt-2 text-sm text-gray-500">У этого курьера нет маршрутов</p>
+                      </div>
+                    )}
+
+                    {/* Объяснение расчета */}
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <h5 className="font-medium text-gray-900 mb-2">Как рассчитывается пробег:</h5>
+                      <ul className="text-sm text-gray-600 space-y-1">
+                        <li>• <strong>Базовое расстояние:</strong> 1км за маршрут (или рассчитанное Google Maps)</li>
+                        <li>• <strong>Дополнительное расстояние:</strong> +500м за каждый заказ в маршруте</li>
+                        <li>• <strong>Общий пробег:</strong> Базовое + Дополнительное расстояние</li>
+                      </ul>
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+            
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => setShowDistanceModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg"
+              >
+                Закрыть
               </button>
             </div>
           </div>
