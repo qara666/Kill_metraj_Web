@@ -764,7 +764,6 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                   })()}
                 </div>
               </div>
-              </div>
 
               <div className="mt-4 space-y-2">
                 <div className="flex space-x-2">
@@ -798,7 +797,6 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
             </div>
             )
           })}
-          </div>
         </div>
       )}
 
