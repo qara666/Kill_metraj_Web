@@ -20,8 +20,8 @@ import * as api from '../services/api'
 
 // Ленивая загрузка тяжелых компонентов
 const RouteMap = lazy(() => import('../components/RouteMap'))
-const ExcelDebugLogs = lazy(() => import('../components/ExcelDebugLogs'))
-const ExcelDataPreview = lazy(() => import('../components/ExcelDataPreview'))
+const ExcelDebugLogs = lazy(() => import('../components/ExcelDebugLogs').then(module => ({ default: module.ExcelDebugLogs })))
+const ExcelDataPreview = lazy(() => import('../components/ExcelDataPreview').then(module => ({ default: module.ExcelDataPreview })))
 
 export const Dashboard: React.FC = () => {
   const { excelData, setExcelData, clearExcelData } = useExcelData()
