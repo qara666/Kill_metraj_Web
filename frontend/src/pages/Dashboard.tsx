@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, Suspense, lazy } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
 import { 
@@ -8,18 +8,20 @@ import {
   CheckCircleIcon
 } from '@heroicons/react/24/outline'
 import { CourierCard } from '../components/CourierCard'
-import RouteMap from '../components/RouteMap'
 import { StatsCard } from '../components/StatsCard'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { ApiKeyNotification } from '../components/ApiKeyNotification'
 import { ExcelUploadSection } from '../components/ExcelUploadSection'
 import { ExcelResultsDisplay } from '../components/ExcelResultsDisplay'
-import { ExcelDebugLogs } from '../components/ExcelDebugLogs'
-import { ExcelDataPreview } from '../components/ExcelDataPreview'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { clsx } from 'clsx'
 import * as api from '../services/api'
+
+// Ленивая загрузка тяжелых компонентов
+const RouteMap = lazy(() => import('../components/RouteMap'))
+const ExcelDebugLogs = lazy(() => import('../components/ExcelDebugLogs'))
+const ExcelDataPreview = lazy(() => import('../components/ExcelDataPreview'))
 
 export const Dashboard: React.FC = () => {
   const { excelData, setExcelData, clearExcelData } = useExcelData()
@@ -31,12 +33,23 @@ export const Dashboard: React.FC = () => {
   const [showExcelLogs, setShowExcelLogs] = useState(false)
   const [showDataPreview, setShowDataPreview] = useState(false)
   const [previewData, setPreviewData] = useState<any>(null)
+  const [dataLoaded, setDataLoaded] = useState(false)
   const queryClient = useQueryClient()
 
   const log = (message: string) => {
     console.log('[Dashboard]', message)
     const entry = `${new Date().toLocaleTimeString()} — ${message}`
     setLogs(prev => [entry, ...prev].slice(0, 200))
+  }
+
+  // Функция для ленивой загрузки данных
+  const loadDashboardData = () => {
+    if (!dataLoaded) {
+      queryClient.fetchQuery({ queryKey: ['dashboard'] })
+      queryClient.fetchQuery({ queryKey: ['couriers'] })
+      queryClient.fetchQuery({ queryKey: ['routes'] })
+      setDataLoaded(true)
+    }
   }
 
   // Функция для объединения данных с проверкой дубликатов
@@ -196,23 +209,28 @@ export const Dashboard: React.FC = () => {
     } catch {}
   }, [excelLogs])
 
-  // Fetch dashboard data
+  // Fetch dashboard data (ленивая загрузка)
   const { data: dashboardData, isLoading: dashboardLoading } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => api.analyticsApi.getDashboardAnalytics(),
-    // Убрали автоматическое обновление каждые 30 секунд
+    enabled: false, // Отключаем автоматическую загрузку
+    staleTime: 5 * 60 * 1000, // 5 минут
   })
 
-  // Fetch couriers
+  // Fetch couriers (ленивая загрузка)
   const { data: couriersData, isLoading: couriersLoading } = useQuery({
     queryKey: ['couriers'],
     queryFn: () => api.courierApi.getCouriers({ limit: 10 }),
+    enabled: false, // Отключаем автоматическую загрузку
+    staleTime: 5 * 60 * 1000, // 5 минут
   })
 
-  // Fetch routes
+  // Fetch routes (ленивая загрузка)
   const { data: routesData, isLoading: routesLoading } = useQuery({
     queryKey: ['routes'],
     queryFn: () => api.routeApi.getRoutes({ limit: 10 }),
+    enabled: false, // Отключаем автоматическую загрузку
+    staleTime: 5 * 60 * 1000, // 5 минут
   })
 
   // Process Excel file mutation
@@ -309,10 +327,6 @@ export const Dashboard: React.FC = () => {
     log('Пользователь подтвердил сохранение данных из Excel')
   }
 
-  if (dashboardLoading || couriersLoading || routesLoading) {
-    return <LoadingSpinner />
-  }
-
   const stats = dashboardData?.data?.overview
   const couriers = couriersData?.data || []
   const routes = routesData?.data || []
@@ -325,9 +339,31 @@ export const Dashboard: React.FC = () => {
       {/* API Key Notification */}
       <ApiKeyNotification />
       
+      {/* Load Data Button */}
+      {!dataLoaded && (
+        <div className="text-center py-8">
+          <button
+            onClick={loadDashboardData}
+            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 transform hover:scale-105"
+          >
+            Загрузить данные панели управления
+          </button>
+          <p className="mt-2 text-sm text-gray-500">
+            Нажмите для загрузки статистики и данных
+          </p>
+        </div>
+      )}
+
+      {/* Loading State */}
+      {(dashboardLoading || couriersLoading || routesLoading) && dataLoaded && (
+        <div className="text-center py-8">
+          <LoadingSpinner />
+          <p className="mt-2 text-sm text-gray-500">Загрузка данных...</p>
+        </div>
+      )}
 
       {/* Stats Overview */}
-      {stats && (
+      {stats && dataLoaded && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatsCard
             title="Всего маршрутов"
@@ -450,13 +486,14 @@ export const Dashboard: React.FC = () => {
         <div className="lg:col-span-2">
           <div className="space-y-6">
             {/* Couriers Section */}
-            <div className="card p-6">
-              <h2 className={clsx(
-                'text-lg font-semibold mb-4',
-                isDark ? 'text-gray-100' : 'text-gray-900'
-              )}>
-                Последние курьеры ({couriers.length})
-              </h2>
+            {dataLoaded && (
+              <div className="card p-6">
+                <h2 className={clsx(
+                  'text-lg font-semibold mb-4',
+                  isDark ? 'text-gray-100' : 'text-gray-900'
+                )}>
+                  Последние курьеры ({couriers.length})
+                </h2>
               
               {couriers.length === 0 ? (
                 <div className="text-center py-8">
@@ -490,9 +527,11 @@ export const Dashboard: React.FC = () => {
                 </div>
               )}
             </div>
+            )}
 
             {/* Map Section */}
-            <div className="card p-6">
+            {dataLoaded && (
+              <div className="card p-6">
               <h2 className={clsx(
                 'text-lg font-semibold mb-4',
                 isDark ? 'text-gray-100' : 'text-gray-900'
@@ -500,29 +539,36 @@ export const Dashboard: React.FC = () => {
                 Карта маршрутів
               </h2>
               
-              <RouteMap 
-                routes={routes}
-                selectedCourier={selectedCourier || undefined}
-              />
-            </div>
+              <Suspense fallback={<LoadingSpinner />}>
+                <RouteMap 
+                  routes={routes}
+                  selectedCourier={selectedCourier || undefined}
+                />
+              </Suspense>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* Excel Debug Logs Modal */}
-      <ExcelDebugLogs 
-        logs={excelLogs}
-        isVisible={showExcelLogs}
-        onClose={() => setShowExcelLogs(false)}
-      />
+      <Suspense fallback={<LoadingSpinner />}>
+        <ExcelDebugLogs 
+          logs={excelLogs}
+          isVisible={showExcelLogs}
+          onClose={() => setShowExcelLogs(false)}
+        />
+      </Suspense>
 
       {/* Excel Data Preview Modal */}
-      <ExcelDataPreview 
-        data={previewData}
-        isVisible={showDataPreview}
-        onClose={() => setShowDataPreview(false)}
-        onConfirm={handleConfirmPreview}
-      />
+      <Suspense fallback={<LoadingSpinner />}>
+        <ExcelDataPreview 
+          data={previewData}
+          isVisible={showDataPreview}
+          onClose={() => setShowDataPreview(false)}
+          onConfirm={handleConfirmPreview}
+        />
+      </Suspense>
     </div>
   )
 }
