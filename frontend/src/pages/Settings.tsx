@@ -5,6 +5,7 @@ import { CogIcon, KeyIcon, MapIcon } from '@heroicons/react/24/outline'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import * as api from '../services/api'
 import { localStorageUtils } from '../utils/localStorage'
+import { validateGoogleMapsApiKey } from '../utils/apiKeyValidator'
 import { useTheme } from '../contexts/ThemeContext'
 import { clsx } from 'clsx'
 
@@ -18,6 +19,7 @@ export const Settings: React.FC = () => {
   const { isDark } = useTheme()
   const [isTestingApiKey, setIsTestingApiKey] = useState(false)
   const [apiKeyStatus, setApiKeyStatus] = useState<'unknown' | 'valid' | 'invalid'>('unknown')
+  const [apiKeyDetails, setApiKeyDetails] = useState<string>('')
 
   const { register, handleSubmit, watch, setValue } = useForm<SettingsForm>({
     defaultValues: {
@@ -45,14 +47,17 @@ export const Settings: React.FC = () => {
     if (!apiKey.trim()) return
     
     try {
-      const result = await api.uploadApi.testApiKey(apiKey)
-      if (result.data?.isValid) {
+      const validationResult = await validateGoogleMapsApiKey(apiKey)
+      if (validationResult.isValid) {
         setApiKeyStatus('valid')
+        setApiKeyDetails(validationResult.details?.status || 'OK')
       } else {
         setApiKeyStatus('invalid')
+        setApiKeyDetails(validationResult.error || 'Неизвестная ошибка')
       }
     } catch (error) {
       setApiKeyStatus('invalid')
+      setApiKeyDetails(error instanceof Error ? error.message : 'Ошибка проверки')
     }
   }
 
@@ -66,19 +71,21 @@ export const Settings: React.FC = () => {
 
     setIsTestingApiKey(true)
     try {
-      const result = await api.uploadApi.testApiKey(googleMapsApiKey)
-      if (result.data?.isValid) {
+      const validationResult = await validateGoogleMapsApiKey(googleMapsApiKey)
+      if (validationResult.isValid) {
         setApiKeyStatus('valid')
+        setApiKeyDetails(validationResult.details?.status || 'OK')
         // Save API key to localStorage when it's valid
         localStorageUtils.setApiKey(googleMapsApiKey)
-        toast.success('API ключ действителен и сохранен!')
+        toast.success('✓ API ключ действителен и сохранен!')
       } else {
         setApiKeyStatus('invalid')
-        toast.error('API ключ недействителен или превышена квота')
+        setApiKeyDetails(validationResult.error || 'Неизвестная ошибка')
+        toast.error(`API ключ недействителен: ${validationResult.error}`)
       }
     } catch (error) {
       setApiKeyStatus('invalid')
-      toast.error('Не удалось проверить API ключ')
+      toast.error(`Не удалось проверить API ключ: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`)
     } finally {
       setIsTestingApiKey(false)
     }
@@ -187,10 +194,20 @@ export const Settings: React.FC = () => {
               </button>
             </div>
             {apiKeyStatus === 'valid' && (
-              <p className="mt-1 text-sm text-success-600">✓ API ключ действителен</p>
+              <div className="mt-1">
+                <p className="text-sm text-green-600">✓ API ключ действителен</p>
+                {apiKeyDetails && (
+                  <p className="text-xs text-gray-500">Статус: {apiKeyDetails}</p>
+                )}
+              </div>
             )}
             {apiKeyStatus === 'invalid' && (
-              <p className="mt-1 text-sm text-danger-600">✗ API ключ недействителен</p>
+              <div className="mt-1">
+                <p className="text-sm text-red-600">✗ API ключ недействителен</p>
+                {apiKeyDetails && (
+                  <p className="text-xs text-gray-500">Ошибка: {apiKeyDetails}</p>
+                )}
+              </div>
             )}
             <p className="mt-1 text-xs text-gray-500">
               Необходим для геокодирования адресов и расчета маршрутов. Получите API ключ в{' '}
