@@ -40,7 +40,6 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingCourier, setEditingCourier] = useState<Courier | null>(null)
   const [filter, setFilter] = useState<'all' | 'car' | 'motorcycle'>('all')
-  const [selectedCourierForRoutes, setSelectedCourierForRoutes] = useState<Courier | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [, setGoogleMapsReady] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
@@ -292,13 +291,6 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
       return []
     }
     return contextData.routes.filter((route: any) => route.courier === courierName)
-  }
-
-  const handleCourierClick = (courier: Courier) => {
-    const routes = getCourierRoutes(courier.name)
-    if (routes.length > 0) {
-      setSelectedCourierForRoutes(courier)
-    }
   }
 
   // Функция для очистки адреса от лишней информации
@@ -635,9 +627,6 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
           {/* Сетка курьеров */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredCouriers.map((courier) => {
-            const courierRoutes = getCourierRoutes(courier.name)
-            const hasRoutes = courierRoutes.length > 0
-            
             return (
               <div 
               key={courier.id} 
@@ -832,12 +821,12 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                         )}>
                           {distanceDetails.totalDistance.toFixed(1)} км
                         </p>
-                        {distanceDetails.ordersInRoutes > 0 && (
+                        {distanceDetails.additionalDistance > 0 && (
                           <p className={clsx(
                             'text-xs mt-1',
                             isDark ? 'text-green-300/60' : 'text-green-600/60'
                           )}>
-                            +{distanceDetails.ordersInRoutes} дополнительных заказов
+                            +{distanceDetails.additionalDistance.toFixed(1)} км дополнительное расстояние
                           </p>
                         )}
                       </div>
@@ -865,150 +854,10 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                     Редактировать
                   </button>
                 </div>
-                {hasRoutes && (
-                  <button
-                    onClick={() => handleCourierClick(courier)}
-                    className="w-full px-3 py-2 text-sm font-medium text-blue-800 bg-blue-100 hover:bg-blue-200 rounded-lg flex items-center justify-center space-x-2"
-                  >
-                    <MapPinIcon className="h-4 w-4" />
-                    <span>Показать маршруты ({courierRoutes.length})</span>
-                  </button>
-                )}
               </div>
             </div>
             )
           })}
-          </div>
-        </div>
-      )}
-
-      {/* Routes Modal */}
-      {selectedCourierForRoutes && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-medium text-gray-900">
-                  Маршруты курьера {selectedCourierForRoutes.name}
-                </h3>
-                <button
-                  onClick={() => setSelectedCourierForRoutes(null)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <XMarkIcon className="h-6 w-6" />
-                </button>
-              </div>
-            </div>
-            
-            <div className="px-6 py-4">
-              {getCourierRoutes(selectedCourierForRoutes.name).length === 0 ? (
-                <div className="text-center py-8">
-                  <MapIcon className="mx-auto h-12 w-12 text-gray-400" />
-                  <p className="mt-2 text-sm text-gray-500">У этого курьера нет маршрутов</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {getCourierRoutes(selectedCourierForRoutes.name).map((route: any, index: number) => (
-                    <div key={route.id || index} className="border border-gray-200 rounded-lg p-4 transition-all duration-200 hover:shadow-md">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center space-x-2">
-                          <TruckIcon className={`h-5 w-5 ${
-                            selectedCourierForRoutes.vehicleType === 'car' ? 'text-green-600' : 'text-orange-600'
-                          }`} />
-                          <div>
-                            <h4 className="font-medium text-gray-900">
-                              Маршрут #{index + 1}
-                            </h4>
-                            <p className="text-sm text-gray-500">
-                              {route.orders?.length || 0} заказов
-                            </p>
-                          </div>
-                          <span className={`text-xs px-2 py-1 rounded-full ${
-                            selectedCourierForRoutes.vehicleType === 'car' 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-orange-100 text-orange-800'
-                          }`}>
-                            {selectedCourierForRoutes.vehicleType === 'car' ? 'Авто' : 'Мото'}
-                          </span>
-                        </div>
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => openRouteInGoogleMaps(route)}
-                            disabled={!route.isOptimized}
-                            className={clsx(
-                              'p-2 rounded-lg transition-all duration-200',
-                              route.isOptimized 
-                                ? 'text-blue-600 hover:text-blue-800 hover:bg-blue-50' 
-                                : 'text-gray-400 cursor-not-allowed'
-                            )}
-                            title={route.isOptimized ? "Открыть маршрут в Google Maps" : "Маршрут не рассчитан"}
-                          >
-                            <MapIcon className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => deleteRoute(route.id)}
-                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200"
-                            title="Удалить маршрут"
-                          >
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                      
-                      {route.orders && route.orders.length > 0 && (
-                        <div className="space-y-2 mb-3">
-                          <h5 className="text-sm font-medium text-gray-700">Заказы в маршруте:</h5>
-                          <div className="space-y-1">
-                            {route.orders.map((order: any, orderIndex: number) => (
-                              <div key={orderIndex} className="flex items-center space-x-2 text-sm">
-                                <span className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium">
-                                  {orderIndex + 1}
-                                </span>
-                                <span className="text-gray-600 font-medium">#{order.orderNumber}</span>
-                                <span className="text-gray-500 truncate">{order.address}</span>
-                                {order.customerName && (
-                                  <span className="text-gray-400 text-xs">({order.customerName})</span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      
-                      {route.isOptimized && (
-                        <div className="mt-3 pt-3 border-t border-gray-200">
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="flex items-center space-x-2">
-                              <MapPinIcon className="h-4 w-4 text-gray-400" />
-                              <span className="text-sm text-gray-600">Расстояние:</span>
-                              <span className="text-sm font-medium text-gray-900">
-                                {route.totalDistance ? `${route.totalDistance.toFixed(1)} км` : 'N/A'}
-                              </span>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <ClockIcon className="h-4 w-4 text-gray-400" />
-                              <span className="text-sm text-gray-600">Время:</span>
-                              <span className="text-sm font-medium text-gray-900">
-                                {route.totalDuration ? formatDuration(route.totalDuration) : 'N/A'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
-              <button
-                onClick={() => setSelectedCourierForRoutes(null)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg"
-              >
-                Закрыть
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -1126,13 +975,49 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                             
                             return (
                               <div key={route.id || index} className="border border-gray-200 rounded-lg p-4">
-                                <div className="flex items-center justify-between mb-3">
-                                  <h5 className="font-medium text-gray-900">
-                                    Маршрут #{index + 1}
-                                  </h5>
-                                  <span className="text-sm text-gray-500">
-                                    {ordersCount} заказов
-                                  </span>
+                                <div className="flex items-start justify-between mb-3">
+                                  <div className="flex items-center space-x-2">
+                                    <TruckIcon className={`h-5 w-5 ${
+                                      selectedCourierForDistance.vehicleType === 'car' ? 'text-green-600' : 'text-orange-600'
+                                    }`} />
+                                    <div>
+                                      <h5 className="font-medium text-gray-900">
+                                        Маршрут #{index + 1}
+                                      </h5>
+                                      <span className="text-sm text-gray-500">
+                                        {ordersCount} заказов
+                                      </span>
+                                    </div>
+                                    <span className={`text-xs px-2 py-1 rounded-full ${
+                                      selectedCourierForDistance.vehicleType === 'car' 
+                                        ? 'bg-green-100 text-green-800' 
+                                        : 'bg-orange-100 text-orange-800'
+                                    }`}>
+                                      {selectedCourierForDistance.vehicleType === 'car' ? 'Авто' : 'Мото'}
+                                    </span>
+                                  </div>
+                                  <div className="flex space-x-2">
+                                    <button
+                                      onClick={() => openRouteInGoogleMaps(route)}
+                                      disabled={!route.isOptimized}
+                                      className={clsx(
+                                        'p-2 rounded-lg transition-all duration-200',
+                                        route.isOptimized 
+                                          ? 'text-blue-600 hover:text-blue-800 hover:bg-blue-50' 
+                                          : 'text-gray-400 cursor-not-allowed'
+                                      )}
+                                      title={route.isOptimized ? "Открыть маршрут в Google Maps" : "Маршрут не рассчитан"}
+                                    >
+                                      <MapIcon className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      onClick={() => deleteRoute(route.id)}
+                                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200"
+                                      title="Удалить маршрут"
+                                    >
+                                      <TrashIcon className="h-4 w-4" />
+                                    </button>
+                                  </div>
                                 </div>
                                 
                                 <div className="grid grid-cols-3 gap-3 text-sm">
@@ -1157,6 +1042,27 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                                     <div className="text-gray-500">+500м за заказ</div>
                                   </div>
                                 </div>
+                                
+                                {/* Заказы в маршруте */}
+                                {route.orders && route.orders.length > 0 && (
+                                  <div className="mt-4">
+                                    <h6 className="text-sm font-medium text-gray-700 mb-2">Заказы в маршруте:</h6>
+                                    <div className="space-y-1">
+                                      {route.orders.map((order: any, orderIndex: number) => (
+                                        <div key={orderIndex} className="flex items-center space-x-2 text-sm">
+                                          <span className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium">
+                                            {orderIndex + 1}
+                                          </span>
+                                          <span className="text-gray-600 font-medium">#{order.orderNumber}</span>
+                                          <span className="text-gray-500 truncate">{order.address}</span>
+                                          {order.customerName && (
+                                            <span className="text-gray-400 text-xs">({order.customerName})</span>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
                                 
                                 {route.isOptimized && (
                                   <div className="mt-3 pt-3 border-t border-gray-200">
