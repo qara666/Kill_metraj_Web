@@ -241,7 +241,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
         }
         
         grouped[courierName].push({
-          id: order.id || `order_${Math.random()}`,
+          id: order.id || `order_${order.orderNumber || Math.random()}`,
           orderNumber: order.orderNumber || 'N/A',
           address: order.address,
           courier: order.courier,

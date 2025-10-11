@@ -67,8 +67,14 @@ export const Dashboard: React.FC = () => {
     let duplicateOrders = 0
     
     newOrders.forEach((newOrder: any) => {
+      // Создаем стабильный ID на основе orderNumber если его нет
+      if (!newOrder.id) {
+        newOrder.id = `order_${newOrder.orderNumber || Math.random()}`
+      }
+      
       const isDuplicate = existingOrders.some((existingOrder: any) => 
-        existingOrder.orderNumber === newOrder.orderNumber
+        existingOrder.orderNumber === newOrder.orderNumber ||
+        existingOrder.id === newOrder.id
       )
       
       if (!isDuplicate) {
@@ -147,6 +153,12 @@ export const Dashboard: React.FC = () => {
 
     // Логируем результаты объединения
     log(`Объединение данных: +${addedOrders} заказов (${duplicateOrders} дубликатов), +${addedCouriers} курьеров (${duplicateCouriers} дубликатов), +${addedPaymentMethods} способов оплаты (${duplicatePaymentMethods} дубликатов), +${addedRoutes} маршрутов (${duplicateRoutes} дубликатов)`)
+    
+    // Дополнительное логирование для отладки заказов
+    if (addedOrders > 0) {
+      const newOrderNumbers = newOrders.slice(0, 3).map((order: any) => order.orderNumber).join(', ')
+      log(`Новые заказы: ${newOrderNumbers}${newOrders.length > 3 ? '...' : ''}`)
+    }
 
     return {
       orders: mergedOrders,
@@ -265,6 +277,9 @@ export const Dashboard: React.FC = () => {
       // Объединяем новые данные с существующими
       const mergedData = mergeExcelData(newData, excelData)
       setExcelData(mergedData)
+      
+      // Инвалидируем кэш маршрутов для обновления состояния
+      queryClient.invalidateQueries({ queryKey: ['routes'] })
       
       // Extract Excel debug logs if available
       const responseData = resp as any;
