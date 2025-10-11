@@ -1,6 +1,7 @@
 // Утилита для динамической загрузки Google Maps API с ключом из настроек
 
 import { localStorageUtils } from './localStorage'
+import { validateGoogleMapsApiKey } from './apiKeyValidator'
 
 interface GoogleMapsLoader {
   isLoaded: boolean
@@ -48,6 +49,16 @@ class GoogleMapsLoaderClass {
     if (!finalApiKey) {
       throw new Error('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ в настройках.')
     }
+
+    // Проверяем валидность API ключа перед загрузкой
+    console.log('Проверяем валидность Google Maps API ключа...')
+    const validationResult = await validateGoogleMapsApiKey(finalApiKey)
+    
+    if (!validationResult.isValid) {
+      throw new Error(`Google Maps API ключ недействителен: ${validationResult.error}`)
+    }
+    
+    console.log('Google Maps API ключ валиден, загружаем API...')
 
     // Начинаем загрузку
     this.state.isLoading = true
