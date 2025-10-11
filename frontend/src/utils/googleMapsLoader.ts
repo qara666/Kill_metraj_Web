@@ -19,7 +19,10 @@ class GoogleMapsLoaderClass {
 
   // Проверяем, загружен ли Google Maps API
   isLoaded(): boolean {
-    return this.state.isLoaded && window.google && window.google.maps
+    return this.state.isLoaded && 
+           window.google && 
+           window.google.maps && 
+           localStorageUtils.hasApiKey()
   }
 
   // Загружаем Google Maps API с ключом из настроек
@@ -36,13 +39,19 @@ class GoogleMapsLoaderClass {
 
     // Получаем API ключ из настроек
     const apiKey = localStorageUtils.getApiKey()
-    if (!apiKey.trim()) {
+    
+    // Проверяем переменную окружения как fallback
+    const envApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+    
+    const finalApiKey = apiKey.trim() || envApiKey?.trim()
+    
+    if (!finalApiKey) {
       throw new Error('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ в настройках.')
     }
 
     // Начинаем загрузку
     this.state.isLoading = true
-    this.state.loadPromise = this.loadScript(apiKey)
+    this.state.loadPromise = this.loadScript(finalApiKey)
 
     try {
       await this.state.loadPromise

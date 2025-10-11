@@ -202,6 +202,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   useEffect(() => {
     const initGoogleMaps = async () => {
       try {
+        // Проверяем, есть ли API ключ в настройках
+        if (!localStorageUtils.hasApiKey()) {
+          console.warn('Google Maps API ключ не найден в настройках')
+          setGoogleMapsReady(false)
+          return
+        }
+
         await googleMapsLoader.load()
         setGoogleMapsReady(true)
       } catch (error) {
@@ -210,13 +217,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
       }
     }
 
-    // Проверяем, есть ли API ключ в настройках
-    if (localStorageUtils.hasApiKey()) {
-      initGoogleMaps()
-    } else {
-      console.warn('Google Maps API ключ не найден в настройках')
-      setGoogleMapsReady(false)
-    }
+    initGoogleMaps()
   }, [])
 
   // Сохраняем маршруты в localStorage
@@ -472,6 +473,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
     // Проверяем готовность Google Maps API
     if (!googleMapsReady) {
+      // Проверяем, есть ли API ключ в настройках
+      if (!localStorageUtils.hasApiKey()) {
+        alert('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ в настройках.')
+        return
+      }
+      
       try {
         await googleMapsLoader.load()
         setGoogleMapsReady(true)
@@ -519,6 +526,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
   const calculateRouteDistance = async (route: Route) => {
     if (!googleMapsReady) {
+      // Проверяем, есть ли API ключ в настройках
+      if (!localStorageUtils.hasApiKey()) {
+        alert('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ в настройках.')
+        return
+      }
+      
       // Пытаемся загрузить Google Maps API если он не готов
       try {
         await googleMapsLoader.load()
@@ -779,21 +792,23 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                 </h3>
                 <button
                   onClick={createRoute}
-                  disabled={selectedOrders.size === 0 || isRouteDuplicate(selectedCourier, selectedOrders)}
+                  disabled={selectedOrders.size === 0 || isRouteDuplicate(selectedCourier, selectedOrders) || !googleMapsReady}
                   className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium ${
-                    selectedOrders.size === 0 || isRouteDuplicate(selectedCourier, selectedOrders)
+                    selectedOrders.size === 0 || isRouteDuplicate(selectedCourier, selectedOrders) || !googleMapsReady
                       ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                       : 'bg-blue-600 text-white hover:bg-blue-700'
                   }`}
                 >
                   <PlusIcon className="h-4 w-4" />
                   <span>
-                    {isRouteDuplicate(selectedCourier, selectedOrders) 
-                      ? 'Маршрут уже существует' 
-                      : `Создать маршрут (${selectedOrders.size})`
+                    {!googleMapsReady
+                      ? 'Google Maps API не настроен'
+                      : isRouteDuplicate(selectedCourier, selectedOrders) 
+                        ? 'Маршрут уже существует' 
+                        : `Создать маршрут (${selectedOrders.size})`
                     }
                   </span>
-                  {selectedOrders.size > 0 && !isRouteDuplicate(selectedCourier, selectedOrders) && (
+                  {selectedOrders.size > 0 && !isRouteDuplicate(selectedCourier, selectedOrders) && googleMapsReady && (
                     <div className="flex items-center space-x-1 ml-2">
                       <span className="text-xs text-blue-200">Порядок:</span>
                       <div className="flex space-x-1">
