@@ -54,13 +54,13 @@ export const Dashboard: React.FC = () => {
 
   // Функция для объединения данных с проверкой дубликатов
   const mergeExcelData = (newData: any, existingData: any) => {
-    if (!existingData) {
-      return newData
+    if (!existingData || !newData) {
+      return newData || existingData || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [] }
     }
 
     // Объединяем заказы, исключая дубликаты по номеру заказа
-    const existingOrders = existingData.orders || []
-    const newOrders = newData.orders || []
+    const existingOrders = Array.isArray(existingData.orders) ? existingData.orders : []
+    const newOrders = Array.isArray(newData.orders) ? newData.orders : []
     const mergedOrders = [...existingOrders]
     
     let addedOrders = 0
@@ -86,8 +86,8 @@ export const Dashboard: React.FC = () => {
     })
 
     // Объединяем курьеров, исключая дубликаты по имени
-    const existingCouriers = existingData.couriers || []
-    const newCouriers = newData.couriers || []
+    const existingCouriers = Array.isArray(existingData.couriers) ? existingData.couriers : []
+    const newCouriers = Array.isArray(newData.couriers) ? newData.couriers : []
     const mergedCouriers = [...existingCouriers]
     
     let addedCouriers = 0
@@ -107,8 +107,8 @@ export const Dashboard: React.FC = () => {
     })
 
     // Объединяем способы оплаты, исключая дубликаты
-    const existingPaymentMethods = existingData.paymentMethods || []
-    const newPaymentMethods = newData.paymentMethods || []
+    const existingPaymentMethods = Array.isArray(existingData.paymentMethods) ? existingData.paymentMethods : []
+    const newPaymentMethods = Array.isArray(newData.paymentMethods) ? newData.paymentMethods : []
     const mergedPaymentMethods = [...existingPaymentMethods]
     
     let addedPaymentMethods = 0
@@ -128,8 +128,8 @@ export const Dashboard: React.FC = () => {
     })
 
     // Объединяем маршруты, исключая дубликаты по ID
-    const existingRoutes = existingData.routes || []
-    const newRoutes = newData.routes || []
+    const existingRoutes = Array.isArray(existingData.routes) ? existingData.routes : []
+    const newRoutes = Array.isArray(newData.routes) ? newData.routes : []
     const mergedRoutes = [...existingRoutes]
     
     let addedRoutes = 0
@@ -275,8 +275,14 @@ export const Dashboard: React.FC = () => {
       }
 
       // Объединяем новые данные с существующими
-      const mergedData = mergeExcelData(newData, excelData)
-      setExcelData(mergedData)
+      try {
+        const mergedData = mergeExcelData(newData, excelData || null)
+        setExcelData(mergedData)
+      } catch (error) {
+        console.error('Ошибка при объединении данных:', error)
+        // Если объединение не удалось, просто используем новые данные
+        setExcelData(newData)
+      }
       
       // Инвалидируем кэш маршрутов для обновления состояния
       queryClient.invalidateQueries({ queryKey: ['routes'] })
@@ -297,7 +303,8 @@ export const Dashboard: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['routes'] })
     },
     onError: (error: any) => {
-      const msg = error?.response?.data?.error || 'Не вдалося обробити файл'
+      console.error('Ошибка обработки файла:', error)
+      const msg = error?.response?.data?.error || error?.message || 'Не вдалося обробити файл'
       toast.error(msg)
       log(`Помилка обробки файлу: ${msg}`)
     },
@@ -430,6 +437,7 @@ export const Dashboard: React.FC = () => {
         />
       )}
 
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* Logs panel */}
@@ -462,6 +470,12 @@ export const Dashboard: React.FC = () => {
                         setPreviewData(null)
                         setShowDataPreview(false)
                         setExcelLogs([])
+                        try {
+                          localStorage.removeItem('km_dashboard_processed_data')
+                          localStorage.removeItem('km_dashboard_excel_logs')
+                          localStorage.removeItem('km_routes')
+                          localStorage.removeItem('km_excel_data')
+                        } catch {}
                         log('Все данные Excel полностью очищены')
                         toast.success('Все данные Excel очищены')
                       }

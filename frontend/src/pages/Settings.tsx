@@ -114,6 +114,9 @@ export const Settings: React.FC = () => {
         localStorage.removeItem('km_dashboard_excel_logs')
         localStorage.removeItem('km_default_start_address')
         localStorage.removeItem('km_default_end_address')
+        // Дополнительно очищаем сохраненные маршруты и связанные данные
+        localStorage.removeItem('km_routes')
+        localStorage.removeItem('km_excel_data')
         
         // Очищаем все настройки
         localStorageUtils.clearAllSettings()

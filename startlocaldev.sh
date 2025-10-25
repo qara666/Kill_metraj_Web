@@ -38,3 +38,7 @@ echo "Для остановки нажмите Ctrl+C"
 echo ""
 
 npm run startlocaldev
+
+
+
+

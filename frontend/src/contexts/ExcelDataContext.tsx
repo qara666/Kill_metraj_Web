@@ -15,6 +15,7 @@ interface ExcelData {
 interface ExcelDataContextType {
   excelData: ExcelData | null
   setExcelData: (data: ExcelData | null) => void
+  updateExcelData: (data: ExcelData) => void
   clearExcelData: () => void
   updateRouteData: (routes: any[]) => void
   updateCourierData: (couriers: any[]) => void
@@ -44,7 +45,17 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       if (stored) {
         const parsed = JSON.parse(stored)
         if (parsed && typeof parsed === 'object') {
-          setExcelDataState(parsed)
+          // Убеждаемся, что routes всегда массив
+          const normalizedData = {
+            ...parsed,
+            routes: Array.isArray(parsed.routes) ? parsed.routes : [],
+            orders: Array.isArray(parsed.orders) ? parsed.orders : [],
+            couriers: Array.isArray(parsed.couriers) ? parsed.couriers : [],
+            paymentMethods: Array.isArray(parsed.paymentMethods) ? parsed.paymentMethods : [],
+            errors: Array.isArray(parsed.errors) ? parsed.errors : [],
+            warnings: Array.isArray(parsed.warnings) ? parsed.warnings : []
+          }
+          setExcelDataState(normalizedData)
         }
       }
     } catch (error) {
@@ -67,6 +78,10 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     setExcelDataState(data)
   }
 
+  const updateExcelData = (data: ExcelData) => {
+    setExcelDataState(data)
+  }
+
   const clearExcelData = () => {
     setExcelDataState(null)
     try {
@@ -80,7 +95,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     if (excelData) {
       setExcelDataState({
         ...excelData,
-        routes: routes
+        routes: Array.isArray(routes) ? routes : []
       })
     }
   }
@@ -95,7 +110,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   }
 
   return (
-    <ExcelDataContext.Provider value={{ excelData, setExcelData, clearExcelData, updateRouteData, updateCourierData }}>
+    <ExcelDataContext.Provider value={{ excelData, setExcelData, updateExcelData, clearExcelData, updateRouteData, updateCourierData }}>
       {children}
     </ExcelDataContext.Provider>
   )

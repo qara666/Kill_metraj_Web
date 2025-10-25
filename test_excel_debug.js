@@ -90,3 +90,7 @@ async function testExcelProcessing() {
 
 // Запускаем тест
 testExcelProcessing();
+
+
+
+

@@ -13,7 +13,7 @@ import {
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { localStorageUtils } from '../utils/localStorage'
-import { googleMapsLoader } from '../utils/googleMapsLoader'
+// import { googleMapsLoader } from '../utils/googleMapsLoader' // Убрано для предотвращения дублирования
 import { clsx } from 'clsx'
 
 interface Courier {
@@ -34,14 +34,14 @@ interface CourierManagementProps {
 }
 
 export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData }) => {
-  const { excelData: contextData, updateCourierData } = useExcelData()
+  const { excelData: contextData, updateCourierData, updateRouteData } = useExcelData()
   const { isDark } = useTheme()
   const [couriers, setCouriers] = useState<Courier[]>([])
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingCourier, setEditingCourier] = useState<Courier | null>(null)
   const [filter, setFilter] = useState<'all' | 'car' | 'motorcycle'>('all')
   const [searchTerm, setSearchTerm] = useState('')
-  const [, setGoogleMapsReady] = useState(false)
+  // const [, setGoogleMapsReady] = useState(false) // Убрано для предотвращения дублирования
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [routeToDelete, setRouteToDelete] = useState<any>(null)
   const [showDistanceModal, setShowDistanceModal] = useState(false)
@@ -178,24 +178,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     }
   }, [contextData?.couriers, calculateCourierDistance])
 
-  // Проверяем готовность Google Maps
-  useEffect(() => {
-    const initGoogleMaps = async () => {
-      try {
-        if (!localStorageUtils.hasApiKey()) {
-          console.warn('Google Maps API ключ не найден в настройках')
-          setGoogleMapsReady(false)
-          return
-        }
-        await googleMapsLoader.load()
-        setGoogleMapsReady(true)
-      } catch (error) {
-        console.error('Ошибка загрузки Google Maps API:', error)
-        setGoogleMapsReady(false)
-      }
-    }
-    initGoogleMaps()
-  }, [])
+  // Google Maps API загружается в RouteManagement компоненте
+  // Убрано отсюда для предотвращения дублирования
 
   // Функция для поиска курьеров
   const searchCouriers = (courier: Courier) => {
@@ -335,21 +319,31 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   // Функции для подтверждения/отмены удаления маршрута
   const confirmDeleteRoute = () => {
     if (routeToDelete && contextData?.routes) {
+      console.log('Deleting route:', routeToDelete.id, 'from courier:', routeToDelete.courier)
       const updatedRoutes = contextData.routes.filter((route: any) => route.id !== routeToDelete.id)
+      
       // Обновляем данные в контексте, включая маршруты
       if (contextData) {
         const updatedData = { ...contextData, routes: updatedRoutes }
+        
         // Сохраняем в localStorage
         try {
           localStorage.setItem('km_excel_data', JSON.stringify(updatedData))
+          localStorage.setItem('km_routes', JSON.stringify(updatedRoutes))
+          console.log('Routes updated in localStorage:', updatedRoutes.length)
         } catch (error) {
           console.error('Ошибка сохранения данных:', error)
         }
-        // Обновляем контекст через updateCourierData (передаем только курьеров)
-        updateCourierData(contextData.couriers || [])
+        
+        // Обновляем контекст с новыми маршрутами
+        updateRouteData(updatedRoutes)
       }
+      
       setShowDeleteModal(false)
       setRouteToDelete(null)
+      
+      // Показываем уведомление об успешном удалении
+      alert(`Маршрут курьера ${routeToDelete.courier} успешно удален`)
     }
   }
 
@@ -864,7 +858,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
 
       {/* Модальное окно подтверждения удаления маршрута */}
       {showDeleteModal && routeToDelete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
             <div className="flex items-center space-x-3 mb-4">
               <div className="flex-shrink-0">
@@ -1096,15 +1090,6 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                       </div>
                     )}
 
-                    {/* Объяснение расчета */}
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <h5 className="font-medium text-gray-900 mb-2">Как рассчитывается пробег:</h5>
-                      <ul className="text-sm text-gray-600 space-y-1">
-                        <li>• <strong>Базовое расстояние:</strong> 1км за маршрут (или рассчитанное Google Maps)</li>
-                        <li>• <strong>Дополнительное расстояние:</strong> +500м за каждый заказ в маршруте</li>
-                        <li>• <strong>Общий пробег:</strong> Базовое + Дополнительное расстояние</li>
-                      </ul>
-                    </div>
                   </div>
                 )
               })()}
