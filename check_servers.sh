@@ -39,3 +39,7 @@ echo "   Frontend: http://localhost:5173"
 echo "   Backend:  http://localhost:5001"
 echo "   API Health: http://localhost:5001/api/health"
 echo "   Debug Logs: http://localhost:5001/debug/logs"
+
+
+
+

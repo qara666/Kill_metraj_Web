@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, memo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
 import { 
   MapIcon, 
   TruckIcon, 
@@ -61,7 +61,8 @@ const OrderItem = memo(({
   onSelect, 
   onMoveUp, 
   onMoveDown, 
-  isInRoute 
+  isInRoute,
+  isDark = false
 }: {
   order: Order
   isSelected: boolean
@@ -70,22 +71,33 @@ const OrderItem = memo(({
   onMoveUp: (id: string) => void
   onMoveDown: (id: string) => void
   isInRoute: boolean
+  isDark?: boolean
 }) => {
   return (
     <div
       onClick={() => onSelect(order.id)}
-      className={`p-3 rounded-lg border transition-all duration-200 ease-in-out transform hover:scale-[1.01] ${
+      className={clsx(
+        'p-3 rounded-lg border transition-all duration-200 ease-in-out transform hover:scale-[1.01]',
         isSelected
-          ? 'bg-blue-50 border-blue-200 ring-2 ring-blue-500 cursor-pointer shadow-md'
+          ? isDark 
+            ? 'bg-blue-600/20 border-blue-500 ring-2 ring-blue-500 cursor-pointer shadow-md' 
+            : 'bg-blue-50 border-blue-200 ring-2 ring-blue-500 cursor-pointer shadow-md'
           : isInRoute
-          ? 'bg-yellow-50 border-yellow-200 cursor-not-allowed opacity-60'
-          : 'bg-gray-50 border-gray-200 hover:bg-gray-100 cursor-pointer hover:shadow-sm'
-      }`}
+          ? isDark 
+            ? 'bg-yellow-600/20 border-yellow-500 cursor-not-allowed opacity-60' 
+            : 'bg-yellow-50 border-yellow-200 cursor-not-allowed opacity-60'
+          : isDark 
+            ? 'bg-gray-700 border-gray-600 hover:bg-gray-600 cursor-pointer hover:shadow-sm' 
+            : 'bg-gray-50 border-gray-200 hover:bg-gray-100 cursor-pointer hover:shadow-sm'
+      )}
     >
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <div className="flex items-center space-x-2">
-            <span className="font-medium text-gray-900">
+            <span className={clsx(
+              'font-medium',
+              isDark ? 'text-gray-100' : 'text-gray-900'
+            )}>
               Заказ #{order.orderNumber}
             </span>
             {isSelected && (
@@ -100,7 +112,12 @@ const OrderItem = memo(({
                       onMoveUp(order.id)
                     }}
                     disabled={selectionOrder === 1}
-                    className="p-1 text-blue-600 hover:text-blue-800 disabled:opacity-30 disabled:cursor-not-allowed"
+                    className={clsx(
+                      'p-1 transition-colors disabled:opacity-30 disabled:cursor-not-allowed',
+                      isDark 
+                        ? 'text-blue-400 hover:text-blue-300' 
+                        : 'text-blue-600 hover:text-blue-800'
+                    )}
                     title="Переместить вверх"
                   >
                     <ChevronUpIcon className="h-3 w-3" />
@@ -111,28 +128,50 @@ const OrderItem = memo(({
                       onMoveDown(order.id)
                     }}
                     disabled={selectionOrder === 0}
-                    className="p-1 text-blue-600 hover:text-blue-800 disabled:opacity-30 disabled:cursor-not-allowed"
+                    className={clsx(
+                      'p-1 transition-colors disabled:opacity-30 disabled:cursor-not-allowed',
+                      isDark 
+                        ? 'text-blue-400 hover:text-blue-300' 
+                        : 'text-blue-600 hover:text-blue-800'
+                    )}
                     title="Переместить вниз"
                   >
                     <ChevronDownIcon className="h-3 w-3" />
                   </button>
                 </div>
-                <CheckCircleIcon className="h-4 w-4 text-blue-600" />
+                <CheckCircleIcon className={clsx(
+                  'h-4 w-4',
+                  isDark ? 'text-blue-400' : 'text-blue-600'
+                )} />
               </div>
             )}
             {isInRoute && (
-              <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
+              <span className={clsx(
+                'text-xs px-2 py-1 rounded',
+                isDark 
+                  ? 'bg-yellow-600/20 text-yellow-300' 
+                  : 'bg-yellow-100 text-yellow-800'
+              )}>
                 В маршруте
               </span>
             )}
           </div>
-          <p className="text-sm text-gray-600 mt-1">{order.address}</p>
-          <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
+          <p className={clsx(
+            'text-sm mt-1',
+            isDark ? 'text-gray-300' : 'text-gray-600'
+          )}>{order.address}</p>
+          <div className={clsx(
+            'flex items-center space-x-4 mt-2 text-xs',
+            isDark ? 'text-gray-400' : 'text-gray-500'
+          )}>
             <span>{order.customerName}</span>
             <span>{order.phone}</span>
             <span>{order.amount} грн</span>
             {order.plannedTime && (
-              <span className="text-blue-600 font-medium">
+              <span className={clsx(
+                'font-medium',
+                isDark ? 'text-blue-400' : 'text-blue-600'
+              )}>
                 {order.plannedTime}
               </span>
             )}
@@ -162,6 +201,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   const [timeFilter, setTimeFilter] = useState<string>('all') // all, morning, afternoon, evening
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [routeToDelete, setRouteToDelete] = useState<Route | null>(null)
+  const placeIdCacheRef = useRef<Map<string, string>>(new Map())
+  const geocodeCacheRef = useRef<Map<string, { placeId: string; formattedAddress: string }>>(new Map())
+  const regionBiasRef = useRef<{ country?: string; locality?: string; bounds?: google.maps.LatLngBounds | null }>({})
 
   // Дебаунсинг для поиска
   useEffect(() => {
@@ -231,10 +273,16 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     }
   }, [routes])
 
-  // Обновляем данные о маршрутах в контексте
+  // Обновляем данные о маршрутах в контексте (только при создании новых маршрутов)
+  const prevRoutesRef = useRef(routes)
   useEffect(() => {
-    if (routes.length > 0) {
-      updateRouteData(routes)
+    // Проверяем, действительно ли изменились маршруты
+    if (routes.length !== prevRoutesRef.current.length || 
+        JSON.stringify(routes) !== JSON.stringify(prevRoutesRef.current)) {
+      if (routes.length > 0) {
+        updateRouteData(routes)
+      }
+      prevRoutesRef.current = routes
     }
   }, [routes, updateRouteData])
 
@@ -325,6 +373,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
   const handleCourierSelect = useCallback((courierName: string) => {
     setSelectedCourier(courierName)
+    // При смене курьера сбрасываем выбор и порядок, чтобы избежать артефактов
+    setSelectedOrders(new Set())
+    setSelectedOrdersOrder([])
   }, [])
 
   // Функция для фильтрации заказов по времени
@@ -424,7 +475,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
       } else {
         newSet.add(orderId)
         // Добавляем в конец порядка выбора
-        setSelectedOrdersOrder(prevOrder => [...prevOrder, orderId])
+        setSelectedOrdersOrder(prevOrder => {
+          const next = [...prevOrder, orderId]
+          // Дедупликация с сохранением первого вхождения
+          const seen = new Set<string>()
+          return next.filter(id => (seen.has(id) ? false : (seen.add(id), true)))
+        })
       }
       return newSet
     })
@@ -436,7 +492,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     if (currentIndex > 0) {
       const newOrder = [...selectedOrdersOrder]
       ;[newOrder[currentIndex - 1], newOrder[currentIndex]] = [newOrder[currentIndex], newOrder[currentIndex - 1]]
-      setSelectedOrdersOrder(newOrder)
+      // На всякий случай устраняем дубликаты
+      const seen = new Set<string>()
+      setSelectedOrdersOrder(newOrder.filter(id => (seen.has(id) ? false : (seen.add(id), true))) )
     }
   }, [selectedOrdersOrder])
 
@@ -445,7 +503,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     if (currentIndex < selectedOrdersOrder.length - 1) {
       const newOrder = [...selectedOrdersOrder]
       ;[newOrder[currentIndex], newOrder[currentIndex + 1]] = [newOrder[currentIndex + 1], newOrder[currentIndex]]
-      setSelectedOrdersOrder(newOrder)
+      const seen = new Set<string>()
+      setSelectedOrdersOrder(newOrder.filter(id => (seen.has(id) ? false : (seen.add(id), true))) )
     }
   }, [selectedOrdersOrder])
 
@@ -458,7 +517,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     if (!selectedCourier) return
 
     // Создаем список заказов в порядке их выбора
-    const selectedOrdersList = selectedOrdersOrder
+    // Формируем уникальный список выбранных заказов в текущем порядке
+    const seen = new Set<string>()
+    const uniqueOrderIds = selectedOrdersOrder.filter(id => (seen.has(id) ? false : (seen.add(id), true)))
+    const selectedOrdersList = uniqueOrderIds
       .map(orderId => courierOrders[selectedCourier].find(order => order.id === orderId))
       .filter(order => order !== undefined) as Order[]
 
@@ -526,6 +588,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     return cleaned
   }
 
+  // Простая очистка адреса без сложного геокодирования
+  const cleanAddressForRoute = useCallback((raw: string): string => {
+    return cleanAddress(raw).trim()
+  }, [])
+
+
   const calculateRouteDistance = async (route: Route) => {
     if (!googleMapsReady) {
       // Проверяем, есть ли API ключ в настройках
@@ -548,29 +616,68 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
     try {
       const directionsService = new window.google.maps.DirectionsService()
+
+      // Используем прямые адреса без геокодирования
       const waypoints = route.orders.map(order => ({
-        location: cleanAddress(order.address),
+        location: cleanAddressForRoute(order.address),
         stopover: true
       }))
 
       const request = {
-        origin: route.startAddress,
-        destination: route.endAddress,
+        origin: cleanAddressForRoute(route.startAddress),
+        destination: cleanAddressForRoute(route.endAddress),
         waypoints: waypoints,
         travelMode: window.google.maps.TravelMode.DRIVING,
-        optimizeWaypoints: true
+        // Важно: сохраняем порядок точек как в UI, ничего не оптимизируем
+        optimizeWaypoints: false,
+        unitSystem: window.google.maps.UnitSystem.METRIC,
+        // Дополнительные параметры для точности
+        avoidHighways: false,
+        avoidTolls: false,
+        avoidFerries: false,
+        // Используем текущее время для учета пробок
+        drivingOptions: {
+          departureTime: new Date(),
+          trafficModel: window.google.maps.TrafficModel.BEST_GUESS
+        }
       }
 
       directionsService.route(request, (result: any, status: any) => {
         if (status === window.google.maps.DirectionsStatus.OK && result) {
+          // Используем точное расстояние из Google Maps API
           const totalDistance = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
           const totalDuration = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
+
+          // Конвертируем в километры с высокой точностью
+          const distanceKm = totalDistance / 1000
+          
+          // Проверяем, что маршрут не превышает 100км (возможная ошибка в адресе)
+          if (distanceKm > 100) {
+            console.warn(`Маршрут превышает 100км (${distanceKm.toFixed(1)}км). Возможна ошибка в адресе.`)
+            alert(`Внимание: Маршрут превышает 100км (${distanceKm.toFixed(1)}км). Проверьте корректность адресов.`)
+          }
+
+          // Логируем для отладки и сравнения с Google Maps UI
+          console.log('Google Maps API Distance Calculation:', {
+            totalDistanceMeters: totalDistance,
+            distanceKm: distanceKm,
+            distanceKmRounded: Math.round(distanceKm * 10) / 10, // Округление как в Google Maps UI
+            legs: result.routes[0].legs.map((leg: any, index: number) => ({
+              legIndex: index,
+              distance: leg.distance,
+              duration: leg.duration,
+              startAddress: leg.start_address,
+              endAddress: leg.end_address
+            })),
+            routeSummary: result.routes[0].summary,
+            warnings: result.routes[0].warnings || []
+          })
 
           setRoutes(prev => prev.map(r => 
             r.id === route.id 
               ? { 
                   ...r, 
-                  totalDistance: totalDistance / 1000, // конвертируем в км
+                  totalDistance: distanceKm, // Сохраняем точное значение без округления
                   totalDuration: totalDuration / 60, // конвертируем в минуты
                   isOptimized: true
                 }
@@ -611,36 +718,58 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   }
 
   const clearAllRoutes = () => {
+    console.log('Clear all routes clicked, current routes count:', routes.length)
     if (window.confirm('Вы уверены, что хотите удалить все маршруты?')) {
+      console.log('User confirmed, clearing all routes')
       setRoutes([])
+      // Также очищаем из localStorage
+      try {
+        localStorage.removeItem('km_routes')
+        console.log('Routes cleared from localStorage')
+      } catch (error) {
+        console.error('Error clearing routes from localStorage:', error)
+      }
     }
   }
 
-  const openRouteInGoogleMaps = (route: Route) => {
-    if (!route.isOptimized || route.orders.length === 0) {
-      alert('Сначала рассчитайте маршрут')
+  const openRouteInGoogleMaps = async (route: Route) => {
+    if (route.orders.length === 0) {
+      alert('Нет точек для маршрута')
       return
     }
 
-    // Создаем массив адресов для маршрута
-    const addresses = [
-      cleanAddress(route.startAddress),
-      ...route.orders.map(order => cleanAddress(order.address)),
-      cleanAddress(route.endAddress)
-    ]
-    
-    // Кодируем каждый адрес отдельно
-    const encodedAddresses = addresses.map(addr => encodeURIComponent(addr))
-    
-    // Создаем URL для Google Maps с несколькими точками
-    const googleMapsUrl = `https://www.google.com/maps/dir/${encodedAddresses.join('/')}`
-    window.open(googleMapsUrl, '_blank')
+    try {
+      // Используем прямые адреса без геокодирования
+      const base = 'https://www.google.com/maps/dir/?api=1'
+      const origin = `origin=${encodeURIComponent(cleanAddressForRoute(route.startAddress))}`
+      const destination = `destination=${encodeURIComponent(cleanAddressForRoute(route.endAddress))}`
+      const waypointAddresses = route.orders.map(order => cleanAddressForRoute(order.address))
+      const waypoints = waypointAddresses.length > 0
+        ? `waypoints=${encodeURIComponent(waypointAddresses.join('|'))}`
+        : ''
+      const travelmode = 'travelmode=driving'
+
+      const parts = [origin, destination, travelmode]
+      if (waypoints) parts.push(waypoints)
+      const url = `${base}&${parts.join('&')}`
+      window.open(url, '_blank')
+    } catch (err) {
+      console.error('Ошибка открытия маршрута в Google Maps:', err)
+      alert('Не удалось открыть маршрут в Google Maps')
+    }
   }
 
   const formatDuration = (minutes: number) => {
     const hours = Math.floor(minutes / 60)
     const mins = Math.floor(minutes % 60)
     return hours > 0 ? `${hours}ч ${mins}мин` : `${mins}мин`
+  }
+
+  // Форматирование расстояния как в Google Maps
+  const formatDistance = (distanceKm: number) => {
+    // Округляем до 1 знака после запятой, как в Google Maps UI
+    const rounded = Math.round(distanceKm * 10) / 10
+    return rounded.toFixed(1).replace('.', ',')
   }
 
   return (
@@ -692,32 +821,47 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
               <div className="flex space-x-2">
                 <button
                   onClick={() => setCourierFilter('all')}
-                  className={`px-3 py-1 text-xs rounded-full ${
+                  className={clsx(
+                    'px-3 py-1 text-xs rounded-full transition-colors',
                     courierFilter === 'all'
-                      ? 'bg-blue-100 text-blue-800'
-                      : 'bg-gray-100 text-gray-600'
-                  }`}
+                      ? isDark 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-blue-100 text-blue-800'
+                      : isDark 
+                        ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  )}
                 >
                   Все
                 </button>
                 <button
                   onClick={() => setCourierFilter('car')}
-                  className={`px-3 py-1 text-xs rounded-full flex items-center space-x-1 ${
+                  className={clsx(
+                    'px-3 py-1 text-xs rounded-full flex items-center space-x-1 transition-colors',
                     courierFilter === 'car'
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-gray-100 text-gray-600'
-                  }`}
+                      ? isDark 
+                        ? 'bg-green-600 text-white' 
+                        : 'bg-green-100 text-green-800'
+                      : isDark 
+                        ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  )}
                 >
                   <TruckIcon className="h-3 w-3" />
                   <span>Авто</span>
                 </button>
                 <button
                   onClick={() => setCourierFilter('motorcycle')}
-                  className={`px-3 py-1 text-xs rounded-full flex items-center space-x-1 ${
+                  className={clsx(
+                    'px-3 py-1 text-xs rounded-full flex items-center space-x-1 transition-colors',
                     courierFilter === 'motorcycle'
-                      ? 'bg-orange-100 text-orange-800'
-                      : 'bg-gray-100 text-gray-600'
-                  }`}
+                      ? isDark 
+                        ? 'bg-orange-600 text-white' 
+                        : 'bg-orange-100 text-orange-800'
+                      : isDark 
+                        ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  )}
                 >
                   <TruckIcon className="h-3 w-3" />
                   <span>Мото</span>
@@ -727,8 +871,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
             
             {paginatedCouriers.length === 0 ? (
               <div className="text-center py-8">
-                <TruckIcon className="mx-auto h-12 w-12 text-gray-400" />
-                <p className="mt-2 text-sm text-gray-500">
+                <TruckIcon className={clsx(
+                  'mx-auto h-12 w-12',
+                  isDark ? 'text-gray-500' : 'text-gray-400'
+                )} />
+                <p className={clsx(
+                  'mt-2 text-sm',
+                  isDark ? 'text-gray-400' : 'text-gray-500'
+                )}>
                   {couriers.length === 0 
                     ? 'Загрузите Excel файл для отображения курьеров'
                     : 'Нет курьеров выбранного типа'
@@ -743,27 +893,43 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                     <button
                       key={courierName}
                       onClick={() => handleCourierSelect(courierName)}
-                      className={`w-full text-left p-3 rounded-lg border transition-all duration-200 ease-in-out transform hover:scale-[1.02] ${
+                      className={clsx(
+                        'w-full text-left p-3 rounded-lg border transition-all duration-200 ease-in-out transform hover:scale-[1.02]',
                         selectedCourier === courierName
-                          ? 'bg-blue-50 border-blue-200 text-blue-900 shadow-md'
-                          : 'bg-gray-50 border-gray-200 hover:bg-gray-100 hover:shadow-sm'
-                      }`}
+                          ? isDark 
+                            ? 'bg-blue-600/20 border-blue-500 text-blue-100 shadow-md' 
+                            : 'bg-blue-50 border-blue-200 text-blue-900 shadow-md'
+                          : isDark 
+                            ? 'bg-gray-700 border-gray-600 hover:bg-gray-600 hover:shadow-sm text-gray-200' 
+                            : 'bg-gray-50 border-gray-200 hover:bg-gray-100 hover:shadow-sm text-gray-900'
+                      )}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-3">
-                          <TruckIcon className={`h-5 w-5 ${
-                            vehicleType === 'car' ? 'text-green-600' : 'text-orange-600'
-                          }`} />
-                          <span className="font-medium">{courierName}</span>
-                          <span className={`text-xs px-2 py-1 rounded-full ${
+                          <TruckIcon className={clsx(
+                            'h-5 w-5',
                             vehicleType === 'car' 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-orange-100 text-orange-800'
-                          }`}>
+                              ? isDark ? 'text-green-400' : 'text-green-600' 
+                              : isDark ? 'text-orange-400' : 'text-orange-600'
+                          )} />
+                          <span className="font-medium">{courierName}</span>
+                          <span className={clsx(
+                            'text-xs px-2 py-1 rounded-full',
+                            vehicleType === 'car' 
+                              ? isDark 
+                                ? 'bg-green-600/20 text-green-300' 
+                                : 'bg-green-100 text-green-800'
+                              : isDark 
+                                ? 'bg-orange-600/20 text-orange-300' 
+                                : 'bg-orange-100 text-orange-800'
+                          )}>
                             {vehicleType === 'car' ? 'Авто' : 'Мото'}
                           </span>
                         </div>
-                        <span className="text-sm text-gray-500">
+                        <span className={clsx(
+                          'text-sm',
+                          isDark ? 'text-gray-400' : 'text-gray-500'
+                        )}>
                           {getAvailableOrdersCount(courierName)} заказов
                         </span>
                       </div>
@@ -779,17 +945,30 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                 <button
                   onClick={() => setCourierPage(Math.max(0, courierPage - 1))}
                   disabled={courierPage === 0}
-                  className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={clsx(
+                    'px-3 py-1 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+                    isDark 
+                      ? 'text-gray-300 hover:text-white disabled:text-gray-500' 
+                      : 'text-gray-600 hover:text-gray-800 disabled:text-gray-400'
+                  )}
                 >
                   ← Назад
                 </button>
-                <span className="text-sm text-gray-500">
+                <span className={clsx(
+                  'text-sm',
+                  isDark ? 'text-gray-400' : 'text-gray-500'
+                )}>
                   Страница {courierPage + 1} из {totalCourierPages}
                 </span>
                 <button
                   onClick={() => setCourierPage(Math.min(totalCourierPages - 1, courierPage + 1))}
                   disabled={courierPage >= totalCourierPages - 1}
-                  className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={clsx(
+                    'px-3 py-1 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+                    isDark 
+                      ? 'text-gray-300 hover:text-white disabled:text-gray-500' 
+                      : 'text-gray-600 hover:text-gray-800 disabled:text-gray-400'
+                  )}
                 >
                   Вперед →
                 </button>
@@ -802,19 +981,30 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
         {/* Заказы выбранного курьера */}
         <div className="space-y-4">
           {selectedCourier && (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className={clsx(
+              'rounded-lg shadow-sm border p-6',
+              isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+            )}>
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">
+                <h3 className={clsx(
+                  'text-lg font-semibold',
+                  isDark ? 'text-gray-100' : 'text-gray-900'
+                )}>
                   Заказы: {selectedCourier}
                 </h3>
                 <button
                   onClick={createRoute}
                   disabled={selectedOrders.size === 0 || isRouteDuplicate(selectedCourier, selectedOrders) || !googleMapsReady}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium ${
+                  className={clsx(
+                    'flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-colors',
                     selectedOrders.size === 0 || isRouteDuplicate(selectedCourier, selectedOrders) || !googleMapsReady
-                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
-                  }`}
+                      ? isDark 
+                        ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
+                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : isDark 
+                        ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                  )}
                 >
                   <PlusIcon className="h-4 w-4" />
                   <span>
@@ -844,7 +1034,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
               <div className="mb-4 space-y-3">
                 {/* Поиск по номеру заказа */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className={clsx(
+                    'block text-sm font-medium mb-1',
+                    isDark ? 'text-gray-300' : 'text-gray-700'
+                  )}>
                     Поиск заказа
                   </label>
                   <input
@@ -852,53 +1045,81 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                     placeholder="Номер заказа, имя клиента или адрес..."
                     value={orderSearchTerm}
                     onChange={(e) => setOrderSearchTerm(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className={clsx(
+                      'w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors',
+                      isDark 
+                        ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
+                    )}
                   />
                 </div>
 
                 {/* Фильтр по времени */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className={clsx(
+                    'block text-sm font-medium mb-1',
+                    isDark ? 'text-gray-300' : 'text-gray-700'
+                  )}>
                     Время доставки
                   </label>
                   <div className="flex space-x-2">
                     <button
                       onClick={() => setTimeFilter('all')}
-                      className={`px-3 py-1 text-xs rounded-full ${
+                      className={clsx(
+                        'px-3 py-1 text-xs rounded-full transition-colors',
                         timeFilter === 'all'
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
+                          ? isDark 
+                            ? 'bg-blue-600 text-white' 
+                            : 'bg-blue-100 text-blue-800'
+                          : isDark 
+                            ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      )}
                     >
                       Все
                     </button>
                     <button
                       onClick={() => setTimeFilter('morning')}
-                      className={`px-3 py-1 text-xs rounded-full ${
+                      className={clsx(
+                        'px-3 py-1 text-xs rounded-full transition-colors',
                         timeFilter === 'morning'
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
+                          ? isDark 
+                            ? 'bg-yellow-600 text-white' 
+                            : 'bg-yellow-100 text-yellow-800'
+                          : isDark 
+                            ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      )}
                     >
                       Утро (6-12)
                     </button>
                     <button
                       onClick={() => setTimeFilter('afternoon')}
-                      className={`px-3 py-1 text-xs rounded-full ${
+                      className={clsx(
+                        'px-3 py-1 text-xs rounded-full transition-colors',
                         timeFilter === 'afternoon'
-                          ? 'bg-orange-100 text-orange-800'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
+                          ? isDark 
+                            ? 'bg-orange-600 text-white' 
+                            : 'bg-orange-100 text-orange-800'
+                          : isDark 
+                            ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      )}
                     >
                       День (12-18)
                     </button>
                     <button
                       onClick={() => setTimeFilter('evening')}
-                      className={`px-3 py-1 text-xs rounded-full ${
+                      className={clsx(
+                        'px-3 py-1 text-xs rounded-full transition-colors',
                         timeFilter === 'evening'
-                          ? 'bg-purple-100 text-purple-800'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
+                          ? isDark 
+                            ? 'bg-purple-600 text-white' 
+                            : 'bg-purple-100 text-purple-800'
+                          : isDark 
+                            ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      )}
                     >
                       Вечер (18+)
                     </button>
@@ -906,13 +1127,21 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                 </div>
               </div>
 
-              <div className="max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+              <div className={clsx(
+                'max-h-96 overflow-y-auto scrollbar-thin',
+                isDark 
+                  ? 'scrollbar-thumb-gray-600 scrollbar-track-gray-800' 
+                  : 'scrollbar-thumb-gray-300 scrollbar-track-gray-100'
+              )}>
                 {(() => {
-                  const allOrders = sortOrdersByTime(
-                    searchOrders(
-                      filterOrdersByTime(courierOrders[selectedCourier] || [])
-                    )
-                  )
+    let allOrders = sortOrdersByTime(
+      searchOrders(
+        filterOrdersByTime(courierOrders[selectedCourier] || [])
+      )
+    )
+    // Дедупликация на случай дублей данных из источника
+    const seenOrders = new Set<string>()
+    allOrders = allOrders.filter(o => (seenOrders.has(o.id) ? false : (seenOrders.add(o.id), true)))
                   const availableOrders = allOrders.filter(order => !isOrderInExistingRoute(order.id))
                   const ordersInRoutes = allOrders.filter(order => isOrderInExistingRoute(order.id))
                   
@@ -922,8 +1151,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                       {availableOrders.length > 0 && (
                         <div>
                           <div className="flex items-center space-x-2 mb-2">
-                            <CheckCircleIcon className="h-4 w-4 text-green-600" />
-                            <span className="text-sm font-medium text-green-800">
+                            <CheckCircleIcon className={clsx(
+                              'h-4 w-4',
+                              isDark ? 'text-green-400' : 'text-green-600'
+                            )} />
+                            <span className={clsx(
+                              'text-sm font-medium',
+                              isDark ? 'text-green-300' : 'text-green-800'
+                            )}>
                               Доступные заказы ({availableOrders.length})
                             </span>
                           </div>
@@ -941,6 +1176,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                                   onMoveUp={moveOrderUp}
                                   onMoveDown={moveOrderDown}
                                   isInRoute={false}
+                                  isDark={isDark}
                                 />
                               )
                             })}
@@ -948,7 +1184,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                               <div className="text-center py-4">
                                 <button
                                   onClick={loadMoreOrders}
-                                  className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors duration-200"
+                                  className={clsx(
+                                    'px-4 py-2 rounded-lg transition-colors duration-200',
+                                    isDark 
+                                      ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                                      : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                                  )}
                                 >
                                   Показать еще {Math.min(20, availableOrders.length - visibleOrdersCount)} заказов
                                 </button>
@@ -962,8 +1203,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                       {ordersInRoutes.length > 0 && (
                         <div>
                           <div className="flex items-center space-x-2 mb-2">
-                            <ClockIcon className="h-4 w-4 text-yellow-600" />
-                            <span className="text-sm font-medium text-yellow-800">
+                            <ClockIcon className={clsx(
+                              'h-4 w-4',
+                              isDark ? 'text-yellow-400' : 'text-yellow-600'
+                            )} />
+                            <span className={clsx(
+                              'text-sm font-medium',
+                              isDark ? 'text-yellow-300' : 'text-yellow-800'
+                            )}>
                               Заказы в маршрутах ({ordersInRoutes.length})
                             </span>
                           </div>
@@ -978,6 +1225,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                                 onMoveUp={() => {}}
                                 onMoveDown={() => {}}
                                 isInRoute={true}
+                                isDark={isDark}
                               />
                             ))}
                           </div>
@@ -994,13 +1242,24 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
       {/* Нижняя часть: Созданные маршруты */}
       <div className="mt-6">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className={clsx(
+          'rounded-lg shadow-sm border p-6',
+          isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+        )}>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Созданные маршруты</h2>
+            <h2 className={clsx(
+              'text-lg font-semibold',
+              isDark ? 'text-gray-100' : 'text-gray-900'
+            )}>Созданные маршруты</h2>
             {routes.length > 0 && (
               <button
                 onClick={clearAllRoutes}
-                className="text-sm text-red-600 hover:text-red-800 font-medium"
+                className={clsx(
+                  'text-sm font-medium transition-colors',
+                  isDark 
+                    ? 'text-red-400 hover:text-red-300' 
+                    : 'text-red-600 hover:text-red-800'
+                )}
               >
                 Очистить все
               </button>
@@ -1009,29 +1268,52 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
             
           {routes.length === 0 ? (
             <div className="text-center py-8">
-              <MapIcon className="mx-auto h-12 w-12 text-gray-400" />
-              <p className="mt-2 text-sm text-gray-500">Создайте маршруты для курьеров</p>
+              <MapIcon className={clsx(
+                'mx-auto h-12 w-12',
+                isDark ? 'text-gray-500' : 'text-gray-400'
+              )} />
+              <p className={clsx(
+                'mt-2 text-sm',
+                isDark ? 'text-gray-400' : 'text-gray-500'
+              )}>Создайте маршруты для курьеров</p>
             </div>
           ) : (
             <div className="space-y-4">
                 {paginatedRoutes.map(route => (
-                  <div key={route.id} className="border border-gray-200 rounded-lg p-4 transition-all duration-200 ease-in-out hover:shadow-md hover:scale-[1.01]">
+                  <div key={route.id} className={clsx(
+                    'border rounded-lg p-4 transition-all duration-200 ease-in-out hover:shadow-md hover:scale-[1.01]',
+                    isDark ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-white'
+                  )}>
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center space-x-2">
-                      <TruckIcon className={`h-5 w-5 ${
-                        getCourierVehicleType(route.courier) === 'car' ? 'text-green-600' : 'text-orange-600'
-                      }`} />
+                      <TruckIcon className={clsx(
+                        'h-5 w-5',
+                        getCourierVehicleType(route.courier) === 'car' 
+                          ? isDark ? 'text-green-400' : 'text-green-600' 
+                          : isDark ? 'text-orange-400' : 'text-orange-600'
+                      )} />
                       <div>
-                        <h3 className="font-medium text-gray-900">{route.courier}</h3>
-                        <p className="text-sm text-gray-500">
+                        <h3 className={clsx(
+                          'font-medium',
+                          isDark ? 'text-gray-100' : 'text-gray-900'
+                        )}>{route.courier}</h3>
+                        <p className={clsx(
+                          'text-sm',
+                          isDark ? 'text-gray-400' : 'text-gray-500'
+                        )}>
                           {route.orders.length} заказов
                         </p>
                       </div>
-                      <span className={`text-xs px-2 py-1 rounded-full ${
+                      <span className={clsx(
+                        'text-xs px-2 py-1 rounded-full',
                         getCourierVehicleType(route.courier) === 'car' 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-orange-100 text-orange-800'
-                      }`}>
+                          ? isDark 
+                            ? 'bg-green-600/20 text-green-300' 
+                            : 'bg-green-100 text-green-800'
+                          : isDark 
+                            ? 'bg-orange-600/20 text-orange-300' 
+                            : 'bg-orange-100 text-orange-800'
+                      )}>
                         {getCourierVehicleType(route.courier) === 'car' ? 'Авто' : 'Мото'}
                       </span>
                     </div>
@@ -1039,14 +1321,24 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                       <button
                         onClick={() => route.isOptimized ? openRouteInGoogleMaps(route) : calculateRouteDistance(route)}
                         disabled={isCalculating}
-                        className="p-1 text-gray-400 hover:text-blue-600 disabled:opacity-50"
+                        className={clsx(
+                          'p-1 transition-colors disabled:opacity-50',
+                          isDark 
+                            ? 'text-gray-400 hover:text-blue-400' 
+                            : 'text-gray-400 hover:text-blue-600'
+                        )}
                         title={route.isOptimized ? "Открыть маршрут в Google Maps" : "Рассчитать расстояние"}
                       >
                         <MapIcon className="h-4 w-4" />
                       </button>
                       <button
                         onClick={() => deleteRoute(route.id)}
-                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 ease-in-out transform hover:scale-110"
+                        className={clsx(
+                          'p-2 rounded-lg transition-all duration-200 ease-in-out transform hover:scale-110',
+                          isDark 
+                            ? 'text-gray-400 hover:text-red-400 hover:bg-red-900/20' 
+                            : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                        )}
                         title="Удалить маршрут"
                       >
                         <TrashIcon className="h-4 w-4" />
@@ -1057,42 +1349,77 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                   <div className="space-y-2">
                     {route.orders.map((order, index) => (
                       <div key={order.id} className="flex items-center space-x-2 text-sm">
-                        <span className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium">
+                        <span className={clsx(
+                          'w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium',
+                          isDark 
+                            ? 'bg-blue-600/20 text-blue-300' 
+                            : 'bg-blue-100 text-blue-800'
+                        )}>
                           {index + 1}
                         </span>
-                        <span className="text-gray-600">#{order.orderNumber}</span>
-                        <span className="text-gray-500 truncate">{order.address}</span>
+                        <span className={clsx(
+                          isDark ? 'text-gray-300' : 'text-gray-600'
+                        )}>#{order.orderNumber}</span>
+                        <span className={clsx(
+                          'truncate',
+                          isDark ? 'text-gray-400' : 'text-gray-500'
+                        )}>{order.address}</span>
                       </div>
                     ))}
                   </div>
 
-                  <div className="mt-3 pt-3 border-t border-gray-200">
+                  <div className={clsx(
+                    'mt-3 pt-3 border-t',
+                    isDark ? 'border-gray-600' : 'border-gray-200'
+                  )}>
                     {route.isOptimized ? (
                       <>
                         <div className="flex items-center justify-between text-sm">
                           <div className="flex items-center space-x-1">
-                            <MapPinIcon className="h-4 w-4 text-gray-400" />
-                            <span className="text-gray-600">Расстояние</span>
+                            <MapPinIcon className={clsx(
+                              'h-4 w-4',
+                              isDark ? 'text-gray-500' : 'text-gray-400'
+                            )} />
+                            <span className={clsx(
+                              isDark ? 'text-gray-300' : 'text-gray-600'
+                            )}>Расстояние</span>
                           </div>
-                          <span className="font-medium text-gray-900">
-                            {route.totalDistance.toFixed(1)} км
+                          <span className={clsx(
+                            'font-medium',
+                            isDark ? 'text-gray-100' : 'text-gray-900'
+                          )}>
+                            {formatDistance(route.totalDistance)} км
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-sm mt-1">
                           <div className="flex items-center space-x-1">
-                            <ClockIcon className="h-4 w-4 text-gray-400" />
-                            <span className="text-gray-600">Время</span>
+                            <ClockIcon className={clsx(
+                              'h-4 w-4',
+                              isDark ? 'text-gray-500' : 'text-gray-400'
+                            )} />
+                            <span className={clsx(
+                              isDark ? 'text-gray-300' : 'text-gray-600'
+                            )}>Время</span>
                           </div>
-                          <span className="font-medium text-gray-900">
+                          <span className={clsx(
+                            'font-medium',
+                            isDark ? 'text-gray-100' : 'text-gray-900'
+                          )}>
                             {formatDuration(route.totalDuration)}
                           </span>
                         </div>
-                        <div className="text-xs text-green-600 mt-1">
+                        <div className={clsx(
+                          'text-xs mt-1',
+                          isDark ? 'text-green-400' : 'text-green-600'
+                        )}>
                           ✓ Маршрут создан
                         </div>
                       </>
                     ) : (
-                      <div className="text-sm text-gray-500">
+                      <div className={clsx(
+                        'text-sm',
+                        isDark ? 'text-gray-400' : 'text-gray-500'
+                      )}>
                         {isCalculating ? 'Расчет расстояния...' : 'Нажмите на карту для расчета расстояния'}
                       </div>
                     )}
@@ -1108,17 +1435,30 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
               <button
                 onClick={() => setRoutePage(Math.max(0, routePage - 1))}
                 disabled={routePage === 0}
-                className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                className={clsx(
+                  'px-3 py-1 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+                  isDark 
+                    ? 'text-gray-300 hover:text-white disabled:text-gray-500' 
+                    : 'text-gray-600 hover:text-gray-800 disabled:text-gray-400'
+                )}
               >
                 ← Назад
               </button>
-              <span className="text-sm text-gray-500">
+              <span className={clsx(
+                'text-sm',
+                isDark ? 'text-gray-400' : 'text-gray-500'
+              )}>
                 Страница {routePage + 1} из {totalRoutePages}
               </span>
               <button
                 onClick={() => setRoutePage(Math.min(totalRoutePages - 1, routePage + 1))}
                 disabled={routePage >= totalRoutePages - 1}
-                className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                className={clsx(
+                  'px-3 py-1 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+                  isDark 
+                    ? 'text-gray-300 hover:text-white disabled:text-gray-500' 
+                    : 'text-gray-600 hover:text-gray-800 disabled:text-gray-400'
+                )}
               >
                 Вперед →
               </button>

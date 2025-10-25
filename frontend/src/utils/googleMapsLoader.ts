@@ -94,21 +94,40 @@ class GoogleMapsLoaderClass {
       // Проверяем, не загружен ли уже скрипт
       const existingScript = document.querySelector('script[src*="maps.googleapis.com"]')
       if (existingScript) {
+        console.log('Google Maps API уже загружен, удаляем старый скрипт')
         existingScript.remove()
+      }
+
+      // Проверяем, не загружается ли уже Google Maps
+      if (window.google && window.google.maps) {
+        console.log('Google Maps API уже доступен глобально')
+        resolve()
+        return
       }
 
       // Создаем новый скрипт
       const script = document.createElement('script')
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&callback=initGoogleMaps`
       script.async = true
       script.defer = true
 
-      // Обработчики загрузки
-      script.onload = () => {
-        // Устанавливаем глобальную переменную
+      // Устанавливаем глобальный колбэк
+      window.initGoogleMaps = () => {
         window.googleMapsLoaded = true
         console.log('Google Maps API загружен с ключом из настроек')
         resolve()
+      }
+
+      // Обработчики загрузки
+      script.onload = () => {
+        // Дополнительная проверка через небольшую задержку
+        setTimeout(() => {
+          if (window.google && window.google.maps) {
+            window.googleMapsLoaded = true
+            console.log('Google Maps API загружен (onload)')
+            resolve()
+          }
+        }, 100)
       }
 
       script.onerror = () => {

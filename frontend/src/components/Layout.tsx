@@ -14,6 +14,8 @@ import {
 } from '@heroicons/react/24/outline'
 import { clsx } from 'clsx'
 import { useTheme } from '../contexts/ThemeContext'
+import { DataSharing } from './DataSharing'
+import { SyncStatus } from './SyncStatus'
 
 interface LayoutProps {
   children: ReactNode
@@ -60,7 +62,7 @@ export function Layout({ children }: LayoutProps) {
                   <span className="text-white font-bold text-sm">KM</span>
                 </div>
               </div>
-              <div className="ml-3">
+              <div className="ml-6">
                 <h1 className={clsx(
                   'text-lg font-semibold',
                   isDark ? 'text-white' : 'text-gray-900'
@@ -131,13 +133,13 @@ export function Layout({ children }: LayoutProps) {
                   <span className="text-white font-bold text-sm">KM</span>
                 </div>
               </div>
-              <div className="ml-3">
+              <div className="ml-6">
                 <h1 className={clsx(
                   'text-lg font-semibold',
                   isDark ? 'text-white' : 'text-gray-900'
                 )}>Kill_metraj</h1>
                 <p className={clsx(
-                  'text-xs',
+                  'text-xs leading-relaxed',
                   isDark ? 'text-blue-300' : 'text-gray-600'
                 )}>Створюй маршрути (майже автоматизовано усе), бо руками то влом</p>
               </div>
@@ -200,6 +202,12 @@ export function Layout({ children }: LayoutProps) {
           <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
             <div className="flex flex-1" />
             <div className="flex items-center gap-x-4 lg:gap-x-6">
+              {/* Data Sharing */}
+              <DataSharing />
+              
+              {/* Sync Status */}
+              <SyncStatus />
+              
               {/* Theme toggle */}
               <button
                 onClick={toggleTheme}
