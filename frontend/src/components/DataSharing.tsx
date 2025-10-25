@@ -36,8 +36,8 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
     isConnected: isCloudConnected, 
     lastSync: cloudLastSync, 
     syncStatus: cloudSyncStatus,
-    shareData: cloudShareData,
-    importData: cloudImportData
+    shareData: cloudShareData
+    // importData: cloudImportData // Не используется
   } = useCloudSync({ 
     enabled: true, 
     apiUrl: 'https://killmetraj-backend.onrender.com' 
@@ -49,7 +49,7 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
   // Проверяем URL при загрузке страницы
   useEffect(() => {
     const checkForSharedData = () => {
-      const sharedData = importDataFromUrl()
+      const sharedData = importDataFromUrl(window.location.href)
       if (sharedData) {
         setShowImportModal(true)
         setImportUrl(window.location.href)
@@ -82,7 +82,7 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
       
       console.log('Данные для обмена:', dataToShare)
       
-      const url = shareData(excelData, safeRoutes)
+      const url = shareData(dataToShare)
       console.log('Ссылка создана успешно:', url)
       
       setShareUrl(url)
@@ -90,13 +90,14 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
       toast.success('Ссылка для обмена создана!')
     } catch (error) {
       console.error('Ошибка создания ссылки:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка'
       console.error('Детали ошибки:', {
-        message: error.message,
-        stack: error.stack,
+        message: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined,
         excelData: excelData,
         routes: safeRoutes
       })
-      toast.error(`Ошибка создания ссылки для обмена: ${error.message}`)
+      toast.error(`Ошибка создания ссылки для обмена: ${errorMessage}`)
     } finally {
       setIsSharing(false)
     }

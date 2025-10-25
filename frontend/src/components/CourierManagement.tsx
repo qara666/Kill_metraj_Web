@@ -12,7 +12,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
-import { localStorageUtils } from '../utils/localStorage'
+// import { localStorageUtils } from '../utils/localStorage' // Не используется
 // import { googleMapsLoader } from '../utils/googleMapsLoader' // Убрано для предотвращения дублирования
 import { clsx } from 'clsx'
 

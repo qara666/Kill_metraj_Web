@@ -17,7 +17,7 @@ export const useCloudSync = (options: UseCloudSyncOptions = {}) => {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle')
   
   const cloudSyncRef = useRef<CloudSyncService | null>(null)
-  const lastSyncRef = useRef<number>(0)
+  // const lastSyncRef = useRef<number>(0) // Не используется
 
   // Инициализируем облачную синхронизацию
   useEffect(() => {
