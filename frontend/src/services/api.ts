@@ -8,20 +8,25 @@ export const analyticsApi = {
       totalOrders: 0,
       totalRevenue: 0,
       totalCouriers: 0,
-      totalRoutes: 0
+      totalRoutes: 0,
+      activeRoutes: 0,
+      activeCouriers: 0,
+      averageOrdersPerRoute: 0,
+      completionRate: 0,
+      completedRoutes: 0
     }
   }
 }
 
 export const courierApi = {
-  getCouriers: async (params: { limit?: number }) => {
+  getCouriers: async (_params: { limit?: number }) => {
     // Заглушка для курьеров
     return []
   }
 }
 
 export const routeApi = {
-  getRoutes: async (params: { limit?: number }) => {
+  getRoutes: async (_params: { limit?: number }) => {
     // Заглушка для маршрутов
     return []
   }
