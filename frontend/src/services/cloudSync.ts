@@ -18,7 +18,9 @@ class CloudSyncService {
   private enabled: boolean
 
   constructor(options: CloudSyncOptions = {}) {
-    this.apiUrl = options.apiUrl || 'https://killmetraj-backend.onrender.com'
+    // ВРЕМЕННО: используем localhost до деплоя на Render
+    const backendUrl = import.meta.env?.VITE_BACKEND_URL || 'http://localhost:10000';
+    this.apiUrl = options.apiUrl || backendUrl
     this.userId = options.userId || this.generateUserId()
     this.enabled = options.enabled || false
   }
