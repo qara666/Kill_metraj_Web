@@ -55,44 +55,34 @@ export const uploadApi = {
       
     } catch (error) {
       console.error('Ошибка загрузки файла:', error)
-      // Fallback к локальным данным если сервер недоступен
-      const mockData = {
-        orders: [
-          {
-            id: `order_${Date.now()}_1`,
-            orderNumber: 'ORD-001',
-            address: 'ул. Крещатик, 1, Киев',
-            courier: 'Иван Петров',
-            amount: 150,
-            phone: '+380501234567',
-            customerName: 'Анна Иванова',
-            plannedTime: '10:00-12:00',
-            isSelected: false,
-            isInRoute: false
-          }
-        ],
-        couriers: [
-          {
-            id: `courier_${Date.now()}_1`,
-            name: 'Иван Петров',
-            phone: '+380501234567',
-            email: 'ivan@example.com',
-            vehicleType: 'car',
-            isActive: true
-          }
-        ],
+      
+      // Fallback к пустым данным если сервер недоступен
+      const emptyData = {
+        orders: [],
+        couriers: [],
         paymentMethods: [],
         routes: [],
         errors: [],
+        warnings: [],
+        statistics: {},
+        summary: {
+          totalRows: 0,
+          successfulGeocoding: 0,
+          failedGeocoding: 0,
+          orders: 0,
+          couriers: 0,
+          paymentMethods: 0,
+          errors: []
+        },
         debug: {
-          logs: ['Файл обработан локально (сервер недоступен)']
+          logs: ['⚠️ Backend сервер недоступен. Для обработки Excel файла запустите backend сервер на порту 5001.', 'Вы можете запустить backend командой: cd backend && npm start']
         }
       }
       
       return {
-        success: true,
-        message: 'Файл обработан локально',
-        data: mockData
+        success: false,
+        message: 'Backend сервер недоступен. Для обработки Excel файлов необходимо запустить backend сервер.',
+        data: emptyData
       }
     }
   }

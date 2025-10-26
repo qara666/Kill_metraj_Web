@@ -29,8 +29,13 @@ export const ExcelDataPreview: React.FC<ExcelDataPreviewProps> = ({
 
   const { orders, couriers, paymentMethods, addresses, errors, warnings, statistics, debug } = data;
 
-  const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
+  const getStatusColor = (status?: string) => {
+    if (!status || typeof status !== 'string') {
+      return 'text-gray-600 bg-gray-50';
+    }
+    
+    const statusLower = status.toLowerCase();
+    switch (statusLower) {
       case 'доставлен':
       case 'выполнен':
       case 'completed':
