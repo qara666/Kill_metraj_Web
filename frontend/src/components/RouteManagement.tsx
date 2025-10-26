@@ -594,6 +594,85 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   }, [])
 
 
+  // Функция для валидации и фильтрации адресов
+  const validateAddress = (address: string): boolean => {
+    if (!address || address.trim().length === 0) return false
+    
+    // Проверяем на подозрительные паттерны (очень длинные адреса, специальные символы)
+    const suspiciousPatterns = [
+      /.{200,}/, // Адрес длиннее 200 символов
+      /http/,
+      /www\./,
+      /@/, // Email
+      /\d{10,}/, // Множество цифр подряд
+      /[<>{}\[\]\\\/]/ // Специальные символы
+    ]
+    
+    const addressNormalized = address.trim().toLowerCase()
+    
+    for (const pattern of suspiciousPatterns) {
+      if (pattern.test(addressNormalized)) {
+        console.warn('Подозрительный адрес обнаружен:', address)
+        return false
+      }
+    }
+    
+    return true
+  }
+
+  // Функция для проверки расстояния между точками
+  const checkSegmentDistance = (from: string, to: string): Promise<{ distance: number, isAnomaly: boolean }> => {
+    return new Promise((resolve) => {
+      if (!googleMapsReady || !window.google) {
+        resolve({ distance: 0, isAnomaly: false })
+        return
+      }
+
+      const geocoder = new window.google.maps.Geocoder()
+      const directionsService = new window.google.maps.DirectionsService()
+      
+      // Геокодируем оба адреса
+      Promise.all([
+        new Promise((res) => geocoder.geocode({ address: from }, (results: any, status: any) => {
+          if (status === 'OK' && results && results[0]) {
+            res(results[0].geometry.location)
+          } else {
+            res(null)
+          }
+        })),
+        new Promise((res) => geocoder.geocode({ address: to }, (results: any, status: any) => {
+          if (status === 'OK' && results && results[0]) {
+            res(results[0].geometry.location)
+          } else {
+            res(null)
+          }
+        }))
+      ]).then(([locationA, locationB]: any) => {
+        if (!locationA || !locationB) {
+          resolve({ distance: 0, isAnomaly: false })
+          return
+        }
+
+        // Используем Directions Service для получения расстояния
+        directionsService.route({
+          origin: locationA,
+          destination: locationB,
+          travelMode: window.google.maps.TravelMode.DRIVING
+        }, (result: any, status: any) => {
+          if (status === 'OK' && result && result.routes && result.routes[0]) {
+            const distance = result.routes[0].legs[0].distance.value / 1000 // Конвертируем в км
+            const isAnomaly = distance > 20 // Если расстояние больше 20км между двумя точками
+            resolve({ distance, isAnomaly })
+          } else {
+            resolve({ distance: 0, isAnomaly: false })
+          }
+        })
+      }).catch(() => {
+        resolve({ distance: 0, isAnomaly: false })
+      })
+    })
+  }
+
   const calculateRouteDistance = async (route: Route) => {
     if (!googleMapsReady) {
       // Проверяем, есть ли API ключ в настройках
@@ -617,25 +696,72 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     try {
       const directionsService = new window.google.maps.DirectionsService()
 
-      // Используем прямые адреса без геокодирования
-      const waypoints = route.orders.map(order => ({
-        location: cleanAddressForRoute(order.address),
-        stopover: true
-      }))
+      // Валидация и фильтрация адресов перед расчетом
+      const validatedWaypoints = route.orders
+        .map(order => ({
+          order,
+          address: cleanAddressForRoute(order.address)
+        }))
+        .filter(({ order, address }) => {
+          const isValid = validateAddress(address)
+          if (!isValid) {
+            console.warn(`Пропущен подозрительный адрес для заказа ${order.orderNumber}:`, address)
+          }
+          return isValid
+        })
+        .map(({ address }) => ({
+          location: address,
+          stopover: true
+        }))
+
+      // Если после фильтрации не осталось точек, отменяем расчет
+      if (validatedWaypoints.length === 0) {
+        alert('Нет валидных адресов для расчета маршрута. Проверьте адреса заказов.')
+        setIsCalculating(false)
+        return
+      }
+
+      // Проверяем расстояния между смежными точками
+      const startAddress = cleanAddressForRoute(route.startAddress)
+      const checkResults = []
+      
+      for (let i = 0; i < validatedWaypoints.length - 1; i++) {
+        const fromAddress = i === 0 ? startAddress : validatedWaypoints[i].location
+        const toAddress = validatedWaypoints[i + 1].location
+        const check = await checkSegmentDistance(fromAddress, toAddress)
+        checkResults.push(check)
+      }
+
+      // Проверяем последний сегмент до конечного адреса
+      if (validatedWaypoints.length > 0) {
+        const lastCheck = await checkSegmentDistance(
+          validatedWaypoints[validatedWaypoints.length - 1].location,
+          cleanAddressForRoute(route.endAddress)
+        )
+        checkResults.push(lastCheck)
+      }
+
+      // Если обнаружены аномалии, предупреждаем пользователя
+      const anomalies = checkResults.filter(check => check.isAnomaly)
+      if (anomalies.length > 0) {
+        const warningMessage = `⚠️ Обнаружены подозрительно большие расстояния (${anomalies.length} сегментов > 20км). Возможны ошибки в адресах.`
+        console.warn(warningMessage)
+        if (!window.confirm(`${warningMessage}\n\nПродолжить расчет маршрута?`)) {
+          setIsCalculating(false)
+          return
+        }
+      }
 
       const request = {
-        origin: cleanAddressForRoute(route.startAddress),
+        origin: startAddress,
         destination: cleanAddressForRoute(route.endAddress),
-        waypoints: waypoints,
+        waypoints: validatedWaypoints,
         travelMode: window.google.maps.TravelMode.DRIVING,
-        // Важно: сохраняем порядок точек как в UI, ничего не оптимизируем
         optimizeWaypoints: false,
         unitSystem: window.google.maps.UnitSystem.METRIC,
-        // Дополнительные параметры для точности
         avoidHighways: false,
         avoidTolls: false,
         avoidFerries: false,
-        // Используем текущее время для учета пробок
         drivingOptions: {
           departureTime: new Date(),
           trafficModel: window.google.maps.TrafficModel.BEST_GUESS
@@ -644,24 +770,42 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
       directionsService.route(request, (result: any, status: any) => {
         if (status === window.google.maps.DirectionsStatus.OK && result) {
-          // Используем точное расстояние из Google Maps API
           const totalDistance = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
           const totalDuration = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
 
-          // Конвертируем в километры с высокой точностью
           const distanceKm = totalDistance / 1000
           
-          // Проверяем, что маршрут не превышает 100км (возможная ошибка в адресе)
-          if (distanceKm > 100) {
-            console.warn(`Маршрут превышает 100км (${distanceKm.toFixed(1)}км). Возможна ошибка в адресе.`)
-            alert(`Внимание: Маршрут превышает 100км (${distanceKm.toFixed(1)}км). Проверьте корректность адресов.`)
+          // Расширенная проверка на аномальные расстояния
+          const maxReasonableDistance = 50 // Максимальное разумное расстояние для маршрута (50км)
+          const avgDistancePerOrder = distanceKm / (route.orders.length || 1)
+          
+          if (distanceKm > maxReasonableDistance) {
+            console.warn(`⚠️ Маршрут превышает ${maxReasonableDistance}км (${distanceKm.toFixed(1)}км)`)
+            
+            // Проверяем среднее расстояние на заказ
+            if (avgDistancePerOrder > 25) {
+              console.warn(`⚠️ Среднее расстояние на заказ: ${avgDistancePerOrder.toFixed(1)}км (подозрительно высокое)`)
+              
+              const proceed = window.confirm(
+                `⚠️ Маршрут имеет подозрительно большую протяженность:\n` +
+                `• Общее расстояние: ${distanceKm.toFixed(1)}км\n` +
+                `• Среднее на заказ: ${avgDistancePerOrder.toFixed(1)}км\n` +
+                `• Возможны ошибки в адресах!\n\n` +
+                `Использовать это значение или отменить?`
+              )
+              
+              if (!proceed) {
+                setIsCalculating(false)
+                return
+              }
+            }
           }
 
-          // Логируем для отладки и сравнения с Google Maps UI
           console.log('Google Maps API Distance Calculation:', {
             totalDistanceMeters: totalDistance,
             distanceKm: distanceKm,
-            distanceKmRounded: Math.round(distanceKm * 10) / 10, // Округление как в Google Maps UI
+            distanceKmRounded: Math.round(distanceKm * 10) / 10,
+            avgDistancePerOrder: avgDistancePerOrder.toFixed(2),
             legs: result.routes[0].legs.map((leg: any, index: number) => ({
               legIndex: index,
               distance: leg.distance,
@@ -677,21 +821,21 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
             r.id === route.id 
               ? { 
                   ...r, 
-                  totalDistance: distanceKm, // Сохраняем точное значение без округления
-                  totalDuration: totalDuration / 60, // конвертируем в минуты
+                  totalDistance: distanceKm,
+                  totalDuration: totalDuration / 60,
                   isOptimized: true
                 }
               : r
           ))
         } else {
           console.error('Ошибка расчета маршрута:', status)
-          alert('Ошибка расчета маршрута')
+          alert(`Ошибка расчета маршрута: ${status}. Проверьте корректность адресов.`)
         }
         setIsCalculating(false)
       })
     } catch (error) {
       console.error('Ошибка при расчете маршрута:', error)
-      alert('Ошибка при расчете маршрута')
+      alert('Ошибка при расчете маршрута. Проверьте адреса и попробуйте снова.')
       setIsCalculating(false)
     }
   }

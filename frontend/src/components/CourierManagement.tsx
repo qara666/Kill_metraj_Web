@@ -46,6 +46,10 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   const [routeToDelete, setRouteToDelete] = useState<any>(null)
   const [showDistanceModal, setShowDistanceModal] = useState(false)
   const [selectedCourierForDistance, setSelectedCourierForDistance] = useState<Courier | null>(null)
+  const [showAddressEditModal, setShowAddressEditModal] = useState(false)
+  const [addressToEdit, setAddressToEdit] = useState<any>(null)
+  const [editedAddress, setEditedAddress] = useState('')
+  const [routeToUpdate, setRouteToUpdate] = useState<any>(null)
 
   // Рассчитываем расстояние для каждого курьера на основе маршрутов
   const calculateCourierDistance = useMemo(() => {
@@ -363,6 +367,136 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   const handleDistanceClick = (courier: Courier) => {
     setSelectedCourierForDistance(courier)
     setShowDistanceModal(true)
+  }
+
+  // Функция для открытия модального окна редактирования адреса
+  const handleEditAddressClick = (order: any, route: any) => {
+    setAddressToEdit(order)
+    setEditedAddress(order.address)
+    setRouteToUpdate(route)
+    setShowAddressEditModal(true)
+  }
+
+  // Функция для открытия Google Maps Place Picker для выбора адреса
+  const openGoogleMapsPlacePicker = () => {
+    const url = `https://www.google.com/maps/search/?api=1`
+    window.open(url, '_blank')
+  }
+
+  // Функция для сохранения отредактированного адреса и пересчета маршрута
+  const handleSaveEditedAddress = () => {
+    if (!addressToEdit || !routeToUpdate || !editedAddress.trim()) {
+      alert('Введите корректный адрес')
+      return
+    }
+
+    // Обновляем адрес заказа в маршруте
+    const updatedOrders = routeToUpdate.orders.map((order: any) => 
+      order.id === addressToEdit.id 
+        ? { ...order, address: editedAddress }
+        : order
+    )
+
+    // Обновляем маршрут
+    const updatedRoute = { ...routeToUpdate, orders: updatedOrders }
+
+    // Обновляем маршруты в контексте
+    if (contextData?.routes) {
+      const updatedRoutes = contextData.routes.map((r: any) => 
+        r.id === routeToUpdate.id ? updatedRoute : r
+      )
+      
+      // Обновляем контекст
+      updateRouteData(updatedRoutes)
+      
+      // Сохраняем в localStorage
+      try {
+        localStorage.setItem('km_routes', JSON.stringify(updatedRoutes))
+      } catch (error) {
+        console.error('Ошибка сохранения маршрутов:', error)
+      }
+
+      alert('Адрес обновлен. Теперь вы можете пересчитать маршрут для получения нового километража.')
+      
+      // Закрываем модальное окно
+      setShowAddressEditModal(false)
+      setAddressToEdit(null)
+      setEditedAddress('')
+      setRouteToUpdate(null)
+    }
+  }
+
+  // Функция для пересчета километража конкретного маршрута
+  const recalculateRouteDistance = async (routeId: string) => {
+    const route = contextData?.routes?.find((r: any) => r.id === routeId)
+    if (!route) return
+
+    try {
+      // Проверяем наличие Google Maps API
+      if (!window.google) {
+        alert('Google Maps API не загружен. Проверьте настройки.')
+        return
+      }
+
+      const directionsService = new window.google.maps.DirectionsService()
+      
+      // Готовим waypoints
+      const waypoints = route.orders.map((order: any) => ({
+        location: order.address,
+        stopover: true
+      }))
+
+      const request = {
+        origin: route.startAddress,
+        destination: route.endAddress,
+        waypoints: waypoints,
+        travelMode: window.google.maps.TravelMode.DRIVING,
+        optimizeWaypoints: false,
+        unitSystem: window.google.maps.UnitSystem.METRIC,
+        avoidHighways: false,
+        avoidTolls: false,
+        avoidFerries: false
+      }
+
+      directionsService.route(request, (result: any, status: any) => {
+        if (status === window.google.maps.DirectionsStatus.OK && result) {
+          const totalDistance = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
+          const totalDuration = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
+
+          const distanceKm = totalDistance / 1000
+          
+          // Обновляем маршрут с новым километражем
+          if (contextData?.routes) {
+            const updatedRoutes = contextData.routes.map((r: any) => 
+              r.id === routeId 
+                ? { 
+                    ...r, 
+                    totalDistance: distanceKm,
+                    totalDuration: totalDuration / 60,
+                    isOptimized: true
+                  }
+                : r
+            )
+            
+            updateRouteData(updatedRoutes)
+            
+            // Сохраняем в localStorage
+            try {
+              localStorage.setItem('km_routes', JSON.stringify(updatedRoutes))
+            } catch (error) {
+              console.error('Ошибка сохранения маршрутов:', error)
+            }
+
+            alert(`Километраж маршрута обновлен: ${distanceKm.toFixed(1)}км`)
+          }
+        } else {
+          alert('Ошибка пересчета маршрута. Проверьте корректность адресов.')
+        }
+      })
+    } catch (error) {
+      console.error('Ошибка пересчета маршрута:', error)
+      alert('Ошибка пересчета маршрута. Проверьте настройки Google Maps API.')
+    }
   }
 
 
@@ -1040,18 +1174,38 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                                 {/* Заказы в маршруте */}
                                 {route.orders && route.orders.length > 0 && (
                                   <div className="mt-4">
-                                    <h6 className="text-sm font-medium text-gray-700 mb-2">Заказы в маршруте:</h6>
-                                    <div className="space-y-1">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <h6 className="text-sm font-medium text-gray-700">Заказы в маршруте:</h6>
+                                      <button
+                                        onClick={() => recalculateRouteDistance(route.id)}
+                                        className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                                        title="Пересчитать километраж маршрута"
+                                      >
+                                        🔄 Пересчитать
+                                      </button>
+                                    </div>
+                                    <div className="space-y-2">
                                       {route.orders.map((order: any, orderIndex: number) => (
-                                        <div key={orderIndex} className="flex items-center space-x-2 text-sm">
-                                          <span className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium">
-                                            {orderIndex + 1}
-                                          </span>
-                                          <span className="text-gray-600 font-medium">#{order.orderNumber}</span>
-                                          <span className="text-gray-500 truncate">{order.address}</span>
-                                          {order.customerName && (
-                                            <span className="text-gray-400 text-xs">({order.customerName})</span>
-                                          )}
+                                        <div key={orderIndex} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                                          <div className="flex items-center space-x-2 text-sm flex-1 min-w-0">
+                                            <span className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0">
+                                              {orderIndex + 1}
+                                            </span>
+                                            <span className="text-gray-600 font-medium flex-shrink-0">#{order.orderNumber}</span>
+                                            <span className="text-gray-500 truncate flex-1" title={order.address}>
+                                              {order.address}
+                                            </span>
+                                            {order.customerName && (
+                                              <span className="text-gray-400 text-xs flex-shrink-0">({order.customerName})</span>
+                                            )}
+                                          </div>
+                                          <button
+                                            onClick={() => handleEditAddressClick(order, route)}
+                                            className="ml-2 p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded transition-colors flex-shrink-0"
+                                            title="Редактировать адрес"
+                                          >
+                                            <PencilIcon className="h-4 w-4" />
+                                          </button>
                                         </div>
                                       ))}
                                     </div>
@@ -1101,6 +1255,90 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg"
               >
                 Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модальное окно редактирования адреса */}
+      {showAddressEditModal && addressToEdit && routeToUpdate && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70]">
+          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-medium text-gray-900">
+                  Редактирование адреса
+                </h3>
+                <button
+                  onClick={() => setShowAddressEditModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="px-6 py-4">
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Номер заказа
+                </label>
+                <div className="text-sm text-gray-600">#{addressToEdit.orderNumber}</div>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Текущий адрес
+                </label>
+                <div className="text-sm text-gray-500 bg-gray-50 p-3 rounded-lg">
+                  {addressToEdit.address}
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Новый адрес
+                </label>
+                <textarea
+                  value={editedAddress}
+                  onChange={(e) => setEditedAddress(e.target.value)}
+                  placeholder="Введите новый адрес..."
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              <div className="mb-4">
+                <button
+                  onClick={openGoogleMapsPlacePicker}
+                  className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                  type="button"
+                >
+                  <MapIcon className="h-5 w-5" />
+                  <span>Открыть Google Maps для поиска адреса</span>
+                </button>
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                <p className="text-xs text-yellow-700">
+                  <strong>💡 Совет:</strong> После изменения адреса нажмите кнопку "Пересчитать" для получения нового километража маршрута.
+                </p>
+              </div>
+            </div>
+            
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+              <button
+                onClick={() => setShowAddressEditModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={handleSaveEditedAddress}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+              >
+                Сохранить адрес
               </button>
             </div>
           </div>
