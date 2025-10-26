@@ -50,6 +50,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   const [addressToEdit, setAddressToEdit] = useState<any>(null)
   const [editedAddress, setEditedAddress] = useState('')
   const [routeToUpdate, setRouteToUpdate] = useState<any>(null)
+  const [isGeocoding, setIsGeocoding] = useState(false)
 
   // Рассчитываем расстояние для каждого курьера на основе маршрутов
   const calculateCourierDistance = useMemo(() => {
@@ -383,46 +384,81 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     window.open(url, '_blank')
   }
 
+  // Функция для геокодирования адреса
+  const geocodeAddress = async (address: string): Promise<string> => {
+    if (!window.google || !address.trim()) {
+      return address
+    }
+
+    return new Promise((resolve) => {
+      const geocoder = new window.google.maps.Geocoder()
+      
+      geocoder.geocode({ address: address }, (results: any, status: any) => {
+        if (status === 'OK' && results && results[0]) {
+          // Возвращаем отформатированный адрес из Google Maps
+          const formattedAddress = results[0].formatted_address
+          console.log('Адрес геокодирован:', formattedAddress)
+          resolve(formattedAddress)
+        } else {
+          console.warn('Не удалось геокодировать адрес, используется исходный:', address)
+          resolve(address)
+        }
+      })
+    })
+  }
+
   // Функция для сохранения отредактированного адреса и пересчета маршрута
-  const handleSaveEditedAddress = () => {
+  const handleSaveEditedAddress = async () => {
     if (!addressToEdit || !routeToUpdate || !editedAddress.trim()) {
       alert('Введите корректный адрес')
       return
     }
 
-    // Обновляем адрес заказа в маршруте
-    const updatedOrders = routeToUpdate.orders.map((order: any) => 
-      order.id === addressToEdit.id 
-        ? { ...order, address: editedAddress }
-        : order
-    )
-
-    // Обновляем маршрут
-    const updatedRoute = { ...routeToUpdate, orders: updatedOrders }
-
-    // Обновляем маршруты в контексте
-    if (contextData?.routes) {
-      const updatedRoutes = contextData.routes.map((r: any) => 
-        r.id === routeToUpdate.id ? updatedRoute : r
+    try {
+      setIsGeocoding(true)
+      
+      // Геокодируем введенный адрес
+      const geocodedAddress = await geocodeAddress(editedAddress.trim())
+      
+      // Обновляем адрес заказа в маршруте
+      const updatedOrders = routeToUpdate.orders.map((order: any) => 
+        order.id === addressToEdit.id 
+          ? { ...order, address: geocodedAddress }
+          : order
       )
-      
-      // Обновляем контекст
-      updateRouteData(updatedRoutes)
-      
-      // Сохраняем в localStorage
-      try {
-        localStorage.setItem('km_routes', JSON.stringify(updatedRoutes))
-      } catch (error) {
-        console.error('Ошибка сохранения маршрутов:', error)
-      }
 
-      alert('Адрес обновлен. Теперь вы можете пересчитать маршрут для получения нового километража.')
-      
-      // Закрываем модальное окно
-      setShowAddressEditModal(false)
-      setAddressToEdit(null)
-      setEditedAddress('')
-      setRouteToUpdate(null)
+      // Обновляем маршрут
+      const updatedRoute = { ...routeToUpdate, orders: updatedOrders }
+
+      // Обновляем маршруты в контексте
+      if (contextData?.routes) {
+        const updatedRoutes = contextData.routes.map((r: any) => 
+          r.id === routeToUpdate.id ? updatedRoute : r
+        )
+        
+        // Обновляем контекст
+        updateRouteData(updatedRoutes)
+        
+        // Сохраняем в localStorage
+        try {
+          localStorage.setItem('km_routes', JSON.stringify(updatedRoutes))
+        } catch (error) {
+          console.error('Ошибка сохранения маршрутов:', error)
+        }
+
+        alert(`✅ Адрес обновлен и геокодирован!\n\nНовый адрес: ${geocodedAddress}\n\nТеперь нажмите "🔄 Пересчитать" для получения нового километража.`)
+        
+        // Закрываем модальное окно
+        setShowAddressEditModal(false)
+        setAddressToEdit(null)
+        setEditedAddress('')
+        setRouteToUpdate(null)
+      }
+    } catch (error) {
+      console.error('Ошибка геокодирования адреса:', error)
+      alert('Ошибка геокодирования адреса. Попробуйте ввести более точный адрес.')
+    } finally {
+      setIsGeocoding(false)
     }
   }
 
@@ -1320,25 +1356,53 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 </button>
               </div>
 
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-                <p className="text-xs text-yellow-700">
-                  <strong>💡 Совет:</strong> После изменения адреса нажмите кнопку "Пересчитать" для получения нового километража маршрута.
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                <p className="text-xs text-blue-700">
+                  <strong>📍 Автогеокодирование:</strong> При сохранении адрес будет автоматически геокодирован через Google Maps для получения корректного формата.
                 </p>
               </div>
+
+              {isGeocoding && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                  <div className="flex items-center space-x-2">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                    <p className="text-sm text-blue-700 font-medium">
+                      Геокодирование адреса...
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
             
             <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
               <button
                 onClick={() => setShowAddressEditModal(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                disabled={isGeocoding}
+                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  isGeocoding 
+                    ? 'text-gray-400 bg-gray-100 cursor-not-allowed' 
+                    : 'text-gray-700 bg-gray-100 hover:bg-gray-200'
+                }`}
               >
                 Отмена
               </button>
               <button
                 onClick={handleSaveEditedAddress}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                disabled={isGeocoding || !editedAddress.trim()}
+                className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors flex items-center space-x-2 ${
+                  isGeocoding || !editedAddress.trim()
+                    ? 'bg-blue-400 cursor-not-allowed' 
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
               >
-                Сохранить адрес
+                {isGeocoding ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <span>Геокодирование...</span>
+                  </>
+                ) : (
+                  <span>Сохранить адрес</span>
+                )}
               </button>
             </div>
           </div>
