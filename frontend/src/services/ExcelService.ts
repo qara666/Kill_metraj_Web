@@ -269,18 +269,18 @@ class ExcelService {
   }
 
   private createOrderFromRow(row: any[], indexes: any, rowNumber: number): ExcelOrder | null {
-    const orderNumber = row[indexes.orderNumber] || `ORDER_${rowNumber}`;
-    const customerName = row[indexes.customerName] || 'Неизвестный клиент';
-    const address = row[indexes.address] || '';
-    const phone = row[indexes.phone] || '';
-    const courierName = row[indexes.courierName] || 'Не назначен';
-    const paymentMethod = row[indexes.paymentMethod] || 'Наличные';
-    const amount = parseFloat(row[indexes.amount]) || 0;
-    const status = row[indexes.status] || 'Новый';
-    const deliveryDate = row[indexes.deliveryDate] || new Date().toISOString();
-    const notes = row[indexes.notes] || '';
+    const orderNumber = indexes.orderNumber !== undefined ? row[indexes.orderNumber] : `ORDER_${rowNumber}`;
+    const customerName = indexes.customerName !== undefined ? row[indexes.customerName] : 'Неизвестный клиент';
+    const address = indexes.address !== undefined ? row[indexes.address] : '';
+    const phone = indexes.phone !== undefined ? row[indexes.phone] : '';
+    const courierName = indexes.courierName !== undefined ? row[indexes.courierName] : 'Не назначен';
+    const paymentMethod = indexes.paymentMethod !== undefined ? row[indexes.paymentMethod] : 'Наличные';
+    const amount = indexes.amount !== undefined ? parseFloat(row[indexes.amount]) : 0;
+    const status = indexes.status !== undefined ? row[indexes.status] : 'Новый';
+    const deliveryDate = indexes.deliveryDate !== undefined ? row[indexes.deliveryDate] : new Date().toISOString();
+    const notes = indexes.notes !== undefined ? row[indexes.notes] : '';
 
-    if (!address) {
+    if (!address || address.trim() === '') {
       throw new Error('Адрес не указан');
     }
 
