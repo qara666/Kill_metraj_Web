@@ -40,7 +40,9 @@ export const uploadApi = {
     formData.append('file', file)
     
     try {
-      const response = await fetch('https://killmetraj-backend.onrender.com/api/upload/excel', {
+      // ВРЕМЕННО: используем localhost до деплоя на Render
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:10000';
+      const response = await fetch(`${backendUrl}/api/upload/excel`, {
         method: 'POST',
         body: formData,
       })
