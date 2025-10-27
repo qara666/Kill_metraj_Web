@@ -44,18 +44,18 @@ class GoogleMapsLoaderClass {
     // Проверяем переменную окружения как fallback
     const envApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
     
-    const finalApiKey = apiKey.trim() || envApiKey?.trim()
+    const finalApiKey = (apiKey || envApiKey || '').trim()
     
     if (!finalApiKey) {
       throw new Error('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ в настройках.')
     }
 
-    // Проверяем валидность API ключа перед загрузкой
+    // Простая проверка валидности API ключа
     console.log('Проверяем валидность Google Maps API ключа...')
-    const validationResult = await validateGoogleMapsApiKey(finalApiKey)
+    const isValid = validateGoogleMapsApiKey(finalApiKey)
     
-    if (!validationResult.isValid) {
-      throw new Error(`Google Maps API ключ недействителен: ${validationResult.error}`)
+    if (!isValid) {
+      throw new Error('Google Maps API ключ недействителен')
     }
     
     console.log('Google Maps API ключ валиден, загружаем API...')
@@ -157,6 +157,7 @@ declare global {
     initGoogleMaps: () => void
   }
 }
+
 
 
 
