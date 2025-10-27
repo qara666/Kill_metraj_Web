@@ -1,5 +1,41 @@
 import { compress, decompress } from 'lz-string'
 
+/**
+ * Расширяет простые данные в полный формат
+ */
+const expandSimpleData = (simpleData: any): ShareableData => {
+  // Если данные уже в полном формате, возвращаем как есть
+  if (simpleData.excelData && simpleData.routes) {
+    return simpleData
+  }
+
+  // Если это минимальные данные, создаем пустую структуру
+  if (simpleData.v && simpleData.t) {
+    return {
+      excelData: {
+        orders: [],
+        couriers: [],
+        zones: []
+      },
+      routes: [],
+      timestamp: simpleData.t,
+      version: simpleData.v || '1.0.0'
+    }
+  }
+
+  // Fallback: возвращаем пустые данные
+  return {
+    excelData: {
+      orders: [],
+      couriers: [],
+      zones: []
+    },
+    routes: [],
+    timestamp: Date.now(),
+    version: '1.0.0'
+  }
+}
+
 export interface ShareableData {
   excelData: any
   routes: any[]
@@ -172,7 +208,7 @@ export const dataSharingUtils: DataSharingUtils = {
       
       // Пробуем сжатие
       try {
-        const compressed = compress(jsonString, 9)
+        const compressed = compress(jsonString)
         if (compressed && dataSharingUtils.isStringSafe(compressed)) {
           return encodeURIComponent(compressed)
         }
@@ -208,7 +244,7 @@ export const dataSharingUtils: DataSharingUtils = {
           console.log('Данные распакованы, длина JSON:', jsonString.length)
           const data = JSON.parse(jsonString)
           console.log('JSON распарсен, структура:', Object.keys(data))
-          const expandedData = dataSharingUtils.expandSimpleData(data)
+          const expandedData = expandSimpleData(data)
           console.log('Данные расширены:', {
             orders: expandedData.excelData?.orders?.length || 0,
             couriers: expandedData.excelData?.couriers?.length || 0,
@@ -244,60 +280,6 @@ export const dataSharingUtils: DataSharingUtils = {
     }
   },
 
-  /**
-   * Расширяет простые данные в полный формат
-   */
-  expandSimpleData: (simpleData: any): ShareableData => {
-    // Если данные уже в полном формате, возвращаем как есть
-    if (simpleData.excelData && simpleData.routes) {
-      return simpleData
-    }
-
-    // Расширяем простые данные
-    return {
-      excelData: {
-        orders: simpleData.o?.map((order: any) => ({
-          id: order.i,
-          orderNumber: order.n,
-          address: order.a,
-          courier: order.c,
-          amount: order.am,
-          phone: order.p,
-          customerName: order.cn,
-          plannedTime: order.pt,
-          isSelected: false,
-          isInRoute: false
-        })) || [],
-        couriers: simpleData.c?.map((courier: any) => ({
-          id: courier.i,
-          name: courier.n,
-          phone: courier.p,
-          email: courier.e,
-          vehicleType: courier.vt,
-          isActive: courier.ia
-        })) || [],
-        paymentMethods: [],
-        errors: [],
-        warnings: []
-      },
-      routes: simpleData.r?.map((route: any) => ({
-        id: route.i,
-        courierId: route.ci,
-        orders: route.o?.map((order: any) => ({
-          id: order.i,
-          orderNumber: order.n,
-          address: order.a,
-          isSelected: false,
-          isInRoute: true
-        })) || [],
-        totalDistance: route.td,
-        totalTime: route.tt,
-        createdAt: new Date().toISOString()
-      })) || [],
-      timestamp: simpleData.t,
-      version: simpleData.v
-    }
-  },
 
   /**
    * Генерирует URL для обмена данными
@@ -402,5 +384,7 @@ export const useDataSharing = () => {
     validateData: dataSharingUtils.validateData
   }
 }
+
+
 
 

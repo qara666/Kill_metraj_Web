@@ -14,6 +14,7 @@ interface ExcelData {
 
 interface ExcelDataContextType {
   excelData: ExcelData | null
+  routes: any[]
   setExcelData: (data: ExcelData | null) => void
   updateExcelData: (data: ExcelData) => void
   clearExcelData: () => void
@@ -37,11 +38,14 @@ interface ExcelDataProviderProps {
 
 export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }) => {
   const [excelData, setExcelDataState] = useState<ExcelData | null>(null)
+  const [routes, setRoutes] = useState<any[]>([])
 
   // Загружаем данные из localStorage при инициализации
   useEffect(() => {
     try {
       const stored = localStorage.getItem('km_dashboard_processed_data')
+      const storedRoutes = localStorage.getItem('km_routes')
+      
       if (stored) {
         const parsed = JSON.parse(stored)
         if (parsed && typeof parsed === 'object') {
@@ -56,6 +60,13 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             warnings: Array.isArray(parsed.warnings) ? parsed.warnings : []
           }
           setExcelDataState(normalizedData)
+        }
+      }
+      
+      if (storedRoutes) {
+        const parsedRoutes = JSON.parse(storedRoutes)
+        if (Array.isArray(parsedRoutes)) {
+          setRoutes(parsedRoutes)
         }
       }
     } catch (error) {
@@ -74,6 +85,17 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     }
   }, [excelData])
 
+  // Сохраняем routes в localStorage при изменении
+  useEffect(() => {
+    try {
+      if (routes.length > 0) {
+        localStorage.setItem('km_routes', JSON.stringify(routes))
+      }
+    } catch (error) {
+      console.warn('Ошибка сохранения маршрутов в localStorage:', error)
+    }
+  }, [routes])
+
   const setExcelData = (data: ExcelData | null) => {
     setExcelDataState(data)
   }
@@ -91,11 +113,12 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     }
   }
 
-  const updateRouteData = (routes: any[]) => {
+  const updateRouteData = (newRoutes: any[]) => {
+    setRoutes(newRoutes)
     if (excelData) {
       setExcelDataState({
         ...excelData,
-        routes: Array.isArray(routes) ? routes : []
+        routes: Array.isArray(newRoutes) ? newRoutes : []
       })
     }
   }
@@ -110,10 +133,12 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   }
 
   return (
-    <ExcelDataContext.Provider value={{ excelData, setExcelData, updateExcelData, clearExcelData, updateRouteData, updateCourierData }}>
+    <ExcelDataContext.Provider value={{ excelData, routes, setExcelData, updateExcelData, clearExcelData, updateRouteData, updateCourierData }}>
       {children}
     </ExcelDataContext.Provider>
   )
 }
+
+
 
 

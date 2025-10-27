@@ -34,7 +34,6 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
   const [isGeocoding, setIsGeocoding] = useState(false)
   const [geocodingResult, setGeocodingResult] = useState<GeocodingResult | null>(null)
   const [validationResult, setValidationResult] = useState<AddressValidationResult | null>(null)
-  const [showSuggestions, setShowSuggestions] = useState(false)
 
   // Сбрасываем состояние при открытии модального окна
   useEffect(() => {
@@ -42,7 +41,6 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
       setEditedAddress(currentAddress)
       setGeocodingResult(null)
       setValidationResult(null)
-      setShowSuggestions(false)
     }
   }, [isOpen, currentAddress])
 
@@ -72,7 +70,6 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
       
       if (result.success) {
         setEditedAddress(result.formattedAddress)
-        setShowSuggestions(false)
       }
     } catch (error) {
       console.error('Ошибка геокодирования:', error)
@@ -97,7 +94,6 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
     setEditedAddress(currentAddress)
     setGeocodingResult(null)
     setValidationResult(null)
-    setShowSuggestions(false)
     onClose()
   }
 
