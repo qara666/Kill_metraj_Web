@@ -1,89 +1,94 @@
-export interface StoredData {
-  orders: any[]
-  couriers: any[]
+// LocalStorage utilities for persisting application settings
+
+export interface AppSettings {
+  googleMapsApiKey: string
+  defaultStartAddress: string
+  defaultEndAddress: string
 }
+
+const STORAGE_KEYS = {
+  GOOGLE_MAPS_API_KEY: 'googleMapsApiKey',
+  DEFAULT_START_ADDRESS: 'defaultStartAddress',
+  DEFAULT_END_ADDRESS: 'defaultEndAddress'
+} as const
 
 export const localStorageUtils = {
-  hasApiKey: (): boolean => {
-    if (typeof window === 'undefined') return false
-    const apiKey = localStorage.getItem('google_maps_api_key')
-    return !!apiKey
+  // Get Google Maps API key
+  getApiKey: (): string => {
+    if (typeof window === 'undefined') return ''
+    return localStorage.getItem(STORAGE_KEYS.GOOGLE_MAPS_API_KEY) || ''
   },
 
-  getApiKey: (): string | null => {
-    if (typeof window === 'undefined') return null
-    return localStorage.getItem('google_maps_api_key')
-  },
-
-  setApiKey: (key: string): void => {
+  // Set Google Maps API key
+  setApiKey: (apiKey: string): void => {
     if (typeof window === 'undefined') return
-    localStorage.setItem('google_maps_api_key', key)
+    localStorage.setItem(STORAGE_KEYS.GOOGLE_MAPS_API_KEY, apiKey)
   },
 
-  removeApiKey: (): void => {
+  // Get default start address
+  getDefaultStartAddress: (): string => {
+    if (typeof window === 'undefined') return 'Макіївська 7, Київ, Україна'
+    return localStorage.getItem(STORAGE_KEYS.DEFAULT_START_ADDRESS) || 'Макіївська 7, Київ, Україна'
+  },
+
+  // Set default start address
+  setDefaultStartAddress: (address: string): void => {
     if (typeof window === 'undefined') return
-    localStorage.removeItem('google_maps_api_key')
+    localStorage.setItem(STORAGE_KEYS.DEFAULT_START_ADDRESS, address)
   },
 
-  getData: (key: string): any | null => {
-    if (typeof window === 'undefined') return null
-    try {
-      const item = localStorage.getItem(key)
-      return item ? JSON.parse(item) : null
-    } catch (error) {
-      console.error('Error reading from localStorage:', error)
-      return null
+  // Get default end address
+  getDefaultEndAddress: (): string => {
+    if (typeof window === 'undefined') return 'Макіївська 7, Київ, Україна'
+    return localStorage.getItem(STORAGE_KEYS.DEFAULT_END_ADDRESS) || 'Макіївська 7, Київ, Україна'
+  },
+
+  // Set default end address
+  setDefaultEndAddress: (address: string): void => {
+    if (typeof window === 'undefined') return
+    localStorage.setItem(STORAGE_KEYS.DEFAULT_END_ADDRESS, address)
+  },
+
+  // Get all settings
+  getAllSettings: (): AppSettings => {
+    return {
+      googleMapsApiKey: localStorageUtils.getApiKey(),
+      defaultStartAddress: localStorageUtils.getDefaultStartAddress(),
+      defaultEndAddress: localStorageUtils.getDefaultEndAddress()
     }
   },
 
-  setData: (key: string, data: any): void => {
+  // Set all settings
+  setAllSettings: (settings: Partial<AppSettings>): void => {
     if (typeof window === 'undefined') return
-    try {
-      localStorage.setItem(key, JSON.stringify(data))
-    } catch (error) {
-      console.error('Error writing to localStorage:', error)
+    
+    if (settings.googleMapsApiKey !== undefined) {
+      localStorageUtils.setApiKey(settings.googleMapsApiKey)
+    }
+    if (settings.defaultStartAddress !== undefined) {
+      localStorageUtils.setDefaultStartAddress(settings.defaultStartAddress)
+    }
+    if (settings.defaultEndAddress !== undefined) {
+      localStorageUtils.setDefaultEndAddress(settings.defaultEndAddress)
     }
   },
 
-  removeData: (key: string): void => {
-    if (typeof window === 'undefined') return
-    localStorage.removeItem(key)
-  },
-
-  clear: (): void => {
-    if (typeof window === 'undefined') return
-    localStorage.clear()
-  },
-
-  getAllSettings: (): any => {
-    if (typeof window === 'undefined') return {}
-    const settings: any = {}
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i)
-      if (key) {
-        settings[key] = localStorage.getItem(key)
-      }
-    }
-    return settings
-  },
-
-  setAllSettings: (settings: any): void => {
-    if (typeof window === 'undefined') return
-    Object.entries(settings).forEach(([key, value]) => {
-      localStorage.setItem(key, String(value))
-    })
-  },
-
+  // Clear all settings
   clearAllSettings: (): void => {
     if (typeof window === 'undefined') return
-    const keysToRemove: string[] = []
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i)
-      if (key && key.includes('settings')) {
-        keysToRemove.push(key)
-      }
-    }
-    keysToRemove.forEach(key => localStorage.removeItem(key))
+    
+    localStorage.removeItem(STORAGE_KEYS.GOOGLE_MAPS_API_KEY)
+    localStorage.removeItem(STORAGE_KEYS.DEFAULT_START_ADDRESS)
+    localStorage.removeItem(STORAGE_KEYS.DEFAULT_END_ADDRESS)
+  },
+
+  // Check if API key exists
+  hasApiKey: (): boolean => {
+    return localStorageUtils.getApiKey().trim() !== ''
   }
 }
+
+export default localStorageUtils
+
+
 

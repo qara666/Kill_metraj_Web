@@ -173,13 +173,3 @@ OrderSchema.pre('save', async function(next) {
 
 module.exports = mongoose.model('Order', OrderSchema);
 
-
-
-
-
-
-
-
-
-
-

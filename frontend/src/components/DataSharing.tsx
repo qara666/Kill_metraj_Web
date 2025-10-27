@@ -33,10 +33,15 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
   
   // Облачная синхронизация
   const { 
-    isConnected: isCloudConnected,
+    isConnected: isCloudConnected, 
+    lastSync: cloudLastSync, 
     syncStatus: cloudSyncStatus,
-    shareData: cloudShareData
-  } = useCloudSync()
+    shareData: cloudShareData,
+    importData: cloudImportData
+  } = useCloudSync({ 
+    enabled: true, 
+    apiUrl: 'http://localhost:3001' 
+  })
   
   // Безопасные значения по умолчанию
   const safeRoutes = routes || []
@@ -44,20 +49,14 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
   // Проверяем URL при загрузке страницы
   useEffect(() => {
     const checkForSharedData = () => {
-      try {
-        const currentUrl = window.location.href
-        const sharedData = importDataFromUrl(currentUrl)
-        if (sharedData) {
-          setShowImportModal(true)
-          setImportUrl(currentUrl)
-        }
-      } catch (error) {
-        console.error('Ошибка проверки URL:', error)
+      const sharedData = importDataFromUrl()
+      if (sharedData) {
+        setShowImportModal(true)
+        setImportUrl(window.location.href)
       }
     }
 
     checkForSharedData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleShare = async () => {
@@ -89,15 +88,15 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
       setShareUrl(url)
       setShowShareModal(true)
       toast.success('Ссылка для обмена создана!')
-    } catch (error: any) {
+    } catch (error) {
       console.error('Ошибка создания ссылки:', error)
       console.error('Детали ошибки:', {
-        message: error?.message || 'Unknown error',
-        stack: error?.stack,
+        message: error.message,
+        stack: error.stack,
         excelData: excelData,
         routes: safeRoutes
       })
-      toast.error(`Ошибка создания ссылки для обмена: ${error?.message || 'Unknown error'}`)
+      toast.error(`Ошибка создания ссылки для обмена: ${error.message}`)
     } finally {
       setIsSharing(false)
     }
@@ -547,18 +546,16 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
                cloudSyncStatus === 'error' ? 'Ошибка синхронизации' : 'Облако подключено'}
             </span>
           </div>
+          {cloudLastSync && (
+            <div className={clsx(
+              'text-xs mt-1',
+              isDark ? 'text-gray-400' : 'text-gray-500'
+            )}>
+              Последняя синхронизация: {cloudLastSync}
+            </div>
+          )}
         </div>
       )}
     </>
   )
 }
-
-
-
-
-
-
-
-
-
-

@@ -150,13 +150,3 @@ PaymentMethodSchema.statics.getByType = function(type) {
 
 module.exports = mongoose.model('PaymentMethod', PaymentMethodSchema);
 
-
-
-
-
-
-
-
-
-
-

@@ -86,7 +86,7 @@ export const useDataSync = (options: UseDataSyncOptions = {}) => {
     if (storedData.syncKey === syncKeyRef.current) return
 
     // Проверяем, новее ли данные
-    if (!storedData.lastModified || storedData.lastModified <= lastSyncRef.current) return
+    if (storedData.lastModified <= lastSyncRef.current) return
 
     console.log('Обнаружены новые данные для синхронизации:', {
       syncKey: storedData.syncKey,
@@ -109,7 +109,7 @@ export const useDataSync = (options: UseDataSyncOptions = {}) => {
       console.log('Маршруты синхронизированы и сохранены в localStorage:', storedData.routes.length)
     }
 
-    lastSyncRef.current = storedData.lastModified || Date.now()
+    lastSyncRef.current = storedData.lastModified
     console.log('Данные успешно синхронизированы с внешним источником')
     
     // Уведомляем пользователя о синхронизации без перезагрузки страницы
@@ -166,8 +166,3 @@ export const useDataSync = (options: UseDataSyncOptions = {}) => {
     isEnabled: enabled
   }
 }
-
-
-
-
-

@@ -5,8 +5,6 @@ export interface ShareableData {
   routes: any[]
   timestamp: number
   version: string
-  syncKey?: string
-  lastModified?: number
 }
 
 export interface DataSharingUtils {
@@ -16,7 +14,6 @@ export interface DataSharingUtils {
   extractDataFromUrl: (url?: string) => ShareableData | null
   validateData: (data: any) => boolean
   createSimpleData: (data: ShareableData) => any
-  expandSimpleData: (data: any) => ShareableData
   isJsonSafe: (jsonString: string) => boolean
   isStringSafe: (str: string) => boolean
   encodeBase64: (str: string) => string
@@ -175,7 +172,7 @@ export const dataSharingUtils: DataSharingUtils = {
       
       // Пробуем сжатие
       try {
-        const compressed = compress(jsonString)
+        const compressed = compress(jsonString, 9)
         if (compressed && dataSharingUtils.isStringSafe(compressed)) {
           return encodeURIComponent(compressed)
         }
@@ -365,13 +362,7 @@ export const dataSharingUtils: DataSharingUtils = {
 
 // Хук для использования функций обмена данными
 export const useDataSharing = () => {
-  const shareData = (excelData: any, routes: any[]): string => {
-    const data: ShareableData = {
-      excelData,
-      routes,
-      timestamp: Date.now(),
-      version: '1.0.0'
-    }
+  const shareData = (data: ShareableData): string => {
     return dataSharingUtils.generateShareUrl(data)
   }
 
@@ -411,11 +402,3 @@ export const useDataSharing = () => {
     validateData: dataSharingUtils.validateData
   }
 }
-
-
-
-
-
-
-
-

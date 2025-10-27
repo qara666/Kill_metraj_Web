@@ -1,55 +1,155 @@
-const API_BASE_URL = 'http://localhost:5001'
-
-export interface CloudData {
-  userId: string
+// Облачная синхронизация данных
+interface CloudData {
+  id: string
   data: any
   timestamp: number
+  userId: string
+}
+
+interface CloudSyncOptions {
+  apiUrl?: string
+  userId?: string
+  enabled?: boolean
 }
 
 class CloudSyncService {
-  private async fetch(url: string, options: RequestInit = {}) {
+  private apiUrl: string
+  private userId: string
+  private enabled: boolean
+
+  constructor(options: CloudSyncOptions = {}) {
+    this.apiUrl = options.apiUrl || 'https://api.killmetraj.com'
+    this.userId = options.userId || this.generateUserId()
+    this.enabled = options.enabled || false
+  }
+
+  private generateUserId(): string {
+    return `user_${Date.now()}_${Math.random().toString(36).substring(2)}`
+  }
+
+  // Сохранить данные в облако
+  async saveData(data: any): Promise<boolean> {
+    if (!this.enabled) return false
+
     try {
-      const response = await fetch(`${API_BASE_URL}${url}`, {
-        ...options,
+      const cloudData: CloudData = {
+        id: this.userId,
+        data: data,
+        timestamp: Date.now(),
+        userId: this.userId
+      }
+
+      const response = await fetch(`${this.apiUrl}/sync/save`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...options.headers
-        }
+        },
+        body: JSON.stringify(cloudData)
       })
-      return await response.json()
+
+      if (response.ok) {
+        console.log('Данные сохранены в облако')
+        return true
+      } else {
+        console.error('Ошибка сохранения в облако:', response.statusText)
+        return false
+      }
     } catch (error) {
-      console.error('Cloud sync error:', error)
-      throw error
+      console.error('Ошибка облачной синхронизации:', error)
+      return false
     }
   }
 
-  async saveData(userId: string, data: any): Promise<void> {
-    await this.fetch('/sync/save', {
-      method: 'POST',
-      body: JSON.stringify({ userId, data, timestamp: Date.now() })
-    })
+  // Получить данные из облака
+  async getData(): Promise<any | null> {
+    if (!this.enabled) return null
+
+    try {
+      const response = await fetch(`${this.apiUrl}/sync/get/${this.userId}`)
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('Данные получены из облака')
+        return data
+      } else {
+        console.log('Нет данных в облаке')
+        return null
+      }
+    } catch (error) {
+      console.error('Ошибка получения данных из облака:', error)
+      return null
+    }
   }
 
-  async getData(userId: string): Promise<any> {
-    return await this.fetch(`/sync/get/${userId}`)
+  // Проверить обновления
+  async checkUpdates(): Promise<any | null> {
+    if (!this.enabled) return null
+
+    try {
+      const response = await fetch(`${this.apiUrl}/sync/check/${this.userId}`)
+      
+      if (response.ok) {
+        const data = await response.json()
+        if (data.hasUpdates) {
+          console.log('Найдены обновления в облаке')
+          return data.data
+        }
+      }
+      return null
+    } catch (error) {
+      console.error('Ошибка проверки обновлений:', error)
+      return null
+    }
   }
 
-  async shareData(data: any): Promise<string> {
-    const result = await this.fetch('/sync/share', {
-      method: 'POST',
-      body: JSON.stringify({ data })
-    })
-    return result.shareId
+  // Поделиться данными (создать публичную ссылку)
+  async shareData(data: any): Promise<string | null> {
+    if (!this.enabled) return null
+
+    try {
+      const response = await fetch(`${this.apiUrl}/sync/share`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ data })
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        const shareUrl = `${window.location.origin}?share=${result.shareId}`
+        console.log('Создана ссылка для sharing:', shareUrl)
+        return shareUrl
+      } else {
+        console.error('Ошибка создания ссылки для sharing')
+        return null
+      }
+    } catch (error) {
+      console.error('Ошибка sharing данных:', error)
+      return null
+    }
   }
 
-  async importData(shareId: string): Promise<any> {
-    return await this.fetch(`/sync/import/${shareId}`)
-  }
+  // Импортировать данные по ссылке
+  async importData(shareId: string): Promise<any | null> {
+    if (!this.enabled) return null
 
-  async checkUpdates(userId: string): Promise<any> {
-    return await this.fetch(`/sync/check/${userId}`)
+    try {
+      const response = await fetch(`${this.apiUrl}/sync/import/${shareId}`)
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('Данные импортированы из облака')
+        return data
+      } else {
+        console.error('Ошибка импорта данных')
+        return null
+      }
+    } catch (error) {
+      console.error('Ошибка импорта данных:', error)
+      return null
+    }
   }
 }
 
-export const cloudSyncService = new CloudSyncService()
-
+export default CloudSyncService

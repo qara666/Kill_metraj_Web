@@ -262,11 +262,9 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
           
           {expandedSections.errors && (
             <div className="mt-4 space-y-2 max-h-40 overflow-y-auto">
-              {errors.map((error: any, index: number) => (
+              {errors.map((error: string, index: number) => (
                 <div key={index} className="bg-red-50 p-3 rounded-lg border border-red-200">
-                  <p className="text-sm text-red-800">
-                    {typeof error === 'string' ? error : `Строка ${error.row}: ${error.message}`}
-                  </p>
+                  <p className="text-sm text-red-800">{error}</p>
                 </div>
               ))}
             </div>
@@ -306,13 +304,3 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
     </div>
   )
 }
-
-
-
-
-
-
-
-
-
-

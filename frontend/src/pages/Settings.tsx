@@ -46,13 +46,13 @@ export const Settings: React.FC = () => {
     if (!apiKey.trim()) return
     
     try {
-      const validationResult = validateGoogleMapsApiKey(apiKey)
-      if (validationResult) {
+      const validationResult = await validateGoogleMapsApiKey(apiKey)
+      if (validationResult.isValid) {
         setApiKeyStatus('valid')
-        setApiKeyDetails('OK')
+        setApiKeyDetails(validationResult.details?.status || 'OK')
       } else {
         setApiKeyStatus('invalid')
-        setApiKeyDetails('Неизвестная ошибка')
+        setApiKeyDetails(validationResult.error || 'Неизвестная ошибка')
       }
     } catch (error) {
       setApiKeyStatus('invalid')
@@ -70,17 +70,17 @@ export const Settings: React.FC = () => {
 
     setIsTestingApiKey(true)
     try {
-      const validationResult = validateGoogleMapsApiKey(googleMapsApiKey)
-      if (validationResult) {
+      const validationResult = await validateGoogleMapsApiKey(googleMapsApiKey)
+      if (validationResult.isValid) {
         setApiKeyStatus('valid')
-        setApiKeyDetails('OK')
+        setApiKeyDetails(validationResult.details?.status || 'OK')
         // Save API key to localStorage when it's valid
         localStorageUtils.setApiKey(googleMapsApiKey)
         toast.success('✓ API ключ действителен и сохранен!')
       } else {
         setApiKeyStatus('invalid')
-        setApiKeyDetails('Неизвестная ошибка')
-        toast.error(`API ключ недействителен: Неизвестная ошибка`)
+        setApiKeyDetails(validationResult.error || 'Неизвестная ошибка')
+        toast.error(`API ключ недействителен: ${validationResult.error}`)
       }
     } catch (error) {
       setApiKeyStatus('invalid')
@@ -280,8 +280,3 @@ export const Settings: React.FC = () => {
     </div>
   )
 }
-
-
-
-
-
