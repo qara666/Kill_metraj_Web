@@ -44,7 +44,7 @@ class GoogleMapsLoaderClass {
     // Проверяем переменную окружения как fallback
     const envApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
     
-    const finalApiKey = apiKey?.trim() || envApiKey?.trim()
+    const finalApiKey = (apiKey && apiKey.trim()) || (envApiKey && envApiKey.trim())
     
     if (!finalApiKey) {
       throw new Error('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ в настройках.')
@@ -157,6 +157,7 @@ declare global {
     initGoogleMaps: () => void
   }
 }
+
 
 
 

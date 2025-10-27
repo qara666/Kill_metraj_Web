@@ -31,15 +31,16 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
   const { shareData, importDataFromUrl, copyToClipboard } = useDataSharing()
   const { excelData, routes, updateExcelData, updateRouteData } = useExcelData()
   
-  // Облачная синхронизация
+  // Облачная синхронизация (только в development)
+  const isDevelopment = import.meta.env.DEV
   const { 
     isConnected: isCloudConnected, 
     lastSync: cloudLastSync, 
     syncStatus: cloudSyncStatus,
     shareData: cloudShareData
   } = useCloudSync({ 
-    enabled: true, 
-    apiUrl: 'http://localhost:3001' 
+    enabled: isDevelopment, 
+    apiUrl: import.meta.env.VITE_CLOUD_SYNC_URL || 'http://localhost:3001' 
   })
   
   // Безопасные значения по умолчанию
@@ -505,10 +506,10 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
                 </button>
                 <button
                   onClick={handleImport}
-                  disabled={isImporting || !importUrl.trim()}
+                  disabled={isImporting || !importUrl || !importUrl.trim()}
                   className={clsx(
                     'px-4 py-2 rounded-lg font-medium transition-colors',
-                    isImporting || !importUrl.trim()
+                    isImporting || !importUrl || !importUrl.trim()
                       ? isDark 
                         ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
                         : 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -525,8 +526,8 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
         </div>
       )}
 
-      {/* Статус облачной синхронизации */}
-      {isCloudConnected && (
+      {/* Статус облачной синхронизации (только в development) */}
+      {isDevelopment && isCloudConnected && (
         <div className={clsx(
           'fixed bottom-4 right-4 p-3 rounded-lg shadow-lg transition-all duration-300',
           isDark ? 'bg-gray-800 border border-gray-600' : 'bg-white border border-gray-200'
@@ -558,6 +559,7 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
     </>
   )
 }
+
 
 
 

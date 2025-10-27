@@ -43,7 +43,7 @@ export const Settings: React.FC = () => {
   }, [setValue])
 
   const checkApiKeyStatus = async (apiKey: string) => {
-    if (!apiKey.trim()) return
+    if (!apiKey || !apiKey.trim()) return
     
     try {
       const validationResult = await apiKeyValidator.validateGoogleMapsApiKey(apiKey)
@@ -280,6 +280,7 @@ export const Settings: React.FC = () => {
     </div>
   )
 }
+
 
 
 
