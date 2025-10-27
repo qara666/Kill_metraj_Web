@@ -148,8 +148,19 @@ export const Dashboard: React.FC = () => {
       }
     })
 
-    // Объединяем ошибки
-    const mergedErrors = [...(existingData.errors || []), ...(newData.errors || [])]
+    // Объединяем ошибки, преобразуя объекты в строки
+    const existingErrors = Array.isArray(existingData.errors) ? existingData.errors : []
+    const newErrors = Array.isArray(newData.errors) ? newData.errors : []
+    
+    const existingErrorsAsStrings = existingErrors.map((error: any) => 
+      typeof error === 'string' ? error : `Строка ${error.row || 'N/A'}: ${error.message || 'Неизвестная ошибка'}`
+    )
+    
+    const newErrorsAsStrings = newErrors.map((error: any) => 
+      typeof error === 'string' ? error : `Строка ${error.row || 'N/A'}: ${error.message || 'Неизвестная ошибка'}`
+    )
+    
+    const mergedErrors = [...existingErrorsAsStrings, ...newErrorsAsStrings]
 
     // Логируем результаты объединения
     log(`Объединение данных: +${addedOrders} заказов (${duplicateOrders} дубликатов), +${addedCouriers} курьеров (${duplicateCouriers} дубликатов), +${addedPaymentMethods} способов оплаты (${duplicatePaymentMethods} дубликатов), +${addedRoutes} маршрутов (${duplicateRoutes} дубликатов)`)
@@ -256,13 +267,17 @@ export const Dashboard: React.FC = () => {
       const paymentMethods = Array.isArray((data as any).paymentMethods) ? (data as any).paymentMethods : []
       const routes = Array.isArray((data as any).routes) ? (data as any).routes : []
       const errorsArr = Array.isArray((data as any).errors) ? (data as any).errors : []
+      // Преобразуем объекты ошибок в строки
+      const errorsAsStrings = errorsArr.map((error: any) => 
+        typeof error === 'string' ? error : `Строка ${error.row || 'N/A'}: ${error.message || 'Неизвестная ошибка'}`
+      )
 
       const newData: any = {
         orders,
         couriers,
         paymentMethods,
         routes,
-        errors: errorsArr,
+        errors: errorsAsStrings,
         summary: {
           totalRows: orders.length + couriers.length + paymentMethods.length + routes.length,
           successfulGeocoding: 0,
@@ -270,7 +285,7 @@ export const Dashboard: React.FC = () => {
           orders: orders.length,
           couriers: couriers.length,
           paymentMethods: paymentMethods.length,
-          errors: errorsArr
+          errors: errorsAsStrings
         }
       }
 
