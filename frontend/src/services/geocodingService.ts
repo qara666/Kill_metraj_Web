@@ -2,13 +2,6 @@
  * Сервис геокодирования через Google Maps API
  */
 
-// Google Maps types
-declare global {
-  interface Window {
-    google: any
-  }
-}
-
 export interface GeocodingResult {
   success: boolean
   formattedAddress: string
@@ -22,12 +15,12 @@ export interface GeocodingResult {
 export interface GeocodingOptions {
   region?: string
   language?: string
-  bounds?: any
-  componentRestrictions?: any
+  bounds?: google.maps.LatLngBounds
+  componentRestrictions?: google.maps.GeocoderComponentRestrictions
 }
 
 export class GeocodingService {
-  private static geocoder: any = null
+  private static geocoder: google.maps.Geocoder | null = null
   private static cache = new Map<string, GeocodingResult>()
 
   /**
@@ -71,13 +64,13 @@ export class GeocodingService {
     }
 
     return new Promise((resolve) => {
-      const request: any = {
+      const request: google.maps.GeocoderRequest = {
         address: address,
         ...options
       }
 
-      this.geocoder!.geocode(request, (results: any, status: any) => {
-        if (status === window.google?.maps?.GeocoderStatus?.OK && results && results.length > 0) {
+      this.geocoder!.geocode(request, (results, status) => {
+        if (status === google.maps.GeocoderStatus.OK && results && results.length > 0) {
           const result = results[0]
           const geocodingResult: GeocodingResult = {
             success: true,
@@ -142,14 +135,14 @@ export class GeocodingService {
     }
 
     return new Promise((resolve) => {
-      const latlng = new window.google.maps.LatLng(lat, lng)
-      const request: any = {
+      const latlng = new google.maps.LatLng(lat, lng)
+      const request: google.maps.GeocoderRequest = {
         location: latlng,
         ...options
       }
 
-      this.geocoder!.geocode(request, (results: any, status: any) => {
-        if (status === window.google?.maps?.GeocoderStatus?.OK && results && results.length > 0) {
+      this.geocoder!.geocode(request, (results, status) => {
+        if (status === google.maps.GeocoderStatus.OK && results && results.length > 0) {
           const result = results[0]
           const geocodingResult: GeocodingResult = {
             success: true,
@@ -181,17 +174,17 @@ export class GeocodingService {
   /**
    * Получение сообщения об ошибке
    */
-  private static getErrorMessage(status: any): string {
+  private static getErrorMessage(status: google.maps.GeocoderStatus): string {
     switch (status) {
-      case window.google.maps.GeocoderStatus.ZERO_RESULTS:
+      case google.maps.GeocoderStatus.ZERO_RESULTS:
         return 'Адрес не найден'
-      case window.google.maps.GeocoderStatus.OVER_QUERY_LIMIT:
+      case google.maps.GeocoderStatus.OVER_QUERY_LIMIT:
         return 'Превышен лимит запросов к Google Maps API'
-      case window.google.maps.GeocoderStatus.REQUEST_DENIED:
+      case google.maps.GeocoderStatus.REQUEST_DENIED:
         return 'Запрос отклонен. Проверьте API ключ'
-      case window.google.maps.GeocoderStatus.INVALID_REQUEST:
+      case google.maps.GeocoderStatus.INVALID_REQUEST:
         return 'Некорректный запрос'
-      case window.google.maps.GeocoderStatus.UNKNOWN_ERROR:
+      case google.maps.GeocoderStatus.UNKNOWN_ERROR:
         return 'Неизвестная ошибка'
       default:
         return 'Ошибка геокодирования'
@@ -262,4 +255,3 @@ export class GeocodingService {
     return results
   }
 }
-

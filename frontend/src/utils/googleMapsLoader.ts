@@ -1,7 +1,7 @@
 // Утилита для динамической загрузки Google Maps API с ключом из настроек
 
 import { localStorageUtils } from './localStorage'
-import { apiKeyValidator } from './apiKeyValidator'
+import { validateGoogleMapsApiKey } from './apiKeyValidator'
 
 interface GoogleMapsLoader {
   isLoaded: boolean
@@ -23,7 +23,7 @@ class GoogleMapsLoaderClass {
     return this.state.isLoaded && 
            window.google && 
            window.google.maps && 
-           !!localStorageUtils.getApiKey()
+           localStorageUtils.hasApiKey()
   }
 
   // Загружаем Google Maps API с ключом из настроек
@@ -44,7 +44,7 @@ class GoogleMapsLoaderClass {
     // Проверяем переменную окружения как fallback
     const envApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
     
-    const finalApiKey = (apiKey && apiKey.trim()) || (envApiKey && envApiKey.trim())
+    const finalApiKey = apiKey.trim() || envApiKey?.trim()
     
     if (!finalApiKey) {
       throw new Error('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ в настройках.')
@@ -52,7 +52,7 @@ class GoogleMapsLoaderClass {
 
     // Проверяем валидность API ключа перед загрузкой
     console.log('Проверяем валидность Google Maps API ключа...')
-    const validationResult = await apiKeyValidator.validateGoogleMapsApiKey(finalApiKey)
+    const validationResult = await validateGoogleMapsApiKey(finalApiKey)
     
     if (!validationResult.isValid) {
       throw new Error(`Google Maps API ключ недействителен: ${validationResult.error}`)
@@ -157,8 +157,6 @@ declare global {
     initGoogleMaps: () => void
   }
 }
-
-
 
 
 

@@ -86,11 +86,11 @@ export const useDataSync = (options: UseDataSyncOptions = {}) => {
     if (storedData.syncKey === syncKeyRef.current) return
 
     // Проверяем, новее ли данные
-    if (storedData.lastModified && storedData.lastModified <= lastSyncRef.current) return
+    if (storedData.lastModified <= lastSyncRef.current) return
 
     console.log('Обнаружены новые данные для синхронизации:', {
       syncKey: storedData.syncKey,
-      lastModified: storedData.lastModified ? new Date(storedData.lastModified).toLocaleString() : 'Неизвестно',
+      lastModified: new Date(storedData.lastModified).toLocaleString(),
       ordersCount: storedData.excelData?.orders?.length || 0,
       routesCount: storedData.routes?.length || 0
     })
@@ -109,7 +109,7 @@ export const useDataSync = (options: UseDataSyncOptions = {}) => {
       console.log('Маршруты синхронизированы и сохранены в localStorage:', storedData.routes.length)
     }
 
-        lastSyncRef.current = storedData.lastModified || Date.now()
+    lastSyncRef.current = storedData.lastModified
     console.log('Данные успешно синхронизированы с внешним источником')
     
     // Уведомляем пользователя о синхронизации без перезагрузки страницы
@@ -166,7 +166,6 @@ export const useDataSync = (options: UseDataSyncOptions = {}) => {
     isEnabled: enabled
   }
 }
-
 
 
 

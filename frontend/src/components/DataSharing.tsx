@@ -31,24 +31,17 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
   const { shareData, importDataFromUrl, copyToClipboard } = useDataSharing()
   const { excelData, routes, updateExcelData, updateRouteData } = useExcelData()
   
-  // Облачная синхронизация (только в development)
-  const isDevelopment = import.meta.env.DEV
-  const cloudSyncHook = isDevelopment ? useCloudSync({ 
-    enabled: true, 
-    apiUrl: import.meta.env.VITE_CLOUD_SYNC_URL || 'http://localhost:3001' 
-  }) : {
-    isConnected: false,
-    lastSync: null,
-    syncStatus: 'idle' as const,
-    shareData: async () => { throw new Error('Cloud sync disabled in production') }
-  }
-  
+  // Облачная синхронизация
   const { 
     isConnected: isCloudConnected, 
     lastSync: cloudLastSync, 
     syncStatus: cloudSyncStatus,
-    shareData: cloudShareData
-  } = cloudSyncHook
+    shareData: cloudShareData,
+    importData: cloudImportData
+  } = useCloudSync({ 
+    enabled: true, 
+    apiUrl: 'http://localhost:3001' 
+  })
   
   // Безопасные значения по умолчанию
   const safeRoutes = routes || []
@@ -56,7 +49,7 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
   // Проверяем URL при загрузке страницы
   useEffect(() => {
     const checkForSharedData = () => {
-      const sharedData = importDataFromUrl(window.location.href)
+      const sharedData = importDataFromUrl()
       if (sharedData) {
         setShowImportModal(true)
         setImportUrl(window.location.href)
@@ -89,7 +82,7 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
       
       console.log('Данные для обмена:', dataToShare)
       
-      const url = shareData(dataToShare)
+      const url = shareData(excelData, safeRoutes)
       console.log('Ссылка создана успешно:', url)
       
       setShareUrl(url)
@@ -98,12 +91,12 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
     } catch (error) {
       console.error('Ошибка создания ссылки:', error)
       console.error('Детали ошибки:', {
-        message: error instanceof Error ? error.message : 'Неизвестная ошибка',
-        stack: error instanceof Error ? error.stack : undefined,
+        message: error.message,
+        stack: error.stack,
         excelData: excelData,
         routes: safeRoutes
       })
-      toast.error(`Ошибка создания ссылки для обмена: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`)
+      toast.error(`Ошибка создания ссылки для обмена: ${error.message}`)
     } finally {
       setIsSharing(false)
     }
@@ -127,7 +120,7 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
   }
 
   const handleImport = async () => {
-    if (!importUrl || !importUrl.trim()) {
+    if (!importUrl.trim()) {
       toast.error('Введите URL для импорта')
       return
     }
@@ -513,10 +506,10 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
                 </button>
                 <button
                   onClick={handleImport}
-                  disabled={isImporting || !importUrl || !importUrl.trim()}
+                  disabled={isImporting || !importUrl.trim()}
                   className={clsx(
                     'px-4 py-2 rounded-lg font-medium transition-colors',
-                    isImporting || !importUrl || !importUrl.trim()
+                    isImporting || !importUrl.trim()
                       ? isDark 
                         ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
                         : 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -533,8 +526,8 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
         </div>
       )}
 
-      {/* Статус облачной синхронизации (только в development) */}
-      {isDevelopment && isCloudConnected && (
+      {/* Статус облачной синхронизации */}
+      {isCloudConnected && (
         <div className={clsx(
           'fixed bottom-4 right-4 p-3 rounded-lg shadow-lg transition-all duration-300',
           isDark ? 'bg-gray-800 border border-gray-600' : 'bg-white border border-gray-200'
@@ -566,8 +559,6 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
     </>
   )
 }
-
-
 
 
 
