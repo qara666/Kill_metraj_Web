@@ -368,7 +368,12 @@ export const Dashboard: React.FC = () => {
     totalOrders: 0,
     totalRevenue: 0,
     totalCouriers: 0,
-    totalRoutes: 0
+    totalRoutes: 0,
+    activeRoutes: 0,
+    activeCouriers: 0,
+    averageOrdersPerRoute: 0,
+    completionRate: 0,
+    completedRoutes: 0
   }
   const couriers = Array.isArray((couriersData as any)?.data) ? (couriersData as any).data : []
   const routes = Array.isArray((routesData as any)?.data) ? (routesData as any).data : []
