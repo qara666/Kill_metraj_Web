@@ -16,6 +16,7 @@ import {
 import { googleMapsLoader } from '../utils/googleMapsLoader'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
+import { useApiKey } from '../hooks/useApiKey'
 import { localStorageUtils } from '../utils/localStorage'
 import { clsx } from 'clsx'
 import { AddressEditModal } from './AddressEditModal'
@@ -192,6 +193,7 @@ const OrderItem = memo(({
 export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) => {
   const { updateRouteData } = useExcelData()
   const { isDark } = useTheme()
+  const { hasApiKey } = useApiKey()
   const [selectedCourier, setSelectedCourier] = useState<string | null>(null)
   const [routes, setRoutes] = useState<Route[]>([])
   const [isCalculating, setIsCalculating] = useState(false)
@@ -256,7 +258,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     const initGoogleMaps = async () => {
       try {
         // Проверяем, есть ли API ключ в настройках
-        if (!localStorageUtils.hasApiKey()) {
+        if (!hasApiKey) {
           console.warn('Google Maps API ключ не найден в настройках')
           setGoogleMapsReady(false)
           return
@@ -547,7 +549,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     // Проверяем готовность Google Maps API
     if (!googleMapsReady) {
       // Проверяем, есть ли API ключ в настройках
-      if (!localStorageUtils.hasApiKey()) {
+      if (!hasApiKey) {
         alert('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ в настройках.')
         return
       }
@@ -606,7 +608,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   const calculateRouteDistance = async (route: Route) => {
     if (!googleMapsReady) {
       // Проверяем, есть ли API ключ в настройках
-      if (!localStorageUtils.hasApiKey()) {
+      if (!hasApiKey) {
         alert('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ в настройках.')
         return
       }
@@ -1819,6 +1821,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     </div>
   )
 }
+
+
 
 
 

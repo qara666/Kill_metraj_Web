@@ -4,7 +4,7 @@ import { toast } from 'react-hot-toast'
 import { CogIcon, KeyIcon, MapIcon } from '@heroicons/react/24/outline'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { localStorageUtils } from '../utils/localStorage'
-import { validateGoogleMapsApiKey } from '../utils/apiKeyValidator'
+import { apiKeyValidator } from '../utils/apiKeyValidator'
 import { useTheme } from '../contexts/ThemeContext'
 import { clsx } from 'clsx'
 
@@ -46,10 +46,10 @@ export const Settings: React.FC = () => {
     if (!apiKey.trim()) return
     
     try {
-      const validationResult = await validateGoogleMapsApiKey(apiKey)
+      const validationResult = await apiKeyValidator.validateGoogleMapsApiKey(apiKey)
       if (validationResult.isValid) {
         setApiKeyStatus('valid')
-        setApiKeyDetails(validationResult.details?.status || 'OK')
+        setApiKeyDetails('OK')
       } else {
         setApiKeyStatus('invalid')
         setApiKeyDetails(validationResult.error || 'Неизвестная ошибка')
@@ -70,10 +70,10 @@ export const Settings: React.FC = () => {
 
     setIsTestingApiKey(true)
     try {
-      const validationResult = await validateGoogleMapsApiKey(googleMapsApiKey)
+      const validationResult = await apiKeyValidator.validateGoogleMapsApiKey(googleMapsApiKey)
       if (validationResult.isValid) {
         setApiKeyStatus('valid')
-        setApiKeyDetails(validationResult.details?.status || 'OK')
+        setApiKeyDetails('OK')
         // Save API key to localStorage when it's valid
         localStorageUtils.setApiKey(googleMapsApiKey)
         toast.success('✓ API ключ действителен и сохранен!')
@@ -280,5 +280,8 @@ export const Settings: React.FC = () => {
     </div>
   )
 }
+
+
+
 
 
