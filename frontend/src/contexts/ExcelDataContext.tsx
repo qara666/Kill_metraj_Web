@@ -4,11 +4,8 @@ interface ExcelData {
   orders: any[]
   couriers: any[]
   paymentMethods: any[]
-  addresses: any[]
   routes: any[]
   errors: any[]
-  warnings: any[]
-  statistics: any
   summary: any
 }
 
@@ -19,7 +16,6 @@ interface ExcelDataContextType {
   updateExcelData: (data: ExcelData) => void
   clearExcelData: () => void
   updateRouteData: (routes: any[]) => void
-  updateCourierData: (couriers: any[]) => void
 }
 
 const ExcelDataContext = createContext<ExcelDataContextType | undefined>(undefined)
@@ -38,40 +34,46 @@ interface ExcelDataProviderProps {
 
 export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }) => {
   const [excelData, setExcelDataState] = useState<ExcelData | null>(null)
+  const [routes, setRoutes] = useState<any[]>([])
 
-  // Загружаем данные из localStorage при инициализации
   useEffect(() => {
     try {
       const stored = localStorage.getItem('km_dashboard_processed_data')
       if (stored) {
         const parsed = JSON.parse(stored)
         if (parsed && typeof parsed === 'object') {
-          // Убеждаемся, что routes всегда массив
-          const normalizedData = {
+          setExcelDataState({
             ...parsed,
             routes: Array.isArray(parsed.routes) ? parsed.routes : [],
             orders: Array.isArray(parsed.orders) ? parsed.orders : [],
             couriers: Array.isArray(parsed.couriers) ? parsed.couriers : [],
             paymentMethods: Array.isArray(parsed.paymentMethods) ? parsed.paymentMethods : [],
-            errors: Array.isArray(parsed.errors) ? parsed.errors : [],
-            warnings: Array.isArray(parsed.warnings) ? parsed.warnings : []
-          }
-          setExcelDataState(normalizedData)
+            errors: Array.isArray(parsed.errors) ? parsed.errors : []
+          })
         }
       }
     } catch (error) {
-      console.warn('Ошибка восстановления данных Excel из localStorage:', error)
+      console.warn('Ошибка восстановления данных:', error)
     }
   }, [])
 
-  // Сохраняем данные в localStorage при изменении
   useEffect(() => {
     try {
-      if (excelData) {
-        localStorage.setItem('km_dashboard_processed_data', JSON.stringify(excelData))
+      const stored = localStorage.getItem('km_routes')
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        if (Array.isArray(parsed)) {
+          setRoutes(parsed)
+        }
       }
     } catch (error) {
-      console.warn('Ошибка сохранения данных Excel в localStorage:', error)
+      console.warn('Ошибка восстановления маршрутов:', error)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (excelData) {
+      localStorage.setItem('km_dashboard_processed_data', JSON.stringify(excelData))
     }
   }, [excelData])
 
@@ -85,34 +87,27 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
 
   const clearExcelData = () => {
     setExcelDataState(null)
-    try {
-      localStorage.removeItem('km_dashboard_processed_data')
-    } catch (error) {
-      console.warn('Ошибка очистки данных Excel из localStorage:', error)
-    }
+    localStorage.removeItem('km_dashboard_processed_data')
   }
 
-  const updateRouteData = (routes: any[]) => {
+  const updateRouteData = (newRoutes: any[]) => {
+    setRoutes(newRoutes)
     if (excelData) {
-      setExcelDataState({
-        ...excelData,
-        routes: Array.isArray(routes) ? routes : []
-      })
-    }
-  }
-
-  const updateCourierData = (couriers: any[]) => {
-    if (excelData) {
-      setExcelDataState({
-        ...excelData,
-        couriers: couriers
-      })
+      setExcelDataState({ ...excelData, routes: newRoutes })
     }
   }
 
   return (
-    <ExcelDataContext.Provider value={{ excelData, routes: excelData?.routes || [], setExcelData, updateExcelData, clearExcelData, updateRouteData, updateCourierData }}>
+    <ExcelDataContext.Provider value={{ 
+      excelData, 
+      routes, 
+      setExcelData, 
+      updateExcelData, 
+      clearExcelData, 
+      updateRouteData 
+    }}>
       {children}
     </ExcelDataContext.Provider>
   )
 }
+

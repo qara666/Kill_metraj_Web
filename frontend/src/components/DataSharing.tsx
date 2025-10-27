@@ -10,7 +10,6 @@ import {
 import { clsx } from 'clsx'
 import { useTheme } from '../contexts/ThemeContext'
 import { useDataSharing } from '../utils/dataSharing'
-import { useCloudSync } from '../hooks/useCloudSync'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import toast from 'react-hot-toast'
 
@@ -31,31 +30,24 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
   const { shareData, importDataFromUrl, copyToClipboard } = useDataSharing()
   const { excelData, routes, updateExcelData, updateRouteData } = useExcelData()
   
-  // Облачная синхронизация
-  const { 
-    isConnected: isCloudConnected, 
-    lastSync: cloudLastSync, 
-    syncStatus: cloudSyncStatus,
-    shareData: cloudShareData
-  } = useCloudSync({ 
-    enabled: true, 
-    apiUrl: 'http://localhost:3001' 
-  })
-  
-  // Безопасные значения по умолчанию
   const safeRoutes = routes || []
 
-  // Проверяем URL при загрузке страницы
   useEffect(() => {
     const checkForSharedData = () => {
-      const sharedData = importDataFromUrl(window.location.href)
-      if (sharedData) {
-        setShowImportModal(true)
-        setImportUrl(window.location.href)
+      try {
+        const currentUrl = window.location.href
+        const sharedData = importDataFromUrl(currentUrl)
+        if (sharedData) {
+          setShowImportModal(true)
+          setImportUrl(currentUrl)
+        }
+      } catch (error) {
+        console.error('Ошибка проверки URL:', error)
       }
     }
 
     checkForSharedData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleShare = async () => {
@@ -81,28 +73,21 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
       
       console.log('Данные для обмена:', dataToShare)
       
-      const shareableData = {
-        excelData,
-        routes: safeRoutes,
-        timestamp: Date.now(),
-        version: '1.0.0'
-      }
-      const url = shareData(shareableData)
+      const url = shareData(excelData, safeRoutes)
       console.log('Ссылка создана успешно:', url)
       
       setShareUrl(url)
       setShowShareModal(true)
       toast.success('Ссылка для обмена создана!')
-    } catch (error) {
+    } catch (error: any) {
       console.error('Ошибка создания ссылки:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка'
       console.error('Детали ошибки:', {
-        message: errorMessage,
-        stack: error instanceof Error ? error.stack : undefined,
+        message: error?.message || 'Unknown error',
+        stack: error?.stack,
         excelData: excelData,
         routes: safeRoutes
       })
-      toast.error(`Ошибка создания ссылки для обмена: ${errorMessage}`)
+      toast.error(`Ошибка создания ссылки для обмена: ${error?.message || 'Unknown error'}`)
     } finally {
       setIsSharing(false)
     }
@@ -205,8 +190,7 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
       toast.success(`Данные успешно импортированы! Загружено: ${ordersCount} заказов, ${couriersCount} курьеров, ${routesCount} маршрутов.`)
     } catch (error) {
       console.error('Ошибка импорта:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка'
-      toast.error(`Ошибка импорта данных: ${errorMessage}`)
+      toast.error('Ошибка импорта данных')
     } finally {
       setIsImporting(false)
     }
@@ -262,39 +246,6 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
           <span>Импорт</span>
         </button>
 
-        {/* Облачная синхронизация */}
-        <button
-          onClick={async () => {
-            if (excelData && routes) {
-              const shareableData = {
-                excelData,
-                routes,
-                timestamp: Date.now(),
-                version: '1.0.0'
-              }
-              const shareUrl = await cloudShareData(shareableData)
-              if (shareUrl) {
-                setShareUrl(shareUrl)
-                setShowShareModal(true)
-              }
-            }
-          }}
-          disabled={!excelData || cloudSyncStatus === 'syncing'}
-          className={clsx(
-            'flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-all duration-200',
-            !excelData || cloudSyncStatus === 'syncing'
-              ? isDark 
-                ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
-                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-              : isDark 
-                ? 'bg-purple-600 text-white hover:bg-purple-700' 
-                : 'bg-purple-600 text-white hover:bg-purple-700'
-          )}
-          title="Поделиться данными через облако"
-        >
-          <ShareIcon className="h-4 w-4" />
-          <span>{cloudSyncStatus === 'syncing' ? 'Синхронизация...' : 'Облако'}</span>
-        </button>
       </div>
 
       {/* Модальное окно для обмена */}
@@ -539,37 +490,6 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
         </div>
       )}
 
-      {/* Статус облачной синхронизации */}
-      {isCloudConnected && (
-        <div className={clsx(
-          'fixed bottom-4 right-4 p-3 rounded-lg shadow-lg transition-all duration-300',
-          isDark ? 'bg-gray-800 border border-gray-600' : 'bg-white border border-gray-200'
-        )}>
-          <div className="flex items-center space-x-2">
-            <div className={clsx(
-              'w-2 h-2 rounded-full',
-              cloudSyncStatus === 'syncing' ? 'bg-yellow-400 animate-pulse' :
-              cloudSyncStatus === 'error' ? 'bg-red-400' : 'bg-green-400'
-            )} />
-            <span className={clsx(
-              'text-sm font-medium',
-              isDark ? 'text-gray-300' : 'text-gray-700'
-            )}>
-              {cloudSyncStatus === 'syncing' ? 'Синхронизация...' :
-               cloudSyncStatus === 'error' ? 'Ошибка синхронизации' : 'Облако подключено'}
-            </span>
-          </div>
-          {cloudLastSync && (
-            <div className={clsx(
-              'text-xs mt-1',
-              isDark ? 'text-gray-400' : 'text-gray-500'
-            )}>
-              Последняя синхронизация: {cloudLastSync}
-            </div>
-          )}
-        </div>
-      )}
     </>
   )
 }
-
