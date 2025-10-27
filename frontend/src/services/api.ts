@@ -95,7 +95,13 @@ export const uploadApi = {
           orders: 1,
           couriers: 1,
           paymentMethods: 0,
-          errors: []
+          errors: [
+            {
+              row: 0,
+              message: `Ошибка обработки файла: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
+              data: null
+            }
+          ]
         }
       }
       

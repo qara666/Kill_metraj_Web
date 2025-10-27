@@ -101,7 +101,7 @@ export const processExcelFile = async (file: File): Promise<ProcessedExcelData> 
             orders: orders.length,
             couriers: couriers.length,
             paymentMethods: paymentMethods.length,
-            errors: errors
+            errors: errors.map(error => typeof error === 'string' ? error : error.message)
           }
         }
 
