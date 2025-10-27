@@ -123,9 +123,19 @@ const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
   const paymentMethods: any[] = []
   const errors: any[] = []
   
+  // Логируем заголовки для отладки
+  console.log('Заголовки Excel:', headers)
+  
   rows.forEach((row, index) => {
     try {
       const rowData = createRowData(row, headers)
+      
+      // Если есть номер заказа (7-значное число), считаем это заказом
+      const orderNumber = findOrderNumber(rowData)
+      if (orderNumber) {
+        orders.push(createOrderFromData(rowData, orderNumber, index))
+        return
+      }
       
       if (isOrderRow(rowData)) {
         orders.push(createOrder(rowData, index))
@@ -268,4 +278,36 @@ const getValue = (rowData: Record<string, any>, fields: string[]): string => {
     }
   }
   return ''
+}
+
+const findOrderNumber = (rowData: Record<string, any>): string | null => {
+  for (const key in rowData) {
+    const value = rowData[key]
+    if (typeof value === 'string' && /^\d{7,8}$/.test(value)) {
+      return value
+    }
+    if (typeof value === 'number' && value >= 1000000 && value <= 99999999) {
+      return String(value)
+    }
+  }
+  return null
+}
+
+const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, index: number): any => {
+  const address = Object.values(rowData).find((val: any) => 
+    val && typeof val === 'string' && val.length > 10 && /[а-яА-Я]/.test(val)
+  ) || ''
+  
+  return {
+    id: `order_${Date.now()}_${index}`,
+    orderNumber,
+    address: String(address).trim(),
+    courier: getValue(rowData, ['курьер', 'courier', 'курьер_имя']) || '',
+    amount: parseFloat(getValue(rowData, ['сумма', 'amount', 'цена', 'price', 'стоимость'])) || 0,
+    phone: getValue(rowData, ['телефон', 'phone', 'телефон_клиента']) || '',
+    customerName: getValue(rowData, ['клиент', 'customer', 'имя_клиента', 'имя']) || '',
+    plannedTime: getValue(rowData, ['время', 'time', 'плановое_время']) || '',
+    isSelected: false,
+    isInRoute: false
+  }
 }
