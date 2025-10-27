@@ -37,7 +37,7 @@ export class AddressValidationService {
       return result
     }
 
-    const trimmedAddress = address && address.trim() ? address.trim() : address
+    const trimmedAddress = address.trim()
 
     // Проверка длины адреса
     if (trimmedAddress.length > 200) {
@@ -54,7 +54,7 @@ export class AddressValidationService {
       /\b\d{10,}\b/g // Очень длинные числа (возможно ошибка)
     ]
 
-    suspiciousPatterns.forEach((pattern) => {
+    suspiciousPatterns.forEach((pattern, index) => {
       if (pattern.test(trimmedAddress)) {
         result.warnings.push(`Обнаружены подозрительные символы или паттерны в адресе`)
         result.suggestions.push('Проверьте корректность адреса')
@@ -178,7 +178,7 @@ export class AddressValidationService {
     }
 
     // Проверка на дублирующиеся адреса
-    const addresses = route.orders.map(order => order.address && order.address.toLowerCase().trim() ? order.address.toLowerCase().trim() : order.address.toLowerCase())
+    const addresses = route.orders.map(order => order.address.toLowerCase().trim())
     const uniqueAddresses = new Set(addresses)
     
     if (addresses.length !== uniqueAddresses.size) {
@@ -214,7 +214,7 @@ export class AddressValidationService {
       .replace(/,\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
       .replace(/,\s*\d+\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
       .replace(/\s+/g, ' ')
-      .trim() || address
+      .trim()
   }
 
   /**
@@ -233,4 +233,3 @@ export class AddressValidationService {
     return validation.suggestions
   }
 }
-

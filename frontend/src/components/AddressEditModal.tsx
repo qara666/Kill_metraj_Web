@@ -34,6 +34,7 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
   const [isGeocoding, setIsGeocoding] = useState(false)
   const [geocodingResult, setGeocodingResult] = useState<GeocodingResult | null>(null)
   const [validationResult, setValidationResult] = useState<AddressValidationResult | null>(null)
+  const [showSuggestions, setShowSuggestions] = useState(false)
 
   // Сбрасываем состояние при открытии модального окна
   useEffect(() => {
@@ -41,12 +42,13 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
       setEditedAddress(currentAddress)
       setGeocodingResult(null)
       setValidationResult(null)
+      setShowSuggestions(false)
     }
   }, [isOpen, currentAddress])
 
   // Валидация адреса при изменении
   useEffect(() => {
-    if (editedAddress && editedAddress.trim()) {
+    if (editedAddress.trim()) {
       const validation = AddressValidationService.validateAddress(editedAddress)
       setValidationResult(validation)
     } else {
@@ -55,7 +57,7 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
   }, [editedAddress])
 
   const handleGeocode = async () => {
-    if (!editedAddress || !editedAddress.trim()) return
+    if (!editedAddress.trim()) return
 
     setIsGeocoding(true)
     setGeocodingResult(null)
@@ -70,6 +72,7 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
       
       if (result.success) {
         setEditedAddress(result.formattedAddress)
+        setShowSuggestions(false)
       }
     } catch (error) {
       console.error('Ошибка геокодирования:', error)
@@ -84,8 +87,8 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
   }
 
   const handleSave = () => {
-    if (editedAddress && editedAddress.trim()) {
-      onSave(editedAddress && editedAddress.trim() ? editedAddress.trim() : editedAddress)
+    if (editedAddress.trim()) {
+      onSave(editedAddress.trim())
       onClose()
     }
   }
@@ -94,6 +97,7 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
     setEditedAddress(currentAddress)
     setGeocodingResult(null)
     setValidationResult(null)
+    setShowSuggestions(false)
     onClose()
   }
 
@@ -198,10 +202,10 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
               />
               <button
                 onClick={handleGeocode}
-                disabled={!editedAddress || !editedAddress.trim() || isGeocoding}
+                disabled={!editedAddress.trim() || isGeocoding}
                 className={clsx(
                   'px-4 py-3 rounded-lg font-medium transition-all duration-200 flex items-center space-x-2',
-                  isGeocoding || !editedAddress || !editedAddress.trim()
+                  isGeocoding || !editedAddress.trim()
                     ? isDark 
                       ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
                       : 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -416,10 +420,10 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
           </button>
           <button
             onClick={handleSave}
-            disabled={!editedAddress || !editedAddress.trim() || (validationResult && !validationResult.isValid) || false}
+            disabled={!editedAddress.trim() || (validationResult && !validationResult.isValid)}
             className={clsx(
               'px-4 py-2 text-sm font-medium rounded-lg transition-colors',
-              !editedAddress || !editedAddress.trim() || (validationResult && !validationResult.isValid)
+              !editedAddress.trim() || (validationResult && !validationResult.isValid)
                 ? isDark 
                   ? 'text-gray-500 bg-gray-700 cursor-not-allowed' 
                   : 'text-gray-400 bg-gray-100 cursor-not-allowed'
@@ -435,4 +439,3 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
     </div>
   )
 }
-

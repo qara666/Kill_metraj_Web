@@ -11,7 +11,7 @@ export const ApiKeyNotification: React.FC = () => {
   const [isDismissed, setIsDismissed] = useState(false)
 
   // Don't show if API key is configured or notification is dismissed
-  if (hasApiKey || isDismissed) {
+  if (hasApiKey() || isDismissed) {
     return null
   }
 

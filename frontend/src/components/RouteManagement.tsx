@@ -13,16 +13,14 @@ import {
   ArrowPathIcon,
   ExclamationTriangleIcon
 } from '@heroicons/react/24/outline'
+import { localStorageUtils } from '../utils/localStorage'
 import { googleMapsLoader } from '../utils/googleMapsLoader'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
-import { useApiKey } from '../hooks/useApiKey'
-import { localStorageUtils } from '../utils/localStorage'
 import { clsx } from 'clsx'
 import { AddressEditModal } from './AddressEditModal'
-import { AddressFixNotification } from './AddressFixNotification'
 import { AddressValidationService, RouteAnomalyCheck } from '../services/addressValidation'
-import { AddressAutoFixService, AddressFixResult } from '../services/addressAutoFix'
+import { GeocodingService } from '../services/geocodingService'
 
 // Google Maps types
 declare global {
@@ -193,7 +191,6 @@ const OrderItem = memo(({
 export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) => {
   const { updateRouteData } = useExcelData()
   const { isDark } = useTheme()
-  const { hasApiKey } = useApiKey()
   const [selectedCourier, setSelectedCourier] = useState<string | null>(null)
   const [routes, setRoutes] = useState<Route[]>([])
   const [isCalculating, setIsCalculating] = useState(false)
@@ -213,8 +210,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   const [showAddressEditModal, setShowAddressEditModal] = useState(false)
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [routeAnomalies, setRouteAnomalies] = useState<Map<string, RouteAnomalyCheck>>(new Map())
-  const [showFixNotification, setShowFixNotification] = useState(false)
-  const [lastFixResults, setLastFixResults] = useState<Map<string, AddressFixResult>>(new Map())
+  const placeIdCacheRef = useRef<Map<string, string>>(new Map())
+  const geocodeCacheRef = useRef<Map<string, { placeId: string; formattedAddress: string }>>(new Map())
+  const regionBiasRef = useRef<{ country?: string; locality?: string; bounds?: google.maps.LatLngBounds | null }>({})
 
   // Дебаунсинг для поиска
   useEffect(() => {
@@ -258,7 +256,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     const initGoogleMaps = async () => {
       try {
         // Проверяем, есть ли API ключ в настройках
-        if (!hasApiKey) {
+        if (!localStorageUtils.hasApiKey()) {
           console.warn('Google Maps API ключ не найден в настройках')
           setGoogleMapsReady(false)
           return
@@ -415,7 +413,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
   // Функция для поиска заказов по номеру
   const searchOrders = useCallback((orders: Order[]) => {
-    if (!debouncedSearchTerm || !debouncedSearchTerm.trim()) return orders
+    if (!debouncedSearchTerm.trim()) return orders
     
     const searchTerm = debouncedSearchTerm.toLowerCase().trim()
     return orders.filter(order => 
@@ -549,7 +547,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     // Проверяем готовность Google Maps API
     if (!googleMapsReady) {
       // Проверяем, есть ли API ключ в настройках
-      if (!hasApiKey) {
+      if (!localStorageUtils.hasApiKey()) {
         alert('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ в настройках.')
         return
       }
@@ -601,14 +599,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
   // Простая очистка адреса без сложного геокодирования
   const cleanAddressForRoute = useCallback((raw: string): string => {
-    return cleanAddress(raw) && cleanAddress(raw).trim() ? cleanAddress(raw).trim() : cleanAddress(raw)
+    return cleanAddress(raw).trim()
   }, [])
 
 
   const calculateRouteDistance = async (route: Route) => {
     if (!googleMapsReady) {
       // Проверяем, есть ли API ключ в настройках
-      if (!hasApiKey) {
+      if (!localStorageUtils.hasApiKey()) {
         alert('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ в настройках.')
         return
       }
@@ -623,53 +621,26 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
       }
     }
 
+    // Проверяем аномалии перед расчетом
+    const anomalyCheck = AddressValidationService.checkRouteAnomalies(route)
+    setRouteAnomalies(prev => new Map(prev).set(route.id, anomalyCheck))
+
+    if (anomalyCheck.hasAnomalies && anomalyCheck.errors.length > 0) {
+      const errorMessage = `Обнаружены ошибки в маршруте:\n${anomalyCheck.errors.join('\n')}\n\nРасчет невозможен. Исправьте ошибки в адресах.`
+      alert(errorMessage)
+      return
+    }
+
+    if (anomalyCheck.warnings.length > 0) {
+      const warningMessage = `Предупреждения в маршруте:\n${anomalyCheck.warnings.join('\n')}\n\nПродолжить расчет?`
+      if (!window.confirm(warningMessage)) {
+        return
+      }
+    }
+
     setIsCalculating(true)
 
     try {
-      // Автоматически исправляем адреса в маршруте
-      console.log('🔧 Автоматическое исправление адресов в маршруте...')
-      const { fixedRoute, fixResults, hasChanges } = await AddressAutoFixService.autoFixRouteAddresses(route, {
-        enableGeocoding: true,
-        enableValidation: true,
-        enableSuggestions: true,
-        minConfidence: 0.7,
-        maxSuggestions: 3
-      })
-
-      // Показываем уведомление о результатах исправления
-      if (hasChanges) {
-        setLastFixResults(fixResults)
-        setShowFixNotification(true)
-        
-        // Обновляем маршрут с исправленными адресами
-        setRoutes(prev => prev.map(r => r.id === route.id ? fixedRoute : r))
-        
-        // Используем исправленный маршрут для дальнейших расчетов
-        route = fixedRoute
-        
-        // Автоматически скрываем уведомление через 5 секунд
-        setTimeout(() => {
-          setShowFixNotification(false)
-        }, 5000)
-      }
-
-      // Проверяем аномалии после исправления
-      const anomalyCheck = AddressValidationService.checkRouteAnomalies(route)
-      setRouteAnomalies(prev => new Map(prev).set(route.id, anomalyCheck))
-
-      // Если после исправления все еще есть критические ошибки, показываем их
-      if (anomalyCheck.hasAnomalies && anomalyCheck.errors.length > 0) {
-        const errorMessage = `После автоматического исправления остались ошибки:\n${anomalyCheck.errors.join('\n')}\n\nПожалуйста, исправьте адреса вручную.`
-        alert(errorMessage)
-        setIsCalculating(false)
-        return
-      }
-
-      // Показываем предупреждения, но продолжаем расчет
-      if (anomalyCheck.warnings.length > 0) {
-        console.warn('⚠️ Предупреждения в маршруте:', anomalyCheck.warnings)
-      }
-
       const directionsService = new window.google.maps.DirectionsService()
 
       // Используем прямые адреса без геокодирования
@@ -799,12 +770,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
     // Обновляем данные в контексте Excel
     if (excelData?.orders) {
-      // Обновляем контекст с новым адресом
-      const updatedOrders = excelData.orders.map((order: any) => 
-        order.id === editingOrder.id ? { ...order, address: newAddress } : order
-      )
+      const updatedExcelData = {
+        ...excelData,
+        orders: excelData.orders.map((order: any) => 
+          order.id === editingOrder.id ? { ...order, address: newAddress } : order
+        )
+      }
       // Здесь можно обновить контекст, если нужно
-      console.log('Обновлены заказы с новым адресом:', updatedOrders.length)
     }
 
     setShowAddressEditModal(false)
@@ -813,63 +785,30 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
   // Функция для пересчета конкретного маршрута
   const recalculateRoute = async (route: Route) => {
-    console.log('🔄 Пересчет маршрута с автоматическим исправлением адресов...')
-    
-    // Выполняем пересчет с автоматическим исправлением адресов
+    // Проверяем аномалии перед пересчетом
+    const anomalyCheck = AddressValidationService.checkRouteAnomalies(route)
+    setRouteAnomalies(prev => new Map(prev).set(route.id, anomalyCheck))
+
+    if (anomalyCheck.hasAnomalies && anomalyCheck.errors.length > 0) {
+      const errorMessage = `Обнаружены ошибки в маршруте:\n${anomalyCheck.errors.join('\n')}\n\nПересчет невозможен. Исправьте ошибки в адресах.`
+      alert(errorMessage)
+      return
+    }
+
+    if (anomalyCheck.warnings.length > 0) {
+      const warningMessage = `Предупреждения в маршруте:\n${anomalyCheck.warnings.join('\n')}\n\nПродолжить пересчет?`
+      if (!window.confirm(warningMessage)) {
+        return
+      }
+    }
+
+    // Выполняем пересчет
     await calculateRouteDistance(route)
   }
 
-
-  // Функция для массового исправления всех маршрутов
-  const autoFixAllRoutes = async () => {
-    if (routes.length === 0) {
-      alert('Нет маршрутов для исправления')
-      return
-    }
-
-    const confirmMessage = `Исправить адреса во всех ${routes.length} маршрутах?\n\nЭто может занять некоторое время.`
-    if (!window.confirm(confirmMessage)) {
-      return
-    }
-
-    setIsCalculating(true)
-    let totalFixed = 0
-    let totalErrors = 0
-
-    try {
-      for (const route of routes) {
-        console.log(`🔧 Исправление маршрута: ${route.courier}`)
-        
-        const { fixedRoute, fixResults, hasChanges } = await AddressAutoFixService.autoFixRouteAddresses(route, {
-          enableGeocoding: true,
-          enableValidation: true,
-          enableSuggestions: true,
-          minConfidence: 0.7,
-          maxSuggestions: 3
-        })
-
-        if (hasChanges) {
-          const fixedCount = Array.from(fixResults.values()).filter(r => r.confidence >= 0.7).length
-          const errorCount = Array.from(fixResults.values()).filter(r => r.errors.length > 0).length
-          
-          totalFixed += fixedCount
-          totalErrors += errorCount
-
-          // Обновляем маршрут
-          setRoutes(prev => prev.map(r => r.id === route.id ? fixedRoute : r))
-        }
-      }
-
-      // Показываем результаты
-      const message = `✅ Массовое исправление завершено!\n\nИсправлено: ${totalFixed} адресов\nОшибок: ${totalErrors} адресов`
-      alert(message)
-
-    } catch (error) {
-      console.error('Ошибка массового исправления:', error)
-      alert('Произошла ошибка при массовом исправлении адресов')
-    } finally {
-      setIsCalculating(false)
-    }
+  // Функция для проверки аномалий маршрута
+  const checkRouteAnomalies = (route: Route): RouteAnomalyCheck => {
+    return AddressValidationService.checkRouteAnomalies(route)
   }
 
   const clearAllRoutes = () => {
@@ -1407,35 +1346,17 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
               isDark ? 'text-gray-100' : 'text-gray-900'
             )}>Созданные маршруты</h2>
             {routes.length > 0 && (
-              <div className="flex space-x-3">
-                <button
-                  onClick={autoFixAllRoutes}
-                  disabled={isCalculating}
-                  className={clsx(
-                    'text-sm font-medium transition-colors',
-                    isCalculating
-                      ? isDark 
-                        ? 'text-gray-500 cursor-not-allowed' 
-                        : 'text-gray-400 cursor-not-allowed'
-                      : isDark
-                        ? 'text-green-400 hover:text-green-300'
-                        : 'text-green-600 hover:text-green-800'
-                  )}
-                >
-                  {isCalculating ? 'Исправление...' : 'Исправить все адреса'}
-                </button>
-                <button
-                  onClick={clearAllRoutes}
-                  className={clsx(
-                    'text-sm font-medium transition-colors',
-                    isDark 
-                      ? 'text-red-400 hover:text-red-300' 
-                      : 'text-red-600 hover:text-red-800'
-                  )}
-                >
-                  Очистить все
-                </button>
-              </div>
+              <button
+                onClick={clearAllRoutes}
+                className={clsx(
+                  'text-sm font-medium transition-colors',
+                  isDark 
+                    ? 'text-red-400 hover:text-red-300' 
+                    : 'text-red-600 hover:text-red-800'
+                )}
+              >
+                Очистить все
+              </button>
             )}
           </div>
             
@@ -1810,18 +1731,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
           isDark={isDark}
         />
       )}
-
-      {/* Уведомление об автоматическом исправлении адресов */}
-      <AddressFixNotification
-        fixResults={lastFixResults}
-        isVisible={showFixNotification}
-        onClose={() => setShowFixNotification(false)}
-        isDark={isDark}
-      />
     </div>
   )
 }
-
 
 
 
