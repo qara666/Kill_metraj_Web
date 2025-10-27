@@ -141,32 +141,63 @@ const createRowData = (row: any[], headers: string[]): Record<string, any> => {
 const isOrderRow = (rowData: Record<string, any>): boolean => {
   const hasOrderNumber = hasValue(rowData, ['номер', 'number', 'orderNumber'])
   const hasAddress = hasValue(rowData, ['адрес', 'address'])
-  const hasAmount = hasValue(rowData, ['сумма', 'amount', 'цена'])
+  const hasCourier = hasValue(rowData, ['курьер', 'courier'])
   
-  return hasOrderNumber && hasAddress && hasAmount
+  return hasOrderNumber && hasAddress && hasCourier
 }
 
 // Проверяет, является ли строка курьером
 const isCourierRow = (rowData: Record<string, any>): boolean => {
-  const hasName = hasValue(rowData, ['имя', 'name', 'курьер', 'courier'])
+  const hasName = hasValue(rowData, ['имя', 'name'])
   const hasPhone = hasValue(rowData, ['телефон', 'phone'])
   
-  return hasName && hasPhone && !isOrderRow(rowData)
+  // Курьер должен иметь имя и телефон, но не должен быть заказом
+  return hasName && hasPhone && !isOrderRow(rowData) && !hasValue(rowData, ['номер', 'number', 'orderNumber'])
 }
 
 // Проверяет, является ли строка способом оплаты
 const isPaymentMethodRow = (rowData: Record<string, any>): boolean => {
-  const hasPaymentType = hasValue(rowData, ['оплата', 'payment', 'способ'])
+  const hasPaymentType = hasValue(rowData, ['оплата', 'payment', 'способ', 'способ оплаты'])
   
+  // Способ оплаты должен иметь название, но не должен быть заказом или курьером
   return hasPaymentType && !isOrderRow(rowData) && !isCourierRow(rowData)
 }
 
 // Проверяет наличие значения в указанных полях
 const hasValue = (rowData: Record<string, any>, fields: string[]): boolean => {
   return fields.some(field => {
-    const value = rowData[field]
-    return value !== undefined && value !== null && value !== ''
+    // Ищем поле по точному совпадению или по нормализованному названию
+    const normalizedField = field.toLowerCase().trim()
+    const foundKey = Object.keys(rowData).find(key => 
+      key.toLowerCase().trim() === normalizedField
+    )
+    
+    if (foundKey) {
+      const value = rowData[foundKey]
+      return value !== undefined && value !== null && String(value).trim() !== ''
+    }
+    
+    return false
   })
+}
+
+// Получает значение из указанных полей
+const getValue = (rowData: Record<string, any>, fields: string[]): string => {
+  for (const field of fields) {
+    const normalizedField = field.toLowerCase().trim()
+    const foundKey = Object.keys(rowData).find(key => 
+      key.toLowerCase().trim() === normalizedField
+    )
+    
+    if (foundKey) {
+      const value = rowData[foundKey]
+      if (value !== undefined && value !== null && String(value).trim() !== '') {
+        return String(value).trim()
+      }
+    }
+  }
+  
+  return ''
 }
 
 // Создает объект заказа
@@ -178,8 +209,8 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
     courier: getValue(rowData, ['курьер', 'courier']) || '',
     amount: parseFloat(getValue(rowData, ['сумма', 'amount', 'цена']) || '0'),
     phone: getValue(rowData, ['телефон', 'phone']) || '',
-    customerName: getValue(rowData, ['клиент', 'customer', 'имя', 'name']) || '',
-    plannedTime: getValue(rowData, ['время', 'time']) || '',
+    customerName: getValue(rowData, ['клиент', 'customer', 'имя клиента', 'имя клиента']) || '',
+    plannedTime: getValue(rowData, ['время', 'time', 'время доставки']) || '',
     isSelected: false,
     isInRoute: false
   }
@@ -189,10 +220,10 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
 const createCourier = (rowData: Record<string, any>, index: number): any => {
   return {
     id: `courier_${Date.now()}_${index}`,
-    name: getValue(rowData, ['имя', 'name', 'курьер', 'courier']) || '',
+    name: getValue(rowData, ['имя', 'name', 'имя курьера']) || '',
     phone: getValue(rowData, ['телефон', 'phone']) || '',
     email: getValue(rowData, ['email', 'почта']) || '',
-    vehicleType: getValue(rowData, ['транспорт', 'vehicle', 'тип']) || 'car',
+    vehicleType: getValue(rowData, ['транспорт', 'vehicle', 'тип', 'тип транспорта']) || 'car',
     isActive: true
   }
 }
@@ -201,19 +232,9 @@ const createCourier = (rowData: Record<string, any>, index: number): any => {
 const createPaymentMethod = (rowData: Record<string, any>, index: number): any => {
   return {
     id: `payment_${Date.now()}_${index}`,
-    name: getValue(rowData, ['название', 'name', 'оплата', 'payment']) || '',
-    type: getValue(rowData, ['тип', 'type']) || 'card',
+    name: getValue(rowData, ['название', 'name', 'оплата', 'payment', 'способ оплаты']) || '',
+    type: getValue(rowData, ['тип', 'type', 'тип оплаты']) || 'card',
     isActive: true
   }
 }
 
-// Получает значение из указанных полей
-const getValue = (rowData: Record<string, any>, fields: string[]): string => {
-  for (const field of fields) {
-    const value = rowData[field]
-    if (value !== undefined && value !== null && value !== '') {
-      return String(value).trim()
-    }
-  }
-  return ''
-}
