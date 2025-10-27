@@ -57,32 +57,54 @@ export const localStorageUtils = {
 
   getAllSettings: (): any => {
     if (typeof window === 'undefined') return {}
-    const settings: any = {}
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i)
-      if (key) {
-        settings[key] = localStorage.getItem(key)
+    try {
+      const settingsJson = localStorage.getItem('km_settings')
+      return settingsJson ? JSON.parse(settingsJson) : {
+        googleMapsApiKey: localStorage.getItem('google_maps_api_key') || '',
+        defaultStartAddress: localStorage.getItem('km_default_start_address') || 'Макеевская 7, Киев, Украина',
+        defaultEndAddress: localStorage.getItem('km_default_end_address') || 'Макеевская 7, Киев, Украина'
+      }
+    } catch (error) {
+      console.error('Error reading settings:', error)
+      return {
+        googleMapsApiKey: localStorage.getItem('google_maps_api_key') || '',
+        defaultStartAddress: localStorage.getItem('km_default_start_address') || 'Макеевская 7, Киев, Украина',
+        defaultEndAddress: localStorage.getItem('km_default_end_address') || 'Макеевская 7, Киев, Украина'
       }
     }
-    return settings
   },
 
   setAllSettings: (settings: any): void => {
     if (typeof window === 'undefined') return
-    Object.entries(settings).forEach(([key, value]) => {
-      localStorage.setItem(key, String(value))
-    })
+    try {
+      localStorage.setItem('km_settings', JSON.stringify(settings))
+      if (settings.googleMapsApiKey) {
+        localStorage.setItem('google_maps_api_key', settings.googleMapsApiKey)
+      }
+      if (settings.defaultStartAddress) {
+        localStorage.setItem('km_default_start_address', settings.defaultStartAddress)
+      }
+      if (settings.defaultEndAddress) {
+        localStorage.setItem('km_default_end_address', settings.defaultEndAddress)
+      }
+    } catch (error) {
+      console.error('Error saving settings:', error)
+    }
   },
 
   clearAllSettings: (): void => {
     if (typeof window === 'undefined') return
-    const keysToRemove: string[] = []
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i)
-      if (key && key.includes('settings')) {
-        keysToRemove.push(key)
-      }
-    }
+    const keysToRemove = [
+      'km_settings',
+      'km_dashboard_logs',
+      'km_dashboard_processed_data',
+      'km_dashboard_excel_logs',
+      'km_default_start_address',
+      'km_default_end_address',
+      'km_routes',
+      'km_excel_data',
+      'km_sync_data'
+    ]
     keysToRemove.forEach(key => localStorage.removeItem(key))
   }
 }
