@@ -1,5 +1,5 @@
 import { GeocodingService } from './geocodingService'
-import { AddressValidationService, AddressValidationResult } from './addressValidation'
+import { AddressValidationService } from './addressValidation'
 
 interface AutoFixOptions {
   enableGeocoding: boolean

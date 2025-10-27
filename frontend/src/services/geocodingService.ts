@@ -77,7 +77,7 @@ export class GeocodingService {
       }
 
       this.geocoder!.geocode(request, (results: any, status: any) => {
-        if (status === window.google.maps.GeocoderStatus.OK && results && results.length > 0) {
+        if (status === window.google?.maps?.GeocoderStatus?.OK && results && results.length > 0) {
           const result = results[0]
           const geocodingResult: GeocodingResult = {
             success: true,
@@ -142,14 +142,14 @@ export class GeocodingService {
     }
 
     return new Promise((resolve) => {
-      const latlng = new google.maps.LatLng(lat, lng)
-      const request: google.maps.GeocoderRequest = {
+      const latlng = new window.google.maps.LatLng(lat, lng)
+      const request: any = {
         location: latlng,
         ...options
       }
 
-      this.geocoder!.geocode(request, (results, status) => {
-        if (status === window.google.maps.GeocoderStatus.OK && results && results.length > 0) {
+      this.geocoder!.geocode(request, (results: any, status: any) => {
+        if (status === window.google?.maps?.GeocoderStatus?.OK && results && results.length > 0) {
           const result = results[0]
           const geocodingResult: GeocodingResult = {
             success: true,
