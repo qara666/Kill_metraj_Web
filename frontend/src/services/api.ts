@@ -14,14 +14,14 @@ export const analyticsApi = {
 }
 
 export const courierApi = {
-  getCouriers: async (params: { limit?: number }) => {
+  getCouriers: async (_params: { limit?: number }) => {
     // Заглушка для курьеров
     return []
   }
 }
 
 export const routeApi = {
-  getRoutes: async (params: { limit?: number }) => {
+  getRoutes: async (_params: { limit?: number }) => {
     // Заглушка для маршрутов
     return []
   }
@@ -92,5 +92,6 @@ export const uploadApi = {
     }
   }
 }
+
 
 
