@@ -21,7 +21,7 @@ export const SyncStatus: React.FC<SyncStatusProps> = ({ className }) => {
   const [syncMessage, setSyncMessage] = useState<string>('')
   
   const { isDark } = useTheme()
-  const { lastSync, isEnabled } = useDataSync({ enabled: true })
+  const { lastSync, isEnabled } = useDataSync()
 
   // Отслеживаем статус онлайн/оффлайн
   useEffect(() => {
@@ -39,8 +39,8 @@ export const SyncStatus: React.FC<SyncStatusProps> = ({ className }) => {
 
   // Обновляем время последней синхронизации
   useEffect(() => {
-    if (lastSync > 0) {
-      setLastSyncTime(new Date(lastSync))
+    if (lastSync && lastSync.getTime() > 0) {
+      setLastSyncTime(lastSync)
       setSyncStatus('success')
       setSyncMessage('Данные синхронизированы')
       
@@ -169,6 +169,9 @@ export const SyncStatus: React.FC<SyncStatusProps> = ({ className }) => {
     </div>
   )
 }
+
+
+
 
 
 
