@@ -41,6 +41,8 @@ export interface ShareableData {
   routes: any[]
   timestamp: number
   version: string
+  syncKey?: string
+  lastModified?: number
 }
 
 export interface DataSharingUtils {
@@ -262,7 +264,7 @@ export const dataSharingUtils: DataSharingUtils = {
         console.log('Данные декодированы как base64, длина JSON:', jsonString.length)
         const data = JSON.parse(jsonString)
         console.log('JSON распарсен, структура:', Object.keys(data))
-        const expandedData = dataSharingUtils.expandSimpleData(data)
+        const expandedData = expandSimpleData(data)
         console.log('Данные расширены:', {
           orders: expandedData.excelData?.orders?.length || 0,
           couriers: expandedData.excelData?.couriers?.length || 0,
@@ -384,6 +386,7 @@ export const useDataSharing = () => {
     validateData: dataSharingUtils.validateData
   }
 }
+
 
 
 

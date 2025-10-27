@@ -349,9 +349,9 @@ export const Dashboard: React.FC = () => {
     log('Пользователь подтвердил сохранение данных из Excel')
   }
 
-  const stats = dashboardData?.data?.overview
-  const couriers = couriersData?.data || []
-  const routes = routesData?.data || []
+  const stats = dashboardData
+  const couriers: any[] = couriersData || []
+  const routes: any[] = routesData || []
 
   return (
     <div className={clsx(
@@ -392,28 +392,28 @@ export const Dashboard: React.FC = () => {
             value={stats.totalRoutes}
             icon={MapIcon}
             color="primary"
-            change={`${stats.activeRoutes} активных`}
+            change={`${routes.filter(r => r.status === 'active').length} активных`}
           />
           <StatsCard
             title="Всего курьеров"
             value={stats.totalCouriers}
             icon={UserGroupIcon}
             color="success"
-            change={`${stats.activeCouriers} активных`}
+            change={`${couriers.filter(c => c.isActive).length} активных`}
           />
           <StatsCard
             title="Всего заказов"
             value={stats.totalOrders}
             icon={TruckIcon}
             color="warning"
-            change={`${stats.averageOrdersPerRoute.toFixed(1)} среднее/маршрут`}
+            change={`${(stats.totalOrders / Math.max(stats.totalRoutes, 1)).toFixed(1)} среднее/маршрут`}
           />
           <StatsCard
             title="Процент выполнения"
-            value={`${stats.completionRate.toFixed(1)}%`}
+            value={`${(routes.filter(r => r.status === 'completed').length / Math.max(stats.totalRoutes, 1) * 100).toFixed(1)}%`}
             icon={CheckCircleIcon}
             color="success"
-            change={`${stats.completedRoutes} завершено`}
+            change={`${routes.filter(r => r.status === 'completed').length} завершено`}
           />
         </div>
       )}
@@ -601,5 +601,10 @@ export const Dashboard: React.FC = () => {
     </div>
   )
 }
+
+
+
+
+
 
 
