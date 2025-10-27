@@ -45,9 +45,11 @@ const processCsvFile = async (file: File): Promise<ProcessedExcelData> => {
         }
         
         const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''))
-        const rows = lines.slice(1).map(line => 
-          line.split(',').map(cell => cell.trim().replace(/"/g, ''))
-        )
+        
+        const rows = lines.slice(1).map(line => {
+          const cells = line.split(',').map(cell => cell.trim().replace(/"/g, ''))
+          return cells
+        })
         
         const jsonData = [headers, ...rows]
         const result = processJsonData(jsonData)
@@ -178,34 +180,38 @@ const createRowData = (row: any[], headers: string[]): Record<string, any> => {
   return rowData
 }
 
-// Проверяет, является ли строка заказом
 const isOrderRow = (rowData: Record<string, any>): boolean => {
-  const hasOrderNumber = hasValue(rowData, ['номер', 'number', 'orderNumber'])
-  const hasAddress = hasValue(rowData, ['адрес', 'address'])
-  const hasAmount = hasValue(rowData, ['сумма', 'amount', 'цена'])
+  const hasOrderNumber = hasValue(rowData, ['номер', 'number', 'orderNumber', 'order_number', 'номер_заказа'])
+  const hasAddress = hasValue(rowData, ['адрес', 'address', 'адрес_доставки', 'адресс'])
+  const hasAmount = hasValue(rowData, ['сумма', 'amount', 'цена', 'price', 'стоимость', 'total'])
   
-  return hasOrderNumber && hasAddress && hasAmount
+  return (hasOrderNumber || hasAddress) && (hasAmount || hasAddress)
 }
 
 // Проверяет, является ли строка курьером
 const isCourierRow = (rowData: Record<string, any>): boolean => {
-  const hasName = hasValue(rowData, ['имя', 'name', 'курьер', 'courier'])
-  const hasPhone = hasValue(rowData, ['телефон', 'phone'])
+  const hasName = hasValue(rowData, ['имя', 'name', 'курьер', 'courier', 'курьер_имя', 'courier_name'])
+  const hasPhone = hasValue(rowData, ['телефон', 'phone', 'телефон_курьера', 'courier_phone'])
   
   return hasName && hasPhone && !isOrderRow(rowData)
 }
 
 // Проверяет, является ли строка способом оплаты
 const isPaymentMethodRow = (rowData: Record<string, any>): boolean => {
-  const hasPaymentType = hasValue(rowData, ['оплата', 'payment', 'способ'])
+  const hasPaymentType = hasValue(rowData, ['оплата', 'payment', 'способ', 'метод_оплаты', 'payment_method'])
   
   return hasPaymentType && !isOrderRow(rowData) && !isCourierRow(rowData)
 }
 
 // Проверяет наличие значения в указанных полях
 const hasValue = (rowData: Record<string, any>, fields: string[]): boolean => {
+  const lowerRowData = Object.keys(rowData).reduce((acc, key) => {
+    acc[key.toLowerCase()] = rowData[key]
+    return acc
+  }, {} as Record<string, any>)
+  
   return fields.some(field => {
-    const value = rowData[field]
+    const value = lowerRowData[field.toLowerCase()]
     return value !== undefined && value !== null && value !== ''
   })
 }
@@ -250,8 +256,13 @@ const createPaymentMethod = (rowData: Record<string, any>, index: number): any =
 
 // Получает значение из указанных полей
 const getValue = (rowData: Record<string, any>, fields: string[]): string => {
+  const lowerRowData = Object.keys(rowData).reduce((acc, key) => {
+    acc[key.toLowerCase()] = rowData[key]
+    return acc
+  }, {} as Record<string, any>)
+  
   for (const field of fields) {
-    const value = rowData[field]
+    const value = lowerRowData[field.toLowerCase()]
     if (value !== undefined && value !== null && value !== '') {
       return String(value).trim()
     }
