@@ -28,4 +28,3 @@ export const ExcelDataPreview: React.FC<ExcelDataPreviewProps> = ({ data, isVisi
   )
 }
 
-
