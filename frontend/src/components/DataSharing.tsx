@@ -33,15 +33,22 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
   
   // Облачная синхронизация (только в development)
   const isDevelopment = import.meta.env.DEV
+  const cloudSyncHook = isDevelopment ? useCloudSync({ 
+    enabled: true, 
+    apiUrl: import.meta.env.VITE_CLOUD_SYNC_URL || 'http://localhost:3001' 
+  }) : {
+    isConnected: false,
+    lastSync: null,
+    syncStatus: 'idle' as const,
+    shareData: async () => { throw new Error('Cloud sync disabled in production') }
+  }
+  
   const { 
     isConnected: isCloudConnected, 
     lastSync: cloudLastSync, 
     syncStatus: cloudSyncStatus,
     shareData: cloudShareData
-  } = useCloudSync({ 
-    enabled: isDevelopment, 
-    apiUrl: import.meta.env.VITE_CLOUD_SYNC_URL || 'http://localhost:3001' 
-  })
+  } = cloudSyncHook
   
   // Безопасные значения по умолчанию
   const safeRoutes = routes || []

@@ -63,7 +63,7 @@ export const Settings: React.FC = () => {
   const googleMapsApiKey = watch('googleMapsApiKey')
 
   const testApiKey = async () => {
-    if (!googleMapsApiKey.trim()) {
+    if (!googleMapsApiKey || !googleMapsApiKey.trim()) {
       toast.error('Пожалуйста, введите Google Maps API ключ')
       return
     }
