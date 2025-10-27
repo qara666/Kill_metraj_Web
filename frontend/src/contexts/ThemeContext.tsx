@@ -1,73 +1,43 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 
-type Theme = 'light' | 'dark'
-
 interface ThemeContextType {
-  theme: Theme
-  toggleTheme: () => void
   isDark: boolean
+  toggleTheme: () => void
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
-export const useTheme = () => {
-  const context = useContext(ThemeContext)
-  if (context === undefined) {
-    throw new Error('useTheme must be used within a ThemeProvider')
-  }
-  return context
-}
-
-interface ThemeProviderProps {
-  children: ReactNode
-}
-
-export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
-  const [theme, setTheme] = useState<Theme>(() => {
-    // Проверяем сохраненную тему или системную
-    const savedTheme = localStorage.getItem('km-theme') as Theme
-    if (savedTheme) {
-      return savedTheme
-    }
-    
-    // Проверяем системную тему
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      return 'dark'
-    }
-    
-    return 'light'
+export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [isDark, setIsDark] = useState<boolean>(() => {
+    const stored = localStorage.getItem('theme')
+    return stored === 'dark'
   })
 
   useEffect(() => {
-    // Сохраняем тему в localStorage
-    localStorage.setItem('km-theme', theme)
-    
-    // Применяем тему к документу
-    document.documentElement.setAttribute('data-theme', theme)
-    
-    // Обновляем meta theme-color для мобильных браузеров
-    const metaThemeColor = document.querySelector('meta[name="theme-color"]')
-    if (metaThemeColor) {
-      metaThemeColor.setAttribute('content', theme === 'dark' ? '#1e293b' : '#ffffff')
+    if (isDark) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
     }
-  }, [theme])
+    localStorage.setItem('theme', isDark ? 'dark' : 'light')
+  }, [isDark])
 
   const toggleTheme = () => {
-    setTheme(prev => prev === 'light' ? 'dark' : 'light')
-  }
-
-  const value = {
-    theme,
-    toggleTheme,
-    isDark: theme === 'dark'
+    setIsDark(!isDark)
   }
 
   return (
-    <ThemeContext.Provider value={value}>
+    <ThemeContext.Provider value={{ isDark, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   )
 }
 
-
+export const useTheme = () => {
+  const context = useContext(ThemeContext)
+  if (!context) {
+    throw new Error('useTheme must be used within ThemeProvider')
+  }
+  return context
+}
 

@@ -148,8 +148,19 @@ export const Dashboard: React.FC = () => {
       }
     })
 
-    // Объединяем ошибки
-    const mergedErrors = [...(existingData.errors || []), ...(newData.errors || [])]
+    // Объединяем ошибки, преобразуя объекты в строки
+    const existingErrors = Array.isArray(existingData.errors) ? existingData.errors : []
+    const newErrors = Array.isArray(newData.errors) ? newData.errors : []
+    
+    const existingErrorsAsStrings = existingErrors.map((error: any) => 
+      typeof error === 'string' ? error : `Строка ${error.row || 'N/A'}: ${error.message || 'Неизвестная ошибка'}`
+    )
+    
+    const newErrorsAsStrings = newErrors.map((error: any) => 
+      typeof error === 'string' ? error : `Строка ${error.row || 'N/A'}: ${error.message || 'Неизвестная ошибка'}`
+    )
+    
+    const mergedErrors = [...existingErrorsAsStrings, ...newErrorsAsStrings]
 
     // Логируем результаты объединения
     log(`Объединение данных: +${addedOrders} заказов (${duplicateOrders} дубликатов), +${addedCouriers} курьеров (${duplicateCouriers} дубликатов), +${addedPaymentMethods} способов оплаты (${duplicatePaymentMethods} дубликатов), +${addedRoutes} маршрутов (${duplicateRoutes} дубликатов)`)
@@ -232,7 +243,7 @@ export const Dashboard: React.FC = () => {
   // Fetch couriers (ленивая загрузка)
   const { data: couriersData, isLoading: couriersLoading } = useQuery({
     queryKey: ['couriers'],
-    queryFn: () => api.courierApi.getCouriers({ limit: 10 }),
+    queryFn: () => api.courierApi.getCouriers(),
     enabled: false, // Отключаем автоматическую загрузку
     staleTime: 5 * 60 * 1000, // 5 минут
   })
@@ -240,7 +251,7 @@ export const Dashboard: React.FC = () => {
   // Fetch routes (ленивая загрузка)
   const { data: routesData, isLoading: routesLoading } = useQuery({
     queryKey: ['routes'],
-    queryFn: () => api.routeApi.getRoutes({ limit: 10 }),
+    queryFn: () => api.routeApi.getRoutes(),
     enabled: false, // Отключаем автоматическую загрузку
     staleTime: 5 * 60 * 1000, // 5 минут
   })
@@ -256,13 +267,17 @@ export const Dashboard: React.FC = () => {
       const paymentMethods = Array.isArray((data as any).paymentMethods) ? (data as any).paymentMethods : []
       const routes = Array.isArray((data as any).routes) ? (data as any).routes : []
       const errorsArr = Array.isArray((data as any).errors) ? (data as any).errors : []
+      // Преобразуем объекты ошибок в строки
+      const errorsAsStrings = errorsArr.map((error: any) => 
+        typeof error === 'string' ? error : `Строка ${error.row || 'N/A'}: ${error.message || 'Неизвестная ошибка'}`
+      )
 
       const newData: any = {
         orders,
         couriers,
         paymentMethods,
         routes,
-        errors: errorsArr,
+        errors: errorsAsStrings,
         summary: {
           totalRows: orders.length + couriers.length + paymentMethods.length + routes.length,
           successfulGeocoding: 0,
@@ -270,7 +285,7 @@ export const Dashboard: React.FC = () => {
           orders: orders.length,
           couriers: couriers.length,
           paymentMethods: paymentMethods.length,
-          errors: errorsArr
+          errors: errorsAsStrings
         }
       }
 
@@ -349,9 +364,14 @@ export const Dashboard: React.FC = () => {
     log('Пользователь подтвердил сохранение данных из Excel')
   }
 
-  const stats = dashboardData
-  const couriers = couriersData || []
-  const routes = routesData || []
+  const stats = (dashboardData as any)?.data?.overview || {
+    totalOrders: 0,
+    totalRevenue: 0,
+    totalCouriers: 0,
+    totalRoutes: 0
+  }
+  const couriers = Array.isArray((couriersData as any)?.data) ? (couriersData as any).data : []
+  const routes = Array.isArray((routesData as any)?.data) ? (routesData as any).data : []
 
   return (
     <div className={clsx(
@@ -392,28 +412,28 @@ export const Dashboard: React.FC = () => {
             value={stats.totalRoutes}
             icon={MapIcon}
             color="primary"
-            change={`${(stats as any).activeRoutes || 0} активных`}
+            change={`${stats.activeRoutes} активных`}
           />
           <StatsCard
             title="Всего курьеров"
             value={stats.totalCouriers}
             icon={UserGroupIcon}
             color="success"
-            change={`${(stats as any).activeCouriers || 0} активных`}
+            change={`${stats.activeCouriers} активных`}
           />
           <StatsCard
             title="Всего заказов"
             value={stats.totalOrders}
             icon={TruckIcon}
             color="warning"
-            change={`${((stats as any).averageOrdersPerRoute || 0).toFixed(1)} среднее/маршрут`}
+            change={`${stats.averageOrdersPerRoute.toFixed(1)} среднее/маршрут`}
           />
           <StatsCard
             title="Процент выполнения"
-            value={`${((stats as any).completionRate || 0).toFixed(1)}%`}
+            value={`${stats.completionRate.toFixed(1)}%`}
             icon={CheckCircleIcon}
             color="success"
-            change={`${(stats as any).completedRoutes || 0} завершено`}
+            change={`${stats.completedRoutes} завершено`}
           />
         </div>
       )}
@@ -601,4 +621,13 @@ export const Dashboard: React.FC = () => {
     </div>
   )
 }
+
+
+
+
+
+
+
+
+
 

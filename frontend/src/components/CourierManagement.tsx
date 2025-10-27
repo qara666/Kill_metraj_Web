@@ -8,13 +8,14 @@ import {
   MapPinIcon,
   XMarkIcon,
   ClockIcon,
-  MapIcon
+  MapIcon,
+  ArrowPathIcon,
 } from '@heroicons/react/24/outline'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
-// import { localStorageUtils } from '../utils/localStorage' // Пока не используется
 // import { googleMapsLoader } from '../utils/googleMapsLoader' // Убрано для предотвращения дублирования
 import { clsx } from 'clsx'
+import { AddressValidationService } from '../services/addressValidation'
 
 interface Courier {
   id: string
@@ -34,7 +35,7 @@ interface CourierManagementProps {
 }
 
 export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData }) => {
-  const { excelData: contextData, updateCourierData, updateRouteData } = useExcelData()
+  const { excelData: contextData, updateRouteData } = useExcelData()
   const { isDark } = useTheme()
   const [couriers, setCouriers] = useState<Courier[]>([])
   const [showAddModal, setShowAddModal] = useState(false)
@@ -263,7 +264,6 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
           return courier
         })
         console.log('Обновляем контекст:', updatedContextCouriers)
-        updateCourierData(updatedContextCouriers)
       }
       
       return updatedCouriers
@@ -363,6 +363,29 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   const handleDistanceClick = (courier: Courier) => {
     setSelectedCourierForDistance(courier)
     setShowDistanceModal(true)
+  }
+
+  // Функция для пересчета конкретного маршрута курьера
+  const recalculateCourierRoute = async (route: any) => {
+    // Проверяем аномалии перед пересчетом
+    const anomalyCheck = AddressValidationService.checkRouteAnomalies(route)
+
+    if (anomalyCheck.hasAnomalies && anomalyCheck.errors.length > 0) {
+      const errorMessage = `Обнаружены ошибки в маршруте:\n${anomalyCheck.errors.join('\n')}\n\nПересчет невозможен. Исправьте ошибки в адресах.`
+      alert(errorMessage)
+      return
+    }
+
+    if (anomalyCheck.warnings.length > 0) {
+      const warningMessage = `Предупреждения в маршруте:\n${anomalyCheck.warnings.join('\n')}\n\nПродолжить пересчет?`
+      if (!window.confirm(warningMessage)) {
+        return
+      }
+    }
+
+    // Здесь можно добавить логику пересчета через Google Maps API
+    // Пока что просто показываем сообщение
+    alert(`Пересчет маршрута для курьера ${route.courier} будет выполнен. Функция находится в разработке.`)
   }
 
 
@@ -1005,6 +1028,13 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                                       <MapIcon className="h-4 w-4" />
                                     </button>
                                     <button
+                                      onClick={() => recalculateCourierRoute(route)}
+                                      className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all duration-200"
+                                      title="Пересчитать маршрут"
+                                    >
+                                      <ArrowPathIcon className="h-4 w-4" />
+                                    </button>
+                                    <button
                                       onClick={() => deleteRoute(route.id)}
                                       className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200"
                                       title="Удалить маршрут"
@@ -1140,3 +1170,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     </div>
   )
 }
+
+
+
+
+

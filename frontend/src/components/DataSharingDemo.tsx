@@ -90,13 +90,7 @@ export const DataSharingDemo: React.FC = () => {
   const handleGenerateDemo = () => {
     try {
       const { demoExcelData, demoRoutes } = generateDemoData()
-      const shareableData = {
-        excelData: demoExcelData,
-        routes: demoRoutes,
-        timestamp: Date.now(),
-        version: '1.0.0'
-      }
-      const url = shareData(shareableData)
+      const url = shareData(demoExcelData, demoRoutes)
       setDemoUrl(url)
       toast.success('Демо-ссылка создана!')
     } catch (error) {
@@ -191,13 +185,7 @@ export const DataSharingDemo: React.FC = () => {
             <button
               onClick={() => {
                 if (excelData && safeRoutes.length > 0) {
-                  const shareableData = {
-                    excelData,
-                    routes: safeRoutes,
-                    timestamp: Date.now(),
-                    version: '1.0.0'
-                  }
-                  const url = shareData(shareableData)
+                  const url = shareData(excelData, safeRoutes)
                   setDemoUrl(url)
                   toast.success('Ссылка с вашими данными создана!')
                 }
@@ -298,3 +286,13 @@ export const DataSharingDemo: React.FC = () => {
     </div>
   )
 }
+
+
+
+
+
+
+
+
+
+
