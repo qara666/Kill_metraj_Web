@@ -8,13 +8,16 @@ import {
   MapPinIcon,
   XMarkIcon,
   ClockIcon,
-  MapIcon
+  MapIcon,
+  ArrowPathIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/outline'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
-// import { localStorageUtils } from '../utils/localStorage' // Не используется
+import { localStorageUtils } from '../utils/localStorage'
 // import { googleMapsLoader } from '../utils/googleMapsLoader' // Убрано для предотвращения дублирования
 import { clsx } from 'clsx'
+import { AddressValidationService, RouteAnomalyCheck } from '../services/addressValidation'
 
 interface Courier {
   id: string
@@ -46,11 +49,6 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   const [routeToDelete, setRouteToDelete] = useState<any>(null)
   const [showDistanceModal, setShowDistanceModal] = useState(false)
   const [selectedCourierForDistance, setSelectedCourierForDistance] = useState<Courier | null>(null)
-  const [showAddressEditModal, setShowAddressEditModal] = useState(false)
-  const [addressToEdit, setAddressToEdit] = useState<any>(null)
-  const [editedAddress, setEditedAddress] = useState('')
-  const [routeToUpdate, setRouteToUpdate] = useState<any>(null)
-  const [isGeocoding, setIsGeocoding] = useState(false)
 
   // Рассчитываем расстояние для каждого курьера на основе маршрутов
   const calculateCourierDistance = useMemo(() => {
@@ -370,169 +368,27 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     setShowDistanceModal(true)
   }
 
-  // Функция для открытия модального окна редактирования адреса
-  const handleEditAddressClick = (order: any, route: any) => {
-    setAddressToEdit(order)
-    setEditedAddress(order.address)
-    setRouteToUpdate(route)
-    setShowAddressEditModal(true)
-  }
+  // Функция для пересчета конкретного маршрута курьера
+  const recalculateCourierRoute = async (route: any) => {
+    // Проверяем аномалии перед пересчетом
+    const anomalyCheck = AddressValidationService.checkRouteAnomalies(route)
 
-  // Функция для открытия Google Maps Place Picker для выбора адреса
-  const openGoogleMapsPlacePicker = () => {
-    const url = `https://www.google.com/maps/search/?api=1`
-    window.open(url, '_blank')
-  }
-
-  // Функция для геокодирования адреса
-  const geocodeAddress = async (address: string): Promise<string> => {
-    if (!window.google || !address.trim()) {
-      return address
-    }
-
-    return new Promise((resolve) => {
-      const geocoder = new window.google.maps.Geocoder()
-      
-      geocoder.geocode({ address: address }, (results: any, status: any) => {
-        if (status === 'OK' && results && results[0]) {
-          // Возвращаем отформатированный адрес из Google Maps
-          const formattedAddress = results[0].formatted_address
-          console.log('Адрес геокодирован:', formattedAddress)
-          resolve(formattedAddress)
-        } else {
-          console.warn('Не удалось геокодировать адрес, используется исходный:', address)
-          resolve(address)
-        }
-      })
-    })
-  }
-
-  // Функция для сохранения отредактированного адреса и пересчета маршрута
-  const handleSaveEditedAddress = async () => {
-    if (!addressToEdit || !routeToUpdate || !editedAddress.trim()) {
-      alert('Введите корректный адрес')
+    if (anomalyCheck.hasAnomalies && anomalyCheck.errors.length > 0) {
+      const errorMessage = `Обнаружены ошибки в маршруте:\n${anomalyCheck.errors.join('\n')}\n\nПересчет невозможен. Исправьте ошибки в адресах.`
+      alert(errorMessage)
       return
     }
 
-    try {
-      setIsGeocoding(true)
-      
-      // Геокодируем введенный адрес
-      const geocodedAddress = await geocodeAddress(editedAddress.trim())
-      
-      // Обновляем адрес заказа в маршруте
-      const updatedOrders = routeToUpdate.orders.map((order: any) => 
-        order.id === addressToEdit.id 
-          ? { ...order, address: geocodedAddress }
-          : order
-      )
-
-      // Обновляем маршрут
-      const updatedRoute = { ...routeToUpdate, orders: updatedOrders }
-
-      // Обновляем маршруты в контексте
-      if (contextData?.routes) {
-        const updatedRoutes = contextData.routes.map((r: any) => 
-          r.id === routeToUpdate.id ? updatedRoute : r
-        )
-        
-        // Обновляем контекст
-        updateRouteData(updatedRoutes)
-        
-        // Сохраняем в localStorage
-        try {
-          localStorage.setItem('km_routes', JSON.stringify(updatedRoutes))
-        } catch (error) {
-          console.error('Ошибка сохранения маршрутов:', error)
-        }
-
-        alert(`✅ Адрес обновлен и геокодирован!\n\nНовый адрес: ${geocodedAddress}\n\nТеперь нажмите "🔄 Пересчитать" для получения нового километража.`)
-        
-        // Закрываем модальное окно
-        setShowAddressEditModal(false)
-        setAddressToEdit(null)
-        setEditedAddress('')
-        setRouteToUpdate(null)
-      }
-    } catch (error) {
-      console.error('Ошибка геокодирования адреса:', error)
-      alert('Ошибка геокодирования адреса. Попробуйте ввести более точный адрес.')
-    } finally {
-      setIsGeocoding(false)
-    }
-  }
-
-  // Функция для пересчета километража конкретного маршрута
-  const recalculateRouteDistance = async (routeId: string) => {
-    const route = contextData?.routes?.find((r: any) => r.id === routeId)
-    if (!route) return
-
-    try {
-      // Проверяем наличие Google Maps API
-      if (!window.google) {
-        alert('Google Maps API не загружен. Проверьте настройки.')
+    if (anomalyCheck.warnings.length > 0) {
+      const warningMessage = `Предупреждения в маршруте:\n${anomalyCheck.warnings.join('\n')}\n\nПродолжить пересчет?`
+      if (!window.confirm(warningMessage)) {
         return
       }
-
-      const directionsService = new window.google.maps.DirectionsService()
-      
-      // Готовим waypoints
-      const waypoints = route.orders.map((order: any) => ({
-        location: order.address,
-        stopover: true
-      }))
-
-      const request = {
-        origin: route.startAddress,
-        destination: route.endAddress,
-        waypoints: waypoints,
-        travelMode: window.google.maps.TravelMode.DRIVING,
-        optimizeWaypoints: false,
-        unitSystem: window.google.maps.UnitSystem.METRIC,
-        avoidHighways: false,
-        avoidTolls: false,
-        avoidFerries: false
-      }
-
-      directionsService.route(request, (result: any, status: any) => {
-        if (status === window.google.maps.DirectionsStatus.OK && result) {
-          const totalDistance = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
-          const totalDuration = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
-
-          const distanceKm = totalDistance / 1000
-          
-          // Обновляем маршрут с новым километражем
-          if (contextData?.routes) {
-            const updatedRoutes = contextData.routes.map((r: any) => 
-              r.id === routeId 
-                ? { 
-                    ...r, 
-                    totalDistance: distanceKm,
-                    totalDuration: totalDuration / 60,
-                    isOptimized: true
-                  }
-                : r
-            )
-            
-            updateRouteData(updatedRoutes)
-            
-            // Сохраняем в localStorage
-            try {
-              localStorage.setItem('km_routes', JSON.stringify(updatedRoutes))
-            } catch (error) {
-              console.error('Ошибка сохранения маршрутов:', error)
-            }
-
-            alert(`Километраж маршрута обновлен: ${distanceKm.toFixed(1)}км`)
-          }
-        } else {
-          alert('Ошибка пересчета маршрута. Проверьте корректность адресов.')
-        }
-      })
-    } catch (error) {
-      console.error('Ошибка пересчета маршрута:', error)
-      alert('Ошибка пересчета маршрута. Проверьте настройки Google Maps API.')
     }
+
+    // Здесь можно добавить логику пересчета через Google Maps API
+    // Пока что просто показываем сообщение
+    alert(`Пересчет маршрута для курьера ${route.courier} будет выполнен. Функция находится в разработке.`)
   }
 
 
@@ -1175,6 +1031,13 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                                       <MapIcon className="h-4 w-4" />
                                     </button>
                                     <button
+                                      onClick={() => recalculateCourierRoute(route)}
+                                      className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all duration-200"
+                                      title="Пересчитать маршрут"
+                                    >
+                                      <ArrowPathIcon className="h-4 w-4" />
+                                    </button>
+                                    <button
                                       onClick={() => deleteRoute(route.id)}
                                       className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200"
                                       title="Удалить маршрут"
@@ -1210,38 +1073,18 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                                 {/* Заказы в маршруте */}
                                 {route.orders && route.orders.length > 0 && (
                                   <div className="mt-4">
-                                    <div className="flex items-center justify-between mb-2">
-                                      <h6 className="text-sm font-medium text-gray-700">Заказы в маршруте:</h6>
-                                      <button
-                                        onClick={() => recalculateRouteDistance(route.id)}
-                                        className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
-                                        title="Пересчитать километраж маршрута"
-                                      >
-                                        🔄 Пересчитать
-                                      </button>
-                                    </div>
-                                    <div className="space-y-2">
+                                    <h6 className="text-sm font-medium text-gray-700 mb-2">Заказы в маршруте:</h6>
+                                    <div className="space-y-1">
                                       {route.orders.map((order: any, orderIndex: number) => (
-                                        <div key={orderIndex} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                                          <div className="flex items-center space-x-2 text-sm flex-1 min-w-0">
-                                            <span className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0">
-                                              {orderIndex + 1}
-                                            </span>
-                                            <span className="text-gray-600 font-medium flex-shrink-0">#{order.orderNumber}</span>
-                                            <span className="text-gray-500 truncate flex-1" title={order.address}>
-                                              {order.address}
-                                            </span>
-                                            {order.customerName && (
-                                              <span className="text-gray-400 text-xs flex-shrink-0">({order.customerName})</span>
-                                            )}
-                                          </div>
-                                          <button
-                                            onClick={() => handleEditAddressClick(order, route)}
-                                            className="ml-2 p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded transition-colors flex-shrink-0"
-                                            title="Редактировать адрес"
-                                          >
-                                            <PencilIcon className="h-4 w-4" />
-                                          </button>
+                                        <div key={orderIndex} className="flex items-center space-x-2 text-sm">
+                                          <span className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium">
+                                            {orderIndex + 1}
+                                          </span>
+                                          <span className="text-gray-600 font-medium">#{order.orderNumber}</span>
+                                          <span className="text-gray-500 truncate">{order.address}</span>
+                                          {order.customerName && (
+                                            <span className="text-gray-400 text-xs">({order.customerName})</span>
+                                          )}
                                         </div>
                                       ))}
                                     </div>
@@ -1297,118 +1140,6 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
         </div>
       )}
 
-      {/* Модальное окно редактирования адреса */}
-      {showAddressEditModal && addressToEdit && routeToUpdate && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70]">
-          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-medium text-gray-900">
-                  Редактирование адреса
-                </h3>
-                <button
-                  onClick={() => setShowAddressEditModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <XMarkIcon className="h-6 w-6" />
-                </button>
-              </div>
-            </div>
-            
-            <div className="px-6 py-4">
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Номер заказа
-                </label>
-                <div className="text-sm text-gray-600">#{addressToEdit.orderNumber}</div>
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Текущий адрес
-                </label>
-                <div className="text-sm text-gray-500 bg-gray-50 p-3 rounded-lg">
-                  {addressToEdit.address}
-                </div>
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Новый адрес
-                </label>
-                <textarea
-                  value={editedAddress}
-                  onChange={(e) => setEditedAddress(e.target.value)}
-                  placeholder="Введите новый адрес..."
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-
-              <div className="mb-4">
-                <button
-                  onClick={openGoogleMapsPlacePicker}
-                  className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
-                  type="button"
-                >
-                  <MapIcon className="h-5 w-5" />
-                  <span>Открыть Google Maps для поиска адреса</span>
-                </button>
-              </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-                <p className="text-xs text-blue-700">
-                  <strong>📍 Автогеокодирование:</strong> При сохранении адрес будет автоматически геокодирован через Google Maps для получения корректного формата.
-                </p>
-              </div>
-
-              {isGeocoding && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-                  <div className="flex items-center space-x-2">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-                    <p className="text-sm text-blue-700 font-medium">
-                      Геокодирование адреса...
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
-              <button
-                onClick={() => setShowAddressEditModal(false)}
-                disabled={isGeocoding}
-                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                  isGeocoding 
-                    ? 'text-gray-400 bg-gray-100 cursor-not-allowed' 
-                    : 'text-gray-700 bg-gray-100 hover:bg-gray-200'
-                }`}
-              >
-                Отмена
-              </button>
-              <button
-                onClick={handleSaveEditedAddress}
-                disabled={isGeocoding || !editedAddress.trim()}
-                className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors flex items-center space-x-2 ${
-                  isGeocoding || !editedAddress.trim()
-                    ? 'bg-blue-400 cursor-not-allowed' 
-                    : 'bg-blue-600 hover:bg-blue-700'
-                }`}
-              >
-                {isGeocoding ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                    <span>Геокодирование...</span>
-                  </>
-                ) : (
-                  <span>Сохранить адрес</span>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Add/Edit Modal */}
       {(showAddModal || editingCourier) && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -1442,3 +1173,4 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     </div>
   )
 }
+
