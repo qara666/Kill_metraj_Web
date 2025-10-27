@@ -1,0 +1,2 @@
+# Render Environment Variables для Frontend
+VITE_API_URL=https://kill-metraj-backend.onrender.com

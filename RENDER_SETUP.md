@@ -1,82 +1,63 @@
-# Настройка Render для связи бэкенда и фронтенда
+# Настройка для Render
 
-## Проблема
-Фронтенд не может подключиться к бэкенду на Render, потому что они развернуты как отдельные сервисы.
+## Backend (Node.js)
 
-## Решение
-
-### 1. Настройка бэкенда на Render
-
-#### Создание Web Service для бэкенда:
-1. Подключите репозиторий GitHub
-2. Выберите папку `backend`
-3. Настройки:
-   - **Build Command**: `npm install`
-   - **Start Command**: `node simple_server.js`
-   - **Environment**: `Node`
-
-#### Переменные окружения для бэкенда:
+### Переменные окружения на Render:
 ```
+PORT=10000
 NODE_ENV=production
-PORT=5001
+CORS_ORIGIN=https://kill-metraj-frontend.onrender.com
 ```
 
-### 2. Настройка фронтенда на Render
-
-#### Создание Static Site для фронтенда:
-1. Подключите тот же репозиторий GitHub
-2. Выберите папку `frontend`
-3. Настройки:
-   - **Build Command**: `npm run build`
-   - **Publish Directory**: `dist`
-
-#### Переменные окружения для фронтенда:
+### Команда запуска:
 ```
-VITE_API_BASE_URL=https://your-backend-service.onrender.com/api
-VITE_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+npm start
 ```
 
-### 3. Обновление CORS в бэкенде
-
-После получения URL фронтенда, обновите `backend/simple_server.js`:
-
-```javascript
-app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'https://your-frontend-service.onrender.com', // Замените на ваш URL
-  ],
-  credentials: true
-}));
+### URL бэкенда:
+```
+https://kill-metraj-backend.onrender.com
 ```
 
-### 4. Проверка работы
+## Frontend (Vite)
 
-1. **Бэкенд**: Откройте `https://your-backend-service.onrender.com/api/health`
-2. **Фронтенд**: Откройте `https://your-frontend-service.onrender.com`
-3. **Проверка связи**: Загрузите Excel файл во фронтенде
+### Переменные окружения на Render:
+```
+VITE_API_URL=https://kill-metraj-backend.onrender.com
+```
 
-### 5. Отладка
+### Команда сборки:
+```
+npm run build
+```
 
-Если не работает:
+### Команда запуска:
+```
+npm run preview
+```
 
-1. **Проверьте URL бэкенда** в переменных окружения фронтенда
-2. **Проверьте CORS** - добавьте URL фронтенда в список разрешенных
-3. **Проверьте логи** в Render Dashboard
-4. **Проверьте Network** в DevTools браузера
+### Директория для статики:
+```
+dist
+```
 
-### 6. Примеры URL
+## Проблемы и решения
 
-- **Бэкенд**: `https://kill-metraj-backend.onrender.com`
-- **Фронтенд**: `https://kill-metraj-frontend.onrender.com`
-- **API Base URL**: `https://kill-metraj-backend.onrender.com/api`
+### 1. CORS ошибки
+- Убедитесь, что в `simple_server.js` добавлен URL фронтенда в `cors.origin`
+- На бэкенде должно быть: `origin: ['https://kill-metraj-frontend.onrender.com']`
 
-## Важно!
+### 2. API недоступен
+- Проверьте переменную окружения `VITE_API_URL` на фронтенде
+- Проверьте, что бэкенд запущен и доступен
+- Проверьте логи бэкенда на Render
 
-1. **Замените** `your-backend-service.onrender.com` на реальный URL вашего бэкенда
-2. **Замените** `your-frontend-service.onrender.com` на реальный URL вашего фронтенда
-3. **Обновите** CORS настройки после получения URL
-4. **Перезапустите** сервисы после изменения переменных окружения
+### 3. Excel файлы не обрабатываются
+- Файлы теперь обрабатываются на бэкенде через `ExcelService_v3.js`
+- Проверьте логи бэкенда для ошибок обработки
+- Убедитесь, что `xlsx` установлен на бэкенде
 
-
-
+### 4. Подключение не работает
+- Убедитесь, что оба сервиса запущены на Render
+- Проверьте, что порты настроены правильно
+- Используйте HTTPS URLs для подключения
