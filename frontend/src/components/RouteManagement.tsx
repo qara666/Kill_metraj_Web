@@ -8,18 +8,13 @@ import {
   MapPinIcon,
   CheckCircleIcon,
   ChevronUpIcon,
-  ChevronDownIcon,
-  PencilIcon,
-  ArrowPathIcon,
-  ExclamationTriangleIcon
+  ChevronDownIcon
 } from '@heroicons/react/24/outline'
 import { localStorageUtils } from '../utils/localStorage'
 import { googleMapsLoader } from '../utils/googleMapsLoader'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { clsx } from 'clsx'
-import { AddressEditModal } from './AddressEditModal'
-import { AddressValidationService, RouteAnomalyCheck } from '../services/addressValidation'
 
 // Google Maps types
 declare global {
@@ -206,9 +201,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   const [timeFilter, setTimeFilter] = useState<string>('all') // all, morning, afternoon, evening
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [routeToDelete, setRouteToDelete] = useState<Route | null>(null)
-  const [showAddressEditModal, setShowAddressEditModal] = useState(false)
-  const [editingOrder, setEditingOrder] = useState<Order | null>(null)
-  const [routeAnomalies, setRouteAnomalies] = useState<Map<string, RouteAnomalyCheck>>(new Map())
+  const placeIdCacheRef = useRef<Map<string, string>>(new Map())
+  const geocodeCacheRef = useRef<Map<string, { placeId: string; formattedAddress: string }>>(new Map())
+  const regionBiasRef = useRef<{ country?: string; locality?: string; bounds?: google.maps.LatLngBounds | null }>({})
 
   // Дебаунсинг для поиска
   useEffect(() => {
@@ -617,23 +612,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
       }
     }
 
-    // Проверяем аномалии перед расчетом
-    const anomalyCheck = AddressValidationService.checkRouteAnomalies(route)
-    setRouteAnomalies(prev => new Map(prev).set(route.id, anomalyCheck))
-
-    if (anomalyCheck.hasAnomalies && anomalyCheck.errors.length > 0) {
-      const errorMessage = `Обнаружены ошибки в маршруте:\n${anomalyCheck.errors.join('\n')}\n\nРасчет невозможен. Исправьте ошибки в адресах.`
-      alert(errorMessage)
-      return
-    }
-
-    if (anomalyCheck.warnings.length > 0) {
-      const warningMessage = `Предупреждения в маршруте:\n${anomalyCheck.warnings.join('\n')}\n\nПродолжить расчет?`
-      if (!window.confirm(warningMessage)) {
-        return
-      }
-    }
-
     setIsCalculating(true)
 
     try {
@@ -738,67 +716,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     setShowDeleteModal(false)
     setRouteToDelete(null)
   }
-
-  // Функция для открытия модального окна редактирования адреса
-  const handleEditAddress = (order: Order) => {
-    setEditingOrder(order)
-    setShowAddressEditModal(true)
-  }
-
-  // Функция для сохранения измененного адреса
-  const handleSaveAddress = (newAddress: string) => {
-    if (!editingOrder) return
-
-    // Обновляем адрес в заказе
-    const updatedOrder = { ...editingOrder, address: newAddress }
-    
-    // Обновляем маршруты, содержащие этот заказ
-    setRoutes(prev => prev.map(route => ({
-      ...route,
-      orders: route.orders.map(order => 
-        order.id === editingOrder.id ? updatedOrder : order
-      ),
-      // Сбрасываем флаг оптимизации, так как адрес изменился
-      isOptimized: false,
-      totalDistance: 0,
-      totalDuration: 0
-    })))
-
-    // Обновляем данные в контексте Excel
-    if (excelData?.orders) {
-      excelData.orders.map((order: any) => 
-        order.id === editingOrder.id ? { ...order, address: newAddress } : order
-      )
-      // Здесь можно обновить контекст, если нужно
-    }
-
-    setShowAddressEditModal(false)
-    setEditingOrder(null)
-  }
-
-  // Функция для пересчета конкретного маршрута
-  const recalculateRoute = async (route: Route) => {
-    // Проверяем аномалии перед пересчетом
-    const anomalyCheck = AddressValidationService.checkRouteAnomalies(route)
-    setRouteAnomalies(prev => new Map(prev).set(route.id, anomalyCheck))
-
-    if (anomalyCheck.hasAnomalies && anomalyCheck.errors.length > 0) {
-      const errorMessage = `Обнаружены ошибки в маршруте:\n${anomalyCheck.errors.join('\n')}\n\nПересчет невозможен. Исправьте ошибки в адресах.`
-      alert(errorMessage)
-      return
-    }
-
-    if (anomalyCheck.warnings.length > 0) {
-      const warningMessage = `Предупреждения в маршруте:\n${anomalyCheck.warnings.join('\n')}\n\nПродолжить пересчет?`
-      if (!window.confirm(warningMessage)) {
-        return
-      }
-    }
-
-    // Выполняем пересчет
-    await calculateRouteDistance(route)
-  }
-
 
   const clearAllRoutes = () => {
     console.log('Clear all routes clicked, current routes count:', routes.length)
@@ -1415,19 +1332,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                         <MapIcon className="h-4 w-4" />
                       </button>
                       <button
-                        onClick={() => recalculateRoute(route)}
-                        disabled={isCalculating}
-                        className={clsx(
-                          'p-1 transition-colors disabled:opacity-50',
-                          isDark 
-                            ? 'text-gray-400 hover:text-green-400' 
-                            : 'text-gray-400 hover:text-green-600'
-                        )}
-                        title="Пересчитать маршрут"
-                      >
-                        <ArrowPathIcon className="h-4 w-4" />
-                      </button>
-                      <button
                         onClick={() => deleteRoute(route.id)}
                         className={clsx(
                           'p-2 rounded-lg transition-all duration-200 ease-in-out transform hover:scale-110',
@@ -1443,52 +1347,25 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                   </div>
 
                   <div className="space-y-2">
-                    {route.orders.map((order, index) => {
-                      const anomalyCheck = routeAnomalies.get(route.id)
-                      const hasAddressIssues = anomalyCheck?.errors.some(error => 
-                        error.includes('адрес') || error.includes('адресов')
-                      )
-                      
-                      return (
-                        <div key={order.id} className="flex items-center space-x-2 text-sm group">
-                          <span className={clsx(
-                            'w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium',
-                            isDark 
-                              ? 'bg-blue-600/20 text-blue-300' 
-                              : 'bg-blue-100 text-blue-800'
-                          )}>
-                            {index + 1}
-                          </span>
-                          <span className={clsx(
-                            isDark ? 'text-gray-300' : 'text-gray-600'
-                          )}>#{order.orderNumber}</span>
-                          <span className={clsx(
-                            'truncate flex-1',
-                            isDark ? 'text-gray-400' : 'text-gray-500',
-                            hasAddressIssues && 'text-red-500'
-                          )}>{order.address}</span>
-                          
-                          {/* Кнопка редактирования адреса */}
-                          <button
-                            onClick={() => handleEditAddress(order)}
-                            className={clsx(
-                              'p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200',
-                              isDark 
-                                ? 'text-gray-400 hover:text-blue-400 hover:bg-blue-900/20' 
-                                : 'text-gray-400 hover:text-blue-600 hover:bg-blue-100'
-                            )}
-                            title="Редактировать адрес"
-                          >
-                            <PencilIcon className="h-4 w-4" />
-                          </button>
-                          
-                          {/* Индикатор проблем с адресом */}
-                          {hasAddressIssues && (
-                            <ExclamationTriangleIcon className="h-4 w-4 text-red-500" title="Проблемы с адресом" />
-                          )}
-                        </div>
-                      )
-                    })}
+                    {route.orders.map((order, index) => (
+                      <div key={order.id} className="flex items-center space-x-2 text-sm">
+                        <span className={clsx(
+                          'w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium',
+                          isDark 
+                            ? 'bg-blue-600/20 text-blue-300' 
+                            : 'bg-blue-100 text-blue-800'
+                        )}>
+                          {index + 1}
+                        </span>
+                        <span className={clsx(
+                          isDark ? 'text-gray-300' : 'text-gray-600'
+                        )}>#{order.orderNumber}</span>
+                        <span className={clsx(
+                          'truncate',
+                          isDark ? 'text-gray-400' : 'text-gray-500'
+                        )}>{order.address}</span>
+                      </div>
+                    ))}
                   </div>
 
                   <div className={clsx(
@@ -1537,52 +1414,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                         )}>
                           ✓ Маршрут создан
                         </div>
-                        
-                        {/* Отображение аномалий маршрута */}
-                        {(() => {
-                          const anomalyCheck = routeAnomalies.get(route.id)
-                          if (!anomalyCheck || (!anomalyCheck.hasAnomalies && anomalyCheck.warnings.length === 0)) {
-                            return null
-                          }
-                          
-                          return (
-                            <div className="mt-2 space-y-1">
-                              {anomalyCheck.errors.length > 0 && (
-                                <div className={clsx(
-                                  'text-xs p-2 rounded',
-                                  isDark ? 'bg-red-900/20 text-red-300' : 'bg-red-50 text-red-700'
-                                )}>
-                                  <div className="flex items-center space-x-1">
-                                    <ExclamationTriangleIcon className="h-3 w-3" />
-                                    <span className="font-medium">Ошибки:</span>
-                                  </div>
-                                  <ul className="ml-4 mt-1">
-                                    {anomalyCheck.errors.map((error, index) => (
-                                      <li key={index}>• {error}</li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              )}
-                              
-                              {anomalyCheck.warnings.length > 0 && (
-                                <div className={clsx(
-                                  'text-xs p-2 rounded',
-                                  isDark ? 'bg-yellow-900/20 text-yellow-300' : 'bg-yellow-50 text-yellow-700'
-                                )}>
-                                  <div className="flex items-center space-x-1">
-                                    <ExclamationTriangleIcon className="h-3 w-3" />
-                                    <span className="font-medium">Предупреждения:</span>
-                                  </div>
-                                  <ul className="ml-4 mt-1">
-                                    {anomalyCheck.warnings.map((warning, index) => (
-                                      <li key={index}>• {warning}</li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })()}
                       </>
                     ) : (
                       <div className={clsx(
@@ -1704,31 +1535,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
           </div>
         </div>
       )}
-
-      {/* Модальное окно редактирования адреса */}
-      {showAddressEditModal && editingOrder && (
-        <AddressEditModal
-          isOpen={showAddressEditModal}
-          onClose={() => {
-            setShowAddressEditModal(false)
-            setEditingOrder(null)
-          }}
-          onSave={handleSaveAddress}
-          currentAddress={editingOrder.address}
-          orderNumber={editingOrder.orderNumber}
-          customerName={editingOrder.customerName}
-          isDark={isDark}
-        />
-      )}
     </div>
   )
 }
-
-
-
-
-
-
-
-
-

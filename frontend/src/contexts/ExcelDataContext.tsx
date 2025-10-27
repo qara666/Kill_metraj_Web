@@ -14,7 +14,6 @@ interface ExcelData {
 
 interface ExcelDataContextType {
   excelData: ExcelData | null
-  routes: any[]
   setExcelData: (data: ExcelData | null) => void
   updateExcelData: (data: ExcelData) => void
   clearExcelData: () => void
@@ -110,31 +109,9 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     }
   }
 
-  // Получаем маршруты из localStorage
-  const [routesState, setRoutesState] = useState<any[]>([])
-  
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('km_routes')
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        if (Array.isArray(parsed)) {
-          setRoutesState(parsed)
-        }
-      }
-    } catch (error) {
-      console.warn('Ошибка восстановления маршрутов из localStorage:', error)
-    }
-  }, [])
-
   return (
-    <ExcelDataContext.Provider value={{ excelData, routes: routesState, setExcelData, updateExcelData, clearExcelData, updateRouteData, updateCourierData }}>
+    <ExcelDataContext.Provider value={{ excelData, setExcelData, updateExcelData, clearExcelData, updateRouteData, updateCourierData }}>
       {children}
     </ExcelDataContext.Provider>
   )
 }
-
-
-
-
-

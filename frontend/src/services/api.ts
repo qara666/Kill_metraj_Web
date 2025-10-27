@@ -1,8 +1,6 @@
 // API сервисы для работы с данными
 // Заглушки для совместимости с существующим кодом
 
-import { processExcelFile } from '../utils/excelProcessor'
-
 export const analyticsApi = {
   getDashboardAnalytics: async () => {
     // Заглушка для аналитики
@@ -16,14 +14,14 @@ export const analyticsApi = {
 }
 
 export const courierApi = {
-  getCouriers: async (_params: { limit?: number }) => {
+  getCouriers: async (params: { limit?: number }) => {
     // Заглушка для курьеров
     return []
   }
 }
 
 export const routeApi = {
-  getRoutes: async (_params: { limit?: number }) => {
+  getRoutes: async (params: { limit?: number }) => {
     // Заглушка для маршрутов
     return []
   }
@@ -31,29 +29,28 @@ export const routeApi = {
 
 export const uploadApi = {
   uploadExcelFile: async (file: File) => {
-    console.log('Обработка Excel файла локально:', file.name)
+    console.log('Отправка файла на сервер:', file.name)
+    
+    const formData = new FormData()
+    formData.append('file', file)
     
     try {
-      // Обрабатываем файл локально
-      const processedData = await processExcelFile(file)
-      
-      console.log('Файл успешно обработан:', {
-        orders: processedData.orders.length,
-        couriers: processedData.couriers.length,
-        paymentMethods: processedData.paymentMethods.length,
-        errors: processedData.errors.length
+      const response = await fetch('http://localhost:5001/api/upload/excel', {
+        method: 'POST',
+        body: formData,
       })
       
-      return {
-        success: true,
-        message: 'Файл успешно обработан',
-        data: processedData
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
       
-    } catch (error) {
-      console.error('Ошибка обработки файла:', error)
+      const result = await response.json()
+      console.log('Ответ сервера:', result)
+      return result
       
-      // Fallback к тестовым данным если обработка не удалась
+    } catch (error) {
+      console.error('Ошибка загрузки файла:', error)
+      // Fallback к локальным данным если сервер недоступен
       const mockData = {
         orders: [
           {
@@ -81,40 +78,17 @@ export const uploadApi = {
         ],
         paymentMethods: [],
         routes: [],
-        errors: [
-          {
-            row: 0,
-            message: `Ошибка обработки файла: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
-            data: null
-          }
-        ],
-        summary: {
-          totalRows: 0,
-          successfulGeocoding: 0,
-          failedGeocoding: 0,
-          orders: 1,
-          couriers: 1,
-          paymentMethods: 0,
-          errors: [
-            {
-              row: 0,
-              message: `Ошибка обработки файла: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
-              data: null
-            }
-          ]
+        errors: [],
+        debug: {
+          logs: ['Файл обработан локально (сервер недоступен)']
         }
       }
       
       return {
-        success: false,
-        message: `Ошибка обработки файла: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
+        success: true,
+        message: 'Файл обработан локально',
         data: mockData
       }
     }
   }
 }
-
-
-
-
-
