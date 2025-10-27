@@ -13,9 +13,11 @@ app.use(cors({
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'https://kill-metraj-frontend.onrender.com',
-    // Добавьте сюда URL вашего фронтенда на Render
+    'https://kill-metraj-web.onrender.com'
   ],
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
 
@@ -172,6 +174,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Простой сервер запущен на 0.0.0.0:${PORT}`);
   addLog('Сервер запущен');
 });
+
 
 
 

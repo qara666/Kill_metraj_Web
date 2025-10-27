@@ -1,4 +1,4 @@
-import { processExcelFile } from '../utils/excelProcessor'
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:10000'
 
 export const analyticsApi = {
   getDashboardAnalytics: async () => ({
@@ -20,13 +20,28 @@ export const routeApi = {
 export const uploadApi = {
   uploadExcelFile: async (file: File) => {
     try {
-      const processedData = await processExcelFile(file)
-      return {
-        success: true,
-        message: 'Файл успешно обработан',
-        data: processedData
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      const response = await fetch(`${API_URL}/api/upload/excel`, {
+        method: 'POST',
+        body: formData
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Ошибка сервера: ${response.status}`)
       }
+      
+      const result = await response.json()
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Ошибка обработки файла')
+      }
+      
+      return result
     } catch (error) {
+      console.error('Ошибка загрузки файла на сервер:', error)
+      
       const mockData = {
         orders: [{
           id: `order_${Date.now()}_1`,
@@ -52,7 +67,7 @@ export const uploadApi = {
         routes: [],
         errors: [{
           row: 0,
-          message: `Ошибка обработки файла: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
+          message: `Ошибка подключения к серверу: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
           data: null
         }],
         summary: {
@@ -64,7 +79,7 @@ export const uploadApi = {
           paymentMethods: 0,
           errors: [{
             row: 0,
-            message: `Ошибка обработки файла: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
+            message: `Ошибка подключения к серверу: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
             data: null
           }]
         }
@@ -72,9 +87,10 @@ export const uploadApi = {
       
       return {
         success: false,
-        message: `Ошибка обработки файла: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
+        message: `Не удалось подключиться к серверу: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
         data: mockData
       }
     }
   }
 }
+
