@@ -14,7 +14,7 @@ export const ApiKeyStatus: React.FC<ApiKeyStatusProps> = ({
 }) => {
   const { hasApiKey } = useApiKey()
 
-  if (!hasApiKey()) {
+  if (!hasApiKey) {
     return (
       <div className={`flex items-center space-x-2 text-orange-600 ${className}`}>
         <ExclamationTriangleIcon className="h-4 w-4" />
@@ -40,6 +40,7 @@ export const ApiKeyStatus: React.FC<ApiKeyStatusProps> = ({
 }
 
 export default ApiKeyStatus
+
 
 
 
