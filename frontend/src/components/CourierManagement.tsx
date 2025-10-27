@@ -10,14 +10,12 @@ import {
   ClockIcon,
   MapIcon,
   ArrowPathIcon,
-  ExclamationTriangleIcon
 } from '@heroicons/react/24/outline'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
-import { localStorageUtils } from '../utils/localStorage'
 // import { googleMapsLoader } from '../utils/googleMapsLoader' // Убрано для предотвращения дублирования
 import { clsx } from 'clsx'
-import { AddressValidationService, RouteAnomalyCheck } from '../services/addressValidation'
+import { AddressValidationService } from '../services/addressValidation'
 
 interface Courier {
   id: string
@@ -1173,6 +1171,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     </div>
   )
 }
+
 
 
 

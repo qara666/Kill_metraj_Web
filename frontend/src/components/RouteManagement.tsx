@@ -20,7 +20,6 @@ import { useTheme } from '../contexts/ThemeContext'
 import { clsx } from 'clsx'
 import { AddressEditModal } from './AddressEditModal'
 import { AddressValidationService, RouteAnomalyCheck } from '../services/addressValidation'
-import { GeocodingService } from '../services/geocodingService'
 
 // Google Maps types
 declare global {
@@ -210,9 +209,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   const [showAddressEditModal, setShowAddressEditModal] = useState(false)
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [routeAnomalies, setRouteAnomalies] = useState<Map<string, RouteAnomalyCheck>>(new Map())
-  const placeIdCacheRef = useRef<Map<string, string>>(new Map())
-  const geocodeCacheRef = useRef<Map<string, { placeId: string; formattedAddress: string }>>(new Map())
-  const regionBiasRef = useRef<{ country?: string; locality?: string; bounds?: google.maps.LatLngBounds | null }>({})
 
   // Дебаунсинг для поиска
   useEffect(() => {
@@ -770,12 +766,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
     // Обновляем данные в контексте Excel
     if (excelData?.orders) {
-      const updatedExcelData = {
-        ...excelData,
-        orders: excelData.orders.map((order: any) => 
-          order.id === editingOrder.id ? { ...order, address: newAddress } : order
-        )
-      }
+      excelData.orders.map((order: any) => 
+        order.id === editingOrder.id ? { ...order, address: newAddress } : order
+      )
       // Здесь можно обновить контекст, если нужно
     }
 
@@ -806,10 +799,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     await calculateRouteDistance(route)
   }
 
-  // Функция для проверки аномалий маршрута
-  const checkRouteAnomalies = (route: Route): RouteAnomalyCheck => {
-    return AddressValidationService.checkRouteAnomalies(route)
-  }
 
   const clearAllRoutes = () => {
     console.log('Clear all routes clicked, current routes count:', routes.length)
@@ -1734,6 +1723,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     </div>
   )
 }
+
 
 
 
