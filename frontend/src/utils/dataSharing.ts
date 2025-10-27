@@ -5,6 +5,8 @@ export interface ShareableData {
   routes: any[]
   timestamp: number
   version: string
+  syncKey?: string
+  lastModified?: number
 }
 
 export interface DataSharingUtils {
@@ -409,6 +411,10 @@ export const useDataSharing = () => {
     validateData: dataSharingUtils.validateData
   }
 }
+
+
+
+
 
 
 

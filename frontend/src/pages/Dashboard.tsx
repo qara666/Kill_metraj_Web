@@ -349,9 +349,14 @@ export const Dashboard: React.FC = () => {
     log('Пользователь подтвердил сохранение данных из Excel')
   }
 
-  const stats = dashboardData?.data?.overview
-  const couriers = couriersData?.data || []
-  const routes = routesData?.data || []
+  const stats = (dashboardData as any)?.data?.overview || {
+    totalOrders: 0,
+    totalRevenue: 0,
+    totalCouriers: 0,
+    totalRoutes: 0
+  }
+  const couriers = Array.isArray((couriersData as any)?.data) ? (couriersData as any).data : []
+  const routes = Array.isArray((routesData as any)?.data) ? (routesData as any).data : []
 
   return (
     <div className={clsx(
@@ -601,6 +606,11 @@ export const Dashboard: React.FC = () => {
     </div>
   )
 }
+
+
+
+
+
 
 
 
