@@ -36,8 +36,7 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
     isConnected: isCloudConnected, 
     lastSync: cloudLastSync, 
     syncStatus: cloudSyncStatus,
-    shareData: cloudShareData,
-    importData: cloudImportData
+    shareData: cloudShareData
   } = useCloudSync({ 
     enabled: true, 
     apiUrl: 'http://localhost:3001' 
@@ -49,7 +48,7 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
   // Проверяем URL при загрузке страницы
   useEffect(() => {
     const checkForSharedData = () => {
-      const sharedData = importDataFromUrl()
+      const sharedData = importDataFromUrl(window.location.href)
       if (sharedData) {
         setShowImportModal(true)
         setImportUrl(window.location.href)
@@ -82,7 +81,13 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
       
       console.log('Данные для обмена:', dataToShare)
       
-      const url = shareData(excelData, safeRoutes)
+      const shareableData = {
+        excelData,
+        routes: safeRoutes,
+        timestamp: Date.now(),
+        version: '1.0.0'
+      }
+      const url = shareData(shareableData)
       console.log('Ссылка создана успешно:', url)
       
       setShareUrl(url)
@@ -90,13 +95,14 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
       toast.success('Ссылка для обмена создана!')
     } catch (error) {
       console.error('Ошибка создания ссылки:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка'
       console.error('Детали ошибки:', {
-        message: error.message,
-        stack: error.stack,
+        message: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined,
         excelData: excelData,
         routes: safeRoutes
       })
-      toast.error(`Ошибка создания ссылки для обмена: ${error.message}`)
+      toast.error(`Ошибка создания ссылки для обмена: ${errorMessage}`)
     } finally {
       setIsSharing(false)
     }
@@ -199,7 +205,8 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
       toast.success(`Данные успешно импортированы! Загружено: ${ordersCount} заказов, ${couriersCount} курьеров, ${routesCount} маршрутов.`)
     } catch (error) {
       console.error('Ошибка импорта:', error)
-      toast.error('Ошибка импорта данных')
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка'
+      toast.error(`Ошибка импорта данных: ${errorMessage}`)
     } finally {
       setIsImporting(false)
     }
@@ -259,7 +266,13 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
         <button
           onClick={async () => {
             if (excelData && routes) {
-              const shareUrl = await cloudShareData({ excelData, routes })
+              const shareableData = {
+                excelData,
+                routes,
+                timestamp: Date.now(),
+                version: '1.0.0'
+              }
+              const shareUrl = await cloudShareData(shareableData)
               if (shareUrl) {
                 setShareUrl(shareUrl)
                 setShowShareModal(true)
@@ -559,3 +572,4 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
     </>
   )
 }
+

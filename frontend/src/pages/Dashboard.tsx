@@ -349,9 +349,9 @@ export const Dashboard: React.FC = () => {
     log('Пользователь подтвердил сохранение данных из Excel')
   }
 
-  const stats = dashboardData?.data?.overview
-  const couriers = couriersData?.data || []
-  const routes = routesData?.data || []
+  const stats = dashboardData
+  const couriers = couriersData || []
+  const routes = routesData || []
 
   return (
     <div className={clsx(
@@ -392,28 +392,28 @@ export const Dashboard: React.FC = () => {
             value={stats.totalRoutes}
             icon={MapIcon}
             color="primary"
-            change={`${stats.activeRoutes} активных`}
+            change={`${(stats as any).activeRoutes || 0} активных`}
           />
           <StatsCard
             title="Всего курьеров"
             value={stats.totalCouriers}
             icon={UserGroupIcon}
             color="success"
-            change={`${stats.activeCouriers} активных`}
+            change={`${(stats as any).activeCouriers || 0} активных`}
           />
           <StatsCard
             title="Всего заказов"
             value={stats.totalOrders}
             icon={TruckIcon}
             color="warning"
-            change={`${stats.averageOrdersPerRoute.toFixed(1)} среднее/маршрут`}
+            change={`${((stats as any).averageOrdersPerRoute || 0).toFixed(1)} среднее/маршрут`}
           />
           <StatsCard
             title="Процент выполнения"
-            value={`${stats.completionRate.toFixed(1)}%`}
+            value={`${((stats as any).completionRate || 0).toFixed(1)}%`}
             icon={CheckCircleIcon}
             color="success"
-            change={`${stats.completedRoutes} завершено`}
+            change={`${(stats as any).completedRoutes || 0} завершено`}
           />
         </div>
       )}
@@ -601,3 +601,4 @@ export const Dashboard: React.FC = () => {
     </div>
   )
 }
+

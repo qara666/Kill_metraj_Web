@@ -201,9 +201,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   const [timeFilter, setTimeFilter] = useState<string>('all') // all, morning, afternoon, evening
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [routeToDelete, setRouteToDelete] = useState<Route | null>(null)
-  const placeIdCacheRef = useRef<Map<string, string>>(new Map())
-  const geocodeCacheRef = useRef<Map<string, { placeId: string; formattedAddress: string }>>(new Map())
-  const regionBiasRef = useRef<{ country?: string; locality?: string; bounds?: google.maps.LatLngBounds | null }>({})
+  // Кэши для Google Maps API (пока не используются)
+  // const placeIdCacheRef = useRef<Map<string, string>>(new Map())
+  // const geocodeCacheRef = useRef<Map<string, { placeId: string; formattedAddress: string }>>(new Map())
+  // const regionBiasRef = useRef<{ country?: string; locality?: string; bounds?: any }>({})
 
   // Дебаунсинг для поиска
   useEffect(() => {
