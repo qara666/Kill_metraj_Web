@@ -415,7 +415,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
   // Функция для поиска заказов по номеру
   const searchOrders = useCallback((orders: Order[]) => {
-    if (!debouncedSearchTerm.trim()) return orders
+    if (!debouncedSearchTerm || !debouncedSearchTerm.trim()) return orders
     
     const searchTerm = debouncedSearchTerm.toLowerCase().trim()
     return orders.filter(order => 
@@ -601,7 +601,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
   // Простая очистка адреса без сложного геокодирования
   const cleanAddressForRoute = useCallback((raw: string): string => {
-    return cleanAddress(raw).trim()
+    return cleanAddress(raw) && cleanAddress(raw).trim() ? cleanAddress(raw).trim() : cleanAddress(raw)
   }, [])
 
 

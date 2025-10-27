@@ -127,7 +127,7 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
   }
 
   const handleImport = async () => {
-    if (!importUrl.trim()) {
+    if (!importUrl || !importUrl.trim()) {
       toast.error('Введите URL для импорта')
       return
     }

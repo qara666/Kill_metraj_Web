@@ -95,7 +95,7 @@ export const Settings: React.FC = () => {
     localStorageUtils.setAllSettings(data)
     
     // Check API key status after saving
-    if (data.googleMapsApiKey.trim()) {
+    if (data.googleMapsApiKey && data.googleMapsApiKey.trim()) {
       checkApiKeyStatus(data.googleMapsApiKey)
     }
     
@@ -185,7 +185,7 @@ export const Settings: React.FC = () => {
               <button
                 type="button"
                 onClick={testApiKey}
-                disabled={isTestingApiKey || !googleMapsApiKey.trim()}
+                disabled={isTestingApiKey || !googleMapsApiKey || !googleMapsApiKey.trim()}
                 className="btn-outline rounded-l-none border-l-0"
               >
                 {isTestingApiKey ? (
@@ -280,6 +280,7 @@ export const Settings: React.FC = () => {
     </div>
   )
 }
+
 
 
 
