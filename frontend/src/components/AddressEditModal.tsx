@@ -375,26 +375,38 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
             </div>
           )}
 
-          {/* Instructions */}
-          <div className={clsx(
-            'p-4 rounded-lg',
-            isDark ? 'bg-gray-700/50' : 'bg-gray-50'
-          )}>
-            <h4 className={clsx(
-              'font-medium mb-2',
+          {/* Google Maps Integration */}
+          <div>
+            <label className={clsx(
+              'block text-sm font-medium mb-2',
               isDark ? 'text-gray-300' : 'text-gray-700'
             )}>
-              Инструкции:
-            </h4>
-            <ul className={clsx(
-              'text-sm space-y-1',
-              isDark ? 'text-gray-400' : 'text-gray-600'
+              Выбор адреса на карте
+            </label>
+            <div className={clsx(
+              'p-4 rounded-lg border h-64',
+              isDark ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
             )}>
-              <li>• Введите новый адрес в поле выше</li>
-              <li>• Нажмите "Найти" для автоматического геокодирования</li>
-              <li>• Система найдет точный адрес и исправит ошибки</li>
-              <li>• Проверьте результат и нажмите "Сохранить"</li>
-            </ul>
+              {/* Google Maps будет интегрирован здесь */}
+              <div className="flex items-center justify-center h-full">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const query = encodeURIComponent(editedAddress)
+                    window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank')
+                  }}
+                  className={clsx(
+                    'px-4 py-2 rounded-lg font-medium transition-colors flex items-center space-x-2',
+                    isDark 
+                      ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  )}
+                >
+                  <MapPinIcon className="h-5 w-5" />
+                  <span>Открыть в Google Maps</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 

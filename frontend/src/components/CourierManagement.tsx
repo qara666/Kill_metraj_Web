@@ -16,6 +16,7 @@ import { useTheme } from '../contexts/ThemeContext'
 // import { googleMapsLoader } from '../utils/googleMapsLoader' // Убрано для предотвращения дублирования
 import { clsx } from 'clsx'
 import { AddressValidationService } from '../services/addressValidation'
+import { AddressEditModal } from './AddressEditModal'
 
 interface Courier {
   id: string
@@ -47,6 +48,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   const [routeToDelete, setRouteToDelete] = useState<any>(null)
   const [showDistanceModal, setShowDistanceModal] = useState(false)
   const [selectedCourierForDistance, setSelectedCourierForDistance] = useState<Courier | null>(null)
+  const [showAddressEditModal, setShowAddressEditModal] = useState(false)
+  const [editingOrder, setEditingOrder] = useState<any>(null)
 
   // Рассчитываем расстояние для каждого курьера на основе маршрутов
   const calculateCourierDistance = useMemo(() => {
@@ -275,6 +278,53 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
       return []
     }
     return contextData.routes.filter((route: any) => route.courier === courierName)
+  }
+
+  const handleEditAddress = (order: any) => {
+    setEditingOrder(order)
+    setShowAddressEditModal(true)
+  }
+
+  const handleSaveAddress = (newAddress: string) => {
+    if (!editingOrder) return
+
+    const updatedOrder = { ...editingOrder, address: newAddress }
+    
+    if (contextData?.routes) {
+      const updatedRoutes = contextData.routes.map((route: any) => ({
+        ...route,
+        orders: route.orders.map((order: any) => 
+          order.id === editingOrder.id ? updatedOrder : order
+        ),
+        isOptimized: false,
+        totalDistance: 0,
+        totalDuration: 0
+      }))
+      
+      updateRouteData(updatedRoutes)
+    }
+
+    setShowAddressEditModal(false)
+    setEditingOrder(null)
+  }
+
+  const handleRecalculateRoute = async (route: any) => {
+    const anomalyCheck = AddressValidationService.checkRouteAnomalies(route)
+    
+    if (anomalyCheck.hasAnomalies && anomalyCheck.errors.length > 0) {
+      alert(`Обнаружены ошибки в маршруте:\n${anomalyCheck.errors.join('\n')}`)
+      return
+    }
+
+    if (anomalyCheck.warnings.length > 0) {
+      const warningMessage = `Предупреждения:\n${anomalyCheck.warnings.join('\n')}\n\nПродолжить?`
+      if (!window.confirm(warningMessage)) {
+        return
+      }
+    }
+
+    // Логика пересчета маршрута (можно добавить позже)
+    alert('Пересчет маршрута будет реализован позже')
   }
 
   // Функция для очистки адреса от лишней информации
@@ -1070,18 +1120,34 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                                 {/* Заказы в маршруте */}
                                 {route.orders && route.orders.length > 0 && (
                                   <div className="mt-4">
-                                    <h6 className="text-sm font-medium text-gray-700 mb-2">Заказы в маршруте:</h6>
+                                    <div className="flex items-center justify-between mb-2">
+                                      <h6 className="text-sm font-medium text-gray-700">Заказы в маршруте:</h6>
+                                      <button
+                                        onClick={() => handleRecalculateRoute(route)}
+                                        className="p-1 rounded text-green-600 hover:text-green-800 hover:bg-green-50 transition-colors"
+                                        title="Пересчитать маршрут"
+                                      >
+                                        <ArrowPathIcon className="h-4 w-4" />
+                                      </button>
+                                    </div>
                                     <div className="space-y-1">
                                       {route.orders.map((order: any, orderIndex: number) => (
-                                        <div key={orderIndex} className="flex items-center space-x-2 text-sm">
+                                        <div key={orderIndex} className="flex items-center space-x-2 text-sm group">
                                           <span className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium">
                                             {orderIndex + 1}
                                           </span>
                                           <span className="text-gray-600 font-medium">#{order.orderNumber}</span>
-                                          <span className="text-gray-500 truncate">{order.address}</span>
+                                          <span className="text-gray-500 truncate flex-1">{order.address}</span>
                                           {order.customerName && (
                                             <span className="text-gray-400 text-xs">({order.customerName})</span>
                                           )}
+                                          <button
+                                            onClick={() => handleEditAddress(order)}
+                                            className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                                            title="Редактировать адрес"
+                                          >
+                                            <PencilIcon className="h-4 w-4" />
+                                          </button>
                                         </div>
                                       ))}
                                     </div>
@@ -1166,6 +1232,22 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
             </div>
           </div>
         </div>
+      )}
+
+      {/* Модальное окно редактирования адреса */}
+      {showAddressEditModal && editingOrder && (
+        <AddressEditModal
+          isOpen={showAddressEditModal}
+          onClose={() => {
+            setShowAddressEditModal(false)
+            setEditingOrder(null)
+          }}
+          onSave={handleSaveAddress}
+          currentAddress={editingOrder.address}
+          orderNumber={editingOrder.orderNumber}
+          customerName={editingOrder.customerName}
+          isDark={isDark}
+        />
       )}
     </div>
   )
