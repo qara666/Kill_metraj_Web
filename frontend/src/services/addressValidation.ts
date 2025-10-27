@@ -37,7 +37,7 @@ export class AddressValidationService {
       return result
     }
 
-    const trimmedAddress = address.trim()
+    const trimmedAddress = address && address.trim() ? address.trim() : address
 
     // Проверка длины адреса
     if (trimmedAddress.length > 200) {
@@ -178,7 +178,7 @@ export class AddressValidationService {
     }
 
     // Проверка на дублирующиеся адреса
-    const addresses = route.orders.map(order => order.address.toLowerCase().trim())
+    const addresses = route.orders.map(order => order.address && order.address.toLowerCase().trim() ? order.address.toLowerCase().trim() : order.address.toLowerCase())
     const uniqueAddresses = new Set(addresses)
     
     if (addresses.length !== uniqueAddresses.size) {
@@ -214,7 +214,7 @@ export class AddressValidationService {
       .replace(/,\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
       .replace(/,\s*\d+\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
       .replace(/\s+/g, ' ')
-      .trim()
+      .trim() || address
   }
 
   /**
