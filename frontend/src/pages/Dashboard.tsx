@@ -7,7 +7,6 @@ import {
   TruckIcon,
   CheckCircleIcon
 } from '@heroicons/react/24/outline'
-import { CourierCard } from '../components/CourierCard'
 import { StatsCard } from '../components/StatsCard'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { ApiKeyNotification } from '../components/ApiKeyNotification'
@@ -17,9 +16,6 @@ import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { clsx } from 'clsx'
 import * as api from '../services/api'
-
-// Ленивая загрузка тяжелых компонентов
-const RouteMap = lazy(() => import('../components/RouteMap'))
 const ExcelDebugLogs = lazy(() => import('../components/ExcelDebugLogs').then(module => ({ default: module.ExcelDebugLogs })))
 const ExcelDataPreview = lazy(() => import('../components/ExcelDataPreview').then(module => ({ default: module.ExcelDataPreview })))
 
@@ -27,7 +23,6 @@ export const Dashboard: React.FC = () => {
   const { excelData, setExcelData, clearExcelData } = useExcelData()
   const { isDark } = useTheme()
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [selectedCourier, setSelectedCourier] = useState<string | null>(null)
   const [logs, setLogs] = useState<string[]>([])
   const [excelLogs, setExcelLogs] = useState<any[]>([])
   const [showExcelLogs, setShowExcelLogs] = useState(false)
@@ -240,21 +235,8 @@ export const Dashboard: React.FC = () => {
     staleTime: 5 * 60 * 1000, // 5 минут
   })
 
-  // Fetch couriers (ленивая загрузка)
-  const { data: couriersData, isLoading: couriersLoading } = useQuery({
-    queryKey: ['couriers'],
-    queryFn: () => api.courierApi.getCouriers(),
-    enabled: false, // Отключаем автоматическую загрузку
-    staleTime: 5 * 60 * 1000, // 5 минут
-  })
-
-  // Fetch routes (ленивая загрузка)
-  const { data: routesData, isLoading: routesLoading } = useQuery({
-    queryKey: ['routes'],
-    queryFn: () => api.routeApi.getRoutes(),
-    enabled: false, // Отключаем автоматическую загрузку
-    staleTime: 5 * 60 * 1000, // 5 минут
-  })
+  // Fetch couriers (ленивая загрузка) - удалено, не используется
+  // Fetch routes (ленивая загрузка) - удалено, не используется
 
   // Process Excel file mutation
   const processFileMutation = useMutation({
@@ -375,8 +357,6 @@ export const Dashboard: React.FC = () => {
     completionRate: 0,
     completedRoutes: 0
   }
-  const couriers = Array.isArray((couriersData as any)?.data) ? (couriersData as any).data : []
-  const routes = Array.isArray((routesData as any)?.data) ? (routesData as any).data : []
 
   return (
     <div className={clsx(
@@ -402,7 +382,7 @@ export const Dashboard: React.FC = () => {
       )}
 
       {/* Loading State */}
-      {(dashboardLoading || couriersLoading || routesLoading) && dataLoaded && (
+      {dashboardLoading && dataLoaded && (
         <div className="text-center py-8">
           <LoadingSpinner />
           <p className="mt-2 text-sm text-gray-500">Загрузка данных...</p>
@@ -538,70 +518,7 @@ export const Dashboard: React.FC = () => {
 
         {/* Main Content */}
         <div className="lg:col-span-2">
-          <div className="space-y-6">
-            {/* Couriers Section */}
-            {dataLoaded && (
-              <div className="card p-6">
-                <h2 className={clsx(
-                  'text-lg font-semibold mb-4',
-                  isDark ? 'text-gray-100' : 'text-gray-900'
-                )}>
-                  Последние курьеры ({couriers.length})
-                </h2>
-              
-              {couriers.length === 0 ? (
-                <div className="text-center py-8">
-                  <UserGroupIcon className={clsx(
-                    'mx-auto h-12 w-12',
-                    isDark ? 'text-gray-500' : 'text-gray-400'
-                  )} />
-                  <h3 className={clsx(
-                    'mt-2 text-sm font-medium',
-                    isDark ? 'text-gray-200' : 'text-gray-900'
-                  )}>Нет курьеров</h3>
-                  <p className={clsx(
-                    'mt-1 text-sm',
-                    isDark ? 'text-gray-400' : 'text-gray-500'
-                  )}>
-                    Загрузите Excel файл для создания курьеров и маршрутов.
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {couriers.slice(0, 4).map((courier: any) => (
-                    <CourierCard
-                      key={courier._id}
-                      courier={courier}
-                      isSelected={selectedCourier === courier._id}
-                      onSelect={() => setSelectedCourier(
-                        selectedCourier === courier._id ? null : courier._id
-                      )}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-            )}
-
-            {/* Map Section */}
-            {dataLoaded && (
-              <div className="card p-6">
-              <h2 className={clsx(
-                'text-lg font-semibold mb-4',
-                isDark ? 'text-gray-100' : 'text-gray-900'
-              )}>
-                Карта маршрутів
-              </h2>
-              
-              <Suspense fallback={<LoadingSpinner />}>
-                <RouteMap 
-                  routes={routes}
-                  selectedCourier={selectedCourier || undefined}
-                />
-              </Suspense>
-              </div>
-            )}
-          </div>
+          {/* Content here */}
         </div>
       </div>
 
@@ -626,6 +543,7 @@ export const Dashboard: React.FC = () => {
     </div>
   )
 }
+
 
 
 
