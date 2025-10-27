@@ -54,7 +54,7 @@ export class AddressValidationService {
       /\b\d{10,}\b/g // Очень длинные числа (возможно ошибка)
     ]
 
-    suspiciousPatterns.forEach((pattern, index) => {
+    suspiciousPatterns.forEach((pattern) => {
       if (pattern.test(trimmedAddress)) {
         result.warnings.push(`Обнаружены подозрительные символы или паттерны в адресе`)
         result.suggestions.push('Проверьте корректность адреса')
@@ -233,3 +233,4 @@ export class AddressValidationService {
     return validation.suggestions
   }
 }
+

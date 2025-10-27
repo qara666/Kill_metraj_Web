@@ -420,7 +420,7 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
           </button>
           <button
             onClick={handleSave}
-            disabled={!editedAddress.trim() || (validationResult && !validationResult.isValid)}
+            disabled={!editedAddress.trim() || (validationResult && !validationResult.isValid) || false}
             className={clsx(
               'px-4 py-2 text-sm font-medium rounded-lg transition-colors',
               !editedAddress.trim() || (validationResult && !validationResult.isValid)
@@ -439,3 +439,4 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
     </div>
   )
 }
+

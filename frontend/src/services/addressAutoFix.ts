@@ -1,7 +1,15 @@
 import { GeocodingService } from './geocodingService'
 import { AddressValidationService, AddressValidationResult } from './addressValidation'
 
-interface AddressFixResult {
+interface AutoFixOptions {
+  enableGeocoding: boolean
+  enableValidation: boolean
+  enableSuggestions: boolean
+  minConfidence: number // Минимальная уверенность для автоматического применения
+  maxSuggestions: number
+}
+
+export interface AddressFixResult {
   originalAddress: string
   fixedAddress: string
   confidence: number // 0-1, где 1 = полная уверенность
@@ -9,14 +17,6 @@ interface AddressFixResult {
   suggestions: string[]
   warnings: string[]
   errors: string[]
-}
-
-interface AutoFixOptions {
-  enableGeocoding: boolean
-  enableValidation: boolean
-  enableSuggestions: boolean
-  minConfidence: number // Минимальная уверенность для автоматического применения
-  maxSuggestions: number
 }
 
 export const AddressAutoFixService = {
@@ -55,7 +55,7 @@ export const AddressAutoFixService = {
         const validation = AddressValidationService.validateAddress(address)
         
         if (validation.isValid) {
-          result.fixedAddress = validation.cleanedAddress
+          result.fixedAddress = address // Используем исходный адрес, так как он валиден
           result.confidence = 0.8
           result.fixType = 'validation'
           result.warnings = validation.warnings
@@ -63,7 +63,7 @@ export const AddressAutoFixService = {
         }
 
         // Если есть ошибки, пытаемся их исправить
-        result.fixedAddress = validation.cleanedAddress
+        result.fixedAddress = address // Используем исходный адрес
         result.warnings = validation.warnings
         result.errors = validation.errors
       }
