@@ -12,9 +12,11 @@ interface ExcelDataPreviewProps {
 export const ExcelDataPreview: React.FC<ExcelDataPreviewProps> = ({ data, isVisible, onClose, onConfirm }) => {
   if (!isVisible) return null
 
-  const orders = data?.orders || []
-  const errors = data?.errors || []
-  const summary = data?.summary || {}
+  const orders = data?.data?.orders || data?.orders || []
+  const couriers = data?.data?.couriers || data?.couriers || []
+  const paymentMethods = data?.data?.paymentMethods || data?.paymentMethods || []
+  const errors = data?.data?.errors || data?.errors || []
+  const summary = data?.data?.summary || data?.summary || {}
 
   const isDark = false
 
@@ -48,37 +50,71 @@ export const ExcelDataPreview: React.FC<ExcelDataPreviewProps> = ({ data, isVisi
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Summary */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {/* Orders */}
             <div className={clsx(
               'rounded-lg p-4 border',
-              isDark ? 'bg-blue-900/20 border-blue-700' : 'bg-blue-50 border-blue-200'
+              orders.length > 0 
+                ? (isDark ? 'bg-blue-900/20 border-blue-700' : 'bg-blue-50 border-blue-200')
+                : (isDark ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200')
             )}>
               <div className="flex items-center space-x-2 mb-2">
-                <CheckCircleIcon className={clsx('h-6 w-6', isDark ? 'text-blue-400' : 'text-blue-600')} />
+                {orders.length > 0 ? (
+                  <CheckCircleIcon className={clsx('h-6 w-6', isDark ? 'text-blue-400' : 'text-blue-600')} />
+                ) : (
+                  <XCircleIcon className={clsx('h-6 w-6', isDark ? 'text-gray-500' : 'text-gray-400')} />
+                )}
                 <h3 className={clsx('font-semibold', isDark ? 'text-gray-100' : 'text-gray-900')}>
-                  Заказов
+                  Заказы
                 </h3>
               </div>
-              <p className={clsx('text-2xl font-bold', isDark ? 'text-gray-100' : 'text-gray-900')}>
-                {summary.orders || 0}
+              <p className={clsx('text-3xl font-bold', isDark ? 'text-gray-100' : 'text-gray-900')}>
+                {orders.length}
               </p>
             </div>
 
             {/* Couriers */}
             <div className={clsx(
               'rounded-lg p-4 border',
-              isDark ? 'bg-green-900/20 border-green-700' : 'bg-green-50 border-green-200'
+              couriers.length > 0
+                ? (isDark ? 'bg-green-900/20 border-green-700' : 'bg-green-50 border-green-200')
+                : (isDark ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200')
             )}>
               <div className="flex items-center space-x-2 mb-2">
-                <CheckCircleIcon className={clsx('h-6 w-6', isDark ? 'text-green-400' : 'text-green-600')} />
+                {couriers.length > 0 ? (
+                  <CheckCircleIcon className={clsx('h-6 w-6', isDark ? 'text-green-400' : 'text-green-600')} />
+                ) : (
+                  <XCircleIcon className={clsx('h-6 w-6', isDark ? 'text-gray-500' : 'text-gray-400')} />
+                )}
                 <h3 className={clsx('font-semibold', isDark ? 'text-gray-100' : 'text-gray-900')}>
-                  Курьеров
+                  Курьеры
                 </h3>
               </div>
-              <p className={clsx('text-2xl font-bold', isDark ? 'text-gray-100' : 'text-gray-900')}>
-                {summary.couriers || 0}
+              <p className={clsx('text-3xl font-bold', isDark ? 'text-gray-100' : 'text-gray-900')}>
+                {couriers.length}
+              </p>
+            </div>
+
+            {/* Payment Methods */}
+            <div className={clsx(
+              'rounded-lg p-4 border',
+              paymentMethods.length > 0
+                ? (isDark ? 'bg-purple-900/20 border-purple-700' : 'bg-purple-50 border-purple-200')
+                : (isDark ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200')
+            )}>
+              <div className="flex items-center space-x-2 mb-2">
+                {paymentMethods.length > 0 ? (
+                  <CheckCircleIcon className={clsx('h-6 w-6', isDark ? 'text-purple-400' : 'text-purple-600')} />
+                ) : (
+                  <XCircleIcon className={clsx('h-6 w-6', isDark ? 'text-gray-500' : 'text-gray-400')} />
+                )}
+                <h3 className={clsx('font-semibold', isDark ? 'text-gray-100' : 'text-gray-900')}>
+                  Способы оплаты
+                </h3>
+              </div>
+              <p className={clsx('text-3xl font-bold', isDark ? 'text-gray-100' : 'text-gray-900')}>
+                {paymentMethods.length}
               </p>
             </div>
 
@@ -86,8 +122,8 @@ export const ExcelDataPreview: React.FC<ExcelDataPreviewProps> = ({ data, isVisi
             <div className={clsx(
               'rounded-lg p-4 border',
               errors.length > 0
-                ? isDark ? 'bg-red-900/20 border-red-700' : 'bg-red-50 border-red-200'
-                : isDark ? 'bg-green-900/20 border-green-700' : 'bg-green-50 border-green-200'
+                ? (isDark ? 'bg-red-900/20 border-red-700' : 'bg-red-50 border-red-200')
+                : (isDark ? 'bg-green-900/20 border-green-700' : 'bg-green-50 border-green-200')
             )}>
               <div className="flex items-center space-x-2 mb-2">
                 {errors.length > 0 ? (
@@ -99,57 +135,25 @@ export const ExcelDataPreview: React.FC<ExcelDataPreviewProps> = ({ data, isVisi
                   Ошибок
                 </h3>
               </div>
-              <p className={clsx('text-2xl font-bold', isDark ? 'text-gray-100' : 'text-gray-900')}>
+              <p className={clsx('text-3xl font-bold', isDark ? 'text-gray-100' : 'text-gray-900')}>
                 {errors.length}
               </p>
             </div>
           </div>
 
-          {/* Preview Data */}
-          {orders.length > 0 && (
-            <div>
-              <h3 className={clsx('font-semibold mb-3', isDark ? 'text-gray-100' : 'text-gray-900')}>
-                Пример заказов (первые 5):
-              </h3>
-              <div className={clsx(
-                'rounded-lg overflow-hidden border',
-                isDark ? 'border-gray-700' : 'border-gray-200'
-              )}>
-                <table className="w-full">
-                  <thead className={clsx('border-b', isDark ? 'bg-gray-700 border-gray-600' : 'bg-gray-100 border-gray-200')}>
-                    <tr>
-                      <th className={clsx('px-4 py-2 text-left text-sm font-semibold', isDark ? 'text-gray-300' : 'text-gray-700')}>
-                        № Заказа
-                      </th>
-                      <th className={clsx('px-4 py-2 text-left text-sm font-semibold', isDark ? 'text-gray-300' : 'text-gray-700')}>
-                        Адрес
-                      </th>
-                      <th className={clsx('px-4 py-2 text-left text-sm font-semibold', isDark ? 'text-gray-300' : 'text-gray-700')}>
-                        Сумма
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {orders.slice(0, 5).map((order: any, index: number) => (
-                      <tr key={index} className={clsx('border-b', isDark ? 'border-gray-700' : 'border-gray-100')}>
-                        <td className={clsx('px-4 py-2 text-sm', isDark ? 'text-gray-300' : 'text-gray-900')}>
-                          {order.orderNumber}
-                        </td>
-                        <td className={clsx('px-4 py-2 text-sm', isDark ? 'text-gray-300' : 'text-gray-900')}>
-                          {order.address}
-                        </td>
-                        <td className={clsx('px-4 py-2 text-sm', isDark ? 'text-gray-300' : 'text-gray-900')}>
-                          {order.amount} ₴
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+          {/* Total Rows */}
+          {summary.totalRows > 0 && (
+            <div className={clsx(
+              'rounded-lg p-4 border',
+              isDark ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'
+            )}>
+              <p className={clsx('text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>
+                Всего обработано строк: <span className="font-bold">{summary.totalRows}</span>
+              </p>
             </div>
           )}
 
-          {/* Errors */}
+          {/* Errors List */}
           {errors.length > 0 && errors.length < 10 && (
             <div>
               <h3 className={clsx('font-semibold mb-3 flex items-center space-x-2', isDark ? 'text-red-400' : 'text-red-600')}>
