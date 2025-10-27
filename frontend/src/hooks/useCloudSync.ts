@@ -28,6 +28,8 @@ export const useCloudSync = (options: UseCloudSyncOptions) => {
 
   // Проверяем подключение к облаку
   const checkConnection = useCallback(async () => {
+    if (!enabled) return
+    
     try {
       setState(prev => ({ ...prev, syncStatus: 'syncing' }))
       
@@ -55,10 +57,14 @@ export const useCloudSync = (options: UseCloudSyncOptions) => {
         error: error instanceof Error ? error.message : 'Ошибка подключения'
       }))
     }
-  }, [apiUrl])
+  }, [apiUrl, enabled])
 
   // Синхронизация данных
   const shareData = useCallback(async (data: any) => {
+    if (!enabled) {
+      throw new Error('Cloud sync is disabled')
+    }
+    
     try {
       setState(prev => ({ ...prev, syncStatus: 'syncing' }))
       
@@ -80,9 +86,13 @@ export const useCloudSync = (options: UseCloudSyncOptions) => {
       }))
       throw error
     }
-  }, [cloudSyncService])
+  }, [cloudSyncService, enabled])
 
   const importData = useCallback(async (shareId: string) => {
+    if (!enabled) {
+      throw new Error('Cloud sync is disabled')
+    }
+    
     try {
       setState(prev => ({ ...prev, syncStatus: 'syncing' }))
       
@@ -104,7 +114,7 @@ export const useCloudSync = (options: UseCloudSyncOptions) => {
       }))
       throw error
     }
-  }, [cloudSyncService])
+  }, [cloudSyncService, enabled])
 
   // Автоматическая проверка подключения
   useEffect(() => {
