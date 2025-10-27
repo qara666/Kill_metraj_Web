@@ -14,7 +14,6 @@ interface ExcelData {
 
 interface ExcelDataContextType {
   excelData: ExcelData | null
-  routes: any[]
   setExcelData: (data: ExcelData | null) => void
   updateExcelData: (data: ExcelData) => void
   clearExcelData: () => void
@@ -38,7 +37,6 @@ interface ExcelDataProviderProps {
 
 export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }) => {
   const [excelData, setExcelDataState] = useState<ExcelData | null>(null)
-  const [routes, setRoutes] = useState<any[]>([])
 
   // Загружаем данные из localStorage при инициализации
   useEffect(() => {
@@ -94,7 +92,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   }
 
   const updateRouteData = (routes: any[]) => {
-    setRoutes(Array.isArray(routes) ? routes : [])
     if (excelData) {
       setExcelDataState({
         ...excelData,
@@ -113,8 +110,10 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   }
 
   return (
-    <ExcelDataContext.Provider value={{ excelData, routes, setExcelData, updateExcelData, clearExcelData, updateRouteData, updateCourierData }}>
+    <ExcelDataContext.Provider value={{ excelData, setExcelData, updateExcelData, clearExcelData, updateRouteData, updateCourierData }}>
       {children}
     </ExcelDataContext.Provider>
   )
 }
+
+

@@ -36,11 +36,11 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
     isConnected: isCloudConnected, 
     lastSync: cloudLastSync, 
     syncStatus: cloudSyncStatus,
-    shareData: cloudShareData
-    // importData: cloudImportData // Не используется
+    shareData: cloudShareData,
+    importData: cloudImportData
   } = useCloudSync({ 
     enabled: true, 
-    apiUrl: 'https://killmetraj-backend.onrender.com' 
+    apiUrl: 'http://localhost:3001' 
   })
   
   // Безопасные значения по умолчанию
@@ -49,7 +49,7 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
   // Проверяем URL при загрузке страницы
   useEffect(() => {
     const checkForSharedData = () => {
-      const sharedData = importDataFromUrl(window.location.href)
+      const sharedData = importDataFromUrl()
       if (sharedData) {
         setShowImportModal(true)
         setImportUrl(window.location.href)
@@ -82,7 +82,7 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
       
       console.log('Данные для обмена:', dataToShare)
       
-      const url = shareData(dataToShare)
+      const url = shareData(excelData, safeRoutes)
       console.log('Ссылка создана успешно:', url)
       
       setShareUrl(url)
@@ -90,14 +90,13 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
       toast.success('Ссылка для обмена создана!')
     } catch (error) {
       console.error('Ошибка создания ссылки:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка'
       console.error('Детали ошибки:', {
-        message: errorMessage,
-        stack: error instanceof Error ? error.stack : undefined,
+        message: error.message,
+        stack: error.stack,
         excelData: excelData,
         routes: safeRoutes
       })
-      toast.error(`Ошибка создания ссылки для обмена: ${errorMessage}`)
+      toast.error(`Ошибка создания ссылки для обмена: ${error.message}`)
     } finally {
       setIsSharing(false)
     }
@@ -560,3 +559,5 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
     </>
   )
 }
+
+

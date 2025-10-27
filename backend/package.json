@@ -2,7 +2,7 @@
   "name": "kill-metraj-backend",
   "version": "1.0.0",
   "description": "Backend API for Kill_metraj web application",
-  "main": "simple_server.js",
+  "main": "src/server_no_db.js",
   "scripts": {
     "dev": "PORT=5001 node simple_server.js",
     "build": "echo 'No build step needed for JavaScript'",

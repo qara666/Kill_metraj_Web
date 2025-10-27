@@ -34,10 +34,6 @@ const addLog = (message) => {
   console.log(`[LOG] ${message}`);
 };
 
-// Облачная синхронизация - хранилище данных
-const dataStore = new Map(); // { userId: { data: any, lastModified: number } }
-const shareStore = new Map(); // { shareId: { data: any, timestamp: number } }
-
 // Маршруты
 app.get('/', (req, res) => {
   res.json({ message: 'Simple Excel Server', status: 'running' });
@@ -171,101 +167,10 @@ app.post('/api/upload/test-api-key', (req, res) => {
   });
 });
 
-// Облачная синхронизация - эндпоинты
-app.post('/sync/save', (req, res) => {
-  try {
-    const { id, data, timestamp, userId } = req.body;
-    addLog(`Сохранение данных для пользователя: ${userId}`);
-    
-    dataStore.set(userId, {
-      data: data,
-      lastModified: timestamp || Date.now()
-    });
-    
-    res.json({ success: true, message: 'Данные сохранены' });
-  } catch (error) {
-    addLog(`Ошибка сохранения данных: ${error.message}`);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/sync/get/:userId', (req, res) => {
-  try {
-    const { userId } = req.params;
-    const userData = dataStore.get(userId);
-    
-    if (userData) {
-      addLog(`Получение данных для пользователя: ${userId}`);
-      res.json({ success: true, data: userData.data });
-    } else {
-      res.json({ success: true, data: null });
-    }
-  } catch (error) {
-    addLog(`Ошибка получения данных: ${error.message}`);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/sync/check/:userId', (req, res) => {
-  try {
-    const { userId } = req.params;
-    const lastKnown = parseInt(req.query.lastKnown) || 0;
-    const userData = dataStore.get(userId);
-    
-    if (userData && userData.lastModified > lastKnown) {
-      addLog(`Найдены обновления для пользователя: ${userId}`);
-      res.json({ 
-        success: true, 
-        hasUpdates: true, 
-        data: userData.data,
-        lastModified: userData.lastModified
-      });
-    } else {
-      res.json({ success: true, hasUpdates: false });
-    }
-  } catch (error) {
-    addLog(`Ошибка проверки обновлений: ${error.message}`);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/sync/share', (req, res) => {
-  try {
-    const { data } = req.body;
-    const shareId = `share_${Date.now()}_${Math.random().toString(36).substring(2)}`;
-    
-    shareStore.set(shareId, {
-      data: data,
-      timestamp: Date.now()
-    });
-    
-    addLog(`Создана ссылка для sharing: ${shareId}`);
-    res.json({ success: true, shareId: shareId });
-  } catch (error) {
-    addLog(`Ошибка создания ссылки для sharing: ${error.message}`);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/sync/import/:shareId', (req, res) => {
-  try {
-    const { shareId } = req.params;
-    const shareData = shareStore.get(shareId);
-    
-    if (shareData) {
-      addLog(`Импорт данных по ссылке: ${shareId}`);
-      res.json({ success: true, data: shareData.data });
-    } else {
-      res.status(404).json({ success: false, error: 'Ссылка не найдена или истекла' });
-    }
-  } catch (error) {
-    addLog(`Ошибка импорта данных: ${error.message}`);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 // Запуск
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Простой сервер запущен на 0.0.0.0:${PORT}`);
   addLog('Сервер запущен');
 });
+
+

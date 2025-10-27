@@ -5,8 +5,6 @@ export interface ShareableData {
   routes: any[]
   timestamp: number
   version: string
-  syncKey?: string
-  lastModified?: number
 }
 
 export interface DataSharingUtils {
@@ -16,7 +14,6 @@ export interface DataSharingUtils {
   extractDataFromUrl: (url?: string) => ShareableData | null
   validateData: (data: any) => boolean
   createSimpleData: (data: ShareableData) => any
-  expandSimpleData: (simpleData: any) => ShareableData
   isJsonSafe: (jsonString: string) => boolean
   isStringSafe: (str: string) => boolean
   encodeBase64: (str: string) => string
@@ -175,7 +172,7 @@ export const dataSharingUtils: DataSharingUtils = {
       
       // Пробуем сжатие
       try {
-        const compressed = compress(jsonString)
+        const compressed = compress(jsonString, 9)
         if (compressed && dataSharingUtils.isStringSafe(compressed)) {
           return encodeURIComponent(compressed)
         }
@@ -405,3 +402,4 @@ export const useDataSharing = () => {
     validateData: dataSharingUtils.validateData
   }
 }
+

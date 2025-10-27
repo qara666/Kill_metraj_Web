@@ -25,8 +25,7 @@ class ExcelService_v3 {
         cellDates: true,
         cellNF: false,
         cellText: false,
-        raw: false,
-        codepage: 65001 // UTF-8
+        raw: false
       });
       
       this.addDebugLog('Excel файл успешно прочитан', {
@@ -448,7 +447,7 @@ class ExcelService_v3 {
       if (!header) return;
       
       const originalHeader = header;
-      const normalizedHeader = this.fixEncoding(header.toString().toLowerCase().trim());
+      const normalizedHeader = header.toString().toLowerCase().trim();
       const noApostrophes = normalizedHeader.replace(/['"]/g, '');
       
       this.addDebugLog(`Анализ заголовка ${index}: "${originalHeader}" -> "${normalizedHeader}"`);
@@ -460,66 +459,34 @@ class ExcelService_v3 {
     return headerMap;
   }
 
-  fixEncoding(str) {
-    // Исправляем проблемы с кодировкой русских символов
-    const encodingMap = {
-      'Ð½Ð¾Ð¼ÐµÑ': 'номер',
-      'Ð·Ð°ÐºÐ°Ð·': 'заказ',
-      'ÐºÐ»Ð¸ÐµÐ½Ñ': 'клиент',
-      'Ð¸Ð¼Ñ': 'имя',
-      'Ð¿Ð¾ÐºÑÐ¿Ð°ÑÐµÐ»Ñ': 'покупатель',
-      'Ð°Ð´ÑÐµÑ': 'адрес',
-      'Ð´Ð¾ÑÑÐ°Ð²ÐºÐ¸': 'доставки',
-      'ÑÐµÐ»ÐµÑÐ¾Ð½': 'телефон',
-      'ÑÐµÐ»': 'тел',
-      'ÐºÑÑÑÑÐµÑ': 'курьер',
-      'Ð´Ð¾ÑÑÐ°Ð²ÑÐ¸Ðº': 'доставщик',
-      'Ð¾Ð¿Ð»Ð°ÑÑ': 'оплаты',
-      'Ð¾Ð¿Ð»Ð°ÑÐ°': 'оплата',
-      'ÑÐ¿Ð¾ÑÐ¾Ð±': 'способ',
-      'ÑÑÐ¼Ð¼Ð°': 'сумма',
-      'ÑÑÐ¾Ð¸Ð¼Ð¾ÑÑÑ': 'стоимость',
-      'ÑÐµÐ½Ð°': 'цена',
-      'ÐºÐ¾Ð¼Ð¼ÐµÐ½ÑÐ°ÑÐ¸Ð¸': 'комментарии',
-      'Ð¿ÑÐ¸Ð¼ÐµÑÐ°Ð½Ð¸Ðµ': 'примечание'
-    };
-    
-    let result = str;
-    Object.entries(encodingMap).forEach(([wrong, correct]) => {
-      result = result.replace(new RegExp(wrong, 'gi'), correct);
-    });
-    
-    return result;
-  }
-
   getHeaderMappingRules() {
     return {
       customerName: {
-        keywords: ['заказчик', 'клиент', 'имя', 'customer', 'name', 'покупатель', 'ÐºÐ»Ð¸ÐµÐ½Ñ', 'Ð¸Ð¼Ñ', 'Ð¿Ð¾ÐºÑÐ¿Ð°ÑÐµÐ»Ñ'],
+        keywords: ['заказчик', 'клиент', 'имя', 'customer', 'name', 'покупатель'],
         exclusions: ['номер', '№', 'number', 'id', 'заказ', 'замовлення', 'всего заказов']
       },
       amount: {
-        keywords: ['сумма', 'amount', 'price', 'стоимость', 'вартість', 'цена', 'к оплате', 'оплате', 'сумма сдачи', 'сдача', 'ÑÑÐ¼Ð¼Ð°', 'ÑÑÐ¾Ð¸Ð¼Ð¾ÑÑÑ', 'ÑÐµÐ½Ð°'],
+        keywords: ['сумма', 'amount', 'price', 'стоимость', 'вартість', 'цена', 'к оплате', 'оплате', 'сумма сдачи', 'сдача'],
         exclusions: ['номер', '№', 'number', 'id', 'процент', '%']
       },
       orderNumber: {
-        keywords: ['номер', '№', 'number', 'id', 'заказ', 'замовлення', 'Ð½Ð¾Ð¼ÐµÑ', 'Ð·Ð°ÐºÐ°Ð·'],
+        keywords: ['номер', '№', 'number', 'id', 'заказ', 'замовлення'],
         exclusions: ['сумма', 'amount', 'price', 'стоимость', 'оплате', 'заказчик', 'клиент']
       },
       address: {
-        keywords: ['адрес', 'address', 'доставки', 'delivery', 'Ð°Ð´ÑÐµÑ', 'Ð´Ð¾ÑÑÐ°Ð²ÐºÐ¸']
+        keywords: ['адрес', 'address', 'доставки', 'delivery']
       },
       courier: {
-        keywords: ['курьер', 'courier', 'доставщик', 'delivery', 'driver', 'ÐºÑÑÑÑÐµÑ', 'Ð´Ð¾ÑÑÐ°Ð²ÑÐ¸Ðº']
+        keywords: ['курьер', 'courier', 'доставщик', 'delivery', 'driver']
       },
       paymentMethod: {
-        keywords: ['оплаты', 'payment', 'способ', 'method', 'оплата', 'pay', 'Ð¾Ð¿Ð»Ð°ÑÑ', 'Ð¾Ð¿Ð»Ð°ÑÐ°', 'ÑÐ¿Ð¾ÑÐ¾Ð±']
+        keywords: ['оплаты', 'payment', 'способ', 'method', 'оплата', 'pay']
       },
       phone: {
-        keywords: ['телефон', 'phone', 'тел', 'мобильный', 'mobile', 'ÑÐµÐ»ÐµÑÐ¾Ð½', 'ÑÐµÐ»']
+        keywords: ['телефон', 'phone', 'тел', 'мобильный', 'mobile']
       },
       comment: {
-        keywords: ['комментарии', 'комментарий', 'comment', 'примечание', 'note', 'ÐºÐ¾Ð¼Ð¼ÐµÐ½ÑÐ°ÑÐ¸Ð¸', 'Ð¿ÑÐ¸Ð¼ÐµÑÐ°Ð½Ð¸Ðµ']
+        keywords: ['комментарии', 'комментарий', 'comment', 'примечание', 'note']
       }
     };
   }
@@ -683,3 +650,4 @@ class ExcelService_v3 {
 }
 
 module.exports = ExcelService_v3;
+
