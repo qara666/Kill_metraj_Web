@@ -115,6 +115,22 @@ export class AddressValidationService {
     startAddress: string
     endAddress: string
   }): RouteAnomalyCheck {
+    // Загружаем пользовательские пороги из настроек (localStorage)
+    let maxLegKm = 10
+    let maxTotalKm = 35
+    let maxAvgPerOrderKm = 25
+    let filterEnabled = true
+    try {
+      const settingsRaw = localStorage.getItem('km_settings')
+      if (settingsRaw) {
+        const s = JSON.parse(settingsRaw)
+        if (typeof s.anomalyFilterEnabled === 'boolean') filterEnabled = s.anomalyFilterEnabled
+        if (typeof s.anomalyMaxLegDistanceKm === 'number') maxLegKm = s.anomalyMaxLegDistanceKm
+        if (typeof s.anomalyMaxTotalDistanceKm === 'number') maxTotalKm = s.anomalyMaxTotalDistanceKm
+        if (typeof s.anomalyMaxAvgPerOrderKm === 'number') maxAvgPerOrderKm = s.anomalyMaxAvgPerOrderKm
+      }
+    } catch {}
+
     const result: RouteAnomalyCheck = {
       hasAnomalies: false,
       warnings: [],
@@ -139,16 +155,16 @@ export class AddressValidationService {
       result.averageDistancePerOrder = route.totalDistance / ordersCount
 
       // Проверка на слишком большое общее расстояние
-      if (route.totalDistance > 35) {
+      if (filterEnabled && route.totalDistance > maxTotalKm) {
         result.hasAnomalies = true
-        result.warnings.push(`Маршрут превышает 35км (${route.totalDistance.toFixed(1)}км)`) 
+        result.warnings.push(`Маршрут превышает ${maxTotalKm}км (${route.totalDistance.toFixed(1)}км)`)
         result.suggestions.push('Проверьте корректность адресов заказов')
       }
 
       // Проверка среднего расстояния на заказ
-      if (result.averageDistancePerOrder > 25) {
+      if (filterEnabled && result.averageDistancePerOrder > maxAvgPerOrderKm) {
         result.hasAnomalies = true
-        result.warnings.push(`Среднее расстояние на заказ слишком большое (${result.averageDistancePerOrder.toFixed(1)}км)`) 
+        result.warnings.push(`Среднее расстояние на заказ слишком большое (${result.averageDistancePerOrder.toFixed(1)}км)`)
         result.suggestions.push('Возможно, есть ошибки в адресах заказов')
       }
 
@@ -214,9 +230,9 @@ export class AddressValidationService {
     }
 
     // Порог по максимальному расстоянию между точками (>10км) — используем, если предоставлено внешним расчетом
-    if (result.maxDistanceBetweenPoints > 10) {
+    if (filterEnabled && result.maxDistanceBetweenPoints > maxLegKm) {
       result.hasAnomalies = true
-      result.warnings.push(`Расстояние между некоторыми точками превышает 10км (${result.maxDistanceBetweenPoints.toFixed(1)}км)`) 
+      result.warnings.push(`Расстояние между некоторыми точками превышает ${maxLegKm}км (${result.maxDistanceBetweenPoints.toFixed(1)}км)`)
     }
 
     // Проверка стартового и конечного адресов

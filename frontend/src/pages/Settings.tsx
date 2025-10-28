@@ -12,6 +12,10 @@ interface SettingsForm {
   googleMapsApiKey: string
   defaultStartAddress: string
   defaultEndAddress: string
+  anomalyFilterEnabled: boolean
+  anomalyMaxLegDistanceKm: number
+  anomalyMaxTotalDistanceKm: number
+  anomalyMaxAvgPerOrderKm: number
 }
 
 export const Settings: React.FC = () => {
@@ -24,7 +28,11 @@ export const Settings: React.FC = () => {
     defaultValues: {
       googleMapsApiKey: '',
       defaultStartAddress: 'Макеевская 7, Киев, Украина',
-      defaultEndAddress: 'Макеевская 7, Киев, Украина'
+      defaultEndAddress: 'Макеевская 7, Киев, Украина',
+      anomalyFilterEnabled: true,
+      anomalyMaxLegDistanceKm: 10,
+      anomalyMaxTotalDistanceKm: 35,
+      anomalyMaxAvgPerOrderKm: 25
     }
   })
 
@@ -35,6 +43,11 @@ export const Settings: React.FC = () => {
     setValue('googleMapsApiKey', settings.googleMapsApiKey)
     setValue('defaultStartAddress', settings.defaultStartAddress)
     setValue('defaultEndAddress', settings.defaultEndAddress)
+    // Аномалии (с дефолтами)
+    setValue('anomalyFilterEnabled', settings.anomalyFilterEnabled ?? true)
+    setValue('anomalyMaxLegDistanceKm', settings.anomalyMaxLegDistanceKm ?? 10)
+    setValue('anomalyMaxTotalDistanceKm', settings.anomalyMaxTotalDistanceKm ?? 35)
+    setValue('anomalyMaxAvgPerOrderKm', settings.anomalyMaxAvgPerOrderKm ?? 25)
     
     // Check if API key is valid when loading
     if (settings.googleMapsApiKey) {
@@ -169,6 +182,33 @@ export const Settings: React.FC = () => {
         isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
       )}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          {/* Фильтр аномалий маршрута */}
+          <div>
+            <label className="label">
+              <CogIcon className="h-4 w-4 inline mr-2" />
+              Фильтр аномалий (расстояние)
+            </label>
+            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label className="inline-flex items-center space-x-2">
+                <input type="checkbox" className="checkbox" {...register('anomalyFilterEnabled')} />
+                <span className={clsx(isDark ? 'text-gray-200' : 'text-gray-800')}>Включить фильтр аномалий</span>
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 col-span-1 md:col-span-2">
+                <div>
+                  <div className="text-xs mb-1">Макс. расстояние между точками (км)</div>
+                  <input type="number" step="1" min="1" className="input" {...register('anomalyMaxLegDistanceKm', { valueAsNumber: true })} />
+                </div>
+                <div>
+                  <div className="text-xs mb-1">Макс. общий километраж маршрута (км)</div>
+                  <input type="number" step="1" min="1" className="input" {...register('anomalyMaxTotalDistanceKm', { valueAsNumber: true })} />
+                </div>
+                <div>
+                  <div className="text-xs mb-1">Макс. среднее на заказ (км)</div>
+                  <input type="number" step="1" min="1" className="input" {...register('anomalyMaxAvgPerOrderKm', { valueAsNumber: true })} />
+                </div>
+              </div>
+            </div>
+          </div>
           {/* Google Maps API Key */}
           <div>
             <label className="label">
