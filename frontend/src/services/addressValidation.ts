@@ -139,16 +139,16 @@ export class AddressValidationService {
       result.averageDistancePerOrder = route.totalDistance / ordersCount
 
       // Проверка на слишком большое общее расстояние
-      if (route.totalDistance > 50) {
+      if (route.totalDistance > 35) {
         result.hasAnomalies = true
-        result.warnings.push(`Маршрут превышает 50км (${route.totalDistance.toFixed(1)}км)`)
+        result.warnings.push(`Маршрут превышает 35км (${route.totalDistance.toFixed(1)}км)`) 
         result.suggestions.push('Проверьте корректность адресов заказов')
       }
 
       // Проверка среднего расстояния на заказ
-      if (result.averageDistancePerOrder > 15) {
+      if (result.averageDistancePerOrder > 25) {
         result.hasAnomalies = true
-        result.warnings.push(`Среднее расстояние на заказ слишком большое (${result.averageDistancePerOrder.toFixed(1)}км)`)
+        result.warnings.push(`Среднее расстояние на заказ слишком большое (${result.averageDistancePerOrder.toFixed(1)}км)`) 
         result.suggestions.push('Возможно, есть ошибки в адресах заказов')
       }
 
@@ -187,6 +187,38 @@ export class AddressValidationService {
       result.suggestions.push('Удалите дублирующиеся заказы или проверьте адреса')
     }
 
+    // Эвристика: адреса указывают на разные города — возможны длинные переезды
+    const knownCities = ['киев','київ','kiev','харьков','харків','kharkiv','одесса','одеса','odessa','днепр','дніпро','dnipro','львов','львів','lviv']
+    const addressCities = addresses.map(a => knownCities.find(c => a.includes(c)) || null).filter(Boolean)
+    const distinctCities = new Set(addressCities)
+    if (distinctCities.size > 1) {
+      result.hasAnomalies = true
+      result.warnings.push('Адреса из разных городов в одном маршруте')
+      result.suggestions.push('Разделите заказы по городам для корректного расчета')
+      result.maxDistanceBetweenPoints = 11 // >10 км по заданному порогу
+    }
+
+    // Эвристика: отсутствие номера дома у большинства адресов
+    const withoutHouseNumber = addresses.filter(a => !/\b\d+[а-я]?\b/i.test(a))
+    if (withoutHouseNumber.length / ordersCount > 0.6) {
+      result.hasAnomalies = true
+      result.warnings.push('У большинства адресов отсутствует номер дома')
+      result.suggestions.push('Добавьте номера домов для повышения точности')
+    }
+
+    // Эвристика: подозрительные ключевые слова (почтоматы/пункты) — возможна неточность координат
+    const nonPhysicalPatterns = /(почтомат|постамат|пункт выдачи|отделение|склад|терминал)/i
+    const nonPhysicalCount = addresses.filter(a => nonPhysicalPatterns.test(a)).length
+    if (nonPhysicalCount > 0) {
+      result.warnings.push('В маршруте есть адреса пунктов/отделений — возможна неточность')
+    }
+
+    // Порог по максимальному расстоянию между точками (>10км) — используем, если предоставлено внешним расчетом
+    if (result.maxDistanceBetweenPoints > 10) {
+      result.hasAnomalies = true
+      result.warnings.push(`Расстояние между некоторыми точками превышает 10км (${result.maxDistanceBetweenPoints.toFixed(1)}км)`) 
+    }
+
     // Проверка стартового и конечного адресов
     const startValidation = this.validateAddress(route.startAddress)
     const endValidation = this.validateAddress(route.endAddress)
@@ -199,6 +231,12 @@ export class AddressValidationService {
     if (!endValidation.isValid) {
       result.hasAnomalies = true
       result.errors.push('Некорректный конечный адрес')
+    }
+
+    // Дополнительно: стартовый и конечный адрес совпадают с одним из заказов → возможный цикл
+    const hasLoop = addresses.includes(route.startAddress.toLowerCase().trim()) && addresses.includes(route.endAddress.toLowerCase().trim())
+    if (hasLoop) {
+      result.warnings.push('Старт/финиш совпадают с адресами заказов — проверьте маршрут на петли')
     }
 
     return result

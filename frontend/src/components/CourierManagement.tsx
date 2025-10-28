@@ -1113,7 +1113,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                                     <div className="font-semibold text-gray-900">
                                       {routeAdditionalDistance.toFixed(1)} км
                                     </div>
-                                    <div className="text-gray-500">+500м за заказ</div>
+                                    <div className="text-gray-500"></div>
                                   </div>
                                 </div>
                                 
@@ -1143,7 +1143,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                                           )}
                                           <button
                                             onClick={() => handleEditAddress(order)}
-                                            className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                                            className="p-1 rounded text-blue-600 hover:text-blue-800 hover:bg-blue-50"
                                             title="Редактировать адрес"
                                           >
                                             <PencilIcon className="h-4 w-4" />
@@ -1252,6 +1252,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     </div>
   )
 }
+
 
 
 
