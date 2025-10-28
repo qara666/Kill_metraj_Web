@@ -39,17 +39,16 @@ export const SyncStatus: React.FC<SyncStatusProps> = ({ className }) => {
 
   // Обновляем время последней синхронизации
   useEffect(() => {
-    if (lastSync && lastSync.getTime() > 0) {
-      setLastSyncTime(lastSync)
-      setSyncStatus('success')
-      setSyncMessage('Данные синхронизированы')
-      
-      // Сбрасываем статус через 3 секунды
-      setTimeout(() => {
-        setSyncStatus('idle')
-        setSyncMessage('')
-      }, 3000)
-    }
+    if (!lastSync || !(lastSync instanceof Date)) return
+    if (Number.isNaN(lastSync.getTime())) return
+    setLastSyncTime(lastSync)
+    setSyncStatus('success')
+    setSyncMessage('Данные синхронизированы')
+    const t1 = setTimeout(() => {
+      setSyncStatus('idle')
+      setSyncMessage('')
+    }, 3000)
+    return () => clearTimeout(t1)
   }, [lastSync])
 
   // Отслеживаем изменения в localStorage для показа уведомлений о синхронизации

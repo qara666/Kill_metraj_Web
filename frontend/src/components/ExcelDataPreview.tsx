@@ -1,5 +1,5 @@
 import React from 'react'
-import { CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/outline'
+import { CheckCircleIcon, XCircleIcon, UsersIcon, ClipboardDocumentListIcon, BanknotesIcon, ShieldCheckIcon, ArrowDownCircleIcon } from '@heroicons/react/24/outline'
 import { clsx } from 'clsx'
 
 interface ExcelDataPreviewProps {
@@ -59,19 +59,21 @@ export const ExcelDataPreview: React.FC<ExcelDataPreviewProps> = ({ data, isVisi
                 ? (isDark ? 'bg-blue-900/20 border-blue-700' : 'bg-blue-50 border-blue-200')
                 : (isDark ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200')
             )}>
-              <div className="flex items-center space-x-2 mb-2">
-                {orders.length > 0 ? (
-                  <CheckCircleIcon className={clsx('h-6 w-6', isDark ? 'text-blue-400' : 'text-blue-600')} />
-                ) : (
-                  <XCircleIcon className={clsx('h-6 w-6', isDark ? 'text-gray-500' : 'text-gray-400')} />
-                )}
-                <h3 className={clsx('font-semibold', isDark ? 'text-gray-100' : 'text-gray-900')}>
-                  Заказы
-                </h3>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center space-x-2">
+                  <ClipboardDocumentListIcon className={clsx('h-6 w-6', isDark ? 'text-blue-400' : 'text-blue-600')} />
+                  <h3 className={clsx('font-semibold', isDark ? 'text-gray-100' : 'text-gray-900')}>
+                    Заказы
+                  </h3>
+                </div>
+                <ShieldCheckIcon className={clsx('h-5 w-5', isDark ? 'text-blue-300' : 'text-blue-500')} title="Проверено" />
               </div>
               <p className={clsx('text-3xl font-bold', isDark ? 'text-gray-100' : 'text-gray-900')}>
                 {orders.length}
               </p>
+              {summary.totalRows && (
+                <p className={clsx('mt-1 text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>Строк обработано: {summary.totalRows}</p>
+              )}
             </div>
 
             {/* Couriers */}
@@ -81,15 +83,14 @@ export const ExcelDataPreview: React.FC<ExcelDataPreviewProps> = ({ data, isVisi
                 ? (isDark ? 'bg-green-900/20 border-green-700' : 'bg-green-50 border-green-200')
                 : (isDark ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200')
             )}>
-              <div className="flex items-center space-x-2 mb-2">
-                {couriers.length > 0 ? (
-                  <CheckCircleIcon className={clsx('h-6 w-6', isDark ? 'text-green-400' : 'text-green-600')} />
-                ) : (
-                  <XCircleIcon className={clsx('h-6 w-6', isDark ? 'text-gray-500' : 'text-gray-400')} />
-                )}
-                <h3 className={clsx('font-semibold', isDark ? 'text-gray-100' : 'text-gray-900')}>
-                  Курьеры
-                </h3>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center space-x-2">
+                  <UsersIcon className={clsx('h-6 w-6', isDark ? 'text-green-400' : 'text-green-600')} />
+                  <h3 className={clsx('font-semibold', isDark ? 'text-gray-100' : 'text-gray-900')}>
+                    Курьеры
+                  </h3>
+                </div>
+                <ShieldCheckIcon className={clsx('h-5 w-5', isDark ? 'text-green-300' : 'text-green-500')} />
               </div>
               <p className={clsx('text-3xl font-bold', isDark ? 'text-gray-100' : 'text-gray-900')}>
                 {couriers.length}
@@ -103,15 +104,14 @@ export const ExcelDataPreview: React.FC<ExcelDataPreviewProps> = ({ data, isVisi
                 ? (isDark ? 'bg-purple-900/20 border-purple-700' : 'bg-purple-50 border-purple-200')
                 : (isDark ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200')
             )}>
-              <div className="flex items-center space-x-2 mb-2">
-                {paymentMethods.length > 0 ? (
-                  <CheckCircleIcon className={clsx('h-6 w-6', isDark ? 'text-purple-400' : 'text-purple-600')} />
-                ) : (
-                  <XCircleIcon className={clsx('h-6 w-6', isDark ? 'text-gray-500' : 'text-gray-400')} />
-                )}
-                <h3 className={clsx('font-semibold', isDark ? 'text-gray-100' : 'text-gray-900')}>
-                  Способы оплаты
-                </h3>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center space-x-2">
+                  <BanknotesIcon className={clsx('h-6 w-6', isDark ? 'text-purple-400' : 'text-purple-600')} />
+                  <h3 className={clsx('font-semibold', isDark ? 'text-gray-100' : 'text-gray-900')}>
+                    Способы оплаты
+                  </h3>
+                </div>
+                <ShieldCheckIcon className={clsx('h-5 w-5', isDark ? 'text-purple-300' : 'text-purple-500')} />
               </div>
               <p className={clsx('text-3xl font-bold', isDark ? 'text-gray-100' : 'text-gray-900')}>
                 {paymentMethods.length}
@@ -125,15 +125,18 @@ export const ExcelDataPreview: React.FC<ExcelDataPreviewProps> = ({ data, isVisi
                 ? (isDark ? 'bg-red-900/20 border-red-700' : 'bg-red-50 border-red-200')
                 : (isDark ? 'bg-green-900/20 border-green-700' : 'bg-green-50 border-green-200')
             )}>
-              <div className="flex items-center space-x-2 mb-2">
-                {errors.length > 0 ? (
-                  <XCircleIcon className={clsx('h-6 w-6', isDark ? 'text-red-400' : 'text-red-600')} />
-                ) : (
-                  <CheckCircleIcon className={clsx('h-6 w-6', isDark ? 'text-green-400' : 'text-green-600')} />
-                )}
-                <h3 className={clsx('font-semibold', isDark ? 'text-gray-100' : 'text-gray-900')}>
-                  Ошибок
-                </h3>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center space-x-2">
+                  {errors.length > 0 ? (
+                    <XCircleIcon className={clsx('h-6 w-6', isDark ? 'text-red-400' : 'text-red-600')} />
+                  ) : (
+                    <CheckCircleIcon className={clsx('h-6 w-6', isDark ? 'text-green-400' : 'text-green-600')} />
+                  )}
+                  <h3 className={clsx('font-semibold', isDark ? 'text-gray-100' : 'text-gray-900')}>
+                    Ошибок
+                  </h3>
+                </div>
+                <ShieldCheckIcon className={clsx('h-5 w-5', isDark ? 'text-green-300' : 'text-green-500')} />
               </div>
               <p className={clsx('text-3xl font-bold', isDark ? 'text-gray-100' : 'text-gray-900')}>
                 {errors.length}
@@ -174,6 +177,22 @@ export const ExcelDataPreview: React.FC<ExcelDataPreviewProps> = ({ data, isVisi
               </div>
             </div>
           )}
+
+          {/* CTA helpers */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className={clsx('p-3 rounded-lg flex items-center space-x-3', isDark ? 'bg-gray-800' : 'bg-gray-50')}>
+              <ArrowDownCircleIcon className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-500')} />
+              <span className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-600')}>Данные будут сохранены локально и доступны в «Курьеры/Маршруты»</span>
+            </div>
+            <div className={clsx('p-3 rounded-lg flex items-center space-x-3', isDark ? 'bg-gray-800' : 'bg-gray-50')}>
+              <ShieldCheckIcon className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-500')} />
+              <span className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-600')}>Адреса проходят базовую проверку на аномалии</span>
+            </div>
+            <div className={clsx('p-3 rounded-lg flex items-center space-x-3', isDark ? 'bg-gray-800' : 'bg-gray-50')}>
+              <BanknotesIcon className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-500')} />
+              <span className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-600')}>Методы оплаты автоматически агрегируются в отчете</span>
+            </div>
+          </div>
         </div>
 
         {/* Footer */}
