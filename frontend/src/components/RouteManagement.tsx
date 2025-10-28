@@ -627,11 +627,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
       return
     }
 
+    // Предупреждения не блокируют расчет — продолжаем автоматически
     if (anomalyCheck.warnings.length > 0) {
-      const warningMessage = `Предупреждения в маршруте:\n${anomalyCheck.warnings.join('\n')}\n\nПродолжить расчет?`
-      if (!window.confirm(warningMessage)) {
-        return
-      }
+      console.warn('Route warnings:', anomalyCheck.warnings)
     }
 
     setIsCalculating(true)
@@ -676,7 +674,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
           // Проверяем, что маршрут не превышает 100км (возможная ошибка в адресе)
           if (distanceKm > 100) {
             console.warn(`Маршрут превышает 100км (${distanceKm.toFixed(1)}км). Возможна ошибка в адресе.`)
-            alert(`Внимание: Маршрут превышает 100км (${distanceKm.toFixed(1)}км). Проверьте корректность адресов.`)
           }
 
           // Логируем для отладки и сравнения с Google Maps UI
@@ -788,11 +785,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
       return
     }
 
+    // Предупреждения не блокируют пересчет — продолжаем автоматически
     if (anomalyCheck.warnings.length > 0) {
-      const warningMessage = `Предупреждения в маршруте:\n${anomalyCheck.warnings.join('\n')}\n\nПродолжить пересчет?`
-      if (!window.confirm(warningMessage)) {
-        return
-      }
+      console.warn('Route warnings (recalc):', anomalyCheck.warnings)
     }
 
     // Выполняем пересчет
@@ -1723,6 +1718,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     </div>
   )
 }
+
 
 
 

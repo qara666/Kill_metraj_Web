@@ -252,63 +252,9 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
                 </div>
               )}
 
-              {/* Warnings */}
-              {validationResult.warnings.length > 0 && (
-                <div className={clsx(
-                  'p-4 rounded-lg border-l-4',
-                  isDark ? 'bg-yellow-900/20 border-yellow-500' : 'bg-yellow-50 border-yellow-500'
-                )}>
-                  <div className="flex items-center space-x-2 mb-2">
-                    <ExclamationTriangleIcon className={clsx(
-                      'h-5 w-5',
-                      isDark ? 'text-yellow-400' : 'text-yellow-600'
-                    )} />
-                    <span className={clsx(
-                      'font-medium',
-                      isDark ? 'text-yellow-300' : 'text-yellow-800'
-                    )}>
-                      Предупреждения
-                    </span>
-                  </div>
-                  <ul className={clsx(
-                    'text-sm space-y-1',
-                    isDark ? 'text-yellow-300' : 'text-yellow-700'
-                  )}>
-                    {validationResult.warnings.map((warning, index) => (
-                      <li key={index}>• {warning}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              {/* Warnings hidden in this modal per requirements */}
 
-              {/* Suggestions */}
-              {validationResult.suggestions.length > 0 && (
-                <div className={clsx(
-                  'p-4 rounded-lg border-l-4',
-                  isDark ? 'bg-blue-900/20 border-blue-500' : 'bg-blue-50 border-blue-500'
-                )}>
-                  <div className="flex items-center space-x-2 mb-2">
-                    <CheckCircleIcon className={clsx(
-                      'h-5 w-5',
-                      isDark ? 'text-blue-400' : 'text-blue-600'
-                    )} />
-                    <span className={clsx(
-                      'font-medium',
-                      isDark ? 'text-blue-300' : 'text-blue-800'
-                    )}>
-                      Рекомендации
-                    </span>
-                  </div>
-                  <ul className={clsx(
-                    'text-sm space-y-1',
-                    isDark ? 'text-blue-300' : 'text-blue-700'
-                  )}>
-                    {validationResult.suggestions.map((suggestion, index) => (
-                      <li key={index}>• {suggestion}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              {/* Suggestions hidden in this modal per requirements */}
             </div>
           )}
 
