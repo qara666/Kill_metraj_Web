@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, memo, useRef, useLayoutEffect } from 'react'
+import { VariableSizeList as List, areEqual } from 'react-window'
 import { 
   MapIcon, 
   TruckIcon, 
@@ -41,6 +42,7 @@ interface Order {
   isSelected?: boolean
   routeOrder?: number
   plannedTime?: string
+  paymentMethod?: string // Добавляем поле для способа оплаты
 }
 
 interface Route {
@@ -166,26 +168,30 @@ const OrderItem = memo(({
             isDark ? 'text-gray-300' : 'text-gray-600'
           )}>{order.address}</p>
           <div className={clsx(
-            'flex items-center space-x-4 mt-2 text-xs',
+            'flex items-center flex-wrap gap-2 mt-2 text-xs',
             isDark ? 'text-gray-400' : 'text-gray-500'
           )}>
-            <span>{order.customerName}</span>
-            <span>{order.phone}</span>
-            <span>{order.amount} грн</span>
+            {order.customerName && <span>{order.customerName}</span>}
+            {/* телефон скрыт */}
+            {typeof order.amount === 'number' && <span>{order.amount} грн</span>}
             {order.plannedTime && (
               <span className={clsx(
-                'font-medium',
-                isDark ? 'text-blue-400' : 'text-blue-600'
-              )}>
-                {order.plannedTime}
-              </span>
+                'px-2 py-0.5 rounded-full',
+                isDark ? 'bg-purple-600/20 text-purple-300' : 'bg-purple-50 text-purple-700'
+              )}>{order.plannedTime}</span>
+            )}
+            {order.paymentMethod && (
+              <span className={clsx(
+                'px-2 py-0.5 rounded-full',
+                isDark ? 'bg-green-600/20 text-green-300' : 'bg-green-50 text-green-700'
+              )}>{order.paymentMethod}</span>
             )}
           </div>
         </div>
       </div>
     </div>
   )
-})
+}, areEqual)
 
 export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) => {
   const { updateRouteData } = useExcelData()
@@ -200,7 +206,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   const [courierPage, setCourierPage] = useState(0)
   const [routePage, setRoutePage] = useState(0)
   const [routesPerPage] = useState(5) // Количество маршрутов на странице
-  const [visibleOrdersCount, setVisibleOrdersCount] = useState(20) // Начальное количество видимых заказов
+  const [visibleOrdersCount] = useState(2000) // Лимит для виртуализации
   const [orderSearchTerm, setOrderSearchTerm] = useState('')
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
   const [timeFilter, setTimeFilter] = useState<string>('all') // all, morning, afternoon, evening
@@ -315,6 +321,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
           phone: order.phone || '',
           customerName: order.customerName || '',
           plannedTime: order.plannedTime || '',
+          paymentMethod: order.paymentMethod || '', // Добавляем способ оплаты
           isSelected: false
         })
       }
@@ -463,6 +470,80 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set())
   const [selectedOrdersOrder, setSelectedOrdersOrder] = useState<string[]>([])
 
+  // --- Виртуализация с динамической высотой ---
+  const availableListRef = useRef<List>(null as any)
+  const inRouteListRef = useRef<List>(null as any)
+  const availableSizeMap = useRef<Record<number, number>>({})
+  const inRouteSizeMap = useRef<Record<number, number>>({})
+  const ROW_GAP = 8 // расстояние между элементами
+
+  const setAvailableSize = useCallback((index: number, size: number) => {
+    const next = size + ROW_GAP
+    if (availableSizeMap.current[index] !== next) {
+      availableSizeMap.current[index] = next
+      availableListRef.current?.resetAfterIndex(index)
+    }
+  }, [])
+
+  const getAvailableSize = useCallback((index: number) => {
+    return availableSizeMap.current[index] || 110
+  }, [])
+
+  const setInRouteSize = useCallback((index: number, size: number) => {
+    const next = size + ROW_GAP
+    if (inRouteSizeMap.current[index] !== next) {
+      inRouteSizeMap.current[index] = next
+      inRouteListRef.current?.resetAfterIndex(index)
+    }
+  }, [])
+
+  const getInRouteSize = useCallback((index: number) => {
+    return inRouteSizeMap.current[index] || 96
+  }, [])
+
+  const MeasuredRow: React.FC<{
+    index: number
+    style: React.CSSProperties
+    order: Order
+    isSelected: boolean
+    selectionOrder: number
+    isInRoute: boolean
+    onSelect: (id: string) => void
+    onMoveUp: (id: string) => void
+    onMoveDown: (id: string) => void
+    setSize: (index: number, size: number) => void
+  }> = ({ index, style, order, isSelected, selectionOrder, isInRoute, onSelect, onMoveUp, onMoveDown, setSize }) => {
+    const rowRef = useRef<HTMLDivElement>(null)
+
+    useLayoutEffect(() => {
+      if (!rowRef.current) return
+      const el = rowRef.current
+      const measure = () => setSize(index, el.getBoundingClientRect().height)
+      measure()
+      const ro = new ResizeObserver(measure)
+      ro.observe(el)
+      return () => ro.disconnect()
+    }, [index, setSize])
+
+    return (
+      <div style={style}>
+        <div ref={rowRef} className="mb-2">
+          <OrderItem
+            key={order.id}
+            order={order}
+            isSelected={isSelected}
+            selectionOrder={selectionOrder}
+            onSelect={onSelect}
+            onMoveUp={onMoveUp}
+            onMoveDown={onMoveDown}
+            isInRoute={isInRoute}
+            isDark={isDark}
+          />
+        </div>
+      </div>
+    )
+  }
+
   const handleOrderSelect = useCallback((orderId: string) => {
     if (!selectedCourier) return
 
@@ -470,6 +551,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     if (isOrderInExistingRoute(orderId)) {
       return // Не позволяем выбирать заказы, которые уже в маршрутах
     }
+
+    // Если выбирали через поиск — очищаем строку
+    if (orderSearchTerm) setOrderSearchTerm('')
 
     setSelectedOrders(prev => {
       const newSet = new Set(prev)
@@ -489,7 +573,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
       }
       return newSet
     })
-  }, [selectedCourier, isOrderInExistingRoute])
+  }, [selectedCourier, isOrderInExistingRoute, orderSearchTerm])
 
   // Функции для изменения порядка выбранных заказов
   const moveOrderUp = useCallback((orderId: string) => {
@@ -513,10 +597,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     }
   }, [selectedOrdersOrder])
 
-  // Функция для загрузки большего количества заказов
-  const loadMoreOrders = useCallback(() => {
-    setVisibleOrdersCount(prev => prev + 20)
-  }, [])
+  // При виртуализации ручная подгрузка не требуется; функция удалена
 
   const createRoute = async () => {
     if (!selectedCourier) return
@@ -1240,39 +1321,35 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                               Доступные заказы ({availableOrders.length})
                             </span>
                           </div>
-                          <div className="space-y-2">
-                            {availableOrders.slice(0, visibleOrdersCount).map(order => {
-                              const isSelected = selectedOrders.has(order.id)
-                              const selectionOrder = selectedOrdersOrder.indexOf(order.id) + 1
-                              return (
-                                <OrderItem
-                                  key={order.id}
-                                  order={order}
-                                  isSelected={isSelected}
-                                  selectionOrder={selectionOrder}
-                                  onSelect={handleOrderSelect}
-                                  onMoveUp={moveOrderUp}
-                                  onMoveDown={moveOrderDown}
-                                  isInRoute={false}
-                                  isDark={isDark}
-                                />
-                              )
-                            })}
-                            {availableOrders.length > visibleOrdersCount && (
-                              <div className="text-center py-4">
-                                <button
-                                  onClick={loadMoreOrders}
-                                  className={clsx(
-                                    'px-4 py-2 rounded-lg transition-colors duration-200',
-                                    isDark 
-                                      ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                                      : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                                  )}
-                                >
-                                  Показать еще {Math.min(20, availableOrders.length - visibleOrdersCount)} заказов
-                                </button>
-                              </div>
-                            )}
+                          <div style={{ height: 400 }}>
+                            <List
+                              ref={availableListRef as any}
+                              height={400}
+                              itemCount={Math.min(availableOrders.length, visibleOrdersCount)}
+                              itemSize={getAvailableSize}
+                              width={'100%'}
+                              className="space-y-2"
+                            >
+                              {({ index, style }) => {
+                                const order = availableOrders[index]
+                                const isSelected = selectedOrders.has(order.id)
+                                const selectionOrder = selectedOrdersOrder.indexOf(order.id) + 1
+                                return (
+                                  <MeasuredRow
+                                    index={index}
+                                    style={style}
+                                    order={order}
+                                    isSelected={isSelected}
+                                    selectionOrder={selectionOrder}
+                                    onSelect={handleOrderSelect}
+                                    onMoveUp={moveOrderUp}
+                                    onMoveDown={moveOrderDown}
+                                    isInRoute={false}
+                                    setSize={setAvailableSize}
+                                  />
+                                )
+                              }}
+                            </List>
                           </div>
                         </div>
                       )}
@@ -1292,20 +1369,33 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                               Заказы в маршрутах ({ordersInRoutes.length})
                             </span>
                           </div>
-                          <div className="space-y-2">
-                            {ordersInRoutes.map(order => (
-                              <OrderItem
-                                key={order.id}
-                                order={order}
-                                isSelected={false}
-                                selectionOrder={0}
-                                onSelect={() => {}}
-                                onMoveUp={() => {}}
-                                onMoveDown={() => {}}
-                                isInRoute={true}
-                                isDark={isDark}
-                              />
-                            ))}
+                          <div style={{ height: 300 }}>
+                            <List
+                              ref={inRouteListRef as any}
+                              height={300}
+                              itemCount={ordersInRoutes.length}
+                              itemSize={getInRouteSize}
+                              width={'100%'}
+                              className="space-y-2"
+                            >
+                              {({ index, style }) => {
+                                const order = ordersInRoutes[index]
+                                return (
+                                  <MeasuredRow
+                                    index={index}
+                                    style={style}
+                                    order={order}
+                                    isSelected={false}
+                                    selectionOrder={0}
+                                    onSelect={() => {}}
+                                    onMoveUp={() => {}}
+                                    onMoveDown={() => {}}
+                                    isInRoute={true}
+                                    setSize={setInRouteSize}
+                                  />
+                                )
+                              }}
+                            </List>
                           </div>
                         </div>
                       )}
@@ -1445,42 +1535,72 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                       )
                       
                       return (
-                        <div key={order.id} className="flex items-center space-x-2 text-sm group">
-                          <span className={clsx(
-                            'w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium',
-                            isDark 
-                              ? 'bg-blue-600/20 text-blue-300' 
-                              : 'bg-blue-100 text-blue-800'
-                          )}>
-                            {index + 1}
-                          </span>
-                          <span className={clsx(
-                            isDark ? 'text-gray-300' : 'text-gray-600'
-                          )}>#{order.orderNumber}</span>
-                          <span className={clsx(
-                            'truncate flex-1',
-                            isDark ? 'text-gray-400' : 'text-gray-500',
-                            hasAddressIssues && 'text-red-500'
-                          )}>{order.address}</span>
-                          
-                          {/* Кнопка редактирования адреса */}
-                          <button
-                            onClick={() => handleEditAddress(order)}
-                            className={clsx(
-                              'p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200',
+                        <div key={order.id} className="flex items-start justify-between text-sm group py-3">
+                          <div className="flex items-start space-x-3 flex-1">
+                            <span className={clsx(
+                              'mt-1 w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold',
                               isDark 
-                                ? 'text-gray-400 hover:text-blue-400 hover:bg-blue-900/20' 
-                                : 'text-gray-400 hover:text-blue-600 hover:bg-blue-100'
+                                ? 'bg-blue-600/20 text-blue-300' 
+                                : 'bg-blue-100 text-blue-800'
+                            )}>
+                              {index + 1}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center space-x-2">
+                                <span className={clsx(
+                                  'font-medium',
+                                  isDark ? 'text-gray-300' : 'text-gray-700'
+                                )}>Заказ #{order.orderNumber}</span>
+                                {order.plannedTime && (
+                                  <span className={clsx(
+                                    'px-2 py-0.5 rounded-full text-xs',
+                                    isDark ? 'bg-purple-600/20 text-purple-300' : 'bg-purple-50 text-purple-700'
+                                  )}>
+                                    {order.plannedTime}
+                                  </span>
+                                )}
+                                {order.paymentMethod && (
+                                  <span className={clsx(
+                                    'px-2 py-0.5 rounded-full text-xs',
+                                    isDark ? 'bg-green-600/20 text-green-300' : 'bg-green-50 text-green-700'
+                                  )}>
+                                    {order.paymentMethod}
+                                  </span>
+                                )}
+                              </div>
+                              <div className={clsx(
+                                'truncate',
+                                isDark ? 'text-gray-400' : 'text-gray-600',
+                                hasAddressIssues && 'text-red-500'
+                              )}>{order.address}</div>
+                              <div className={clsx(
+                                'mt-1 text-xs',
+                                isDark ? 'text-gray-500' : 'text-gray-400'
+                              )}>
+                                {/* Телефон скрыт по требованию */}
+                                {typeof order.amount === 'number' && (
+                                  <span className="mr-2">{order.amount} грн</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2 pl-2">
+                            <button
+                              onClick={() => handleEditAddress(order)}
+                              className={clsx(
+                                'p-1.5 rounded',
+                                isDark 
+                                  ? 'text-gray-400 hover:text-blue-400 hover:bg-blue-900/20' 
+                                  : 'text-gray-500 hover:text-blue-600 hover:bg-blue-100'
+                              )}
+                              title="Редактировать адрес"
+                            >
+                              <PencilIcon className="h-4 w-4" />
+                            </button>
+                            {hasAddressIssues && (
+                              <ExclamationTriangleIcon className="h-4 w-4 text-red-500" title="Проблемы с адресом" />
                             )}
-                            title="Редактировать адрес"
-                          >
-                            <PencilIcon className="h-4 w-4" />
-                          </button>
-                          
-                          {/* Индикатор проблем с адресом */}
-                          {hasAddressIssues && (
-                            <ExclamationTriangleIcon className="h-4 w-4 text-red-500" title="Проблемы с адресом" />
-                          )}
+                          </div>
                         </div>
                       )
                     })}
@@ -1718,6 +1838,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     </div>
   )
 }
+
+
+
+
 
 
 

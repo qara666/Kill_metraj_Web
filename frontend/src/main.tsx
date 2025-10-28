@@ -25,6 +25,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <App />
         <Toaster
           position="top-right"
+          gutter={10}
+          containerStyle={{ top: 76, right: 16, zIndex: 60 }}
           toastOptions={{
             duration: 4000,
             style: {
@@ -32,6 +34,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               color: 'var(--text-primary)',
               border: '1px solid var(--border-primary)',
               boxShadow: 'var(--shadow-lg)',
+              opacity: 0.95,
+              backdropFilter: 'saturate(120%) blur(4px)',
+              borderRadius: '10px'
             },
             success: {
               duration: 3000,
