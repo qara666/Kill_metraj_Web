@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-hot-toast'
-import { CogIcon, KeyIcon, MapIcon } from '@heroicons/react/24/outline'
+import { CogIcon, KeyIcon, MapIcon, ChevronDownIcon, ChevronUpIcon, TruckIcon, ShieldCheckIcon } from '@heroicons/react/24/outline'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { localStorageUtils } from '../utils/localStorage'
 import { validateGoogleMapsApiKey } from '../utils/apiKeyValidator'
 import { useTheme } from '../contexts/ThemeContext'
+import { useExcelData } from '../contexts/ExcelDataContext'
 import { clsx } from 'clsx'
 
 interface SettingsForm {
@@ -16,25 +17,158 @@ interface SettingsForm {
   anomalyMaxLegDistanceKm: number
   anomalyMaxTotalDistanceKm: number
   anomalyMaxAvgPerOrderKm: number
+  addressQualityThreshold: number // Минимальный порог качества адреса (0-100)
+  enableCoordinateValidation: boolean // Включить проверку координат
+  enableAdaptiveThresholds: boolean // Включить адаптивные пороги
+  courierVehicleMap: Record<string, 'car' | 'motorcycle'>
+}
+
+const CourierVehicleEditor: React.FC<{
+  value: Record<string, 'car' | 'motorcycle'>
+  onChange: (map: Record<string, 'car' | 'motorcycle'>) => void
+  isDark: boolean
+  courierNames: string[]
+}> = ({ value, onChange, isDark, courierNames }) => {
+  const [isExpanded, setIsExpanded] = useState(false)
+
+  const toggleType = (courierName: string) => {
+    const currentType = value[courierName] || 'car'
+    onChange({ ...value, [courierName]: currentType === 'car' ? 'motorcycle' : 'car' })
+  }
+
+  const sortedCouriers = [...courierNames].sort((a, b) => a.localeCompare(b, 'ru'))
+
+  return (
+    <div className={clsx('rounded-lg border', isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}>
+      <button
+        type="button"
+        onClick={() => setIsExpanded(!isExpanded)}
+        className={clsx(
+          'w-full flex items-center justify-between p-4 transition-colors',
+          isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+        )}
+      >
+        <div className="flex items-center space-x-3">
+          <TruckIcon className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-600')} />
+          <span className={clsx('font-medium', isDark ? 'text-gray-200' : 'text-gray-900')}>
+            Тип транспорта курьеров
+          </span>
+          <span className={clsx(
+            'px-2 py-1 rounded-full text-xs font-medium',
+            isDark ? 'bg-gray-700' : 'bg-gray-100'
+          )}>
+            {sortedCouriers.length}
+          </span>
+        </div>
+        {isExpanded ? (
+          <ChevronUpIcon className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-600')} />
+        ) : (
+          <ChevronDownIcon className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-600')} />
+        )}
+      </button>
+
+      {isExpanded && (
+        <div className={clsx('border-t p-4', isDark ? 'border-gray-700' : 'border-gray-200')}>
+          {sortedCouriers.length === 0 ? (
+            <p className={clsx('text-sm text-center py-4', isDark ? 'text-gray-400' : 'text-gray-500')}>
+              Загрузите Excel файл, чтобы курьеры появились здесь
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {sortedCouriers.map((courierName) => {
+                const type = value[courierName] || 'car'
+                const hasCustomType = value[courierName] !== undefined
+                return (
+                  <div
+                    key={courierName}
+                    className={clsx(
+                      'flex items-center justify-between rounded-lg px-3 py-2 border transition-all',
+                      isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleType(courierName)}
+                      className="flex items-center space-x-2 flex-1 text-left"
+                    >
+                      <span className={clsx('font-medium truncate', isDark ? 'text-gray-200' : 'text-gray-900')}>
+                        {courierName}
+                      </span>
+                      <span className={clsx(
+                        'px-2 py-0.5 rounded-full text-xs font-medium',
+                        type === 'car'
+                          ? (isDark ? 'bg-green-600/20 text-green-300' : 'bg-green-100 text-green-800')
+                          : (isDark ? 'bg-orange-600/20 text-orange-300' : 'bg-orange-100 text-orange-800')
+                      )}>
+                        {type === 'car' ? 'Авто' : 'Мото'}
+                      </span>
+                    </button>
+                    {hasCustomType && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          const updated = { ...value }
+                          delete updated[courierName]
+                          onChange(updated)
+                          localStorageUtils.removeCourierFromMap(courierName)
+                        }}
+                        className={clsx(
+                          'ml-2 px-2 py-1 rounded text-xs transition-colors',
+                          isDark 
+                            ? 'bg-red-600/20 text-red-300 hover:bg-red-600/30' 
+                            : 'bg-red-50 text-red-600 hover:bg-red-100'
+                        )}
+                        title="Удалить настройку типа (полностью из памяти)"
+                      >
+                        🗑️
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export const Settings: React.FC = () => {
   const { isDark } = useTheme()
+  const { excelData } = useExcelData()
   const [isTestingApiKey, setIsTestingApiKey] = useState(false)
   const [apiKeyStatus, setApiKeyStatus] = useState<'unknown' | 'valid' | 'invalid'>('unknown')
   const [apiKeyDetails, setApiKeyDetails] = useState<string>('')
 
+  // Извлекаем имена курьеров из Excel данных
+  const courierNames = React.useMemo(() => {
+    if (!excelData?.couriers || !Array.isArray(excelData.couriers)) {
+      return []
+    }
+    return excelData.couriers.map((courier: any) => courier.name || courier).filter(Boolean)
+  }, [excelData?.couriers])
+
   const { register, handleSubmit, watch, setValue } = useForm<SettingsForm>({
     defaultValues: {
       googleMapsApiKey: '',
-      defaultStartAddress: 'Макеевская 7, Киев, Украина',
-      defaultEndAddress: 'Макеевская 7, Киев, Украина',
+      defaultStartAddress: '',
+      defaultEndAddress: '',
       anomalyFilterEnabled: true,
       anomalyMaxLegDistanceKm: 10,
       anomalyMaxTotalDistanceKm: 35,
-      anomalyMaxAvgPerOrderKm: 25
+      anomalyMaxAvgPerOrderKm: 25,
+      addressQualityThreshold: 60,
+      enableCoordinateValidation: true,
+      enableAdaptiveThresholds: true,
+      courierVehicleMap: {}
     }
   })
+
+  // Safe watches
+  const googleMapsApiKey = watch('googleMapsApiKey') || ''
+  const courierVehicleMap = watch('courierVehicleMap') || {}
 
   // Load settings from localStorage on component mount
   useEffect(() => {
@@ -48,6 +182,10 @@ export const Settings: React.FC = () => {
     setValue('anomalyMaxLegDistanceKm', settings.anomalyMaxLegDistanceKm ?? 10)
     setValue('anomalyMaxTotalDistanceKm', settings.anomalyMaxTotalDistanceKm ?? 35)
     setValue('anomalyMaxAvgPerOrderKm', settings.anomalyMaxAvgPerOrderKm ?? 25)
+    setValue('addressQualityThreshold', settings.addressQualityThreshold ?? 60)
+    setValue('enableCoordinateValidation', settings.enableCoordinateValidation ?? true)
+    setValue('enableAdaptiveThresholds', settings.enableAdaptiveThresholds ?? true)
+    setValue('courierVehicleMap', settings.courierVehicleMap ?? {})
     
     // Check if API key is valid when loading
     if (settings.googleMapsApiKey) {
@@ -73,7 +211,7 @@ export const Settings: React.FC = () => {
     }
   }
 
-  const googleMapsApiKey = watch('googleMapsApiKey')
+  
 
   const testApiKey = async () => {
     if (!googleMapsApiKey.trim()) {
@@ -114,6 +252,15 @@ export const Settings: React.FC = () => {
     
     toast.success('Настройки успешно сохранены!')
   }
+
+  // Persist courier vehicle map immediately when user toggles types
+  useEffect(() => {
+    if (Object.keys(courierVehicleMap).length > 0) {
+      try {
+        localStorageUtils.setCourierVehicleMap(courierVehicleMap)
+      } catch {}
+    }
+  }, [courierVehicleMap])
 
   const handleClearAllData = () => {
     if (window.confirm('Вы уверены, что хотите очистить все данные? Это действие нельзя отменить.')) {
@@ -209,6 +356,46 @@ export const Settings: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Расширенные настройки фильтрации */}
+          <div>
+            <label className="label">
+              <ShieldCheckIcon className="h-4 w-4 inline mr-2" />
+              Расширенная фильтрация аномалий
+            </label>
+            <div className="space-y-3">
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  className="checkbox"
+                  {...register('enableCoordinateValidation')}
+                />
+                <span className="ml-2 text-sm">Проверять координаты на разумность</span>
+              </div>
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  className="checkbox"
+                  {...register('enableAdaptiveThresholds')}
+                />
+                <span className="ml-2 text-sm">Использовать адаптивные пороги</span>
+              </div>
+              <div>
+                <div className="text-xs mb-1">Минимальный порог качества адреса (0-100)</div>
+                <input 
+                  type="number" 
+                  step="5" 
+                  min="0" 
+                  max="100" 
+                  className="input" 
+                  {...register('addressQualityThreshold', { valueAsNumber: true })} 
+                />
+                <div className="text-xs text-gray-500 mt-1">
+                  Адреса с оценкой ниже этого порога будут помечены как подозрительные
+                </div>
+              </div>
+            </div>
+          </div>
           {/* Google Maps API Key */}
           <div>
             <label className="label">
@@ -299,6 +486,18 @@ export const Settings: React.FC = () => {
             </div>
           </div>
 
+          {/* Тип транспорта для курьеров */}
+          <div>
+            <label className="label">
+              <TruckIcon className="h-4 w-4 inline mr-2" />
+              Тип транспорта курьеров
+            </label>
+            <p className={clsx('text-xs mb-3', isDark ? 'text-gray-400' : 'text-gray-500')}>
+              Выберите тип транспорта для каждого курьера (сохраняется и применяется при загрузке Excel)
+            </p>
+            <CourierVehicleEditor value={watch('courierVehicleMap')} onChange={(map) => setValue('courierVehicleMap', map)} isDark={isDark} courierNames={courierNames} />
+          </div>
+
           {/* Action Buttons */}
           <div className="flex justify-between">
             <button 
@@ -320,6 +519,17 @@ export const Settings: React.FC = () => {
     </div>
   )
 }
+
+
+
+
+
+
+
+
+
+
+
 
 
 
