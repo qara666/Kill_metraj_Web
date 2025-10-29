@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { localStorageUtils } from '../utils/localStorage'
 
 interface ExcelData {
   orders: any[]
@@ -42,14 +43,8 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       if (stored) {
         const parsed = JSON.parse(stored)
         if (parsed && typeof parsed === 'object') {
-          setExcelDataState({
-            ...parsed,
-            routes: Array.isArray(parsed.routes) ? parsed.routes : [],
-            orders: Array.isArray(parsed.orders) ? parsed.orders : [],
-            couriers: Array.isArray(parsed.couriers) ? parsed.couriers : [],
-            paymentMethods: Array.isArray(parsed.paymentMethods) ? parsed.paymentMethods : [],
-            errors: Array.isArray(parsed.errors) ? parsed.errors : []
-          })
+          const mapped = applyCourierVehicleMap(parsed)
+          setExcelDataState(mapped)
         }
       }
     } catch (error) {
@@ -78,11 +73,15 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   }, [excelData])
 
   const setExcelData = (data: ExcelData | null) => {
-    setExcelDataState(data)
+    if (data) {
+      setExcelDataState(applyCourierVehicleMap(data))
+    } else {
+      setExcelDataState(null)
+    }
   }
 
   const updateExcelData = (data: ExcelData) => {
-    setExcelDataState(data)
+    setExcelDataState(applyCourierVehicleMap(data))
   }
 
   const clearExcelData = () => {
@@ -109,5 +108,33 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       {children}
     </ExcelDataContext.Provider>
   )
+}
+
+// Helpers
+function applyCourierVehicleMap(data: any): any {
+  try {
+    const map = localStorageUtils.getCourierVehicleMap()
+    const couriers = Array.isArray(data.couriers) ? data.couriers.map((c: any) => ({
+      ...c,
+      vehicleType: map[c.name] || c.vehicleType || 'car'
+    })) : []
+    return {
+      ...data,
+      routes: Array.isArray(data.routes) ? data.routes : [],
+      orders: Array.isArray(data.orders) ? data.orders : [],
+      couriers,
+      paymentMethods: Array.isArray(data.paymentMethods) ? data.paymentMethods : [],
+      errors: Array.isArray(data.errors) ? data.errors : []
+    }
+  } catch {
+    return {
+      ...data,
+      routes: Array.isArray(data.routes) ? data.routes : [],
+      orders: Array.isArray(data.orders) ? data.orders : [],
+      couriers: Array.isArray(data.couriers) ? data.couriers : [],
+      paymentMethods: Array.isArray(data.paymentMethods) ? data.paymentMethods : [],
+      errors: Array.isArray(data.errors) ? data.errors : []
+    }
+  }
 }
 

@@ -42,55 +42,37 @@ export const uploadApi = {
     } catch (error) {
       console.error('Ошибка загрузки файла на сервер:', error)
       
-      const mockData = {
-        orders: [{
-          id: `order_${Date.now()}_1`,
-          orderNumber: 'ORD-001',
-          address: 'ул. Крещатик, 1, Киев',
-          courier: 'Иван Петров',
-          amount: 150,
-          phone: '+380501234567',
-          customerName: 'Анна Иванова',
-          plannedTime: '10:00-12:00',
-          isSelected: false,
-          isInRoute: false
-        }],
-        couriers: [{
-          id: `courier_${Date.now()}_1`,
-          name: 'Иван Петров',
-          phone: '+380501234567',
-          email: 'ivan@example.com',
-          vehicleType: 'car',
-          isActive: true
-        }],
-        paymentMethods: [],
-        routes: [],
-        errors: [{
-          row: 0,
-          message: `Ошибка подключения к серверу: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
-          data: null
-        }],
-        summary: {
-          totalRows: 0,
-          successfulGeocoding: 0,
-          failedGeocoding: 0,
-          orders: 1,
-          couriers: 1,
-          paymentMethods: 0,
+      return {
+        success: false,
+        message: `Не удалось подключиться к серверу: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
+        data: {
+          orders: [],
+          couriers: [],
+          paymentMethods: [],
+          routes: [],
           errors: [{
             row: 0,
             message: `Ошибка подключения к серверу: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
             data: null
-          }]
+          }],
+          summary: {
+            totalRows: 0,
+            successfulGeocoding: 0,
+            failedGeocoding: 0,
+            orders: 0,
+            couriers: 0,
+            paymentMethods: 0,
+            errors: [{
+              row: 0,
+              message: `Ошибка подключения к серверу: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
+              data: null
+            }]
+          }
         }
-      }
-      
-      return {
-        success: false,
-        message: `Не удалось подключиться к серверу: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
-        data: mockData
       }
     }
   }
 }
+
+
 

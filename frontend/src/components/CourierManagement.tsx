@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { localStorageUtils } from '../utils/localStorage'
 import { 
   PlusIcon, 
   PencilIcon, 
@@ -10,12 +11,14 @@ import {
   ClockIcon,
   MapIcon,
   ArrowPathIcon,
+  ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
-// import { googleMapsLoader } from '../utils/googleMapsLoader' // Убрано для предотвращения дублирования
+import { googleMapsLoader } from '../utils/googleMapsLoader'
 import { clsx } from 'clsx'
 import { AddressValidationService } from '../services/addressValidation'
+import { toast } from 'react-hot-toast'
 import { AddressEditModal } from './AddressEditModal'
 
 interface Courier {
@@ -50,6 +53,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   const [selectedCourierForDistance, setSelectedCourierForDistance] = useState<Courier | null>(null)
   const [showAddressEditModal, setShowAddressEditModal] = useState(false)
   const [editingOrder, setEditingOrder] = useState<any>(null)
+  const [recalculatingRouteId, setRecalculatingRouteId] = useState<string | null>(null)
 
   // Рассчитываем расстояние для каждого курьера на основе маршрутов
   const calculateCourierDistance = useMemo(() => {
@@ -137,14 +141,16 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   // Создаем курьеров из данных Excel при загрузке
   useEffect(() => {
     if (excelData?.couriers && Array.isArray(excelData.couriers)) {
+      const map = localStorageUtils.getCourierVehicleMap()
       const couriersFromExcel = excelData.couriers.map((courier: any, index: number) => {
         const courierName = courier.name || 'Неизвестный курьер'
+        const mappedType = (map[courierName] || courier.vehicleType || 'car') as 'car' | 'motorcycle'
         return {
           id: `excel_${index}`,
           name: courierName,
           phone: '',
           email: '',
-          vehicleType: (courier.vehicleType || 'car') as 'car' | 'motorcycle',
+          vehicleType: mappedType,
           location: 'Киев',
           isActive: true,
           orders: calculateCourierOrdersInRoutes(courierName),
@@ -268,6 +274,16 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
         })
         console.log('Обновляем контекст:', updatedContextCouriers)
       }
+
+      // Persist to persistent map immediately
+      try {
+        const existingMap = localStorageUtils.getCourierVehicleMap()
+        const changed = updatedCouriers.find(c => c.id === id)
+        if (changed) {
+          const updatedMap = { ...existingMap, [changed.name]: changed.vehicleType }
+          localStorageUtils.setCourierVehicleMap(updatedMap)
+        }
+      } catch {}
       
       return updatedCouriers
     })
@@ -288,20 +304,56 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   const handleSaveAddress = (newAddress: string) => {
     if (!editingOrder) return
 
+    console.log('Редактирование адреса:', {
+      orderId: editingOrder.id,
+      oldAddress: editingOrder.address,
+      newAddress: newAddress
+    })
+
     const updatedOrder = { ...editingOrder, address: newAddress }
     
     if (contextData?.routes) {
-      const updatedRoutes = contextData.routes.map((route: any) => ({
-        ...route,
-        orders: route.orders.map((order: any) => 
-          order.id === editingOrder.id ? updatedOrder : order
-        ),
-        isOptimized: false,
-        totalDistance: 0,
-        totalDuration: 0
-      }))
+      const updatedRoutes = contextData.routes.map((route: any) => {
+        // Проверяем, есть ли этот заказ в данном маршруте
+        const orderIndex = route.orders.findIndex((order: any) => order.id === editingOrder.id)
+        
+        if (orderIndex !== -1) {
+          // Обновляем только маршрут, содержащий измененный заказ
+          const updatedRouteOrders = [...route.orders]
+          updatedRouteOrders[orderIndex] = updatedOrder
+          
+          return {
+            ...route,
+            orders: updatedRouteOrders,
+            isOptimized: false, // Сбрасываем оптимизацию только для этого маршрута
+            totalDistance: 0,
+            totalDuration: 0
+          }
+        }
+        
+        // Возвращаем маршрут без изменений
+        return route
+      })
       
       updateRouteData(updatedRoutes)
+      
+      console.log('Маршруты после обновления адреса:', updatedRoutes.map(r => ({
+        id: r.id,
+        courier: r.courier,
+        ordersCount: r.orders?.length || 0,
+        isOptimized: r.isOptimized
+      })))
+      
+      // Сохраняем в localStorage
+      try {
+        const savedData = JSON.parse(localStorage.getItem('km_dashboard_processed_data') || '{}')
+        if (savedData.routes) {
+          savedData.routes = updatedRoutes
+          localStorage.setItem('km_dashboard_processed_data', JSON.stringify(savedData))
+        }
+      } catch (error) {
+        console.error('Ошибка сохранения данных:', error)
+      }
     }
 
     setShowAddressEditModal(false)
@@ -416,25 +468,118 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
 
   // Функция для пересчета конкретного маршрута курьера
   const recalculateCourierRoute = async (route: any) => {
-    // Проверяем аномалии перед пересчетом
-    const anomalyCheck = AddressValidationService.checkRouteAnomalies(route)
+    // Устанавливаем состояние загрузки
+    setRecalculatingRouteId(route.id)
 
-    if (anomalyCheck.hasAnomalies && anomalyCheck.errors.length > 0) {
-      const errorMessage = `Обнаружены ошибки в маршруте:\n${anomalyCheck.errors.join('\n')}\n\nПересчет невозможен. Исправьте ошибки в адресах.`
-      alert(errorMessage)
-      return
-    }
+    try {
+      // Проверяем аномалии перед пересчетом
+      const anomalyCheck = AddressValidationService.checkRouteAnomalies(route)
 
-    if (anomalyCheck.warnings.length > 0) {
-      const warningMessage = `Предупреждения в маршруте:\n${anomalyCheck.warnings.join('\n')}\n\nПродолжить пересчет?`
-      if (!window.confirm(warningMessage)) {
+      if (anomalyCheck.hasAnomalies && anomalyCheck.errors.length > 0) {
+        const errorMessage = `Обнаружены ошибки в маршруте:\n${anomalyCheck.errors.join('\n')}\n\nПересчет невозможен. Исправьте ошибки в адресах.`
+        alert(errorMessage)
         return
       }
-    }
 
-    // Здесь можно добавить логику пересчета через Google Maps API
-    // Пока что просто показываем сообщение
-    alert(`Пересчет маршрута для курьера ${route.courier} будет выполнен. Функция находится в разработке.`)
+      // Предупреждения не блокируют пересчет — продолжаем автоматически
+      if (anomalyCheck.warnings.length > 0) {
+        console.warn('Route warnings (recalc):', anomalyCheck.warnings)
+      }
+
+      // Проверяем готовность Google Maps API
+      if (!window.google || !window.google.maps) {
+        try {
+          await googleMapsLoader.load()
+        } catch (error) {
+          alert('Ошибка загрузки Google Maps API. Проверьте настройки API ключа.')
+          return
+        }
+      }
+
+      const directionsService = new window.google.maps.DirectionsService()
+
+      // Используем прямые адреса без геокодирования
+      const waypoints = route.orders.map((order: any) => ({
+        location: order.address,
+        stopover: true
+      }))
+
+      const request = {
+        origin: route.startAddress,
+        destination: route.endAddress,
+        waypoints: waypoints,
+        travelMode: window.google.maps.TravelMode.DRIVING,
+        optimizeWaypoints: false, // Сохраняем порядок точек
+        unitSystem: window.google.maps.UnitSystem.METRIC,
+        avoidHighways: false,
+        avoidTolls: false,
+        avoidFerries: false,
+        drivingOptions: {
+          departureTime: new Date(),
+          trafficModel: window.google.maps.TrafficModel.BEST_GUESS
+        }
+      }
+
+      directionsService.route(request, (result: any, status: any) => {
+        if (status === window.google.maps.DirectionsStatus.OK && result) {
+          const totalDistance = result.routes[0].legs.reduce((sum: number, leg: any) => sum + leg.distance.value, 0)
+          const totalDuration = result.routes[0].legs.reduce((sum: number, leg: any) => sum + leg.duration.value, 0)
+
+          // Обновляем маршрут с новыми данными
+          const updatedRoute = {
+            ...route,
+            totalDistance: Math.round(totalDistance / 1000 * 10) / 10, // в км
+            totalDuration: Math.round(totalDuration / 60), // в минутах
+            isOptimized: true,
+            lastCalculated: new Date().toISOString()
+          }
+
+          console.log('Обновляемый маршрут:', {
+            id: updatedRoute.id,
+            courier: updatedRoute.courier,
+            ordersCount: updatedRoute.orders?.length || 0,
+            totalDistance: updatedRoute.totalDistance,
+            totalDuration: updatedRoute.totalDuration
+          })
+
+          // Обновляем маршрут через контекст
+          if (contextData?.routes) {
+            const updatedRoutes = contextData.routes.map((r: any) => r.id === route.id ? updatedRoute : r)
+            updateRouteData(updatedRoutes)
+            
+            console.log('Маршруты после обновления:', updatedRoutes.map(r => ({
+              id: r.id,
+              courier: r.courier,
+              ordersCount: r.orders?.length || 0
+            })))
+          }
+
+          // Сохраняем в localStorage
+          try {
+            const savedData = JSON.parse(localStorage.getItem('km_dashboard_processed_data') || '{}')
+            if (savedData.routes) {
+              const updatedRoutes = savedData.routes.map((r: any) => r.id === route.id ? updatedRoute : r)
+              savedData.routes = updatedRoutes
+              localStorage.setItem('km_dashboard_processed_data', JSON.stringify(savedData))
+            }
+          } catch (error) {
+            console.error('Ошибка сохранения маршрута:', error)
+          }
+
+          toast.success(`Маршрут для курьера ${route.courier} пересчитан: ${updatedRoute.totalDistance}км, ${updatedRoute.totalDuration}мин`)
+        } else {
+          console.error('Ошибка расчета маршрута:', status)
+          toast.error('Ошибка при пересчете маршрута')
+        }
+      })
+
+    } catch (error) {
+      console.error('Ошибка пересчета маршрута:', error)
+      toast.error('Ошибка при пересчете маршрута')
+    } finally {
+      // Очищаем состояние загрузки
+      setRecalculatingRouteId(null)
+    }
   }
 
 
@@ -1078,10 +1223,19 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                                     </button>
                                     <button
                                       onClick={() => recalculateCourierRoute(route)}
-                                      className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all duration-200"
-                                      title="Пересчитать маршрут"
+                                      disabled={recalculatingRouteId === route.id}
+                                      className={clsx(
+                                        'p-2 rounded-lg transition-all duration-200',
+                                        recalculatingRouteId === route.id
+                                          ? 'text-green-600 bg-green-50 cursor-wait'
+                                          : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
+                                      )}
+                                      title={recalculatingRouteId === route.id ? "Пересчитывается..." : "Пересчитать маршрут"}
                                     >
-                                      <ArrowPathIcon className="h-4 w-4" />
+                                      <ArrowPathIcon className={clsx(
+                                        'h-4 w-4',
+                                        recalculatingRouteId === route.id && 'animate-spin'
+                                      )} />
                                     </button>
                                     <button
                                       onClick={() => deleteRoute(route.id)}
@@ -1171,6 +1325,46 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                                         </span>
                                       </div>
                                     </div>
+
+                                    {/* Отображение аномалий маршрута */}
+                                    {(() => {
+                                      const anomalyCheck = AddressValidationService.checkRouteAnomalies(route)
+                                      if (!anomalyCheck || (!anomalyCheck.hasAnomalies && anomalyCheck.warnings.length === 0)) {
+                                        return null
+                                      }
+                                      
+                                      return (
+                                        <div className="mt-2 space-y-1">
+                                          {anomalyCheck.errors.length > 0 && (
+                                            <div className="text-xs p-2 rounded bg-red-50 text-red-700 border border-red-200">
+                                              <div className="flex items-center space-x-1">
+                                                <ExclamationTriangleIcon className="h-3 w-3" />
+                                                <span className="font-medium">Ошибки:</span>
+                                              </div>
+                                              <ul className="ml-4 mt-1">
+                                                {anomalyCheck.errors.map((error, index) => (
+                                                  <li key={index}>• {error}</li>
+                                                ))}
+                                              </ul>
+                                            </div>
+                                          )}
+                                          
+                                          {anomalyCheck.warnings.length > 0 && (
+                                            <div className="text-xs p-2 rounded bg-yellow-50 text-yellow-700 border border-yellow-200">
+                                              <div className="flex items-center space-x-1">
+                                                <ExclamationTriangleIcon className="h-3 w-3" />
+                                                <span className="font-medium">Предупреждения:</span>
+                                              </div>
+                                              <ul className="ml-4 mt-1">
+                                                {anomalyCheck.warnings.map((warning, index) => (
+                                                  <li key={index}>• {warning}</li>
+                                                ))}
+                                              </ul>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )
+                                    })()}
                                   </div>
                                 )}
                               </div>
@@ -1251,6 +1445,14 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     </div>
   )
 }
+
+
+
+
+
+
+
+
 
 
 

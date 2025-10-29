@@ -10,6 +10,50 @@ export const localStorageUtils = {
     return !!apiKey
   },
 
+  // Persistent courier vehicle mapping (separate from regular settings)
+  getCourierVehicleMap: (): Record<string, 'car' | 'motorcycle'> => {
+    if (typeof window === 'undefined') return {}
+    try {
+      const existing = localStorage.getItem('km_courier_vehicle_map')
+      return existing ? JSON.parse(existing) : {}
+    } catch {
+      return {}
+    }
+  },
+
+  setCourierVehicleMap: (map: Record<string, 'car' | 'motorcycle'>): void => {
+    if (typeof window === 'undefined') return
+    try {
+      localStorage.setItem('km_courier_vehicle_map', JSON.stringify(map))
+    } catch (error) {
+      console.error('Error saving courier vehicle map:', error)
+    }
+  },
+
+  removeCourierFromMap: (courierName: string): void => {
+    if (typeof window === 'undefined') return
+    try {
+      const existing = localStorage.getItem('km_courier_vehicle_map')
+      if (existing) {
+        const map = JSON.parse(existing)
+        delete map[courierName]
+        // If map is now empty, remove the entire key to free up storage
+        if (Object.keys(map).length === 0) {
+          localStorage.removeItem('km_courier_vehicle_map')
+        } else {
+          localStorage.setItem('km_courier_vehicle_map', JSON.stringify(map))
+        }
+      }
+    } catch (e) {
+      console.error('Error removing courier from map:', e)
+    }
+  },
+
+  clearCourierVehicleMap: (): void => {
+    if (typeof window === 'undefined') return
+    localStorage.removeItem('km_courier_vehicle_map')
+  },
+
   getApiKey: (): string | null => {
     if (typeof window === 'undefined') return null
     return localStorage.getItem('google_maps_api_key')
@@ -59,17 +103,20 @@ export const localStorageUtils = {
     if (typeof window === 'undefined') return {}
     try {
       const settingsJson = localStorage.getItem('km_settings')
-      return settingsJson ? JSON.parse(settingsJson) : {
+      const persistentMap = localStorageUtils.getCourierVehicleMap()
+      return settingsJson ? { ...JSON.parse(settingsJson), courierVehicleMap: persistentMap } : {
         googleMapsApiKey: localStorage.getItem('google_maps_api_key') || '',
         defaultStartAddress: localStorage.getItem('km_default_start_address') || 'Макеевская 7, Киев, Украина',
-        defaultEndAddress: localStorage.getItem('km_default_end_address') || 'Макеевская 7, Киев, Украина'
+        defaultEndAddress: localStorage.getItem('km_default_end_address') || 'Макеевская 7, Киев, Украина',
+        courierVehicleMap: persistentMap
       }
     } catch (error) {
       console.error('Error reading settings:', error)
       return {
         googleMapsApiKey: localStorage.getItem('google_maps_api_key') || '',
         defaultStartAddress: localStorage.getItem('km_default_start_address') || 'Макеевская 7, Киев, Украина',
-        defaultEndAddress: localStorage.getItem('km_default_end_address') || 'Макеевская 7, Киев, Украина'
+        defaultEndAddress: localStorage.getItem('km_default_end_address') || 'Макеевская 7, Киев, Украина',
+        courierVehicleMap: localStorageUtils.getCourierVehicleMap()
       }
     }
   },
@@ -77,7 +124,8 @@ export const localStorageUtils = {
   setAllSettings: (settings: any): void => {
     if (typeof window === 'undefined') return
     try {
-      localStorage.setItem('km_settings', JSON.stringify(settings))
+      const { courierVehicleMap, ...restSettings } = settings
+      localStorage.setItem('km_settings', JSON.stringify(restSettings))
       if (settings.googleMapsApiKey) {
         localStorage.setItem('google_maps_api_key', settings.googleMapsApiKey)
       }
@@ -87,6 +135,10 @@ export const localStorageUtils = {
       if (settings.defaultEndAddress) {
         localStorage.setItem('km_default_end_address', settings.defaultEndAddress)
       }
+      // Save courier vehicle map separately
+      if (courierVehicleMap && typeof courierVehicleMap === 'object') {
+        localStorageUtils.setCourierVehicleMap(courierVehicleMap)
+      }
     } catch (error) {
       console.error('Error saving settings:', error)
     }
@@ -94,6 +146,10 @@ export const localStorageUtils = {
 
   clearAllSettings: (): void => {
     if (typeof window === 'undefined') return
+    // Keep courier vehicle map in separate storage - IT SURVIVES CLEAR ALL DATA
+    // Also preserve API key for convenience
+    const apiKey = localStorage.getItem('google_maps_api_key')
+    
     const keysToRemove = [
       'km_settings',
       'km_dashboard_logs',
@@ -106,6 +162,11 @@ export const localStorageUtils = {
       'km_sync_data'
     ]
     keysToRemove.forEach(key => localStorage.removeItem(key))
+    
+    // Restore API key
+    if (apiKey) {
+      localStorage.setItem('google_maps_api_key', apiKey)
+    }
   }
 }
 

@@ -21,6 +21,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { clsx } from 'clsx'
 import { AddressEditModal } from './AddressEditModal'
 import { AddressValidationService, RouteAnomalyCheck } from '../services/addressValidation'
+import { getPaymentMethodBadgeProps } from '../utils/paymentMethodHelper'
 
 // Google Maps types
 declare global {
@@ -174,17 +175,19 @@ const OrderItem = memo(({
             {order.customerName && <span>{order.customerName}</span>}
             {/* телефон скрыт */}
             {typeof order.amount === 'number' && <span>{order.amount} грн</span>}
+            {order.paymentMethod && (() => {
+              const badgeProps = getPaymentMethodBadgeProps(order.paymentMethod, isDark)
+              return (
+                <span className={clsx('px-2 py-0.5 rounded-full', badgeProps.bgColorClass, badgeProps.textColorClass)}>
+                  {badgeProps.text}
+                </span>
+              )
+            })()}
             {order.plannedTime && (
               <span className={clsx(
                 'px-2 py-0.5 rounded-full',
                 isDark ? 'bg-purple-600/20 text-purple-300' : 'bg-purple-50 text-purple-700'
               )}>{order.plannedTime}</span>
-            )}
-            {order.paymentMethod && (
-              <span className={clsx(
-                'px-2 py-0.5 rounded-full',
-                isDark ? 'bg-green-600/20 text-green-300' : 'bg-green-50 text-green-700'
-              )}>{order.paymentMethod}</span>
             )}
           </div>
         </div>
@@ -193,8 +196,8 @@ const OrderItem = memo(({
   )
 }, areEqual)
 
-export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) => {
-  const { updateRouteData } = useExcelData()
+export const RouteManagement: React.FC<RouteManagementProps> = () => {
+  const { excelData, updateRouteData, updateExcelData } = useExcelData()
   const { isDark } = useTheme()
   const [selectedCourier, setSelectedCourier] = useState<string | null>(null)
   const [routes, setRoutes] = useState<Route[]>([])
@@ -352,6 +355,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
 
   // Определяем тип транспорта курьера
   const getCourierVehicleType = (courierName: string) => {
+    const settings = localStorageUtils.getAllSettings()
+    if (settings.courierVehicleMap && settings.courierVehicleMap[courierName]) {
+      return settings.courierVehicleMap[courierName]
+    }
     if (!excelData?.couriers || !Array.isArray(excelData.couriers)) {
       return 'car'
     }
@@ -830,24 +837,43 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     // Обновляем адрес в заказе
     const updatedOrder = { ...editingOrder, address: newAddress }
     
-    // Обновляем маршруты, содержащие этот заказ
-    setRoutes(prev => prev.map(route => ({
-      ...route,
-      orders: route.orders.map(order => 
-        order.id === editingOrder.id ? updatedOrder : order
-      ),
-      // Сбрасываем флаг оптимизации, так как адрес изменился
-      isOptimized: false,
-      totalDistance: 0,
-      totalDuration: 0
-    })))
+    // Обновляем только маршруты, содержащие этот заказ
+    setRoutes(prev => prev.map(route => {
+      // Проверяем, есть ли этот заказ в данном маршруте
+      const orderIndex = route.orders.findIndex(order => order.id === editingOrder.id)
+      
+      if (orderIndex !== -1) {
+        // Обновляем только маршрут, содержащий измененный заказ
+        const updatedRouteOrders = [...route.orders]
+        updatedRouteOrders[orderIndex] = updatedOrder
+        
+        return {
+          ...route,
+          orders: updatedRouteOrders,
+          // Сбрасываем флаг оптимизации только для этого маршрута
+          isOptimized: false,
+          totalDistance: 0,
+          totalDuration: 0
+        }
+      }
+      
+      // Возвращаем маршрут без изменений
+      return route
+    }))
 
     // Обновляем данные в контексте Excel
     if (excelData?.orders) {
-      excelData.orders.map((order: any) => 
+      const updatedOrders = excelData.orders.map((order: any) => 
         order.id === editingOrder.id ? { ...order, address: newAddress } : order
       )
-      // Здесь можно обновить контекст, если нужно
+      updateExcelData({ ...excelData, orders: updatedOrders })
+    }
+
+    // Сохраняем в localStorage
+    try {
+      localStorage.setItem('km_routes', JSON.stringify(routes))
+    } catch (error) {
+      console.error('Ошибка сохранения маршрутов:', error)
     }
 
     setShowAddressEditModal(false)
@@ -1559,14 +1585,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
                                     {order.plannedTime}
                                   </span>
                                 )}
-                                {order.paymentMethod && (
-                                  <span className={clsx(
-                                    'px-2 py-0.5 rounded-full text-xs',
-                                    isDark ? 'bg-green-600/20 text-green-300' : 'bg-green-50 text-green-700'
-                                  )}>
-                                    {order.paymentMethod}
-                                  </span>
-                                )}
+                                {order.paymentMethod && (() => {
+                                  const badgeProps = getPaymentMethodBadgeProps(order.paymentMethod, isDark)
+                                  return (
+                                    <span className={clsx('px-2 py-0.5 rounded-full text-xs', badgeProps.bgColorClass, badgeProps.textColorClass)}>
+                                      {badgeProps.text}
+                                    </span>
+                                  )
+                                })()}
                               </div>
                               <div className={clsx(
                                 'truncate',
@@ -1838,6 +1864,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData }) =
     </div>
   )
 }
+
+
+
+
+
+
+
 
 
 

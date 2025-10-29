@@ -28,61 +28,18 @@ app.post('/api/upload/excel', upload.single('file'), (req, res) => {
 
     console.log('Получен файл:', req.file.originalname);
 
-    // Создаем тестовые данные для демонстрации
+    // Возвращаем пустые данные
     const mockData = {
-      orders: [
-        {
-          id: `order_${Date.now()}_1`,
-          orderNumber: 'ORD-001',
-          address: 'ул. Крещатик, 1, Киев',
-          courier: 'Иван Петров',
-          amount: 150,
-          phone: '+380501234567',
-          customerName: 'Анна Иванова',
-          plannedTime: '10:00-12:00',
-          isSelected: false,
-          isInRoute: false
-        },
-        {
-          id: `order_${Date.now()}_2`,
-          orderNumber: 'ORD-002',
-          address: 'ул. Шевченко, 15, Киев',
-          courier: 'Мария Сидорова',
-          amount: 200,
-          phone: '+380501234568',
-          customerName: 'Петр Козлов',
-          plannedTime: '14:00-16:00',
-          isSelected: false,
-          isInRoute: false
-        }
-      ],
-      couriers: [
-        {
-          id: `courier_${Date.now()}_1`,
-          name: 'Иван Петров',
-          phone: '+380501234567',
-          email: 'ivan@example.com',
-          vehicleType: 'car',
-          isActive: true
-        },
-        {
-          id: `courier_${Date.now()}_2`,
-          name: 'Мария Сидорова',
-          phone: '+380501234568',
-          email: 'maria@example.com',
-          vehicleType: 'motorcycle',
-          isActive: true
-        }
-      ],
+      orders: [],
+      couriers: [],
       paymentMethods: [],
       routes: [],
       errors: [],
       debug: {
         logs: [
           'Файл успешно загружен',
-          'Обработано 2 заказа',
-          'Найдено 2 курьера',
-          'Геокодирование выполнено успешно'
+          'Обработано 0 заказов',
+          'Найдено 0 курьеров'
         ]
       }
     };
@@ -119,6 +76,12 @@ app.get('/', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+
+
+
+
+
 
 
 

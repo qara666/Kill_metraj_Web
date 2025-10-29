@@ -67,16 +67,28 @@ export const Dashboard: React.FC = () => {
         newOrder.id = `order_${newOrder.orderNumber || Math.random()}`
       }
       
-      const isDuplicate = existingOrders.some((existingOrder: any) => 
-        existingOrder.orderNumber === newOrder.orderNumber ||
-        existingOrder.id === newOrder.id
-      )
+      // Более точная проверка дубликатов - учитываем только orderNumber, если он есть
+      let isDuplicate = false
+      if (newOrder.orderNumber) {
+        isDuplicate = existingOrders.some((existingOrder: any) => 
+          existingOrder.orderNumber === newOrder.orderNumber
+        )
+      } else {
+        // Если нет orderNumber, проверяем по адресу и другим полям
+        isDuplicate = existingOrders.some((existingOrder: any) => 
+          existingOrder.address === newOrder.address &&
+          existingOrder.courierName === newOrder.courierName &&
+          existingOrder.plannedTime === newOrder.plannedTime
+        )
+      }
       
       if (!isDuplicate) {
         mergedOrders.push(newOrder)
         addedOrders++
       } else {
         duplicateOrders++
+        // Логируем дубликат для отладки
+        console.log(`Дубликат заказа: ${newOrder.orderNumber || 'без номера'} - ${newOrder.address}`)
       }
     })
 
@@ -164,6 +176,13 @@ export const Dashboard: React.FC = () => {
     if (addedOrders > 0) {
       const newOrderNumbers = newOrders.slice(0, 3).map((order: any) => order.orderNumber).join(', ')
       log(`Новые заказы: ${newOrderNumbers}${newOrders.length > 3 ? '...' : ''}`)
+    }
+    
+    // Дополнительная диагностика если заказы не добавились
+    if (addedOrders === 0 && newOrders.length > 0) {
+      log(`⚠️ ДИАГНОСТИКА: Все ${newOrders.length} заказов считаются дубликатами!`)
+      log(`Примеры новых заказов: ${newOrders.slice(0, 2).map((o: any) => `№${o.orderNumber || 'N/A'}`).join(', ')}`)
+      log(`Примеры существующих заказов: ${existingOrders.slice(0, 2).map((o: any) => `№${o.orderNumber || 'N/A'}`).join(', ')}`)
     }
 
     return {
@@ -272,13 +291,29 @@ export const Dashboard: React.FC = () => {
       }
 
       // Объединяем новые данные с существующими
+      let mergedData: any
       try {
-        const mergedData = mergeExcelData(newData, excelData || null)
+        mergedData = mergeExcelData(newData, excelData || null)
         setExcelData(mergedData)
+        
+        // Логируем результаты объединения
+        const existingOrdersCount = excelData?.orders?.length || 0
+        const newOrdersCount = (orders as any[]).length
+        const finalOrdersCount = mergedData.orders.length
+        
+        log(`Файл оброблено: замовлень=${newOrdersCount}, геокодовано=${newData.summary.successfulGeocoding}, помилок=${(newData.summary.errors as any[]).length}.`)
+        log(`Объединение: було=${existingOrdersCount}, нових=${newOrdersCount}, стало=${finalOrdersCount} заказов.`)
+        
+        if (finalOrdersCount === existingOrdersCount && newOrdersCount > 0) {
+          log(`⚠️ ВНИМАНИЕ: Новые заказы не добавились! Возможно, все заказы считаются дубликатами.`)
+        }
+        
       } catch (error) {
         console.error('Ошибка при объединении данных:', error)
         // Если объединение не удалось, просто используем новые данные
         setExcelData(newData)
+        mergedData = newData
+        log(`Ошибка объединения данных, используются только новые данные`)
       }
       
       // Инвалидируем кэш маршрутов для обновления состояния
@@ -294,9 +329,6 @@ export const Dashboard: React.FC = () => {
       // Показываем предпросмотр данных
       setPreviewData(data);
       setShowDataPreview(true);
-      
-      const ordersCount = (orders as any[]).length
-      log(`Файл оброблено: замовлень=${ordersCount}, геокодовано=${newData.summary.successfulGeocoding}, помилок=${(newData.summary.errors as any[]).length}. Данные объединены с существующими.`)
       queryClient.invalidateQueries({ queryKey: ['routes'] })
     },
     onError: (error: any) => {
@@ -543,6 +575,10 @@ export const Dashboard: React.FC = () => {
     </div>
   )
 }
+
+
+
+
 
 
 
