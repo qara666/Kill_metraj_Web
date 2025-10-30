@@ -28,9 +28,8 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
   
   const { isDark } = useTheme()
   const { shareData, importDataFromUrl, copyToClipboard } = useDataSharing()
-  const { excelData, routes, updateExcelData, updateRouteData } = useExcelData()
-  
-  const safeRoutes = routes || []
+  const { excelData, updateExcelData, updateRouteData } = useExcelData()
+  const safeRoutes = (excelData?.routes || [])
 
   useEffect(() => {
     const checkForSharedData = () => {
@@ -134,17 +133,19 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
       })
 
       // Обновляем данные в контексте полностью
-      if (sharedData.excelData) {
-        // Обновляем весь excelData контекст
-        updateExcelData(sharedData.excelData)
-        console.log('Excel данные обновлены:', {
-          orders: sharedData.excelData.orders?.length || 0,
-          couriers: sharedData.excelData.couriers?.length || 0,
-          routes: sharedData.excelData.routes?.length || 0
-        })
-      } else {
-        console.warn('Нет данных excelData для импорта!')
+      let newCombinedData = sharedData.excelData
+      if (newCombinedData && !newCombinedData.routes && sharedData.routes) {
+          newCombinedData = { ...newCombinedData, routes: sharedData.routes }
       }
+      if (newCombinedData && excelData?.routes && excelData.routes.length > 0 && (!newCombinedData.routes || newCombinedData.routes.length === 0)) {
+          newCombinedData.routes = [...excelData.routes]
+      }
+      updateExcelData(newCombinedData)
+      console.log('Excel данные обновлены:', {
+        orders: newCombinedData.orders?.length || 0,
+        couriers: newCombinedData.couriers?.length || 0,
+        routes: newCombinedData.routes?.length || 0
+      })
       
       // Дополнительно обновляем маршруты если они есть отдельно
       if (sharedData.routes && sharedData.routes.length > 0) {
@@ -183,9 +184,9 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
       
       setShowImportModal(false)
       setImportUrl('')
-      const ordersCount = sharedData.excelData?.orders?.length || 0
-      const couriersCount = sharedData.excelData?.couriers?.length || 0
-      const routesCount = sharedData.routes?.length || 0
+      const ordersCount = newCombinedData?.orders?.length || 0
+      const couriersCount = newCombinedData?.couriers?.length || 0
+      const routesCount = newCombinedData?.routes?.length || 0
       
       toast.success(`Данные успешно импортированы! Загружено: ${ordersCount} заказов, ${couriersCount} курьеров, ${routesCount} маршрутов.`)
     } catch (error) {
@@ -493,6 +494,13 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
     </>
   )
 }
+
+
+
+
+
+
+
 
 
 

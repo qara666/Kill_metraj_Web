@@ -104,11 +104,17 @@ export const localStorageUtils = {
     try {
       const settingsJson = localStorage.getItem('km_settings')
       const persistentMap = localStorageUtils.getCourierVehicleMap()
-      return settingsJson ? { ...JSON.parse(settingsJson), courierVehicleMap: persistentMap } : {
+      const maxCriticalRouteDistanceKm = localStorage.getItem('km_max_critical_route_distance_km')
+      return settingsJson ? {
+        ...JSON.parse(settingsJson),
+        courierVehicleMap: persistentMap,
+        maxCriticalRouteDistanceKm: maxCriticalRouteDistanceKm ? parseFloat(maxCriticalRouteDistanceKm) : 120
+      } : {
         googleMapsApiKey: localStorage.getItem('google_maps_api_key') || '',
         defaultStartAddress: localStorage.getItem('km_default_start_address') || 'Макеевская 7, Киев, Украина',
         defaultEndAddress: localStorage.getItem('km_default_end_address') || 'Макеевская 7, Киев, Украина',
-        courierVehicleMap: persistentMap
+        courierVehicleMap: persistentMap,
+        maxCriticalRouteDistanceKm: maxCriticalRouteDistanceKm ? parseFloat(maxCriticalRouteDistanceKm) : 120
       }
     } catch (error) {
       console.error('Error reading settings:', error)
@@ -116,7 +122,8 @@ export const localStorageUtils = {
         googleMapsApiKey: localStorage.getItem('google_maps_api_key') || '',
         defaultStartAddress: localStorage.getItem('km_default_start_address') || 'Макеевская 7, Киев, Украина',
         defaultEndAddress: localStorage.getItem('km_default_end_address') || 'Макеевская 7, Киев, Украина',
-        courierVehicleMap: localStorageUtils.getCourierVehicleMap()
+        courierVehicleMap: localStorageUtils.getCourierVehicleMap(),
+        maxCriticalRouteDistanceKm: localStorage.getItem('km_max_critical_route_distance_km') ? parseFloat(localStorage.getItem('km_max_critical_route_distance_km')!) : 120
       }
     }
   },
@@ -134,6 +141,9 @@ export const localStorageUtils = {
       }
       if (settings.defaultEndAddress) {
         localStorage.setItem('km_default_end_address', settings.defaultEndAddress)
+      }
+      if (settings.maxCriticalRouteDistanceKm !== undefined) {
+        localStorage.setItem('km_max_critical_route_distance_km', settings.maxCriticalRouteDistanceKm.toString())
       }
       // Save courier vehicle map separately
       if (courierVehicleMap && typeof courierVehicleMap === 'object') {

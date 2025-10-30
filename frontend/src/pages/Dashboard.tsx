@@ -294,6 +294,9 @@ export const Dashboard: React.FC = () => {
       let mergedData: any
       try {
         mergedData = mergeExcelData(newData, excelData || null)
+        if (mergedData && excelData?.routes && excelData.routes.length > 0 && (!mergedData.routes || mergedData.routes.length === 0)) {
+            mergedData.routes = [...excelData.routes]
+        }
         setExcelData(mergedData)
         
         // Логируем результаты объединения
@@ -311,6 +314,9 @@ export const Dashboard: React.FC = () => {
       } catch (error) {
         console.error('Ошибка при объединении данных:', error)
         // Если объединение не удалось, просто используем новые данные
+        if (newData && excelData?.routes && excelData.routes.length > 0 && (!newData.routes || newData.routes.length === 0)) {
+            newData.routes = [...excelData.routes]
+        }
         setExcelData(newData)
         mergedData = newData
         log(`Ошибка объединения данных, используются только новые данные`)
@@ -575,6 +581,14 @@ export const Dashboard: React.FC = () => {
     </div>
   )
 }
+
+
+
+
+
+
+
+
 
 
 

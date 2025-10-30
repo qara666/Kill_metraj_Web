@@ -522,14 +522,30 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
 
       directionsService.route(request, (result: any, status: any) => {
         if (status === window.google.maps.DirectionsStatus.OK && result) {
-          const totalDistance = result.routes[0].legs.reduce((sum: number, leg: any) => sum + leg.distance.value, 0)
-          const totalDuration = result.routes[0].legs.reduce((sum: number, leg: any) => sum + leg.duration.value, 0)
+          // Логируем legs для отладки
+          if (result.routes[0]?.legs) {
+            console.log('legs:', result.routes[0].legs.map((leg: any) => ({
+              start_address: leg.start_address,
+              end_address: leg.end_address,
+              distance: leg.distance,
+              duration: leg.duration,
+            })))
+          }
+          const totalDistanceMeters = result.routes[0].legs.reduce((sum: number, leg: any) => {
+            // ТОЛЬКО value (int, метры)
+            if (leg.distance && typeof leg.distance.value === 'number') return sum + leg.distance.value;
+            return sum;
+          }, 0);
+          const totalDurationSec = result.routes[0].legs.reduce((sum: number, leg: any) => {
+            if (leg.duration && typeof leg.duration.value === 'number') return sum + leg.duration.value;
+            return sum;
+          }, 0);
 
           // Обновляем маршрут с новыми данными
           const updatedRoute = {
             ...route,
-            totalDistance: Math.round(totalDistance / 1000 * 10) / 10, // в км
-            totalDuration: Math.round(totalDuration / 60), // в минутах
+            totalDistance: Math.round(totalDistanceMeters / 1000 * 10) / 10, // в км
+            totalDuration: Math.round(totalDurationSec / 60), // в минутах
             isOptimized: true,
             lastCalculated: new Date().toISOString()
           }
@@ -1445,6 +1461,15 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     </div>
   )
 }
+
+
+
+
+
+
+
+
+
 
 
 

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react'
 import { localStorageUtils } from '../utils/localStorage'
 
 interface ExcelData {
@@ -12,9 +12,8 @@ interface ExcelData {
 
 interface ExcelDataContextType {
   excelData: ExcelData | null
-  routes: any[]
   setExcelData: (data: ExcelData | null) => void
-  updateExcelData: (data: ExcelData) => void
+  updateExcelData: (dataOrUpdater: ExcelData | ((prev: ExcelData) => ExcelData)) => void
   clearExcelData: () => void
   updateRouteData: (routes: any[]) => void
 }
@@ -35,71 +34,74 @@ interface ExcelDataProviderProps {
 
 export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }) => {
   const [excelData, setExcelDataState] = useState<ExcelData | null>(null)
-  const [routes, setRoutes] = useState<any[]>([])
+  const hasInit = useRef(false)
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('km_dashboard_processed_data')
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        if (parsed && typeof parsed === 'object') {
-          const mapped = applyCourierVehicleMap(parsed)
-          setExcelDataState(mapped)
+    if (!hasInit.current) {
+      hasInit.current = true
+      try {
+        const stored = localStorage.getItem('km_dashboard_processed_data')
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          if (parsed && typeof parsed === 'object') {
+            const mapped = applyCourierVehicleMap(parsed)
+            if (window && (window as any).debugExcel) console.warn('[ExcelDataProvider:INIT]', mapped, (new Error()).stack)
+            setExcelDataState(mapped)
+          }
         }
+      } catch (error) {
+        console.warn('Ошибка восстановления данных:', error)
       }
-    } catch (error) {
-      console.warn('Ошибка восстановления данных:', error)
     }
   }, [])
-
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('km_routes')
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        if (Array.isArray(parsed)) {
-          setRoutes(parsed)
-        }
-      }
-    } catch (error) {
-      console.warn('Ошибка восстановления маршрутов:', error)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (excelData) {
-      localStorage.setItem('km_dashboard_processed_data', JSON.stringify(excelData))
-    }
-  }, [excelData])
 
   const setExcelData = (data: ExcelData | null) => {
+    if (window && (window as any).debugExcel) console.warn('[ExcelDataProvider:SET]', data, (new Error()).stack)
     if (data) {
-      setExcelDataState(applyCourierVehicleMap(data))
+      const val = applyCourierVehicleMap(data)
+      setExcelDataState(val)
+      localStorage.setItem('km_dashboard_processed_data', JSON.stringify(val))
     } else {
       setExcelDataState(null)
+      localStorage.removeItem('km_dashboard_processed_data')
     }
   }
 
-  const updateExcelData = (data: ExcelData) => {
-    setExcelDataState(applyCourierVehicleMap(data))
+  const updateExcelData = (dataOrUpdater: ExcelData | ((prev: ExcelData) => ExcelData)) => {
+    setExcelDataState(prev => {
+      let next: ExcelData;
+      if (typeof dataOrUpdater === 'function') {
+        next = applyCourierVehicleMap((dataOrUpdater as (p: ExcelData) => ExcelData)(prev!));
+      } else {
+        next = applyCourierVehicleMap(dataOrUpdater);
+      }
+      localStorage.setItem('km_dashboard_processed_data', JSON.stringify(next));
+      return next;
+    });
   }
 
   const clearExcelData = () => {
+    if (window && (window as any).debugExcel) console.warn('[ExcelDataProvider:CLEAR]', (new Error()).stack)
     setExcelDataState(null)
     localStorage.removeItem('km_dashboard_processed_data')
   }
 
   const updateRouteData = (newRoutes: any[]) => {
-    setRoutes(newRoutes)
-    if (excelData) {
-      setExcelDataState({ ...excelData, routes: newRoutes })
-    }
+    if (window && (window as any).debugExcel) console.warn('[ExcelDataProvider:UPDATEROUTE]', newRoutes, (new Error()).stack)
+    setExcelDataState(prev => {
+      if (prev) {
+        return { ...prev, routes: newRoutes }
+      } else {
+        return {
+          orders: [], couriers: [], paymentMethods: [], routes: newRoutes, errors: [], summary: undefined
+        }
+      }
+    })
   }
 
   return (
     <ExcelDataContext.Provider value={{ 
       excelData, 
-      routes, 
       setExcelData, 
       updateExcelData, 
       clearExcelData, 
