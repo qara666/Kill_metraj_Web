@@ -19,10 +19,10 @@ export const DataSharingDemo: React.FC = () => {
   
   const { isDark } = useTheme()
   const { shareData, copyToClipboard } = useDataSharing()
-  const { excelData, routes } = useExcelData()
+  const { excelData } = useExcelData()
   
   // Безопасные значения по умолчанию
-  const safeRoutes = routes || []
+  const safeRoutes = excelData?.routes || []
 
   const generateDemoData = () => {
     const demoExcelData = {
@@ -286,6 +286,13 @@ export const DataSharingDemo: React.FC = () => {
     </div>
   )
 }
+
+
+
+
+
+
+
 
 
 

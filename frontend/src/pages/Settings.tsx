@@ -21,6 +21,7 @@ interface SettingsForm {
   enableCoordinateValidation: boolean // Включить проверку координат
   enableAdaptiveThresholds: boolean // Включить адаптивные пороги
   courierVehicleMap: Record<string, 'car' | 'motorcycle'>
+  maxCriticalRouteDistanceKm: number
 }
 
 const CourierVehicleEditor: React.FC<{
@@ -162,7 +163,8 @@ export const Settings: React.FC = () => {
       addressQualityThreshold: 60,
       enableCoordinateValidation: true,
       enableAdaptiveThresholds: true,
-      courierVehicleMap: {}
+      courierVehicleMap: {},
+      maxCriticalRouteDistanceKm: 120
     }
   })
 
@@ -186,6 +188,7 @@ export const Settings: React.FC = () => {
     setValue('enableCoordinateValidation', settings.enableCoordinateValidation ?? true)
     setValue('enableAdaptiveThresholds', settings.enableAdaptiveThresholds ?? true)
     setValue('courierVehicleMap', settings.courierVehicleMap ?? {})
+    setValue('maxCriticalRouteDistanceKm', settings.maxCriticalRouteDistanceKm ?? 120)
     
     // Check if API key is valid when loading
     if (settings.googleMapsApiKey) {
@@ -498,6 +501,21 @@ export const Settings: React.FC = () => {
             <CourierVehicleEditor value={watch('courierVehicleMap')} onChange={(map) => setValue('courierVehicleMap', map)} isDark={isDark} courierNames={courierNames} />
           </div>
 
+          {/* Критический лимит для маршрута */}
+          <div>
+            <label className="label">
+              <ShieldCheckIcon className="h-4 w-4 inline mr-2" />
+              Критический лимит для маршрута
+            </label>
+            <div className="mt-2">
+              <div className="text-xs mb-1">Крит. максимальное расстояние маршрута (км)</div>
+              <input type="number" step="1" min="1" className="input" {...register('maxCriticalRouteDistanceKm', { valueAsNumber: true })} />
+              <div className="text-xs text-gray-500 mt-1">
+                Если маршрут превышает это значение — будет показан критический warning, маршрут НЕ будет пересчитан
+              </div>
+            </div>
+          </div>
+
           {/* Action Buttons */}
           <div className="flex justify-between">
             <button 
@@ -519,6 +537,14 @@ export const Settings: React.FC = () => {
     </div>
   )
 }
+
+
+
+
+
+
+
+
 
 
 

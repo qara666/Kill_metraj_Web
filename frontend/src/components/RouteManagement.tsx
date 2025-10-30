@@ -197,10 +197,9 @@ const OrderItem = memo(({
 }, areEqual)
 
 export const RouteManagement: React.FC<RouteManagementProps> = () => {
-  const { excelData, updateRouteData, updateExcelData } = useExcelData()
+  const { excelData, updateExcelData } = useExcelData()
   const { isDark } = useTheme()
   const [selectedCourier, setSelectedCourier] = useState<string | null>(null)
-  const [routes, setRoutes] = useState<Route[]>([])
   const [isCalculating, setIsCalculating] = useState(false)
   const [startAddress, setStartAddress] = useState('')
   const [endAddress, setEndAddress] = useState('')
@@ -234,28 +233,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     setEndAddress(settings.defaultEndAddress)
   }, [])
 
-  // Загружаем сохраненные маршруты
-  useEffect(() => {
-    try {
-      const savedRoutes = localStorage.getItem('km_routes')
-      if (savedRoutes) {
-        const parsedRoutes = JSON.parse(savedRoutes)
-        if (Array.isArray(parsedRoutes)) {
-          setRoutes(parsedRoutes)
-        }
-      }
-    } catch (error) {
-      console.warn('Ошибка загрузки маршрутов из localStorage:', error)
-    }
-  }, [])
-
-  // Загружаем маршруты из контекста при инициализации
-  useEffect(() => {
-    if (excelData?.routes && Array.isArray(excelData.routes) && excelData.routes.length > 0) {
-      setRoutes(excelData.routes)
-    }
-  }, [excelData?.routes])
-
   // Проверяем готовность Google Maps
   useEffect(() => {
     const initGoogleMaps = async () => {
@@ -278,27 +255,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     initGoogleMaps()
   }, [])
 
-  // Сохраняем маршруты в localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem('km_routes', JSON.stringify(routes))
-    } catch (error) {
-      console.warn('Ошибка сохранения маршрутов в localStorage:', error)
-    }
-  }, [routes])
-
-  // Обновляем данные о маршрутах в контексте (только при создании новых маршрутов)
-  const prevRoutesRef = useRef(routes)
-  useEffect(() => {
-    // Проверяем, действительно ли изменились маршруты
-    if (routes.length !== prevRoutesRef.current.length || 
-        JSON.stringify(routes) !== JSON.stringify(prevRoutesRef.current)) {
-      if (routes.length > 0) {
-        updateRouteData(routes)
-      }
-      prevRoutesRef.current = routes
-    }
-  }, [routes, updateRouteData])
+  // (удалено) Прежний эффект мог вызывать лишние обновления и ошибки типов
 
   // Группируем заказы по курьерам
   const courierOrders = useMemo(() => {
@@ -338,14 +295,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     const allOrders = courierOrders[courierName] || []
     const ordersInRoutes = new Set()
     
-    // Собираем ID всех заказов, которые уже в маршрутах
-    routes.forEach(route => {
-      if (route.courier === courierName) {
-        route.orders.forEach(order => {
-          ordersInRoutes.add(order.id)
-        })
-      }
-    })
+  // Собираем ID всех заказов, которые уже в маршрутах
+  ;(excelData?.routes || []).forEach((route: Route) => {
+    if (route.courier === courierName) {
+      route.orders.forEach((order: Order) => {
+        ordersInRoutes.add(order.id)
+      })
+    }
+  })
     
     // Возвращаем количество заказов, которые НЕ в маршрутах
     return allOrders.filter(order => !ordersInRoutes.has(order.id)).length
@@ -384,11 +341,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   )
 
   // Пагинация маршрутов
-  const totalRoutePages = Math.ceil(routes.length / routesPerPage)
-  const paginatedRoutes = routes.slice(
+  const totalRoutePages = Math.ceil((excelData?.routes?.length ?? 0) / routesPerPage || 0)
+  const paginatedRoutes = excelData?.routes?.slice(
     routePage * routesPerPage,
     (routePage + 1) * routesPerPage
-  )
+  ) || []
 
   const handleCourierSelect = useCallback((courierName: string) => {
     setSelectedCourier(courierName)
@@ -453,10 +410,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
   // Проверяем, существует ли уже маршрут для данного курьера с теми же заказами
   const isRouteDuplicate = (courierName: string, selectedOrderIds: Set<string>) => {
-    return routes.some(route => {
+    return excelData?.routes?.some((route: Route) => {
       if (route.courier !== courierName) return false
       
-      const routeOrderIds = new Set(route.orders.map(order => order.id))
+      const routeOrderIds = new Set(route.orders.map((order: Order) => order.id))
       if (routeOrderIds.size !== selectedOrderIds.size) return false
       
       for (const id of selectedOrderIds) {
@@ -464,14 +421,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       }
       
       return true
-    })
+    }) || false
   }
 
   // Проверяем, включен ли заказ в существующий маршрут
   const isOrderInExistingRoute = (orderId: string) => {
-    return routes.some(route => 
-      route.orders.some(order => order.id === orderId)
-    )
+    return excelData?.routes?.some((route: Route) => 
+      route.orders.some((order: Order) => order.id === orderId)
+    ) || false
   }
 
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set())
@@ -656,7 +613,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       isOptimized: false
     }
 
-    setRoutes(prev => [newRoute, ...prev])
+    // Добавляем новый маршрут в список маршрутов (функциональный апдейт во избежание гонок состояний)
+    updateExcelData((prev: any) => ({
+      ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
+      routes: [ ...(prev?.routes || []), newRoute ],
+      orders: (prev?.orders || [])
+    }))
     
     // Сбрасываем выбор заказов и порядок
     setSelectedOrders(new Set())
@@ -681,10 +643,52 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     return cleaned
   }
 
-  // Простая очистка адреса без сложного геокодирования
+  // Определяем город/страну для геокодирования из startAddress или настроек
+  const detectCityCountry = useCallback((): { city: string; country: string; region: string } => {
+    const settings = localStorageUtils.getAllSettings()
+    const source = (startAddress && startAddress.trim().length > 0 ? startAddress : settings?.defaultStartAddress) || ''
+    const lower = source.toLowerCase()
+
+    const cityMap: Array<{ key: RegExp; norm: string; region: string }> = [
+      { key: /(киев|київ|kyiv)/i, norm: 'Киев', region: 'UA' },
+      { key: /(одесса|odesa)/i, norm: 'Одесса', region: 'UA' },
+      { key: /(харьков|kharkiv)/i, norm: 'Харьков', region: 'UA' },
+      { key: /(днепр|dnipro)/i, norm: 'Днепр', region: 'UA' },
+      { key: /(львов|львів|lviv)/i, norm: 'Львов', region: 'UA' },
+      { key: /(запорожье|запоріжжя|zaporizh)/i, norm: 'Запорожье', region: 'UA' },
+      { key: /(винниц|vinnyts)/i, norm: 'Винница', region: 'UA' },
+      { key: /(чернигов|чернігів|chernihiv)/i, norm: 'Чернигов', region: 'UA' },
+      { key: /(полтава|poltava)/i, norm: 'Полтава', region: 'UA' },
+      { key: /(николаев|миколаїв|mykolaiv)/i, norm: 'Николаев', region: 'UA' },
+      { key: /(черкасс|cherkasy)/i, norm: 'Черкассы', region: 'UA' },
+      { key: /(ужгород|uzhhorod)/i, norm: 'Ужгород', region: 'UA' },
+      { key: /(луцк|lutsk)/i, norm: 'Луцк', region: 'UA' }
+    ]
+
+    for (const m of cityMap) {
+      if (m.key.test(lower)) {
+        return { city: m.norm, country: 'Украина', region: m.region }
+      }
+    }
+
+    // Если не распознали — возьмём предпоследний/последний сегмент как город
+    const parts = source.split(',').map((p: string) => p.trim()).filter(Boolean)
+    const guessCity = parts.length >= 2 ? parts[parts.length - 2] : (parts[parts.length - 1] || 'Киев')
+    return { city: guessCity, country: 'Украина', region: 'UA' }
+  }, [startAddress])
+
+  // Простая очистка адреса + добавление города/страны для избежания геокодирования не туда
   const cleanAddressForRoute = useCallback((raw: string): string => {
-    return cleanAddress(raw).trim()
-  }, [])
+    const base = cleanAddress(raw).trim()
+    if (!base) return base
+    const lower = base.toLowerCase()
+    const { city, country } = detectCityCountry()
+    const hasCity = lower.includes(city.toLowerCase())
+    const hasCountry = lower.includes('украина') || lower.includes('україна') || lower.includes('ukraine') || lower.includes(country.toLowerCase())
+    if (!hasCity && !hasCountry) return `${base}, ${city}, ${country}`
+    if (!hasCountry) return `${base}, ${country}`
+    return base
+  }, [detectCityCountry])
 
 
   const calculateRouteDistance = async (route: Route) => {
@@ -731,6 +735,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         stopover: true
       }))
 
+      const cityCtx = detectCityCountry()
       const request = {
         origin: cleanAddressForRoute(route.startAddress),
         destination: cleanAddressForRoute(route.endAddress),
@@ -747,7 +752,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         drivingOptions: {
           departureTime: new Date(),
           trafficModel: window.google.maps.TrafficModel.BEST_GUESS
-        }
+        },
+        region: cityCtx.region
       }
 
       directionsService.route(request, (result: any, status: any) => {
@@ -758,6 +764,56 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
           // Конвертируем в километры с высокой точностью
           const distanceKm = totalDistance / 1000
+          // Критическая отсечка аномалий (из настроек, по умолчанию 120км)
+          const settings = localStorageUtils.getAllSettings()
+          const maxKm = settings?.maxCriticalRouteDistanceKm ?? 120
+          if (distanceKm > maxKm) {
+            console.warn(`Аномальное расстояние: ${distanceKm.toFixed(1)} км > ${maxKm} км. Повторяем расчет с принудительным городом/страной.`)
+            // Повторная попытка с жестким добавлением города/страны
+            const forcedRequest = {
+              ...request,
+              origin: `${cleanAddress(route.startAddress)}, ${cityCtx.city}, ${cityCtx.country}`,
+              destination: `${cleanAddress(route.endAddress)}, ${cityCtx.city}, ${cityCtx.country}`,
+              waypoints: route.orders.map((order: Order) => ({
+                location: `${cleanAddress(order.address)}, ${cityCtx.city}, ${cityCtx.country}`,
+                stopover: true
+              })),
+              region: cityCtx.region
+            }
+            return directionsService.route(forcedRequest, (result2: any, status2: any) => {
+              if (status2 === window.google.maps.DirectionsStatus.OK && result2) {
+                const totalDistance2 = result2.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
+                const totalDuration2 = result2.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
+                const distanceKm2 = totalDistance2 / 1000
+                console.log('Retry Distance Calculation (forced city/country):', {
+                  distanceKm2,
+                  legs: result2.routes[0].legs.map((leg: any, i: number) => ({
+                    i,
+                    startAddress: leg.start_address,
+                    endAddress: leg.end_address,
+                    distance: leg.distance,
+                    duration: leg.duration
+                  }))
+                })
+                updateExcelData((prev: any) => ({
+                  ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
+                  routes: (prev?.routes || []).map((r: Route) =>
+                    r.id === route.id
+                      ? {
+                          ...r,
+                          totalDistance: distanceKm2,
+                          totalDuration: totalDuration2 / 60,
+                          isOptimized: true
+                        }
+                      : r
+                  )
+                }))
+              } else {
+                console.error('Ошибка повторного расчета маршрута:', status2)
+              }
+              setIsCalculating(false)
+            })
+          }
           
           // Проверяем, что маршрут не превышает 100км (возможная ошибка в адресе)
           if (distanceKm > 100) {
@@ -780,16 +836,19 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             warnings: result.routes[0].warnings || []
           })
 
-          setRoutes(prev => prev.map(r => 
-            r.id === route.id 
-              ? { 
-                  ...r, 
-                  totalDistance: distanceKm, // Сохраняем точное значение без округления
-                  totalDuration: totalDuration / 60, // конвертируем в минуты
-                  isOptimized: true
-                }
-              : r
-          ))
+          updateExcelData((prev: any) => ({
+            ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
+            routes: (prev?.routes || []).map((r: Route) =>
+              r.id === route.id
+                ? {
+                    ...r,
+                    totalDistance: distanceKm,
+                    totalDuration: totalDuration / 60,
+                    isOptimized: true
+                  }
+                : r
+            )
+          }))
         } else {
           console.error('Ошибка расчета маршрута:', status)
           alert('Ошибка расчета маршрута')
@@ -804,7 +863,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   }
 
   const deleteRoute = (routeId: string) => {
-    const route = routes.find(r => r.id === routeId)
+    const route = excelData?.routes?.find(r => r.id === routeId)
     if (route) {
       setRouteToDelete(route)
       setShowDeleteModal(true)
@@ -813,7 +872,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
   const confirmDeleteRoute = () => {
     if (routeToDelete) {
-      setRoutes(prev => prev.filter(route => route.id !== routeToDelete.id))
+      updateExcelData({ ...(excelData || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }), routes: (excelData?.routes || []).filter(route => route.id !== routeToDelete.id) })
       setShowDeleteModal(false)
       setRouteToDelete(null)
     }
@@ -838,40 +897,27 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     const updatedOrder = { ...editingOrder, address: newAddress }
     
     // Обновляем только маршруты, содержащие этот заказ
-    setRoutes(prev => prev.map(route => {
-      // Проверяем, есть ли этот заказ в данном маршруте
-      const orderIndex = route.orders.findIndex(order => order.id === editingOrder.id)
-      
+    updateExcelData({ ...(excelData || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }), routes: (excelData?.routes || []).map((route: Route) => {
+      const orderIndex = route.orders.findIndex((order: Order) => order.id === editingOrder.id)
       if (orderIndex !== -1) {
-        // Обновляем только маршрут, содержащий измененный заказ
         const updatedRouteOrders = [...route.orders]
         updatedRouteOrders[orderIndex] = updatedOrder
-        
         return {
           ...route,
           orders: updatedRouteOrders,
-          // Сбрасываем флаг оптимизации только для этого маршрута
           isOptimized: false,
           totalDistance: 0,
           totalDuration: 0
         }
       }
-      
-      // Возвращаем маршрут без изменений
       return route
-    }))
-
-    // Обновляем данные в контексте Excel
-    if (excelData?.orders) {
-      const updatedOrders = excelData.orders.map((order: any) => 
-        order.id === editingOrder.id ? { ...order, address: newAddress } : order
-      )
-      updateExcelData({ ...excelData, orders: updatedOrders })
-    }
+    }), orders: ((excelData?.orders || []).map((order: any) =>
+      order.id === editingOrder.id ? { ...order, address: newAddress } : order
+    )) })
 
     // Сохраняем в localStorage
     try {
-      localStorage.setItem('km_routes', JSON.stringify(routes))
+      localStorage.setItem('km_routes', JSON.stringify(excelData?.routes))
     } catch (error) {
       console.error('Ошибка сохранения маршрутов:', error)
     }
@@ -903,10 +949,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
 
   const clearAllRoutes = () => {
-    console.log('Clear all routes clicked, current routes count:', routes.length)
+    console.log('Clear all routes clicked, current routes count:', (excelData?.routes?.length ?? 0))
     if (window.confirm('Вы уверены, что хотите удалить все маршруты?')) {
       console.log('User confirmed, clearing all routes')
-      setRoutes([])
+      updateExcelData({ ...(excelData || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }), routes: [] })
       // Также очищаем из localStorage
       try {
         localStorage.removeItem('km_routes')
@@ -981,7 +1027,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             'flex items-center space-x-4 text-sm',
             isDark ? 'text-gray-400' : 'text-gray-500'
           )}>
-            <span>{couriers.length} курьеров, {routes.length} маршрутов</span>
+            <span>{couriers.length} курьеров, {(excelData?.routes?.length ?? 0)} маршрутов</span>
             <div className="flex items-center space-x-1">
               <div className={`w-2 h-2 rounded-full ${googleMapsReady ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
               <span>{googleMapsReady ? 'Google Maps готов' : 'Загрузка Google Maps...'}</span>
@@ -1179,10 +1225,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 </h3>
                 <button
                   onClick={createRoute}
-                  disabled={selectedOrders.size === 0 || isRouteDuplicate(selectedCourier, selectedOrders) || !googleMapsReady}
+                  disabled={selectedOrders.size === 0 || isRouteDuplicate(selectedCourier, selectedOrders)}
                   className={clsx(
                     'flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-colors',
-                    selectedOrders.size === 0 || isRouteDuplicate(selectedCourier, selectedOrders) || !googleMapsReady
+                    selectedOrders.size === 0 || isRouteDuplicate(selectedCourier, selectedOrders)
                       ? isDark 
                         ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
                         : 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -1193,14 +1239,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 >
                   <PlusIcon className="h-4 w-4" />
                   <span>
-                    {!googleMapsReady
-                      ? 'Google Maps API не настроен'
-                      : isRouteDuplicate(selectedCourier, selectedOrders) 
-                        ? 'Маршрут уже существует' 
-                        : `Создать маршрут (${selectedOrders.size})`
-                    }
+                    {isRouteDuplicate(selectedCourier, selectedOrders) 
+                      ? 'Маршрут уже существует' 
+                      : `Создать маршрут (${selectedOrders.size})`}
                   </span>
-                  {selectedOrders.size > 0 && !isRouteDuplicate(selectedCourier, selectedOrders) && googleMapsReady && (
+                  {selectedOrders.size > 0 && !isRouteDuplicate(selectedCourier, selectedOrders) && (
                     <div className="flex items-center space-x-1 ml-2">
                       <span className="text-xs text-blue-200">Порядок:</span>
                       <div className="flex space-x-1">
@@ -1445,7 +1488,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
               'text-lg font-semibold',
               isDark ? 'text-gray-100' : 'text-gray-900'
             )}>Созданные маршруты</h2>
-            {routes.length > 0 && (
+            {(excelData?.routes?.length ?? 0) > 0 && (
               <button
                 onClick={clearAllRoutes}
                 className={clsx(
@@ -1460,7 +1503,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             )}
           </div>
             
-          {routes.length === 0 ? (
+          {(excelData?.routes?.length ?? 0) === 0 ? (
             <div className="text-center py-8">
               <MapIcon className={clsx(
                 'mx-auto h-12 w-12',
@@ -1554,7 +1597,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   </div>
 
                   <div className="space-y-2">
-                    {route.orders.map((order, index) => {
+                      {route.orders.map((order: Order, index: number) => {
                       const anomalyCheck = routeAnomalies.get(route.id)
                       const hasAddressIssues = anomalyCheck?.errors.some(error => 
                         error.includes('адрес') || error.includes('адресов')
@@ -1864,6 +1907,19 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     </div>
   )
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
