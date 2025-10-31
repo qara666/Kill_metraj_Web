@@ -55,6 +55,8 @@ interface Route {
   startAddress: string
   endAddress: string
   isOptimized: boolean
+  geoMeta?: any // геокод-мета для визуальной верификации
+  createdAt?: number
 }
 
 interface RouteManagementProps {
@@ -208,6 +210,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [courierPage, setCourierPage] = useState(0)
   const [routePage, setRoutePage] = useState(0)
   const [routesPerPage] = useState(5) // Количество маршрутов на странице
+  const [sortRoutesByNewest] = useState(true)
   const [visibleOrdersCount] = useState(2000) // Лимит для виртуализации
   const [orderSearchTerm, setOrderSearchTerm] = useState('')
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
@@ -217,6 +220,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [showAddressEditModal, setShowAddressEditModal] = useState(false)
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [routeAnomalies, setRouteAnomalies] = useState<Map<string, RouteAnomalyCheck>>(new Map())
+  // Disambiguation modal state for choosing among multiple in-sector candidates
+  const [disambModal, setDisambModal] = useState<{ open: boolean; title: string; options: Array<{label: string; distanceMeters?: number; res: any}> } | null>(null)
+  const disambResolver = useRef<(choice: any | null) => void>()
 
   // Дебаунсинг для поиска
   useEffect(() => {
@@ -340,12 +346,16 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     (courierPage + 1) * COURIERS_PER_PAGE
   )
 
-  // Пагинация маршрутов
-  const totalRoutePages = Math.ceil((excelData?.routes?.length ?? 0) / routesPerPage || 0)
-  const paginatedRoutes = excelData?.routes?.slice(
+  // Сортировка и пагинация маршрутов
+  const allRoutes = (excelData?.routes || []) as Route[]
+  const sortedRoutes = sortRoutesByNewest
+    ? [...allRoutes].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+    : allRoutes
+  const totalRoutePages = Math.ceil((sortedRoutes.length ?? 0) / routesPerPage || 0)
+  const paginatedRoutes = sortedRoutes.slice(
     routePage * routesPerPage,
     (routePage + 1) * routesPerPage
-  ) || []
+  )
 
   const handleCourierSelect = useCallback((courierName: string) => {
     setSelectedCourier(courierName)
@@ -566,6 +576,16 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const createRoute = async () => {
     if (!selectedCourier) return
 
+    // Требуем выбранный город в настройках
+    {
+      const settings = localStorageUtils.getAllSettings()
+      const cityBias = settings.cityBias || ''
+      if (!cityBias) {
+        alert('Выберите город во вкладке Настройки (Город для маршрутов). Без выбранного города создание маршрута запрещено.')
+        return
+      }
+    }
+
     // Создаем список заказов в порядке их выбора
     // Формируем уникальный список выбранных заказов в текущем порядке
     const seen = new Set<string>()
@@ -610,7 +630,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       totalDuration: 0,
       startAddress,
       endAddress,
-      isOptimized: false
+      isOptimized: false,
+      createdAt: Date.now()
     }
 
     // Добавляем новый маршрут в список маршрутов (функциональный апдейт во избежание гонок состояний)
@@ -643,53 +664,26 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     return cleaned
   }
 
-  // Определяем город/страну для геокодирования из startAddress или настроек
-  const detectCityCountry = useCallback((): { city: string; country: string; region: string } => {
+  // Выбранный город обязателен; используем только его для bias/нормализации
+  const getSelectedCity = useCallback((): { city: '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'; country: 'Украина'; region: 'UA' } => {
     const settings = localStorageUtils.getAllSettings()
-    const source = (startAddress && startAddress.trim().length > 0 ? startAddress : settings?.defaultStartAddress) || ''
-    const lower = source.toLowerCase()
+    const city = (settings.cityBias || '') as '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'
+    return { city, country: 'Украина', region: 'UA' }
+  }, [])
 
-    const cityMap: Array<{ key: RegExp; norm: string; region: string }> = [
-      { key: /(киев|київ|kyiv)/i, norm: 'Киев', region: 'UA' },
-      { key: /(одесса|odesa)/i, norm: 'Одесса', region: 'UA' },
-      { key: /(харьков|kharkiv)/i, norm: 'Харьков', region: 'UA' },
-      { key: /(днепр|dnipro)/i, norm: 'Днепр', region: 'UA' },
-      { key: /(львов|львів|lviv)/i, norm: 'Львов', region: 'UA' },
-      { key: /(запорожье|запоріжжя|zaporizh)/i, norm: 'Запорожье', region: 'UA' },
-      { key: /(винниц|vinnyts)/i, norm: 'Винница', region: 'UA' },
-      { key: /(чернигов|чернігів|chernihiv)/i, norm: 'Чернигов', region: 'UA' },
-      { key: /(полтава|poltava)/i, norm: 'Полтава', region: 'UA' },
-      { key: /(николаев|миколаїв|mykolaiv)/i, norm: 'Николаев', region: 'UA' },
-      { key: /(черкасс|cherkasy)/i, norm: 'Черкассы', region: 'UA' },
-      { key: /(ужгород|uzhhorod)/i, norm: 'Ужгород', region: 'UA' },
-      { key: /(луцк|lutsk)/i, norm: 'Луцк', region: 'UA' }
-    ]
-
-    for (const m of cityMap) {
-      if (m.key.test(lower)) {
-        return { city: m.norm, country: 'Украина', region: m.region }
-      }
-    }
-
-    // Если не распознали — возьмём предпоследний/последний сегмент как город
-    const parts = source.split(',').map((p: string) => p.trim()).filter(Boolean)
-    const guessCity = parts.length >= 2 ? parts[parts.length - 2] : (parts[parts.length - 1] || 'Киев')
-    return { city: guessCity, country: 'Украина', region: 'UA' }
-  }, [startAddress])
-
-  // Простая очистка адреса + добавление города/страны для избежания геокодирования не туда
+  // Простая очистка адреса + добавление выбранного города/страны
   const cleanAddressForRoute = useCallback((raw: string): string => {
     const base = cleanAddress(raw).trim()
     if (!base) return base
     const lower = base.toLowerCase()
-    const { city, country } = detectCityCountry()
+    const { city, country } = getSelectedCity()
+    if (!city) return base
     const hasCity = lower.includes(city.toLowerCase())
     const hasCountry = lower.includes('украина') || lower.includes('україна') || lower.includes('ukraine') || lower.includes(country.toLowerCase())
     if (!hasCity && !hasCountry) return `${base}, ${city}, ${country}`
     if (!hasCountry) return `${base}, ${country}`
     return base
-  }, [detectCityCountry])
-
+  }, [getSelectedCity])
 
   const calculateRouteDistance = async (route: Route) => {
     if (!googleMapsReady) {
@@ -729,35 +723,430 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     try {
       const directionsService = new window.google.maps.DirectionsService()
 
-      // Используем прямые адреса без геокодирования
-      const waypoints = route.orders.map(order => ({
-        location: cleanAddressForRoute(order.address),
+      // --- Сектор города и границы для геокодирования ---
+      const settings = localStorageUtils.getAllSettings()
+      const cityCtx = getSelectedCity()
+      const sectorPath = cityCtx.city && settings.citySectors && settings.citySectors[cityCtx.city]
+        ? settings.citySectors[cityCtx.city]
+        : null
+
+      const toLatLng = (p: { lat: number; lng: number }) => new window.google.maps.LatLng(p.lat, p.lng)
+
+      // Ранее использовали центроид сектора как refPoint; теперь приоритет — предыдущая точка маршрута
+
+      // Границы сектора (bounds) для bias
+      const sectorBounds = (() => {
+        if (!sectorPath || sectorPath.length < 3) return null
+        const b = new window.google.maps.LatLngBounds()
+        sectorPath.forEach((pt: any) => b.extend(toLatLng(pt)))
+        return b
+      })()
+
+      // Полигон сектора для containsLocation
+      const sectorPolygon = (() => {
+        if (!sectorPath || sectorPath.length < 3 || !window.google?.maps?.geometry?.poly) return null
+        return new window.google.maps.Polygon({ paths: sectorPath })
+      })()
+
+      // Извлекаем предполагаемый номер дома из исходной строки (латиница/кириллица, буквы суффикса допустимы)
+      const extractHouseNumber = (raw: string): string | null => {
+        if (!raw) return null
+        const m = raw.match(/\b(\d+[\w\-]?)(?=\b|,|\s|$)/u)
+        return m ? m[1] : null
+      }
+
+      // Извлекаем индекс (UA 5 цифр)
+      const extractPostal = (raw: string): string | null => {
+        if (!raw) return null
+        const m = raw.match(/\b\d{5}\b/)
+        return m ? m[0] : null
+      }
+
+      // Генерируем альтернативные варианты записи улицы (сокращения/языковые формы/дефисы)
+      const generateStreetVariants = (raw: string): string[] => {
+        const base = cleanAddressForRoute(raw)
+        const variants = new Set<string>()
+        variants.add(base)
+        const replaceTokens = (
+          str: string,
+          from: RegExp,
+          to: string
+        ) => str.replace(from, to)
+
+        const tokenPairs: Array<[RegExp, string]> = [
+          [/\bвулиця\b/iu, 'вул.'],
+          [/\bвул\.?\b/iu, 'вулиця'],
+          [/\bулица\b/iu, 'ул.'],
+          [/\bул\.?\b/iu, 'улица'],
+          [/\bпровулок\b/iu, 'пров.'],
+          [/\bпров\.?\b/iu, 'провулок'],
+          [/\bпроспект\b/iu, 'просп.'],
+          [/\bпросп\.?\b/iu, 'проспект'],
+          [/\bлиния\b/iu, 'лінія'],
+          [/\bлінія\b/iu, 'лін.'],
+          [/\bлін\.?\b/iu, 'лінія']
+        ]
+        tokenPairs.forEach(([from, to]) => {
+          try { variants.add(replaceTokens(base, from, to)) } catch {}
+        })
+
+        // Нормализация номера линии: 1-а ↔ 1а ↔ 1
+        const lineForms = [
+          base.replace(/\b(\d+)-(а|я)\b/iu, '$1$2'),
+          base.replace(/\b(\d+)\s*(а|я)\b/iu, '$1-$2'),
+          base.replace(/\b(\d+)-?(а|я)\b/iu, '$1'),
+          base.replace(/\bперша\b/iu, '1-а'),
+          base.replace(/\bпервая\b/iu, '1-я')
+        ]
+        lineForms.forEach(v => variants.add(v))
+
+        // Если указано 
+        //   "1 лінія" или "1 линия" без префикса типа улицы — добавим префиксы
+        if (/\b(лінія|линия)\b/iu.test(base) && !/\b(вулиця|вул\.|улица|ул\.)\b/iu.test(base)) {
+          variants.add(`вулиця ${base}`)
+          variants.add(`вул. ${base}`)
+          variants.add(`улица ${base}`)
+          variants.add(`ул. ${base}`)
+        }
+
+        return Array.from(variants).filter(v => v && v !== base)
+      }
+
+      // Общая оценка кандидата: приоритет внутри сектора, наличие street_number и ROOFTOP
+      const scoreCandidate = (candidate: any, opts: { refPoint?: any; expectedHouse?: string | null; expectedPostal?: string | null; inside: boolean }): number => {
+        let score = 0
+        // внутри сектора весомее всего
+        if (opts.inside) score += 1000
+        // тип геометрии
+        const lt = candidate.geometry?.location_type
+        if (lt === 'ROOFTOP') score += 200
+        else if (lt === 'RANGE_INTERPOLATED') score += 120
+        else if (lt === 'GEOMETRIC_CENTER') score += 80
+        else if (lt === 'APPROXIMATE') score += 40
+
+        // наличие точного street_number
+        const comps = candidate.address_components || []
+        const streetNumComp = comps.find((c: any) => c.types?.includes('street_number'))
+        if (streetNumComp) score += 150
+        // совпадение номера дома
+        if (opts.expectedHouse) {
+          const formatted = (candidate.formatted_address || '').toString().toLowerCase()
+          if (formatted.includes(opts.expectedHouse.toLowerCase())) score += 120
+          if (streetNumComp && streetNumComp.long_name && streetNumComp.long_name.toLowerCase() === opts.expectedHouse.toLowerCase()) score += 100
+        }
+        // совпадение почтового кода
+        if (opts.expectedPostal) {
+          const postalComp = comps.find((c: any) => c.types?.includes('postal_code'))
+          if (postalComp && postalComp.long_name === opts.expectedPostal) score += 120
+          const f = (candidate.formatted_address || '').toString()
+          if (f.includes(opts.expectedPostal)) score += 60
+        }
+
+        // близость к опорной точке
+        if (opts.refPoint) {
+          try {
+            const d = window.google.maps.geometry.spherical.computeDistanceBetween(candidate.geometry.location, opts.refPoint)
+            // чем ближе, тем лучше; конвертируем в баллы
+            // до 2км — 100 баллов, 2-5км — 60, 5-10км — 30, дальше — 0..10
+            if (d <= 2000) score += 100
+            else if (d <= 5000) score += 60
+            else if (d <= 10000) score += 30
+            else score += Math.max(0, 10 - Math.floor((d - 10000) / 2000))
+          } catch {}
+        }
+
+        return score
+      }
+
+      // Геокодирование адреса с учетом сектора и region/componentRestrictions
+      const geocodeWithSector = async (rawAddress: string, hintPoint?: any): Promise<any | null> => {
+      const geocoder = new window.google.maps.Geocoder()
+        const address = cleanAddressForRoute(rawAddress)
+        const request: any = {
+          address,
+          region: cityCtx.region,
+          componentRestrictions: { country: 'ua' }
+        }
+        if (sectorBounds) request.bounds = sectorBounds
+        const results: any = await new Promise((resolve) => {
+          geocoder.geocode(request, (res: any, status: any) => resolve(status === 'OK' ? res : []))
+        })
+        if (!results || results.length === 0) return null
+        const expectedHouse = extractHouseNumber(rawAddress)
+        const expectedPostal = extractPostal(rawAddress)
+        const refPoint = hintPoint || null
+        const inside = sectorPolygon
+          ? results.filter((r: any) => window.google.maps.geometry.poly.containsLocation(r.geometry.location, sectorPolygon))
+          : []
+        const pool = (inside.length > 0 ? inside : results)
+        let best = pool[0]
+        let bestScore = scoreCandidate(best, { refPoint, expectedHouse, expectedPostal, inside: sectorPolygon ? window.google.maps.geometry.poly.containsLocation(best.geometry.location, sectorPolygon) : true })
+        for (let i = 1; i < pool.length; i++) {
+          const cand = pool[i]
+          const candScore = scoreCandidate(cand, { refPoint, expectedHouse, expectedPostal, inside: sectorPolygon ? window.google.maps.geometry.poly.containsLocation(cand.geometry.location, sectorPolygon) : true })
+          if (candScore > bestScore) { best = cand; bestScore = candScore }
+        }
+        // если мы выбрали снаружи, а есть варианты внутри, попробуем лучшего внутри
+        if (sectorPolygon && inside.length > 0 && !window.google.maps.geometry.poly.containsLocation(best.geometry.location, sectorPolygon)) {
+          let bestIn = inside[0]
+          let bestInScore = scoreCandidate(bestIn, { refPoint, expectedHouse, expectedPostal, inside: true })
+          for (let i = 1; i < inside.length; i++) {
+            const s = scoreCandidate(inside[i], { refPoint, expectedHouse, expectedPostal, inside: true })
+            if (s > bestInScore) { bestIn = inside[i]; bestInScore = s }
+          }
+          best = bestIn
+        }
+
+        // Если нет ROOFTOP, попробуем уточнить корпус/секцию и повторить строго внутри сектора
+        const tryRefine = () => {
+          const m = rawAddress.match(/\b(корп(?:ус)?|к|секция|литера)\s*([\w-]+)/i)
+          if (!m) return null
+          const refined = `${address}, ${m[1]} ${m[2]}`
+          return refined
+        }
+        if (best?.geometry?.location_type !== 'ROOFTOP') {
+          const refinedAddr = tryRefine()
+          if (refinedAddr) {
+            const fix = await geocodeInsideOnly(refinedAddr, refPoint)
+            if (fix && fix.geometry?.location_type === 'ROOFTOP') best = fix
+          }
+        }
+        return best
+      }
+
+      // Повторная попытка: возвращает ЛУЧШЕГО кандидата ТОЛЬКО внутри полигона (если нет — null)
+      const geocodeInsideOnly = async (rawAddress: string, hintPoint?: any): Promise<any | null> => {
+        if (!sectorPolygon) return null
+        const geocoder = new window.google.maps.Geocoder()
+        const address = cleanAddressForRoute(rawAddress)
+        const request: any = {
+          address,
+          region: cityCtx.region,
+          componentRestrictions: { country: 'ua' }
+        }
+        if (sectorBounds) request.bounds = sectorBounds
+        const results: any = await new Promise((resolve) => {
+          geocoder.geocode(request, (res: any, status: any) => resolve(status === 'OK' ? res : []))
+        })
+        let gathered = results
+        if (!gathered || gathered.length === 0) gathered = []
+        let inside = gathered.filter((r: any) => window.google.maps.geometry.poly.containsLocation(r.geometry.location, sectorPolygon))
+        // Если внутри сектора кандидатов нет — пробуем альтернативные формы улицы
+        if (inside.length === 0) {
+          const alts = generateStreetVariants(rawAddress)
+          for (const alt of alts) {
+            // eslint-disable-next-line no-await-in-loop
+            const altRes: any = await new Promise((resolve) => {
+              geocoder.geocode({ ...request, address: alt }, (res: any, status: any) => resolve(status === 'OK' ? res : []))
+            })
+            if (altRes && altRes.length > 0) {
+              const insideAlt = altRes.filter((r: any) => window.google.maps.geometry.poly.containsLocation(r.geometry.location, sectorPolygon))
+              if (insideAlt.length > 0) { inside = insideAlt; break }
+            }
+          }
+        }
+        // Если всё ещё нет — при наличии подсказки (предыдущая точка) получаем sublocality и пробуем с ней
+        if (inside.length === 0 && hintPoint) {
+          const rev: any = await new Promise((resolve) => {
+            const gc = new window.google.maps.Geocoder()
+            gc.geocode({ location: hintPoint }, (res: any, status: any) => resolve(status === 'OK' ? res : []))
+          })
+          if (rev && rev.length > 0) {
+            const sub = (() => {
+              for (const r of rev) {
+                const comp = (r.address_components || []).find((c: any) => c.types?.includes('sublocality') || c.types?.includes('neighborhood'))
+                if (comp?.long_name) return comp.long_name
+              }
+              return null
+            })()
+            if (sub) {
+              const withSub = `${address}, ${sub}`
+              const subRes: any = await new Promise((resolve) => {
+                geocoder.geocode({ ...request, address: withSub }, (res: any, status: any) => resolve(status === 'OK' ? res : []))
+              })
+              if (subRes && subRes.length > 0) {
+                const insideSub = subRes.filter((r: any) => window.google.maps.geometry.poly.containsLocation(r.geometry.location, sectorPolygon))
+                if (insideSub.length > 0) inside = insideSub
+              }
+            }
+          }
+        }
+        if (inside.length === 0) return null
+        const refPoint = hintPoint || null
+        const expectedHouse = extractHouseNumber(rawAddress)
+        const expectedPostal = extractPostal(rawAddress)
+        let best = inside[0]
+        let bestScore = scoreCandidate(best, { refPoint, expectedHouse, expectedPostal, inside: true })
+        for (let i = 1; i < inside.length; i++) {
+          const cand = inside[i]
+          const candScore = scoreCandidate(cand, { refPoint, expectedHouse, expectedPostal, inside: true })
+          if (candScore > bestScore) { best = cand; bestScore = candScore }
+        }
+        // If multiple viable options exist and no strong winner, ask the user
+        if (inside.length > 1) {
+          const withDistances = inside.map((r: any) => {
+            let d
+            try { if (refPoint) d = window.google.maps.geometry.spherical.computeDistanceBetween(r.geometry.location, refPoint) } catch {}
+            return { label: r.formatted_address || 'Кандидат', distanceMeters: d, res: r }
+          })
+          const choice: any = await new Promise(resolve => {
+            setDisambModal({ open: true, title: 'Выберите точный адрес', options: withDistances })
+            disambResolver.current = resolve
+          })
+          setDisambModal(null)
+          if (choice) return choice
+        }
+        return best
+      }
+
+      // Разрешаем координаты для всех точек маршрута
+      const originRes = await geocodeWithSector(route.startAddress)
+      const waypointResList: Array<any | null> = []
+      let prevPoint = originRes?.geometry?.location || null
+      for (const order of route.orders) {
+        // подсказка: тянуть к центроиду сектора
+        // теперь используем предыдущую точку маршрута для приоритета близости
+        // eslint-disable-next-line no-await-in-loop
+        const res = await geocodeWithSector(order.address, prevPoint)
+        waypointResList.push(res)
+        if (res?.geometry?.location) prevPoint = res.geometry.location
+      }
+      const destinationRes = await geocodeWithSector(route.endAddress, prevPoint)
+      // Подготовим метаинформацию для визуальной верификации
+      const buildMeta = (res: any, raw: string) => {
+        if (!res) return null
+        const comps = res.address_components || []
+        const house = extractHouseNumber(raw)
+        const postal = extractPostal(raw)
+        const streetNumComp = comps.find((c: any) => c.types?.includes('street_number'))
+        const postalComp = comps.find((c: any) => c.types?.includes('postal_code'))
+        return {
+          locationType: res.geometry?.location_type || 'UNKNOWN',
+          placeId: res.place_id || null,
+          streetNumberMatched: !!house && ((res.formatted_address || '').toLowerCase().includes(house.toLowerCase()) || (streetNumComp?.long_name || '').toLowerCase() === house.toLowerCase()),
+          postalMatched: !!postal && (postalComp?.long_name === postal || (res.formatted_address || '').includes(postal)),
+          formatted: res.formatted_address || '',
+          lat: res.geometry?.location?.lat ? res.geometry.location.lat() : undefined,
+          lng: res.geometry?.location?.lng ? res.geometry.location.lng() : undefined
+        }
+      }
+      const routeGeoMeta: any = {
+        origin: buildMeta(originRes, route.startAddress),
+        destination: buildMeta(destinationRes, route.endAddress),
+        waypoints: route.orders.map((o, i) => buildMeta(waypointResList[i], o.address))
+      }
+
+
+      // Валидация
+      const unresolved: string[] = []
+      if (!originRes) unresolved.push('стартовый адрес')
+      waypointResList.forEach((r, idx) => { if (!r) unresolved.push(`точка #${idx + 1}`) })
+      if (!destinationRes) unresolved.push('финишный адрес')
+      if (unresolved.length > 0) {
+        alert(`Не удалось однозначно определить: ${unresolved.join(', ')}. Уточните адреса или границы сектора.`)
+        setIsCalculating(false)
+        return
+      }
+
+      // Проверка попадания в сектор (если есть) + повторная попытка для внешних точек
+      if (sectorPolygon) {
+        const isInside = (loc: any) => window.google.maps.geometry.poly.containsLocation(loc, sectorPolygon)
+        const all = [originRes, ...waypointResList, destinationRes]
+
+        let anyOutside = false
+        all.forEach((r: any) => { if (r && !isInside(r.geometry.location)) anyOutside = true })
+
+        if (anyOutside) {
+          // Пробуем переразрешить только внешние точки строго внутри полигона
+          // origin
+          if (originRes && !isInside(originRes.geometry.location)) {
+            const fix = await geocodeInsideOnly(route.startAddress, null)
+            if (fix) (originRes as any) = fix
+          }
+          // waypoints
+          for (let i = 0; i < waypointResList.length; i++) {
+            const r = waypointResList[i]
+            if (r && !isInside(r.geometry.location)) {
+              // eslint-disable-next-line no-await-in-loop
+              const prev = i === 0 ? (originRes?.geometry?.location || null) : (waypointResList[i-1]?.geometry?.location || null)
+              const fix = await geocodeInsideOnly(route.orders[i].address, prev)
+              if (fix) waypointResList[i] = fix
+            }
+          }
+          // destination
+          if (destinationRes && !isInside(destinationRes.geometry.location)) {
+            const prev = waypointResList.length > 0 ? (waypointResList[waypointResList.length-1]?.geometry?.location || null) : (originRes?.geometry?.location || null)
+            const fix = await geocodeInsideOnly(route.endAddress, prev)
+            if (fix) (destinationRes as any) = fix
+          }
+
+          // Повторная валидация
+          const allPoints2 = [originRes!.geometry.location, ...waypointResList.map(r => r!.geometry.location), destinationRes!.geometry.location]
+          const stillOutside = allPoints2.some((pt: any) => !isInside(pt))
+          if (stillOutside) {
+            alert('Некоторые точки маршрута находятся вне заданного сектора города. Проверьте адреса или границы сектора в Настройках.')
+            setIsCalculating(false)
+            return
+          }
+        }
+      }
+
+      // Формируем запрос: приоритет placeId, иначе formatted_address
+      const originLocation = originRes?.place_id
+        ? { placeId: originRes.place_id }
+        : (originRes?.formatted_address || cleanAddressForRoute(route.startAddress))
+      const destinationLocation = destinationRes?.place_id
+        ? { placeId: destinationRes.place_id }
+        : (destinationRes?.formatted_address || cleanAddressForRoute(route.endAddress))
+      const waypointsLocations = waypointResList.map(r => ({
+        location: r?.place_id ? { placeId: r.place_id } : (r?.formatted_address || ''),
         stopover: true
       }))
-
-      const cityCtx = detectCityCountry()
       const request = {
-        origin: cleanAddressForRoute(route.startAddress),
-        destination: cleanAddressForRoute(route.endAddress),
-        waypoints: waypoints,
+        origin: originLocation,
+        destination: destinationLocation,
+        waypoints: waypointsLocations,
         travelMode: window.google.maps.TravelMode.DRIVING,
-        // Важно: сохраняем порядок точек как в UI, ничего не оптимизируем
         optimizeWaypoints: false,
         unitSystem: window.google.maps.UnitSystem.METRIC,
-        // Дополнительные параметры для точности
         avoidHighways: false,
         avoidTolls: false,
         avoidFerries: false,
-        // Используем текущее время для учета пробок
         drivingOptions: {
           departureTime: new Date(),
           trafficModel: window.google.maps.TrafficModel.BEST_GUESS
         },
-        region: cityCtx.region
+        region: cityCtx.region,
+        provideRouteAlternatives: false
       }
 
       directionsService.route(request, (result: any, status: any) => {
         if (status === window.google.maps.DirectionsStatus.OK && result) {
+          // Если задан сектор (полигон) для города — проверяем попадание всех точек
+          const settings = localStorageUtils.getAllSettings()
+          const city = cityCtx.city
+          if (city && settings.citySectors && settings.citySectors[city] && settings.citySectors[city].length >= 3 && window.google?.maps?.geometry?.poly) {
+            try {
+              const sectorPath = settings.citySectors[city]
+              const polygon = new window.google.maps.Polygon({ paths: sectorPath })
+              const legs = result.routes[0].legs
+              const points: any[] = []
+              if (legs.length > 0) {
+                points.push(legs[0].start_location)
+                legs.forEach((leg: any) => points.push(leg.end_location))
+              }
+              const outside = points.some((pt: any) => !window.google.maps.geometry.poly.containsLocation(pt, polygon))
+              if (outside) {
+                console.warn('Некоторые точки вне сектора города — маршрут помечен как ложный, расчет отклонен')
+                alert('Точки маршрута находятся вне заданного сектора города. Проверьте адреса или границы сектора в Настройках.')
+                setIsCalculating(false)
+                return
+              }
+            } catch (e) {
+              // Если вдруг нет geometry, продолжаем без проверки
+            }
+          }
+
           // Используем точное расстояние из Google Maps API
           const totalDistance = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
           const totalDuration = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
@@ -765,21 +1154,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           // Конвертируем в километры с высокой точностью
           const distanceKm = totalDistance / 1000
           // Критическая отсечка аномалий (из настроек, по умолчанию 120км)
-          const settings = localStorageUtils.getAllSettings()
           const maxKm = settings?.maxCriticalRouteDistanceKm ?? 120
           if (distanceKm > maxKm) {
             console.warn(`Аномальное расстояние: ${distanceKm.toFixed(1)} км > ${maxKm} км. Повторяем расчет с принудительным городом/страной.`)
             // Повторная попытка с жестким добавлением города/страны
-            const forcedRequest = {
-              ...request,
-              origin: `${cleanAddress(route.startAddress)}, ${cityCtx.city}, ${cityCtx.country}`,
-              destination: `${cleanAddress(route.endAddress)}, ${cityCtx.city}, ${cityCtx.country}`,
-              waypoints: route.orders.map((order: Order) => ({
-                location: `${cleanAddress(order.address)}, ${cityCtx.city}, ${cityCtx.country}`,
-                stopover: true
-              })),
-              region: cityCtx.region
-            }
+            const forcedRequest = request
             return directionsService.route(forcedRequest, (result2: any, status2: any) => {
               if (status2 === window.google.maps.DirectionsStatus.OK && result2) {
                 const totalDistance2 = result2.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
@@ -803,7 +1182,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                           ...r,
                           totalDistance: distanceKm2,
                           totalDuration: totalDuration2 / 60,
-                          isOptimized: true
+                          isOptimized: true,
+                          geoMeta: routeGeoMeta
                         }
                       : r
                   )
@@ -844,7 +1224,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                     ...r,
                     totalDistance: distanceKm,
                     totalDuration: totalDuration / 60,
-                    isOptimized: true
+                    isOptimized: true,
+                    geoMeta: routeGeoMeta
                   }
                 : r
             )
@@ -970,14 +1351,22 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     }
 
     try {
-      // Используем прямые адреса без геокодирования
+      // Предпочитаем placeId/форматированные адреса из geoMeta, чтобы совпадать с расчетом/сектором
       const base = 'https://www.google.com/maps/dir/?api=1'
-      const origin = `origin=${encodeURIComponent(cleanAddressForRoute(route.startAddress))}`
-      const destination = `destination=${encodeURIComponent(cleanAddressForRoute(route.endAddress))}`
-      const waypointAddresses = route.orders.map(order => cleanAddressForRoute(order.address))
-      const waypoints = waypointAddresses.length > 0
-        ? `waypoints=${encodeURIComponent(waypointAddresses.join('|'))}`
-        : ''
+      const meta: any = (route as any).geoMeta || {}
+      const hasFullCoords = (m: any) => typeof m?.lat === 'number' && typeof m?.lng === 'number'
+      const waypointsMeta: any[] = (meta.waypoints && Array.isArray(meta.waypoints)) ? meta.waypoints : []
+      const missingCoords = !hasFullCoords(meta.origin) || !hasFullCoords(meta.destination) || waypointsMeta.some((w: any) => !hasFullCoords(w)) || waypointsMeta.length !== route.orders.length
+      if (missingCoords) {
+        alert('Чтобы открыть маршрут в Google Maps без искажений, сначала пересчитайте маршрут (получим координаты точек).')
+        return
+      }
+      const originStr = `${meta.origin.lat},${meta.origin.lng}`
+      const destinationStr = `${meta.destination.lat},${meta.destination.lng}`
+      const wpList = waypointsMeta.map((w: any) => `${w.lat},${w.lng}`)
+      const origin = `origin=${encodeURIComponent(originStr)}`
+      const destination = `destination=${encodeURIComponent(destinationStr)}`
+      const waypoints = wpList.length > 0 ? `waypoints=${encodeURIComponent(wpList.join('|'))}` : ''
       const travelmode = 'travelmode=driving'
 
       const parts = [origin, destination, travelmode]
@@ -1599,6 +1988,28 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   <div className="space-y-2">
                       {route.orders.map((order: Order, index: number) => {
                       const anomalyCheck = routeAnomalies.get(route.id)
+                      const meta = (route as any).geoMeta?.waypoints?.[index]
+                      const metaBadge = meta ? (
+                        <div className="mt-1 flex items-center flex-wrap gap-1 text-[10px]">
+                          <span className={clsx(
+                            'px-1.5 py-0.5 rounded',
+                            meta.locationType === 'ROOFTOP'
+                              ? (isDark ? 'bg-green-900/30 text-green-300' : 'bg-green-100 text-green-800')
+                              : meta.locationType === 'RANGE_INTERPOLATED'
+                                ? (isDark ? 'bg-yellow-900/30 text-yellow-300' : 'bg-yellow-100 text-yellow-800')
+                                : (isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-700')
+                          )}>{meta.locationType}</span>
+                          {typeof meta.streetNumberMatched === 'boolean' && (
+                            <span className={clsx(
+                              'px-1.5 py-0.5 rounded',
+                              meta.streetNumberMatched
+                                ? (isDark ? 'bg-green-900/30 text-green-300' : 'bg-green-100 text-green-800')
+                                : (isDark ? 'bg-red-900/30 text-red-300' : 'bg-red-100 text-red-700')
+                            )}>№ {meta.streetNumberMatched ? '✓' : '✗'}</span>
+                          )}
+                          {/* ZIP badge removed by user request */}
+                        </div>
+                      ) : null
                       const hasAddressIssues = anomalyCheck?.errors.some(error => 
                         error.includes('адрес') || error.includes('адресов')
                       )
@@ -1642,6 +2053,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                 isDark ? 'text-gray-400' : 'text-gray-600',
                                 hasAddressIssues && 'text-red-500'
                               )}>{order.address}</div>
+                              {metaBadge}
                               <div className={clsx(
                                 'mt-1 text-xs',
                                 isDark ? 'text-gray-500' : 'text-gray-400'
@@ -1904,9 +2316,52 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           isDark={isDark}
         />
       )}
+
+      {/* Модальное окно выбора адреса при неоднозначности геокодирования */}
+      {disambModal?.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+          <div className={clsx('rounded-lg p-6 w-full max-w-xl', isDark ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-900')}>
+            <h3 className="text-lg font-semibold mb-3">{disambModal.title}</h3>
+            <p className={clsx('text-sm mb-3', isDark ? 'text-gray-300' : 'text-gray-600')}>В секторе найдено несколько подходящих вариантов. Выберите правильный адрес.</p>
+            <div className="max-h-80 overflow-y-auto divide-y">
+              {disambModal.options.map((opt, idx) => (
+                <button
+                  key={idx}
+                  className={clsx('w-full text-left py-3 px-2 hover:bg-blue-50 rounded', isDark && 'hover:bg-gray-700')}
+                  onClick={() => {
+                    const resolver = disambResolver.current
+                    if (resolver) resolver(opt.res)
+                  }}
+                >
+                  <div className="font-medium truncate">{opt.label}</div>
+                  {typeof opt.distanceMeters === 'number' && (
+                    <div className={clsx('text-xs mt-0.5', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                      ~{(opt.distanceMeters / 1000).toFixed(2)} км от предыдущей точки
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 flex justify-end space-x-2">
+              <button
+                className={clsx('px-4 py-2 rounded', isDark ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-700')}
+                onClick={() => { const r = disambResolver.current; if (r) r(null) }}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+
+
+
+
+
+
 
 
 

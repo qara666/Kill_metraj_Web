@@ -378,33 +378,27 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     // Пока просто сбрасываем флаг оптимизации, расчет выполняется в RouteManagement
   }
 
-  // Функция для очистки адреса от лишней информации
-  const cleanAddress = (address: string) => {
-    if (!address) return address
-    
-    const cleaned = address
-      .replace(/,\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
-      .replace(/,\s*\d+\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
-      .trim()
-    
-    return cleaned
-  }
+  // Ранее использовалось для строковых адресов; больше не нужно после перехода на координаты
 
   // Функция для открытия маршрута в Google Maps
   const openRouteInGoogleMaps = (route: any) => {
-    if (!route.isOptimized || route.orders.length === 0) {
-      alert('Сначала рассчитайте маршрут')
+    if (!route || !route.orders || route.orders.length === 0) {
+      alert('Маршрут пустой')
       return
     }
-
-    const addresses = [
-      cleanAddress(route.startAddress),
-      ...route.orders.map((order: any) => cleanAddress(order.address)),
-      cleanAddress(route.endAddress)
-    ]
-    
-    const encodedAddresses = addresses.map(addr => encodeURIComponent(addr))
-    const googleMapsUrl = `https://www.google.com/maps/dir/${encodedAddresses.join('/')}`
+    const meta = route.geoMeta || {}
+    const hasCoords = (m: any) => typeof m?.lat === 'number' && typeof m?.lng === 'number'
+    const waypointsMeta: any[] = Array.isArray(meta.waypoints) ? meta.waypoints : []
+    const missing = !hasCoords(meta.origin) || !hasCoords(meta.destination) || waypointsMeta.length !== route.orders.length || waypointsMeta.some(w => !hasCoords(w))
+    if (missing) {
+      alert('Чтобы открыть корректный маршрут в Google Maps, пересчитайте маршрут (получим координаты точек).')
+      return
+    }
+    const parts: string[] = []
+    parts.push(`${meta.origin.lat},${meta.origin.lng}`)
+    waypointsMeta.forEach((w: any) => parts.push(`${w.lat},${w.lng}`))
+    parts.push(`${meta.destination.lat},${meta.destination.lng}`)
+    const googleMapsUrl = `https://www.google.com/maps/dir/${parts.map(encodeURIComponent).join('/')}`
     window.open(googleMapsUrl, '_blank')
   }
 
@@ -1461,6 +1455,10 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     </div>
   )
 }
+
+
+
+
 
 
 

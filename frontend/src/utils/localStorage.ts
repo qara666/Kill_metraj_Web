@@ -105,16 +105,20 @@ export const localStorageUtils = {
       const settingsJson = localStorage.getItem('km_settings')
       const persistentMap = localStorageUtils.getCourierVehicleMap()
       const maxCriticalRouteDistanceKm = localStorage.getItem('km_max_critical_route_distance_km')
+      const citySectors = localStorage.getItem('km_city_sectors')
       return settingsJson ? {
         ...JSON.parse(settingsJson),
         courierVehicleMap: persistentMap,
-        maxCriticalRouteDistanceKm: maxCriticalRouteDistanceKm ? parseFloat(maxCriticalRouteDistanceKm) : 120
+        maxCriticalRouteDistanceKm: maxCriticalRouteDistanceKm ? parseFloat(maxCriticalRouteDistanceKm) : 120,
+        citySectors: citySectors ? JSON.parse(citySectors) : {}
       } : {
         googleMapsApiKey: localStorage.getItem('google_maps_api_key') || '',
         defaultStartAddress: localStorage.getItem('km_default_start_address') || 'Макеевская 7, Киев, Украина',
         defaultEndAddress: localStorage.getItem('km_default_end_address') || 'Макеевская 7, Киев, Украина',
+        cityBias: localStorage.getItem('km_city_bias') || '',
         courierVehicleMap: persistentMap,
-        maxCriticalRouteDistanceKm: maxCriticalRouteDistanceKm ? parseFloat(maxCriticalRouteDistanceKm) : 120
+        maxCriticalRouteDistanceKm: maxCriticalRouteDistanceKm ? parseFloat(maxCriticalRouteDistanceKm) : 120,
+        citySectors: citySectors ? JSON.parse(citySectors) : {}
       }
     } catch (error) {
       console.error('Error reading settings:', error)
@@ -122,8 +126,10 @@ export const localStorageUtils = {
         googleMapsApiKey: localStorage.getItem('google_maps_api_key') || '',
         defaultStartAddress: localStorage.getItem('km_default_start_address') || 'Макеевская 7, Киев, Украина',
         defaultEndAddress: localStorage.getItem('km_default_end_address') || 'Макеевская 7, Киев, Украина',
+        cityBias: localStorage.getItem('km_city_bias') || '',
         courierVehicleMap: localStorageUtils.getCourierVehicleMap(),
-        maxCriticalRouteDistanceKm: localStorage.getItem('km_max_critical_route_distance_km') ? parseFloat(localStorage.getItem('km_max_critical_route_distance_km')!) : 120
+        maxCriticalRouteDistanceKm: localStorage.getItem('km_max_critical_route_distance_km') ? parseFloat(localStorage.getItem('km_max_critical_route_distance_km')!) : 120,
+        citySectors: localStorage.getItem('km_city_sectors') ? JSON.parse(localStorage.getItem('km_city_sectors')!) : {}
       }
     }
   },
@@ -144,6 +150,12 @@ export const localStorageUtils = {
       }
       if (settings.maxCriticalRouteDistanceKm !== undefined) {
         localStorage.setItem('km_max_critical_route_distance_km', settings.maxCriticalRouteDistanceKm.toString())
+      }
+      if (settings.cityBias !== undefined) {
+        localStorage.setItem('km_city_bias', settings.cityBias)
+      }
+      if (settings.citySectors !== undefined) {
+        localStorage.setItem('km_city_sectors', JSON.stringify(settings.citySectors || {}))
       }
       // Save courier vehicle map separately
       if (courierVehicleMap && typeof courierVehicleMap === 'object') {
