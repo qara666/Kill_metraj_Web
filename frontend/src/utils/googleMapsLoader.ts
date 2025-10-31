@@ -107,7 +107,8 @@ class GoogleMapsLoaderClass {
 
       // Создаем новый скрипт
       const script = document.createElement('script')
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&callback=initGoogleMaps`
+      // Добавляем библиотеки drawing и geometry для редактора секторов и проверки попадания в полигон
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,drawing,geometry&callback=initGoogleMaps`
       script.async = true
       script.defer = true
 
@@ -157,6 +158,7 @@ declare global {
     initGoogleMaps: () => void
   }
 }
+
 
 
 

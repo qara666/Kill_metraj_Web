@@ -14,7 +14,6 @@ import {
 } from '@heroicons/react/24/outline'
 import { clsx } from 'clsx'
 import { useTheme } from '../contexts/ThemeContext'
-import { DataSharing } from './DataSharing'
 import { SyncStatus } from './SyncStatus'
 
 interface LayoutProps {
@@ -202,9 +201,6 @@ export function Layout({ children }: LayoutProps) {
           <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
             <div className="flex flex-1" />
             <div className="flex items-center gap-x-4 lg:gap-x-6">
-              {/* Data Sharing */}
-              <DataSharing />
-              
               {/* Sync Status */}
               <SyncStatus />
               
@@ -253,6 +249,12 @@ export function Layout({ children }: LayoutProps) {
     </div>
   )
 }
+
+
+
+
+
+
 
 
 

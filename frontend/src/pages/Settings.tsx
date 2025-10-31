@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form'
 import { toast } from 'react-hot-toast'
 import { CogIcon, KeyIcon, MapIcon, ChevronDownIcon, ChevronUpIcon, TruckIcon, ShieldCheckIcon } from '@heroicons/react/24/outline'
 import { LoadingSpinner } from '../components/LoadingSpinner'
+import { CitySectorsEditor, CitySectors } from '../components/CitySectorsEditor'
 import { localStorageUtils } from '../utils/localStorage'
 import { validateGoogleMapsApiKey } from '../utils/apiKeyValidator'
 import { useTheme } from '../contexts/ThemeContext'
@@ -13,6 +14,8 @@ interface SettingsForm {
   googleMapsApiKey: string
   defaultStartAddress: string
   defaultEndAddress: string
+  cityBias: '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'
+  citySectors: CitySectors
   anomalyFilterEnabled: boolean
   anomalyMaxLegDistanceKm: number
   anomalyMaxTotalDistanceKm: number
@@ -136,6 +139,80 @@ const CourierVehicleEditor: React.FC<{
   )
 }
 
+const CollapsibleSection: React.FC<{ isDark: boolean; icon: React.ReactNode; title: string; children: React.ReactNode }>
+  = ({ isDark, icon, title, children }) => {
+  const [isExpanded, setIsExpanded] = useState(false)
+  return (
+    <div className={clsx('rounded-lg border', isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}>
+      <button
+        type="button"
+        onClick={() => setIsExpanded(!isExpanded)}
+        className={clsx('w-full flex items-center justify-between p-4 transition-colors', isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-50')}
+      >
+        <div className="flex items-center space-x-3">
+          <span className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-600')}>{icon}</span>
+          <span className={clsx('font-medium', isDark ? 'text-gray-200' : 'text-gray-900')}>{title}</span>
+        </div>
+        {isExpanded ? (
+          <ChevronUpIcon className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-600')} />
+        ) : (
+          <ChevronDownIcon className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-600')} />
+        )}
+      </button>
+      {isExpanded && (
+        <div className={clsx('border-t p-4', isDark ? 'border-gray-700' : 'border-gray-200')}>
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const CityBiasSection: React.FC<{ isDark: boolean; value: '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'; onChange: (v: '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса') => void }>
+  = ({ isDark, value, onChange }) => {
+  const [isExpanded, setIsExpanded] = useState(true)
+  return (
+    <div className={clsx('rounded-lg border', isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}>
+      <button
+        type="button"
+        onClick={() => setIsExpanded(!isExpanded)}
+        className={clsx('w-full flex items-center justify-between p-4 transition-colors', isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-50')}
+      >
+        <div className="flex items-center space-x-3">
+          <MapIcon className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-600')} />
+          <span className={clsx('font-medium', isDark ? 'text-gray-200' : 'text-gray-900')}>Город для маршрутов (обязателен)</span>
+        </div>
+        {isExpanded ? (
+          <ChevronUpIcon className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-600')} />
+        ) : (
+          <ChevronDownIcon className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-600')} />
+        )}
+      </button>
+      {isExpanded && (
+        <div className={clsx('border-t p-4', isDark ? 'border-gray-700' : 'border-gray-200')}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <label className="text-sm">Выберите город</label>
+            <select
+              className="input md:col-span-2"
+              value={value}
+              onChange={(e) => onChange(e.target.value as any)}
+            >
+              <option value="">— Не выбран —</option>
+              <option value="Киев">Киев</option>
+              <option value="Харьков">Харьков</option>
+              <option value="Полтава">Полтава</option>
+              <option value="Одесса">Одесса</option>
+            </select>
+          </div>
+          <p className={clsx('mt-2 text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
+            Расчёт и геокодирование будут учитывать только выбранный город. Без выбора города создание маршрута запрещено.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export const Settings: React.FC = () => {
   const { isDark } = useTheme()
   const { excelData } = useExcelData()
@@ -156,6 +233,8 @@ export const Settings: React.FC = () => {
       googleMapsApiKey: '',
       defaultStartAddress: '',
       defaultEndAddress: '',
+      cityBias: '',
+      citySectors: {},
       anomalyFilterEnabled: true,
       anomalyMaxLegDistanceKm: 10,
       anomalyMaxTotalDistanceKm: 35,
@@ -179,6 +258,8 @@ export const Settings: React.FC = () => {
     setValue('googleMapsApiKey', settings.googleMapsApiKey)
     setValue('defaultStartAddress', settings.defaultStartAddress)
     setValue('defaultEndAddress', settings.defaultEndAddress)
+    setValue('cityBias', settings.cityBias || '')
+    setValue('citySectors', settings.citySectors || {})
     // Аномалии (с дефолтами)
     setValue('anomalyFilterEnabled', settings.anomalyFilterEnabled ?? true)
     setValue('anomalyMaxLegDistanceKm', settings.anomalyMaxLegDistanceKm ?? 10)
@@ -332,12 +413,28 @@ export const Settings: React.FC = () => {
         isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
       )}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          {/* Фильтр аномалий маршрута */}
-          <div>
-            <label className="label">
-              <CogIcon className="h-4 w-4 inline mr-2" />
-              Фильтр аномалий (расстояние)
-            </label>
+          {/* City Bias */}
+          <CityBiasSection isDark={isDark} value={watch('cityBias')} onChange={(v) => setValue('cityBias', v)} />
+
+          {/* City Sectors (polygons) */}
+          <CollapsibleSection
+            isDark={isDark}
+            icon={<MapIcon className="h-4 w-4" />}
+            title="Сектор города (зона допустимых адресов)"
+          >
+            <CitySectorsEditor
+              isDark={isDark}
+              city={watch('cityBias')}
+              value={watch('citySectors')}
+              onChange={(next) => setValue('citySectors', next)}
+            />
+          </CollapsibleSection>
+          {/* Фильтр аномалий маршрута (collapsible) */}
+          <CollapsibleSection
+            isDark={isDark}
+            icon={<CogIcon className="h-4 w-4" />}
+            title="Фильтр аномалий (расстояние)"
+          >
             <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
               <label className="inline-flex items-center space-x-2">
                 <input type="checkbox" className="checkbox" {...register('anomalyFilterEnabled')} />
@@ -358,47 +455,23 @@ export const Settings: React.FC = () => {
                 </div>
               </div>
             </div>
-          </div>
-
-          {/* Расширенные настройки фильтрации */}
-          <div>
-            <label className="label">
-              <ShieldCheckIcon className="h-4 w-4 inline mr-2" />
-              Расширенная фильтрация аномалий
-            </label>
-            <div className="space-y-3">
+              {/* Расширенная фильтрация (перенесено сюда) */}
+            <div className="mt-4 space-y-3">
               <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  className="checkbox"
-                  {...register('enableCoordinateValidation')}
-                />
+                <input type="checkbox" className="checkbox" {...register('enableCoordinateValidation')} />
                 <span className="ml-2 text-sm">Проверять координаты на разумность</span>
               </div>
               <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  className="checkbox"
-                  {...register('enableAdaptiveThresholds')}
-                />
+                <input type="checkbox" className="checkbox" {...register('enableAdaptiveThresholds')} />
                 <span className="ml-2 text-sm">Использовать адаптивные пороги</span>
               </div>
               <div>
                 <div className="text-xs mb-1">Минимальный порог качества адреса (0-100)</div>
-                <input 
-                  type="number" 
-                  step="5" 
-                  min="0" 
-                  max="100" 
-                  className="input" 
-                  {...register('addressQualityThreshold', { valueAsNumber: true })} 
-                />
-                <div className="text-xs text-gray-500 mt-1">
-                  Адреса с оценкой ниже этого порога будут помечены как подозрительные
-                </div>
+                <input type="number" step="5" min="0" max="100" className="input" {...register('addressQualityThreshold', { valueAsNumber: true })} />
+                <div className="text-xs text-gray-500 mt-1">Адреса с оценкой ниже этого порога будут помечены как подозрительные</div>
               </div>
             </div>
-          </div>
+          </CollapsibleSection>
           {/* Google Maps API Key */}
           <div>
             <label className="label">
@@ -501,12 +574,12 @@ export const Settings: React.FC = () => {
             <CourierVehicleEditor value={watch('courierVehicleMap')} onChange={(map) => setValue('courierVehicleMap', map)} isDark={isDark} courierNames={courierNames} />
           </div>
 
-          {/* Критический лимит для маршрута */}
-          <div>
-            <label className="label">
-              <ShieldCheckIcon className="h-4 w-4 inline mr-2" />
-              Критический лимит для маршрута
-            </label>
+          {/* Критический лимит для маршрута (collapsible) */}
+          <CollapsibleSection
+            isDark={isDark}
+            icon={<ShieldCheckIcon className="h-4 w-4" />}
+            title="Критический лимит для маршрута"
+          >
             <div className="mt-2">
               <div className="text-xs mb-1">Крит. максимальное расстояние маршрута (км)</div>
               <input type="number" step="1" min="1" className="input" {...register('maxCriticalRouteDistanceKm', { valueAsNumber: true })} />
@@ -514,7 +587,7 @@ export const Settings: React.FC = () => {
                 Если маршрут превышает это значение — будет показан критический warning, маршрут НЕ будет пересчитан
               </div>
             </div>
-          </div>
+          </CollapsibleSection>
 
           {/* Action Buttons */}
           <div className="flex justify-between">
@@ -537,6 +610,10 @@ export const Settings: React.FC = () => {
     </div>
   )
 }
+
+
+
+
 
 
 
