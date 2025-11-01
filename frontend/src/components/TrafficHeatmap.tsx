@@ -488,7 +488,6 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({
   }
 
   // Генерация сетки точек внутри сектора (пока не используется, зарезервировано для будущего)
-  // @ts-expect-error - функция зарезервирована для будущего использования
   const _generateGridPoints = (
     _sectorPath: Array<{ lat: number; lng: number }>,
     _gridSize: number
