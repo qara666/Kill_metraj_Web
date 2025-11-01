@@ -4,7 +4,6 @@
 
 import React, { useEffect, useRef } from 'react'
 import { googleMapsLoader } from '../utils/googleMapsLoader'
-import { localStorageUtils } from '../utils/localStorage'
 import { clsx } from 'clsx'
 import { useTheme } from '../contexts/ThemeContext'
 
@@ -34,7 +33,7 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({
   const trafficLayerRef = useRef<any>(null)
   const trafficDataCacheRef = useRef<TrafficData | null>(null)
   const lastUpdateRef = useRef<number>(0)
-  const updateIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const updateIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const markersRef = useRef<any[]>([]) // Для хранения маркеров (fallback)
 
   useEffect(() => {
@@ -133,7 +132,7 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({
                 if (!gmaps.visualization || !gmaps.visualization.HeatmapLayer) {
                   console.warn('⚠️ Библиотека Google Maps Visualization не загружена. Убедитесь, что она подключена через libraries=visualization')
                   // Вместо тепловой карты показываем обычные маркеры
-                  basicHeatmapData.forEach((point, idx) => {
+                  basicHeatmapData.forEach((point) => {
                     new gmaps.Marker({
                       position: point.location,
                       map: map,
@@ -252,7 +251,7 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({
       console.log(`🔍 Анализирую трафик по ${Math.min(routePairs.length, 15)} маршрутам в секторе...`)
       
       // Проверяем трафик по маршрутам (ограничиваем до 15 для производительности)
-      const trafficChecks = await Promise.all(
+      await Promise.all(
         routePairs.slice(0, 15).map(async (pair, index) => {
           const [origin, destination] = pair
           
@@ -275,7 +274,7 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({
               const route = result.routes[0]
               
               // Анализируем каждый участок маршрута
-              route.legs.forEach((leg: any, legIndex: number) => {
+              route.legs.forEach((leg: any) => {
                 // Берем среднюю точку leg для размещения маркера (более репрезентативно)
                 const startLocation = leg.start_location
                 const endLocation = leg.end_location
@@ -466,7 +465,7 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({
     if (criticalAreas.length > 0) {
       criticalAreas.forEach(area => {
         try {
-          const marker = new gmaps.Marker({
+          new gmaps.Marker({
             position: new gmaps.LatLng(area.location.lat, area.location.lng),
             map: map,
             icon: {
@@ -488,7 +487,8 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({
     }
   }
 
-  // Генерация сетки точек внутри сектора
+  // Генерация сетки точек внутри сектора (пока не используется)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const generateGridPoints = (
     sectorPath: Array<{ lat: number; lng: number }>,
     gridSize: number

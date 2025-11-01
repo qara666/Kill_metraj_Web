@@ -561,7 +561,8 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
   ]
   
   let finalAddress = address
-  if (!finalAddress || !isValidAddress(finalAddress, 'адрес')) {
+  // Проверяем валидность адреса (isValidAddress принимает columnName как опциональный параметр)
+  if (!finalAddress || !isValidAddress(finalAddress)) {
     finalAddress = ''
     for (const key in rowData) {
       const lowerKey = key.toLowerCase().trim()
