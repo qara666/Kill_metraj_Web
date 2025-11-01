@@ -487,8 +487,8 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({
     }
   }
 
-  // Генерация сетки точек внутри сектора (пока не используется)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // Генерация сетки точек внутри сектора (пока не используется, зарезервировано для будущего)
+  // @ts-expect-error - функция зарезервирована для будущего использования
   const _generateGridPoints = (
     _sectorPath: Array<{ lat: number; lng: number }>,
     _gridSize: number
@@ -517,6 +517,9 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({
 
     return points
   }
+  
+  // Подавляем предупреждение о неиспользуемой функции (она зарезервирована для будущего)
+  void _generateGridPoints
 
   return (
     <div className="mt-4" onClick={(e) => e.stopPropagation()}>
