@@ -507,8 +507,16 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
   ]) || ''
   
   // Функция для валидации адреса
-  const isValidAddress = (str: string): boolean => {
+  const isValidAddress = (str: string, columnName?: string): boolean => {
     if (!str || str.trim().length < 5) return false
+    
+    const lowerStr = str.toLowerCase().trim()
+    const lowerColName = (columnName || '').toLowerCase().trim()
+    
+    // Исключаем известные не-адресные колонки
+    if (excludeCols.some(excl => lowerColName.includes(excl))) {
+      return false
+    }
     
     // Исключаем инструкции и комментарии
     const invalidPatterns = [
@@ -523,19 +531,19 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
     ]
     
     for (const pattern of invalidPatterns) {
-      if (pattern.test(str)) {
+      if (pattern.test(lowerStr)) {
         return false
       }
     }
     
     // Адрес должен содержать маркеры адреса
     const addressMarkers = [
-      /\b(вул|вулиця|улица|ул|проспект|просп|провулок|пров|бульвар|бул|линия|лінія|лін|площа|площадь)\b/i,
+      /\b(вул|вулиця|улица|ул\.?|проспект|просп\.?|провулок|пров\.?|бульвар|бул\.?|линия|лінія|лін|площа|площадь)\b/i,
       /\b\d+[а-я]?\b/, // номер дома
       /\b(киев|київ|kiev|kyiv|одесса|одеса|харьков|харків|полтава)\b/i
     ]
     
-    const hasAddressMarker = addressMarkers.some(pattern => pattern.test(str))
+    const hasAddressMarker = addressMarkers.some(pattern => pattern.test(lowerStr))
     const isNotPhone = !/^[\d\+\-\(\)\s]+$/.test(str)
     const isNotEmail = !/^[\w\.-]+@[\w\.-]+\.\w+$/.test(str)
     const isNotOnlyNumber = !/^\d+$/.test(str)
@@ -575,6 +583,7 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
       if (value && typeof value === 'string') {
         const strVal = String(value).trim()
         // Используем валидацию адреса с проверкой названия колонки
+        // Второй параметр columnName опционален и используется для фильтрации
         if (isValidAddress(strVal, key)) {
           finalAddress = strVal
           console.log(`✅ Найден валидный адрес в колонке "${key}": ${strVal.substring(0, 50)}...`)

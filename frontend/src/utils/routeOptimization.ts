@@ -218,7 +218,8 @@ export function splitLargeRoute(
     // Берем заказы до лимита или пока не превышаем ограничения
     for (let i = 0; i < remaining.length && subRoute.length < maxStopsPerRoute; i++) {
       const candidate = remaining[i]
-      const testChain = [...subRoute, candidate]
+      // testChain используется для будущих проверок feasibility
+      // const testChain = [...subRoute, candidate]
 
       // Если есть проверка, используем её
       if (checkFeasibility) {
