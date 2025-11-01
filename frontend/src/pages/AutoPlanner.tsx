@@ -271,7 +271,7 @@ export const AutoPlanner: React.FC = () => {
   const [routeNotifications, setRouteNotifications] = useState<Map<string, Notification[]>>(new Map())
   
   // Данные о трафике и секторе (trafficData может использоваться для будущих предупреждений)
-  const [trafficData, setTrafficData] = useState<any>(null)
+  const [_trafficData, setTrafficData] = useState<any>(null)
   const [sectorPathState, setSectorPathState] = useState<Array<{ lat: number; lng: number }> | null>(null)
 
   const ordersCount = useMemo(() => excelData?.orders?.length ?? 0, [excelData])
@@ -1846,7 +1846,6 @@ export const AutoPlanner: React.FC = () => {
                                         const keywords = ['кухню', 'kitchen', 'готовности', 'ready']
                                         for (const key in o) {
                                           const lowerKey = key.toLowerCase().trim()
-                                          const lowerValue = String(o[key] || '').toLowerCase()
                                           // Пропускаем поля, связанные с плановым временем
                                           if (lowerKey.includes('планов') || lowerKey.includes('planned') || 
                                               lowerKey.includes('дедлайн') || lowerKey.includes('deadline')) continue

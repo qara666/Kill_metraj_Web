@@ -70,6 +70,10 @@ export function generateRouteNotifications(
     return notifications
   }
 
+  // Константы для буферов времени
+  const FORCE_MAJEURE_MINUTES = 9 // Форс-мажор на каждый заказ
+  const FORCE_MAJEURE_MS = FORCE_MAJEURE_MINUTES * 60 * 1000
+
   ordersWithETA.forEach(order => {
     if (order.deadlineAt && order.estimatedArrivalTime) {
       // Форс-мажор расширяет дедлайн: плановое время + 9 минут
@@ -132,9 +136,7 @@ function calculateOrderETAs(route: RouteInfo): OrderInfo[] {
   const ordersWithETA: OrderInfo[] = []
 
   // Константы для буферов времени
-  const FORCE_MAJEURE_MINUTES = 9 // Форс-мажор на каждый заказ
   const DELIVERY_TIME_MINUTES = 5 // Время на отдачу заказа курьером
-  const FORCE_MAJEURE_MS = FORCE_MAJEURE_MINUTES * 60 * 1000
   const DELIVERY_TIME_MS = DELIVERY_TIME_MINUTES * 60 * 1000
 
   // Для каждого заказа находим соответствующий leg и вычисляем ETA
@@ -197,13 +199,19 @@ export function scheduleNotifications(
     if (notification.sent) return
     if (notification.timestamp <= now) {
       // Отправляем немедленно
-      onNotify(notification).catch(console.error)
+      const notifyResult = onNotify(notification)
+      if (notifyResult && typeof notifyResult.catch === 'function') {
+        notifyResult.catch(console.error)
+      }
       notification.sent = true
     } else {
       // Планируем на будущее
       const delay = notification.timestamp - now
       setTimeout(() => {
-        onNotify(notification).catch(console.error)
+        const notifyResult = onNotify(notification)
+        if (notifyResult && typeof notifyResult.catch === 'function') {
+          notifyResult.catch(console.error)
+        }
         notification.sent = true
       }, delay)
     }
