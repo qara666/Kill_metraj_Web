@@ -23,6 +23,7 @@ interface LayoutProps {
 const navigation = [
   { name: 'Панель управления', href: '/', icon: HomeIcon },
   { name: 'Маршруты', href: '/routes', icon: MapIcon },
+  { name: 'Автопланирование', href: '/autoplanner', icon: MapIcon },
   { name: 'Курьеры', href: '/couriers', icon: UserGroupIcon },
   { name: 'Зоны', href: '/zones', icon: MapPinIcon },
   { name: 'Аналитика', href: '/analytics', icon: ChartBarIcon },
