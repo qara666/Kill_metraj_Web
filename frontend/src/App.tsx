@@ -5,6 +5,7 @@ const Couriers = React.lazy(() => import('./pages/Couriers').then(m => ({ defaul
 const RoutesPage = React.lazy(() => import('./pages/Routes').then(m => ({ default: m.Routes })))
 const Zones = React.lazy(() => import('./pages/Zones').then(m => ({ default: m.Zones })))
 const Analytics = React.lazy(() => import('./pages/Analytics').then(m => ({ default: m.Analytics })))
+const AutoPlanner = React.lazy(() => import('./pages/AutoPlanner').then(m => ({ default: m.AutoPlanner })))
 const Settings = React.lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })))
 import { Layout } from './components/Layout'
 import { ExcelDataProvider } from './contexts/ExcelDataContext'
@@ -22,6 +23,7 @@ function App() {
               <Route path="/routes" element={<RoutesPage />} />
               <Route path="/zones" element={<Zones />} />
               <Route path="/analytics" element={<Analytics />} />
+              <Route path="/autoplanner" element={<AutoPlanner />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </Suspense>

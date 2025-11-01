@@ -108,7 +108,8 @@ class GoogleMapsLoaderClass {
       // Создаем новый скрипт
       const script = document.createElement('script')
       // Добавляем библиотеки drawing и geometry для редактора секторов и проверки попадания в полигон
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,drawing,geometry&callback=initGoogleMaps`
+      // Используем loading=async параметр для лучшей производительности
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,drawing,geometry,visualization&loading=async&callback=initGoogleMaps`
       script.async = true
       script.defer = true
 
