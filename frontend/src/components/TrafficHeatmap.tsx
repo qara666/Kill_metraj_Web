@@ -489,24 +489,24 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({
 
   // Генерация сетки точек внутри сектора (пока не используется)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const generateGridPoints = (
-    sectorPath: Array<{ lat: number; lng: number }>,
-    gridSize: number
+  const _generateGridPoints = (
+    _sectorPath: Array<{ lat: number; lng: number }>,
+    _gridSize: number
   ): Array<{ lat: number; lng: number }> => {
     // Находим границы сектора
-    const minLat = Math.min(...sectorPath.map(p => p.lat))
-    const maxLat = Math.max(...sectorPath.map(p => p.lat))
-    const minLng = Math.min(...sectorPath.map(p => p.lng))
-    const maxLng = Math.max(...sectorPath.map(p => p.lng))
+    const minLat = Math.min(..._sectorPath.map(p => p.lat))
+    const maxLat = Math.max(..._sectorPath.map(p => p.lat))
+    const minLng = Math.min(..._sectorPath.map(p => p.lng))
+    const maxLng = Math.max(..._sectorPath.map(p => p.lng))
 
-    const latStep = (maxLat - minLat) / gridSize
-    const lngStep = (maxLng - minLng) / gridSize
+    const latStep = (maxLat - minLat) / _gridSize
+    const lngStep = (maxLng - minLng) / _gridSize
 
     const points: Array<{ lat: number; lng: number }> = []
 
     // Простая проверка на вхождение в полигон (для реального использования нужна более точная проверка)
-    for (let i = 0; i <= gridSize; i++) {
-      for (let j = 0; j <= gridSize; j++) {
+    for (let i = 0; i <= _gridSize; i++) {
+      for (let j = 0; j <= _gridSize; j++) {
         const lat = minLat + i * latStep
         const lng = minLng + j * lngStep
         
