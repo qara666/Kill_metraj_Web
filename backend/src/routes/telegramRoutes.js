@@ -14,6 +14,16 @@ router.post('/initialize', async (req, res) => {
   try {
     const { sessionId, apiId, apiHash, phoneNumber } = req.body;
 
+    // Логируем входящие данные для отладки
+    console.log('Получен запрос на инициализацию:', {
+      sessionId: sessionId ? `${sessionId.substring(0, 10)}...` : 'undefined',
+      apiId: apiId ? String(apiId).substring(0, 5) + '...' : 'undefined',
+      apiHash: apiHash ? `${apiHash.substring(0, 5)}...` : 'undefined',
+      apiHashLength: apiHash ? apiHash.length : 0,
+      phoneNumber: phoneNumber ? phoneNumber.substring(0, 10) + '...' : 'undefined',
+      phoneNumberLength: phoneNumber ? phoneNumber.length : 0
+    });
+
     // Валидация обязательных полей
     if (!sessionId || typeof sessionId !== 'string' || sessionId.trim().length === 0) {
       return res.status(400).json({
@@ -43,11 +53,24 @@ router.post('/initialize', async (req, res) => {
       });
     }
 
+    // Очищаем и нормализуем данные
+    const cleanSessionId = sessionId.trim();
+    const cleanApiId = String(apiId).trim();
+    const cleanApiHash = apiHash.trim();
+    const cleanPhoneNumber = phoneNumber.trim();
+
+    console.log('Очищенные данные:', {
+      apiId: cleanApiId.substring(0, 5) + '...',
+      apiHashLength: cleanApiHash.length,
+      phoneNumber: cleanPhoneNumber.substring(0, 10) + '...',
+      phoneNumberLength: cleanPhoneNumber.length
+    });
+
     const result = await telegramService.initialize(
-      sessionId.trim(),
-      String(apiId).trim(),
-      apiHash.trim(),
-      phoneNumber.trim()
+      cleanSessionId,
+      cleanApiId,
+      cleanApiHash,
+      cleanPhoneNumber
     );
     
     if (result.success) {

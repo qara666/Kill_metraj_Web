@@ -92,21 +92,41 @@ export const TelegramParsing: React.FC = () => {
   // Валидация данных подключения
   const validateConnectionData = useCallback((data: TelegramConnection): string | null => {
     // Валидация API ID
-    const apiIdNum = parseInt(data.apiId)
+    if (!data.apiId || data.apiId.trim().length === 0) {
+      return 'API ID не может быть пустым'
+    }
+    const apiIdNum = parseInt(data.apiId.trim())
     if (isNaN(apiIdNum) || apiIdNum <= 0) {
       return 'API ID должен быть положительным числом'
     }
 
     // Валидация API Hash
-    if (!data.apiHash || data.apiHash.length < 20) {
+    if (!data.apiHash || data.apiHash.trim().length < 20) {
       return 'API Hash должен быть строкой длиной не менее 20 символов'
     }
 
     // Валидация номера телефона
-    const phoneRegex = /^\+?[1-9]\d{1,14}$/
-    const cleanPhone = data.phoneNumber.replace(/[\s\-\(\)]/g, '')
-    if (!phoneRegex.test(cleanPhone)) {
-      return 'Номер телефона должен быть в формате +380XXXXXXXXX или 380XXXXXXXXX'
+    // Убираем все нецифровые символы кроме плюса в начале
+    let cleanPhone = data.phoneNumber.trim()
+    // Убираем пробелы, дефисы, скобки
+    cleanPhone = cleanPhone.replace(/[\s\-\(\)]/g, '')
+    
+    // Если есть плюс, убираем его для проверки
+    const phoneWithoutPlus = cleanPhone.startsWith('+') ? cleanPhone.substring(1) : cleanPhone
+    
+    // Проверяем, что после плюса только цифры
+    if (!/^\d+$/.test(phoneWithoutPlus)) {
+      return 'Номер телефона должен содержать только цифры (можно с + в начале)'
+    }
+    
+    // Проверяем длину (от 7 до 15 цифр)
+    if (phoneWithoutPlus.length < 7 || phoneWithoutPlus.length > 15) {
+      return 'Номер телефона должен содержать от 7 до 15 цифр'
+    }
+    
+    // Проверяем, что номер не начинается с 0
+    if (phoneWithoutPlus.startsWith('0')) {
+      return 'Номер телефона не должен начинаться с 0. Используйте формат +380XXXXXXXXX или 380XXXXXXXXX'
     }
 
     return null
