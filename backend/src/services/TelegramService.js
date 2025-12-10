@@ -106,19 +106,73 @@ class TelegramService {
 
       const apiIdNum = parseInt(apiId);
       
+      // Проверяем все параметры перед созданием клиента
+      if (!apiIdNum || isNaN(apiIdNum) || apiIdNum <= 0) {
+        return {
+          success: false,
+          error: 'API ID должен быть положительным числом'
+        };
+      }
+      
+      if (!apiHash || typeof apiHash !== 'string' || apiHash.trim().length === 0) {
+        return {
+          success: false,
+          error: 'API Hash должен быть непустой строкой'
+        };
+      }
+      
       // Логируем входные данные для отладки
       console.log('Инициализация Telegram:', {
         apiId: apiIdNum,
+        apiIdType: typeof apiIdNum,
         apiHashLength: apiHash.length,
+        apiHashType: typeof apiHash,
+        apiHashDefined: !!apiHash,
         phoneOriginal: phoneNumber,
         phoneCleaned: cleanPhone,
-        phoneLength: cleanPhone.length
+        phoneLength: cleanPhone.length,
+        sessionExists: !!stringSession,
+        sessionLength: stringSession ? stringSession.length : 0
       });
       
-      const session = new StringSession(stringSession);
-      const client = new TelegramClient(session, apiIdNum, apiHash, {
-        connectionRetries: 5,
-      });
+      // Создаем сессию и клиент с проверками
+      let session;
+      let client;
+      
+      try {
+        session = new StringSession(stringSession || '');
+        console.log('Сессия создана успешно');
+      } catch (sessionError) {
+        console.error('Ошибка создания сессии:', sessionError);
+        return {
+          success: false,
+          error: 'Ошибка создания сессии: ' + (sessionError.message || 'Неизвестная ошибка')
+        };
+      }
+      
+      try {
+        // Убеждаемся, что apiHash - это строка
+        const apiHashString = String(apiHash).trim();
+        
+        client = new TelegramClient(session, apiIdNum, apiHashString, {
+          connectionRetries: 5,
+        });
+        console.log('Клиент Telegram создан успешно');
+      } catch (clientError) {
+        console.error('Ошибка создания клиента:', clientError);
+        console.error('Детали ошибки создания клиента:', {
+          message: clientError.message,
+          stack: clientError.stack,
+          apiId: apiIdNum,
+          apiIdType: typeof apiIdNum,
+          apiHashType: typeof apiHash,
+          apiHashLength: apiHash ? apiHash.length : 0
+        });
+        return {
+          success: false,
+          error: 'Ошибка создания клиента Telegram: ' + (clientError.message || 'Неизвестная ошибка')
+        };
+      }
 
       await client.connect();
 
@@ -130,10 +184,38 @@ class TelegramService {
           // Убеждаемся, что номер содержит только цифры
           const phoneForApi = cleanPhone.replace(/\D/g, '');
           
-          console.log('Отправка кода на номер:', phoneForApi);
+          // Проверяем, что все параметры определены
+          if (!phoneForApi || phoneForApi.length === 0) {
+            throw new Error('Номер телефона не может быть пустым');
+          }
           
-          // В gramjs 2.26+ sendCode принимает только номер телефона
+          if (!apiHash || typeof apiHash !== 'string' || apiHash.length === 0) {
+            throw new Error('API Hash не может быть пустым');
+          }
+          
+          if (!apiIdNum || isNaN(apiIdNum) || apiIdNum <= 0) {
+            throw new Error('API ID должен быть положительным числом');
+          }
+          
+          console.log('Отправка кода на номер:', {
+            phone: phoneForApi,
+            phoneLength: phoneForApi.length,
+            phoneType: typeof phoneForApi,
+            apiId: apiIdNum,
+            apiIdType: typeof apiIdNum,
+            apiHashLength: apiHash.length,
+            apiHashType: typeof apiHash,
+            apiHashPrefix: apiHash.substring(0, 5) + '...'
+          });
+          
+          // В gramjs 2.26+ sendCode принимает только номер телефона как строку
+          // Убеждаемся, что передаем правильный тип (строка, не число)
           const result = await client.sendCode(phoneForApi);
+
+          // Проверяем результат
+          if (!result || !result.phoneCodeHash) {
+            throw new Error('Не удалось получить phoneCodeHash от Telegram');
+          }
 
           // Сохраняем временные данные для авторизации
           return {
@@ -146,20 +228,26 @@ class TelegramService {
           console.error('Ошибка отправки кода:', sendCodeError);
           console.error('Детали ошибки:', {
             message: sendCodeError.message,
+            stack: sendCodeError.stack,
             code: sendCodeError.code,
             phone: cleanPhone,
-            apiId: apiIdNum
+            phoneLength: cleanPhone.length,
+            apiId: apiIdNum,
+            apiHashDefined: !!apiHash,
+            apiHashLength: apiHash ? apiHash.length : 0
           });
           
           let errorMessage = sendCodeError.message || 'Проверьте номер телефона и API данные';
           
           // Более детальная обработка ошибок
-          if (errorMessage.includes('pattern') || errorMessage.includes('PHONE_NUMBER')) {
-            errorMessage = 'Неверный формат номера телефона. Используйте формат +380XXXXXXXXX (без пробелов и дефисов)';
-          } else if (errorMessage.includes('API')) {
+          if (errorMessage.includes('pattern') || errorMessage.includes('PHONE_NUMBER') || errorMessage.includes('constructor')) {
+            errorMessage = 'Неверный формат номера телефона или API данных. Проверьте все поля.';
+          } else if (errorMessage.includes('API') || errorMessage.includes('API_ID')) {
             errorMessage = 'Неверные API данные. Проверьте API ID и API Hash на my.telegram.org/apps';
           } else if (errorMessage.includes('FLOOD')) {
             errorMessage = 'Слишком много запросов. Подождите несколько минут и попробуйте снова.';
+          } else if (errorMessage.includes('undefined') || errorMessage.includes('constructor')) {
+            errorMessage = 'Ошибка инициализации. Проверьте, что все поля заполнены корректно.';
           }
           
           return {
@@ -244,10 +332,48 @@ class TelegramService {
       }
 
       const apiIdNum = parseInt(apiId);
-      const session = new StringSession(stringSession);
-      const client = new TelegramClient(session, apiIdNum, apiHash, {
-        connectionRetries: 5,
-      });
+      
+      // Проверяем параметры перед созданием клиента
+      if (!apiIdNum || isNaN(apiIdNum) || apiIdNum <= 0) {
+        return {
+          success: false,
+          error: 'API ID должен быть положительным числом'
+        };
+      }
+      
+      if (!apiHash || typeof apiHash !== 'string' || apiHash.trim().length === 0) {
+        return {
+          success: false,
+          error: 'API Hash должен быть непустой строкой'
+        };
+      }
+      
+      // Создаем сессию и клиент с проверками
+      let session;
+      let client;
+      
+      try {
+        session = new StringSession(stringSession || '');
+      } catch (sessionError) {
+        console.error('Ошибка создания сессии:', sessionError);
+        return {
+          success: false,
+          error: 'Ошибка создания сессии: ' + (sessionError.message || 'Неизвестная ошибка')
+        };
+      }
+      
+      try {
+        const apiHashString = String(apiHash).trim();
+        client = new TelegramClient(session, apiIdNum, apiHashString, {
+          connectionRetries: 5,
+        });
+      } catch (clientError) {
+        console.error('Ошибка создания клиента:', clientError);
+        return {
+          success: false,
+          error: 'Ошибка создания клиента Telegram: ' + (clientError.message || 'Неизвестная ошибка')
+        };
+      }
 
       await client.connect();
 
