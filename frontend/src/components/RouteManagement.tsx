@@ -12,7 +12,8 @@ import {
   ChevronDownIcon,
   PencilIcon,
   ArrowPathIcon,
-  ExclamationTriangleIcon
+  ExclamationTriangleIcon,
+  QuestionMarkCircleIcon
 } from '@heroicons/react/24/outline'
 import { localStorageUtils } from '../utils/localStorage'
 import { googleMapsLoader } from '../utils/googleMapsLoader'
@@ -22,6 +23,14 @@ import { clsx } from 'clsx'
 import { AddressEditModal } from './AddressEditModal'
 import { AddressValidationService, RouteAnomalyCheck } from '../services/addressValidation'
 import { getPaymentMethodBadgeProps } from '../utils/paymentMethodHelper'
+import { Tooltip } from './Tooltip'
+import { googleApiCache } from '../services/googleApiCache'
+import { lazy, Suspense } from 'react'
+import type { TourStep } from './HelpTour'
+
+// Ленивая загрузка тяжелых компонентов
+const HelpModalRoutes = lazy(() => import('./HelpModalRoutes').then(m => ({ default: m.HelpModalRoutes })))
+const HelpTour = lazy(() => import('./HelpTour').then(m => ({ default: m.HelpTour })))
 
 // Google Maps types
 declare global {
@@ -214,7 +223,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [visibleOrdersCount] = useState(2000) // Лимит для виртуализации
   const [orderSearchTerm, setOrderSearchTerm] = useState('')
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
-  const [timeFilter, setTimeFilter] = useState<string>('all') // all, morning, afternoon, evening
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [routeToDelete, setRouteToDelete] = useState<Route | null>(null)
   const [showAddressEditModal, setShowAddressEditModal] = useState(false)
@@ -223,6 +231,26 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   // Disambiguation modal state for choosing among multiple in-sector candidates
   const [disambModal, setDisambModal] = useState<{ open: boolean; title: string; options: Array<{label: string; distanceMeters?: number; res: any}> } | null>(null)
   const disambResolver = useRef<(choice: any | null) => void>()
+
+  // Состояния для системы помощи
+  const [showHelpModal, setShowHelpModal] = useState(false)
+  const [showHelpTour, setShowHelpTour] = useState(false)
+  const [hasSeenHelp, setHasSeenHelp] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('km_routes_has_seen_help') === 'true'
+    }
+    return false
+  })
+
+  // Показываем помощь новым пользователям через 2 секунды после загрузки
+  useEffect(() => {
+    if (!hasSeenHelp && typeof window !== 'undefined') {
+      const timer = setTimeout(() => {
+        setShowHelpModal(true)
+      }, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [hasSeenHelp])
 
   // Дебаунсинг для поиска
   useEffect(() => {
@@ -364,29 +392,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     setSelectedOrdersOrder([])
   }, [])
 
-  // Функция для фильтрации заказов по времени
-  const filterOrdersByTime = useCallback((orders: Order[]) => {
-    if (timeFilter === 'all') return orders
-    
-    return orders.filter(order => {
-      if (!order.plannedTime) return timeFilter === 'all'
-      
-      const time = order.plannedTime.toLowerCase()
-      switch (timeFilter) {
-        case 'morning':
-          return time.includes('утро') || time.includes('morning') || 
-                 (time.includes(':') && parseInt(time.split(':')[0]) >= 6 && parseInt(time.split(':')[0]) < 12)
-        case 'afternoon':
-          return time.includes('день') || time.includes('afternoon') || 
-                 (time.includes(':') && parseInt(time.split(':')[0]) >= 12 && parseInt(time.split(':')[0]) < 18)
-        case 'evening':
-          return time.includes('вечер') || time.includes('evening') || 
-                 (time.includes(':') && parseInt(time.split(':')[0]) >= 18)
-        default:
-          return true
-      }
-    })
-  }, [timeFilter])
 
   // Функция для поиска заказов по номеру
   const searchOrders = useCallback((orders: Order[]) => {
@@ -721,7 +726,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     setIsCalculating(true)
 
     try {
-      const directionsService = new window.google.maps.DirectionsService()
 
       // --- Сектор города и границы для геокодирования ---
       const settings = localStorageUtils.getAllSettings()
@@ -860,7 +864,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
       // Геокодирование адреса с учетом сектора и region/componentRestrictions
       const geocodeWithSector = async (rawAddress: string, hintPoint?: any): Promise<any | null> => {
-      const geocoder = new window.google.maps.Geocoder()
         const address = cleanAddressForRoute(rawAddress)
         const request: any = {
           address,
@@ -868,9 +871,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           componentRestrictions: { country: 'ua' }
         }
         if (sectorBounds) request.bounds = sectorBounds
-        const results: any = await new Promise((resolve) => {
-          geocoder.geocode(request, (res: any, status: any) => resolve(status === 'OK' ? res : []))
-        })
+        const results: any = await googleApiCache.geocode(request)
         if (!results || results.length === 0) return null
         const expectedHouse = extractHouseNumber(rawAddress)
         const expectedPostal = extractPostal(rawAddress)
@@ -917,7 +918,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       // Повторная попытка: возвращает ЛУЧШЕГО кандидата ТОЛЬКО внутри полигона (если нет — null)
       const geocodeInsideOnly = async (rawAddress: string, hintPoint?: any): Promise<any | null> => {
         if (!sectorPolygon) return null
-        const geocoder = new window.google.maps.Geocoder()
         const address = cleanAddressForRoute(rawAddress)
         const request: any = {
           address,
@@ -925,9 +925,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           componentRestrictions: { country: 'ua' }
         }
         if (sectorBounds) request.bounds = sectorBounds
-        const results: any = await new Promise((resolve) => {
-          geocoder.geocode(request, (res: any, status: any) => resolve(status === 'OK' ? res : []))
-        })
+        const results: any = await googleApiCache.geocode(request)
         let gathered = results
         if (!gathered || gathered.length === 0) gathered = []
         let inside = gathered.filter((r: any) => window.google.maps.geometry.poly.containsLocation(r.geometry.location, sectorPolygon))
@@ -936,9 +934,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           const alts = generateStreetVariants(rawAddress)
           for (const alt of alts) {
             // eslint-disable-next-line no-await-in-loop
-            const altRes: any = await new Promise((resolve) => {
-              geocoder.geocode({ ...request, address: alt }, (res: any, status: any) => resolve(status === 'OK' ? res : []))
-            })
+            const altRes: any = await googleApiCache.geocode({ ...request, address: alt })
             if (altRes && altRes.length > 0) {
               const insideAlt = altRes.filter((r: any) => window.google.maps.geometry.poly.containsLocation(r.geometry.location, sectorPolygon))
               if (insideAlt.length > 0) { inside = insideAlt; break }
@@ -947,10 +943,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         }
         // Если всё ещё нет — при наличии подсказки (предыдущая точка) получаем sublocality и пробуем с ней
         if (inside.length === 0 && hintPoint) {
-          const rev: any = await new Promise((resolve) => {
-            const gc = new window.google.maps.Geocoder()
-            gc.geocode({ location: hintPoint }, (res: any, status: any) => resolve(status === 'OK' ? res : []))
-          })
+          const rev: any = await googleApiCache.geocode({ location: hintPoint })
           if (rev && rev.length > 0) {
             const sub = (() => {
               for (const r of rev) {
@@ -961,9 +954,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             })()
             if (sub) {
               const withSub = `${address}, ${sub}`
-              const subRes: any = await new Promise((resolve) => {
-                geocoder.geocode({ ...request, address: withSub }, (res: any, status: any) => resolve(status === 'OK' ? res : []))
-              })
+              const subRes: any = await googleApiCache.geocode({ ...request, address: withSub })
               if (subRes && subRes.length > 0) {
                 const insideSub = subRes.filter((r: any) => window.google.maps.geometry.poly.containsLocation(r.geometry.location, sectorPolygon))
                 if (insideSub.length > 0) inside = insideSub
@@ -1000,7 +991,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       }
 
       // Разрешаем координаты для всех точек маршрута
-      const originRes = await geocodeWithSector(route.startAddress)
+      let originRes = await geocodeWithSector(route.startAddress)
       const waypointResList: Array<any | null> = []
       let prevPoint = originRes?.geometry?.location || null
       for (const order of route.orders) {
@@ -1011,7 +1002,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         waypointResList.push(res)
         if (res?.geometry?.location) prevPoint = res.geometry.location
       }
-      const destinationRes = await geocodeWithSector(route.endAddress, prevPoint)
+      let destinationRes = await geocodeWithSector(route.endAddress, prevPoint)
       // Подготовим метаинформацию для визуальной верификации
       const buildMeta = (res: any, raw: string) => {
         if (!res) return null
@@ -1061,7 +1052,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           // origin
           if (originRes && !isInside(originRes.geometry.location)) {
             const fix = await geocodeInsideOnly(route.startAddress, null)
-            if (fix) (originRes as any) = fix
+            if (fix) originRes = fix
           }
           // waypoints
           for (let i = 0; i < waypointResList.length; i++) {
@@ -1077,7 +1068,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           if (destinationRes && !isInside(destinationRes.geometry.location)) {
             const prev = waypointResList.length > 0 ? (waypointResList[waypointResList.length-1]?.geometry?.location || null) : (originRes?.geometry?.location || null)
             const fix = await geocodeInsideOnly(route.endAddress, prev)
-            if (fix) (destinationRes as any) = fix
+            if (fix) destinationRes = fix
           }
 
           // Повторная валидация
@@ -1120,8 +1111,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         provideRouteAlternatives: false
       }
 
-      directionsService.route(request, (result: any, status: any) => {
-        if (status === window.google.maps.DirectionsStatus.OK && result) {
+      const result = await googleApiCache.getDirections(request)
+      if (result) {
           // Если задан сектор (полигон) для города — проверяем попадание всех точек
           const settings = localStorageUtils.getAllSettings()
           const city = cityCtx.city
@@ -1159,40 +1150,40 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             console.warn(`Аномальное расстояние: ${distanceKm.toFixed(1)} км > ${maxKm} км. Повторяем расчет с принудительным городом/страной.`)
             // Повторная попытка с жестким добавлением города/страны
             const forcedRequest = request
-            return directionsService.route(forcedRequest, (result2: any, status2: any) => {
-              if (status2 === window.google.maps.DirectionsStatus.OK && result2) {
-                const totalDistance2 = result2.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
-                const totalDuration2 = result2.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
-                const distanceKm2 = totalDistance2 / 1000
-                console.log('Retry Distance Calculation (forced city/country):', {
-                  distanceKm2,
-                  legs: result2.routes[0].legs.map((leg: any, i: number) => ({
-                    i,
-                    startAddress: leg.start_address,
-                    endAddress: leg.end_address,
-                    distance: leg.distance,
-                    duration: leg.duration
-                  }))
-                })
-                updateExcelData((prev: any) => ({
-                  ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
-                  routes: (prev?.routes || []).map((r: Route) =>
-                    r.id === route.id
-                      ? {
-                          ...r,
-                          totalDistance: distanceKm2,
-                          totalDuration: totalDuration2 / 60,
-                          isOptimized: true,
-                          geoMeta: routeGeoMeta
-                        }
-                      : r
-                  )
+            const result2 = await googleApiCache.getDirections(forcedRequest)
+            if (result2) {
+              const totalDistance2 = result2.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
+              const totalDuration2 = result2.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
+              const distanceKm2 = totalDistance2 / 1000
+              console.log('Retry Distance Calculation (forced city/country):', {
+                distanceKm2,
+                legs: result2.routes[0].legs.map((leg: any, i: number) => ({
+                  i,
+                  startAddress: leg.start_address,
+                  endAddress: leg.end_address,
+                  distance: leg.distance,
+                  duration: leg.duration
                 }))
-              } else {
-                console.error('Ошибка повторного расчета маршрута:', status2)
-              }
-              setIsCalculating(false)
-            })
+              })
+              updateExcelData((prev: any) => ({
+                ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
+                routes: (prev?.routes || []).map((r: Route) =>
+                  r.id === route.id
+                    ? {
+                        ...r,
+                        totalDistance: distanceKm2,
+                        totalDuration: totalDuration2 / 60,
+                        isOptimized: true,
+                        geoMeta: routeGeoMeta
+                      }
+                    : r
+                )
+              }))
+            } else {
+              console.error('Ошибка повторного расчета маршрута')
+            }
+            setIsCalculating(false)
+            return
           }
           
           // Проверяем, что маршрут не превышает 100км (возможная ошибка в адресе)
@@ -1231,16 +1222,15 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             )
           }))
         } else {
-          console.error('Ошибка расчета маршрута:', status)
-          alert('Ошибка расчета маршрута')
+          console.error('Ошибка расчета маршрута')
         }
+        
         setIsCalculating(false)
-      })
-    } catch (error) {
-      console.error('Ошибка при расчете маршрута:', error)
-      alert('Ошибка при расчете маршрута')
-      setIsCalculating(false)
-    }
+      } catch (error: any) {
+        console.error('Ошибка при расчете маршрута:', error)
+        alert(`Ошибка при расчете маршрута: ${error.message || 'Неизвестная ошибка'}`)
+        setIsCalculating(false)
+      }
   }
 
   const deleteRoute = (routeId: string) => {
@@ -1392,34 +1382,86 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     return rounded.toFixed(1).replace('.', ',')
   }
 
+  // Функция для перевода состояний геокодирования на русский
+  const translateLocationType = (locationType: string): string => {
+    const translations: Record<string, string> = {
+      'ROOFTOP': 'Точный адрес',
+      'RANGE_INTERPOLATED': 'Интерполированный',
+      'GEOMETRIC_CENTER': 'Геометрический центр',
+      'APPROXIMATE': 'Приблизительный',
+      'UNKNOWN': 'Неизвестно'
+    }
+    return translations[locationType] || locationType
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className={clsx(
-        'rounded-lg shadow-sm border p-6',
-        isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+        'rounded-3xl p-8 shadow-2xl border-2 overflow-hidden relative',
+        isDark 
+          ? 'bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 border-gray-700' 
+          : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-blue-200'
       )}>
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className={clsx(
-              'text-2xl font-bold',
-              isDark ? 'text-gray-100' : 'text-gray-900'
-            )}>Управление маршрутами</h1>
-            <p className={clsx(
-              'mt-1 text-sm',
-              isDark ? 'text-gray-400' : 'text-gray-600'
-            )}>
-              Создавайте маршруты для курьеров и рассчитывайте расстояния
-            </p>
-          </div>
-          <div className={clsx(
-            'flex items-center space-x-4 text-sm',
-            isDark ? 'text-gray-400' : 'text-gray-500'
-          )}>
-            <span>{couriers.length} курьеров, {(excelData?.routes?.length ?? 0)} маршрутов</span>
-            <div className="flex items-center space-x-1">
-              <div className={`w-2 h-2 rounded-full ${googleMapsReady ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
-              <span>{googleMapsReady ? 'Google Maps готов' : 'Загрузка Google Maps...'}</span>
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10 opacity-50"></div>
+        <div className="relative z-10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className={clsx(
+                'p-4 rounded-2xl shadow-lg',
+                isDark 
+                  ? 'bg-gradient-to-br from-blue-600 to-purple-600' 
+                  : 'bg-gradient-to-br from-blue-500 to-indigo-600'
+              )}>
+                <MapIcon className="w-8 h-8 text-white" />
+              </div>
+              <div>
+                <h1 className={clsx(
+                  'text-3xl font-bold mb-1 bg-gradient-to-r bg-clip-text text-transparent',
+                  isDark 
+                    ? 'from-blue-400 to-purple-400' 
+                    : 'from-blue-600 to-indigo-600'
+                )}>
+                  Управление маршрутами
+                </h1>
+                <p className={clsx('text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>
+                  Создавайте маршруты для курьеров и рассчитывайте расстояния
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4">
+              <div className={clsx(
+                'flex items-center space-x-4 text-sm',
+                isDark ? 'text-gray-400' : 'text-gray-500'
+              )}>
+                <span>{couriers.length} курьеров, {(excelData?.routes?.length ?? 0)} маршрутов</span>
+              </div>
+              <Tooltip
+                content="Открыть справку и инструкции по управлению маршрутами"
+                position="left"
+              >
+                <button
+                  onClick={() => {
+                    setShowHelpModal(true)
+                    if (!hasSeenHelp) {
+                      localStorage.setItem('km_routes_has_seen_help', 'true')
+                      setHasSeenHelp(true)
+                    }
+                  }}
+                  className={clsx(
+                    'p-3 rounded-xl transition-all hover:scale-105',
+                    isDark 
+                      ? 'bg-gray-700 hover:bg-gray-600 text-blue-400' 
+                      : 'bg-white hover:bg-blue-50 text-blue-600 shadow-lg'
+                  )}
+                >
+                  <QuestionMarkCircleIcon className="w-6 h-6" />
+                </button>
+              </Tooltip>
+              <div className="flex items-center space-x-1">
+                <div className={`w-2 h-2 rounded-full ${googleMapsReady ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                <span>{googleMapsReady ? 'Google Maps готов' : 'Загрузка Google Maps...'}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -1506,7 +1548,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 </p>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-2" data-tour="courier-select">
                 {paginatedCouriers.map(courierName => {
                   const vehicleType = getCourierVehicleType(courierName)
                   return (
@@ -1615,6 +1657,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 <button
                   onClick={createRoute}
                   disabled={selectedOrders.size === 0 || isRouteDuplicate(selectedCourier, selectedOrders)}
+                  data-tour="create-route"
                   className={clsx(
                     'flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-colors',
                     selectedOrders.size === 0 || isRouteDuplicate(selectedCourier, selectedOrders)
@@ -1671,90 +1714,20 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   />
                 </div>
 
-                {/* Фильтр по времени */}
-                <div>
-                  <label className={clsx(
-                    'block text-sm font-medium mb-1',
-                    isDark ? 'text-gray-300' : 'text-gray-700'
-                  )}>
-                    Время доставки
-                  </label>
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={() => setTimeFilter('all')}
-                      className={clsx(
-                        'px-3 py-1 text-xs rounded-full transition-colors',
-                        timeFilter === 'all'
-                          ? isDark 
-                            ? 'bg-blue-600 text-white' 
-                            : 'bg-blue-100 text-blue-800'
-                          : isDark 
-                            ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      )}
-                    >
-                      Все
-                    </button>
-                    <button
-                      onClick={() => setTimeFilter('morning')}
-                      className={clsx(
-                        'px-3 py-1 text-xs rounded-full transition-colors',
-                        timeFilter === 'morning'
-                          ? isDark 
-                            ? 'bg-yellow-600 text-white' 
-                            : 'bg-yellow-100 text-yellow-800'
-                          : isDark 
-                            ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      )}
-                    >
-                      Утро (6-12)
-                    </button>
-                    <button
-                      onClick={() => setTimeFilter('afternoon')}
-                      className={clsx(
-                        'px-3 py-1 text-xs rounded-full transition-colors',
-                        timeFilter === 'afternoon'
-                          ? isDark 
-                            ? 'bg-orange-600 text-white' 
-                            : 'bg-orange-100 text-orange-800'
-                          : isDark 
-                            ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      )}
-                    >
-                      День (12-18)
-                    </button>
-                    <button
-                      onClick={() => setTimeFilter('evening')}
-                      className={clsx(
-                        'px-3 py-1 text-xs rounded-full transition-colors',
-                        timeFilter === 'evening'
-                          ? isDark 
-                            ? 'bg-purple-600 text-white' 
-                            : 'bg-purple-100 text-purple-800'
-                          : isDark 
-                            ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      )}
-                    >
-                      Вечер (18+)
-                    </button>
-                  </div>
-                </div>
               </div>
 
-              <div className={clsx(
-                'max-h-96 overflow-y-auto scrollbar-thin',
-                isDark 
-                  ? 'scrollbar-thumb-gray-600 scrollbar-track-gray-800' 
-                  : 'scrollbar-thumb-gray-300 scrollbar-track-gray-100'
-              )}>
+              <div 
+                className={clsx(
+                  'max-h-96 overflow-y-auto scrollbar-thin',
+                  isDark 
+                    ? 'scrollbar-thumb-gray-600 scrollbar-track-gray-800' 
+                    : 'scrollbar-thumb-gray-300 scrollbar-track-gray-100'
+                )}
+                data-tour="order-select"
+              >
                 {(() => {
     let allOrders = sortOrdersByTime(
-      searchOrders(
-        filterOrdersByTime(courierOrders[selectedCourier] || [])
-      )
+      searchOrders(courierOrders[selectedCourier] || [])
     )
     // Дедупликация на случай дублей данных из источника
     const seenOrders = new Set<string>()
@@ -1904,7 +1877,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
               )}>Создайте маршруты для курьеров</p>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-4" data-tour="route-list">
                 {paginatedRoutes.map(route => (
                   <div key={route.id} className={clsx(
                     'border rounded-lg p-4 transition-all duration-200 ease-in-out hover:shadow-md hover:scale-[1.01]',
@@ -1998,7 +1971,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                               : meta.locationType === 'RANGE_INTERPOLATED'
                                 ? (isDark ? 'bg-yellow-900/30 text-yellow-300' : 'bg-yellow-100 text-yellow-800')
                                 : (isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-700')
-                          )}>{meta.locationType}</span>
+                          )}>{translateLocationType(meta.locationType)}</span>
                           {typeof meta.streetNumberMatched === 'boolean' && (
                             <span className={clsx(
                               'px-1.5 py-0.5 rounded',
@@ -2352,6 +2325,106 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Система помощи */}
+      {showHelpModal && (
+        <Suspense fallback={null}>
+          <HelpModalRoutes
+            isOpen={showHelpModal}
+            onClose={() => setShowHelpModal(false)}
+            onStartTour={() => {
+              setShowHelpModal(false)
+              setTimeout(() => setShowHelpTour(true), 300)
+            }}
+          />
+        </Suspense>
+      )}
+
+      {/* Интерактивный тур */}
+      {showHelpTour && (
+        <Suspense fallback={null}>
+          <HelpTour
+            isOpen={showHelpTour}
+            onClose={() => setShowHelpTour(false)}
+            onComplete={() => {
+              setShowHelpTour(false)
+              localStorage.setItem('km_routes_has_seen_help', 'true')
+              setHasSeenHelp(true)
+            }}
+            steps={[
+          {
+            id: 'courier-select',
+            title: '👤 Выбор курьера',
+            content: `📋 Начните с выбора курьера из списка слева.
+
+🎯 Что делать:
+1. Найдите нужного курьера в списке
+2. Кликните на карточку курьера
+3. После выбора вы увидите доступные заказы справа
+
+💡 Подсказка: Используйте фильтры "Все", "Авто" или "Мото" для быстрого поиска нужного типа курьера.`,
+            target: '[data-tour="courier-select"]',
+            position: 'right'
+          },
+          {
+            id: 'order-select',
+            title: '📦 Выбор заказов',
+            content: `🖱️ Кликните на заказы, чтобы добавить их в маршрут.
+
+📊 Как это работает:
+• Порядок выбора = порядок доставки
+• Выбранные заказы подсвечиваются синим
+• Используйте кнопки ↑ и ↓ для изменения порядка
+
+✅ Пример:
+1. Кликните на заказ #001 → он станет первым
+2. Кликните на заказ #002 → он станет вторым
+3. Используйте стрелки для изменения порядка
+
+⚠️ Заказы, уже находящиеся в других маршрутах, нельзя выбрать.`,
+            target: '[data-tour="order-select"]',
+            position: 'left'
+          },
+          {
+            id: 'create-route',
+            title: '✨ Создание маршрута',
+            content: `🚀 После выбора заказов нажмите кнопку "Создать маршрут".
+
+⚙️ Что происходит:
+1. Система создает новый маршрут
+2. Автоматически рассчитывает расстояние
+3. Маршрут появляется в списке внизу
+
+📋 Требования:
+• Должен быть выбран курьер
+• Должен быть выбран хотя бы один заказ
+
+💡 После создания маршрут автоматически рассчитывается через Google Maps API.`,
+            target: '[data-tour="create-route"]',
+            position: 'top'
+          },
+          {
+            id: 'route-list',
+            title: '🗺️ Список маршрутов',
+            content: `📋 Здесь отображаются все созданные маршруты.
+
+🎯 Доступные действия:
+🗺️ Открыть в Google Maps - просмотр маршрута
+🔄 Пересчитать - обновить расстояние и время
+🗑️ Удалить - удалить маршрут
+
+📊 Информация о маршруте:
+• Количество заказов
+• Общее расстояние (км)
+• Время в пути (минуты)
+• Статус оптимизации`,
+            target: '[data-tour="route-list"]',
+            position: 'top'
+          }
+        ] as TourStep[]}
+          />
+        </Suspense>
       )}
     </div>
   )

@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const ExcelService = require('./src/services/ExcelService_v3');
+const telegramRoutes = require('./src/routes/telegramRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -43,6 +44,15 @@ app.get('/', (req, res) => {
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+
+// Тестовый эндпоинт для проверки Telegram роутов
+app.get('/api/telegram/test', (req, res) => {
+  res.json({ 
+    success: true, 
+    message: 'Telegram routes are working',
+    timestamp: new Date().toISOString() 
+  });
 });
 
 app.post('/api/upload/excel', upload.single('file'), async (req, res) => {
@@ -149,6 +159,9 @@ app.post('/api/upload/batch-geocode', (_req, res) => {
 app.get('/api/analytics/dashboard', (_req, res) => res.json({ success: true, data: {} }))
 app.get('/api/analytics/courier-performance', (_req, res) => res.json({ success: true, data: [] }))
 app.get('/api/analytics/route-analytics', (_req, res) => res.json({ success: true, data: {} }))
+
+// Telegram routes
+app.use('/api/telegram', telegramRoutes);
 
 app.get('/debug/logs', (req, res) => {
   res.json({

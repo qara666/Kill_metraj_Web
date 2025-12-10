@@ -114,7 +114,31 @@ export const CitySectorsEditor: React.FC<{
           Сначала выберите город выше, затем настройте сектор на карте.
         </p>
       )}
-      <div ref={mapRef} className="w-full h-80 rounded-lg border" style={{ borderColor: isDark ? '#374151' : '#e5e7eb' }} />
+      <div className="relative">
+        <div ref={mapRef} className="w-full h-80 rounded-lg border" style={{ borderColor: isDark ? '#374151' : '#e5e7eb' }} />
+        {city && polygon && (
+          <button
+            type="button"
+            onClick={() => {
+              if (polygon) {
+                polygon.setMap(null)
+                setPolygon(null)
+                const next = { ...(value || {}) }
+                if (city) next[city] = []
+                onChange(next)
+              }
+            }}
+            className={clsx(
+              'absolute top-2 right-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors z-10',
+              isDark 
+                ? 'bg-red-600 hover:bg-red-700 text-white' 
+                : 'bg-red-500 hover:bg-red-600 text-white'
+            )}
+          >
+            Очистить
+          </button>
+        )}
+      </div>
       {city && (
         <div className={clsx('mt-2 text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
           Нарисуйте полигон (многоугольник), ограничивающий допустимую зону адресов для города {city}. Редактировать можно перетаскиванием точек.

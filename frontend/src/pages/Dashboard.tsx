@@ -1,13 +1,6 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
-import { 
-  UserGroupIcon, 
-  MapIcon, 
-  TruckIcon,
-  CheckCircleIcon
-} from '@heroicons/react/24/outline'
-import { StatsCard } from '../components/StatsCard'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { ApiKeyNotification } from '../components/ApiKeyNotification'
 import { ExcelUploadSection } from '../components/ExcelUploadSection'
@@ -28,23 +21,12 @@ export const Dashboard: React.FC = () => {
   const [showExcelLogs, setShowExcelLogs] = useState(false)
   const [showDataPreview, setShowDataPreview] = useState(false)
   const [previewData, setPreviewData] = useState<any>(null)
-  const [dataLoaded, setDataLoaded] = useState(false)
   const queryClient = useQueryClient()
 
   const log = (message: string) => {
     console.log('[Dashboard]', message)
     const entry = `${new Date().toLocaleTimeString()} — ${message}`
     setLogs(prev => [entry, ...prev].slice(0, 200))
-  }
-
-  // Функция для ленивой загрузки данных
-  const loadDashboardData = () => {
-    if (!dataLoaded) {
-      queryClient.fetchQuery({ queryKey: ['dashboard'] })
-      queryClient.fetchQuery({ queryKey: ['couriers'] })
-      queryClient.fetchQuery({ queryKey: ['routes'] })
-      setDataLoaded(true)
-    }
   }
 
   // Функция для объединения данных с проверкой дубликатов
@@ -246,16 +228,6 @@ export const Dashboard: React.FC = () => {
     } catch {}
   }, [excelLogs])
 
-  // Fetch dashboard data (ленивая загрузка)
-  const { data: dashboardData, isLoading: dashboardLoading } = useQuery({
-    queryKey: ['dashboard'],
-    queryFn: () => api.analyticsApi.getDashboardAnalytics(),
-    enabled: false, // Отключаем автоматическую загрузку
-    staleTime: 5 * 60 * 1000, // 5 минут
-  })
-
-  // Fetch couriers (ленивая загрузка) - удалено, не используется
-  // Fetch routes (ленивая загрузка) - удалено, не используется
 
   // Process Excel file mutation
   const processFileMutation = useMutation({
@@ -297,7 +269,29 @@ export const Dashboard: React.FC = () => {
         if (mergedData && excelData?.routes && excelData.routes.length > 0 && (!mergedData.routes || mergedData.routes.length === 0)) {
             mergedData.routes = [...excelData.routes]
         }
+        
+        // Убеждаемся, что все массивы определены
+        if (!mergedData.orders) mergedData.orders = []
+        if (!mergedData.couriers) mergedData.couriers = []
+        if (!mergedData.paymentMethods) mergedData.paymentMethods = []
+        if (!mergedData.routes) mergedData.routes = []
+        if (!mergedData.errors) mergedData.errors = []
+        
+        // Сохраняем данные в контекст (это автоматически сохранит в localStorage)
         setExcelData(mergedData)
+        
+        // Дополнительно проверяем, что данные сохранились
+        try {
+          const saved = localStorage.getItem('km_dashboard_processed_data')
+          if (saved) {
+            const parsed = JSON.parse(saved)
+            log(`✅ Данные сохранены в localStorage: ${parsed?.orders?.length || 0} заказов, ${parsed?.couriers?.length || 0} курьеров`)
+          } else {
+            log(`⚠️ Данные не сохранились в localStorage!`)
+          }
+        } catch (e) {
+          console.warn('Ошибка проверки сохранения:', e)
+        }
         
         // Логируем результаты объединения
         const existingOrdersCount = excelData?.orders?.length || 0
@@ -317,6 +311,14 @@ export const Dashboard: React.FC = () => {
         if (newData && excelData?.routes && excelData.routes.length > 0 && (!newData.routes || newData.routes.length === 0)) {
             newData.routes = [...excelData.routes]
         }
+        
+        // Убеждаемся, что все массивы определены
+        if (!newData.orders) newData.orders = []
+        if (!newData.couriers) newData.couriers = []
+        if (!newData.paymentMethods) newData.paymentMethods = []
+        if (!newData.routes) newData.routes = []
+        if (!newData.errors) newData.errors = []
+        
         setExcelData(newData)
         mergedData = newData
         log(`Ошибка объединения данных, используются только новые данные`)
@@ -384,18 +386,6 @@ export const Dashboard: React.FC = () => {
     log('Пользователь подтвердил сохранение данных из Excel')
   }
 
-  const stats = (dashboardData as any)?.data?.overview || {
-    totalOrders: 0,
-    totalRevenue: 0,
-    totalCouriers: 0,
-    totalRoutes: 0,
-    activeRoutes: 0,
-    activeCouriers: 0,
-    averageOrdersPerRoute: 0,
-    completionRate: 0,
-    completedRoutes: 0
-  }
-
   return (
     <div className={clsx(
       'space-y-6 transition-colors duration-300',
@@ -403,63 +393,6 @@ export const Dashboard: React.FC = () => {
     )}>
       {/* API Key Notification */}
       <ApiKeyNotification />
-      
-      {/* Load Data Button */}
-      {!dataLoaded && (
-        <div className="text-center py-8">
-          <button
-            onClick={loadDashboardData}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 transform hover:scale-105"
-          >
-            Загрузить данные панели управления
-          </button>
-          <p className="mt-2 text-sm text-gray-500">
-            Нажмите для загрузки статистики и данных
-          </p>
-        </div>
-      )}
-
-      {/* Loading State */}
-      {dashboardLoading && dataLoaded && (
-        <div className="text-center py-8">
-          <LoadingSpinner />
-          <p className="mt-2 text-sm text-gray-500">Загрузка данных...</p>
-        </div>
-      )}
-
-      {/* Stats Overview */}
-      {stats && dataLoaded && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <StatsCard
-            title="Всего маршрутов"
-            value={stats.totalRoutes}
-            icon={MapIcon}
-            color="primary"
-            change={`${stats.activeRoutes} активных`}
-          />
-          <StatsCard
-            title="Всего курьеров"
-            value={stats.totalCouriers}
-            icon={UserGroupIcon}
-            color="success"
-            change={`${stats.activeCouriers} активных`}
-          />
-          <StatsCard
-            title="Всего заказов"
-            value={stats.totalOrders}
-            icon={TruckIcon}
-            color="warning"
-            change={`${stats.averageOrdersPerRoute.toFixed(1)} среднее/маршрут`}
-          />
-          <StatsCard
-            title="Процент выполнения"
-            value={`${stats.completionRate.toFixed(1)}%`}
-            icon={CheckCircleIcon}
-            color="success"
-            change={`${stats.completedRoutes} завершено`}
-          />
-        </div>
-      )}
 
       {/* Excel Upload Section */}
       <ExcelUploadSection

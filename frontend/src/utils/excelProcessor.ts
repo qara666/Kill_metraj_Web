@@ -118,19 +118,58 @@ const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
   // Находим строку с заголовками (может быть не первая из-за объединённых ячеек)
   let headerRowIndex = 0
   let headers: string[] = []
+  let subHeaderRowIndex = -1
+  let subHeaders: string[] = []
+  
+  // ВАЖНО: Логируем первые 5 строк для диагностики
+  console.log('📋 [Excel Processor] Первые 5 строк файла для поиска заголовков:')
+  for (let i = 0; i < Math.min(5, jsonData.length); i++) {
+    const row = jsonData[i] as any[]
+    console.log(`  Строка ${i + 1}:`, row.slice(0, 15).map((c, idx) => `${idx}: "${String(c || '').substring(0, 30)}"`))
+  }
   
   // Ищем строку, которая содержит ключевые слова заголовков
   for (let i = 0; i < Math.min(5, jsonData.length); i++) {
     const row = jsonData[i] as any[]
     const rowStr = row.map(c => String(c || '').toLowerCase()).join('|')
     
-    // Проверяем наличие ключевых заголовков
+    // Проверяем наличие ключевых заголовков (включая время)
     if (rowStr.includes('адрес') || rowStr.includes('address') || 
         rowStr.includes('номер') || rowStr.includes('number') ||
-        rowStr.includes('телефон') || rowStr.includes('phone')) {
+        rowStr.includes('телефон') || rowStr.includes('phone') ||
+        rowStr.includes('время') || rowStr.includes('time') ||
+        rowStr.includes('дата') || rowStr.includes('date') ||
+        rowStr.includes('кухню') || rowStr.includes('kitchen') ||
+        rowStr.includes('плановое') || rowStr.includes('planned') ||
+        rowStr.includes('доставить') || rowStr.includes('deliver')) {
       headerRowIndex = i
       headers = row.map(c => String(c || '').trim())
-      console.log(`Найдена строка заголовков в строке ${i + 1}:`, headers)
+      console.log(`✅ [Excel Processor] Найдена строка заголовков в строке ${i + 1}:`, headers.slice(0, 20))
+      console.log(`📋 [Excel Processor] Все заголовки (${headers.length}):`, headers)
+      
+      // ВАЖНО: Проверяем следующую строку на наличие подзаголовков
+      // Если в строке заголовков есть "Дата", проверяем следующую строку на подзаголовки
+      const hasDateHeader = headers.some(h => {
+        const lower = String(h || '').toLowerCase().trim()
+        return lower === 'дата' || lower === 'date'
+      })
+      
+      if (hasDateHeader && i + 1 < jsonData.length) {
+        const nextRow = jsonData[i + 1] as any[]
+        const nextRowStr = nextRow.map(c => String(c || '').toLowerCase()).join('|')
+        
+        // Проверяем, содержит ли следующая строка подзаголовки времени
+        if (nextRowStr.includes('время на кухню') || nextRowStr.includes('kitchen') ||
+            nextRowStr.includes('доставить к') || nextRowStr.includes('deliver') ||
+            nextRowStr.includes('плановое') || nextRowStr.includes('planned') ||
+            nextRowStr.includes('создания') || nextRowStr.includes('creation')) {
+          subHeaderRowIndex = i + 1
+          subHeaders = nextRow.map(c => String(c || '').trim())
+          console.log(`✅ [Excel Processor] Найдена строка подзаголовков в строке ${i + 2}:`, subHeaders.slice(0, 20))
+          console.log(`📋 [Excel Processor] Все подзаголовки (${subHeaders.length}):`, subHeaders)
+        }
+      }
+      
       break
     }
   }
@@ -138,11 +177,119 @@ const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
   // Если не нашли, используем первую строку
   if (headers.length === 0) {
     headers = (jsonData[0] || []).map(c => String(c || '').trim())
-    console.log('Используем первую строку как заголовки:', headers)
+    console.log('⚠️ [Excel Processor] Используем первую строку как заголовки:', headers.slice(0, 20))
+    
+    // Проверяем вторую строку на подзаголовки
+    if (jsonData.length > 1) {
+      const secondRow = jsonData[1] as any[]
+      const secondRowStr = secondRow.map(c => String(c || '').toLowerCase()).join('|')
+      if (secondRowStr.includes('время на кухню') || secondRowStr.includes('kitchen') ||
+          secondRowStr.includes('доставить к') || secondRowStr.includes('deliver') ||
+          secondRowStr.includes('плановое') || secondRowStr.includes('planned')) {
+        subHeaderRowIndex = 1
+        subHeaders = secondRow.map(c => String(c || '').trim())
+        console.log(`✅ [Excel Processor] Найдена строка подзаголовков в строке 2:`, subHeaders.slice(0, 20))
+      }
+    }
+  }
+  
+  // ВАЖНО: Объединяем заголовки с подзаголовками
+  // Если есть подзаголовки, создаем составные ключи типа "Дата.время на кухню"
+  if (subHeaders.length > 0 && headers.length > 0) {
+    const mergedHeaders: string[] = []
+    const maxLength = Math.max(headers.length, subHeaders.length)
+    
+    // Находим индекс столбца "Дата" в основных заголовках
+    let dateHeaderIndex = -1
+    for (let i = 0; i < headers.length; i++) {
+      const h = String(headers[i] || '').toLowerCase().trim()
+      if (h === 'дата' || h === 'date') {
+        dateHeaderIndex = i
+        break
+      }
+    }
+    
+    console.log(`📋 [Excel Processor] Индекс столбца "Дата": ${dateHeaderIndex}`)
+    
+    // ВАЖНО: Создаем один ключ на столбец, чтобы сохранить правильную индексацию
+    // ПРОБЛЕМА: Когда "Дата" объединена на несколько столбцов, в headers только первый столбец содержит "Дата",
+    // остальные пустые, но в subHeaders все столбцы содержат подзаголовки ("создания", "время на кухню", и т.д.)
+    for (let i = 0; i < maxLength; i++) {
+      const mainHeader = headers[i] || ''
+      const subHeader = subHeaders[i] || ''
+      
+      // ВАЖНО: Сначала проверяем, находимся ли мы в области "Дата" (даже если mainHeader пустой)
+      // Если dateHeaderIndex найден, проверяем, находимся ли мы в диапазоне [dateHeaderIndex, dateHeaderIndex + 4)
+      const isInDateRange = dateHeaderIndex >= 0 && i >= dateHeaderIndex && i < dateHeaderIndex + 4
+      
+      // Если мы в области "Дата" и есть подзаголовок, создаем составной ключ "Дата.подзаголовок"
+      if (isInDateRange && subHeader) {
+        // Используем оригинальное написание "Дата" из headers[dateHeaderIndex], если оно есть
+        const dateHeaderName = headers[dateHeaderIndex] || 'Дата'
+        mergedHeaders.push(`${dateHeaderName}.${subHeader}`)
+        console.log(`✅ [Excel Processor] Столбец ${i}: создан составной ключ "${dateHeaderName}.${subHeader}"`)
+      }
+      // Если есть основной заголовок и подзаголовок, но НЕ в области "Дата"
+      else if (mainHeader && subHeader && !isInDateRange) {
+        // Для других заголовков используем основной заголовок
+        mergedHeaders.push(mainHeader)
+      }
+      // Если есть только основной заголовок (и мы не в области "Дата", или нет подзаголовка)
+      else if (mainHeader && !isInDateRange) {
+        mergedHeaders.push(mainHeader)
+      }
+      // Если есть только подзаголовок, но мы НЕ в области "Дата"
+      else if (subHeader && !isInDateRange) {
+        // Это обычный подзаголовок
+        mergedHeaders.push(subHeader)
+      }
+      // Если мы в области "Дата", но нет подзаголовка - используем основной заголовок "Дата" или пустую строку
+      else if (isInDateRange && !subHeader) {
+        // Если это первый столбец "Дата", используем его; иначе пустую строку
+        if (i === dateHeaderIndex) {
+          mergedHeaders.push(headers[dateHeaderIndex] || 'Дата')
+        } else {
+          mergedHeaders.push('')
+        }
+      }
+      // Пустая ячейка - сохраняем пустую строку для сохранения индексов
+      else {
+        mergedHeaders.push('')
+      }
+    }
+    
+    // ВАЖНО: Также создаем дополнительные ключи для обратной совместимости
+    // Но не добавляем их в основной массив headers, чтобы не сломать индексацию
+    // Вместо этого, мы будем добавлять их в rowData при создании
+    
+    // Обновляем headers с объединенными заголовками
+    if (mergedHeaders.length > 0) {
+      headers = mergedHeaders
+      console.log(`✅ [Excel Processor] Объединенные заголовки (${headers.length}):`, headers.slice(0, 25))
+      console.log(`📋 [Excel Processor] Все объединенные заголовки:`, headers)
+    }
   }
   
   // Нормализуем заголовки - убираем лишние пробелы, приводим к нижнему регистру для поиска
   const normalizedHeaders = headers.map(h => h.toLowerCase().trim())
+  
+  // ВАЖНО: Логируем ВСЕ заголовки для отладки
+  console.log(`📋 Заголовки Excel (все):`, headers)
+  
+  // Находим заголовки, связанные со временем
+  const timeRelatedHeaders: Array<{index: number, header: string}> = []
+  headers.forEach((h, idx) => {
+    const lowerHeader = h.toLowerCase().trim()
+    if (lowerHeader.includes('время') || lowerHeader.includes('time') || 
+        lowerHeader.includes('дата') || lowerHeader.includes('date') ||
+        lowerHeader.includes('кухню') || lowerHeader.includes('kitchen') ||
+        lowerHeader.includes('плановое') || lowerHeader.includes('planned') ||
+        lowerHeader.includes('доставить') || lowerHeader.includes('deliver') ||
+        lowerHeader.includes('дедлайн') || lowerHeader.includes('deadline')) {
+      timeRelatedHeaders.push({index: idx, header: h})
+    }
+  })
+  console.log(`📋 Заголовки, связанные со временем:`, timeRelatedHeaders)
   
   // Ищем индекс колонки с адресом (проверяем различные варианты)
   // Список колонок, которые точно НЕ являются адресами
@@ -186,16 +333,21 @@ const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
   console.log('Точные колонки с адресом:', exactAddressIndices.map(i => `${i}: "${headers[i]}"`))
   console.log('Возможные колонки с адресом:', possibleAddressIndices.map(i => `${i}: "${headers[i]}"`))
   
-  const rows = jsonData.slice(headerRowIndex + 1) as any[][]
+  // ВАЖНО: Если есть подзаголовки, пропускаем и строку заголовков, и строку подзаголовков
+  const dataStartRow = subHeaderRowIndex >= 0 ? subHeaderRowIndex + 1 : headerRowIndex + 1
+  const rows = jsonData.slice(dataStartRow) as any[][]
+  
+  console.log(`📋 [Excel Processor] Строка начала данных: ${dataStartRow + 1} (пропущено ${dataStartRow} строк заголовков)`)
   
   const orders: any[] = []
   const couriers: any[] = []
   const paymentMethods: any[] = []
   const errors: any[] = []
   
-  // Логируем заголовки для отладки
-  console.log('Заголовки Excel (все):', headers)
-  console.log('Всего строк данных:', rows.length)
+  // Логируем заголовки для отладки (уже логировали выше)
+  console.log('📋 Всего строк данных:', rows.length)
+  
+  // Выводим заголовки, связанные со временем (уже логировали выше в timeRelatedHeaders)
   
   // Функция для валидации адреса - проверяем, что это действительно адрес, а не инструкция/комментарий
   const isValidAddress = (str: string, columnName?: string): boolean => {
@@ -454,9 +606,84 @@ const createRowData = (row: any[], headers: string[]): Record<string, any> => {
   
   headers.forEach((header, index) => {
     if (header && row[index] !== undefined) {
-      rowData[header] = row[index]
+      const value = row[index]
+      // Сохраняем значение с оригинальным названием заголовка
+      rowData[header] = value
+      
+      // ВАЖНО: Если заголовок содержит точку (например, "Дата.время на кухню"),
+      // также сохраняем просто подзаголовок для обратной совместимости
+      if (header.includes('.')) {
+        const parts = header.split('.')
+        if (parts.length === 2) {
+          const subHeader = parts[1].trim()
+          // Сохраняем как составной ключ "Дата.время на кухню"
+          rowData[header] = value
+          // Также сохраняем просто подзаголовок "время на кухню" для обратной совместимости
+          if (subHeader && !rowData[subHeader]) {
+            rowData[subHeader] = value
+          }
+        }
+      }
+      
+      // ВАЖНО: Также сохраняем с нормализованным ключом (нижний регистр, без пробелов)
+      // Это помогает при поиске полей, если заголовки немного отличаются
+      const normalizedHeader = header.toLowerCase().trim()
+      if (normalizedHeader && normalizedHeader !== header.toLowerCase()) {
+        // Не перезаписываем, если уже есть точное совпадение
+        if (!rowData[normalizedHeader]) {
+          rowData[normalizedHeader] = value
+        }
+      }
     }
   })
+  
+  // ВАЖНО: Логируем для всех строк с данными (первые 5 и строки с проблемными заказами)
+  const orderNumberMatch = row.find((cell: any) => {
+    const str = String(cell || '').trim()
+    return /^\d{7,8}$/.test(str) || str.includes('9323351') || str.includes('9324097') || str.includes('9328519')
+  })
+  
+  if (orderNumberMatch || row.length > 0) {
+    const orderNum = String(orderNumberMatch || row[0] || '').trim()
+    // Логируем для всех заказов (первые 10) и проблемных заказов
+    const shouldLog = !orderNum || orderNum.length === 0 || parseInt(orderNum) < 100 || 
+                      orderNum.includes('9323351') || orderNum.includes('9324097') || 
+                      parseInt(orderNum) >= 9320000 && parseInt(orderNum) <= 9330000
+    
+    if (shouldLog) {
+      // Находим все ключи, связанные со временем
+      const timeKeys = Object.keys(rowData).filter(k => {
+        const lower = k.toLowerCase()
+        return lower.includes('время') || lower.includes('time') || 
+               lower.includes('дата') || lower.includes('date') ||
+               lower.includes('кухню') || lower.includes('kitchen') ||
+               lower.includes('плановое') || lower.includes('planned') ||
+               lower.includes('доставить') || lower.includes('deliver') ||
+               lower.includes('создания') || lower.includes('creation')
+      })
+      
+      console.log(`📋 [createRowData] Создание rowData для строки (заказ: ${orderNum || 'не определен'}):`, {
+        'headers (первые 25)': headers.slice(0, 25),
+        'row values (первые 25)': row.slice(0, 25).map((v, i) => `${i}: "${String(v).substring(0, 40)}"`),
+        'все созданные ключи': Object.keys(rowData),
+        'ключи, связанные со временем': timeKeys,
+        'значения для времени': timeKeys.reduce((acc, k) => {
+          acc[k] = rowData[k]
+          return acc
+        }, {} as Record<string, any>),
+        'специфичные значения': {
+          'Дата.время на кухню': rowData['Дата.время на кухню'] || rowData['дата.время на кухню'] || 'не найдено',
+          'Дата.доставить к': rowData['Дата.доставить к'] || rowData['дата.доставить к'] || 'не найдено',
+          'Дата.плановое время': rowData['Дата.плановое время'] || rowData['дата.плановое время'] || 'не найдено',
+          'Дата.создания': rowData['Дата.создания'] || rowData['дата.создания'] || 'не найдено',
+          'время на кухню': rowData['время на кухню'] || rowData['время_на_кухню'] || 'не найдено',
+          'плановое время': rowData['плановое время'] || rowData['плановое_время'] || 'не найдено',
+          'доставить к': rowData['доставить к'] || rowData['доставить_к'] || 'не найдено',
+          'Дата': rowData['Дата'] || rowData['дата'] || 'не найдено',
+        }
+      })
+    }
+  }
   
   return rowData
 }
@@ -618,38 +845,291 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
     'состояние', 'status', 'статус', 'state', 'статус заказа', 'состояние заказа'
   ], 'состояние')
   
-  // Время на кухню
-  const kitchenTime = getFieldByKeywords([
+  // ВАЖНО: Время на кухню - улучшенный поиск с учетом ВСЕХ возможных названий столбцов
+  // Из скриншота: столбец "Дата" (K3-N3) содержит подстолбец "время на кухню" (L4)
+  // Формат значения: "13:00:00", "13:30:00", "20:12:24" (только время дня)
+  // Сначала пробуем точные совпадения (на русском и английском)
+  // ВАЖНО: при экспорте Excel подстолбцы могут называться просто "время на кухню" или "Дата.время на кухню"
+  let kitchenTime = getFieldByKeywords([
     'время на кухню', 'время_на_кухню', 'временакухню', 'времянакухню',
     'kitchen time', 'kitchen_time', 'kitchentime', 'time to kitchen',
     'время готовности', 'время_готовности', 'времяготовности',
-    'ready time', 'ready_time', 'readytime'
+    'ready time', 'ready_time', 'readytime',
+    'время готовки', 'времяготовки', 'cooking time',
+    // Подстолбцы из столбца "Дата":
+    'дата.время на кухню', 'дата время на кухню', 'дата_время_на_кухню',
+    'date.время на кухню', 'date время на кухню', 'date_время_на_кухню',
+    'Дата.время на кухню', 'Дата время на кухню', 'Дата_время_на_кухню'
   ], 'время на кухню')
   
-  // Плановое время
-  const plannedTime = getFieldByKeywords([
+  // Если не нашли, проверяем ВСЕ ключи в rowData, которые содержат "время" И "кухню"
+  // Учитываем все варианты написания, включая подстолбцы из столбца "Дата"
+  // ВАЖНО: из скриншота видно, что подстолбец может называться просто "время на кухню" (без префикса "Дата.")
+  if (!kitchenTime) {
+    for (const key in rowData) {
+      const lowerKey = key.toLowerCase().trim()
+      // Ищем ключи, которые содержат и "время" и "кухню", или "kitchen" и "time"
+      // Также учитываем вложенные структуры типа "Дата.время на кухню" или просто "время на кухню"
+      // ВАЖНО: проверяем точное совпадение "время на кухню" (с пробелами) или варианты с "Дата."
+      const exactMatch = lowerKey === 'время на кухню' || lowerKey === 'время_на_кухню' || 
+                        lowerKey.includes('дата.время на кухню') || lowerKey.includes('дата.время_на_кухню') ||
+                        lowerKey.includes('date.время на кухню') || lowerKey.includes('date.время_на_кухню')
+      const hasTime = lowerKey.includes('время') || lowerKey.includes('time')
+      const hasKitchen = lowerKey.includes('кухню') || lowerKey.includes('кухня') || lowerKey.includes('kitchen')
+      const hasReady = lowerKey.includes('готов') || lowerKey.includes('готовность') || lowerKey.includes('ready')
+      
+      // Если это точное совпадение или содержит "время" и "кухню"
+      if ((exactMatch || (hasTime && (hasKitchen || hasReady))) && 
+          !lowerKey.includes('плановое') && !lowerKey.includes('planned') &&
+          !lowerKey.includes('доставки') && !lowerKey.includes('delivery') &&
+          !lowerKey.includes('доставить') && !lowerKey.includes('deliver')) {
+        const value = rowData[key]
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+          const strVal = String(value).trim()
+          // Пропускаем длительности
+          if (!strVal.toLowerCase().includes('мин.') && !strVal.toLowerCase().includes('час')) {
+            kitchenTime = strVal
+            console.log(`✅ [Excel Processor] Найдено "время на кухню" в поле "${key}": ${kitchenTime}`)
+            break
+          }
+        }
+      }
+    }
+  }
+  
+  // Если все еще не нашли, проверяем столбец "Дата" - он может содержать дату и время
+  // Excel serial date (например, 45963.524247685185) содержит и дату, и время
+  if (!kitchenTime && rowData['Дата']) {
+    const dateValue = rowData['Дата']
+    // Пробуем парсить как Excel serial date
+    const excelDate = parseFloat(String(dateValue))
+    if (!isNaN(excelDate) && excelDate > 25569) { // 25569 = 01.01.1970 в Excel
+      // Excel serial date - конвертируем в JS Date
+      const jsDate = new Date((excelDate - 25569) * 86400 * 1000)
+      if (!isNaN(jsDate.getTime())) {
+        kitchenTime = jsDate.toISOString()
+        console.log(`✅ [Excel Processor] Найдено "время на кухню" в столбце "Дата" (Excel serial): ${kitchenTime}`)
+      }
+    } else {
+      // Пробуем парсить как строку даты
+      const dateStr = String(dateValue).trim()
+      if (dateStr.includes('/') || dateStr.includes('.') || dateStr.includes('-') || dateStr.includes(':')) {
+        kitchenTime = dateStr
+        console.log(`✅ [Excel Processor] Найдено "время на кухню" в столбце "Дата" (строка): ${kitchenTime}`)
+      }
+    }
+  }
+  
+  // Если все еще не нашли, пробуем поиск только по "кухню" или "готов" (без требования "время")
+  if (!kitchenTime) {
+    for (const key in rowData) {
+      const lowerKey = key.toLowerCase().trim()
+      if ((lowerKey.includes('кухню') || lowerKey.includes('кухня') || lowerKey.includes('kitchen') ||
+           (lowerKey.includes('готов') && !lowerKey.includes('доставки'))) && 
+          !lowerKey.includes('плановое') && !lowerKey.includes('planned') &&
+          !lowerKey.includes('доставить') && !lowerKey.includes('deliver')) {
+        const value = rowData[key]
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+          const strVal = String(value).trim().toLowerCase()
+          // Пропускаем длительности
+          if (!strVal.includes('мин.') && !strVal.includes('час')) {
+            // Проверяем, что это похоже на время/дату, а не на длительность
+            const fullValue = String(value).trim()
+            if (fullValue.includes(':') || fullValue.includes('/') || fullValue.includes('.') || 
+                !isNaN(parseFloat(fullValue))) {
+              kitchenTime = fullValue
+              console.log(`✅ [Excel Processor] Найдено "время на кухню" (только по "кухню"/"готов") в поле "${key}": ${kitchenTime}`)
+              break
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  // ВАЖНО: Плановое время - улучшенный поиск с учетом ВСЕХ возможных названий столбцов
+  // Из скриншота: столбец "Дата" (K3-N3) содержит подстолбцы:
+  //   - "доставить к" (M4) - формат: "29.10.2025 13:30" (дата и время)
+  //   - "плановое время" (N4) - формат: "29.10.2025 13:30" (дата и время)
+  // ВАЖНО: при экспорте Excel подстолбцы могут называться просто "доставить к"/"плановое время" или "Дата.доставить к"/"Дата.плановое время"
+  // Сначала пробуем точные совпадения (на русском и английском)
+  let plannedTime = getFieldByKeywords([
     'плановое время', 'плановое_время', 'плановоевремя',
     'planned time', 'planned_time', 'plannedtime',
-    'время доставки', 'время_доставки', 'времядодоставки',
+    'время доставки', 'время_доставки', 'времядодоставки', // НО: может содержать длительность!
     'delivery time', 'delivery_time', 'deliverytime',
-    'дедлайн', 'deadline', 'deadline_time'
+    'дедлайн', 'deadline', 'deadline_time',
+    'доставить к', 'доставить_к', 'доставить к', 'доставитьк',
+    // Подстолбцы из столбца "Дата":
+    'дата.плановое время', 'дата плановое время', 'дата_плановое_время',
+    'date.плановое время', 'date плановое время', 'date_плановое_время',
+    'Дата.плановое время', 'Дата плановое время', 'Дата_плановое_время',
+    'дата.доставить к', 'дата доставить к', 'дата_доставить_к', 'дата.доставитьк',
+    'date.доставить к', 'date доставить к', 'date_доставить_к', 'date.доставитьк',
+    'Дата.доставить к', 'Дата доставить к', 'Дата_доставить_к', 'Дата.доставитьк'
   ], 'плановое время')
   
-  return {
+  // ВАЖНО: "Время доставки" может содержать длительность (например, "20мин."), а не время!
+  // Если нашли "Время доставки", но там длительность - пропускаем и ищем дальше
+  if (plannedTime && (String(plannedTime).toLowerCase().includes('мин.') || 
+                      String(plannedTime).toLowerCase().includes('час'))) {
+    console.log(`⚠️ [Excel Processor] "Время доставки" содержит длительность "${plannedTime}", ищем дальше...`)
+    plannedTime = ''
+  }
+  
+  // Если не нашли, проверяем ВСЕ ключи в rowData, которые содержат "плановое" И "время", или "доставить к"
+  // ВАЖНО: из скриншота видно, что подстолбцы могут называться просто "доставить к" или "плановое время" (без префикса "Дата.")
+  if (!plannedTime) {
+    for (const key in rowData) {
+      const lowerKey = key.toLowerCase().trim()
+      // ВАЖНО: проверяем точное совпадение "доставить к" или "плановое время" (с пробелами) или варианты с "Дата."
+      const exactMatch = lowerKey === 'доставить к' || lowerKey === 'доставить_к' || 
+                        lowerKey === 'плановое время' || lowerKey === 'плановое_время' ||
+                        lowerKey.includes('дата.доставить к') || lowerKey.includes('дата.доставить_к') ||
+                        lowerKey.includes('дата.плановое время') || lowerKey.includes('дата.плановое_время') ||
+                        lowerKey.includes('date.доставить к') || lowerKey.includes('date.доставить_к') ||
+                        lowerKey.includes('date.плановое время') || lowerKey.includes('date.плановое_время')
+      // Ищем ключи, которые содержат "плановое" и "время", или "доставить" и "к", или "planned" и "time"
+      const hasPlanned = lowerKey.includes('плановое') || lowerKey.includes('planned')
+      const hasTime = lowerKey.includes('время') || lowerKey.includes('time')
+      const hasDeliver = lowerKey.includes('доставить') && (lowerKey.includes('к') || lowerKey.includes('к'))
+      const hasDeadline = lowerKey.includes('дедлайн') || lowerKey.includes('deadline')
+      
+      // ВАЖНО: НЕ используем "время доставки", если там длительность
+      const isDeliveryTime = lowerKey.includes('время доставки') || lowerKey.includes('delivery time')
+      
+      // Если это точное совпадение или содержит нужные ключевые слова
+      if ((exactMatch || ((hasPlanned && hasTime) || hasDeliver || hasDeadline)) && 
+          !lowerKey.includes('кухню') && !lowerKey.includes('kitchen')) {
+        const value = rowData[key]
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+          const strVal = String(value).trim().toLowerCase()
+          // Пропускаем длительности
+          if (!strVal.includes('мин.') && !strVal.includes('час')) {
+            plannedTime = String(value).trim()
+            console.log(`✅ [Excel Processor] Найдено "плановое время" в поле "${key}": ${plannedTime}`)
+            break
+          } else if (isDeliveryTime) {
+            console.log(`⚠️ [Excel Processor] Пропускаем "${key}": содержит длительность "${value}"`)
+          }
+        }
+      }
+    }
+  }
+  
+  // Если не нашли, проверяем столбец "Дата" - он может содержать дату и время
+  // Excel serial date (например, 45963.524247685185) содержит и дату, и время
+  if (!plannedTime && rowData['Дата']) {
+    const dateValue = rowData['Дата']
+    // Пробуем парсить как Excel serial date
+    const excelDate = parseFloat(String(dateValue))
+    if (!isNaN(excelDate) && excelDate > 25569) { // 25569 = 01.01.1970 в Excel
+      // Excel serial date - конвертируем в JS Date
+      const jsDate = new Date((excelDate - 25569) * 86400 * 1000)
+      if (!isNaN(jsDate.getTime())) {
+        plannedTime = jsDate.toISOString()
+        console.log(`✅ [Excel Processor] Найдено "плановое время" в столбце "Дата" (Excel serial): ${plannedTime}`)
+      }
+    } else {
+      // Пробуем парсить как строку даты
+      const dateStr = String(dateValue).trim()
+      if (dateStr.includes('/') || dateStr.includes('.') || dateStr.includes('-') || dateStr.includes(':')) {
+        plannedTime = dateStr
+        console.log(`✅ [Excel Processor] Найдено "плановое время" в столбце "Дата" (строка): ${plannedTime}`)
+      }
+    }
+  }
+  
+  // Если все еще не нашли, пробуем поиск только по "плановое", "доставить к" или "дедлайн"
+  if (!plannedTime) {
+    for (const key in rowData) {
+      const lowerKey = key.toLowerCase().trim()
+      if ((lowerKey.includes('плановое') || lowerKey.includes('planned') || 
+           (lowerKey.includes('доставить') && lowerKey.includes('к')) ||
+           lowerKey.includes('дедлайн') || lowerKey.includes('deadline')) &&
+          !lowerKey.includes('кухню') && !lowerKey.includes('kitchen')) {
+        const value = rowData[key]
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+          const strVal = String(value).trim().toLowerCase()
+          // Пропускаем длительности
+          if (!strVal.includes('мин.') && !strVal.includes('час')) {
+            // Проверяем, что это похоже на время/дату
+            const fullValue = String(value).trim()
+            if (fullValue.includes(':') || fullValue.includes('/') || fullValue.includes('.') || 
+                !isNaN(parseFloat(fullValue))) {
+              plannedTime = fullValue
+              console.log(`✅ [Excel Processor] Найдено "плановое время" (по ключевому слову) в поле "${key}": ${plannedTime}`)
+              break
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  const orderNumber = getValue(rowData, ['номер', 'number', 'orderNumber']) || `ORD-${index + 1}`
+  
+  // Собираем все оригинальные поля из Excel с их оригинальными названиями
+  // Важно: сначала spread rowData, чтобы сохранить оригинальные названия полей из Excel
+  const order: any = {
+    ...rowData, // ВСЕ поля из Excel ПЕРВЫМИ, чтобы сохранить оригинальные названия (например, "время на кухню", "плановое время")
+    // Затем добавляем/перезаписываем нашими вычисленными полями
     id: `order_${Date.now()}_${index}`,
-    orderNumber: getValue(rowData, ['номер', 'number', 'orderNumber']) || `ORD-${index + 1}`,
+    orderNumber: orderNumber,
     address: finalAddress,
     status: status,
-    kitchenTime: kitchenTime,
-    plannedTime: plannedTime,
+    // Сохраняем извлеченные значения, но НЕ перезаписываем оригинальные поля из Excel
+    kitchenTime: kitchenTime || rowData['время на кухню'] || rowData['kitchenTime'] || null,
+    plannedTime: plannedTime || rowData['плановое время'] || rowData['plannedTime'] || null,
     courier: getValue(rowData, ['курьер', 'courier']) || '',
     amount: parseFloat(getValue(rowData, ['сумма', 'amount', 'цена']) || '0'),
     phone: getValue(rowData, ['телефон', 'phone']) || '',
     customerName: getValue(rowData, ['клиент', 'customer', 'имя', 'name']) || '',
     isSelected: false,
     isInRoute: false,
-    ...rowData // Добавляем ВСЕ поля из Excel, включая "время на кухню" и "плановое время"
+    // Явно сохраняем оригинальные поля из Excel, если они не были добавлены через spread
+    'время на кухню': rowData['время на кухню'] || kitchenTime || null,
+    'плановое время': rowData['плановое время'] || plannedTime || null,
+    'доставить к': rowData['доставить к'] || rowData['доставить_к'] || null,
+    // ВАЖНО: Сохраняем rowData как raw для доступа в AutoPlanner
+    raw: { ...rowData }
   }
+  
+  // ВАЖНО: Детальное логирование для диагностики проблем с временем
+  const shouldLog = index < 5 || String(orderNumber).includes('9328519') || String(orderNumber).includes('9352250')
+  if (shouldLog) {
+    // Ищем все ключи, связанные со временем
+    const timeRelatedKeys = Object.keys(rowData).filter(k => {
+      const lower = k.toLowerCase()
+      return lower.includes('время') || lower.includes('time') || 
+             lower.includes('дата') || lower.includes('date') ||
+             lower.includes('кухню') || lower.includes('kitchen') ||
+             lower.includes('плановое') || lower.includes('planned') ||
+             lower.includes('доставить') || lower.includes('deliver') ||
+             lower.includes('дедлайн') || lower.includes('deadline')
+    })
+    
+    console.log(`📋 [Excel Processor] Заказ ${orderNumber} (строка ${index + 2}):`, {
+      'finalAddress': finalAddress?.substring(0, 50) || 'не найден',
+      'kitchenTime (извлеченное)': kitchenTime || 'не найдено',
+      'plannedTime (извлеченное)': plannedTime || 'не найдено',
+      'всего ключей в rowData': Object.keys(rowData).length,
+      'ключи, связанные со временем': timeRelatedKeys,
+      'значения времени': timeRelatedKeys.reduce((acc, k) => {
+        acc[k] = rowData[k]
+        return acc
+      }, {} as Record<string, any>),
+      'rowData["время на кухню"]': rowData['время на кухню'] || 'не найдено',
+      'rowData["плановое время"]': rowData['плановое время'] || 'не найдено',
+      'rowData["доставить к"]': rowData['доставить к'] || 'не найдено',
+      'rowData["Дата"]': rowData['Дата'] || rowData['дата'] || 'не найдено',
+      'Все ключи в созданном заказе': Object.keys(order).slice(0, 40),
+      'order.raw существует': !!order.raw,
+      'order.raw ключи': order.raw ? Object.keys(order.raw).slice(0, 30) : [],
+    })
+  }
+  
+  return order
 }
 
 // Создает объект курьера

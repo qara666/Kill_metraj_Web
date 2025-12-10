@@ -12,6 +12,7 @@ import { clsx } from 'clsx'
 
 interface SettingsForm {
   googleMapsApiKey: string
+  mapboxToken: string // Токен Mapbox для отслеживания пробок
   defaultStartAddress: string
   defaultEndAddress: string
   cityBias: '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'
@@ -43,36 +44,69 @@ const CourierVehicleEditor: React.FC<{
   const sortedCouriers = [...courierNames].sort((a, b) => a.localeCompare(b, 'ru'))
 
   return (
-    <div className={clsx('rounded-lg border', isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}>
+    <div className={clsx(
+      'rounded-xl border shadow-lg transition-all duration-200 overflow-hidden',
+      isDark 
+        ? 'bg-gray-800 border-gray-700' 
+        : 'bg-white border-gray-200',
+      isExpanded && 'shadow-xl'
+    )}>
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
         className={clsx(
-          'w-full flex items-center justify-between p-4 transition-colors',
-          isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+          'w-full flex items-center justify-between p-5 transition-all duration-200 group',
+          isDark 
+            ? 'hover:bg-gray-700/50 hover:border-gray-600' 
+            : 'hover:bg-gray-50/80 hover:border-gray-300'
         )}
       >
         <div className="flex items-center space-x-3">
-          <TruckIcon className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-600')} />
-          <span className={clsx('font-medium', isDark ? 'text-gray-200' : 'text-gray-900')}>
+          <div className={clsx(
+            'p-2 rounded-lg transition-all duration-200',
+            isDark 
+              ? 'bg-orange-600/20 text-orange-400 group-hover:bg-orange-600/30 group-hover:scale-110' 
+              : 'bg-orange-100 text-orange-600 group-hover:bg-orange-200 group-hover:scale-110'
+          )}>
+            <TruckIcon className="h-5 w-5" />
+          </div>
+          <span className={clsx(
+            'font-semibold text-lg transition-colors',
+            isDark ? 'text-gray-200 group-hover:text-white' : 'text-gray-900 group-hover:text-gray-800'
+          )}>
             Тип транспорта курьеров
           </span>
           <span className={clsx(
-            'px-2 py-1 rounded-full text-xs font-medium',
-            isDark ? 'bg-gray-700' : 'bg-gray-100'
+            'px-3 py-1 rounded-full text-xs font-semibold transition-all',
+            isDark 
+              ? 'bg-blue-600/30 text-blue-300 border border-blue-500/50' 
+              : 'bg-blue-100 text-blue-700 border border-blue-200'
           )}>
             {sortedCouriers.length}
           </span>
         </div>
-        {isExpanded ? (
-          <ChevronUpIcon className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-600')} />
-        ) : (
-          <ChevronDownIcon className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-600')} />
-        )}
+        <div className={clsx(
+          'transition-all duration-200',
+          isExpanded && 'rotate-180',
+          isDark 
+            ? 'text-gray-400 group-hover:text-white' 
+            : 'text-gray-600 group-hover:text-gray-800'
+        )}>
+          {isExpanded ? (
+            <ChevronUpIcon className="h-6 w-6" />
+          ) : (
+            <ChevronDownIcon className="h-6 w-6" />
+          )}
+        </div>
       </button>
 
       {isExpanded && (
-        <div className={clsx('border-t p-4', isDark ? 'border-gray-700' : 'border-gray-200')}>
+        <div className={clsx(
+          'border-t p-6',
+          isDark 
+            ? 'border-gray-700 bg-gray-800' 
+            : 'border-gray-200 bg-white'
+        )}>
           {sortedCouriers.length === 0 ? (
             <p className={clsx('text-sm text-center py-4', isDark ? 'text-gray-400' : 'text-gray-500')}>
               Загрузите Excel файл, чтобы курьеры появились здесь
@@ -143,24 +177,60 @@ const CollapsibleSection: React.FC<{ isDark: boolean; icon: React.ReactNode; tit
   = ({ isDark, icon, title, children }) => {
   const [isExpanded, setIsExpanded] = useState(false)
   return (
-    <div className={clsx('rounded-lg border', isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}>
+    <div className={clsx(
+      'rounded-xl border shadow-lg transition-all duration-200 overflow-hidden',
+      isDark 
+        ? 'bg-gray-800 border-gray-700' 
+        : 'bg-white border-gray-200',
+      isExpanded && 'shadow-xl'
+    )}>
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className={clsx('w-full flex items-center justify-between p-4 transition-colors', isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-50')}
+        className={clsx(
+          'w-full flex items-center justify-between p-5 transition-all duration-200 group',
+          isDark 
+            ? 'hover:bg-gray-700/50 hover:border-gray-600' 
+            : 'hover:bg-gray-50/80 hover:border-gray-300'
+        )}
       >
         <div className="flex items-center space-x-3">
-          <span className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-600')}>{icon}</span>
-          <span className={clsx('font-medium', isDark ? 'text-gray-200' : 'text-gray-900')}>{title}</span>
+          <div className={clsx(
+            'p-2 rounded-lg transition-all duration-200',
+            isDark 
+              ? 'bg-blue-600/20 text-blue-400 group-hover:bg-blue-600/30 group-hover:scale-110' 
+              : 'bg-blue-100 text-blue-600 group-hover:bg-blue-200 group-hover:scale-110'
+          )}>
+            {icon}
+          </div>
+          <span className={clsx(
+            'font-semibold text-lg transition-colors',
+            isDark ? 'text-gray-200 group-hover:text-white' : 'text-gray-900 group-hover:text-gray-800'
+          )}>
+            {title}
+          </span>
         </div>
-        {isExpanded ? (
-          <ChevronUpIcon className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-600')} />
-        ) : (
-          <ChevronDownIcon className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-600')} />
-        )}
+        <div className={clsx(
+          'transition-all duration-200',
+          isExpanded && 'rotate-180',
+          isDark 
+            ? 'text-gray-400 group-hover:text-white' 
+            : 'text-gray-600 group-hover:text-gray-800'
+        )}>
+          {isExpanded ? (
+            <ChevronUpIcon className="h-6 w-6" />
+          ) : (
+            <ChevronDownIcon className="h-6 w-6" />
+          )}
+        </div>
       </button>
       {isExpanded && (
-        <div className={clsx('border-t p-4', isDark ? 'border-gray-700' : 'border-gray-200')}>
+        <div className={clsx(
+          'border-t p-6',
+          isDark 
+            ? 'border-gray-700 bg-gray-800' 
+            : 'border-gray-200 bg-white'
+        )}>
           {children}
         </div>
       )}
@@ -172,24 +242,60 @@ const CityBiasSection: React.FC<{ isDark: boolean; value: '' | 'Киев' | 'Х�
   = ({ isDark, value, onChange }) => {
   const [isExpanded, setIsExpanded] = useState(true)
   return (
-    <div className={clsx('rounded-lg border', isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}>
+    <div className={clsx(
+      'rounded-xl border shadow-lg transition-all duration-200 overflow-hidden',
+      isDark 
+        ? 'bg-gray-800 border-gray-700' 
+        : 'bg-white border-gray-200',
+      isExpanded && 'shadow-xl'
+    )}>
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className={clsx('w-full flex items-center justify-between p-4 transition-colors', isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-50')}
+        className={clsx(
+          'w-full flex items-center justify-between p-5 transition-all duration-200 group',
+          isDark 
+            ? 'hover:bg-gray-700/50 hover:border-gray-600' 
+            : 'hover:bg-gray-50/80 hover:border-gray-300'
+        )}
       >
         <div className="flex items-center space-x-3">
-          <MapIcon className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-600')} />
-          <span className={clsx('font-medium', isDark ? 'text-gray-200' : 'text-gray-900')}>Город для маршрутов (обязателен)</span>
+          <div className={clsx(
+            'p-2 rounded-lg transition-all duration-200',
+            isDark 
+              ? 'bg-green-600/20 text-green-400 group-hover:bg-green-600/30 group-hover:scale-110' 
+              : 'bg-green-100 text-green-600 group-hover:bg-green-200 group-hover:scale-110'
+          )}>
+            <MapIcon className="h-5 w-5" />
+          </div>
+          <span className={clsx(
+            'font-semibold text-lg transition-colors',
+            isDark ? 'text-gray-200 group-hover:text-white' : 'text-gray-900 group-hover:text-gray-800'
+          )}>
+            Город для маршрутов (обязателен)
+          </span>
         </div>
-        {isExpanded ? (
-          <ChevronUpIcon className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-600')} />
-        ) : (
-          <ChevronDownIcon className={clsx('h-5 w-5', isDark ? 'text-gray-400' : 'text-gray-600')} />
-        )}
+        <div className={clsx(
+          'transition-all duration-200',
+          isExpanded && 'rotate-180',
+          isDark 
+            ? 'text-gray-400 group-hover:text-white' 
+            : 'text-gray-600 group-hover:text-gray-800'
+        )}>
+          {isExpanded ? (
+            <ChevronUpIcon className="h-6 w-6" />
+          ) : (
+            <ChevronDownIcon className="h-6 w-6" />
+          )}
+        </div>
       </button>
       {isExpanded && (
-        <div className={clsx('border-t p-4', isDark ? 'border-gray-700' : 'border-gray-200')}>
+        <div className={clsx(
+          'border-t p-6',
+          isDark 
+            ? 'border-gray-700 bg-gray-800' 
+            : 'border-gray-200 bg-white'
+        )}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <label className="text-sm">Выберите город</label>
             <select
@@ -231,6 +337,7 @@ export const Settings: React.FC = () => {
   const { register, handleSubmit, watch, setValue } = useForm<SettingsForm>({
     defaultValues: {
       googleMapsApiKey: '',
+      mapboxToken: 'pk.eyJ1IjoieWFwMDA3NyIsImEiOiJjbWkyN2wzYnIxNHN3MmxzZmpjOThzdmp6In0.KKBxC62q-I4xEXQBCx7JVw', // Дефолтный токен
       defaultStartAddress: '',
       defaultEndAddress: '',
       cityBias: '',
@@ -256,6 +363,7 @@ export const Settings: React.FC = () => {
     const settings = localStorageUtils.getAllSettings()
     
     setValue('googleMapsApiKey', settings.googleMapsApiKey)
+    setValue('mapboxToken', settings.mapboxToken || 'pk.eyJ1IjoieWFwMDA3NyIsImEiOiJjbWkyN2wzYnIxNHN3MmxzZmpjOThzdmp6In0.KKBxC62q-I4xEXQBCx7JVw')
     setValue('defaultStartAddress', settings.defaultStartAddress)
     setValue('defaultEndAddress', settings.defaultEndAddress)
     setValue('cityBias', settings.cityBias || '')
@@ -388,8 +496,10 @@ export const Settings: React.FC = () => {
     )}>
       {/* Header */}
       <div className={clsx(
-        'rounded-lg shadow-sm border p-6',
-        isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+        'rounded-2xl shadow-lg border p-8',
+        isDark 
+          ? 'bg-gray-800 border-gray-700' 
+          : 'bg-white border-gray-200'
       )}>
         <div className="flex items-center justify-between">
           <div>
@@ -409,8 +519,10 @@ export const Settings: React.FC = () => {
 
       {/* Settings Form */}
       <div className={clsx(
-        'rounded-lg shadow-sm border p-6',
-        isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+        'rounded-2xl shadow-lg border p-8',
+        isDark 
+          ? 'bg-gray-800 border-gray-700' 
+          : 'bg-white border-gray-200'
       )}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           {/* City Bias */}
@@ -472,6 +584,25 @@ export const Settings: React.FC = () => {
               </div>
             </div>
           </CollapsibleSection>
+          {/* Mapbox Token */}
+          <div>
+            <label className="label">
+              <MapIcon className="h-4 w-4 inline mr-2" />
+              Mapbox Token (для отслеживания пробок)
+            </label>
+            <div className="mt-1">
+              <input
+                type="text"
+                className="input"
+                placeholder="Введите ваш Mapbox токен"
+                {...register('mapboxToken')}
+              />
+              <p className={clsx('mt-1 text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                Используется для отслеживания пробок в реальном времени в Украине/Киеве. 
+                Бесплатный лимит: 50,000 запросов/месяц.
+              </p>
+            </div>
+          </div>
           {/* Google Maps API Key */}
           <div>
             <label className="label">
@@ -590,17 +721,28 @@ export const Settings: React.FC = () => {
           </CollapsibleSection>
 
           {/* Action Buttons */}
-          <div className="flex justify-between">
+            <div className="flex justify-between gap-4">
             <button 
               type="button" 
               onClick={handleClearAllData}
-              className="btn-danger"
+              className={clsx(
+                'px-6 py-3 rounded-xl font-semibold transition-all duration-200 flex items-center gap-2 shadow-lg hover:scale-105',
+                isDark
+                  ? 'bg-gradient-to-r from-red-600/80 to-red-700/80 hover:from-red-700 hover:to-red-800 text-white border border-red-500/50'
+                  : 'bg-gradient-to-r from-red-500/80 to-red-600/80 hover:from-red-600 hover:to-red-700 text-white border border-red-400/50'
+              )}
             >
-              <CogIcon className="h-4 w-4 mr-2" />
+              <CogIcon className="h-5 w-5" />
               Очистить все данные
             </button>
-            <button type="submit" className="btn-primary">
-              <CogIcon className="h-4 w-4 mr-2" />
+            <button 
+              type="submit" 
+              className={clsx(
+                'px-6 py-3 rounded-xl font-semibold transition-all duration-200 flex items-center gap-2 shadow-lg hover:scale-105',
+                'bg-gradient-to-r from-blue-600 via-blue-500 to-pink-500 hover:from-blue-700 hover:via-blue-600 hover:to-pink-600 text-white'
+              )}
+            >
+              <CogIcon className="h-5 w-5" />
               Сохранить настройки
             </button>
           </div>

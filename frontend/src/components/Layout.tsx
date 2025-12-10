@@ -10,7 +10,8 @@ import {
   XMarkIcon,
   SunIcon,
   MoonIcon,
-  MapPinIcon
+  SparklesIcon,
+  PaperClipIcon
 } from '@heroicons/react/24/outline'
 import { clsx } from 'clsx'
 import { useTheme } from '../contexts/ThemeContext'
@@ -23,10 +24,10 @@ interface LayoutProps {
 const navigation = [
   { name: 'Панель управления', href: '/', icon: HomeIcon },
   { name: 'Маршруты', href: '/routes', icon: MapIcon },
-  { name: 'Автопланирование', href: '/autoplanner', icon: MapIcon },
   { name: 'Курьеры', href: '/couriers', icon: UserGroupIcon },
-  { name: 'Зоны', href: '/zones', icon: MapPinIcon },
+  { name: 'Автоматическая оптимизация маршрутов по зонам доставки', href: '/autoplanner', icon: SparklesIcon },
   { name: 'Аналитика', href: '/analytics', icon: ChartBarIcon },
+  { name: 'Парсинг выгрузки в телеграм и реестре', href: '/telegram-parsing', icon: PaperClipIcon },
   { name: 'Настройки', href: '/settings', icon: CogIcon },
 ]
 
