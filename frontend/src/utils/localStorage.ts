@@ -83,9 +83,38 @@ export const localStorageUtils = {
   setData: (key: string, data: any): void => {
     if (typeof window === 'undefined') return
     try {
-      localStorage.setItem(key, JSON.stringify(data))
-    } catch (error) {
-      console.error('Error writing to localStorage:', error)
+      const serialized = JSON.stringify(data)
+      const size = new Blob([serialized]).size
+      
+      // Предупреждение если данные слишком большие (>2MB)
+      if (size > 2 * 1024 * 1024) {
+        console.warn(`⚠️ Данные для ключа "${key}" слишком большие: ${(size / 1024 / 1024).toFixed(2)}MB`)
+      }
+      
+      localStorage.setItem(key, serialized)
+    } catch (error: any) {
+      if (error.name === 'QuotaExceededError' || error.message?.includes('quota')) {
+        console.warn(`⚠️ localStorage переполнен для ключа "${key}". Попытка очистки...`)
+        // Пробуем очистить старые данные
+        try {
+          // Удаляем старые данные (кроме критически важных)
+          const criticalKeys = ['google_maps_api_key', 'km_settings', 'km_courier_vehicle_map']
+          const allKeys = Object.keys(localStorage)
+          allKeys.forEach(k => {
+            if (!criticalKeys.includes(k) && k.startsWith('km_')) {
+              try {
+                localStorage.removeItem(k)
+              } catch {}
+            }
+          })
+          // Пробуем сохранить снова
+          localStorage.setItem(key, JSON.stringify(data))
+        } catch (retryError) {
+          console.error(`❌ Не удалось сохранить данные для ключа "${key}":`, retryError)
+        }
+      } else {
+        console.error('Error writing to localStorage:', error)
+      }
     }
   },
 
@@ -113,6 +142,7 @@ export const localStorageUtils = {
         citySectors: citySectors ? JSON.parse(citySectors) : {}
       } : {
         googleMapsApiKey: localStorage.getItem('google_maps_api_key') || '',
+        mapboxToken: localStorage.getItem('km_mapbox_token') || 'pk.eyJ1IjoieWFwMDA3NyIsImEiOiJjbWkyN2wzYnIxNHN3MmxzZmpjOThzdmp6In0.KKBxC62q-I4xEXQBCx7JVw',
         defaultStartAddress: localStorage.getItem('km_default_start_address') || 'Макеевская 7, Киев, Украина',
         defaultEndAddress: localStorage.getItem('km_default_end_address') || 'Макеевская 7, Киев, Украина',
         cityBias: localStorage.getItem('km_city_bias') || '',
@@ -124,6 +154,7 @@ export const localStorageUtils = {
       console.error('Error reading settings:', error)
       return {
         googleMapsApiKey: localStorage.getItem('google_maps_api_key') || '',
+        mapboxToken: localStorage.getItem('km_mapbox_token') || 'pk.eyJ1IjoieWFwMDA3NyIsImEiOiJjbWkyN2wzYnIxNHN3MmxzZmpjOThzdmp6In0.KKBxC62q-I4xEXQBCx7JVw',
         defaultStartAddress: localStorage.getItem('km_default_start_address') || 'Макеевская 7, Киев, Украина',
         defaultEndAddress: localStorage.getItem('km_default_end_address') || 'Макеевская 7, Киев, Украина',
         cityBias: localStorage.getItem('km_city_bias') || '',
@@ -141,6 +172,9 @@ export const localStorageUtils = {
       localStorage.setItem('km_settings', JSON.stringify(restSettings))
       if (settings.googleMapsApiKey) {
         localStorage.setItem('google_maps_api_key', settings.googleMapsApiKey)
+      }
+      if (settings.mapboxToken !== undefined) {
+        localStorage.setItem('km_mapbox_token', settings.mapboxToken)
       }
       if (settings.defaultStartAddress) {
         localStorage.setItem('km_default_start_address', settings.defaultStartAddress)
@@ -161,6 +195,7 @@ export const localStorageUtils = {
       if (courierVehicleMap && typeof courierVehicleMap === 'object') {
         localStorageUtils.setCourierVehicleMap(courierVehicleMap)
       }
+      window.dispatchEvent(new CustomEvent('km-settings-updated', { detail: { settings: restSettings } }))
     } catch (error) {
       console.error('Error saving settings:', error)
     }

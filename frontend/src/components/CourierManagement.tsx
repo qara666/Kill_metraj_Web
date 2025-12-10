@@ -12,6 +12,7 @@ import {
   MapIcon,
   ArrowPathIcon,
   ExclamationTriangleIcon,
+  QuestionMarkCircleIcon
 } from '@heroicons/react/24/outline'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
@@ -20,6 +21,14 @@ import { clsx } from 'clsx'
 import { AddressValidationService } from '../services/addressValidation'
 import { toast } from 'react-hot-toast'
 import { AddressEditModal } from './AddressEditModal'
+import { Tooltip } from './Tooltip'
+import { googleApiCache } from '../services/googleApiCache'
+import { lazy, Suspense } from 'react'
+import type { TourStep } from './HelpTour'
+
+// Ленивая загрузка тяжелых компонентов
+const HelpModalCouriers = lazy(() => import('./HelpModalCouriers').then(m => ({ default: m.HelpModalCouriers })))
+const HelpTour = lazy(() => import('./HelpTour').then(m => ({ default: m.HelpTour })))
 
 interface Courier {
   id: string
@@ -54,6 +63,26 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   const [showAddressEditModal, setShowAddressEditModal] = useState(false)
   const [editingOrder, setEditingOrder] = useState<any>(null)
   const [recalculatingRouteId, setRecalculatingRouteId] = useState<string | null>(null)
+
+  // Состояния для системы помощи
+  const [showHelpModal, setShowHelpModal] = useState(false)
+  const [showHelpTour, setShowHelpTour] = useState(false)
+  const [hasSeenHelp, setHasSeenHelp] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('km_couriers_has_seen_help') === 'true'
+    }
+    return false
+  })
+
+  // Показываем помощь новым пользователям через 2 секунды после загрузки
+  useEffect(() => {
+    if (!hasSeenHelp && typeof window !== 'undefined') {
+      const timer = setTimeout(() => {
+        setShowHelpModal(true)
+      }, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [hasSeenHelp])
 
   // Рассчитываем расстояние для каждого курьера на основе маршрутов
   const calculateCourierDistance = useMemo(() => {
@@ -490,98 +519,99 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
         }
       }
 
-      const directionsService = new window.google.maps.DirectionsService()
+    // Используем прямые адреса без геокодирования
+    const waypoints = route.orders.map((order: any) => ({
+      location: order.address,
+      stopover: true
+    }))
 
-      // Используем прямые адреса без геокодирования
-      const waypoints = route.orders.map((order: any) => ({
-        location: order.address,
-        stopover: true
-      }))
-
-      const request = {
-        origin: route.startAddress,
-        destination: route.endAddress,
-        waypoints: waypoints,
-        travelMode: window.google.maps.TravelMode.DRIVING,
-        optimizeWaypoints: false, // Сохраняем порядок точек
-        unitSystem: window.google.maps.UnitSystem.METRIC,
-        avoidHighways: false,
-        avoidTolls: false,
-        avoidFerries: false,
-        drivingOptions: {
-          departureTime: new Date(),
-          trafficModel: window.google.maps.TrafficModel.BEST_GUESS
-        }
+    const request = {
+      origin: route.startAddress,
+      destination: route.endAddress,
+      waypoints: waypoints,
+      travelMode: window.google.maps.TravelMode.DRIVING,
+      optimizeWaypoints: false, // Сохраняем порядок точек
+      unitSystem: window.google.maps.UnitSystem.METRIC,
+      avoidHighways: false,
+      avoidTolls: false,
+      avoidFerries: false,
+      drivingOptions: {
+        departureTime: new Date(),
+        trafficModel: window.google.maps.TrafficModel.BEST_GUESS
       }
+    }
 
-      directionsService.route(request, (result: any, status: any) => {
-        if (status === window.google.maps.DirectionsStatus.OK && result) {
-          // Логируем legs для отладки
-          if (result.routes[0]?.legs) {
-            console.log('legs:', result.routes[0].legs.map((leg: any) => ({
-              start_address: leg.start_address,
-              end_address: leg.end_address,
-              distance: leg.distance,
-              duration: leg.duration,
-            })))
-          }
-          const totalDistanceMeters = result.routes[0].legs.reduce((sum: number, leg: any) => {
-            // ТОЛЬКО value (int, метры)
-            if (leg.distance && typeof leg.distance.value === 'number') return sum + leg.distance.value;
-            return sum;
-          }, 0);
-          const totalDurationSec = result.routes[0].legs.reduce((sum: number, leg: any) => {
-            if (leg.duration && typeof leg.duration.value === 'number') return sum + leg.duration.value;
-            return sum;
-          }, 0);
+    const result = await googleApiCache.getDirections(request)
+    if (!result) {
+      console.error('Ошибка расчета маршрута')
+      toast.error('Ошибка при пересчете маршрута')
+      return
+    }
 
-          // Обновляем маршрут с новыми данными
-          const updatedRoute = {
-            ...route,
-            totalDistance: Math.round(totalDistanceMeters / 1000 * 10) / 10, // в км
-            totalDuration: Math.round(totalDurationSec / 60), // в минутах
-            isOptimized: true,
-            lastCalculated: new Date().toISOString()
-          }
+    if (!result) return
 
-          console.log('Обновляемый маршрут:', {
-            id: updatedRoute.id,
-            courier: updatedRoute.courier,
-            ordersCount: updatedRoute.orders?.length || 0,
-            totalDistance: updatedRoute.totalDistance,
-            totalDuration: updatedRoute.totalDuration
-          })
+    // Логируем legs для отладки
+    if (result.routes[0]?.legs) {
+      console.log('legs:', result.routes[0].legs.map((leg: any) => ({
+        start_address: leg.start_address,
+        end_address: leg.end_address,
+        distance: leg.distance,
+        duration: leg.duration,
+      })))
+    }
 
-          // Обновляем маршрут через контекст
-          if (contextData?.routes) {
-            const updatedRoutes = contextData.routes.map((r: any) => r.id === route.id ? updatedRoute : r)
-            updateRouteData(updatedRoutes)
-            
-            console.log('Маршруты после обновления:', updatedRoutes.map(r => ({
-              id: r.id,
-              courier: r.courier,
-              ordersCount: r.orders?.length || 0
-            })))
-          }
+    const totalDistanceMeters = result.routes[0].legs.reduce((sum: number, leg: any) => {
+      // ТОЛЬКО value (int, метры)
+      if (leg.distance && typeof leg.distance.value === 'number') return sum + leg.distance.value;
+      return sum;
+    }, 0);
+    const totalDurationSec = result.routes[0].legs.reduce((sum: number, leg: any) => {
+      if (leg.duration && typeof leg.duration.value === 'number') return sum + leg.duration.value;
+      return sum;
+    }, 0);
 
-          // Сохраняем в localStorage
-          try {
-            const savedData = JSON.parse(localStorage.getItem('km_dashboard_processed_data') || '{}')
-            if (savedData.routes) {
-              const updatedRoutes = savedData.routes.map((r: any) => r.id === route.id ? updatedRoute : r)
-              savedData.routes = updatedRoutes
-              localStorage.setItem('km_dashboard_processed_data', JSON.stringify(savedData))
-            }
-          } catch (error) {
-            console.error('Ошибка сохранения маршрута:', error)
-          }
+    // Обновляем маршрут с новыми данными
+    const updatedRoute = {
+      ...route,
+      totalDistance: Math.round(totalDistanceMeters / 1000 * 10) / 10, // в км
+      totalDuration: Math.round(totalDurationSec / 60), // в минутах
+      isOptimized: true,
+      lastCalculated: new Date().toISOString()
+    }
 
-          toast.success(`Маршрут для курьера ${route.courier} пересчитан: ${updatedRoute.totalDistance}км, ${updatedRoute.totalDuration}мин`)
-        } else {
-          console.error('Ошибка расчета маршрута:', status)
-          toast.error('Ошибка при пересчете маршрута')
-        }
-      })
+    console.log('Обновляемый маршрут:', {
+      id: updatedRoute.id,
+      courier: updatedRoute.courier,
+      ordersCount: updatedRoute.orders?.length || 0,
+      totalDistance: updatedRoute.totalDistance,
+      totalDuration: updatedRoute.totalDuration
+    })
+
+    // Обновляем маршрут через контекст
+    if (contextData?.routes) {
+      const updatedRoutes = contextData.routes.map((r: any) => r.id === route.id ? updatedRoute : r)
+      updateRouteData(updatedRoutes)
+      
+      console.log('Маршруты после обновления:', updatedRoutes.map(r => ({
+        id: r.id,
+        courier: r.courier,
+        ordersCount: r.orders?.length || 0
+      })))
+    }
+
+    // Сохраняем в localStorage
+    try {
+      const savedData = JSON.parse(localStorage.getItem('km_dashboard_processed_data') || '{}')
+      if (savedData.routes) {
+        const updatedRoutes = savedData.routes.map((r: any) => r.id === route.id ? updatedRoute : r)
+        savedData.routes = updatedRoutes
+        localStorage.setItem('km_dashboard_processed_data', JSON.stringify(savedData))
+      }
+    } catch (error) {
+      console.error('Ошибка сохранения маршрута:', error)
+    }
+
+    toast.success(`Маршрут для курьера ${route.courier} пересчитан: ${updatedRoute.totalDistance}км, ${updatedRoute.totalDuration}мин`)
 
     } catch (error) {
       console.error('Ошибка пересчета маршрута:', error)
@@ -597,40 +627,33 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     <div className="space-y-6">
       {/* Header */}
       <div className={clsx(
-        'rounded-xl shadow-lg border p-8 relative overflow-hidden',
-        isDark ? 'bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700' : 'bg-gradient-to-br from-white to-gray-50 border-gray-200'
+        'rounded-3xl p-8 shadow-2xl border-2 overflow-hidden relative',
+        isDark 
+          ? 'bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 border-gray-700' 
+          : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-blue-200'
       )}>
-        {/* Background decoration */}
-        <div className="absolute top-0 right-0 w-32 h-32 opacity-10">
-          <div className={clsx(
-            'w-full h-full rounded-full',
-            isDark ? 'bg-blue-500' : 'bg-blue-400'
-          )}></div>
-        </div>
-        
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10 opacity-50"></div>
         <div className="relative z-10">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center gap-4">
               <div className={clsx(
-                'p-3 rounded-xl',
-                isDark ? 'bg-blue-900/50' : 'bg-blue-100'
+                'p-4 rounded-2xl shadow-lg',
+                isDark 
+                  ? 'bg-gradient-to-br from-blue-600 to-purple-600' 
+                  : 'bg-gradient-to-br from-blue-500 to-indigo-600'
               )}>
-                <UserIcon className={clsx(
-                  'h-8 w-8',
-                  isDark ? 'text-blue-400' : 'text-blue-600'
-                )} />
+                <UserIcon className="w-8 h-8 text-white" />
               </div>
               <div>
                 <h1 className={clsx(
-                  'text-3xl font-bold bg-gradient-to-r bg-clip-text text-transparent',
-                  isDark ? 'from-gray-100 to-gray-300' : 'from-gray-900 to-gray-700'
+                  'text-3xl font-bold mb-1 bg-gradient-to-r bg-clip-text text-transparent',
+                  isDark 
+                    ? 'from-blue-400 to-purple-400' 
+                    : 'from-blue-600 to-indigo-600'
                 )}>
                   Управление курьерами
                 </h1>
-                <p className={clsx(
-                  'mt-2 text-base',
-                  isDark ? 'text-gray-300' : 'text-gray-600'
-                )}>
+                <p className={clsx('text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>
                   Управляйте информацией о курьерах и их заказах
                 </p>
                 <div className="flex items-center space-x-4 mt-3">
@@ -661,17 +684,41 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 </div>
               </div>
             </div>
-            <button
-              onClick={() => setShowAddModal(true)}
-              className={clsx(
-                'px-6 py-3 rounded-xl font-medium transition-all duration-200 transform hover:scale-105 shadow-lg',
-                'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800',
-                'text-white flex items-center space-x-2'
-              )}
-            >
-              <PlusIcon className="h-5 w-5" />
-              <span>Добавить курьера</span>
-            </button>
+            <div className="flex items-center space-x-3">
+              <Tooltip
+                content="Открыть справку и инструкции по управлению курьерами"
+                position="left"
+              >
+                <button
+                  onClick={() => {
+                    setShowHelpModal(true)
+                    if (!hasSeenHelp) {
+                      localStorage.setItem('km_couriers_has_seen_help', 'true')
+                      setHasSeenHelp(true)
+                    }
+                  }}
+                  className={clsx(
+                    'p-3 rounded-xl transition-all hover:scale-105',
+                    isDark 
+                      ? 'bg-gray-700 hover:bg-gray-600 text-blue-400' 
+                      : 'bg-white hover:bg-blue-50 text-blue-600 shadow-lg'
+                  )}
+                >
+                  <QuestionMarkCircleIcon className="w-6 h-6" />
+                </button>
+              </Tooltip>
+              <button
+                onClick={() => setShowAddModal(true)}
+                className={clsx(
+                  'px-6 py-3 rounded-xl font-medium transition-all duration-200 transform hover:scale-105 shadow-lg',
+                  'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800',
+                  'text-white flex items-center space-x-2'
+                )}
+              >
+                <PlusIcon className="h-5 w-5" />
+                <span>Добавить курьера</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -683,7 +730,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
       )}>
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0 lg:space-x-6">
           {/* Filter Buttons */}
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-3" data-tour="filters">
             <button
               onClick={() => setFilter('all')}
               className={clsx(
@@ -755,7 +802,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
           </div>
           
           {/* Search Field */}
-          <div className="flex-1 max-w-md">
+          <div className="flex-1 max-w-md" data-tour="search">
             <div className="relative">
               <input
                 type="text"
@@ -850,7 +897,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
             {filteredCouriers.map((courier) => {
             return (
               <div 
-              key={courier.id} 
+              key={courier.id}
+              data-tour="courier-card"
               className={clsx(
                 'group rounded-xl shadow-lg border p-6 transition-all duration-300 transform hover:scale-105 hover:shadow-xl',
                 isDark 
@@ -865,6 +913,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 <div className="flex items-center space-x-4">
                   <div className="relative">
                     <button
+                      data-tour="vehicle-type"
                       onClick={(e) => {
                         e.stopPropagation()
                         toggleCourierVehicleType(courier.id)
@@ -1005,6 +1054,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
 
                 {/* Километры */}
                 <button
+                  data-tour="routes"
                   onClick={() => handleDistanceClick(courier)}
                   className={clsx(
                     'rounded-xl p-4 text-center transition-all duration-200 hover:scale-105 cursor-pointer',
@@ -1451,6 +1501,116 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
           customerName={editingOrder.customerName}
           isDark={isDark}
         />
+      )}
+
+      {/* Система помощи */}
+      {showHelpModal && (
+        <Suspense fallback={null}>
+          <HelpModalCouriers
+            isOpen={showHelpModal}
+            onClose={() => setShowHelpModal(false)}
+            onStartTour={() => {
+              setShowHelpModal(false)
+              setTimeout(() => setShowHelpTour(true), 300)
+            }}
+          />
+        </Suspense>
+      )}
+
+      {/* Интерактивный тур */}
+      {showHelpTour && (
+        <Suspense fallback={null}>
+          <HelpTour
+            isOpen={showHelpTour}
+            onClose={() => setShowHelpTour(false)}
+            onComplete={() => {
+              setShowHelpTour(false)
+              localStorage.setItem('km_couriers_has_seen_help', 'true')
+              setHasSeenHelp(true)
+            }}
+            steps={[
+          {
+            id: 'filters',
+            title: '🔍 Фильтрация курьеров',
+            content: `📋 Используйте фильтры для просмотра курьеров по типу транспорта
+
+🎯 Доступные фильтры:
+• Все курьеры - показывает всех курьеров независимо от типа транспорта
+• Авто курьеры - только курьеры на автомобилях
+• Мото курьеры - только курьеры на мотоциклах
+
+💡 Совет: Фильтры помогают быстро найти нужного курьера или просмотреть статистику по типам транспорта`,
+            target: '[data-tour="filters"]',
+            position: 'bottom'
+          },
+          {
+            id: 'search',
+            title: '🔎 Поиск курьеров',
+            content: `📋 Используйте поле поиска для быстрого нахождения курьера
+
+🔍 Поиск работает по:
+• Имени курьера
+• Номеру телефона
+
+💡 Совет: Поиск работает в реальном времени - просто начните вводить текст`,
+            target: '[data-tour="search"]',
+            position: 'bottom'
+          },
+          {
+            id: 'courier-card',
+            title: '👤 Информация о курьере',
+            content: `📊 Карточка курьера содержит всю важную информацию
+
+📈 Отображаемые данные:
+• Имя и статус курьера (активен/неактивен)
+• Тип транспорта (автомобиль/мотоцикл)
+• Количество заказов в маршрутах
+• Общий пробег курьера
+
+🖱️ Действия:
+• Кликните на пробег → откроется детальная информация о маршрутах
+• Редактировать → изменить данные курьера
+• Удалить → удалить курьера из системы
+
+💡 Совет: Кликните на иконку транспорта, чтобы быстро изменить тип транспорта`,
+            target: '[data-tour="courier-card"]',
+            position: 'top'
+          },
+          {
+            id: 'vehicle-type',
+            title: '🚗 Изменение типа транспорта',
+            content: `🔄 Кликните на иконку транспорта, чтобы изменить тип транспорта курьера
+
+📊 Что происходит:
+• Тип транспорта переключается между "Авто" и "Мото"
+• Автоматически пересчитывается пробег курьера
+• Изменения сохраняются автоматически`,
+            target: '[data-tour="vehicle-type"]',
+            position: 'left'
+          },
+          {
+            id: 'routes',
+            title: '🗺️ Маршруты курьера',
+            content: `📋 Кликните на блок "Пробег", чтобы увидеть детальную информацию о маршрутах курьера
+
+📊 В детальном просмотре вы увидите:
+• Общий пробег курьера
+• Базовое расстояние маршрутов
+• Дополнительное расстояние
+• Список всех маршрутов курьера
+
+🖱️ Действия с маршрутом:
+• 🗺️ Открыть в Google Maps - просмотр маршрута в навигации
+• 🔄 Пересчитать - обновить расстояние и время маршрута
+• 🗑️ Удалить - удалить маршрут из системы
+
+💡 Совет: Пересчитайте маршрут после изменения адресов для получения актуальных данных`,
+            target: '[data-tour="routes"]',
+            position: 'top'
+          }
+        ] as TourStep[]}
+          />
+        </Suspense>
       )}
     </div>
   )

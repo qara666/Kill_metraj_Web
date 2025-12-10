@@ -20,8 +20,145 @@ export interface CombinedOrder {
   totalAmount: number
 }
 
+// Кеш для приоритетов заказов (обновляется каждую минуту)
+const priorityCache = new Map<Order, { priority: number; timestamp: number }>()
+const PRIORITY_CACHE_TTL = 60 * 1000 // 1 минута
+
+/**
+ * Вычисляет приоритет заказа для быстрой доставки клиентам
+ * Чем выше значение, тем выше приоритет
+ * Результаты кешируются на 1 минуту для оптимизации производительности
+ */
+export function calculateOrderPriority(order: Order): number {
+  const now = Date.now()
+  
+  // Проверяем кеш
+  const cached = priorityCache.get(order)
+  if (cached && (now - cached.timestamp) < PRIORITY_CACHE_TTL) {
+    return cached.priority
+  }
+  
+  let priority = 0
+
+  // 1. Срочность по дедлайну (самый важный фактор для клиентов)
+  if (order.deadlineAt) {
+    const minutesToDeadline = (order.deadlineAt - now) / (60 * 1000)
+    if (minutesToDeadline < 30) {
+      priority += 1000 - minutesToDeadline * 10 // Очень срочные заказы
+    } else if (minutesToDeadline < 60) {
+      priority += 500 - minutesToDeadline * 5 // Срочные заказы
+    } else {
+      priority += Math.max(0, 200 - minutesToDeadline * 2) // Обычные заказы
+    }
+  }
+
+  // 2. Готовность заказа (готовые заказы имеют приоритет)
+  if (order.readyAt) {
+    const minutesSinceReady = (now - order.readyAt) / (60 * 1000)
+    if (minutesSinceReady > 0) {
+      // Заказ готов - чем дольше ждет, тем выше приоритет
+      priority += Math.min(300, minutesSinceReady * 10)
+    } else {
+      // Заказ еще не готов - чем ближе к готовности, тем выше приоритет
+      const minutesUntilReady = -minutesSinceReady
+      if (minutesUntilReady <= 10) {
+        priority += 200 - minutesUntilReady * 10
+      }
+    }
+  } else {
+    // Нет времени готовности - считаем готовым сейчас
+    priority += 100
+  }
+
+  // 3. Бонус за наличие координат (можно сразу планировать)
+  if (order.coords) {
+    priority += 50
+  }
+
+  // Сохраняем в кеш
+  priorityCache.set(order, { priority, timestamp: now })
+  
+  // Очищаем старые записи из кеша (если кеш слишком большой)
+  if (priorityCache.size > 1000) {
+    const entries = Array.from(priorityCache.entries())
+    entries.forEach(([order, data]) => {
+      if (now - data.timestamp > PRIORITY_CACHE_TTL) {
+        priorityCache.delete(order)
+      }
+    })
+  }
+
+  return priority
+}
+
+/**
+ * Вычисляет оценку эффективности группировки для курьера
+ * Учитывает расстояние, время и количество заказов
+ */
+export function calculateGroupingEfficiency(
+  orders: Order[],
+  options: {
+    estimatedDistanceKm?: number
+    estimatedDurationMin?: number
+  } = {}
+): number {
+  if (orders.length === 0) return 0
+  if (orders.length === 1) return 50 // Одиночный заказ - базовая эффективность
+
+  let efficiency = 100 // Базовая эффективность группы
+
+  // Бонус за количество заказов (больше заказов = выше эффективность)
+  efficiency += orders.length * 20
+
+  // Штраф за расстояние (если указано)
+  if (options.estimatedDistanceKm) {
+    const avgDistancePerOrder = options.estimatedDistanceKm / orders.length
+    if (avgDistancePerOrder < 2) {
+      efficiency += 50 // Очень близкие заказы
+    } else if (avgDistancePerOrder < 5) {
+      efficiency += 20 // Близкие заказы
+    } else {
+      efficiency -= (avgDistancePerOrder - 5) * 10 // Штраф за большие расстояния
+    }
+  }
+
+  // Штраф за время (если указано)
+  if (options.estimatedDurationMin) {
+    const avgDurationPerOrder = options.estimatedDurationMin / orders.length
+    if (avgDurationPerOrder < 15) {
+      efficiency += 30 // Быстрая доставка
+    } else if (avgDurationPerOrder < 30) {
+      efficiency += 10 // Нормальная доставка
+    } else {
+      efficiency -= (avgDurationPerOrder - 30) * 5 // Штраф за долгое время
+    }
+  }
+
+  // Бонус за совместимость времени готовности
+  const readyTimes = orders
+    .map(o => o.readyAt || Date.now())
+    .filter(t => t > 0)
+  
+  if (readyTimes.length > 1) {
+    const minReady = Math.min(...readyTimes)
+    const maxReady = Math.max(...readyTimes)
+    const spread = (maxReady - minReady) / (60 * 1000) // в минутах
+    
+    if (spread < 15) {
+      efficiency += 40 // Заказы готовы одновременно
+    } else if (spread < 30) {
+      efficiency += 20 // Заказы готовы в близкое время
+    } else if (spread > 60) {
+      efficiency -= 30 // Большой разброс времени готовности
+    }
+  }
+
+  return Math.max(0, efficiency)
+}
+
 /**
  * Проверяет, можно ли объединить два заказа
+ * Улучшенная версия с учетом приоритетов клиентов и эффективности курьеров
  */
 export function shouldCombineOrders(
   order1: Order,
@@ -29,93 +166,179 @@ export function shouldCombineOrders(
   options: {
     maxDistanceMeters?: number
     maxTimeWindowMinutes?: number
-    sameBuildingThreshold?: number // порог для определения одного здания
+    sameBuildingThreshold?: number
+    prioritizeUrgent?: boolean // Приоритет срочных заказов
+    minEfficiencyScore?: number // Минимальная оценка эффективности для группировки
   } = {}
-): { shouldCombine: boolean; reason: string } {
+): { shouldCombine: boolean; reason: string; efficiencyScore?: number } {
   const {
-    maxDistanceMeters = 500, // 500 метров по умолчанию
-    maxTimeWindowMinutes = 30, // 30 минут окно времени
-    sameBuildingThreshold = 50 // 50 метров = одно здание
+    maxDistanceMeters = 500,
+    maxTimeWindowMinutes = 30,
+    sameBuildingThreshold = 50,
+    prioritizeUrgent = true,
+    minEfficiencyScore = 70
   } = options
 
-  // Быстрая проверка Haversine расстояния (если есть координаты)
+  // Вычисляем приоритеты заказов
+  const priority1 = calculateOrderPriority(order1)
+  const priority2 = calculateOrderPriority(order2)
+
+  // Если включен приоритет срочных заказов и один из заказов очень срочный
+  if (prioritizeUrgent) {
+    const isUrgent1 = priority1 > 800
+    const isUrgent2 = priority2 > 800
+    
+    // Очень срочные заказы лучше доставлять отдельно для максимальной скорости
+    if (isUrgent1 && !isUrgent2) {
+      return {
+        shouldCombine: false,
+        reason: 'Срочный заказ лучше доставить отдельно для максимальной скорости',
+        efficiencyScore: 0
+      }
+    }
+    if (isUrgent2 && !isUrgent1) {
+      return {
+        shouldCombine: false,
+        reason: 'Срочный заказ лучше доставить отдельно для максимальной скорости',
+        efficiencyScore: 0
+      }
+    }
+  }
+
+  // Быстрая проверка Haversine расстояния (с использованием кеша)
   let distanceMeters = Infinity
   if (order1.coords && order2.coords) {
-    distanceMeters = haversineDistance(
+    // Используем кешированное расстояние из routeOptimizationCache
+    const distanceKm = haversineDistance(
       order1.coords.lat,
       order1.coords.lng,
       order2.coords.lat,
       order2.coords.lng
-    ) * 1000 // в метры
+    )
+    distanceMeters = distanceKm * 1000
   } else {
-    // Если координат нет, проверяем по адресу (приблизительно)
     const addr1 = normalizeAddressForComparison(order1.address)
     const addr2 = normalizeAddressForComparison(order2.address)
     
-    // Если адреса очень похожи (одно здание), считаем что очень близко
     if (areAddressesSameBuilding(addr1, addr2)) {
       distanceMeters = 0
     } else {
-      // Без координат не можем точно определить расстояние
-      return { shouldCombine: false, reason: 'Нет координат для проверки расстояния' }
+      return { 
+        shouldCombine: false, 
+        reason: 'Нет координат для проверки расстояния',
+        efficiencyScore: 0
+      }
     }
   }
 
-  // Проверка расстояния
-  if (distanceMeters > maxDistanceMeters) {
+  // Проверка расстояния (более гибкая для близких заказов)
+  const distanceScore = distanceMeters < sameBuildingThreshold 
+    ? 100 
+    : Math.max(0, 100 - (distanceMeters / maxDistanceMeters) * 50)
+
+  if (distanceMeters > maxDistanceMeters * 1.5) {
     return {
       shouldCombine: false,
-      reason: `Расстояние слишком большое: ${distanceMeters.toFixed(0)}м > ${maxDistanceMeters}м`
+      reason: `Расстояние слишком большое: ${distanceMeters.toFixed(0)}м`,
+      efficiencyScore: 0
     }
   }
 
-  // Проверка временного окна (дедлайны должны быть близки)
+  // Улучшенная проверка временного окна
+  let timeCompatibility = 100
+  let timeReason = ''
+
   if (order1.deadlineAt && order2.deadlineAt) {
-    const timeDiff = Math.abs(order1.deadlineAt - order2.deadlineAt) / (60 * 1000) // в минутах
-    if (timeDiff > maxTimeWindowMinutes) {
+    const deadlineDiff = Math.abs(order1.deadlineAt - order2.deadlineAt) / (60 * 1000)
+    if (deadlineDiff > maxTimeWindowMinutes * 1.5) {
       return {
         shouldCombine: false,
-        reason: `Временное окно слишком большое: ${timeDiff.toFixed(0)}мин > ${maxTimeWindowMinutes}мин`
+        reason: `Временное окно слишком большое: ${deadlineDiff.toFixed(0)}мин`,
+        efficiencyScore: 0
       }
     }
+    timeCompatibility = Math.max(0, 100 - (deadlineDiff / maxTimeWindowMinutes) * 50)
+    timeReason = `Дедлайны близки (${deadlineDiff.toFixed(0)}мин)`
   } else if (!order1.deadlineAt && !order2.deadlineAt) {
-    // Если оба без дедлайна, можно объединить
+    timeCompatibility = 80 // Оба без дедлайна - можно объединить
+    timeReason = 'Оба без дедлайна'
   } else {
-    // Если один с дедлайном, другой без - более строгая проверка
+    // Смешанные дедлайны - более строгая проверка
     const deadline = order1.deadlineAt || order2.deadlineAt
     const noDeadlineOrder = order1.deadlineAt ? order2 : order1
-    if (noDeadlineOrder.readyAt) {
-      const timeToDeadline = (deadline! - noDeadlineOrder.readyAt) / (60 * 1000)
-      if (timeToDeadline < maxTimeWindowMinutes) {
-        return {
-          shouldCombine: false,
-          reason: `Смешанные дедлайны - риск опоздания`
-        }
-      }
-    }
-  }
-
-  // Проверка готовности (если один готов, а другой нет - нужно учитывать)
-  if (order1.readyAt && order2.readyAt) {
-    const readyDiff = Math.abs(order1.readyAt - order2.readyAt) / (60 * 1000)
-    if (readyDiff > 60) { // более часа разницы
+    const timeToDeadline = (deadline! - Date.now()) / (60 * 1000)
+    
+    if (timeToDeadline < maxTimeWindowMinutes) {
       return {
         shouldCombine: false,
-        reason: `Разница во времени готовности: ${readyDiff.toFixed(0)}мин`
+        reason: 'Смешанные дедлайны - риск опоздания',
+        efficiencyScore: 0
       }
+    }
+    timeCompatibility = 60
+    timeReason = 'Смешанные дедлайны'
+  }
+
+  // Проверка готовности (улучшенная)
+  let readyCompatibility = 100
+  if (order1.readyAt && order2.readyAt) {
+    const readyDiff = Math.abs(order1.readyAt - order2.readyAt) / (60 * 1000)
+    if (readyDiff > 90) {
+      return {
+        shouldCombine: false,
+        reason: `Разница во времени готовности слишком большая: ${readyDiff.toFixed(0)}мин`,
+        efficiencyScore: 0
+      }
+    }
+    readyCompatibility = Math.max(0, 100 - (readyDiff / 60) * 50)
+  } else if (order1.readyAt || order2.readyAt) {
+    // Один готов, другой нет - проверяем, не будет ли задержки
+    const readyOrder = order1.readyAt ? order1 : order2
+    const notReadyOrder = order1.readyAt ? order2 : order1
+    const readyTime = readyOrder.readyAt!
+    const notReadyTime = notReadyOrder.readyAt || Date.now() + 30 * 60 * 1000 // Предполагаем 30 мин если нет времени
+    
+    if (notReadyTime > readyTime + 30 * 60 * 1000) {
+      // Заказ не готов еще 30+ минут - лучше не объединять
+      return {
+        shouldCombine: false,
+        reason: 'Один заказ готов, другой будет готов слишком поздно',
+        efficiencyScore: 0
+      }
+    }
+    readyCompatibility = 70
+  }
+
+  // Вычисляем общую оценку эффективности
+  const efficiencyScore = (
+    distanceScore * 0.4 +      // 40% - расстояние
+    timeCompatibility * 0.3 +  // 30% - совместимость времени
+    readyCompatibility * 0.3   // 30% - совместимость готовности
+  )
+
+  if (efficiencyScore < minEfficiencyScore) {
+    return {
+      shouldCombine: false,
+      reason: `Низкая эффективность группировки: ${efficiencyScore.toFixed(0)}%`,
+      efficiencyScore
     }
   }
 
   // Все проверки пройдены
   const reason = distanceMeters < sameBuildingThreshold
-    ? `Одно здание (${distanceMeters.toFixed(0)}м)`
-    : `Близко (${distanceMeters.toFixed(0)}м) и подходящее время`
+    ? `Одно здание (${distanceMeters.toFixed(0)}м) - эффективность ${efficiencyScore.toFixed(0)}%`
+    : `Близко (${distanceMeters.toFixed(0)}м), ${timeReason} - эффективность ${efficiencyScore.toFixed(0)}%`
 
-  return { shouldCombine: true, reason }
+  return { 
+    shouldCombine: true, 
+    reason,
+    efficiencyScore
+  }
 }
 
 /**
  * Объединяет массив заказов в группы для совместной доставки
+ * Улучшенный алгоритм с учетом приоритетов клиентов и эффективности курьеров
  */
 export function combineOrders(
   orders: Order[],
@@ -123,41 +346,168 @@ export function combineOrders(
     maxDistanceMeters?: number
     maxTimeWindowMinutes?: number
     maxOrdersPerGroup?: number
+    prioritizeUrgent?: boolean
+    minEfficiencyScore?: number
   } = {}
 ): Order[][] {
   const {
     maxDistanceMeters = 500,
     maxTimeWindowMinutes = 30,
-    maxOrdersPerGroup = 3
+    maxOrdersPerGroup = 3,
+    prioritizeUrgent = true,
+    minEfficiencyScore = 70
   } = options
+
+  if (orders.length === 0) return []
+  if (orders.length === 1) return [[orders[0]]]
+
+  // 1. Предварительно вычисляем приоритеты для всех заказов (один раз)
+  const orderPriorities = new Map<Order, number>()
+  orders.forEach(order => {
+    orderPriorities.set(order, calculateOrderPriority(order))
+  })
+
+  // Сортируем заказы по приоритету (срочные первыми)
+  const ordersWithPriority = orders.map(order => ({
+    order,
+    priority: orderPriorities.get(order)!
+  })).sort((a, b) => b.priority - a.priority) // Сначала самые приоритетные
 
   const groups: Order[][] = []
   const used = new Set<number>()
+  const orderToIndex = new Map<Order, number>()
+  
+  // Создаем маппинг для быстрого поиска индексов
+  orders.forEach((o, idx) => orderToIndex.set(o, idx))
 
-  for (let i = 0; i < orders.length; i++) {
-    if (used.has(i)) continue
+  // 2. Обрабатываем заказы по приоритету
+  for (const { order: currentOrder, priority } of ordersWithPriority) {
+    const currentIdx = orderToIndex.get(currentOrder)!
+    if (used.has(currentIdx)) continue
 
-    const group: Order[] = [orders[i]]
-    used.add(i)
+    // Очень срочные заказы (приоритет > 800) доставляем отдельно для максимальной скорости
+    if (prioritizeUrgent && priority > 800) {
+      groups.push([currentOrder])
+      used.add(currentIdx)
+      continue
+    }
 
-    // Ищем заказы для объединения
-    for (let j = i + 1; j < orders.length; j++) {
-      if (used.has(j) || group.length >= maxOrdersPerGroup) break
+    // 3. Ищем лучших кандидатов для объединения
+    const group: Order[] = [currentOrder]
+    used.add(currentIdx)
 
-      const shouldCombine = shouldCombineOrders(
-        orders[i],
-        orders[j],
-        { maxDistanceMeters, maxTimeWindowMinutes }
+    // Собираем всех потенциальных кандидатов с оценками
+    const candidates: Array<{
+      order: Order
+      index: number
+      efficiencyScore: number
+      reason: string
+      priority: number
+    }> = []
+
+    for (let i = 0; i < orders.length; i++) {
+      if (used.has(i) || i === currentIdx) continue
+      
+      const candidate = orders[i]
+      const candidatePriority = orderPriorities.get(candidate)!
+      
+      // Пропускаем очень срочные заказы (они должны быть отдельно)
+      if (prioritizeUrgent && candidatePriority > 800) continue
+
+      const combineResult = shouldCombineOrders(
+        currentOrder,
+        candidate,
+        {
+          maxDistanceMeters,
+          maxTimeWindowMinutes,
+          prioritizeUrgent,
+          minEfficiencyScore
+        }
       )
 
-      if (shouldCombine.shouldCombine) {
-        group.push(orders[j])
-        used.add(j)
+      if (combineResult.shouldCombine && combineResult.efficiencyScore) {
+        candidates.push({
+          order: candidate,
+          index: i,
+          efficiencyScore: combineResult.efficiencyScore,
+          reason: combineResult.reason,
+          priority: candidatePriority
+        })
       }
+    }
+
+    // 4. Сортируем кандидатов по эффективности и приоритету
+    candidates.sort((a, b) => {
+      // Сначала по эффективности (выше = лучше)
+      if (Math.abs(a.efficiencyScore - b.efficiencyScore) > 10) {
+        return b.efficiencyScore - a.efficiencyScore
+      }
+      // Затем по приоритету (выше = лучше) - используем уже вычисленный приоритет
+      return b.priority - a.priority
+    })
+
+    // 5. Добавляем лучших кандидатов в группу
+    for (const candidate of candidates) {
+      if (group.length >= maxOrdersPerGroup) break
+      if (used.has(candidate.index)) continue
+
+      // Проверяем совместимость со всей группой
+      let compatibleWithGroup = true
+      for (const existingOrder of group) {
+        const checkResult = shouldCombineOrders(
+          existingOrder,
+          candidate.order,
+          {
+            maxDistanceMeters,
+            maxTimeWindowMinutes,
+            prioritizeUrgent,
+            minEfficiencyScore
+          }
+        )
+        
+        if (!checkResult.shouldCombine) {
+          compatibleWithGroup = false
+          break
+        }
+      }
+
+      if (compatibleWithGroup) {
+        group.push(candidate.order)
+        used.add(candidate.index)
+      }
+    }
+
+    // 6. Оптимизируем порядок заказов в группе для минимизации времени доставки
+    if (group.length > 1) {
+      group.sort((a, b) => {
+        // Сначала по времени готовности
+        const aReady = a.readyAt || Date.now()
+        const bReady = b.readyAt || Date.now()
+        if (Math.abs(aReady - bReady) > 5 * 60 * 1000) {
+          return aReady - bReady
+        }
+        
+        // Затем по дедлайну
+        if (a.deadlineAt && b.deadlineAt) {
+          return a.deadlineAt - b.deadlineAt
+        }
+        if (a.deadlineAt) return -1
+        if (b.deadlineAt) return 1
+        
+        // Затем по приоритету (используем уже вычисленный)
+        return (orderPriorities.get(b) || 0) - (orderPriorities.get(a) || 0)
+      })
     }
 
     groups.push(group)
   }
+
+  // 7. Сортируем группы по приоритету (группы с более приоритетными заказами первыми)
+  groups.sort((a, b) => {
+    const aMaxPriority = Math.max(...a.map(o => orderPriorities.get(o) || 0))
+    const bMaxPriority = Math.max(...b.map(o => orderPriorities.get(o) || 0))
+    return bMaxPriority - aMaxPriority
+  })
 
   return groups
 }

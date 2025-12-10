@@ -7,7 +7,6 @@ import {
   CloudArrowUpIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
-  InformationCircleIcon,
   XMarkIcon,
   UserGroupIcon,
   CreditCardIcon
@@ -33,7 +32,6 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
   processedData,
   onClearResults
 }) => {
-  const [showInstructions, setShowInstructions] = useState(false)
   const { isDark } = useTheme()
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -93,99 +91,40 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
     <div className="space-y-6">
       {/* Заголовок секции */}
       <div className={clsx(
-        'rounded-lg shadow-sm border p-6',
-        isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+        'rounded-3xl p-8 shadow-2xl border-2 overflow-hidden relative',
+        isDark 
+          ? 'bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 border-gray-700' 
+          : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-blue-200'
       )}>
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className={clsx(
-              'text-xl font-semibold flex items-center',
-              isDark ? 'text-gray-100' : 'text-gray-900'
-            )}>
-              <DocumentArrowUpIcon className={clsx('h-6 w-6 mr-3', isDark ? 'text-blue-400' : 'text-blue-600')} />
-              Загрузка Excel файлов
-            </h2>
-            <p className={clsx(
-              'mt-1 text-sm',
-              isDark ? 'text-gray-400' : 'text-gray-600'
-            )}>
-              Загрузите Excel файл с заказами для автоматической обработки и создания маршрутов
-            </p>
-          </div>
-          <button
-            onClick={() => setShowInstructions(!showInstructions)}
-            className={clsx(
-              'flex items-center px-4 py-2 rounded-lg border font-medium transition-colors',
-              isDark 
-                ? 'border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white' 
-                : 'border-gray-300 text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-            )}
-          >
-            <InformationCircleIcon className="h-4 w-4 mr-2" />
-            Инструкции
-          </button>
-        </div>
-      </div>
-
-      {/* Инструкции */}
-      {showInstructions && (
-        <div className={clsx(
-          'rounded-lg border p-6',
-          isDark ? 'bg-blue-900/20 border-blue-500/30' : 'bg-blue-50 border-blue-200'
-        )}>
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <h3 className={clsx(
-                'text-lg font-medium mb-4',
-                isDark ? 'text-blue-300' : 'text-blue-900'
-              )}>
-                Как подготовить Excel файл
-              </h3>
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10 opacity-50"></div>
+        <div className="relative z-10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
               <div className={clsx(
-                'text-sm space-y-3',
-                isDark ? 'text-blue-200' : 'text-blue-800'
+                'p-4 rounded-2xl shadow-lg',
+                isDark 
+                  ? 'bg-gradient-to-br from-blue-600 to-purple-600' 
+                  : 'bg-gradient-to-br from-blue-500 to-indigo-600'
               )}>
-                <div>
-                  <h4 className="font-medium">Обязательные колонки:</h4>
-                  <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
-                    <li><strong>Адрес</strong> - адрес доставки (обязательно)</li>
-                    <li><strong>Номер заказа</strong> - уникальный номер заказа</li>
-                    <li><strong>Курьер</strong> - имя курьера</li>
-                    <li><strong>Способ оплаты</strong> - наличные, карта, безнал</li>
-                    <li><strong>Сумма</strong> - сумма заказа</li>
-                  </ul>
-                </div>
-                <div>
-                  <h4 className="font-medium">Дополнительные колонки:</h4>
-                  <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
-                    <li><strong>Телефон</strong> - телефон клиента</li>
-                    <li><strong>Имя клиента</strong> - имя заказчика</li>
-                    <li><strong>Комментарий</strong> - комментарий к заказу</li>
-                    <li><strong>Зона доставки</strong> - зона доставки</li>
-                  </ul>
-                </div>
-                <div>
-                  <h4 className="font-medium">Поддерживаемые форматы:</h4>
-                  <ul className="list-disc list-inside ml-4 mt-1">
-                    <li>Excel файлы (.xlsx, .xls)</li>
-                    <li>CSV файлы (.csv)</li>
-                    <li>Максимальный размер: 10MB</li>
-                  </ul>
-                </div>
+                <DocumentArrowUpIcon className="w-8 h-8 text-white" />
+              </div>
+              <div>
+                <h2 className={clsx(
+                  'text-3xl font-bold mb-1 bg-gradient-to-r bg-clip-text text-transparent',
+                  isDark 
+                    ? 'from-blue-400 to-purple-400' 
+                    : 'from-blue-600 to-indigo-600'
+                )}>
+                  Загрузка Excel файлов
+                </h2>
+                <p className={clsx('text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>
+                  Загрузите Excel файл с заказами для автоматической обработки и создания маршрутов
+                </p>
               </div>
             </div>
-            <button
-              onClick={() => setShowInstructions(false)}
-              className={clsx(
-                'ml-4 transition-colors',
-                isDark ? 'text-blue-400 hover:text-blue-300' : 'text-blue-400 hover:text-blue-600'
-              )}
-            >
-              <XMarkIcon className="h-5 w-5" />
-            </button>
           </div>
         </div>
-      )}
+      </div>
 
       {/* Область загрузки файла */}
       <div className={clsx(
