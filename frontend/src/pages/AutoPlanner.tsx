@@ -9172,7 +9172,11 @@ export const AutoPlanner: React.FC = () => {
         <Suspense fallback={null}>
           <HelpModal
             isOpen={showHelpModal}
-            onClose={() => setShowHelpModal(false)}
+            onClose={() => {
+              setShowHelpModal(false)
+              localStorage.setItem('km_has_seen_help', 'true')
+              setHasSeenHelp(true)
+            }}
             onStartTour={() => {
               setShowHelpModal(false)
               setTimeout(() => setShowHelpTour(true), 300)
@@ -9186,7 +9190,11 @@ export const AutoPlanner: React.FC = () => {
         <Suspense fallback={null}>
           <HelpTour
             isOpen={showHelpTour}
-            onClose={() => setShowHelpTour(false)}
+            onClose={() => {
+              setShowHelpTour(false)
+              localStorage.setItem('km_has_seen_help', 'true')
+              setHasSeenHelp(true)
+            }}
             onComplete={() => {
               setShowHelpTour(false)
               localStorage.setItem('km_has_seen_help', 'true')
