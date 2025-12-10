@@ -104,7 +104,7 @@ export const exportToJSON = (data: RouteExportData): string => {
 
 // Экспорт в CSV
 export const exportToCSV = (data: RouteExportData): string => {
-  const { route, orders, startAddress, endAddress } = data
+  const { route, orders } = data
   
   let csv = 'Позиция,Номер заказа,Адрес,Готовность,Дедлайн\n'
   

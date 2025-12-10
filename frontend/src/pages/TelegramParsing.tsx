@@ -9,11 +9,10 @@ import {
   CheckCircleIcon,
   XCircleIcon,
   ArrowPathIcon,
-  PaperClipIcon,
   LinkIcon,
   XMarkIcon
 } from '@heroicons/react/24/outline'
-import { telegramService, type TelegramChat as ServiceChat, type TelegramMessage } from '../services/telegramService'
+import { telegramService } from '../services/telegramService'
 
 interface TelegramChat {
   id: string

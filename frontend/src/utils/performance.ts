@@ -12,7 +12,7 @@ export function debounce<T extends (...args: any[]) => any>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout | null = null
+  let timeout: ReturnType<typeof setTimeout> | null = null
 
   return function executedFunction(...args: Parameters<T>) {
     const later = () => {
@@ -52,7 +52,7 @@ export function throttle<T extends (...args: any[]) => any>(
  */
 export class RequestBatcher<T> {
   private batch: Array<{ args: any[]; resolve: (value: T) => void; reject: (error: any) => void }> = []
-  private timeout: NodeJS.Timeout | null = null
+  private timeout: ReturnType<typeof setTimeout> | null = null
   private readonly batchSize: number
   private readonly batchDelay: number
   private readonly batchFn: (args: any[][]) => Promise<T[]>
@@ -167,9 +167,7 @@ export function useVirtualization<T>(
   totalHeight: number
   offsetY: number
 } {
-  const { itemHeight, containerHeight, overscan = 5 } = options
-
-  const [scrollTop, setScrollTop] = React.useState(0)
+  const { itemHeight, containerHeight, overscan = 5, scrollTop = 0 } = options
 
   const totalHeight = items.length * itemHeight
   const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - overscan)

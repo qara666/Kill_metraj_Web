@@ -7,7 +7,6 @@ import {
   XMarkIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-  QuestionMarkCircleIcon,
   InformationCircleIcon
 } from '@heroicons/react/24/outline'
 

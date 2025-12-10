@@ -59,18 +59,25 @@ export const RouteDetailsTabs: React.FC<RouteDetailsTabsProps> = ({ reasons }) =
         if (trimmedPart.includes('выбран как первый заказ') || trimmedPart.includes('объединен с заказами')) {
           const orderMatch = trimmedPart.match(/Заказ #([^\s"]+)/)
           const addressMatch = trimmedPart.match(/"([^"]+)"/)
-          if (orderMatch) {
-            parsed.orderInfo = { ...parsed.orderInfo, orderNumber: orderMatch[1].trim() }
-          }
-          if (addressMatch) {
-            parsed.orderInfo = { ...parsed.orderInfo, address: addressMatch[1].trim() }
+          if (orderMatch || addressMatch) {
+            if (!parsed.orderInfo) {
+              parsed.orderInfo = { orderNumber: '', address: '' }
+            }
+            if (orderMatch) {
+              parsed.orderInfo.orderNumber = orderMatch[1].trim()
+            }
+            if (addressMatch) {
+              parsed.orderInfo.address = addressMatch[1].trim()
+            }
           }
         }
 
         if (trimmedPart.includes('Оценка приоритета:') || trimmedPart.includes('📊 Оценка приоритета:')) {
           const priorityMatch = trimmedPart.match(/Оценка приоритета:\s*([\d.]+)/)
           if (priorityMatch) {
-            if (!parsed.orderInfo) parsed.orderInfo = {}
+            if (!parsed.orderInfo) {
+              parsed.orderInfo = { orderNumber: '', address: '' }
+            }
             parsed.orderInfo.priority = priorityMatch[1]
           }
         }
@@ -83,7 +90,9 @@ export const RouteDetailsTabs: React.FC<RouteDetailsTabsProps> = ({ reasons }) =
         if (trimmedPart.includes('Время готовности:') || trimmedPart.includes('⏰ Время готовности:')) {
           const timeMatch = trimmedPart.match(/Время готовности:\s*([^|]+)/)
           if (timeMatch) {
-            if (!parsed.orderInfo) parsed.orderInfo = {}
+            if (!parsed.orderInfo) {
+              parsed.orderInfo = { orderNumber: '', address: '' }
+            }
             parsed.orderInfo.readyTime = timeMatch[1].trim()
           }
         }
@@ -91,7 +100,9 @@ export const RouteDetailsTabs: React.FC<RouteDetailsTabsProps> = ({ reasons }) =
         if (trimmedPart.includes('Зона доставки:') || trimmedPart.includes('🏘️ Зона доставки:')) {
           const zoneMatch = trimmedPart.match(/Зона доставки:\s*([^|]+)/)
           if (zoneMatch) {
-            if (!parsed.orderInfo) parsed.orderInfo = {}
+            if (!parsed.orderInfo) {
+              parsed.orderInfo = { orderNumber: '', address: '' }
+            }
             parsed.orderInfo.zone = zoneMatch[1].trim()
           }
         }
@@ -99,7 +110,9 @@ export const RouteDetailsTabs: React.FC<RouteDetailsTabsProps> = ({ reasons }) =
         if (trimmedPart.includes('Дедлайн:') || trimmedPart.includes('⏱️ Дедлайн:')) {
           const deadlineMatch = trimmedPart.match(/Дедлайн:\s*([^|]+)/)
           if (deadlineMatch) {
-            if (!parsed.orderInfo) parsed.orderInfo = {}
+            if (!parsed.orderInfo) {
+              parsed.orderInfo = { orderNumber: '', address: '' }
+            }
             parsed.orderInfo.deadline = deadlineMatch[1].trim()
           }
         }
@@ -253,7 +266,7 @@ export const RouteDetailsTabs: React.FC<RouteDetailsTabsProps> = ({ reasons }) =
       <div className="p-6 max-h-[60vh] overflow-y-auto">
         {activeTab === 'overview' && (
           <div className="space-y-4">
-            {currentReason.orderInfo && (
+            {currentReason.orderInfo && currentReason.orderInfo.orderNumber && currentReason.orderInfo.address && (
               <div className={clsx('p-4 rounded-lg', isDark ? 'bg-gray-800/50' : 'bg-white')}>
                 <div className="flex items-start gap-3 mb-3">
                   <div className={clsx('p-2 rounded-lg', isDark ? 'bg-green-600/20' : 'bg-green-100')}>

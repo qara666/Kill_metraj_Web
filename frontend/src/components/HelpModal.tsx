@@ -9,8 +9,6 @@ import {
   Cog6ToothIcon,
   PlayIcon,
   ChartBarIcon,
-  ClockIcon,
-  ArrowPathIcon,
   MapPinIcon,
   TruckIcon,
   QuestionMarkCircleIcon,
