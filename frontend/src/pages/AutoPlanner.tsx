@@ -6149,44 +6149,47 @@ export const AutoPlanner: React.FC = () => {
         </div>
 
         {/* Тепловая карта трафика (Mapbox) */}
-        {sectorPathState && sectorPathState.length > 0 && (
-          <div className={clsx('mt-6 rounded-xl border', isDark ? 'border-gray-700 bg-gray-800/30' : 'border-gray-200 bg-white')}>
-            <button
-              onClick={() => setIsTrafficHeatmapCollapsed(!isTrafficHeatmapCollapsed)}
-              className={clsx(
-                'w-full px-4 py-3 flex items-center justify-between transition-colors',
-                isDark ? 'hover:bg-gray-700/50' : 'hover:bg-gray-50'
-              )}
-            >
-              <div className={clsx('text-sm font-medium flex items-center gap-2', isDark ? 'text-gray-300' : 'text-gray-800')}>
-                <span>{isTrafficHeatmapCollapsed ? '▶' : '▼'}</span>
-                <span>🚦 Тепловая карта трафика (Mapbox)</span>
-                <span className={clsx('text-xs px-2 py-1 rounded-full', isDark ? 'bg-green-900/40 text-green-200' : 'bg-green-100 text-green-700')}>
-                  Live
-                </span>
-              </div>
-              <div className={clsx('text-[11px]', isDark ? 'text-gray-500' : 'text-gray-500')}>
-                {mapboxTokenState ? 'Токен подключен' : 'Нет токена'}
-              </div>
-            </button>
-            {!isTrafficHeatmapCollapsed && (
-              <div className="p-4">
-                {!mapboxTokenState && (
-                  <div className={clsx('mb-3 text-xs px-3 py-2 rounded-lg', isDark ? 'bg-yellow-900/30 text-yellow-200' : 'bg-yellow-50 text-yellow-700')}>
-                    ⚠️ Mapbox токен не задан в настройках. Используется дефолтный токен, рекомендуется указать собственный.
-                  </div>
-                )}
-                <Suspense fallback={<div className={clsx('text-sm text-center py-8', isDark ? 'text-gray-400' : 'text-gray-600')}>Загрузка карты трафика...</div>}>
-                  <TrafficHeatmap
-                    sectorPath={sectorPathState}
-                    sectorName={sectorCityName || 'Сектор'}
-                    mapboxToken={mapboxTokenState}
-                  />
-                </Suspense>
-              </div>
+        <div className={clsx('mt-6 rounded-xl border', isDark ? 'border-gray-700 bg-gray-800/30' : 'border-gray-200 bg-white')}>
+          <button
+            onClick={() => setIsTrafficHeatmapCollapsed(!isTrafficHeatmapCollapsed)}
+            className={clsx(
+              'w-full px-4 py-3 flex items-center justify-between transition-colors',
+              isDark ? 'hover:bg-gray-700/50' : 'hover:bg-gray-50'
             )}
-          </div>
-        )}
+          >
+            <div className={clsx('text-sm font-medium flex items-center gap-2', isDark ? 'text-gray-300' : 'text-gray-800')}>
+              <span>{isTrafficHeatmapCollapsed ? '▶' : '▼'}</span>
+              <span>🚦 Тепловая карта трафика (Mapbox)</span>
+              <span className={clsx('text-xs px-2 py-1 rounded-full', isDark ? 'bg-green-900/40 text-green-200' : 'bg-green-100 text-green-700')}>
+                Live
+              </span>
+            </div>
+            <div className={clsx('text-[11px]', isDark ? 'text-gray-500' : 'text-gray-500')}>
+              {mapboxTokenState ? 'Токен подключен' : 'Нет токена'}
+            </div>
+          </button>
+          {!isTrafficHeatmapCollapsed && (
+            <div className="p-4">
+              {!mapboxTokenState && (
+                <div className={clsx('mb-3 text-xs px-3 py-2 rounded-lg', isDark ? 'bg-yellow-900/30 text-yellow-200' : 'bg-yellow-50 text-yellow-700')}>
+                  ⚠️ Mapbox токен не задан в настройках. Используется дефолтный токен, рекомендуется указать собственный.
+                </div>
+              )}
+              {!sectorPathState || sectorPathState.length === 0 ? (
+                <div className={clsx('mb-3 text-xs px-3 py-2 rounded-lg', isDark ? 'bg-blue-900/30 text-blue-200' : 'bg-blue-50 text-blue-700')}>
+                  ℹ️ Сектор не задан. Тепловая карта будет показывать общую информацию о трафике. Для более точных данных задайте сектор в настройках.
+                </div>
+              ) : null}
+              <Suspense fallback={<div className={clsx('text-sm text-center py-8', isDark ? 'text-gray-400' : 'text-gray-600')}>Загрузка карты трафика...</div>}>
+                <TrafficHeatmap
+                  sectorPath={sectorPathState || undefined}
+                  sectorName={sectorCityName || 'Сектор'}
+                  mapboxToken={mapboxTokenState}
+                />
+              </Suspense>
+            </div>
+          )}
+        </div>
 
           <div className={clsx(
             'mb-3 rounded-lg p-4 border text-xs space-y-2',
