@@ -265,7 +265,6 @@ export function shouldCombineOrders(
   } else {
     // Смешанные дедлайны - более строгая проверка
     const deadline = order1.deadlineAt || order2.deadlineAt
-    const noDeadlineOrder = order1.deadlineAt ? order2 : order1
     const timeToDeadline = (deadline! - Date.now()) / (60 * 1000)
     
     if (timeToDeadline < maxTimeWindowMinutes) {

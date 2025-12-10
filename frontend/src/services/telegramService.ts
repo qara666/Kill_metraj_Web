@@ -5,15 +5,6 @@
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
-// Проверка доступности API
-const checkApiAvailability = async (): Promise<boolean> => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/health`, { method: 'GET' });
-    return response.ok;
-  } catch {
-    return false;
-  }
-};
 
 export interface TelegramChat {
   id: string

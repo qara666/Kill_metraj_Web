@@ -57,13 +57,15 @@ class GoogleApiCache {
     }
     
     if (request.location) {
-      const lat = typeof request.location.lat === 'function' 
-        ? request.location.lat() 
-        : request.location.lat
-      const lng = typeof request.location.lng === 'function' 
-        ? request.location.lng() 
-        : request.location.lng
-      parts.push(`loc:${lat?.toFixed(5) ?? lat},${lng?.toFixed(5) ?? lng}`)
+      const lat = (typeof request.location.lat === 'function' 
+        ? (request.location.lat as () => number)() 
+        : request.location.lat) as number | undefined
+      const lng = (typeof request.location.lng === 'function' 
+        ? (request.location.lng as () => number)() 
+        : request.location.lng) as number | undefined
+      if (lat !== undefined && lng !== undefined) {
+        parts.push(`loc:${lat.toFixed(5)},${lng.toFixed(5)}`)
+      }
     }
     
     if (request.region) parts.push(`reg:${request.region}`)
@@ -116,9 +118,11 @@ class GoogleApiCache {
     if (loc.placeId) return { placeId: loc.placeId }
     if (typeof loc === 'string') return loc.trim().toLowerCase()
     if (loc.lat && loc.lng) {
-      const lat = typeof loc.lat === 'function' ? loc.lat() : loc.lat
-      const lng = typeof loc.lng === 'function' ? loc.lng() : loc.lng
-      return { lat: lat?.toFixed(5), lng: lng?.toFixed(5) }
+      const lat = (typeof loc.lat === 'function' ? (loc.lat as () => number)() : loc.lat) as number | undefined
+      const lng = (typeof loc.lng === 'function' ? (loc.lng as () => number)() : loc.lng) as number | undefined
+      if (lat !== undefined && lng !== undefined) {
+        return { lat: lat.toFixed(5), lng: lng.toFixed(5) }
+      }
     }
     
     return loc

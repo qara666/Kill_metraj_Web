@@ -10,8 +10,6 @@ import {
   AcademicCapIcon,
   UserIcon,
   TruckIcon,
-  PlusIcon,
-  PencilIcon,
   MapPinIcon,
   ClockIcon
 } from '@heroicons/react/24/outline'
