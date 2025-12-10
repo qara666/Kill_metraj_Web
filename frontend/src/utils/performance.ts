@@ -155,6 +155,7 @@ export interface VirtualListOptions {
   itemHeight: number
   containerHeight: number
   overscan?: number
+  scrollTop?: number
 }
 
 export function useVirtualization<T>(
