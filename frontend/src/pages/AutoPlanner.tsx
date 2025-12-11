@@ -843,9 +843,14 @@ export const AutoPlanner: React.FC = () => {
       setSectorPathState(null)
     }
 
-    if (settings.mapboxToken && settings.mapboxToken.trim()) {
+    // Загружаем Mapbox Token из localStorage, если он есть
+    const savedMapboxToken = localStorage.getItem('km_mapbox_token')
+    if (savedMapboxToken && savedMapboxToken.trim()) {
+      setMapboxTokenState(savedMapboxToken.trim())
+    } else if (settings.mapboxToken && settings.mapboxToken.trim()) {
       setMapboxTokenState(settings.mapboxToken.trim())
     } else {
+      // Не устанавливаем токен, если он не задан пользователем
       setMapboxTokenState(undefined)
     }
   }, [])
