@@ -113,17 +113,42 @@ class TelegramService {
    */
   async initialize(sessionId, apiId, apiHash, phoneNumber) {
     try {
-      // Валидация входных данных
-      const validation = this.validateInputs(apiId, apiHash, phoneNumber);
-      if (!validation.valid) {
+      // Валидация API данных (обязательны всегда)
+      if (!apiId) {
+        return { valid: false, error: 'API ID обязателен' };
+      }
+      const apiIdStr = String(apiId).trim();
+      if (apiIdStr.length === 0) {
+        return { valid: false, error: 'API ID не может быть пустым' };
+      }
+      const apiIdNum = parseInt(apiIdStr);
+      if (isNaN(apiIdNum) || apiIdNum <= 0) {
         return {
           success: false,
-          error: validation.error
+          error: `API ID должен быть положительным числом (получено: ${apiIdStr})`
         };
       }
 
-      const cleanPhone = validation.cleanPhone;
-      const cleanApiHash = validation.cleanApiHash || String(apiHash).replace(/[\s\n\r\t\u00A0\u2000-\u200B\u2028\u2029\uFEFF]/g, '').trim();
+      // Валидация API Hash
+      if (!apiHash) {
+        return {
+          success: false,
+          error: 'API Hash обязателен'
+        };
+      }
+      const cleanApiHash = String(apiHash).replace(/[\s\n\r\t\u00A0\u2000-\u200B\u2028\u2029\uFEFF]/g, '').trim();
+      if (cleanApiHash.length < 20) {
+        return {
+          success: false,
+          error: `API Hash должен быть строкой длиной не менее 20 символов (получено: ${cleanApiHash.length} после очистки)`
+        };
+      }
+      if (!/^[a-f0-9]+$/i.test(cleanApiHash)) {
+        return {
+          success: false,
+          error: 'API Hash должен содержать только шестнадцатеричные символы (0-9, a-f)'
+        };
+      }
 
       // Проверяем, есть ли уже клиент для этой сессии
       if (this.clients.has(sessionId)) {
@@ -136,49 +161,31 @@ class TelegramService {
       // Загружаем или создаем сессию
       let stringSession = '';
       const sessionPath = this.getSessionPath(sessionId);
+      let hasExistingSession = false;
       
       try {
         const sessionData = await fs.readFile(sessionPath, 'utf-8');
         // Проверяем, что сессия не пустая и имеет правильный формат
         if (sessionData && sessionData.trim().length > 0) {
           stringSession = sessionData.trim();
+          hasExistingSession = true;
         }
       } catch (error) {
         // Файл не существует, создадим новую сессию
         stringSession = '';
+        hasExistingSession = false;
       }
 
-      const apiIdNum = parseInt(String(apiId).trim());
-      
-      // Проверяем все параметры перед созданием клиента
-      if (!apiIdNum || isNaN(apiIdNum) || apiIdNum <= 0) {
-        return {
-          success: false,
-          error: `API ID должен быть положительным числом (получено: ${apiId}, преобразовано: ${apiIdNum})`
-        };
+      // Номер телефона полностью опционален - обрабатываем его локально
+      let processedPhone = '';
+      if (phoneNumber && typeof phoneNumber === 'string' && phoneNumber.trim().length > 0) {
+        // Валидация номера телефона только если он передан
+        const tempPhone = phoneNumber.replace(/\D/g, '');
+        if (tempPhone.length >= 7 && tempPhone.length <= 15 && !tempPhone.startsWith('0') && /^\d+$/.test(tempPhone)) {
+          processedPhone = tempPhone;
+        }
       }
-      
-      if (!cleanApiHash || cleanApiHash.length === 0) {
-        return {
-          success: false,
-          error: `API Hash должен быть непустой строкой (длина после очистки: ${cleanApiHash ? cleanApiHash.length : 0})`
-        };
-      }
-      
-      if (cleanApiHash.length < 20) {
-        return {
-          success: false,
-          error: `API Hash должен быть длиной не менее 20 символов (получено: ${cleanApiHash.length} после очистки)`
-        };
-      }
-      
-      if (!/^[a-f0-9]+$/i.test(cleanApiHash)) {
-        return {
-          success: false,
-          error: 'API Hash должен содержать только шестнадцатеричные символы (0-9, a-f)'
-        };
-      }
-      
+
       // Логируем входные данные для отладки
       console.log('Инициализация Telegram:', {
         apiId: apiIdNum,
@@ -188,9 +195,10 @@ class TelegramService {
         apiHashCleaned: cleanApiHash ? `${cleanApiHash.substring(0, 10)}...` : 'undefined',
         apiHashLength: cleanApiHash ? cleanApiHash.length : 0,
         apiHashType: typeof cleanApiHash,
-        phoneOriginal: phoneNumber,
-        phoneCleaned: cleanPhone,
-        phoneLength: cleanPhone.length,
+        phoneOriginal: phoneNumber || 'не требуется (сессия существует)',
+        phoneProcessed: processedPhone || 'не требуется',
+        phoneLength: processedPhone ? processedPhone.length : 0,
+        hasExistingSession: hasExistingSession,
         sessionExists: !!stringSession,
         sessionLength: stringSession ? stringSession.length : 0
       });
@@ -237,22 +245,26 @@ class TelegramService {
       // Проверяем авторизацию
       if (!(await client.checkAuthorization())) {
         // Нужна авторизация
-        // gramjs требует номер телефона как строку без плюса
-        // Убеждаемся, что номер содержит только цифры
-        // Определяем phoneForApi ДО блока try-catch, чтобы она была доступна в catch
-        const phoneForApi = cleanPhone.replace(/\D/g, '');
+        // Номер телефона опционален - если не передан, просто возвращаем ошибку
+        
+        if (!processedPhone || processedPhone.length === 0) {
+          return {
+            success: false,
+            error: 'Требуется авторизация. Если у вас нет сохраненной сессии, укажите номер телефона для получения кода подтверждения. Если сессия уже была сохранена ранее, попробуйте переподключиться.'
+          };
+        }
         
         try {
-          // Проверяем, что все параметры определены
-          if (!phoneForApi || phoneForApi.length === 0) {
-            throw new Error('Номер телефона не может быть пустым');
+          // Валидация длины номера перед отправкой
+          if (processedPhone.length < 10 || processedPhone.length > 15) {
+            throw new Error(`Номер телефона должен содержать от 10 до 15 цифр (получено: ${processedPhone.length} цифр)`);
           }
           
-          // Используем уже очищенные данные
+          // Используем локальную переменную processedPhone
           console.log('Отправка кода на номер:', {
-            phone: phoneForApi,
-            phoneLength: phoneForApi.length,
-            phoneType: typeof phoneForApi,
+            phone: processedPhone,
+            phoneLength: processedPhone.length,
+            phoneType: typeof processedPhone,
             apiId: apiIdNum,
             apiIdType: typeof apiIdNum,
             apiHashLength: cleanApiHash.length,
@@ -261,25 +273,17 @@ class TelegramService {
             apiHashValid: /^[a-f0-9]+$/i.test(cleanApiHash)
           });
           
-          // В gramjs 2.26+ sendCode принимает только номер телефона как строку
-          // Убеждаемся, что передаем правильный тип (строка, не число)
-          // gramjs может требовать номер в международном формате без плюса, только цифры
-          // Проверяем, что номер начинается с кода страны (например, 380 для Украины)
-          if (phoneForApi.length < 10 || phoneForApi.length > 15) {
-            throw new Error(`Номер телефона должен содержать от 10 до 15 цифр (получено: ${phoneForApi.length} цифр)`);
-          }
-          
           // Логируем финальные параметры перед вызовом
           console.log('Вызов client.sendCode с параметрами:', {
-            phone: phoneForApi,
-            phoneLength: phoneForApi.length,
-            phoneType: typeof phoneForApi,
+            phone: processedPhone,
+            phoneLength: processedPhone.length,
+            phoneType: typeof processedPhone,
             apiId: apiIdNum,
             apiHashLength: cleanApiHash.length,
             apiHashValid: /^[a-f0-9]+$/i.test(cleanApiHash)
           });
           
-          const result = await client.sendCode(phoneForApi);
+          const result = await client.sendCode(processedPhone);
 
           // Проверяем результат
           if (!result || !result.phoneCodeHash) {
@@ -295,56 +299,69 @@ class TelegramService {
           };
         } catch (sendCodeError) {
           console.error('Ошибка отправки кода:', sendCodeError);
+          
+          // Безопасное извлечение информации об ошибке
+          const errorMessage = sendCodeError?.message || String(sendCodeError) || 'Неизвестная ошибка';
+          const errorName = sendCodeError?.name || 'Error';
+          const errorStack = sendCodeError?.stack || '';
+          const errorCode = sendCodeError?.code || '';
+          const errorType = (sendCodeError && typeof sendCodeError === 'object' && sendCodeError.constructor) 
+            ? sendCodeError.constructor.name 
+            : typeof sendCodeError;
+          
+          // Используем локальную переменную processedPhone из области видимости
+          const phoneForLog = processedPhone || '';
+          const phoneLength = phoneForLog ? phoneForLog.length : 0;
+          
           console.error('Детали ошибки:', {
-            message: sendCodeError.message,
-            stack: sendCodeError.stack,
-            code: sendCodeError.code,
-            name: sendCodeError.name,
-            phone: cleanPhone,
-            phoneLength: cleanPhone.length,
-            phoneForApi: phoneForApi || 'undefined',
-            phoneForApiLength: phoneForApi ? phoneForApi.length : 0,
+            message: errorMessage,
+            stack: errorStack,
+            code: errorCode,
+            name: errorName,
+            type: errorType,
+            phone: phoneForLog || 'не указан',
+            phoneLength: phoneLength,
             apiId: apiIdNum,
             apiIdType: typeof apiIdNum,
             apiHashCleaned: cleanApiHash ? `${cleanApiHash.substring(0, 10)}...` : 'undefined',
             apiHashLength: cleanApiHash ? cleanApiHash.length : 0,
             apiHashType: typeof cleanApiHash,
-            apiHashValid: cleanApiHash ? /^[a-f0-9]+$/i.test(cleanApiHash) : false,
-            // Дополнительная информация об ошибке
-            errorType: sendCodeError.constructor?.name,
-            errorString: String(sendCodeError),
-            errorKeys: Object.keys(sendCodeError || {})
+            apiHashValid: cleanApiHash ? /^[a-f0-9]+$/i.test(cleanApiHash) : false
           });
           
-          let errorMessage = sendCodeError.message || 'Проверьте номер телефона и API данные';
-          const errorString = String(errorMessage).toLowerCase();
-          const errorName = sendCodeError.name ? String(sendCodeError.name).toLowerCase() : '';
+          // Безопасное извлечение сообщения об ошибке
+          const originalErrorMessage = errorMessage || 'Проверьте номер телефона и API данные';
+          const errorString = String(originalErrorMessage).toLowerCase();
+          const errorNameLower = errorName ? String(errorName).toLowerCase() : '';
+          
+          let finalErrorMessage = originalErrorMessage;
           
           // Более детальная обработка ошибок
-          if (errorString.includes('pattern') || errorString.includes('phone_number') || errorString.includes('constructor') || errorString.includes('invalid') || errorName.includes('invalid')) {
+          if (errorString.includes('pattern') || errorString.includes('phone_number') || errorString.includes('constructor') || errorString.includes('invalid') || errorNameLower.includes('invalid')) {
             // Проверяем конкретные проблемы
-            if (errorString.includes('phone') || errorString.includes('number') || errorName.includes('phone')) {
-              errorMessage = `Неверный формат номера телефона. Проверьте, что номер в формате +380XXXXXXXXX или 380XXXXXXXXX (получено: ${phoneForApi || cleanPhone}, длина: ${phoneForApi ? phoneForApi.length : cleanPhone.length}). Убедитесь, что номер начинается с кода страны (380 для Украины).`;
-            } else if (errorString.includes('api') || errorString.includes('id') || errorName.includes('api')) {
-              errorMessage = `Неверные API данные. Проверьте API ID (${apiIdNum}) и API Hash (длина: ${cleanApiHash ? cleanApiHash.length : 0}) на my.telegram.org/apps. Убедитесь, что вы используете правильные учетные данные.`;
+            if (errorString.includes('phone') || errorString.includes('number') || errorNameLower.includes('phone')) {
+              finalErrorMessage = `Неверный формат номера телефона. Проверьте, что номер в формате +380XXXXXXXXX или 380XXXXXXXXX (получено: ${phoneForLog || 'не указан'}, длина: ${phoneLength}). Убедитесь, что номер начинается с кода страны (380 для Украины).`;
+            } else if (errorString.includes('api') || errorString.includes('id') || errorNameLower.includes('api')) {
+              finalErrorMessage = `Неверные API данные. Проверьте API ID (${apiIdNum}) и API Hash (длина: ${cleanApiHash ? cleanApiHash.length : 0}) на my.telegram.org/apps. Убедитесь, что вы используете правильные учетные данные.`;
             } else {
               // Более детальное сообщение с информацией о всех параметрах
-              errorMessage = `Неверный формат данных. Проверьте все поля:\n- Номер: ${phoneForApi || cleanPhone} (длина: ${phoneForApi ? phoneForApi.length : cleanPhone.length})\n- API ID: ${apiIdNum}\n- API Hash: длина ${cleanApiHash ? cleanApiHash.length : 0}, валиден: ${cleanApiHash ? /^[a-f0-9]+$/i.test(cleanApiHash) : false}\n\nОригинальная ошибка: ${sendCodeError.message || 'Неизвестная ошибка'}`;
+              finalErrorMessage = `Неверный формат данных. Проверьте все поля:\n- Номер: ${phoneForLog || 'не указан'} (длина: ${phoneLength})\n- API ID: ${apiIdNum}\n- API Hash: длина ${cleanApiHash ? cleanApiHash.length : 0}, валиден: ${cleanApiHash ? /^[a-f0-9]+$/i.test(cleanApiHash) : false}\n\nОригинальная ошибка: ${originalErrorMessage}`;
             }
-          } else if (errorString.includes('api_id') || errorString.includes('api_hash') || errorName.includes('api')) {
-            errorMessage = 'Неверные API данные. Проверьте API ID и API Hash на my.telegram.org/apps. Убедитесь, что вы используете правильные учетные данные из вашего приложения.';
-          } else if (errorString.includes('flood') || errorString.includes('wait') || errorName.includes('flood')) {
-            errorMessage = 'Слишком много запросов. Подождите несколько минут и попробуйте снова.';
-          } else if (errorString.includes('undefined') || errorString.includes('null') || errorString.includes('is not defined')) {
-            errorMessage = 'Ошибка инициализации. Проверьте, что все поля заполнены корректно.';
+          } else if (errorString.includes('api_id') || errorString.includes('api_hash') || errorNameLower.includes('api')) {
+            finalErrorMessage = 'Неверные API данные. Проверьте API ID и API Hash на my.telegram.org/apps. Убедитесь, что вы используете правильные учетные данные из вашего приложения.';
+          } else if (errorString.includes('flood') || errorString.includes('wait') || errorNameLower.includes('flood')) {
+            finalErrorMessage = 'Слишком много запросов. Подождите несколько минут и попробуйте снова.';
+          } else if (errorString.includes('undefined') || errorString.includes('null') || errorString.includes('is not defined') || errorString.includes('cannot read')) {
+            // Обработка ошибок типа "Cannot read properties of undefined"
+            finalErrorMessage = `Ошибка инициализации Telegram API. Проверьте правильность введенных данных:\n- Номер телефона: ${phoneForLog || 'не указан'} (длина: ${phoneLength})\n- API ID: ${apiIdNum}\n- API Hash: длина ${cleanApiHash ? cleanApiHash.length : 0}, валиден: ${cleanApiHash ? /^[a-f0-9]+$/i.test(cleanApiHash) : false}\n\nВозможно, проблема в формате данных или в самом Telegram API. Попробуйте проверить данные на my.telegram.org/apps.`;
           } else {
-            // Если это неизвестная ошибка, показываем оригинальное сообщение
-            errorMessage = `Ошибка Telegram API: ${sendCodeError.message || 'Неизвестная ошибка'}. Проверьте правильность введенных данных (номер телефона, API ID, API Hash).`;
+            // Если это неизвестная ошибка, показываем оригинальное сообщение с контекстом
+            finalErrorMessage = `Ошибка Telegram API: ${originalErrorMessage}. Проверьте правильность введенных данных (API ID, API Hash).`;
           }
           
           return {
             success: false,
-            error: `Ошибка отправки кода: ${errorMessage}`
+            error: `Ошибка отправки кода: ${finalErrorMessage}`
           };
         }
       }
@@ -361,15 +378,19 @@ class TelegramService {
       return { success: true, message: 'Успешно подключено' };
     } catch (error) {
       console.error('Ошибка инициализации Telegram:', error);
+      
       let errorMessage = error.message || 'Неизвестная ошибка';
       
       // Более понятные сообщения об ошибках
       if (errorMessage.includes('pattern') || errorMessage.includes('format')) {
-        errorMessage = 'Неверный формат данных. Проверьте API ID, API Hash и номер телефона.';
+        errorMessage = 'Неверный формат данных. Проверьте API ID и API Hash.';
       } else if (errorMessage.includes('PHONE')) {
-        errorMessage = 'Неверный формат номера телефона. Используйте формат +380XXXXXXXXX';
+        errorMessage = 'Ошибка авторизации. Проверьте API ID и API Hash на my.telegram.org/apps';
       } else if (errorMessage.includes('API')) {
         errorMessage = 'Неверные API данные. Проверьте API ID и API Hash на my.telegram.org/apps';
+      } else if (errorMessage.includes('is not defined') || errorMessage.includes('undefined')) {
+        // Если ошибка связана с неопределенными переменными, добавляем контекст
+        errorMessage = `Ошибка инициализации: ${errorMessage}. Проверьте правильность введенных данных (API ID, API Hash).`;
       }
       
       return {
@@ -384,17 +405,57 @@ class TelegramService {
    */
   async completeAuth(sessionId, apiId, apiHash, phoneNumber, phoneCode, phoneCodeHash) {
     try {
-      // Валидация входных данных
-      const validation = this.validateInputs(apiId, apiHash, phoneNumber);
-      if (!validation.valid) {
+      // Валидация API данных (номер телефона не требуется)
+      if (!apiId) {
         return {
           success: false,
-          error: validation.error
+          error: 'API ID обязателен'
+        };
+      }
+      const apiIdStr = String(apiId).trim();
+      if (apiIdStr.length === 0) {
+        return {
+          success: false,
+          error: 'API ID не может быть пустым'
+        };
+      }
+      const apiIdNum = parseInt(apiIdStr);
+      if (isNaN(apiIdNum) || apiIdNum <= 0) {
+        return {
+          success: false,
+          error: `API ID должен быть положительным числом (получено: ${apiIdStr})`
         };
       }
 
-      const cleanPhone = validation.cleanPhone;
-      const cleanApiHash = validation.cleanApiHash || String(apiHash).replace(/[\s\n\r\t\u00A0\u2000-\u200B\u2028\u2029\uFEFF]/g, '').trim();
+      // Валидация API Hash
+      if (!apiHash) {
+        return {
+          success: false,
+          error: 'API Hash обязателен'
+        };
+      }
+      const cleanApiHash = String(apiHash).replace(/[\s\n\r\t\u00A0\u2000-\u200B\u2028\u2029\uFEFF]/g, '').trim();
+      if (cleanApiHash.length < 20) {
+        return {
+          success: false,
+          error: `API Hash должен быть строкой длиной не менее 20 символов (получено: ${cleanApiHash.length} после очистки)`
+        };
+      }
+      if (!/^[a-f0-9]+$/i.test(cleanApiHash)) {
+        return {
+          success: false,
+          error: 'API Hash должен содержать только шестнадцатеричные символы (0-9, a-f)'
+        };
+      }
+
+      // Номер телефона опционален - обрабатываем только если передан
+      let processedPhone = '';
+      if (phoneNumber && typeof phoneNumber === 'string' && phoneNumber.trim().length > 0) {
+        const tempPhone = phoneNumber.replace(/\D/g, '');
+        if (tempPhone.length >= 7 && tempPhone.length <= 15 && !tempPhone.startsWith('0') && /^\d+$/.test(tempPhone)) {
+          processedPhone = tempPhone;
+        }
+      }
 
       // Валидация кода
       if (!phoneCode || typeof phoneCode !== 'string' || phoneCode.length < 4) {
@@ -424,36 +485,7 @@ class TelegramService {
         stringSession = '';
       }
 
-      const apiIdNum = parseInt(String(apiId).trim());
-      
-      // Проверяем параметры перед созданием клиента
-      if (!apiIdNum || isNaN(apiIdNum) || apiIdNum <= 0) {
-        return {
-          success: false,
-          error: `API ID должен быть положительным числом (получено: ${apiId}, преобразовано: ${apiIdNum})`
-        };
-      }
-      
-      if (!cleanApiHash || cleanApiHash.length === 0) {
-        return {
-          success: false,
-          error: `API Hash должен быть непустой строкой (длина после очистки: ${cleanApiHash ? cleanApiHash.length : 0})`
-        };
-      }
-      
-      if (cleanApiHash.length < 20) {
-        return {
-          success: false,
-          error: `API Hash должен быть длиной не менее 20 символов (получено: ${cleanApiHash.length} после очистки)`
-        };
-      }
-      
-      if (!/^[a-f0-9]+$/i.test(cleanApiHash)) {
-        return {
-          success: false,
-          error: 'API Hash должен содержать только шестнадцатеричные символы (0-9, a-f)'
-        };
-      }
+      // apiIdNum уже определен выше
       
       // Создаем сессию и клиент с проверками
       let session;
@@ -486,18 +518,19 @@ class TelegramService {
 
       // Завершаем авторизацию
       try {
-        // Убеждаемся, что номер содержит только цифры
-        const phoneForApi = cleanPhone.replace(/\D/g, '');
+        // Номер телефона опционален - используем только если был передан
+        const phoneForSignIn = processedPhone || '';
         
         console.log('Завершение авторизации:', {
-          phone: phoneForApi,
+          phone: phoneForSignIn || 'не требуется',
           codeLength: phoneCode.trim().length,
           hashLength: phoneCodeHash.trim().length
         });
         
         // gramjs signInUser принимает параметры в другом формате
+        // Если номер не передан, используем пустую строку (сессия уже должна быть сохранена)
         await client.signInUser({
-          phoneNumber: phoneForApi,
+          phoneNumber: phoneForSignIn,
           phoneCodeHash: phoneCodeHash.trim(),
           phoneCode: phoneCode.trim()
         });

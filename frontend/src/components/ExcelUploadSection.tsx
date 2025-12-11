@@ -100,7 +100,7 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
     }
 
     if (!isValidUrl(htmlUrl.trim())) {
-      toast.error('Неверный формат URL. Используйте http:// или https://')
+      toast.error('Неверный формат URL. Используйте http://, https:// или file://')
       return
     }
 
@@ -240,7 +240,7 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
               'text-sm font-medium',
               isDark ? 'text-gray-200' : 'text-gray-700'
             )}>
-              Или вставь ссылку на HTML страницу с выгрузки фо
+              Или вставь ссылку на HTML страницу с выгрузки ФастОператора 
             </label>
           </div>
           <div className="flex gap-2">
