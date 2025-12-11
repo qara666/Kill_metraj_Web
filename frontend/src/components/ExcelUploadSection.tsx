@@ -15,7 +15,7 @@ import {
 import { LoadingSpinner } from './LoadingSpinner'
 import { clsx } from 'clsx'
 import { useTheme } from '../contexts/ThemeContext'
-import { processHtmlUrl, isValidUrl } from '../utils/htmlProcessor'
+import { processHtmlUrl, isValidUrl, processHtmlFile } from '../utils/htmlProcessor'
 
 interface ExcelUploadSectionProps {
   onFileSelect: (file: File) => void
@@ -42,36 +42,57 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0]
-    if (file) {
-      // Проверяем тип файла
-      const validTypes = [
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-        'application/vnd.ms-excel', // .xls
-        'text/csv' // .csv
-      ]
-      
-      if (!validTypes.includes(file.type) && !file.name.match(/\.(xlsx|xls|csv)$/i)) {
-        toast.error('Пожалуйста, выберите файл Excel (.xlsx, .xls) или CSV')
-        return
-      }
-      
-      // Проверяем размер файла (максимум 10MB)
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error('Размер файла не должен превышать 10MB')
-        return
-      }
-      
-      onFileSelect(file)
-      toast.success(`Файл "${file.name}" выбран для обработки`)
+    if (!file) return
+
+    const isExcel = /(\.xlsx|\.xls)$/i.test(file.name) || [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel'
+    ].includes(file.type)
+    const isCsv = /\.csv$/i.test(file.name) || file.type === 'text/csv'
+    const isHtml = /\.html?$/i.test(file.name) || file.type === 'text/html'
+
+    if (!isExcel && !isCsv && !isHtml) {
+      toast.error('Пожалуйста, выберите Excel (.xlsx, .xls), CSV (.csv) или HTML (.html)')
+      return
     }
-  }, [onFileSelect])
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Размер файла не должен превышать 10MB')
+      return
+    }
+
+    // Если HTML — сразу парсим локально
+    if (isHtml) {
+      if (!onHtmlDataLoad) {
+        toast.error('Обработка HTML недоступна')
+        return
+      }
+      setIsProcessingHtml(true)
+      processHtmlFile(file)
+        .then(data => {
+          onHtmlDataLoad(data)
+          toast.success(`Успешно загружено ${data.orders?.length || 0} заказов из HTML`)
+          setHtmlUrl('')
+        })
+        .catch((error: any) => {
+          console.error('Ошибка обработки HTML файла:', error)
+          toast.error(error.message || 'Ошибка при обработке HTML файла')
+        })
+        .finally(() => setIsProcessingHtml(false))
+      return
+    }
+
+    onFileSelect(file)
+    toast.success(`Файл "${file.name}" выбран для обработки`)
+  }, [onFileSelect, onHtmlDataLoad])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
       'application/vnd.ms-excel': ['.xls'],
-      'text/csv': ['.csv']
+      'text/csv': ['.csv'],
+      'text/html': ['.html', '.htm']
     },
     multiple: false
   })
@@ -222,7 +243,7 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
                   'text-sm mt-1',
                   isDark ? 'text-gray-400' : 'text-gray-500'
                 )}>
-                  Поддерживаются файлы Excel (.xlsx, .xls) и CSV (.csv)
+                  Поддерживаются Excel (.xlsx, .xls), CSV (.csv) и HTML (.html)
                 </p>
               </div>
             </div>
