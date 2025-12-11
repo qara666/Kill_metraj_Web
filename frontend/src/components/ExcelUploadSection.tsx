@@ -40,6 +40,25 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
   const [htmlUrl, setHtmlUrl] = useState<string>('')
   const [isProcessingHtml, setIsProcessingHtml] = useState<boolean>(false)
 
+  const processLocalHtmlFile = useCallback(async (file: File) => {
+    if (!onHtmlDataLoad) {
+      toast.error('Обработка HTML недоступна')
+      return
+    }
+    setIsProcessingHtml(true)
+    try {
+      const data = await processHtmlFile(file)
+      onHtmlDataLoad(data)
+      toast.success(`Успешно загружено ${data.orders?.length || 0} заказов из HTML`)
+      setHtmlUrl('')
+    } catch (error: any) {
+      console.error('Ошибка обработки HTML файла:', error)
+      toast.error(error?.message || 'Ошибка при обработке HTML файла')
+    } finally {
+      setIsProcessingHtml(false)
+    }
+  }, [onHtmlDataLoad])
+
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0]
     if (!file) return
@@ -63,28 +82,13 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
 
     // Если HTML — сразу парсим локально
     if (isHtml) {
-      if (!onHtmlDataLoad) {
-        toast.error('Обработка HTML недоступна')
-        return
-      }
-      setIsProcessingHtml(true)
-      processHtmlFile(file)
-        .then(data => {
-          onHtmlDataLoad(data)
-          toast.success(`Успешно загружено ${data.orders?.length || 0} заказов из HTML`)
-          setHtmlUrl('')
-        })
-        .catch((error: any) => {
-          console.error('Ошибка обработки HTML файла:', error)
-          toast.error(error.message || 'Ошибка при обработке HTML файла')
-        })
-        .finally(() => setIsProcessingHtml(false))
+      void processLocalHtmlFile(file)
       return
     }
 
     onFileSelect(file)
     toast.success(`Файл "${file.name}" выбран для обработки`)
-  }, [onFileSelect, onHtmlDataLoad])
+  }, [onFileSelect, processLocalHtmlFile])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -120,14 +124,22 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
       return
     }
 
-    if (!isValidUrl(htmlUrl.trim())) {
-      toast.error('Неверный формат URL. Используйте http://, https:// или file://')
+    const trimmed = htmlUrl.trim()
+
+    // file:// блокируется браузером: предлагаем перетащить файл
+    if (trimmed.startsWith('file://')) {
+      toast.error('Перетащите HTML-файл в зону загрузки или в поле ниже — file:// блокируется браузером.')
+      return
+    }
+
+    if (!isValidUrl(trimmed)) {
+      toast.error('Неверный формат URL. Используйте http:// или https://')
       return
     }
 
     setIsProcessingHtml(true)
     try {
-      const data = await processHtmlUrl(htmlUrl.trim())
+      const data = await processHtmlUrl(trimmed)
       if (onHtmlDataLoad) {
         onHtmlDataLoad(data)
       }
@@ -270,6 +282,19 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
               value={htmlUrl}
               onChange={(e) => setHtmlUrl(e.target.value)}
               placeholder="https://example.com/data.html"
+              onDragOver={(e) => {
+                // Позволяем бросать HTML файл прямо в поле ссылки
+                if (e.dataTransfer?.items?.length) e.preventDefault()
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                const file = e.dataTransfer?.files?.[0]
+                if (file && (/\.html?$/i.test(file.name) || file.type === 'text/html')) {
+                  void processLocalHtmlFile(file)
+                  return
+                }
+                // Если бросят не файл — позволим обычной вставке текста
+              }}
               className={clsx(
                 'flex-1 px-4 py-2 rounded-lg border text-sm',
                 isDark 
