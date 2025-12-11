@@ -56,15 +56,15 @@ export const processHtmlUrl = async (url: string): Promise<ProcessedExcelData> =
     const jsonData: any[][] = []
     
     const rows = targetTable.querySelectorAll('tr')
-    rows.forEach((row) => {
+    rows.forEach((row: HTMLTableRowElement) => {
       const cells: any[] = []
       const thCells = row.querySelectorAll('th')
       const tdCells = row.querySelectorAll('td')
       
       // Обрабатываем th (заголовки) и td (данные)
-      const allCells = thCells.length > 0 ? thCells : tdCells
+      const allCells: NodeListOf<HTMLTableCellElement> = thCells.length > 0 ? thCells : tdCells
       
-      allCells.forEach((cell) => {
+      allCells.forEach((cell: HTMLTableCellElement) => {
         // Получаем текст ячейки, убираем лишние пробелы
         let cellText = cell.textContent || cell.innerText || ''
         cellText = cellText.trim().replace(/\s+/g, ' ')
