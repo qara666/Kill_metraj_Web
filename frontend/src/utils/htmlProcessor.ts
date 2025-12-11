@@ -55,7 +55,8 @@ export const processHtmlUrl = async (url: string): Promise<ProcessedExcelData> =
     // Преобразуем HTML таблицу в массив массивов (как Excel)
     const jsonData: any[][] = []
     
-    const rows = targetTable.querySelectorAll('tr')
+    // TypeScript не может автоматически сузить тип после проверки, используем non-null assertion
+    const rows = targetTable!.querySelectorAll('tr')
     rows.forEach((row: HTMLTableRowElement) => {
       const cells: any[] = []
       const thCells = row.querySelectorAll('th')
