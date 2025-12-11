@@ -337,7 +337,7 @@ export const Settings: React.FC = () => {
   const { register, handleSubmit, watch, setValue } = useForm<SettingsForm>({
     defaultValues: {
       googleMapsApiKey: '',
-      mapboxToken: 'pk.eyJ1IjoieWFwMDA3NyIsImEiOiJjbWkyN2wzYnIxNHN3MmxzZmpjOThzdmp6In0.KKBxC62q-I4xEXQBCx7JVw', // Дефолтный токен
+      mapboxToken: '', // Пустое поле по умолчанию
       defaultStartAddress: '',
       defaultEndAddress: '',
       cityBias: '',
@@ -363,7 +363,9 @@ export const Settings: React.FC = () => {
     const settings = localStorageUtils.getAllSettings()
     
     setValue('googleMapsApiKey', settings.googleMapsApiKey)
-    setValue('mapboxToken', settings.mapboxToken || 'pk.eyJ1IjoieWFwMDA3NyIsImEiOiJjbWkyN2wzYnIxNHN3MmxzZmpjOThzdmp6In0.KKBxC62q-I4xEXQBCx7JVw')
+    // Загружаем Mapbox Token из localStorage, если он есть, иначе оставляем пустым
+    const savedMapboxToken = localStorage.getItem('km_mapbox_token')
+    setValue('mapboxToken', savedMapboxToken || settings.mapboxToken || '')
     setValue('defaultStartAddress', settings.defaultStartAddress)
     setValue('defaultEndAddress', settings.defaultEndAddress)
     setValue('cityBias', settings.cityBias || '')
@@ -436,6 +438,14 @@ export const Settings: React.FC = () => {
   const onSubmit = (data: SettingsForm) => {
     // Save settings to localStorage
     localStorageUtils.setAllSettings(data)
+    
+    // Сохраняем Mapbox Token отдельно, если он введен
+    if (data.mapboxToken && data.mapboxToken.trim()) {
+      localStorage.setItem('km_mapbox_token', data.mapboxToken.trim())
+    } else {
+      // Если токен пустой, удаляем из localStorage
+      localStorage.removeItem('km_mapbox_token')
+    }
     
     // Check API key status after saving
     if (data.googleMapsApiKey.trim()) {

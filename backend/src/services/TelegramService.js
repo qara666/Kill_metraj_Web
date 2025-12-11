@@ -263,6 +263,22 @@ class TelegramService {
           
           // В gramjs 2.26+ sendCode принимает только номер телефона как строку
           // Убеждаемся, что передаем правильный тип (строка, не число)
+          // gramjs может требовать номер в международном формате без плюса, только цифры
+          // Проверяем, что номер начинается с кода страны (например, 380 для Украины)
+          if (phoneForApi.length < 10 || phoneForApi.length > 15) {
+            throw new Error(`Номер телефона должен содержать от 10 до 15 цифр (получено: ${phoneForApi.length} цифр)`);
+          }
+          
+          // Логируем финальные параметры перед вызовом
+          console.log('Вызов client.sendCode с параметрами:', {
+            phone: phoneForApi,
+            phoneLength: phoneForApi.length,
+            phoneType: typeof phoneForApi,
+            apiId: apiIdNum,
+            apiHashLength: cleanApiHash.length,
+            apiHashValid: /^[a-f0-9]+$/i.test(cleanApiHash)
+          });
+          
           const result = await client.sendCode(phoneForApi);
 
           // Проверяем результат
@@ -293,28 +309,37 @@ class TelegramService {
             apiHashCleaned: cleanApiHash ? `${cleanApiHash.substring(0, 10)}...` : 'undefined',
             apiHashLength: cleanApiHash ? cleanApiHash.length : 0,
             apiHashType: typeof cleanApiHash,
-            apiHashValid: cleanApiHash ? /^[a-f0-9]+$/i.test(cleanApiHash) : false
+            apiHashValid: cleanApiHash ? /^[a-f0-9]+$/i.test(cleanApiHash) : false,
+            // Дополнительная информация об ошибке
+            errorType: sendCodeError.constructor?.name,
+            errorString: String(sendCodeError),
+            errorKeys: Object.keys(sendCodeError || {})
           });
           
           let errorMessage = sendCodeError.message || 'Проверьте номер телефона и API данные';
           const errorString = String(errorMessage).toLowerCase();
+          const errorName = sendCodeError.name ? String(sendCodeError.name).toLowerCase() : '';
           
           // Более детальная обработка ошибок
-          if (errorString.includes('pattern') || errorString.includes('phone_number') || errorString.includes('constructor') || errorString.includes('invalid')) {
+          if (errorString.includes('pattern') || errorString.includes('phone_number') || errorString.includes('constructor') || errorString.includes('invalid') || errorName.includes('invalid')) {
             // Проверяем конкретные проблемы
-            if (errorString.includes('phone') || errorString.includes('number')) {
-              errorMessage = `Неверный формат номера телефона. Проверьте, что номер в формате +380XXXXXXXXX или 380XXXXXXXXX (получено: ${phoneForApi || cleanPhone}, длина: ${phoneForApi ? phoneForApi.length : cleanPhone.length})`;
-            } else if (errorString.includes('api') || errorString.includes('id')) {
-              errorMessage = `Неверные API данные. Проверьте API ID (${apiIdNum}) и API Hash (длина: ${cleanApiHash ? cleanApiHash.length : 0}) на my.telegram.org/apps`;
+            if (errorString.includes('phone') || errorString.includes('number') || errorName.includes('phone')) {
+              errorMessage = `Неверный формат номера телефона. Проверьте, что номер в формате +380XXXXXXXXX или 380XXXXXXXXX (получено: ${phoneForApi || cleanPhone}, длина: ${phoneForApi ? phoneForApi.length : cleanPhone.length}). Убедитесь, что номер начинается с кода страны (380 для Украины).`;
+            } else if (errorString.includes('api') || errorString.includes('id') || errorName.includes('api')) {
+              errorMessage = `Неверные API данные. Проверьте API ID (${apiIdNum}) и API Hash (длина: ${cleanApiHash ? cleanApiHash.length : 0}) на my.telegram.org/apps. Убедитесь, что вы используете правильные учетные данные.`;
             } else {
-              errorMessage = `Неверный формат данных. Проверьте все поля. Номер: ${phoneForApi || cleanPhone}, API ID: ${apiIdNum}, API Hash длина: ${cleanApiHash ? cleanApiHash.length : 0}, API Hash валиден: ${cleanApiHash ? /^[a-f0-9]+$/i.test(cleanApiHash) : false}`;
+              // Более детальное сообщение с информацией о всех параметрах
+              errorMessage = `Неверный формат данных. Проверьте все поля:\n- Номер: ${phoneForApi || cleanPhone} (длина: ${phoneForApi ? phoneForApi.length : cleanPhone.length})\n- API ID: ${apiIdNum}\n- API Hash: длина ${cleanApiHash ? cleanApiHash.length : 0}, валиден: ${cleanApiHash ? /^[a-f0-9]+$/i.test(cleanApiHash) : false}\n\nОригинальная ошибка: ${sendCodeError.message || 'Неизвестная ошибка'}`;
             }
-          } else if (errorString.includes('api_id') || errorString.includes('api_hash')) {
-            errorMessage = 'Неверные API данные. Проверьте API ID и API Hash на my.telegram.org/apps';
-          } else if (errorString.includes('flood') || errorString.includes('wait')) {
+          } else if (errorString.includes('api_id') || errorString.includes('api_hash') || errorName.includes('api')) {
+            errorMessage = 'Неверные API данные. Проверьте API ID и API Hash на my.telegram.org/apps. Убедитесь, что вы используете правильные учетные данные из вашего приложения.';
+          } else if (errorString.includes('flood') || errorString.includes('wait') || errorName.includes('flood')) {
             errorMessage = 'Слишком много запросов. Подождите несколько минут и попробуйте снова.';
           } else if (errorString.includes('undefined') || errorString.includes('null') || errorString.includes('is not defined')) {
             errorMessage = 'Ошибка инициализации. Проверьте, что все поля заполнены корректно.';
+          } else {
+            // Если это неизвестная ошибка, показываем оригинальное сообщение
+            errorMessage = `Ошибка Telegram API: ${sendCodeError.message || 'Неизвестная ошибка'}. Проверьте правильность введенных данных (номер телефона, API ID, API Hash).`;
           }
           
           return {

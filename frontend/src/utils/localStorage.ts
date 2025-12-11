@@ -142,7 +142,7 @@ export const localStorageUtils = {
         citySectors: citySectors ? JSON.parse(citySectors) : {}
       } : {
         googleMapsApiKey: localStorage.getItem('google_maps_api_key') || '',
-        mapboxToken: localStorage.getItem('km_mapbox_token') || 'pk.eyJ1IjoieWFwMDA3NyIsImEiOiJjbWkyN2wzYnIxNHN3MmxzZmpjOThzdmp6In0.KKBxC62q-I4xEXQBCx7JVw',
+        mapboxToken: localStorage.getItem('km_mapbox_token') || '',
         defaultStartAddress: localStorage.getItem('km_default_start_address') || 'Макеевская 7, Киев, Украина',
         defaultEndAddress: localStorage.getItem('km_default_end_address') || 'Макеевская 7, Киев, Украина',
         cityBias: localStorage.getItem('km_city_bias') || '',
@@ -154,7 +154,7 @@ export const localStorageUtils = {
       console.error('Error reading settings:', error)
       return {
         googleMapsApiKey: localStorage.getItem('google_maps_api_key') || '',
-        mapboxToken: localStorage.getItem('km_mapbox_token') || 'pk.eyJ1IjoieWFwMDA3NyIsImEiOiJjbWkyN2wzYnIxNHN3MmxzZmpjOThzdmp6In0.KKBxC62q-I4xEXQBCx7JVw',
+        mapboxToken: localStorage.getItem('km_mapbox_token') || '',
         defaultStartAddress: localStorage.getItem('km_default_start_address') || 'Макеевская 7, Киев, Украина',
         defaultEndAddress: localStorage.getItem('km_default_end_address') || 'Макеевская 7, Киев, Украина',
         cityBias: localStorage.getItem('km_city_bias') || '',
