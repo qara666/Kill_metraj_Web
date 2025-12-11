@@ -160,7 +160,7 @@ export const TelegramParsing: React.FC = () => {
       const result = await telegramService.initialize(
         connectionData.apiId.trim(),
         cleanApiHash,
-        '' // Номер телефона не требуется
+        connectionData.phoneNumber?.trim() || ''
       )
       
       if (result.success) {
@@ -202,7 +202,7 @@ export const TelegramParsing: React.FC = () => {
       return
     }
 
-    // Валидация данных подключения (номер телефона не требуется)
+    // Валидация данных подключения (номер телефона опционален)
     if (!connectionData.apiId || !connectionData.apiHash) {
       alert('Заполните API ID и API Hash')
       return
@@ -216,7 +216,7 @@ export const TelegramParsing: React.FC = () => {
       const result = await telegramService.completeAuth(
         connectionData.apiId.trim(),
         cleanApiHash,
-        '', // Номер телефона не передаем - не требуется
+        connectionData.phoneNumber?.trim() || '',
         phoneCode.trim(),
         phoneCodeHash
       )
@@ -921,7 +921,42 @@ export const TelegramParsing: React.FC = () => {
                 </p>
               </div>
 
-              {/* Поле номера телефона скрыто - не требуется для работы парсера */}
+              <div>
+                <label className={clsx(
+                  'block text-sm font-medium mb-2',
+                  isDark ? 'text-gray-300' : 'text-gray-700'
+                )}>
+                  Номер телефона <span className="text-gray-500 text-xs">(для Telegram; можно пустым, если сессия уже сохранена)</span>
+                </label>
+                <input
+                  type="tel"
+                  value={connectionData.phoneNumber}
+                  onChange={(e) => {
+                    let value = e.target.value
+                    if (value && !value.startsWith('+') && !value.startsWith('380')) {
+                      value = '+' + value.replace(/[^\d]/g, '')
+                    } else {
+                      value = value.replace(/[^\d+]/g, '')
+                    }
+                    setConnectionData(prev => ({ ...prev, phoneNumber: value }))
+                  }}
+                  placeholder="+380XXXXXXXXX (рекомендуется для нового подключения)"
+                  disabled={isConnecting}
+                  className={clsx(
+                    'w-full px-4 py-2 rounded-lg border-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500',
+                    isDark 
+                      ? isConnecting
+                        ? 'bg-gray-800 border-gray-700 text-gray-500 cursor-not-allowed'
+                        : 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400'
+                      : isConnecting
+                        ? 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
+                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
+                  )}
+                />
+                <p className={clsx('text-xs mt-1', isDark ? 'text-gray-500' : 'text-gray-500')}>
+                  Укажите номер, если выполняете первое подключение и нужно получить код. Если сессия уже сохранена, можно оставить пустым.
+                </p>
+              </div>
 
               {/* Поле для кода подтверждения */}
               {needsAuth && (
