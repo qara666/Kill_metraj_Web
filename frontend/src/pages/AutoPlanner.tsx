@@ -79,7 +79,28 @@ import type { TourStep } from '../components/HelpTour'
 // Ленивая загрузка тяжелых компонентов
 const HelpModal = lazy(() => import('../components/HelpModal').then(m => ({ default: m.HelpModal })))
 const HelpTour = lazy(() => import('../components/HelpTour').then(m => ({ default: m.HelpTour })))
-const TrafficHeatmap = lazy(() => import('../components/TrafficHeatmap').then(m => ({ default: m.TrafficHeatmap })))
+const TrafficHeatmap = lazy(() => 
+  import('../components/TrafficHeatmap')
+    .then(m => {
+      // Поддерживаем как named, так и default export
+      const component = m.TrafficHeatmap || m.default
+      if (component) {
+        return { default: component }
+      }
+      throw new Error('TrafficHeatmap component not found')
+    })
+    .catch(err => {
+      console.error('Error loading TrafficHeatmap:', err)
+      // Возвращаем fallback компонент
+      return {
+        default: () => (
+          <div className="p-4 text-center text-red-600">
+            Ошибка загрузки тепловой карты. Попробуйте обновить страницу.
+          </div>
+        )
+      }
+    })
+)
 const WorkloadHeatmap = lazy(() => import('../components/WorkloadHeatmap').then(m => ({ default: m.WorkloadHeatmap })))
 const RouteDetailsTabs = lazy(() => import('../components/RouteDetailsTabs').then(m => ({ default: m.RouteDetailsTabs })))
 
@@ -6253,7 +6274,13 @@ export const AutoPlanner: React.FC = () => {
                   ℹ️ Сектор не задан. Тепловая карта будет показывать общую информацию о трафике. Для более точных данных задайте сектор в настройках.
                 </div>
               ) : null}
-              <Suspense fallback={<div className={clsx('text-sm text-center py-8', isDark ? 'text-gray-400' : 'text-gray-600')}>Загрузка карты трафика...</div>}>
+              <Suspense 
+                fallback={
+                  <div className={clsx('text-sm text-center py-8', isDark ? 'text-gray-400' : 'text-gray-600')}>
+                    Загрузка карты трафика...
+                  </div>
+                }
+              >
                 <TrafficHeatmap
                   sectorPath={sectorPathState || undefined}
                   sectorName={sectorCityName || 'Сектор'}
