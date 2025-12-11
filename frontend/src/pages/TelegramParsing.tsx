@@ -104,6 +104,17 @@ export const TelegramParsing: React.FC = () => {
     if (!data.apiHash || data.apiHash.trim().length < 20) {
       return 'API Hash должен быть строкой длиной не менее 20 символов'
     }
+    
+    // Очищаем API Hash от всех невидимых символов
+    const cleanApiHash = data.apiHash.replace(/[\s\n\r\t\u00A0\u2000-\u200B\u2028\u2029\uFEFF]/g, '').trim()
+    if (cleanApiHash.length < 20) {
+      return `API Hash должен быть строкой длиной не менее 20 символов (после очистки: ${cleanApiHash.length})`
+    }
+    
+    // Проверяем, что API Hash содержит только hex символы
+    if (!/^[a-f0-9]+$/i.test(cleanApiHash)) {
+      return 'API Hash должен содержать только шестнадцатеричные символы (0-9, a-f)'
+    }
 
     // Валидация номера телефона
     // Убираем все нецифровые символы кроме плюса в начале
@@ -148,9 +159,12 @@ export const TelegramParsing: React.FC = () => {
 
     setIsConnecting(true)
     try {
+      // Очищаем API Hash от всех невидимых символов перед отправкой
+      const cleanApiHash = connectionData.apiHash.replace(/[\s\n\r\t\u00A0\u2000-\u200B\u2028\u2029\uFEFF]/g, '').trim()
+      
       const result = await telegramService.initialize(
         connectionData.apiId.trim(),
-        connectionData.apiHash.trim(),
+        cleanApiHash,
         connectionData.phoneNumber.trim()
       )
       
@@ -202,9 +216,12 @@ export const TelegramParsing: React.FC = () => {
 
     setIsConnecting(true)
     try {
+      // Очищаем API Hash от всех невидимых символов перед отправкой
+      const cleanApiHash = connectionData.apiHash.replace(/[\s\n\r\t\u00A0\u2000-\u200B\u2028\u2029\uFEFF]/g, '').trim()
+      
       const result = await telegramService.completeAuth(
         connectionData.apiId.trim(),
-        connectionData.apiHash.trim(),
+        cleanApiHash,
         connectionData.phoneNumber.trim(),
         phoneCode.trim(),
         phoneCodeHash
