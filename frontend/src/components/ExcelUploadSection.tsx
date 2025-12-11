@@ -240,7 +240,7 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
               'text-sm font-medium',
               isDark ? 'text-gray-200' : 'text-gray-700'
             )}>
-              Или вставьте ссылку на HTML страницу с таблицей
+              Или вставь ссылку на HTML страницу с выгрузки фо
             </label>
           </div>
           <div className="flex gap-2">

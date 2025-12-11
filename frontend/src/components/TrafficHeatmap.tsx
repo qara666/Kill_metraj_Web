@@ -2103,3 +2103,6 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({ sectorPath, sect
     </div>
   )
 }
+
+// Default export для более надежной загрузки на Render
+export default TrafficHeatmap
