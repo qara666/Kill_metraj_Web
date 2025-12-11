@@ -55,12 +55,13 @@ export const processHtmlUrl = async (url: string): Promise<ProcessedExcelData> =
     // Преобразуем HTML таблицу в массив массивов (как Excel)
     const jsonData: any[][] = []
     
-    // TypeScript не может автоматически сузить тип после проверки, используем non-null assertion
-    const rows = targetTable!.querySelectorAll('tr')
+    // Создаем локальную переменную с правильным типом для TypeScript
+    const table: HTMLTableElement = targetTable
+    const rows = table.querySelectorAll('tr') as NodeListOf<HTMLTableRowElement>
     rows.forEach((row: HTMLTableRowElement) => {
       const cells: any[] = []
-      const thCells = row.querySelectorAll('th')
-      const tdCells = row.querySelectorAll('td')
+      const thCells = row.querySelectorAll('th') as NodeListOf<HTMLTableCellElement>
+      const tdCells = row.querySelectorAll('td') as NodeListOf<HTMLTableCellElement>
       
       // Обрабатываем th (заголовки) и td (данные)
       const allCells: NodeListOf<HTMLTableCellElement> = thCells.length > 0 ? thCells : tdCells
