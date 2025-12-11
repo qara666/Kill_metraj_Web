@@ -66,7 +66,6 @@ const DEFAULT_FEATURE_FLAGS: MapboxFeatureFlags = {
   enableHeatmapControl: true
 }
 
-const DEFAULT_TOKEN = 'pk.eyJ1IjoieWFwMDA3NyIsImEiOiJjbWkyN2wzYnIxNHN3MmxzZmpjOThzdmp6In0.KKBxC62q-I4xEXQBCx7JVw'
 const SOURCE_ID = 'km-traffic-source'
 const HEATMAP_LAYER_ID = 'km-traffic-heatmap'
 const POINT_LAYER_ID = 'km-traffic-points'
@@ -490,10 +489,14 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({ sectorPath, sect
 
   const sectorStorageKey = useMemo(() => sectorName?.toLowerCase().replace(/\s+/g, '_') || 'default', [sectorName])
   const resolvedToken = useMemo(() => {
-    if (mapboxToken && mapboxToken.trim()) return mapboxToken.trim()
+    const direct = (mapboxToken || '').trim()
+    if (direct) return direct
+    const stored = typeof window !== 'undefined' ? (localStorage.getItem('km_mapbox_token') || '').trim() : ''
+    if (stored) return stored
     const settings = localStorageUtils.getAllSettings()
-    if (settings.mapboxToken && settings.mapboxToken.trim()) return settings.mapboxToken.trim()
-    return DEFAULT_TOKEN
+    const fromSettings = (settings.mapboxToken || '').trim()
+    if (fromSettings) return fromSettings
+    return ''
   }, [mapboxToken])
   const historyStorageKey = useMemo(() => `km_traffic_history_${sectorStorageKey}`, [sectorStorageKey])
   const snapshotStorageKey = useMemo(() => `km_traffic_snapshot_${sectorStorageKey}`, [sectorStorageKey])
@@ -1365,6 +1368,11 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({ sectorPath, sect
   }, [renderSegments, segmentsStorageKey])
 
   const fetchTraffic = useCallback(async (options?: { force?: boolean }) => {
+    if (!resolvedToken) {
+      setError('Укажите Mapbox token в настройках, чтобы загрузить трафик')
+      setLoading(false)
+      return
+    }
     if (!mapRef.current || !sectorPath || sectorPath.length < 3) return
     const nowTs = Date.now()
     if (!options?.force && lastPersistedTimestampRef.current && nowTs - lastPersistedTimestampRef.current < REFRESH_INTERVAL_MS) {
@@ -1550,6 +1558,10 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({ sectorPath, sect
   }, [pairsToCheck, resolvedToken, sectorPath, getCachedData, setCachedData, renderSegments, snapshotStorageKey, featureFlags, segmentsStorageKey])
 
   useEffect(() => {
+    if (!resolvedToken) {
+      setError('Укажите Mapbox token в настройках, чтобы увидеть карту')
+      return
+    }
     if (!sectorPath || sectorPath.length < 3 || !containerRef.current) return
     let mounted = true
 

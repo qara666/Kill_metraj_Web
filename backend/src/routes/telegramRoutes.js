@@ -46,18 +46,19 @@ router.post('/initialize', async (req, res) => {
       });
     }
 
-    if (!phoneNumber || typeof phoneNumber !== 'string') {
-      return res.status(400).json({
-        success: false,
-        error: 'phoneNumber обязателен и должен быть строкой'
-      });
-    }
+    // Номер телефона опционален - не требуется для работы с существующей сессией
+    // if (!phoneNumber || typeof phoneNumber !== 'string') {
+    //   return res.status(400).json({
+    //     success: false,
+    //     error: 'phoneNumber обязателен и должен быть строкой'
+    //   });
+    // }
 
     // Очищаем и нормализуем данные
     const cleanSessionId = sessionId.trim();
     const cleanApiId = String(apiId).trim();
     const cleanApiHash = apiHash.trim();
-    const cleanPhoneNumber = phoneNumber.trim();
+    const cleanPhoneNumber = phoneNumber ? phoneNumber.trim() : '';
 
     console.log('Очищенные данные:', {
       apiId: cleanApiId.substring(0, 5) + '...',

@@ -11,13 +11,21 @@ import { ProcessedExcelData, processJsonData } from './excelProcessor'
  */
 export const processHtmlUrl = async (url: string): Promise<ProcessedExcelData> => {
   try {
+    const parsedUrl = new URL(url)
+    const isFileProtocol = parsedUrl.protocol === 'file:'
+
     // Загружаем HTML страницу
-    const response = await fetch(url, {
-      mode: 'cors',
-      headers: {
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-      }
-    })
+    const response = await fetch(
+      url,
+      isFileProtocol
+        ? undefined
+        : {
+            mode: 'cors',
+            headers: {
+              Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            },
+          },
+    )
     
     if (!response.ok) {
       throw new Error(`Ошибка загрузки HTML: ${response.status} ${response.statusText}`)
@@ -101,7 +109,14 @@ export const processHtmlUrl = async (url: string): Promise<ProcessedExcelData> =
     return result
   } catch (error: any) {
     console.error('Ошибка обработки HTML:', error)
-    throw new Error(`Ошибка обработки HTML страницы: ${error.message || 'Неизвестная ошибка'}`)
+    const msg = error?.message || 'Неизвестная ошибка'
+    // Для file:// поясняем ограничение браузера
+    if (url.startsWith('file://')) {
+      throw new Error(
+        `Не удалось прочитать локальный файл. Браузер может блокировать доступ по file://. Попробуйте загрузить файл через кнопку "Загрузить" или откройте страницу в локальном окружении (http://localhost). Ошибка: ${msg}`,
+      )
+    }
+    throw new Error(`Ошибка обработки HTML страницы: ${msg}`)
   }
 }
 
@@ -111,7 +126,7 @@ export const processHtmlUrl = async (url: string): Promise<ProcessedExcelData> =
 export const isValidUrl = (urlString: string): boolean => {
   try {
     const url = new URL(urlString)
-    return url.protocol === 'http:' || url.protocol === 'https:'
+    return url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'file:'
   } catch {
     return false
   }

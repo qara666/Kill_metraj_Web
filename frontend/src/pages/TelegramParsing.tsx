@@ -89,7 +89,7 @@ export const TelegramParsing: React.FC = () => {
     }
   }, [isConnected])
 
-  // Валидация данных подключения
+  // Валидация данных подключения (номер телефона опционален)
   const validateConnectionData = useCallback((data: TelegramConnection): string | null => {
     // Валидация API ID
     if (!data.apiId || data.apiId.trim().length === 0) {
@@ -116,28 +116,30 @@ export const TelegramParsing: React.FC = () => {
       return 'API Hash должен содержать только шестнадцатеричные символы (0-9, a-f)'
     }
 
-    // Валидация номера телефона
-    // Убираем все нецифровые символы кроме плюса в начале
-    let cleanPhone = data.phoneNumber.trim()
-    // Убираем пробелы, дефисы, скобки
-    cleanPhone = cleanPhone.replace(/[\s\-\(\)]/g, '')
-    
-    // Если есть плюс, убираем его для проверки
-    const phoneWithoutPlus = cleanPhone.startsWith('+') ? cleanPhone.substring(1) : cleanPhone
-    
-    // Проверяем, что после плюса только цифры
-    if (!/^\d+$/.test(phoneWithoutPlus)) {
-      return 'Номер телефона должен содержать только цифры (можно с + в начале)'
-    }
-    
-    // Проверяем длину (от 7 до 15 цифр)
-    if (phoneWithoutPlus.length < 7 || phoneWithoutPlus.length > 15) {
-      return 'Номер телефона должен содержать от 7 до 15 цифр'
-    }
-    
-    // Проверяем, что номер не начинается с 0
-    if (phoneWithoutPlus.startsWith('0')) {
-      return 'Номер телефона не должен начинаться с 0. Используйте формат +380XXXXXXXXX или 380XXXXXXXXX'
+    // Валидация номера телефона (опционально - только если указан)
+    if (data.phoneNumber && data.phoneNumber.trim()) {
+      // Убираем все нецифровые символы кроме плюса в начале
+      let cleanPhone = data.phoneNumber.trim()
+      // Убираем пробелы, дефисы, скобки
+      cleanPhone = cleanPhone.replace(/[\s\-\(\)]/g, '')
+      
+      // Если есть плюс, убираем его для проверки
+      const phoneWithoutPlus = cleanPhone.startsWith('+') ? cleanPhone.substring(1) : cleanPhone
+      
+      // Проверяем, что после плюса только цифры
+      if (!/^\d+$/.test(phoneWithoutPlus)) {
+        return 'Номер телефона должен содержать только цифры (можно с + в начале)'
+      }
+      
+      // Проверяем длину (от 7 до 15 цифр)
+      if (phoneWithoutPlus.length < 7 || phoneWithoutPlus.length > 15) {
+        return 'Номер телефона должен содержать от 7 до 15 цифр'
+      }
+      
+      // Проверяем, что номер не начинается с 0
+      if (phoneWithoutPlus.startsWith('0')) {
+        return 'Номер телефона не должен начинаться с 0. Используйте формат +380XXXXXXXXX или 380XXXXXXXXX'
+      }
     }
 
     return null
@@ -145,15 +147,8 @@ export const TelegramParsing: React.FC = () => {
 
   // Подключение к Telegram
   const handleConnect = useCallback(async () => {
-    if (!connectionData.apiId || !connectionData.apiHash || !connectionData.phoneNumber) {
-      alert('Заполните все поля для подключения')
-      return
-    }
-
-    // Валидация данных
-    const validationError = validateConnectionData(connectionData)
-    if (validationError) {
-      alert(validationError)
+    if (!connectionData.apiId || !connectionData.apiHash) {
+      alert('Заполните API ID и API Hash для подключения')
       return
     }
 
@@ -165,7 +160,7 @@ export const TelegramParsing: React.FC = () => {
       const result = await telegramService.initialize(
         connectionData.apiId.trim(),
         cleanApiHash,
-        connectionData.phoneNumber.trim()
+        '' // Номер телефона не требуется
       )
       
       if (result.success) {
@@ -207,10 +202,9 @@ export const TelegramParsing: React.FC = () => {
       return
     }
 
-    // Валидация данных подключения
-    const validationError = validateConnectionData(connectionData)
-    if (validationError) {
-      alert(validationError)
+    // Валидация данных подключения (номер телефона не требуется)
+    if (!connectionData.apiId || !connectionData.apiHash) {
+      alert('Заполните API ID и API Hash')
       return
     }
 
@@ -222,7 +216,7 @@ export const TelegramParsing: React.FC = () => {
       const result = await telegramService.completeAuth(
         connectionData.apiId.trim(),
         cleanApiHash,
-        connectionData.phoneNumber.trim(),
+        '', // Номер телефона не передаем - не требуется
         phoneCode.trim(),
         phoneCodeHash
       )
@@ -927,43 +921,7 @@ export const TelegramParsing: React.FC = () => {
                 </p>
               </div>
 
-              <div>
-                <label className={clsx(
-                  'block text-sm font-medium mb-2',
-                  isDark ? 'text-gray-300' : 'text-gray-700'
-                )}>
-                  Номер телефона
-                </label>
-                <input
-                  type="tel"
-                  value={connectionData.phoneNumber}
-                  onChange={(e) => {
-                    // Автоматически добавляем + если его нет
-                    let value = e.target.value
-                    if (value && !value.startsWith('+') && !value.startsWith('380')) {
-                      value = '+' + value.replace(/[^\d]/g, '')
-                    } else {
-                      value = value.replace(/[^\d+]/g, '')
-                    }
-                    setConnectionData(prev => ({ ...prev, phoneNumber: value }))
-                  }}
-                  placeholder="+380XXXXXXXXX"
-                  disabled={needsAuth}
-                  className={clsx(
-                    'w-full px-4 py-2 rounded-lg border-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500',
-                    isDark 
-                      ? needsAuth
-                        ? 'bg-gray-800 border-gray-700 text-gray-500 cursor-not-allowed'
-                        : 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400'
-                      : needsAuth
-                        ? 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
-                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                  )}
-                />
-                <p className={clsx('text-xs mt-1', isDark ? 'text-gray-500' : 'text-gray-500')}>
-                  Формат: +380XXXXXXXXX или 380XXXXXXXXX
-                </p>
-              </div>
+              {/* Поле номера телефона скрыто - не требуется для работы парсера */}
 
               {/* Поле для кода подтверждения */}
               {needsAuth && (
@@ -1056,10 +1014,10 @@ export const TelegramParsing: React.FC = () => {
               ) : (
                 <button
                   onClick={handleConnect}
-                  disabled={isConnecting || !connectionData.apiId || !connectionData.apiHash || !connectionData.phoneNumber}
+                  disabled={isConnecting || !connectionData.apiId || !connectionData.apiHash}
                   className={clsx(
                     'px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2',
-                    isConnecting || !connectionData.apiId || !connectionData.apiHash || !connectionData.phoneNumber
+                    isConnecting || !connectionData.apiId || !connectionData.apiHash
                       ? isDark
                         ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
                         : 'bg-gray-200 text-gray-400 cursor-not-allowed'

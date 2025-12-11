@@ -1236,7 +1236,7 @@ export const AutoPlanner: React.FC = () => {
     }
 
     if (!isValidUrl(htmlUrl.trim())) {
-      alert('Неверный формат URL. URL должен начинаться с http:// или https://')
+      alert('Неверный формат URL. URL должен начинаться с http://, https:// или file://')
       return
     }
 
@@ -6271,7 +6271,7 @@ export const AutoPlanner: React.FC = () => {
             <div className="p-4">
               {!mapboxTokenState && (
                 <div className={clsx('mb-3 text-xs px-3 py-2 rounded-lg', isDark ? 'bg-yellow-900/30 text-yellow-200' : 'bg-yellow-50 text-yellow-700')}>
-                  ⚠️ Mapbox токен не задан в настройках. Используется дефолтный токен, рекомендуется указать собственный.
+                  ⚠️ Mapbox токен не задан в настройках. Укажите свой токен в разделе Настройки, иначе карта не загрузится.
                 </div>
               )}
               {!sectorPathState || sectorPathState.length === 0 ? (
@@ -6289,7 +6289,7 @@ export const AutoPlanner: React.FC = () => {
                 <TrafficHeatmap
                   sectorPath={sectorPathState || undefined}
                   sectorName={sectorCityName || 'Сектор'}
-                  mapboxToken={mapboxTokenState || 'pk.eyJ1IjoieWFwMDA3NyIsImEiOiJjbWkyN2wzYnIxNHN3MmxzZmpjOThzdmp6In0.KKBxC62q-I4xEXQBCx7JVw'}
+                  mapboxToken={mapboxTokenState}
                 />
               </Suspense>
             </div>
