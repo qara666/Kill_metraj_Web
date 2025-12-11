@@ -36,17 +36,48 @@ class TelegramService {
    */
   validateInputs(apiId, apiHash, phoneNumber) {
     // Валидация API ID
-    const apiIdNum = parseInt(apiId);
+    if (!apiId) {
+      return { valid: false, error: 'API ID обязателен' };
+    }
+    
+    const apiIdStr = String(apiId).trim();
+    if (apiIdStr.length === 0) {
+      return { valid: false, error: 'API ID не может быть пустым' };
+    }
+    
+    const apiIdNum = parseInt(apiIdStr);
     if (isNaN(apiIdNum) || apiIdNum <= 0) {
-      return { valid: false, error: 'API ID должен быть положительным числом' };
+      return { valid: false, error: `API ID должен быть положительным числом (получено: ${apiIdStr})` };
     }
 
     // Валидация API Hash
-    if (!apiHash || typeof apiHash !== 'string' || apiHash.length < 20) {
-      return { valid: false, error: 'API Hash должен быть строкой длиной не менее 20 символов' };
+    if (!apiHash) {
+      return { valid: false, error: 'API Hash обязателен' };
+    }
+    
+    if (typeof apiHash !== 'string') {
+      return { valid: false, error: `API Hash должен быть строкой (получен тип: ${typeof apiHash})` };
+    }
+    
+    const apiHashStr = apiHash.trim();
+    if (apiHashStr.length < 20) {
+      return { valid: false, error: `API Hash должен быть строкой длиной не менее 20 символов (получено: ${apiHashStr.length})` };
+    }
+    
+    // Проверяем, что API Hash содержит только допустимые символы (hex)
+    if (!/^[a-f0-9]+$/i.test(apiHashStr)) {
+      return { valid: false, error: 'API Hash должен содержать только шестнадцатеричные символы (0-9, a-f)' };
     }
 
     // Валидация номера телефона и нормализация для Telegram API
+    if (!phoneNumber) {
+      return { valid: false, error: 'Номер телефона обязателен' };
+    }
+    
+    if (typeof phoneNumber !== 'string') {
+      return { valid: false, error: `Номер телефона должен быть строкой (получен тип: ${typeof phoneNumber})` };
+    }
+    
     // Telegram API требует номер без плюса, только цифры
     // Убираем все нецифровые символы
     let cleanPhone = phoneNumber.replace(/\D/g, '');
@@ -54,12 +85,17 @@ class TelegramService {
     // Проверяем длину и формат
     // Минимум 7 цифр (для коротких номеров), максимум 15 (международный формат)
     if (cleanPhone.length < 7 || cleanPhone.length > 15) {
-      return { valid: false, error: 'Номер телефона должен содержать от 7 до 15 цифр' };
+      return { valid: false, error: `Номер телефона должен содержать от 7 до 15 цифр (получено: ${cleanPhone.length} цифр из "${phoneNumber}")` };
     }
     
     // Проверяем, что номер не начинается с 0 (кроме некоторых стран, но для Украины это недопустимо)
     if (cleanPhone.startsWith('0')) {
       return { valid: false, error: 'Номер телефона не должен начинаться с 0. Используйте формат 380XXXXXXXXX' };
+    }
+    
+    // Проверяем, что номер содержит только цифры
+    if (!/^\d+$/.test(cleanPhone)) {
+      return { valid: false, error: `Номер телефона должен содержать только цифры (получено: "${phoneNumber}")` };
     }
 
     return { valid: true, cleanPhone };
@@ -125,12 +161,15 @@ class TelegramService {
       console.log('Инициализация Telegram:', {
         apiId: apiIdNum,
         apiIdType: typeof apiIdNum,
+        apiIdOriginal: apiId,
         apiHashLength: apiHash.length,
         apiHashType: typeof apiHash,
         apiHashDefined: !!apiHash,
+        apiHashFirstChars: apiHash ? apiHash.substring(0, 10) : 'undefined',
         phoneOriginal: phoneNumber,
         phoneCleaned: cleanPhone,
         phoneLength: cleanPhone.length,
+        phoneDigitsOnly: cleanPhone.replace(/\D/g, ''),
         sessionExists: !!stringSession,
         sessionLength: stringSession ? stringSession.length : 0
       });
@@ -179,11 +218,12 @@ class TelegramService {
       // Проверяем авторизацию
       if (!(await client.checkAuthorization())) {
         // Нужна авторизация
+        // gramjs требует номер телефона как строку без плюса
+        // Убеждаемся, что номер содержит только цифры
+        // Определяем phoneForApi ДО блока try-catch, чтобы она была доступна в catch
+        const phoneForApi = cleanPhone.replace(/\D/g, '');
+        
         try {
-          // gramjs требует номер телефона как строку без плюса
-          // Убеждаемся, что номер содержит только цифры
-          const phoneForApi = cleanPhone.replace(/\D/g, '');
-          
           // Проверяем, что все параметры определены
           if (!phoneForApi || phoneForApi.length === 0) {
             throw new Error('Номер телефона не может быть пустым');
@@ -230,23 +270,37 @@ class TelegramService {
             message: sendCodeError.message,
             stack: sendCodeError.stack,
             code: sendCodeError.code,
+            name: sendCodeError.name,
             phone: cleanPhone,
             phoneLength: cleanPhone.length,
+            phoneForApi: phoneForApi || 'undefined',
+            phoneForApiLength: phoneForApi ? phoneForApi.length : 0,
             apiId: apiIdNum,
+            apiIdType: typeof apiIdNum,
             apiHashDefined: !!apiHash,
-            apiHashLength: apiHash ? apiHash.length : 0
+            apiHashLength: apiHash ? apiHash.length : 0,
+            apiHashType: typeof apiHash,
+            apiHashFirstChars: apiHash ? apiHash.substring(0, 10) : 'undefined'
           });
           
           let errorMessage = sendCodeError.message || 'Проверьте номер телефона и API данные';
+          const errorString = String(errorMessage).toLowerCase();
           
           // Более детальная обработка ошибок
-          if (errorMessage.includes('pattern') || errorMessage.includes('PHONE_NUMBER') || errorMessage.includes('constructor')) {
-            errorMessage = 'Неверный формат номера телефона или API данных. Проверьте все поля.';
-          } else if (errorMessage.includes('API') || errorMessage.includes('API_ID')) {
+          if (errorString.includes('pattern') || errorString.includes('phone_number') || errorString.includes('constructor') || errorString.includes('invalid')) {
+            // Проверяем конкретные проблемы
+            if (errorString.includes('phone') || errorString.includes('number')) {
+              errorMessage = `Неверный формат номера телефона. Проверьте, что номер в формате +380XXXXXXXXX или 380XXXXXXXXX (получено: ${phoneForApi || cleanPhone}, длина: ${phoneForApi ? phoneForApi.length : cleanPhone.length})`;
+            } else if (errorString.includes('api') || errorString.includes('id')) {
+              errorMessage = `Неверные API данные. Проверьте API ID (${apiIdNum}) и API Hash (длина: ${apiHash ? apiHash.length : 0}) на my.telegram.org/apps`;
+            } else {
+              errorMessage = `Неверный формат данных. Проверьте все поля. Номер: ${phoneForApi || cleanPhone}, API ID: ${apiIdNum}, API Hash длина: ${apiHash ? apiHash.length : 0}`;
+            }
+          } else if (errorString.includes('api_id') || errorString.includes('api_hash')) {
             errorMessage = 'Неверные API данные. Проверьте API ID и API Hash на my.telegram.org/apps';
-          } else if (errorMessage.includes('FLOOD')) {
+          } else if (errorString.includes('flood') || errorString.includes('wait')) {
             errorMessage = 'Слишком много запросов. Подождите несколько минут и попробуйте снова.';
-          } else if (errorMessage.includes('undefined') || errorMessage.includes('constructor')) {
+          } else if (errorString.includes('undefined') || errorString.includes('null') || errorString.includes('is not defined')) {
             errorMessage = 'Ошибка инициализации. Проверьте, что все поля заполнены корректно.';
           }
           

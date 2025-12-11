@@ -17,6 +17,7 @@ import {
   SparklesIcon as SparklesIconSolid
 } from '@heroicons/react/24/solid'
 import { processExcelFile, ProcessedExcelData } from '../utils/excelProcessor'
+import { processHtmlUrl, isValidUrl } from '../utils/htmlProcessor'
 import { googleMapsLoader } from '../utils/googleMapsLoader'
 import { GoogleAPIManager, GoogleAPIManagerConfig } from '../utils/googleAPIManager'
 import { localStorageUtils } from '../utils/localStorage'
@@ -602,6 +603,8 @@ export const AutoPlanner: React.FC = () => {
   const [fileName, setFileName] = useState('')
   const [selectedOrder, setSelectedOrder] = useState<any>(null) // Выбранный заказ для модального окна
   const [isProcessing, setIsProcessing] = useState(false)
+  const [htmlUrl, setHtmlUrl] = useState('')
+  const [isProcessingHtml, setIsProcessingHtml] = useState(false)
   const [isPlanning, setIsPlanning] = useState(false)
   const [plannedRoutes, setPlannedRoutes] = useState<any[]>([])
   const [excludedOutsideSector, setExcludedOutsideSector] = useState<number>(0)
@@ -1193,6 +1196,36 @@ export const AutoPlanner: React.FC = () => {
       setIsProcessing(false)
     }
   }, [])
+
+  const handleHtmlData = useCallback(async (data: ProcessedExcelData) => {
+    setExcelData(data)
+    setFileName('HTML данные')
+    console.log(`✅ Загружено ${data.orders?.length || 0} заказов из HTML`)
+  }, [])
+
+  const handleHtmlUrlLoad = useCallback(async () => {
+    if (!htmlUrl.trim()) {
+      alert('Введите URL HTML страницы')
+      return
+    }
+
+    if (!isValidUrl(htmlUrl.trim())) {
+      alert('Неверный формат URL. URL должен начинаться с http:// или https://')
+      return
+    }
+
+    setIsProcessingHtml(true)
+    try {
+      const data = await processHtmlUrl(htmlUrl.trim())
+      await handleHtmlData(data)
+      setHtmlUrl('') // Очищаем поле после успешной загрузки
+    } catch (error: any) {
+      console.error('Ошибка загрузки HTML:', error)
+      alert(`Ошибка загрузки HTML: ${error.message || 'Неизвестная ошибка'}`)
+    } finally {
+      setIsProcessingHtml(false)
+    }
+  }, [htmlUrl, handleHtmlData])
 
   const onFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
@@ -5464,6 +5497,46 @@ export const AutoPlanner: React.FC = () => {
                 </div>
               </div>
             )}
+
+            {/* Загрузка HTML по URL */}
+            <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
+              <div className={clsx('text-xs font-semibold mb-2', isDark ? 'text-gray-300' : 'text-gray-700')}>
+                Или загрузить из HTML
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={htmlUrl}
+                  onChange={(e) => setHtmlUrl(e.target.value)}
+                  placeholder="https://example.com/data.html"
+                  disabled={isProcessingHtml || isProcessing}
+                  className={clsx(
+                    'flex-1 min-w-0 px-3 py-2 text-xs rounded-lg border transition-colors',
+                    isDark
+                      ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:outline-none'
+                      : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-400 focus:outline-none',
+                    (isProcessingHtml || isProcessing) && 'opacity-50 cursor-not-allowed'
+                  )}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      handleHtmlUrlLoad()
+                    }
+                  }}
+                />
+                <button
+                  onClick={handleHtmlUrlLoad}
+                  disabled={isProcessingHtml || isProcessing || !htmlUrl.trim()}
+                  className={clsx(
+                    'px-3 py-2 text-xs font-medium rounded-lg transition-colors whitespace-nowrap flex-shrink-0',
+                    isDark
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed'
+                  )}
+                >
+                  {isProcessingHtml ? 'Загрузка...' : 'Загрузить'}
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Фильтры маршрута - компактная версия */}
@@ -6184,7 +6257,7 @@ export const AutoPlanner: React.FC = () => {
                 <TrafficHeatmap
                   sectorPath={sectorPathState || undefined}
                   sectorName={sectorCityName || 'Сектор'}
-                  mapboxToken={mapboxTokenState}
+                  mapboxToken={mapboxTokenState || 'pk.eyJ1IjoieWFwMDA3NyIsImEiOiJjbWkyN2wzYnIxNHN3MmxzZmpjOThzdmp6In0.KKBxC62q-I4xEXQBCx7JVw'}
                 />
               </Suspense>
             </div>
