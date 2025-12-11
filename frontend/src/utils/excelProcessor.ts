@@ -114,7 +114,7 @@ const processExcelFileInternal = async (file: File): Promise<ProcessedExcelData>
   })
 }
 
-const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
+export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
   // Находим строку с заголовками (может быть не первая из-за объединённых ячеек)
   let headerRowIndex = 0
   let headers: string[] = []

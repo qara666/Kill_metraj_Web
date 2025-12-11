@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { toast } from 'react-hot-toast'
 import { 
@@ -9,11 +9,13 @@ import {
   ExclamationTriangleIcon,
   XMarkIcon,
   UserGroupIcon,
-  CreditCardIcon
+  CreditCardIcon,
+  LinkIcon
 } from '@heroicons/react/24/outline'
 import { LoadingSpinner } from './LoadingSpinner'
 import { clsx } from 'clsx'
 import { useTheme } from '../contexts/ThemeContext'
+import { processHtmlUrl, isValidUrl } from '../utils/htmlProcessor'
 
 interface ExcelUploadSectionProps {
   onFileSelect: (file: File) => void
@@ -22,6 +24,7 @@ interface ExcelUploadSectionProps {
   isProcessing: boolean
   processedData: any
   onClearResults: () => void
+  onHtmlDataLoad?: (data: any) => void
 }
 
 export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
@@ -30,9 +33,12 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
   selectedFile,
   isProcessing,
   processedData,
-  onClearResults
+  onClearResults,
+  onHtmlDataLoad
 }) => {
   const { isDark } = useTheme()
+  const [htmlUrl, setHtmlUrl] = useState<string>('')
+  const [isProcessingHtml, setIsProcessingHtml] = useState<boolean>(false)
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0]
@@ -86,6 +92,33 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
     }
     return <DocumentTextIcon className={clsx('h-8 w-8', isDark ? 'text-gray-400' : 'text-gray-600')} />
   }
+
+  const handleProcessHtml = useCallback(async () => {
+    if (!htmlUrl.trim()) {
+      toast.error('Введите URL HTML страницы')
+      return
+    }
+
+    if (!isValidUrl(htmlUrl.trim())) {
+      toast.error('Неверный формат URL. Используйте http:// или https://')
+      return
+    }
+
+    setIsProcessingHtml(true)
+    try {
+      const data = await processHtmlUrl(htmlUrl.trim())
+      if (onHtmlDataLoad) {
+        onHtmlDataLoad(data)
+      }
+      toast.success(`Успешно загружено ${data.orders?.length || 0} заказов из HTML`)
+      setHtmlUrl('')
+    } catch (error: any) {
+      console.error('Ошибка обработки HTML:', error)
+      toast.error(error.message || 'Ошибка при обработке HTML страницы')
+    } finally {
+      setIsProcessingHtml(false)
+    }
+  }, [htmlUrl, onHtmlDataLoad])
 
   return (
     <div className="space-y-6">
@@ -194,6 +227,69 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
               </div>
             </div>
           )}
+        </div>
+
+        {/* Поле для HTML ссылки */}
+        <div className={clsx(
+          'mt-6 p-4 rounded-lg border',
+          isDark ? 'bg-gray-800/50 border-gray-700' : 'bg-gray-50 border-gray-200'
+        )}>
+          <div className="flex items-center gap-2 mb-3">
+            <LinkIcon className={clsx('h-5 w-5', isDark ? 'text-blue-400' : 'text-blue-600')} />
+            <label className={clsx(
+              'text-sm font-medium',
+              isDark ? 'text-gray-200' : 'text-gray-700'
+            )}>
+              Или вставьте ссылку на HTML страницу с таблицей
+            </label>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={htmlUrl}
+              onChange={(e) => setHtmlUrl(e.target.value)}
+              placeholder="https://example.com/data.html"
+              className={clsx(
+                'flex-1 px-4 py-2 rounded-lg border text-sm',
+                isDark 
+                  ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500' 
+                  : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
+              )}
+              disabled={isProcessingHtml || isProcessing}
+            />
+            <button
+              onClick={handleProcessHtml}
+              disabled={isProcessingHtml || isProcessing || !htmlUrl.trim()}
+              className={clsx(
+                'px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2',
+                isProcessingHtml || isProcessing || !htmlUrl.trim()
+                  ? isDark 
+                    ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : isDark 
+                    ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+              )}
+            >
+              {isProcessingHtml ? (
+                <>
+                  <LoadingSpinner size="sm" />
+                  <span>Загрузка...</span>
+                </>
+              ) : (
+                <>
+                  <LinkIcon className="h-4 w-4" />
+                  <span>Загрузить</span>
+                </>
+              )}
+            </button>
+          </div>
+          <p className={clsx(
+            'text-xs mt-2',
+            isDark ? 'text-gray-400' : 'text-gray-500'
+          )}>
+            HTML страница должна содержать таблицу с данными в том же формате, что и Excel файл
+          </p>
         </div>
 
         {/* Кнопки действий */}
