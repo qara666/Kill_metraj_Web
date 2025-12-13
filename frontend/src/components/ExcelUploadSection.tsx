@@ -68,10 +68,9 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
       'application/vnd.ms-excel'
     ].includes(file.type)
     const isCsv = /\.csv$/i.test(file.name) || file.type === 'text/csv'
-    const isHtml = /\.html?$/i.test(file.name) || file.type === 'text/html'
 
-    if (!isExcel && !isCsv && !isHtml) {
-      toast.error('Пожалуйста, выберите Excel (.xlsx, .xls), CSV (.csv) или HTML (.html)')
+    if (!isExcel && !isCsv) {
+      toast.error('Пожалуйста, выберите Excel (.xlsx, .xls) или CSV (.csv). Для HTML файлов используйте зону ниже.')
       return
     }
 
@@ -80,22 +79,41 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
       return
     }
 
-    // Если HTML — сразу парсим локально
-    if (isHtml) {
-      void processLocalHtmlFile(file)
-      return
-    }
-
     onFileSelect(file)
     toast.success(`Файл "${file.name}" выбран для обработки`)
-  }, [onFileSelect, processLocalHtmlFile])
+  }, [onFileSelect])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
       'application/vnd.ms-excel': ['.xls'],
-      'text/csv': ['.csv'],
+      'text/csv': ['.csv']
+    },
+    multiple: false
+  })
+
+  // Отдельный dropzone для HTML файлов
+  const { getRootProps: getHtmlRootProps, getInputProps: getHtmlInputProps, isDragActive: isHtmlDragActive } = useDropzone({
+    onDrop: useCallback((acceptedFiles: File[]) => {
+      const file = acceptedFiles[0]
+      if (!file) return
+      
+      const isHtml = /\.html?$/i.test(file.name) || file.type === 'text/html'
+      
+      if (!isHtml) {
+        toast.error('Пожалуйста, выберите HTML файл (.html, .htm)')
+        return
+      }
+      
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error('Размер файла не должен превышать 10MB')
+        return
+      }
+      
+      void processLocalHtmlFile(file)
+    }, [processLocalHtmlFile]),
+    accept: {
       'text/html': ['.html', '.htm']
     },
     multiple: false
@@ -255,14 +273,14 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
                   'text-sm mt-1',
                   isDark ? 'text-gray-400' : 'text-gray-500'
                 )}>
-                  Поддерживаются Excel (.xlsx, .xls), CSV (.csv) и HTML (.html)
+                  Поддерживаются Excel (.xlsx, .xls) и CSV (.csv)
                 </p>
               </div>
             </div>
           )}
         </div>
 
-        {/* Поле для HTML ссылки */}
+        {/* Секция для HTML загрузки */}
         <div className={clsx(
           'mt-6 p-4 rounded-lg border',
           isDark ? 'bg-gray-800/50 border-gray-700' : 'bg-gray-50 border-gray-200'
@@ -276,25 +294,46 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
               Или вставь ссылку на HTML страницу с выгрузки ФастОператора 
             </label>
           </div>
+          
+          {/* Отдельная зона drag and drop для HTML */}
+          <div
+            {...getHtmlRootProps()}
+            className={clsx(
+              'border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors mb-4',
+              isHtmlDragActive
+                ? isDark 
+                  ? 'border-blue-400 bg-blue-900/20' 
+                  : 'border-blue-400 bg-blue-50'
+                : isDark 
+                  ? 'border-gray-600 hover:border-gray-500' 
+                  : 'border-gray-300 hover:border-gray-400'
+            )}
+          >
+            <input {...getHtmlInputProps()} />
+            <div className="space-y-2">
+              <DocumentTextIcon className={clsx('h-8 w-8 mx-auto', isDark ? 'text-blue-400' : 'text-blue-600')} />
+              <p className={clsx(
+                'text-sm font-medium',
+                isDark ? 'text-gray-200' : 'text-gray-700'
+              )}>
+                {isHtmlDragActive ? 'Отпустите HTML файл здесь' : 'Перетащите HTML файл сюда или нажмите для выбора'}
+              </p>
+              <p className={clsx(
+                'text-xs',
+                isDark ? 'text-gray-400' : 'text-gray-500'
+              )}>
+                Поддерживаются файлы .html и .htm
+              </p>
+            </div>
+          </div>
+          
+          {/* Поле для URL */}
           <div className="flex gap-2">
             <input
               type="text"
               value={htmlUrl}
               onChange={(e) => setHtmlUrl(e.target.value)}
               placeholder="https://example.com/data.html"
-              onDragOver={(e) => {
-                // Позволяем бросать HTML файл прямо в поле ссылки
-                if (e.dataTransfer?.items?.length) e.preventDefault()
-              }}
-              onDrop={(e) => {
-                e.preventDefault()
-                const file = e.dataTransfer?.files?.[0]
-                if (file && (/\.html?$/i.test(file.name) || file.type === 'text/html')) {
-                  void processLocalHtmlFile(file)
-                  return
-                }
-                // Если бросят не файл — позволим обычной вставке текста
-              }}
               className={clsx(
                 'flex-1 px-4 py-2 rounded-lg border text-sm',
                 isDark 
