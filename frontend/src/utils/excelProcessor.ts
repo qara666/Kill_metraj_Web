@@ -428,7 +428,19 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
         return
       }
       
+      // Детальное логирование для первых 5 строк для диагностики
+      if (index < 5) {
+        console.log(`\n📋 [Строка ${index + 2}] Обработка строки данных:`)
+        console.log(`   Заголовки (первые 10):`, headers.slice(0, 10).map((h, i) => `${i}: "${h}"`))
+        console.log(`   Значения (первые 10):`, row.slice(0, 10).map((v, i) => `${i}: "${String(v || '').substring(0, 40)}"`))
+      }
+      
       const rowData = createRowData(row, headers)
+      
+      // Логируем созданные rowData для первых строк
+      if (index < 5) {
+        console.log(`   Созданные ключи rowData:`, Object.keys(rowData).slice(0, 15))
+      }
       
       // Улучшенный поиск адреса - проверяем все колонки, которые могут содержать адрес
       let foundAddress = ''
@@ -476,6 +488,7 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
       
       // Если адрес не найден в специальных колонках, ищем по всему ряду (но исключаем известные не-адресные колонки)
       if (!foundAddress) {
+        // Сначала пробуем более мягкую валидацию для HTML данных
         for (let i = 0; i < row.length; i++) {
           const val = row[i]
           const colName = headers[i] || ''
@@ -491,13 +504,42 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
             continue
           }
           
-          if (val && typeof val === 'string') {
+          if (val && (typeof val === 'string' || typeof val === 'number')) {
             const strVal = String(val).trim()
+            
+            // Для первых строк логируем все значения для диагностики
+            if (index < 5) {
+              console.log(`🔍 [Строка ${index + 2}] Проверяем колонку "${colName}" (индекс ${i}): "${strVal.substring(0, 60)}"`)
+            }
+            
             // Используем строгую валидацию адреса
             if (isValidAddress(strVal, colName)) {
               foundAddress = strVal
               console.log(`✅ Найден валидный адрес в колонке "${colName}" (индекс ${i}): ${strVal.substring(0, 60)}`)
               break
+            }
+            
+            // Если строгая валидация не прошла, пробуем более мягкую для длинных строк
+            if (strVal.length > 15 && !foundAddress) {
+              // Мягкая валидация: содержит хотя бы один маркер адреса и не является явно не-адресом
+              const hasAnyAddressMarker = /\b(вул|вулиця|улица|ул\.?|проспект|просп\.?|провулок|пров\.?|бульвар|бул\.?|линия|лінія|лін|площа|площадь|пл\.?|пер\.?|переулок|str|street)\b/i.test(strVal) ||
+                                         /\b\d+[а-яa-z]?[,\s]/.test(strVal) ||
+                                         /\b(киев|київ|kiev|kyiv|одесса|одеса|харьков|харків|полтава|украина|ukraine)\b/i.test(strVal)
+              
+              const isNotExplicitlyNotAddress = !/^[\d\+\-\(\)\s]+$/.test(strVal) && // не только телефон
+                                                !/^[\w\.-]+@[\w\.-]+\.\w+$/.test(strVal) && // не email
+                                                !/^\d{7,8}$/.test(strVal) && // не только номер заказа
+                                                !/^[а-яёіїє]{2,20}\s+[а-яёіїє]{2,20}$/i.test(strVal) && // не только имя
+                                                !/^[a-z]{2,20}\s+[a-z]{2,20}$/i.test(strVal) && // не только имя латиницей
+                                                !/зателефонувати|зателефоновать|позвонить|call|звон/i.test(strVal) &&
+                                                !/хвилин|минут|minutes/i.test(strVal) &&
+                                                !/примітка|примечание|note|комментарий|коментар/i.test(strVal)
+              
+              if (hasAnyAddressMarker && isNotExplicitlyNotAddress && /[а-яА-ЯёЁіІїЇєЄa-zA-Z]/.test(strVal) && /\d/.test(strVal)) {
+                foundAddress = strVal
+                console.log(`✅ Найден адрес (мягкая валидация) в колонке "${colName}" (индекс ${i}): ${strVal.substring(0, 60)}`)
+                break
+              }
             }
           }
         }
@@ -558,10 +600,21 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
           orders.push(order)
           console.log(`Создан заказ из строки ${index + 2} с адресом: ${foundAddress.substring(0, 50)}`)
         } else {
+          // Детальное логирование для диагностики
+          console.warn(`⚠️ [Строка ${index + 2}] Не удалось определить тип записи и не найден адрес`)
+          console.warn(`   Заголовки:`, headers.slice(0, 10))
+          console.warn(`   Значения:`, row.slice(0, 10).map(v => String(v || '').substring(0, 40)))
+          console.warn(`   rowData ключи:`, Object.keys(rowData).slice(0, 15))
+          console.warn(`   rowData значения (первые 10):`, Object.keys(rowData).slice(0, 10).map(k => `${k}: "${String(rowData[k] || '').substring(0, 30)}"`))
+          
           errors.push({
             row: index + 2,
-            message: 'Не удалось определить тип записи и не найден адрес',
-            data: rowData
+            message: `Не удалось определить тип записи и не найден адрес. Проверенные колонки: ${headers.slice(0, 10).join(', ')}`,
+            data: {
+              headers: headers.slice(0, 15),
+              values: row.slice(0, 15).map(v => String(v || '').substring(0, 50)),
+              rowDataKeys: Object.keys(rowData).slice(0, 15)
+            }
           })
         }
       }

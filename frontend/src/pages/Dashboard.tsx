@@ -380,6 +380,105 @@ export const Dashboard: React.FC = () => {
     log('Результаты Excel обработки очищены (можно загрузить новые файлы)')
   }
 
+  // Обработчик для HTML данных
+  const handleHtmlDataLoad = (data: any) => {
+    try {
+      // Нормализуем данные HTML в тот же формат, что и Excel
+      const orders = Array.isArray(data.orders) ? data.orders : []
+      const couriers = Array.isArray(data.couriers) ? data.couriers : []
+      const paymentMethods = Array.isArray(data.paymentMethods) ? data.paymentMethods : []
+      const routes = Array.isArray(data.routes) ? data.routes : []
+      const errorsArr = Array.isArray(data.errors) ? data.errors : []
+      
+      // Преобразуем объекты ошибок в строки
+      const errorsAsStrings = errorsArr.map((error: any) => 
+        typeof error === 'string' ? error : `Строка ${error.row || 'N/A'}: ${error.message || 'Неизвестная ошибка'}`
+      )
+
+      const newData: any = {
+        orders,
+        couriers,
+        paymentMethods,
+        routes,
+        errors: errorsAsStrings,
+        summary: {
+          totalRows: orders.length + couriers.length + paymentMethods.length + routes.length,
+          successfulGeocoding: 0,
+          failedGeocoding: 0,
+          orders: orders.length,
+          couriers: couriers.length,
+          paymentMethods: paymentMethods.length,
+          errors: errorsAsStrings
+        }
+      }
+
+      // Объединяем новые данные с существующими
+      let mergedData: any
+      const newOrdersCount = orders.length
+      const existingOrdersCount = excelData?.orders?.length || 0
+      
+      try {
+        mergedData = mergeExcelData(newData, excelData || null)
+        if (mergedData && excelData?.routes && excelData.routes.length > 0 && (!mergedData.routes || mergedData.routes.length === 0)) {
+          mergedData.routes = [...excelData.routes]
+        }
+        
+        // Убеждаемся, что все массивы определены
+        if (!mergedData.orders) mergedData.orders = []
+        if (!mergedData.couriers) mergedData.couriers = []
+        if (!mergedData.paymentMethods) mergedData.paymentMethods = []
+        if (!mergedData.routes) mergedData.routes = []
+        if (!mergedData.errors) mergedData.errors = []
+        
+        // Сохраняем данные в контекст (это автоматически сохранит в localStorage)
+        setExcelData(mergedData)
+        
+        // Логируем результаты объединения
+        const finalOrdersCount = mergedData.orders.length
+        
+        log(`HTML файл обработан: заказов=${newOrdersCount}, курьеров=${couriers.length}, ошибок=${errorsAsStrings.length}`)
+        log(`Объединение: было=${existingOrdersCount}, новых=${newOrdersCount}, стало=${finalOrdersCount} заказов`)
+        
+        if (finalOrdersCount === existingOrdersCount && newOrdersCount > 0) {
+          log(`⚠️ ВНИМАНИЕ: Новые заказы не добавились! Возможно, все заказы считаются дубликатами.`)
+        }
+        
+        // Показываем предпросмотр данных
+        setPreviewData(data)
+        setShowDataPreview(true)
+        
+        // Инвалидируем кэш маршрутов для обновления состояния
+        queryClient.invalidateQueries({ queryKey: ['routes'] })
+        
+        toast.success(`Успешно загружено ${newOrdersCount} заказов из HTML файла`)
+      } catch (error) {
+        console.error('Ошибка при объединении HTML данных:', error)
+        // Если объединение не удалось, просто используем новые данные
+        if (newData && excelData?.routes && excelData.routes.length > 0 && (!newData.routes || newData.routes.length === 0)) {
+          newData.routes = [...excelData.routes]
+        }
+        
+        // Убеждаемся, что все массивы определены
+        if (!newData.orders) newData.orders = []
+        if (!newData.couriers) newData.couriers = []
+        if (!newData.paymentMethods) newData.paymentMethods = []
+        if (!newData.routes) newData.routes = []
+        if (!newData.errors) newData.errors = []
+        
+        setExcelData(newData)
+        setPreviewData(data)
+        setShowDataPreview(true)
+        queryClient.invalidateQueries({ queryKey: ['routes'] })
+        log(`Ошибка объединения HTML данных, используются только новые данные`)
+        toast.success(`Успешно загружено ${newOrdersCount} заказов из HTML файла`)
+      }
+    } catch (error: any) {
+      console.error('Ошибка обработки HTML данных:', error)
+      toast.error(`Ошибка обработки HTML данных: ${error.message || 'Неизвестная ошибка'}`)
+      log(`Ошибка обработки HTML данных: ${error.message || 'Неизвестная ошибка'}`)
+    }
+  }
+
   const handleConfirmPreview = () => {
     setShowDataPreview(false)
     toast.success('Данные успешно сохранены!')
@@ -402,6 +501,7 @@ export const Dashboard: React.FC = () => {
         isProcessing={processFileMutation.isPending}
         processedData={excelData}
         onClearResults={handleClearExcelResults}
+        onHtmlDataLoad={handleHtmlDataLoad}
       />
 
 
