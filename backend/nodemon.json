@@ -1,8 +1,8 @@
 {
   "watch": ["src"],
-  "ext": "ts,json",
-  "ignore": ["src/**/*.test.ts"],
-  "exec": "ts-node src/server.ts",
+  "ext": "js,json",
+  "ignore": ["src/**/*.test.js", "node_modules"],
+  "exec": "node simple_server.js",
   "env": {
     "NODE_ENV": "development"
   }
