@@ -164,19 +164,40 @@ export const TelegramParsing: React.FC = () => {
       )
       
       if (result.success) {
+        // Устанавливаем состояние подключения - подключение успешно, не перезаписываем на false
         setIsConnected(true)
         setNeedsAuth(false)
         setShowConnectionModal(false)
-        // Загружаем список чатов после подключения
+        // Загружаем список чатов сразу, так как подключение успешно
         await loadChats()
         alert('Успешно подключено к Telegram!')
+        // Проверяем статус в фоне для синхронизации, но не перезаписываем если уже true
+        setTimeout(async () => {
+          const status = await telegramService.checkConnectionStatus()
+          // Обновляем только если статус true, чтобы не перезаписать успешное подключение
+          if (status) {
+            setIsConnected(true)
+          }
+        }, 1000)
       } else if (result.needsAuth) {
         // Требуется код подтверждения
         setNeedsAuth(true)
         setPhoneCodeHash(result.phoneCodeHash || null)
         alert('Введите код подтверждения из Telegram')
       } else {
-        alert(result.error || 'Не удалось подключиться к Telegram. Проверьте данные.')
+        // Проверяем, не требуется ли авторизация с номером телефона
+        const errorMsg = result.error || 'Не удалось подключиться к Telegram. Проверьте данные.'
+        if (errorMsg.includes('Требуется авторизация') || errorMsg.includes('укажите номер телефона')) {
+          // Если требуется номер телефона, но он не указан - показываем подсказку
+          if (!connectionData.phoneNumber || connectionData.phoneNumber.trim().length === 0) {
+            alert('Для подключения к Telegram требуется авторизация. Пожалуйста, укажите номер телефона в поле выше и попробуйте подключиться снова.')
+            // Фокусируемся на поле номера телефона (если возможно)
+          } else {
+            alert(errorMsg)
+          }
+        } else {
+          alert(errorMsg)
+        }
       }
     } catch (error: any) {
       console.error('Ошибка подключения:', error)
@@ -222,14 +243,23 @@ export const TelegramParsing: React.FC = () => {
       )
       
       if (result.success) {
+        // Устанавливаем состояние подключения - подключение успешно, не перезаписываем на false
         setIsConnected(true)
         setNeedsAuth(false)
         setPhoneCode('')
         setPhoneCodeHash(null)
         setShowConnectionModal(false)
-        // Загружаем список чатов после подключения
+        // Загружаем список чатов сразу, так как подключение успешно
         await loadChats()
         alert('Авторизация завершена!')
+        // Проверяем статус в фоне для синхронизации, но не перезаписываем если уже true
+        setTimeout(async () => {
+          const status = await telegramService.checkConnectionStatus()
+          // Обновляем только если статус true, чтобы не перезаписать успешное подключение
+          if (status) {
+            setIsConnected(true)
+          }
+        }, 1000)
       } else {
         let errorMessage = result.error || 'Не удалось завершить авторизацию. Проверьте код.'
         if (errorMessage.includes('code') || errorMessage.includes('PHONE_CODE')) {
@@ -271,7 +301,11 @@ export const TelegramParsing: React.FC = () => {
       return
     }
 
-    if (!isConnected) {
+    // Всегда проверяем реальный статус подключения на backend перед поиском
+    const actualStatus = await telegramService.checkConnectionStatus()
+    setIsConnected(actualStatus)
+    
+    if (!actualStatus) {
       alert('Сначала подключитесь к Telegram')
       setShowConnectionModal(true)
       return

@@ -83,9 +83,22 @@ router.post('/initialize', async (req, res) => {
     }
   } catch (error) {
     console.error('Ошибка инициализации Telegram:', error);
+    // Безопасное извлечение сообщения об ошибке
+    let errorMessage = 'Неизвестная ошибка';
+    try {
+      if (error && typeof error === 'object' && error.message !== undefined) {
+        errorMessage = String(error.message);
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else {
+        errorMessage = String(error);
+      }
+    } catch (e) {
+      errorMessage = 'Не удалось извлечь сообщение об ошибке';
+    }
     res.status(500).json({
       success: false,
-      error: error.message || 'Неизвестная ошибка'
+      error: errorMessage
     });
   }
 });
@@ -152,6 +165,9 @@ router.post('/complete-auth', async (req, res) => {
 
     if (result.success) {
       res.json(result);
+    } else if (result.needsAuth) {
+      // Ожидаемое состояние при истечении/неверном коде — фронт запросит новый код
+      res.status(200).json(result);
     } else {
       res.status(400).json(result); // 400 для ошибок валидации
     }
