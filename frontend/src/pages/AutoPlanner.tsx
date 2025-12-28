@@ -79,7 +79,7 @@ import type { TourStep } from '../components/HelpTour'
 // Ленивая загрузка тяжелых компонентов
 const HelpModal = lazy(() => import('../components/HelpModal').then(m => ({ default: m.HelpModal })))
 const HelpTour = lazy(() => import('../components/HelpTour').then(m => ({ default: m.HelpTour })))
-const TrafficHeatmap = lazy(() => 
+const TrafficHeatmap = lazy(() =>
   import('../components/TrafficHeatmap')
     .then(m => {
       // Поддерживаем как named, так и default export
@@ -405,7 +405,7 @@ const RouteMap: React.FC<{ route: any; onMarkerClick?: (order: any) => void }> =
 
         // Собираем только заказы (без старта и финиша)
         const orderAddresses = route.routeChain || route.waypoints?.map((w: any) => w.address) || []
-        
+
         // Сначала пробуем использовать координаты из routeChainFull (если они были сохранены при планировании)
         // Это гарантирует использование тех же координат, что и при расчете расстояний
         const getOrderCoordinates = async (order: any, address: string): Promise<any> => {
@@ -413,18 +413,18 @@ const RouteMap: React.FC<{ route: any; onMarkerClick?: (order: any) => void }> =
           if (order?.coords && order.coords.lat && order.coords.lng) {
             return new gmaps.LatLng(order.coords.lat, order.coords.lng)
           }
-          
+
           // Иначе используем кэш координат из routeOptimizationCache
           const cached = routeOptimizationCache.getCoordinates(address)
           if (cached) {
             return new gmaps.LatLng(cached.lat, cached.lng)
           }
-          
+
           // Если нет в кэше, геокодируем
           const loc = await geocodeAddress(address)
           return loc ? new gmaps.LatLng(loc.lat(), loc.lng()) : null
         }
-        
+
         // Для построения маршрута нужны старт и финиш
         const fullAddresses = [
           route.startAddress,
@@ -436,11 +436,11 @@ const RouteMap: React.FC<{ route: any; onMarkerClick?: (order: any) => void }> =
           // Получаем координаты для всех точек
           // Используем routeChainFull для получения правильных координат заказов
           const allLocations = []
-          
+
           // Стартовый адрес
           const startLoc = await geocodeAddress(route.startAddress)
           if (startLoc) allLocations.push(new gmaps.LatLng(startLoc.lat(), startLoc.lng()))
-          
+
           // Координаты заказов - используем routeChainFull с сохраненными координатами
           const routeChainFull = route.routeChainFull || []
           for (let i = 0; i < orderAddresses.length; i++) {
@@ -449,17 +449,17 @@ const RouteMap: React.FC<{ route: any; onMarkerClick?: (order: any) => void }> =
             const loc = await getOrderCoordinates(fullOrder, address)
             if (loc) allLocations.push(loc)
           }
-          
+
           // Конечный адрес
           const endLoc = await geocodeAddress(route.endAddress)
           if (endLoc) allLocations.push(new gmaps.LatLng(endLoc.lat(), endLoc.lng()))
-          
+
           if (allLocations.length >= 2) {
             // Устанавливаем центр карты на первый заказ
             if (allLocations.length > 1) {
               map.setCenter(allLocations[1]) // первый заказ после старта
             }
-            
+
             // Создаём маршрут через DirectionsService (со стартом и финишем)
             const directionsService = new gmaps.DirectionsService()
             const origin = allLocations[0] // стартовый адрес
@@ -481,12 +481,12 @@ const RouteMap: React.FC<{ route: any; onMarkerClick?: (order: any) => void }> =
               (result: any, status: any) => {
                 if (status === 'OK' && result) {
                   directionsRenderer.setDirections(result)
-                  
+
                   // Создаём кастомные маркеры только для заказов (A, B, C, D, E)
                   // НЕ создаём маркеры для старта и финиша
                   const routeData = result.routes[0]
                   const legs = routeData.legs || []
-                  
+
                   // Структура legs: [start->order1, order1->order2, ..., orderN->end]
                   // Для waypoints: waypoint[0] = первый заказ (должен быть в end_location legs[0])
                   //                waypoint[1] = второй заказ (должен быть в end_location legs[1])
@@ -494,23 +494,23 @@ const RouteMap: React.FC<{ route: any; onMarkerClick?: (order: any) => void }> =
                   
                   // Используем routeChainFull для правильного сопоставления заказов с маркерами
                   const routeChainFull = route.routeChainFull || []
-                  
+
                   // Создаем маркеры для всех заказов из routeChain (не только из orderNumbers)
                   const actualOrderCount = route.routeChain?.length || routeChainFull.length || orderAddresses.length
-                  
+
                   for (let idx = 0; idx < actualOrderCount && idx < legs.length; idx++) {
                     const leg = legs[idx]
                     // Используем координаты из legs (они были вычислены Directions API с нашими координатами)
                     const endLocation = leg.end_location
-                    
+
                     // Получаем данные заказа из routeChainFull
                     const fullOrder = routeChainFull[idx]
                     const orderAddress = orderAddresses[idx] || route.routeChain?.[idx] || ''
-                    
+
                     // Нормальные круглые маркеры с номерами заказов
                     const orderNum = fullOrder?.orderNumber || route.orderNumbers?.[idx] || String(idx + 1)
                     const markerLabel = String(idx + 1) // 1, 2, 3 вместо A, B, C
-                      
+
                       const marker = new gmaps.Marker({
                         position: endLocation,
                         map,
@@ -532,7 +532,7 @@ const RouteMap: React.FC<{ route: any; onMarkerClick?: (order: any) => void }> =
                         title: `Заказ ${orderNum}: ${orderAddress}`,
                         zIndex: gmaps.Marker.MAX_ZINDEX + idx,
                       })
-                      
+
                       // Добавляем обработчик клика на маркер для показа информации о заказе
                       if (onMarkerClick && fullOrder) {
                         marker.addListener('click', () => {
@@ -553,10 +553,10 @@ const RouteMap: React.FC<{ route: any; onMarkerClick?: (order: any) => void }> =
                           onMarkerClick(orderData)
                         })
                       }
-                      
+
                       markersRef.current.push(marker)
                   }
-                  
+
                   // Подгоняем границы карты под маршрут с отступом (только при первой загрузке)
                   if (!isMapReady) {
                     const bounds = routeData.bounds
@@ -569,11 +569,11 @@ const RouteMap: React.FC<{ route: any; onMarkerClick?: (order: any) => void }> =
                       })
                     }
                   }
-                  
+
                   setIsMapReady(true)
                 }
-              }
-            )
+               }
+           )
           } else if (allLocations.length === 3 && orderAddresses.length === 1) {
             // Если только один заказ, показываем маршрут от старта до заказа до финиша
             map.setCenter(allLocations[1]) // центр на заказе
@@ -583,7 +583,7 @@ const RouteMap: React.FC<{ route: any; onMarkerClick?: (order: any) => void }> =
         }
       } catch (error) {
         console.error('Ошибка инициализации карты:', error)
-      }
+        }
     }
 
     initMap()
@@ -635,12 +635,12 @@ export const AutoPlanner: React.FC = () => {
   const [maxStopsPerRoute, setMaxStopsPerRoute] = useState<number>(4)
   const [errorMsg, setErrorMsg] = useState<string>('')
   const [selectedRoute, setSelectedRoute] = useState<any>(null)
-  
+
   // Настройки объединения заказов
   const [enableOrderCombining, setEnableOrderCombining] = useState<boolean>(true)
   const [combineMaxDistanceMeters, setCombineMaxDistanceMeters] = useState<number>(500)
   const [combineMaxTimeWindowMinutes, setCombineMaxTimeWindowMinutes] = useState<number>(30)
-  
+
   // Настройки уведомлений
   const [enableNotifications, setEnableNotifications] = useState<boolean>(true)
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>({
@@ -648,7 +648,7 @@ export const AutoPlanner: React.FC = () => {
     enableTrafficWarnings: true
   })
   const [routeNotifications, setRouteNotifications] = useState<Map<string, Notification[]>>(new Map())
-  
+
   // Данные о секторе и настройках трафика
   const [sectorPathState, setSectorPathState] = useState<Array<{ lat: number; lng: number }> | null>(null)
   const [sectorCityName, setSectorCityName] = useState<string>('')
@@ -694,16 +694,16 @@ export const AutoPlanner: React.FC = () => {
   // Восстановление состояния при загрузке страницы
   useEffect(() => {
     if (typeof window === 'undefined') return
-    
+
     // Восстанавливаем режим трафика
     const stored = localStorage.getItem(TRAFFIC_MODE_OVERRIDE_KEY)
     if (stored === 'auto' || stored === 'free' || stored === 'busy' || stored === 'gridlock') {
       setTrafficModeOverride(stored)
     }
-    
+
     // Загружаем историю при инициализации
     setRouteHistoryEntries(routeHistory.getAll())
-    
+
         // Восстанавливаем спланированные маршруты
         try {
           const savedRoutes = localStorage.getItem(PLANNED_ROUTES_STORAGE_KEY)
@@ -720,8 +720,7 @@ export const AutoPlanner: React.FC = () => {
                   const analytics = calculateRouteAnalytics(routes)
                   setRouteAnalytics(analytics)
                 }
-                console.log(`✅ Восстановлено ${routes.length} маршрутов из сохранения`)
-              } else {
+                } else {
                 // Удаляем устаревшие данные
                 localStorage.removeItem(PLANNED_ROUTES_STORAGE_KEY)
                 localStorage.removeItem(`${PLANNED_ROUTES_STORAGE_KEY}_timestamp`)
@@ -737,13 +736,12 @@ export const AutoPlanner: React.FC = () => {
                 const suggestions = suggestRouteImprovements(efficiencyMetrics)
                 setEfficiencySuggestions(suggestions)
               }
-              console.log(`✅ Восстановлено ${routes.length} маршрутов из сохранения`)
-            }
+              }
           }
         } catch (error) {
           console.error('Ошибка при восстановлении маршрутов:', error)
-        }
-    
+          }
+
     // Восстанавливаем настройки планирования
     try {
       const savedSettings = localStorage.getItem(SETTINGS_STORAGE_KEY)
@@ -756,12 +754,11 @@ export const AutoPlanner: React.FC = () => {
         if (settings.enableOrderCombining !== undefined) setEnableOrderCombining(settings.enableOrderCombining)
         if (settings.combineMaxDistanceMeters) setCombineMaxDistanceMeters(settings.combineMaxDistanceMeters)
         if (settings.combineMaxTimeWindowMinutes) setCombineMaxTimeWindowMinutes(settings.combineMaxTimeWindowMinutes)
-        console.log('✅ Восстановлены настройки планирования')
-      }
+        }
     } catch (error) {
       console.error('Ошибка при восстановлении настроек:', error)
-    }
-    
+      }
+
     // Восстанавливаем имя файла
     try {
       const savedFileName = localStorage.getItem(FILE_NAME_STORAGE_KEY)
@@ -770,14 +767,14 @@ export const AutoPlanner: React.FC = () => {
       }
     } catch (error) {
       console.error('Ошибка при восстановлении имени файла:', error)
-    }
+      }
   }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     localStorage.setItem(TRAFFIC_MODE_OVERRIDE_KEY, trafficModeOverride)
   }, [trafficModeOverride])
-  
+
   // Сохранение спланированных маршрутов
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -785,17 +782,16 @@ export const AutoPlanner: React.FC = () => {
       try {
         localStorage.setItem(PLANNED_ROUTES_STORAGE_KEY, JSON.stringify(plannedRoutes))
         localStorage.setItem(`${PLANNED_ROUTES_STORAGE_KEY}_timestamp`, Date.now().toString())
-        console.log(`💾 Сохранено ${plannedRoutes.length} маршрутов`)
-      } catch (error) {
+        } catch (error) {
         console.error('Ошибка при сохранении маршрутов:', error)
-      }
+        }
     } else {
       // Удаляем сохранение если маршрутов нет
       localStorage.removeItem(PLANNED_ROUTES_STORAGE_KEY)
       localStorage.removeItem(`${PLANNED_ROUTES_STORAGE_KEY}_timestamp`)
     }
   }, [plannedRoutes])
-  
+
   // Сохранение настроек планирования
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -812,9 +808,9 @@ export const AutoPlanner: React.FC = () => {
       localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings))
     } catch (error) {
       console.error('Ошибка при сохранении настроек:', error)
-    }
+      }
   }, [maxRouteDurationMin, maxRouteDistanceKm, maxStopsPerRoute, maxWaitPerStopMin, enableOrderCombining, combineMaxDistanceMeters, combineMaxTimeWindowMinutes])
-  
+
   // Сохранение имени файла
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -838,8 +834,7 @@ export const AutoPlanner: React.FC = () => {
       settings.citySectors[city].length > 0
     ) {
       setSectorPathState(settings.citySectors[city])
-      console.log(`✅ Синхронизирован сектор для города ${city}: ${settings.citySectors[city].length} точек`)
-    } else {
+      } else {
       setSectorPathState(null)
     }
 
@@ -854,7 +849,7 @@ export const AutoPlanner: React.FC = () => {
       setMapboxTokenState(undefined)
     }
   }, [])
-  
+
   // Настройки расширенной оптимизации (автоматически включены)
   const [enableCoverageAnalysis, _setEnableCoverageAnalysis] = useState<boolean>(false)
   const [enableWorkloadHeatmap, _setEnableWorkloadHeatmap] = useState<boolean>(false)
@@ -878,14 +873,14 @@ export const AutoPlanner: React.FC = () => {
     if (trafficPreset.mode === 'busy') return 'high'
     return 'moderate'
   }, [trafficSnapshot, trafficPreset.mode])
-  
+
   // Прогресс оптимизации
   const [optimizationProgress, setOptimizationProgress] = useState<{
     current: number
     total: number
     message: string
   } | null>(null)
-  
+
   // Настройки построения маршрутов (только основные, остальные применяются автоматически)
   const [routePlanningSettings, setRoutePlanningSettings] = useState<{
     // Приоритеты заказов
@@ -933,14 +928,14 @@ export const AutoPlanner: React.FC = () => {
     maxReadyTimeDifferenceMinutes: 10, // Максимальная разница во времени готовности (10 минут по умолчанию)
     maxDistanceBetweenOrdersKm: 15 // Максимум 15 км между соседними заказами по умолчанию
   })
-  
+
   // Настройки курьеров и графика работы
   const [courierSchedules, setCourierSchedules] = useState<CourierSchedule[]>([])
   const [selectedCourierType, setSelectedCourierType] = useState<'car' | 'motorcycle' | 'all'>('all')
   const [enableScheduleFiltering, setEnableScheduleFiltering] = useState<boolean>(false)
   const [showScheduleModal, setShowScheduleModal] = useState<boolean>(false)
   const [editingSchedule, setEditingSchedule] = useState<CourierSchedule | null>(null)
-  
+
   // Фильтры заказов
   const [orderFilters, setOrderFilters] = useState<{
     enabled: boolean
@@ -963,7 +958,7 @@ export const AutoPlanner: React.FC = () => {
   const [isRouteSettingsExpanded, setIsRouteSettingsExpanded] = useState<boolean>(false)
 
   const ordersCount = useMemo(() => excelData?.orders?.length ?? 0, [excelData])
-  
+
   // Получаем уникальные значения для фильтров из загруженных заказов
   const availableFilters = useMemo(() => {
     if (!excelData?.orders || excelData.orders.length === 0) {
@@ -974,19 +969,19 @@ export const AutoPlanner: React.FC = () => {
         orderTypes: []
       }
     }
-    
+
     const paymentMethods = new Set<string>()
     const deliveryZones = new Set<string>()
     const statuses = new Set<string>()
     const orderTypes = new Set<string>()
-    
+
     excelData.orders.forEach((order: any) => {
       if (order.paymentMethod) paymentMethods.add(String(order.paymentMethod).trim())
       if (order.deliveryZone) deliveryZones.add(String(order.deliveryZone).trim())
       if (order.status) statuses.add(String(order.status).trim())
       if (order.orderType) orderTypes.add(String(order.orderType).trim())
     })
-    
+
     return {
       paymentMethods: Array.from(paymentMethods).sort(),
       deliveryZones: Array.from(deliveryZones).sort(),
@@ -994,13 +989,13 @@ export const AutoPlanner: React.FC = () => {
       orderTypes: Array.from(orderTypes).sort()
     }
   }, [excelData])
-  
+
   // Применяем фильтры к заказам
   const filteredOrders = useMemo(() => {
     if (!excelData?.orders || !orderFilters.enabled) {
       return excelData?.orders || []
     }
-    
+
     return excelData.orders.filter((order: any) => {
       // Фильтр по способу оплаты
       if (orderFilters.paymentMethods.length > 0) {
@@ -1009,7 +1004,7 @@ export const AutoPlanner: React.FC = () => {
           return false
         }
       }
-      
+
       // Фильтр по зоне доставки
       if (orderFilters.deliveryZones.length > 0) {
         const orderZone = String(order.deliveryZone || '').trim()
@@ -1017,7 +1012,7 @@ export const AutoPlanner: React.FC = () => {
           return false
         }
       }
-      
+
       // Фильтр по статусу
       if (orderFilters.statuses.length > 0) {
         const orderStatus = String(order.status || '').trim()
@@ -1025,7 +1020,7 @@ export const AutoPlanner: React.FC = () => {
           return false
         }
       }
-      
+
       // Фильтр по типу заказа
       if (orderFilters.orderTypes.length > 0) {
         const orderType = String(order.orderType || '').trim()
@@ -1033,7 +1028,7 @@ export const AutoPlanner: React.FC = () => {
           return false
         }
       }
-      
+
       // Исключить исполненные
       if (orderFilters.excludeCompleted) {
         const status = String(order.status || '').toLowerCase()
@@ -1041,7 +1036,7 @@ export const AutoPlanner: React.FC = () => {
           return false
         }
       }
-      
+
       // Фильтр по времени доставки
       if (orderFilters.timeRange.start || orderFilters.timeRange.end) {
         const deliveryTime = order.deliveryTime || order.timeDelivery || ''
@@ -1056,7 +1051,7 @@ export const AutoPlanner: React.FC = () => {
           }
         }
       }
-      
+
       return true
     })
   }, [excelData, orderFilters])
@@ -1088,7 +1083,6 @@ export const AutoPlanner: React.FC = () => {
           trafficSnapshotRef.current = null
         }
       } catch (err) {
-        console.warn('Не удалось загрузить снимок трафика', err)
         setTrafficSnapshot(null)
         trafficSnapshotRef.current = null
       }
@@ -1143,7 +1137,7 @@ export const AutoPlanner: React.FC = () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [syncSectorSettings])
-  
+
   // Инициализация графика курьеров из localStorage или создание по умолчанию
   useEffect(() => {
     try {
@@ -1151,25 +1145,22 @@ export const AutoPlanner: React.FC = () => {
       if (savedSchedules) {
         const parsed = JSON.parse(savedSchedules) as CourierSchedule[]
         setCourierSchedules(parsed)
-        console.log(`✅ Загружено ${parsed.length} графиков курьеров из localStorage`)
-      } else {
+        } else {
         // Создаем примеры графиков по умолчанию (можно будет настроить в UI)
-        console.log('📝 Графики курьеров не найдены, будут созданы при необходимости')
-      }
+        }
     } catch (error) {
       console.error('Ошибка загрузки графиков курьеров:', error)
-    }
+      }
   }, [])
-  
+
   // Сохранение графиков курьеров в localStorage
   useEffect(() => {
     if (courierSchedules.length > 0) {
       try {
         localStorage.setItem('courier_schedules', JSON.stringify(courierSchedules))
-        console.log(`💾 Сохранено ${courierSchedules.length} графиков курьеров`)
-      } catch (error) {
+        } catch (error) {
         console.error('Ошибка сохранения графиков курьеров:', error)
-      }
+        }
     }
   }, [courierSchedules])
 
@@ -1179,7 +1170,7 @@ export const AutoPlanner: React.FC = () => {
       const data = await processExcelFile(file)
       setExcelData(data)
       setFileName(file.name)
-      
+
       // Пытаемся автоматически распарсить график курьеров из Excel
       try {
         const fileReader = new FileReader()
@@ -1193,12 +1184,11 @@ export const AutoPlanner: React.FC = () => {
               const firstSheetName = workbook.SheetNames[0]
               const worksheet = workbook.Sheets[firstSheetName]
               const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][]
-              
+
               // Парсим график курьеров
               const parsedSchedules = parseCourierScheduleFromExcel(jsonData)
               if (parsedSchedules.length > 0) {
                 setCourierSchedules(parsedSchedules)
-                console.log(`✅ Автоматически загружено ${parsedSchedules.length} графиков курьеров из Excel`)
                 // Показываем уведомление только если графиков больше 0
                 if (parsedSchedules.length > 0) {
                   setTimeout(() => {
@@ -1208,13 +1198,12 @@ export const AutoPlanner: React.FC = () => {
               }
             }
           } catch (error) {
-            console.warn('⚠️ Не удалось автоматически распарсить график курьеров:', error)
-          }
+            }
         }
         fileReader.readAsArrayBuffer(file)
       } catch (error) {
         console.warn('⚠️ Ошибка при попытке парсинга графика курьеров:', error)
-      }
+        }
     } catch (e) {
       console.error('Excel parse error', e)
       alert('Ошибка чтения Excel файла')
@@ -1226,8 +1215,7 @@ export const AutoPlanner: React.FC = () => {
   const handleHtmlData = useCallback(async (data: ProcessedExcelData) => {
     setExcelData(data)
     setFileName('HTML данные')
-    console.log(`✅ Загружено ${data.orders?.length || 0} заказов из HTML`)
-  }, [])
+    }, [])
 
   const handleHtmlUrlLoad = useCallback(async () => {
     if (!htmlUrl.trim()) {
@@ -1235,10 +1223,10 @@ export const AutoPlanner: React.FC = () => {
       return
     }
 
-    if (!isValidUrl(htmlUrl.trim())) {
+      if (!isValidUrl(htmlUrl.trim())) {
       alert('Неверный формат URL. URL должен начинаться с http://, https:// или file://')
-      return
-    }
+        return
+      }
 
     setIsProcessingHtml(true)
     try {
@@ -1263,7 +1251,7 @@ export const AutoPlanner: React.FC = () => {
       alert('Сначала загрузите заказы из Excel')
       return
     }
-    
+
     // Используем отфильтрованные заказы, если фильтры включены
     const ordersToUse = orderFilters.enabled ? filteredOrders : (excelData.orders || [])
     setIsPlanning(true)
@@ -1272,11 +1260,10 @@ export const AutoPlanner: React.FC = () => {
     setExcludedOutsideSector(0)
     setPlanTrafficImpact(null)
     setLastPlanPreset(null)
-    
+
     try {
       const planningStartTime = Date.now()
-      console.log('🚀 Начало автопланирования...')
-      
+
       // Quick check for API key to avoid silent failure
       if (!localStorageUtils.hasApiKey()) {
         const msg = 'Нет Google Maps API ключа. Добавьте ключ в Настройках и попробуйте снова.'
@@ -1285,31 +1272,26 @@ export const AutoPlanner: React.FC = () => {
         setIsPlanning(false)
         return
       }
-      
-      console.log('✅ API ключ найден, загружаем Google Maps...')
+
       const mapsLoadStart = Date.now()
       await googleMapsLoader.load()
-      console.log(`⏱️ Google Maps загружен за ${((Date.now() - mapsLoadStart) / 1000).toFixed(1)}с`)
-      
+
       const gmaps: any = (window as any).google?.maps
       if (!gmaps) {
         const msg = 'Google Maps не инициализирован. Попробуйте обновить страницу.'
         console.error('❌', msg)
         throw new Error(msg)
       }
-      console.log('✅ Google Maps загружен')
 
       const settings = localStorageUtils.getAllSettings()
       const city = (settings.cityBias || '') as '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'
       const cityAppend = city ? `, ${city}, Украина` : ', Украина'
       const region = 'UA'
-      
+
       // Получаем начальный и конечный адреса из настроек
       const defaultStartAddress = settings.defaultStartAddress || 'Макеевская 7, Киев, Украина'
       const defaultEndAddress = settings.defaultEndAddress || 'Макеевская 7, Киев, Украина'
-      
-      console.log(`📍 Начальный адрес: ${defaultStartAddress}`)
-      console.log(`📍 Конечный адрес: ${defaultEndAddress}`)
+
       
       // Очистка адреса от лишней информации
       const cleanAddress = (address: string) => {
@@ -1319,7 +1301,7 @@ export const AutoPlanner: React.FC = () => {
           .replace(/,\s*\d+\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
           .trim()
       }
-      
+
       const normalizeAddr = (a: string) => {
         const base = cleanAddress(a).trim()
         if (!base) return base
@@ -1333,8 +1315,7 @@ export const AutoPlanner: React.FC = () => {
 
       const now = Date.now()
       let orders = ordersToUse.map((o: any) => ({ ...o }))
-      
-      console.log(`📊 Всего заказов: ${excelData.orders?.length || 0}, после фильтрации: ${orders.length}`)
+
       
       // Автоматически применяем оптимальные настройки (скрытые от пользователя)
       // Эти настройки оптимизированы для лучших результатов
@@ -1356,7 +1337,7 @@ export const AutoPlanner: React.FC = () => {
         maxDistanceBetweenOrdersKm: 15,
         minRouteEfficiency: 0.5,
       }
-      
+
       // Применяем оптимизированные настройки
       const activeTrafficSnapshot = trafficSnapshotRef.current
       const runtimePreset = deriveTrafficPreset(activeTrafficSnapshot, {
@@ -1395,8 +1376,6 @@ export const AutoPlanner: React.FC = () => {
         } else if (runtimePreset.mode === 'busy') {
           optimizedSettings.urgentThresholdMinutes = Math.max(optimizedSettings.urgentThresholdMinutes, 35)
         }
-        console.log('📶 Трафик учтён при планировании:', {
-          avgSpeed: activeTrafficSnapshot.stats.avgSpeed,
           critical: activeTrafficSnapshot.stats.criticalCount,
           mode: runtimePreset.mode,
           limits: {
@@ -1406,13 +1385,10 @@ export const AutoPlanner: React.FC = () => {
             bufferMin: runtimeTrafficBufferMinutes
           }
         })
-      } else {
-        console.log('ℹ️ Трафик: нет актуального снимка, используются базовые лимиты.')
       }
-      
+
       // 1. Приоритизация заказов (всегда включена с приоритетом срочных)
       if (optimizedSettings.prioritizeUrgent) {
-        console.log(`🔄 Приоритизация заказов: срочные заказы в приоритете`)
         orders = [...orders].sort((a, b) => {
           // Сначала срочные заказы
           const aTime = a.deliveryTime || a.timeDelivery || ''
@@ -1422,7 +1398,7 @@ export const AutoPlanner: React.FC = () => {
           const bUrgent = bTime && isUrgentOrder(bTime, optimizedSettings.urgentThresholdMinutes, now)
           if (aUrgent && !bUrgent) return -1
           if (!aUrgent && bUrgent) return 1
-          
+
           // Затем по готовности и дедлайну (автоматически)
           const aReadyAt = a.readyAtSource || a.readyAt || null
           const bReadyAt = b.readyAtSource || b.readyAt || null
@@ -1434,12 +1410,12 @@ export const AutoPlanner: React.FC = () => {
             if (!aReady && bReady) return 1
             if (aReadyAt !== bReadyAt) return aReadyAt - bReadyAt
           }
-          
+
           // Затем по дедлайну
           if (a.deadlineAt && b.deadlineAt) {
             return a.deadlineAt - b.deadlineAt
           }
-          
+
           switch (optimizedSettings.orderPriority) {
             case 'deliveryTime':
               const aTime = a.deliveryTime || a.timeDelivery || ''
@@ -1457,7 +1433,7 @@ export const AutoPlanner: React.FC = () => {
           }
         })
       }
-      
+
       // Вспомогательная функция для определения срочных заказов
       function isUrgentOrder(deliveryTime: string, thresholdMinutes: number, now: Date): boolean {
         try {
@@ -1471,12 +1447,9 @@ export const AutoPlanner: React.FC = () => {
           return false
         }
       }
-      
+
       // 2. Группировка заказов (всегда по близости для оптимальной оптимизации)
       // Группировка по близости будет выполнена позже при создании маршрутов через findClusters
-      console.log(`🔗 Группировка заказов: по близости (радиус: ${optimizedSettings.proximityGroupingRadius}м)`)
-      
-      console.log(`✅ Применены оптимизированные настройки: приоритет срочных заказов, группировка=${optimizedSettings.groupingStrategy}, балансировка=${optimizedSettings.loadBalancing}, избегание пробок=${optimizedSettings.avoidTraffic}`)
 
       // Build sector polygon and bounds if available
       let sectorPolygon: any = null
@@ -1503,7 +1476,7 @@ export const AutoPlanner: React.FC = () => {
         const base = normalizeAddr(raw)
         const variants = new Set<string>()
         variants.add(base)
-        
+
         const tokenPairs: Array<[RegExp, string]> = [
           [/\bвулиця\b/iu, 'вул.'],
           [/\bвул\.?\b/iu, 'вулиця'],
@@ -1517,11 +1490,11 @@ export const AutoPlanner: React.FC = () => {
           [/\bлінія\b/iu, 'лін.'],
           [/\bлін\.?\b/iu, 'лінія']
         ]
-        
+
         tokenPairs.forEach(([from, to]) => {
           try { variants.add(base.replace(from, to)) } catch {}
         })
-        
+
         // Нормализация номера линии
         const lineForms = [
           base.replace(/\b(\d+)-(а|я)\b/iu, '$1$2'),
@@ -1531,7 +1504,7 @@ export const AutoPlanner: React.FC = () => {
           base.replace(/\bпервая\b/iu, '1-я')
         ]
         lineForms.forEach(v => variants.add(v))
-        
+
         // Если "1 лінія" без префикса типа улицы — добавим префиксы
         if (/\b(лінія|линия)\b/iu.test(base) && !/\b(вулиця|вул\.|улица|ул\.)\b/iu.test(base)) {
           variants.add(`вулиця ${base}`)
@@ -1539,7 +1512,7 @@ export const AutoPlanner: React.FC = () => {
           variants.add(`улица ${base}`)
           variants.add(`ул. ${base}`)
         }
-        
+
         return Array.from(variants).filter(v => v && v !== base)
       }
 
@@ -1558,9 +1531,9 @@ export const AutoPlanner: React.FC = () => {
       // Helper: check address is inside sector polygon with improved geocoding
       const isInsideSector = async (addr: string): Promise<boolean> => {
         if (!sectorPolygon) return true
-        
+
         const address = normalizeAddr(addr)
-        
+
         // Базовый запрос без address для переиспользования
         const baseRequest: any = {
           region,
@@ -1577,9 +1550,9 @@ export const AutoPlanner: React.FC = () => {
         }
 
         let results: any = await geocodeAddress(address)
-        
+
         if (!results || results.length === 0) results = []
-        
+
         // Проверяем, есть ли кандидаты внутри сектора
         let inside = results.filter((r: any) => {
           try {
@@ -1588,7 +1561,7 @@ export const AutoPlanner: React.FC = () => {
             return false
           }
         })
-        
+
         // Если нет кандидатов внутри — пробуем альтернативные формы улицы
         if (inside.length === 0) {
           const alts = generateStreetVariants(addr)
@@ -1610,7 +1583,7 @@ export const AutoPlanner: React.FC = () => {
             }
           }
         }
-        
+
         // Если всё ещё нет — пробуем reverse geocoding для получения sublocality
         if (inside.length === 0) {
           const sectorCenter = getSectorCenter()
@@ -1620,8 +1593,8 @@ export const AutoPlanner: React.FC = () => {
             if (rev && rev.length > 0) {
               const sub = (() => {
                 for (const r of rev) {
-                  const comp = (r.address_components || []).find((c: any) => 
-                    c.types?.includes('sublocality') || 
+                  const comp = (r.address_components || []).find((c: any) =>
+                    c.types?.includes('sublocality') ||
                     c.types?.includes('neighborhood') ||
                     c.types?.includes('sublocality_level_1')
                   )
@@ -1629,7 +1602,7 @@ export const AutoPlanner: React.FC = () => {
                 }
                 return null
               })()
-              
+
               if (sub) {
                 // Пробуем адрес с sublocality
                 const withSub = `${address}, ${sub}`
@@ -1650,7 +1623,7 @@ export const AutoPlanner: React.FC = () => {
             }
           }
         }
-        
+
         // Если всё ещё нет — пробуем упрощенный адрес (без подъездов, этажей, квартир)
         if (inside.length === 0) {
           // Убираем детали типа "под.1", "эт.25", "кв.289", "д/ф моб"
@@ -1662,7 +1635,7 @@ export const AutoPlanner: React.FC = () => {
             .replace(/,{2,}/g, ',')
             .replace(/\s+/g, ' ')
             .trim()
-          
+
           if (simplifiedAddr !== address && simplifiedAddr.length > 10) {
             const simpleRes: any = await geocodeAddress(simplifiedAddr)
             if (simpleRes && simpleRes.length > 0) {
@@ -1674,13 +1647,12 @@ export const AutoPlanner: React.FC = () => {
                 }
               })
               if (insideSimple.length > 0) {
-                console.log(`✅ Адрес найден внутри сектора (упрощенный): "${addr}" → "${simplifiedAddr}"`)
                 inside = insideSimple
               }
             }
           }
         }
-        
+
         // Если всё ещё нет — пробуем поиск по только улице и номеру дома
         if (inside.length === 0) {
           // Извлекаем только улицу и номер дома
@@ -1697,13 +1669,12 @@ export const AutoPlanner: React.FC = () => {
                 }
               })
               if (insideStreet.length > 0) {
-                console.log(`✅ Адрес найден внутри сектора (только улица): "${addr}" → "${streetOnly}"`)
                 inside = insideStreet
               }
             }
           }
         }
-        
+
         // Если всё ещё нет — проверяем все результаты геокодирования, возможно они просто не попали в bounds
         if (inside.length === 0 && results.length > 0) {
           // Пробуем геокодировать без bounds, чтобы получить все возможные варианты
@@ -1717,12 +1688,11 @@ export const AutoPlanner: React.FC = () => {
               }
             })
             if (insideNoBounds.length > 0) {
-              console.log(`✅ Адрес найден внутри сектора (без bounds): "${addr}"`)
               inside = insideNoBounds
             }
           }
         }
-        
+
         // Если всё ещё нет — возвращаем false
         if (inside.length === 0) {
           console.warn(`❌ Адрес не найден внутри сектора: "${addr}" → "${address}"`)
@@ -1732,9 +1702,8 @@ export const AutoPlanner: React.FC = () => {
           }
           return false
         }
-        
+
         // Возвращаем true если есть хотя бы один кандидат внутри сектора
-        console.log(`✅ Адрес найден внутри сектора: "${addr}"`)
         return true
       }
 
@@ -1743,7 +1712,7 @@ export const AutoPlanner: React.FC = () => {
         if (!val && val !== 0) return null
         const s = String(val).trim()
         if (!s) return null
-        
+
         // Обрабатываем некорректные значения Excel (##########)
         // Обычно это означает, что Excel не может отобразить значение (например, отрицательная дата)
         // Пробуем найти исходное числовое значение в raw данных или конвертируем как Excel serial date
@@ -1755,13 +1724,13 @@ export const AutoPlanner: React.FC = () => {
           // TODO: Можно попытаться найти исходное числовое значение из Excel
           return null
         }
-        
+
         // Пропускаем значения, которые выглядят как длительность (например, "35мин.")
         const strVal = s.toLowerCase()
         if (strVal.includes('мин.') || strVal.includes('час') || strVal.includes('min') || strVal.includes('hour')) {
           return null
         }
-        
+
         // Формат DD.MM.YYYY HH:MM:SS или DD.MM.YYYY HH:MM (например, "10.10.2025 11:02:21")
         const dotDateTimeMatch = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/i)
         if (dotDateTimeMatch) {
@@ -1771,13 +1740,13 @@ export const AutoPlanner: React.FC = () => {
           let hour = parseInt(dotDateTimeMatch[4], 10)
           const minute = parseInt(dotDateTimeMatch[5], 10)
           const second = dotDateTimeMatch[6] ? parseInt(dotDateTimeMatch[6], 10) : 0
-          
+
           const date = new Date(year, month - 1, day, hour, minute, second)
           if (!isNaN(date.getTime())) {
             return date.getTime()
           }
         }
-        
+
         // Формат Excel дата+время: "2/11/25 13:06" или "M/d/yy HH:mm" (месяц/день/год)
         // ИЛИ "29/10/25 13:30" или "DD/MM/YY HH:mm" (день/месяц/год) - когда день > 12
         const excelDateTimeMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i)
@@ -1789,7 +1758,7 @@ export const AutoPlanner: React.FC = () => {
           const minute = parseInt(excelDateTimeMatch[5], 10)
           const timeSecond = excelDateTimeMatch[6] ? parseInt(excelDateTimeMatch[6], 10) : 0
           const ampm = excelDateTimeMatch[7]
-          
+
           // Определяем формат: если первое число > 12, это DD/MM/YY (день/месяц/год)
           // Иначе это M/d/yy (месяц/день/год)
           let month, day
@@ -1807,12 +1776,12 @@ export const AutoPlanner: React.FC = () => {
             month = first
             day = secondNum
           }
-          
+
           // Корректируем год для 2-значного формата
           if (year < 100) {
             year += year < 50 ? 2000 : 1900
           }
-          
+
           // Корректируем час для AM/PM
           if (ampm) {
             if (ampm.toUpperCase() === 'PM' && hour !== 12) {
@@ -1821,18 +1790,18 @@ export const AutoPlanner: React.FC = () => {
               hour = 0
             }
           }
-          
+
           // Валидация даты
           if (month < 1 || month > 12 || day < 1 || day > 31) {
             return null
           }
-          
+
           const date = new Date(year, month - 1, day, hour, minute, timeSecond)
           if (!isNaN(date.getTime())) {
             return date.getTime()
           }
         }
-        
+
         // Формат только время с секундами: "HH:mm:ss AM/PM" или "HH:mm:ss" (например, "11:48:17", "10:32:21 AM", "13:00:00")
         // ВАЖНО: Этот формат используется для столбца "время на кухню"
         const timeOnlyMatch = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i)
@@ -1841,7 +1810,7 @@ export const AutoPlanner: React.FC = () => {
           const minute = parseInt(timeOnlyMatch[2], 10)
           const second = timeOnlyMatch[3] ? parseInt(timeOnlyMatch[3], 10) : 0
           const ampm = timeOnlyMatch[4]
-          
+
           // Корректируем час для AM/PM
           if (ampm) {
             if (ampm.toUpperCase() === 'PM' && hour !== 12) {
@@ -1850,17 +1819,17 @@ export const AutoPlanner: React.FC = () => {
               hour = 0
             }
           }
-          
+
           // Валидация времени
           if (hour < 0 || hour >= 24 || minute < 0 || minute >= 60 || second < 0 || second >= 60) {
             return null
           }
-          
+
           const base = new Date()
           base.setHours(hour, minute, second, 0)
           return base.getTime()
         }
-        
+
         // Формат HH:mm (простой)
         const simpleTimeMatch = s.match(/^([01]?\d|2[0-3]):([0-5]\d)$/)
         if (simpleTimeMatch) {
@@ -1868,14 +1837,14 @@ export const AutoPlanner: React.FC = () => {
           base.setHours(parseInt(simpleTimeMatch[1], 10), parseInt(simpleTimeMatch[2], 10), 0, 0)
           return base.getTime()
         }
-        
+
         // Попытка распарсить как Date (для ISO форматов и других стандартных)
         const d = new Date(s)
         if (!isNaN(d.getTime()) && d.getFullYear() > 2000) {
           // Проверяем что год разумный (не 1970)
           return d.getTime()
         }
-        
+
         return null
       }
       const getKitchenTime = (o: any): number | null => {
@@ -1883,7 +1852,7 @@ export const AutoPlanner: React.FC = () => {
         if (o.readyAtSource !== undefined && o.readyAtSource !== null && typeof o.readyAtSource === 'number') {
           return o.readyAtSource
         }
-        
+
         // ПРИОРИТЕТ 2: Проверяем основные поля объекта (kitchenTime из excelProcessor)
         const directFields = ['kitchenTime', 'kitchen_time', 'KitchenTime', 'KITCHEN_TIME', 'время на кухню']
         for (const field of directFields) {
@@ -1894,10 +1863,8 @@ export const AutoPlanner: React.FC = () => {
             if (strVal.includes('мин.') || strVal.includes('час') || strVal.includes('min') || strVal.includes('hour')) {
               continue
             }
-            console.log(`🔍 [getKitchenTime] Проверяю o.${field}: "${value}"`)
             const parsed = parseTime(value)
             if (parsed) {
-              console.log(`✅ Найдено время на кухню в o.${field}: ${value} → ${new Date(parsed).toLocaleString()}`)
               return parsed
             } else {
               console.log(`❌ [getKitchenTime] o.${field} = "${value}" не распознано как время`)
@@ -1921,41 +1888,39 @@ export const AutoPlanner: React.FC = () => {
             'Дата.время_на_кухню', 'date.время на кухню', 'date.время_на_кухню',
             'date.kitchen_time', 'Дата время на кухню', 'дата время на кухню',
             // Отдельный столбец "время на кухню":
-            'время на кухню', 'время_на_кухню', 'Время на кухню', 
+            'время на кухню', 'время_на_кухню', 'Время на кухню',
             'kitchenTime', 'kitchen_time'
           ]
-          
+
           // ВАЖНО: Исключаем столбцы, которые НЕ являются "время на кухню"
           const excludeKeys = [
             'создания', 'creation', 'дата', 'date', 'Дата', 'Date',
             'доставить к', 'доставить_к', 'deliver', 'плановое время', 'planned time'
           ]
-          
+
           // Также ищем по всем ключам, которые содержат "время" и "кухню"
           const allRawKeys = Object.keys(o.raw)
           for (const key of allRawKeys) {
             const lowerKey = key.toLowerCase()
-            
+
             // ВАЖНО: Пропускаем столбцы, которые НЕ являются "время на кухню"
-            if (excludeKeys.some(exclude => lowerKey.includes(exclude.toLowerCase()) && 
+            if (excludeKeys.some(exclude => lowerKey.includes(exclude.toLowerCase()) &&
                 !lowerKey.includes('время на кухню') && !lowerKey.includes('kitchen'))) {
               continue
             }
-            
+
             // Проверяем точные совпадения
             if (kitchenTimeKeys.some(k => lowerKey === k.toLowerCase())) {
               const value = o.raw[key]
-              console.log(`🔍 [getKitchenTime] Проверяю столбец "${key}": значение = "${value}" (тип: ${typeof value})`)
-              
+
               if (value !== undefined && value !== null && String(value).trim() !== '') {
                 const strVal = String(value).trim()
-                
+
                 // Пропускаем длительности
                 if (strVal.toLowerCase().includes('мин.') || strVal.toLowerCase().includes('час')) {
-                  console.log(`⏭️ [getKitchenTime] Пропускаем "${key}" (${strVal}): содержит длительность`)
                   continue
                 }
-                
+
                 // Пробуем парсить как время (например, "13:00:00")
                 const timeMatch = strVal.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/)
                 if (timeMatch) {
@@ -1967,7 +1932,7 @@ export const AutoPlanner: React.FC = () => {
                     let targetDate = new Date()
                     if (o.raw) {
                       // Ищем дату в столбцах "доставить к" или "плановое время"
-                      const dateKeys = ['доставить к', 'доставить_к', 'плановое время', 'плановое_время', 
+                      const dateKeys = ['доставить к', 'доставить_к', 'плановое время', 'плановое_время',
                                        'Дата.доставить к', 'Дата.плановое время', 'plannedTime']
                       for (const dateKey of dateKeys) {
                         const dateValue = o.raw[dateKey]
@@ -1983,7 +1948,6 @@ export const AutoPlanner: React.FC = () => {
                             const day = utcDate.getUTCDate()
                             targetDate = new Date(year, month, day, 0, 0, 0, 0)
                             if (!isNaN(targetDate.getTime()) && targetDate.getFullYear() > 2000) {
-                              console.log(`📅 [getKitchenTime] Используем дату из "${dateKey}": ${targetDate.toLocaleDateString('ru-RU')}`)
                               break
                             }
                           } else {
@@ -1992,21 +1956,19 @@ export const AutoPlanner: React.FC = () => {
                             if (parsed) {
                               const parsedDate = new Date(parsed)
                               targetDate = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate(), 0, 0, 0, 0)
-                              console.log(`📅 [getKitchenTime] Используем дату из "${dateKey}": ${targetDate.toLocaleDateString('ru-RU')}`)
                               break
                             }
                           }
                         }
                       }
                     }
-                    
+
                     targetDate.setHours(hours, minutes, seconds, 0)
                     const result = targetDate.getTime()
-                    console.log(`✅ [getKitchenTime] Найдено время на кухню в столбце "${key}" (время ${strVal}): ${new Date(result).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`)
                     return result
                   }
                 }
-                
+
                 // Пробуем парсить как Excel serial time (число от 0 до 1, или дробная часть от Excel serial date)
                 const excelTime = typeof value === 'number' ? value : parseFloat(strVal)
                 if (!isNaN(excelTime)) {
@@ -2017,12 +1979,12 @@ export const AutoPlanner: React.FC = () => {
                     const hours = Math.floor(totalMinutes / 60)
                     const minutes = totalMinutes % 60
                     const seconds = 0 // Для времени на кухню секунды не важны
-                    
+
                     // ВАЖНО: Используем дату из "доставить к" или "плановое время", если она доступна
                     let targetDate = new Date()
                     if (o.raw) {
                       // Ищем дату в столбцах "доставить к" или "плановое время"
-                      const dateKeys = ['доставить к', 'доставить_к', 'плановое время', 'плановое_время', 
+                      const dateKeys = ['доставить к', 'доставить_к', 'плановое время', 'плановое_время',
                                        'Дата.доставить к', 'Дата.плановое время', 'plannedTime']
                       for (const dateKey of dateKeys) {
                         const dateValue = o.raw[dateKey]
@@ -2038,7 +2000,6 @@ export const AutoPlanner: React.FC = () => {
                             const day = utcDate.getUTCDate()
                             targetDate = new Date(year, month, day, 0, 0, 0, 0)
                             if (!isNaN(targetDate.getTime()) && targetDate.getFullYear() > 2000) {
-                              console.log(`📅 [getKitchenTime] Используем дату из "${dateKey}": ${targetDate.toLocaleDateString('ru-RU')}`)
                               break
                             }
                           } else {
@@ -2047,24 +2008,22 @@ export const AutoPlanner: React.FC = () => {
                             if (parsed) {
                               const parsedDate = new Date(parsed)
                               targetDate = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate(), 0, 0, 0, 0)
-                              console.log(`📅 [getKitchenTime] Используем дату из "${dateKey}": ${targetDate.toLocaleDateString('ru-RU')}`)
                               break
                             }
                           }
                         }
                       }
                     }
-                    
+
                     targetDate.setHours(hours, minutes, seconds, 0)
                     const result = targetDate.getTime()
-                    console.log(`✅ [getKitchenTime] Найдено время на кухню в столбце "${key}" (Excel serial time ${excelTime} = ${hours}:${minutes.toString().padStart(2, '0')}): ${new Date(result).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`)
                     return result
                   }
                   // Если это полный Excel serial date (> 25569) - извлекаем дату и время
                   else if (excelTime > 25569) {
                     // ВАЖНО: Excel serial date конвертируется в UTC, но нам нужно локальное время
                     const utcDate = new Date((excelTime - 25569) * 86400 * 1000)
-                    
+
                     // Извлекаем компоненты даты и времени из UTC
                     const year = utcDate.getUTCFullYear()
                     const month = utcDate.getUTCMonth()
@@ -2072,47 +2031,45 @@ export const AutoPlanner: React.FC = () => {
                     const hours = utcDate.getUTCHours()
                     const minutes = utcDate.getUTCMinutes()
                     const seconds = utcDate.getUTCSeconds()
-                    
+
                     // Создаем локальную дату с теми же компонентами
                     const fullDate = new Date(year, month, day, hours, minutes, seconds, 0)
-                    
+
                     if (!isNaN(fullDate.getTime()) && fullDate.getFullYear() > 2000) {
                       const result = fullDate.getTime()
-                      console.log(`✅ [getKitchenTime] Найдено время на кухню в столбце "${key}" (Excel serial date ${excelTime}): ${fullDate.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`)
                       return result
                     }
                   }
                 }
-                
+
                 // Пробуем парсить через parseTime (для форматов даты и времени)
                 const parsed = parseTime(value)
                 if (parsed) {
-                  console.log(`✅ [getKitchenTime] Найдено время на кухню в столбце "${key}": ${strVal} → ${new Date(parsed).toLocaleString()}`)
                   return parsed
                 }
               }
             }
           }
-          
+
           // Дополнительный поиск: ключи, которые содержат "время" и "кухню" (или "kitchen")
           for (const key of allRawKeys) {
             const lowerKey = key.toLowerCase()
-            if ((lowerKey.includes('время') && lowerKey.includes('кухню')) || 
+            if ((lowerKey.includes('время') && lowerKey.includes('кухню')) ||
                 (lowerKey.includes('time') && lowerKey.includes('kitchen'))) {
               // Пропускаем, если это не из столбца "Дата" (уже проверили выше)
               if (kitchenTimeKeys.some(k => lowerKey === k.toLowerCase())) {
                 continue
               }
-              
+
               const value = o.raw[key]
               if (value !== undefined && value !== null && String(value).trim() !== '') {
                 const strVal = String(value).trim()
-                
+
                 // Пропускаем длительности
                 if (strVal.toLowerCase().includes('мин.') || strVal.toLowerCase().includes('час')) {
                   continue
                 }
-                
+
                 // Пробуем парсить как время
                 const timeMatch = strVal.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/)
                 if (timeMatch) {
@@ -2123,21 +2080,19 @@ export const AutoPlanner: React.FC = () => {
                     const today = new Date()
                     today.setHours(hours, minutes, seconds, 0)
                     const result = today.getTime()
-                    console.log(`✅ [getKitchenTime] Найдено время на кухню в столбце "${key}" (поиск по ключевым словам): ${new Date(result).toLocaleString()}`)
                     return result
                   }
                 }
-                
+
                 const parsed = parseTime(value)
                 if (parsed) {
-                  console.log(`✅ [getKitchenTime] Найдено время на кухню в столбце "${key}" (поиск по ключевым словам): ${new Date(parsed).toLocaleString()}`)
                   return parsed
                 }
               }
             }
           }
         }
-        
+
         // ПРИОРИТЕТ 4: Проверяем raw данные (они содержат оригинальные данные из Excel)
         // ВАЖНО: Проверяем ТОЧНОЕ название столбца из Excel "время на кухню"
         if (o.raw) {
@@ -2154,21 +2109,19 @@ export const AutoPlanner: React.FC = () => {
               if (strVal.includes('мин.') || strVal.includes('час') || strVal.includes('min') || strVal.includes('hour')) {
                 continue
               }
-              console.log(`🔍 [getKitchenTime] Проверяю raw.${field}: "${value}"`)
               const parsed = parseTime(value)
               if (parsed) {
-                console.log(`✅ Найдено время на кухню в raw.${field}: ${value} → ${new Date(parsed).toLocaleString()}`)
                 return parsed
               }
             }
           }
-          
+
           // Затем проверяем ВСЕ ключи в raw, которые содержат "время", "кухню" или "kitchen"
           const allRawKeys = Object.keys(o.raw)
           for (const key of allRawKeys) {
             const lowerKey = key.toLowerCase().trim()
             const value = o.raw[key]
-            
+
             // Ищем ключи, содержащие "время" И "кухню", или "kitchen" И "time"
             if (value !== undefined && value !== null && String(value).trim() !== '') {
               const strVal = String(value).trim().toLowerCase()
@@ -2176,27 +2129,25 @@ export const AutoPlanner: React.FC = () => {
               if (strVal.includes('мин.') || strVal.includes('час') || strVal.includes('min') || strVal.includes('hour')) {
                 continue
               }
-              
+
               // Широкий поиск: любое поле, содержащее "кухню" и "время", или только "кухню" (но не "плановое")
               const hasKitchen = lowerKey.includes('кухню') || lowerKey.includes('kitchen')
               const hasTime = lowerKey.includes('время') || lowerKey.includes('time')
               const isNotPlanned = !lowerKey.includes('плановое') && !lowerKey.includes('planned')
               const isNotDelivery = !lowerKey.includes('доставить') && !lowerKey.includes('deliver')
-              
+
               if (hasKitchen && isNotPlanned && isNotDelivery && (hasTime || lowerKey.includes('кухню'))) {
-                console.log(`🔍 [getKitchenTime] Проверяю raw["${key}"]: "${value}"`)
                 
                 const parsed = parseTime(value)
                 if (parsed) {
-                  console.log(`✅ Найдено время на кухню в raw["${key}"]: ${value} → ${new Date(parsed).toLocaleString()}`)
                   return parsed
                 } else {
                   console.log(`❌ [getKitchenTime] raw["${key}"] = "${value}" не распознано как время`)
-                }
+                  }
               }
             }
           }
-          
+
           const rawExactFields = [
             'время на кухню', 'время_на_кухню', 'Время на кухню', 'Время_на_кухню', 'ВРЕМЯ НА КУХНЮ',
             'kitchen_time', 'kitchenTime', 'KitchenTime', 'KITCHEN_TIME',
@@ -2206,21 +2157,19 @@ export const AutoPlanner: React.FC = () => {
             'Готовность', 'готовность', 'ГОТОВНОСТЬ',
             'kitchenTime' // Из excelProcessor
           ]
-          
+
           for (const field of rawExactFields) {
             const value = o.raw[field]
             if (value !== undefined && value !== null && String(value).trim() !== '') {
-              console.log(`🔍 [getKitchenTime] Проверяю raw.${field}: "${value}"`)
               const parsed = parseTime(value)
               if (parsed) {
-                console.log(`✅ Найдено время на кухню в raw.${field}: ${value} → ${new Date(parsed).toLocaleString()}`)
                 return parsed
               } else {
                 console.log(`❌ [getKitchenTime] raw.${field} = "${value}" не распознано как время`)
-              }
+                }
             }
           }
-          
+
           // Дополнительно: регистронезависимый поиск по всем ключам raw
           const searchPhrases = [
             'время на кухню', 'время_на_кухню', 'времянакухню',
@@ -2228,28 +2177,26 @@ export const AutoPlanner: React.FC = () => {
             'время готовности', 'время_готовности', 'времязаготовности',
             'готовность'
           ]
-          
+
           for (const key in o.raw) {
             if (!o.raw.hasOwnProperty(key)) continue
             const lowerKey = key.toLowerCase().trim()
-            
+
             for (const phrase of searchPhrases) {
               if (lowerKey === phrase || lowerKey.includes(phrase)) {
                 const value = o.raw[key]
                 if (value !== undefined && value !== null && String(value).trim() !== '') {
-                  console.log(`🔍 [getKitchenTime] Проверяю raw[${key}]: "${value}"`)
                   const parsed = parseTime(value)
                   if (parsed) {
-                    console.log(`✅ Найдено время на кухню в raw[${key}]: ${value} → ${new Date(parsed).toLocaleString()}`)
                     return parsed
                   } else {
                     console.log(`❌ [getKitchenTime] raw[${key}] = "${value}" не распознано как время`)
-                  }
+                    }
                 }
               }
             }
           }
-          
+
           // Поиск по ключам в raw
           const rawSearchPhrases = [
             'время на кухню', 'время_на_кухню', 'времянакухню',
@@ -2265,7 +2212,6 @@ export const AutoPlanner: React.FC = () => {
                 if (value !== undefined && value !== null && String(value).trim() !== '') {
                   const parsed = parseTime(value)
                   if (parsed) {
-                    console.log(`✅ Найдено время на кухню в raw.${key}: ${value} → ${new Date(parsed).toLocaleString()}`)
                     return parsed
                   }
                 }
@@ -2273,7 +2219,7 @@ export const AutoPlanner: React.FC = () => {
             }
           }
         }
-        
+
         // ПРИОРИТЕТ 3: Проверяем основные поля объекта
         const exactFields = [
           'время на кухню', 'время_на_кухню', 'Время на кухню', 'Время_на_кухню', 'ВРЕМЯ НА КУХНЮ',
@@ -2284,18 +2230,17 @@ export const AutoPlanner: React.FC = () => {
           'Готовность', 'готовность', 'ГОТОВНОСТЬ',
           'kitchenTime' // Из excelProcessor
         ]
-        
+
         for (const field of exactFields) {
           const value = o[field]
           if (value !== undefined && value !== null && String(value).trim() !== '') {
             const parsed = parseTime(value)
             if (parsed) {
-              console.log(`✅ Найдено время на кухню в поле "${field}": ${value} → ${new Date(parsed).toLocaleString()}`)
               return parsed
             }
           }
         }
-        
+
         // ПРИОРИТЕТ 4: Поиск по ключам объекта
         const searchPhrases = [
           'время на кухню', 'время_на_кухню', 'времянакухню',
@@ -2312,23 +2257,21 @@ export const AutoPlanner: React.FC = () => {
               if (value !== undefined && value !== null && String(value).trim() !== '') {
                 const parsed = parseTime(value)
                 if (parsed) {
-                  console.log(`✅ Найдено время на кухню в поле "${key}": ${value} → ${new Date(parsed).toLocaleString()}`)
                   return parsed
                 }
               }
             }
           }
         }
-        
+
         // Логируем проблему с деталями (проверка "Дата" уже была выше)
-        console.log(`⚠️ Время на кухню не найдено для заказа ${o.orderNumber || '?'}. Доступные ключи объекта:`, Object.keys(o).slice(0, 10))
         if (o.raw) {
           console.log(`📋 [getKitchenTime] ВСЕ ключи raw для заказа ${o.orderNumber || '?'}:`, Object.keys(o.raw))
           // Выводим ВСЕ значения, которые содержат "время", "кухню", "kitchen", "дата"
           const relevantKeys: string[] = []
           for (const key in o.raw) {
             const lowerKey = key.toLowerCase()
-            if (lowerKey.includes('время') || lowerKey.includes('time') || 
+            if (lowerKey.includes('время') || lowerKey.includes('time') ||
                 lowerKey.includes('кухню') || lowerKey.includes('kitchen') ||
                 lowerKey.includes('дата') || lowerKey.includes('date')) {
               relevantKeys.push(key)
@@ -2337,19 +2280,19 @@ export const AutoPlanner: React.FC = () => {
           }
           if (relevantKeys.length === 0) {
             console.log(`   ❌ В raw нет ключей, содержащих "время", "кухню", "kitchen" или "дата"`)
-          }
+            }
         } else {
           console.log(`   ❌ У заказа нет raw данных`)
-        }
+          }
         return null
       }
-      
+
       const getPlannedTime = (o: any): number | null => {
         // ПРИОРИТЕТ 1: Проверяем готовые вычисленные значения
         if (o.deadlineAt !== undefined && o.deadlineAt !== null && typeof o.deadlineAt === 'number') {
           return o.deadlineAt
         }
-        
+
         // ПРИОРИТЕТ 2: Проверяем основные поля объекта (plannedTime из excelProcessor)
         // Также проверяем поля "доставить к" из Excel, которые могут содержать дедлайн
         const directFields = [
@@ -2362,13 +2305,10 @@ export const AutoPlanner: React.FC = () => {
             const strVal = String(value).trim().toLowerCase()
             // Пропускаем длительности и некорректные значения
             if (strVal.includes('мин.') || strVal.includes('час') || strVal.includes('min') || strVal.includes('hour') || strVal.includes('#')) {
-              console.log(`⚠️ [getPlannedTime] o.${field} = "${value}" содержит длительность или некорректное значение, пропускаем`)
               continue
             }
-            console.log(`🔍 [getPlannedTime] Проверяю o.${field}: "${value}"`)
             const parsed = parseTime(value)
             if (parsed) {
-              console.log(`✅ Найдено плановое время в o.${field}: ${value} → ${new Date(parsed).toLocaleString()}`)
               return parsed
             } else {
               console.log(`❌ [getPlannedTime] o.${field} = "${value}" не распознано как время`)
@@ -2386,7 +2326,7 @@ export const AutoPlanner: React.FC = () => {
         if (o.raw) {
           // Получаем все ключи raw для проверки
           const allRawKeys = Object.keys(o.raw)
-          
+
           // ВАЖНО: Сначала ищем ПОДСТОЛБЦЫ из "Дата" (они имеют приоритет)
           // Затем ищем отдельные столбцы "плановое время" и "доставить к"
           // НЕ используем столбец "Дата" или "создания" - они содержат другую информацию
@@ -2398,51 +2338,48 @@ export const AutoPlanner: React.FC = () => {
             'date.доставить к', 'date.доставить_к', 'date.доставитьк',
             'Дата плановое время', 'дата плановое время', 'Дата доставить к', 'дата доставить к',
             // Отдельные столбцы:
-            'плановое время', 'плановое_время', 'Плановое время', 
+            'плановое время', 'плановое_время', 'Плановое время',
             'plannedTime', 'planned_time',
             'доставить к', 'доставить_к', 'Доставить к', 'доставитьк'
           ]
-          
+
           // ВАЖНО: Исключаем столбцы, которые НЕ являются "плановое время" или "доставить к"
           const excludeKeys = [
             'создания', 'creation', 'дата', 'date', 'Дата', 'Date',
             'время на кухню', 'kitchen', 'время готовности'
           ]
-          
+
           // Проверяем все ключи raw на точные совпадения (allRawKeys уже определен выше)
           for (const key of allRawKeys) {
             const lowerKey = key.toLowerCase()
-            
+
             // ВАЖНО: Пропускаем столбцы, которые НЕ являются "плановое время" или "доставить к"
-            if (excludeKeys.some(exclude => lowerKey.includes(exclude.toLowerCase()) && 
+            if (excludeKeys.some(exclude => lowerKey.includes(exclude.toLowerCase()) &&
                 !lowerKey.includes('плановое') && !lowerKey.includes('доставить') && !lowerKey.includes('planned') && !lowerKey.includes('deliver'))) {
               continue
             }
-            
+
             // Проверяем точные совпадения
             if (plannedTimeKeys.some(k => lowerKey === k.toLowerCase())) {
               const value = o.raw[key]
-              console.log(`🔍 [getPlannedTime] Проверяю столбец "${key}": значение = "${value}" (тип: ${typeof value})`)
-              
+
               if (value !== undefined && value !== null && String(value).trim() !== '') {
                 const strVal = String(value).trim()
-                
+
                 // Пропускаем длительности
                 if (strVal.toLowerCase().includes('мин.') || strVal.toLowerCase().includes('час')) {
-                  console.log(`⏭️ [getPlannedTime] Пропускаем "${key}" (${strVal}): содержит длительность`)
                   continue
                 }
-                
+
                 // Пробуем парсить через parseTime (для форматов даты и времени типа "29.10.2025 13:30:00")
                 const parsed = parseTime(value)
                 if (parsed) {
                   const parsedDate = new Date(parsed)
-                  console.log(`✅ [getPlannedTime] Найдено плановое время в столбце "${key}": ${strVal} → ${parsedDate.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`)
                   return parsed
                 } else {
                   console.log(`❌ [getPlannedTime] Не удалось распарсить "${key}" (${strVal}) через parseTime`)
                 }
-                
+
                 // Пробуем парсить как Excel serial date (число > 25569)
                 const excelDate = typeof value === 'number' ? value : parseFloat(strVal)
                 if (!isNaN(excelDate) && excelDate > 25569) {
@@ -2450,7 +2387,7 @@ export const AutoPlanner: React.FC = () => {
                   // Стандартная формула: (excelDate - 25569) * 86400 * 1000
                   // 25569 = количество дней от 1 января 1900 до 1 января 1970 (Unix epoch)
                   const utcDate = new Date((excelDate - 25569) * 86400 * 1000)
-                  
+
                   // Извлекаем компоненты даты и времени из UTC
                   const year = utcDate.getUTCFullYear()
                   const month = utcDate.getUTCMonth()
@@ -2458,20 +2395,19 @@ export const AutoPlanner: React.FC = () => {
                   const hours = utcDate.getUTCHours()
                   const minutes = utcDate.getUTCMinutes()
                   const seconds = utcDate.getUTCSeconds()
-                  
+
                   // Создаем локальную дату с теми же компонентами
                   const jsDate = new Date(year, month, day, hours, minutes, seconds, 0)
-                  
+
                   if (!isNaN(jsDate.getTime()) && jsDate.getFullYear() > 2000) {
                     const result = jsDate.getTime()
-                    console.log(`✅ [getPlannedTime] Найдено плановое время в столбце "${key}" (Excel serial date ${excelDate}): ${jsDate.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`)
                     return result
                   }
                 }
               }
             }
           }
-          
+
           // Дополнительный поиск: ключи, которые содержат "плановое" и "время" (или "доставить" и "к")
           for (const key of allRawKeys) {
             const lowerKey = key.toLowerCase()
@@ -2479,7 +2415,7 @@ export const AutoPlanner: React.FC = () => {
             if (plannedTimeKeys.some(k => lowerKey === k.toLowerCase())) {
               continue
             }
-            
+
             // Ищем ключи с "плановое время" или "доставить к"
             if ((lowerKey.includes('плановое') && lowerKey.includes('время')) ||
                 (lowerKey.includes('planned') && lowerKey.includes('time')) ||
@@ -2488,19 +2424,19 @@ export const AutoPlanner: React.FC = () => {
               const value = o.raw[key]
               if (value !== undefined && value !== null && String(value).trim() !== '') {
                 const strVal = String(value).trim()
-                
+
                 // Пропускаем длительности
                 if (strVal.toLowerCase().includes('мин.') || strVal.toLowerCase().includes('час')) {
                   continue
                 }
-                
+
                 // Пропускаем, если это похоже на Excel serial date (число > 25000)
                 const numVal = parseFloat(strVal)
                 if (!isNaN(numVal) && numVal > 25000) {
                   // Это может быть Excel serial date - пробуем распарсить
                   // ВАЖНО: Excel serial date конвертируется в UTC, но нам нужно локальное время
                   const utcDate = new Date((numVal - 25569) * 86400 * 1000)
-                  
+
                   // Извлекаем компоненты даты и времени из UTC
                   const year = utcDate.getUTCFullYear()
                   const month = utcDate.getUTCMonth()
@@ -2508,27 +2444,25 @@ export const AutoPlanner: React.FC = () => {
                   const hours = utcDate.getUTCHours()
                   const minutes = utcDate.getUTCMinutes()
                   const seconds = utcDate.getUTCSeconds()
-                  
+
                   // Создаем локальную дату с теми же компонентами
                   const jsDate = new Date(year, month, day, hours, minutes, seconds, 0)
-                  
+
                   if (!isNaN(jsDate.getTime()) && jsDate.getFullYear() > 2000) {
                     const result = jsDate.getTime()
-                    console.log(`✅ [getPlannedTime] Найдено плановое время в столбце "${key}" (Excel serial date ${numVal}, поиск по ключевым словам): ${jsDate.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`)
                     return result
                   }
                 }
-                
+
                 const parsed = parseTime(value)
                 if (parsed) {
-                  console.log(`✅ [getPlannedTime] Найдено плановое время в столбце "${key}" (поиск по ключевым словам): ${new Date(parsed).toLocaleString()}`)
                   return parsed
                 }
               }
             }
           }
         }
-        
+
         // ПРИОРИТЕТ 4: Проверяем raw данные если они есть (raw содержит оригинальные данные из Excel)
         // ВАЖНО: Проверяем ТОЧНОЕ название столбца из Excel "плановое время"
         // ВАЖНО: Столбец "Дата" уже проверен выше (ПРИОРИТЕТ 3), но если там не нашли, продолжаем поиск
@@ -2539,12 +2473,12 @@ export const AutoPlanner: React.FC = () => {
           for (const key of allRawKeys) {
             const lowerKey = key.toLowerCase().trim()
             const value = o.raw[key]
-            
+
             // Пропускаем столбец "Дата" - уже проверили выше в ПРИОРИТЕТЕ 3
             if (lowerKey === 'дата' || lowerKey === 'date') {
               continue
             }
-            
+
             // Ищем ключи, содержащие "плановое время", "доставить к" или "planned time"
             // ВАЖНО: "доставить к" часто содержит время дедлайна в Excel
             if (value !== undefined && value !== null && String(value).trim() !== '') {
@@ -2553,24 +2487,22 @@ export const AutoPlanner: React.FC = () => {
               if (strVal.includes('мин.') || strVal.includes('час') || strVal.includes('min') || strVal.includes('hour') || strVal.includes('#')) {
                 continue
               }
-              
+
               if ((lowerKey.includes('плановое') && lowerKey.includes('время')) ||
                   (lowerKey.includes('доставить') && lowerKey.includes('к')) ||
                   (lowerKey.includes('planned') && lowerKey.includes('time')) ||
                   (lowerKey.includes('deadline'))) {
-                console.log(`🔍 [getPlannedTime] Проверяю raw["${key}"]: "${value}"`)
                 
                 const parsed = parseTime(value)
                 if (parsed) {
-                  console.log(`✅ Найдено плановое время в raw["${key}"]: ${value} → ${new Date(parsed).toLocaleString()}`)
                   return parsed
                 } else {
                   console.log(`❌ [getPlannedTime] raw["${key}"] = "${value}" не распознано как время`)
-                }
+                  }
               }
             }
           }
-          
+
           const rawExactFields = [
             'плановое время', 'плановое_время', 'Плановое время', 'Плановое_время', 'ПЛАНОВОЕ ВРЕМЯ',
             'plannedTime', 'planned_time', 'PlannedTime', 'PLANNED_TIME',
@@ -2584,7 +2516,7 @@ export const AutoPlanner: React.FC = () => {
             'Дата доставки', 'дата доставки', 'ДАТА ДОСТАВКИ',
             'date_delivery', 'deliveryDate', 'DeliveryDate',
           ]
-          
+
           for (const field of rawExactFields) {
             const value = o.raw[field]
             if (value !== undefined && value !== null && String(value).trim() !== '') {
@@ -2598,18 +2530,17 @@ export const AutoPlanner: React.FC = () => {
               if (!isNaN(numVal) && numVal > 25000) {
                 continue // Это Excel serial date, обрабатывается отдельно
               }
-              
-              console.log(`🔍 [getPlannedTime] Проверяю raw.${field}: "${value}"`)
+
               const parsed = parseTime(value)
               if (parsed) {
                 console.log(`✅ Найдено плановое время в raw.${field}: ${value} → ${new Date(parsed).toLocaleString()}`)
                 return parsed
               } else {
                 console.log(`❌ [getPlannedTime] raw.${field} = "${value}" не распознано как время`)
-              }
+                }
             }
           }
-          
+
           // Дополнительно: регистронезависимый поиск по всем ключам raw (кроме "Дата")
           const searchPhrases = [
             'плановое время', 'плановое_время', 'плановоевремя',
@@ -2621,7 +2552,7 @@ export const AutoPlanner: React.FC = () => {
             'дата доставки', 'дата_доставки', 'датадоставки',
             'delivery_date', 'deliverydate', 'delivery date',
           ]
-          
+
           for (const key in o.raw) {
             if (!o.raw.hasOwnProperty(key)) continue
             const lowerKey = key.toLowerCase().trim()
@@ -2629,7 +2560,7 @@ export const AutoPlanner: React.FC = () => {
             if (lowerKey.includes('кухню') || lowerKey.includes('kitchen')) continue
             // Пропускаем "Дата" - обрабатывается отдельно через Excel serial date
             if (lowerKey === 'дата' || lowerKey === 'date') continue
-            
+
             for (const phrase of searchPhrases) {
               if (lowerKey === phrase || lowerKey.includes(phrase)) {
                 const value = o.raw[key]
@@ -2644,7 +2575,7 @@ export const AutoPlanner: React.FC = () => {
                   if (!isNaN(numVal) && numVal > 25000) {
                     continue
                   }
-                  
+
                   console.log(`🔍 [getPlannedTime] Проверяю raw[${key}]: "${value}"`)
                   const parsed = parseTime(value)
                   if (parsed) {
@@ -2652,13 +2583,13 @@ export const AutoPlanner: React.FC = () => {
                     return parsed
                   } else {
                     console.log(`❌ [getPlannedTime] raw[${key}] = "${value}" не распознано как время`)
-                  }
+                    }
                 }
               }
             }
           }
         }
-        
+
         // Затем проверяем точные совпадения в основном объекте
         const exactFields = [
           'плановое время', 'плановое_время', 'Плановое время', 'Плановое_время', 'ПЛАНОВОЕ ВРЕМЯ',
@@ -2671,7 +2602,7 @@ export const AutoPlanner: React.FC = () => {
           'доставить к', 'доставить_к', 'Доставить к', 'ДОСТАВИТЬ К', // ВАЖНО: часто содержит дедлайн в Excel
           'plannedTime' // Из excelProcessor - важно проверить это поле
         ]
-        
+
         for (const field of exactFields) {
           const value = o[field]
           if (value !== undefined && value !== null && String(value).trim() !== '') {
@@ -2687,10 +2618,10 @@ export const AutoPlanner: React.FC = () => {
               return parsed
             } else {
               console.log(`❌ [getPlannedTime] o["${field}"] = "${value}" не распознано как время`)
-            }
+              }
           }
         }
-        
+
         // Затем проверяем регистронезависимо все ключи объекта на наличие полных фраз (исключая поля связанные с кухней и "Дата")
         const searchPhrases = [
           'плановое время', 'плановое_время', 'плановоевремя',
@@ -2707,7 +2638,7 @@ export const AutoPlanner: React.FC = () => {
           if (lowerKey.includes('кухню') || lowerKey.includes('kitchen')) continue
           // Пропускаем "Дата" - обрабатывается отдельно
           if (lowerKey === 'дата' || lowerKey === 'date') continue
-          
+
           // Ищем полные фразы в названии поля
           for (const phrase of searchPhrases) {
             if (lowerKey === phrase || lowerKey.includes(phrase)) {
@@ -2723,7 +2654,7 @@ export const AutoPlanner: React.FC = () => {
                 if (!isNaN(numVal) && numVal > 25000) {
                   continue
                 }
-                
+
                 const parsed = parseTime(value)
                 if (parsed) {
                   console.log(`✅ Найдено плановое время в поле "${key}": ${value} → ${new Date(parsed).toLocaleString()}`)
@@ -2733,7 +2664,7 @@ export const AutoPlanner: React.FC = () => {
             }
           }
         }
-        
+
         // Если не нашли специальные поля, пробуем общее поле "время" или "time" (но не кухня)
         const generalFields = ['время', 'Время', 'ВРЕМЯ', 'time', 'Time', 'TIME']
         for (const field of generalFields) {
@@ -2749,14 +2680,14 @@ export const AutoPlanner: React.FC = () => {
             }
           }
         }
-        
+
         // Проверяем также raw данные если они есть (кроме "Дата", которая уже обработана)
         if (o.raw) {
           for (const field of exactFields) {
             const lowerField = field.toLowerCase()
             // Пропускаем "Дата" - уже обработана через Excel serial date
             if (lowerField === 'дата' || lowerField === 'date') continue
-            
+
             const value = o.raw[field]
             if (value !== undefined && value !== null && String(value).trim() !== '') {
               const strVal = String(value).trim().toLowerCase()
@@ -2769,7 +2700,7 @@ export const AutoPlanner: React.FC = () => {
               if (!isNaN(numVal) && numVal > 25000) {
                 continue
               }
-              
+
               const parsed = parseTime(value)
               if (parsed) {
                 console.log(`✅ Найдено плановое время в raw.${field}: ${value} → ${new Date(parsed).toLocaleString()}`)
@@ -2778,8 +2709,7 @@ export const AutoPlanner: React.FC = () => {
             }
           }
         }
-        
-        console.log(`⚠️ Плановое время не найдено для заказа ${o.orderNumber || '?'}. Доступные ключи:`, Object.keys(o).slice(0, 10))
+
         if (o.raw) {
           const allRawKeys = Object.keys(o.raw)
           console.log(`📋 [getPlannedTime] ВСЕ ключи raw для заказа ${o.orderNumber || '?'}:`, allRawKeys)
@@ -2788,7 +2718,7 @@ export const AutoPlanner: React.FC = () => {
           // Выводим ВСЕ значения, которые содержат "плановое", "время", "доставить", "planned", "deadline", "дата"
           for (const key of allRawKeys) {
             const lowerKey = key.toLowerCase()
-            if (lowerKey.includes('плановое') || lowerKey.includes('planned') || 
+            if (lowerKey.includes('плановое') || lowerKey.includes('planned') ||
                 lowerKey.includes('доставить') || lowerKey.includes('deadline') ||
                 lowerKey.includes('дата') || lowerKey.includes('date') ||
                 (lowerKey.includes('время') && (lowerKey.includes('доставки') || lowerKey.includes('delivery')))) {
@@ -2802,7 +2732,7 @@ export const AutoPlanner: React.FC = () => {
       // Функция для валидации адреса - проверяем, что это действительно адрес
       const isValidAddress = (str: string): boolean => {
         if (!str || str.trim().length < 5) return false
-        
+
         // Исключаем инструкции, комментарии и ложные адреса
         const invalidPatterns = [
           /зателефонувати|зателефоновать|позвонить|call|звон/i,
@@ -2816,14 +2746,14 @@ export const AutoPlanner: React.FC = () => {
           /^только|only|тільки/i,
           /^без |без$|without/i
         ]
-        
+
         // Проверяем, что это не инструкция/комментарий
         for (const pattern of invalidPatterns) {
           if (pattern.test(str)) {
             return false
           }
         }
-        
+
         // Адрес должен содержать хотя бы один из маркеров адреса:
         // - название улицы/проспекта/бульвара
         // - номер дома (цифра)
@@ -2834,43 +2764,43 @@ export const AutoPlanner: React.FC = () => {
           /\b(киев|київ|kiev|kyiv|одесса|одеса|харьков|харків|полтава)\b/i,
           /\b(под\.|подъезд|эт\.|этаж|кв\.|квартира|оф\.|офис)\b/i // части адреса
         ]
-        
+
         // Должен содержать хотя бы один маркер адреса
         const hasAddressMarker = addressMarkers.some(pattern => pattern.test(str))
-        
+
         // Не должен быть только телефоном, email или числом
         const isNotPhone = !/^[\d\+\-\(\)\s]+$/.test(str)
         const isNotEmail = !/^[\w\.-]+@[\w\.-]+\.\w+$/.test(str)
         const isNotOnlyNumber = !/^\d+$/.test(str)
-        
+
         // Должен быть достаточно длинным и содержать кириллицу/латиницу
         const hasText = str.length > 10 && /[а-яА-ЯёЁіІїЇєЄa-zA-Z]/.test(str)
-        
+
         return hasAddressMarker && isNotPhone && isNotEmail && isNotOnlyNumber && hasText
       }
 
       // Filter orders by sector if polygon defined
       console.log(`📋 Фильтрация ${orders.length} заказов по сектору и валидация адресов...`)
       console.log('📋 Примеры адресов из Excel:', orders.slice(0, 5).map(o => `${o.orderNumber || '?'}: "${o.address}"`))
-      
+
       const filteredOrders: any[] = []
       const excludedAddresses: string[] = []
       let excluded = 0
-      
+
       for (let i = 0; i < orders.length; i++) {
         const o = orders[i]
         // Проверяем все возможные поля с адресом
         const addr = o.address || o['адрес'] || o['address'] || o['адрес_доставки'] || o['address_delivery'] || ''
-        
+
         if (!addr || !String(addr).trim()) {
           excluded++
           excludedAddresses.push(`${i + 1}. (пустой адрес) | orderNumber: ${o.orderNumber || '?'}`)
           console.warn(`⚠️ Заказ ${i + 1}: пустой адрес`)
           continue
         }
-        
+
         const addrStr = String(addr).trim()
-        
+
         // ВАЛИДАЦИЯ АДРЕСА - проверяем, что это действительно адрес, а не инструкция
         if (!isValidAddress(addrStr)) {
           excluded++
@@ -2878,7 +2808,7 @@ export const AutoPlanner: React.FC = () => {
           console.warn(`⚠️ Заказ ${i + 1} (${o.orderNumber || '?'}): невалидный адрес (инструкция/комментарий): "${addrStr.substring(0, 60)}"`)
           continue
         }
-        
+
         // eslint-disable-next-line no-await-in-loop
         const inside = await isInsideSector(addrStr)
         if (inside) {
@@ -2887,16 +2817,15 @@ export const AutoPlanner: React.FC = () => {
           excluded++
           excludedAddresses.push(`${i + 1}. ${addrStr}`)
           if (excludedAddresses.length <= 10) {
-            console.log(`⚠️ Заказ ${i + 1} (${o.orderNumber || '?'}) вне сектора: "${addrStr}"`)
           }
         }
-        
+
         // Показываем прогресс каждые 50 заказов
         if ((i + 1) % 50 === 0) {
           console.log(`  Проверено ${i + 1}/${orders.length}, прошло: ${filteredOrders.length}, исключено: ${excluded}`)
-        }
+          }
       }
-      
+
       setExcludedOutsideSector(excluded)
       console.log(`✅ Прошло фильтр: ${filteredOrders.length}, исключено: ${excluded}`)
       
@@ -2904,9 +2833,9 @@ export const AutoPlanner: React.FC = () => {
         console.log('📋 Исключённые адреса:', excludedAddresses.slice(0, 20))
         if (excluded > 20) {
           console.log(`  ... и ещё ${excluded - 20} адресов`)
-        }
+          }
       }
-      
+
       if (filteredOrders.length === 0) {
         const msg = `Нет заказов внутри сектора города. Исключено: ${excluded}${excluded > 0 ? `. Проверьте границы сектора в Настройках и формат адресов.` : ''}`
         setErrorMsg(msg)
@@ -2924,11 +2853,11 @@ export const AutoPlanner: React.FC = () => {
         // Создаем полную копию всех данных из Excel для сохранения в raw
         // ПРОБЛЕМА: столбцы могут быть динамическими и находиться в разных ячейках, но подписаны они всегда одинаково
         // Поэтому нужно искать поля по названию, а не по позиции
-        
+
         // Если у объекта уже есть raw, используем его (он содержит оригинальные данные из Excel)
         // Если нет, создаем из самого объекта, но убеждаемся, что сохраняем ВСЕ поля
         const rawData: any = o.raw ? { ...o.raw } : {}
-        
+
         // ВАЖНО: Убеждаемся, что все оригинальные поля из Excel сохранены в raw
         // Копируем ВСЕ поля из объекта o в rawData, чтобы сохранить оригинальные названия столбцов
         for (const key in o) {
@@ -2941,7 +2870,7 @@ export const AutoPlanner: React.FC = () => {
             rawData[key] = o[key]
           }
         }
-        
+
         // ДОПОЛНИТЕЛЬНО: Явно ищем и сохраняем поля с нужными названиями, даже если они не были найдены автоматически
         // ПРОБЛЕМА: столбцы могут быть динамическими и находиться в разных ячейках, но подписаны они всегда одинаково
         // Поэтому нужно искать поля по названию, а не по позиции
@@ -2959,7 +2888,7 @@ export const AutoPlanner: React.FC = () => {
           // Дата (может содержать Excel serial date)
           'Дата', 'дата', 'date', 'Date'
         ]
-        
+
         // ВАЖНО: Ищем все поля в объекте o, которые совпадают с нужными названиями (регистронезависимо)
         // Это критично, потому что Excel может экспортировать поля с разным регистром
         for (const key in o) {
@@ -2967,26 +2896,26 @@ export const AutoPlanner: React.FC = () => {
             continue
           }
           const lowerKey = key.toLowerCase().trim()
-          
+
           // Проверяем, совпадает ли ключ с одним из нужных полей (регистронезависимо)
           for (const searchField of searchFields) {
             const lowerSearchField = searchField.toLowerCase().trim()
             // Проверяем точное совпадение или вхождение подстроки (для "Дата.время на кухню")
-            if (lowerKey === lowerSearchField || 
+            if (lowerKey === lowerSearchField ||
                 (lowerSearchField.includes('.') && lowerKey.includes(lowerSearchField.split('.')[1]?.toLowerCase() || ''))) {
               if (o[key] !== undefined && o[key] !== null && String(o[key]).trim() !== '') {
                 rawData[key] = o[key] // Сохраняем с оригинальным названием ключа из Excel
                 console.log(`✅ [Обогащение] Сохранено поле "${key}" в rawData: "${o[key]}"`)
-              }
+                }
             }
           }
-          
+
           // Дополнительно: ищем поля, которые содержат ключевые слова (для случаев, когда название немного отличается)
           const hasTime = lowerKey.includes('время') || lowerKey.includes('time')
           const hasKitchen = lowerKey.includes('кухню') || lowerKey.includes('kitchen')
           const hasPlanned = lowerKey.includes('плановое') || lowerKey.includes('planned')
           const hasDeliver = lowerKey.includes('доставить') && lowerKey.includes('к')
-          
+
           if ((hasTime && hasKitchen && !hasPlanned) || // "время на кухню"
               (hasPlanned && hasTime && !hasKitchen) || // "плановое время"
               (hasDeliver && !hasKitchen)) { // "доставить к"
@@ -2996,16 +2925,16 @@ export const AutoPlanner: React.FC = () => {
             }
           }
         }
-        
+
         // ВАЖНО: Теперь добавляем raw в объект, чтобы getKitchenTime и getPlannedTime имели к нему доступ
         const oWithRaw = { ...o, raw: rawData }
-        
+
         // Теперь пытаемся извлечь время из всех возможных источников
         // Вызываем функции getKitchenTime и getPlannedTime ПОСЛЕ создания rawData
         const ready = getKitchenTime(oWithRaw)
         const readyWithPack = ready ? ready + 4 * 60 * 1000 : null // +4 мин упаковка
         const deadline = getPlannedTime(oWithRaw)
-        
+
         // Отладочная информация для проблемных заказов
         if (!deadline && (idx < 3 || o.orderNumber === '9323351' || o.orderNumber === '9324097' || o.orderNumber === '9327059')) {
           console.warn(`⚠️ [Обогащение] Для заказа ${o.orderNumber} не найден deadline. Проверяем данные:`)
@@ -3022,12 +2951,12 @@ export const AutoPlanner: React.FC = () => {
           const allKeys = Object.keys(oWithRaw)
           const timeKeys = allKeys.filter(k => {
             const lower = k.toLowerCase()
-            return lower.includes('время') || lower.includes('time') || 
+            return lower.includes('время') || lower.includes('time') ||
                    lower.includes('кухню') || lower.includes('kitchen') ||
                    lower.includes('плановое') || lower.includes('planned') ||
                    lower.includes('доставить') || lower.includes('deliver')
           })
-          
+
           console.log(`🔍 [Обогащение заказа ${o.orderNumber}]`, {
             address: o.address?.substring(0, 50) || 'нет адреса',
             'ВСЕ ключи объекта': allKeys,
@@ -3041,7 +2970,7 @@ export const AutoPlanner: React.FC = () => {
             deadline: deadline ? new Date(deadline).toLocaleString() : null,
           })
         }
-        
+
         // Отладочная информация для первых 3 заказов и проблемных заказов
         if (idx < 3 || o.orderNumber === '9323351' || o.orderNumber === '9324097' || o.orderNumber === '9327059') {
           console.log(`📦 [Обогащение заказа ${o.orderNumber}] raw содержит ключи:`, Object.keys(rawData))
@@ -3054,7 +2983,7 @@ export const AutoPlanner: React.FC = () => {
           // Показываем значения всех полей, которые могут содержать время
           const timeRelatedKeys = Object.keys(rawData).filter(k => {
             const lower = k.toLowerCase()
-            return lower.includes('время') || lower.includes('time') || 
+            return lower.includes('время') || lower.includes('time') ||
                    lower.includes('кухню') || lower.includes('kitchen') ||
                    lower.includes('плановое') || lower.includes('planned') ||
                    lower.includes('доставить') || lower.includes('deliver')
@@ -3063,7 +2992,7 @@ export const AutoPlanner: React.FC = () => {
             console.log(`   rawData["${key}"] = "${rawData[key]}" (тип: ${typeof rawData[key]})`)
           })
         }
-        
+
         return {
           idx,
           address: o.address || '',
@@ -3139,7 +3068,7 @@ export const AutoPlanner: React.FC = () => {
         const singleOrders = combinedGroups.filter(g => g.length === 1).length
         const groupedOrders = combinedGroups.filter(g => g.length > 1)
         const totalGrouped = groupedOrders.reduce((sum, g) => sum + g.length, 0)
-        
+
         if (groupedOrders.length > 0) {
           const avgEfficiency = groupedOrders.reduce((sum, group) => {
             // Вычисляем среднюю эффективность группы
@@ -3158,15 +3087,15 @@ export const AutoPlanner: React.FC = () => {
             }
             return sum + (groupEfficiency / Math.max(1, group.length * (group.length - 1) / 2))
           }, 0) / groupedOrders.length
-          
+
           console.log(`✅ Группировка завершена:`)
           console.log(`   - Отдельных заказов: ${singleOrders}`)
           console.log(`   - Групп: ${groupedOrders.length} (${totalGrouped} заказов)`)
           console.log(`   - Средняя эффективность группировки: ${avgEfficiency.toFixed(1)}%`)
           console.log(`   - Срочные заказы доставляются отдельно для максимальной скорости`)
-        } else {
+          } else {
           console.log(`ℹ️ Группировка не найдена - все заказы будут доставлены отдельно`)
-        }
+          }
 
         // Распаковываем группы обратно в массив заказов для планирования
         // (пока не реализуем полное объединение, т.к. это требует изменений в логике планирования)
@@ -3195,10 +3124,10 @@ export const AutoPlanner: React.FC = () => {
         if (cached) {
           return cached
         }
-        
+
         const geocoder = new gmaps.Geocoder()
         const normalizedAddr = normalizeAddr(address)
-        
+
         // Пробуем сначала с компонентами Украины
         const result: Coordinates | null = await new Promise((resolve) => {
           geocoder.geocode({
@@ -3210,16 +3139,16 @@ export const AutoPlanner: React.FC = () => {
               // Проверяем, что результат действительно для Украины
               const firstResult = res[0]
               let coords: Coordinates | null = null
-              
+
               // Проверяем, что страна - Украина
-              const hasUkraine = firstResult.address_components?.some((comp: any) => 
+              const hasUkraine = firstResult.address_components?.some((comp: any) =>
                 comp.types.includes('country') && comp.short_name === 'UA'
               )
-              
+
               if (hasUkraine) {
                 const loc = firstResult.geometry.location
                 coords = { lat: loc.lat(), lng: loc.lng() }
-                
+
                 // Дополнительная проверка: если адрес содержит "Киев" или "Київ", проверяем, что координаты в разумных пределах
                 const addrLower = normalizedAddr.toLowerCase()
                 if (addrLower.includes('киев') || addrLower.includes('київ') || addrLower.includes('kiev') || addrLower.includes('kyiv')) {
@@ -3229,7 +3158,7 @@ export const AutoPlanner: React.FC = () => {
                     // Все равно возвращаем, но с предупреждением
                   }
                 }
-                
+
                 // Сохраняем в кэш
                 routeOptimizationCache.setCoordinates(address, coords)
                 resolve(coords)
@@ -3246,7 +3175,7 @@ export const AutoPlanner: React.FC = () => {
             }
           })
         })
-        
+
         return result
       }
 
@@ -3257,16 +3186,16 @@ export const AutoPlanner: React.FC = () => {
         total: ordersToPlan.length,
         message: 'Геокодирование адресов...'
       })
-      
+
       const geocodeBatchSize = 10 // Размер батча для параллельного геокодирования
       const uniqueAddresses = new Set<string>()
       ordersToPlan.forEach(o => {
         if (o.address) uniqueAddresses.add(o.address)
       })
-      const addressesToGeocode = Array.from(uniqueAddresses).filter(addr => 
+      const addressesToGeocode = Array.from(uniqueAddresses).filter(addr =>
         !routeOptimizationCache.getCoordinates(addr) // Только адреса без кэша
       )
-      
+
       // Геокодируем батчами параллельно
       for (let i = 0; i < addressesToGeocode.length; i += geocodeBatchSize) {
         const batch = addressesToGeocode.slice(i, i + geocodeBatchSize)
@@ -3317,7 +3246,7 @@ export const AutoPlanner: React.FC = () => {
         // 5. ЗОНА: Совпадение зоны доставки - макс 20 баллов
         let score = 0
         const now = Date.now()
-        
+
         // Приоритет 1: Готовность заказа (время на кухню) - УСИЛЕННЫЙ ПРИОРИТЕТ
         // ВАЖНО: Используем readyAtSource (время на кухню без упаковки), а не readyAt (с упаковкой)
         // Если readyAtSource не найден, пробуем readyAt, если и его нет - считаем заказ готовым (сейчас)
@@ -3381,7 +3310,7 @@ export const AutoPlanner: React.FC = () => {
           : 30
         const distanceScore = Math.max(0, 30 * (1 - Math.min(distanceKm, maxDistKm) / maxDistKm))
         score += distanceScore
-        
+
         // Дополнительный штраф, если расстояние превышает лимит (для более строгой фильтрации)
         if (optimizedSettings.maxDistanceBetweenOrdersKm !== null && optimizedSettings.maxDistanceBetweenOrdersKm > 0) {
           if (distanceKm > optimizedSettings.maxDistanceBetweenOrdersKm) {
@@ -3448,14 +3377,14 @@ export const AutoPlanner: React.FC = () => {
         const totalDistance = legs.reduce((acc: number, leg: any) => acc + (leg.distance?.value || 0), 0)
         return { feasible: true, legs, totalDuration, totalDistance }
         }
-        
+
         // Формируем полный маршрут: startAddress -> заказы -> endAddress
         const origin = includeStartEnd ? normalizeAddr(defaultStartAddress) : normalizeAddr(chain[0].address)
         const destination = includeStartEnd ? normalizeAddr(defaultEndAddress) : normalizeAddr(chain[chain.length - 1].address)
-        const waypoints = includeStartEnd 
+        const waypoints = includeStartEnd
           ? chain.map(n => ({ location: normalizeAddr(n.address), stopover: true }))
           : chain.slice(1, chain.length - 1).map(n => ({ location: normalizeAddr(n.address), stopover: true }))
-        
+
         const req: any = {
           origin,
           destination,
@@ -3480,11 +3409,11 @@ export const AutoPlanner: React.FC = () => {
         const totalDistance = legs.reduce((acc: number, leg: any) => acc + (leg.distance?.value || 0), 0)
         return { feasible: true, legs, totalDuration, totalDistance }
       }
-      
+
       // Получаем Mapbox токен из настроек
       const appSettings = localStorageUtils.getAllSettings()
       const mapboxToken = appSettings.mapboxToken || 'pk.eyJ1IjoieWFwMDA3NyIsImEiOiJjbWkyN2wzYnIxNHN3MmxzZmpjOThzdmp6In0.KKBxC62q-I4xEXQBCx7JVw'
-      
+
       // Создаем единый менеджер Google API с оптимизациями
       const apiManagerConfig: GoogleAPIManagerConfig = {
         checkChainFeasible,
@@ -3495,7 +3424,7 @@ export const AutoPlanner: React.FC = () => {
         mapboxToken // Добавляем токен Mapbox для отслеживания пробок
       }
       const apiManager = new GoogleAPIManager(apiManagerConfig)
-      
+
       console.log('🚀 GoogleAPIManager инициализирован с оптимизациями:')
       console.log('  - Кэширование пар точек и сегментов')
       console.log('  - Батчинг запросов (high: 5, low: 10)')
@@ -3503,10 +3432,9 @@ export const AutoPlanner: React.FC = () => {
       console.log('  - Приоритизация запросов')
       if (mapboxToken) {
         console.log('  - Mapbox Traffic API: отслеживание пробок в реальном времени')
-      }
+        }
 
-      console.log(`📊 Начинаем формирование маршрутов из ${ordersToPlan.length} заказов...`)
-      
+
       // Преобразуем ordersToPlan обратно в формат enriched для совместимости
       // ВАЖНО: Проверяем и пересчитываем deadlineAt для каждого заказа, если он отсутствует
       const enrichedForPlanning = ordersToPlan.map(o => {
@@ -3518,7 +3446,7 @@ export const AutoPlanner: React.FC = () => {
             console.log(`✅ [Планирование] Найден deadlineAt для заказа ${o.orderNumber}: ${new Date(deadlineAt).toLocaleString()}`)
           }
         }
-        
+
         // Сохраняем все поля из o, но перезаписываем deadlineAt если пересчитали
         return {
           ...o, // Все поля из исходного объекта
@@ -3527,7 +3455,7 @@ export const AutoPlanner: React.FC = () => {
           'плановое время': o.raw?.['плановое время'] || o['плановое время'] || null,
         }
       })
-      
+
       // УЛУЧШЕННАЯ ЛОГИКА: Глобальная оптимизация вместо только greedy
       console.log('🚀 Улучшенное планирование маршрутов с глобальной оптимизацией...')
       
@@ -3535,16 +3463,15 @@ export const AutoPlanner: React.FC = () => {
       console.log('📍 Группировка заказов по зонам доставки...')
       const zones = groupOrdersByDeliveryZones(enrichedForPlanning as Order[])
       console.log(`  Найдено ${zones.length} зон доставки`)
-      
+
       // 2. Приоритизация с учетом плотности кластеров
-      console.log('📊 Приоритизация заказов с учетом плотности...')
       const prioritized = prioritizeDenseClusters(enrichedForPlanning as Order[])
-      
+
       // 3. Вычисление приоритетов заказов с учетом контекста
       const availableCouriers = courierSchedules.filter(s => s.isActive).length || 1
       const avgRouteLoad = enrichedForPlanning.length / Math.max(1, Math.ceil(enrichedForPlanning.length / runtimeMaxStopsPerRoute))
       const currentTime = Date.now()
-      
+
       // УЛУЧШЕНИЕ 4: Используем улучшенную приоритизацию с адаптивными весами
       const ordersWithPriority = prioritized.map((order: any) => ({
         ...order,
@@ -3579,7 +3506,7 @@ export const AutoPlanner: React.FC = () => {
           }
         }
       }
-      
+
       // ДОПОЛНИТЕЛЬНАЯ сортировка: сначала готовые сейчас, потом скоро готовые
       // Приоритет: готовые сейчас > скоро готовые > по общему приоритету
       ordersWithPriority.sort((a: any, b: any) => {
@@ -3587,40 +3514,40 @@ export const AutoPlanner: React.FC = () => {
         const bReady = b.readyAtSource || b.readyAt || currentTime
         const aMinutesUntilReady = (aReady - currentTime) / (1000 * 60)
         const bMinutesUntilReady = (bReady - currentTime) / (1000 * 60)
-        
+
         // Готовые сейчас (<= 0 минут) - максимальный приоритет
         if (aMinutesUntilReady <= 0 && bMinutesUntilReady > 0) return -1
         if (aMinutesUntilReady > 0 && bMinutesUntilReady <= 0) return 1
-        
+
         // Оба готовые сейчас - сортируем по общему приоритету
         if (aMinutesUntilReady <= 0 && bMinutesUntilReady <= 0) {
           return b._priority - a._priority
         }
-        
+
         // Оба не готовые - сначала те, что готовы раньше (в ближайшие 30 минут)
         if (aMinutesUntilReady <= 30 && bMinutesUntilReady > 30) return -1
         if (aMinutesUntilReady > 30 && bMinutesUntilReady <= 30) return 1
-        
+
         // Оба в ближайшие 30 минут или оба позже - сортируем по времени готовности
         if (aMinutesUntilReady !== bMinutesUntilReady) {
           return aMinutesUntilReady - bMinutesUntilReady
         }
-        
+
         // Если время готовности одинаковое - по общему приоритету
         return b._priority - a._priority
       })
-      
+
       // 4. Предварительное распределение заказов по маршрутам
       const maxRoutes = estimateMaxRoutes(ordersWithPriority as Order[], runtimeMaxStopsPerRoute)
       console.log(`📦 Предварительное распределение на ${maxRoutes} маршрутов...`)
       const preallocatedRoutes = preallocateOrdersToRoutes(ordersWithPriority as Order[], maxRoutes, zones)
       console.log(`  Распределено: ${preallocatedRoutes.map(r => r.length).join(', ')} заказов`)
-      
+
       // 5. КЛАСТЕРИЗАЦИЯ ПО ВРЕМЕНИ ГОТОВНОСТИ
       console.log('⏰ Кластеризация заказов по времени готовности...')
       const readyTimeWindows = groupOrdersByReadyTimeWindows(ordersWithPriority as Order[], 30)
       console.log(`  Найдено ${readyTimeWindows.length} окон готовности`)
-      
+
       // Приоритизируем окна: готовые сейчас > готовые скоро > остальные
       const currentTimeForWindows = Date.now()
       readyTimeWindows.sort((a, b) => {
@@ -3628,20 +3555,20 @@ export const AutoPlanner: React.FC = () => {
         const bReady = (b[0].readyAtSource || b[0].readyAt || currentTimeForWindows)
         const aMinutesUntilReady = (aReady - currentTimeForWindows) / (1000 * 60)
         const bMinutesUntilReady = (bReady - currentTimeForWindows) / (1000 * 60)
-        
+
         // Готовые сейчас (<= 0 минут) - максимальный приоритет
         if (aMinutesUntilReady <= 0 && bMinutesUntilReady > 0) return -1
         if (aMinutesUntilReady > 0 && bMinutesUntilReady <= 0) return 1
-        
+
         // Оба готовые сейчас - по размеру окна (больше = лучше)
         if (aMinutesUntilReady <= 0 && bMinutesUntilReady <= 0) {
           return b.length - a.length
         }
-        
+
         // Оба не готовые - сначала те, что готовы раньше
         return aMinutesUntilReady - bMinutesUntilReady
       })
-      
+
       // 6. Приоритизация заказов с учетом кластеров (для обратной совместимости)
       console.log(`🔗 Поиск кластеров заказов (радиус: ${optimizedSettings.proximityGroupingRadius / 1000} км)...`)
       let enrichedForPlanningGrouped: any[] = readyTimeWindows.flat()
@@ -3660,14 +3587,14 @@ export const AutoPlanner: React.FC = () => {
 
       const routes: any[] = []
       let remaining = enrichedForPlanningGrouped.slice()
-      
+
       // ОПТИМИЗАЦИЯ 4: Используем Set для быстрой проверки использованных заказов
       const usedOrderIds = new Set<string>()
       const getOrderId = (order: any): string => {
-        return order.id || order.raw?.id || 
+        return order.id || order.raw?.id ||
           `${order.orderNumber || order.raw?.orderNumber || ''}_${order.address || ''}`
       }
-      
+
       // ОПТИМИЗАЦИЯ 7: Фильтруем remaining от уже использованных заказов
       const filterRemaining = () => {
         remaining = remaining.filter(order => !usedOrderIds.has(getOrderId(order)))
@@ -3685,7 +3612,7 @@ export const AutoPlanner: React.FC = () => {
           console.log('✅ Все заказы распределены по маршрутам')
           break
         }
-        
+
         // Start route from the highest priority order (готовый + ранний дедлайн)
         const seed = remaining.shift()!
         const seedId = getOrderId(seed)
@@ -3696,29 +3623,29 @@ export const AutoPlanner: React.FC = () => {
 
         // Сохраняем подробную информацию о логике формирования маршрута
         const routeReasons: string[] = []
-        
+
         // Для первого заказа тоже создаем детальный формат reason
         // ВАЖНО: Используем readyAtSource (время на кухню без упаковки), а не readyAt (с упаковкой)
         const seedReadyAt = seed.readyAtSource || seed.readyAt || null
-        const seedReadyTime = seedReadyAt 
+        const seedReadyTime = seedReadyAt
           ? new Date(seedReadyAt).toLocaleTimeString()
           : 'не указано'
         // Извлекаем зону доставки из разных источников
-        const seedZone = seed.deliveryZone || 
-                        seed.raw?.deliveryZone || 
+        const seedZone = seed.deliveryZone ||
+                        seed.raw?.deliveryZone ||
                         seed.raw?.['Зона доставки'] ||
                         extractZoneFromAddress(seed.address) ||
                         'не указана'
-        const seedDeadlineInfo = seed.deadlineAt 
+        const seedDeadlineInfo = seed.deadlineAt
           ? {
               deadline: new Date(seed.deadlineAt).toLocaleTimeString(),
               ok: true
             }
           : null
-        
+
         // Вычисляем приоритет первого заказа
         const seedPriority = seed._priority || 0
-        
+
         // Находим альтернативные кандидаты для сравнения (топ-3 по приоритету)
         const alternativeCandidates = ordersWithPriority
           .filter(o => o !== seed && o._priority > 0)
@@ -3729,15 +3656,15 @@ export const AutoPlanner: React.FC = () => {
             priority: (o._priority || 0).toFixed(0),
             reason: (o._priority || 0) < seedPriority ? 'ниже приоритет' : 'равный приоритет'
           }))
-        
+
         // Вычисляем логику формирования для первого заказа
         const seedReadyTimeDiff = seedReadyAt ? Math.abs(seedReadyAt - Date.now()) / (1000 * 60) : 0
         const seedReadyTimeCompatible = seedReadyTimeDiff <= optimizedSettings.maxReadyTimeDifferenceMinutes
         const seedDeadlineOk = seedDeadlineInfo ? seedDeadlineInfo.ok : true
-        
+
         // Формируем детальный reason для первого заказа
         routeReasons.push(`✅ Заказ #${seed.orderNumber || seed.raw?.orderNumber || '?'} "${seed.address.substring(0, 50)}..." выбран как первый заказ маршрута | 📊 Оценка приоритета: ${seedPriority.toFixed(0)}/100 | ⏰ Время готовности: ${seedReadyTime} | 🏘️ Зона доставки: ${seedZone} | ⏱️ Дедлайн: ${seedDeadlineInfo ? seedDeadlineInfo.deadline : 'не указан'} | 🎯 Почему именно этот заказ: | • Выбран как первый заказ, т.к. имеет наивысший приоритет (готовность + ранний дедлайн) | • Готовность: ${seedReadyAt ? (seedReadyAt <= Date.now() ? 'готов' : `готов через ${Math.round((seedReadyAt - Date.now()) / 60000)} мин`) : 'готов'} | • Приоритет: ${seedPriority.toFixed(0)}/100 (готовность + дедлайн + близость) | 📊 Сравнение с альтернативами: | ${alternativeCandidates.length > 0 ? alternativeCandidates.map(alt => `• Заказ #${alt.orderNumber}: приоритет ${alt.priority}/100 (${alt.reason})`).join(' | ') : '• Альтернативные кандидаты не найдены'} | 💡 Результат: маршрут начат с заказа, готового к немедленной отправке | 🔍 Логика формирования: | • Временная совместимость: ${seedReadyTimeCompatible ? 'совместимо' : 'несовместимо'} (разница ${seedReadyTimeDiff.toFixed(0)} мин, лимит ${optimizedSettings.maxReadyTimeDifferenceMinutes} мин) | • Географическая близость: заказ выбран как стартовая точка маршрута | • Соблюдение дедлайнов: ${seedDeadlineInfo ? (seedDeadlineOk ? 'соблюден' : 'нарушен') + ` (дедлайн ${seedDeadlineInfo.deadline})` : 'не указан'}`)
-        
+
         // Получаем координаты последнего заказа в цепочке для быстрой оценки
         let lastOrderCoords: Coordinates | null = null
         if (routeChain.length > 0) {
@@ -3751,7 +3678,7 @@ export const AutoPlanner: React.FC = () => {
             }
           }
         }
-        
+
         // Предварительная фильтрация по времени готовности (пункт 3)
         let compatibleCandidates: any[] = remaining
         if (optimizedSettings.maxReadyTimeDifferenceMinutes > 0 && routeChain.length > 0) {
@@ -3761,8 +3688,8 @@ export const AutoPlanner: React.FC = () => {
             optimizedSettings.maxReadyTimeDifferenceMinutes
           )
           console.log(`🔍 Предварительная фильтрация по времени: ${remaining.length} -> ${compatibleCandidates.length} совместимых кандидатов`)
-        }
-        
+          }
+
         // УЛУЧШЕНИЕ 1: Предварительная фильтрация по расстоянию Haversine (быстрее чем Google API)
         if (optimizedSettings.maxDistanceBetweenOrdersKm !== null && optimizedSettings.maxDistanceBetweenOrdersKm > 0) {
           const beforeDistanceFilter = compatibleCandidates.length
@@ -3772,14 +3699,14 @@ export const AutoPlanner: React.FC = () => {
             optimizedSettings.maxDistanceBetweenOrdersKm
           )
           console.log(`🔍 Предварительная фильтрация по расстоянию: ${beforeDistanceFilter} -> ${compatibleCandidates.length} кандидатов`)
-        }
-        
+          }
+
         // Динамическое ограничение лимита проверок (пункт 8)
         const baseLimit = 30
         const limit = routeChain.length < 2 ? 50 : baseLimit // Больше проверок для первого заказа
         const hasUrgent = routeChain.some(o => o.deadlineAt && (o.deadlineAt - Date.now()) < 30 * 60 * 1000)
         const adaptiveLimit = hasUrgent ? limit * 2 : limit // Больше проверок если есть срочные заказы
-        
+
         // ОПТИМИЗАЦИЯ 2: Умная фильтрация кандидатов с предварительной оценкой
         // Сначала быстро оцениваем всех кандидатов без API запросов (только Haversine)
         const quickCandidates = compatibleCandidates.map(candidate => {
@@ -3789,18 +3716,18 @@ export const AutoPlanner: React.FC = () => {
           } else {
             candidateCoords = routeOptimizationCache.getCoordinates(candidate.address)
           }
-          
+
           if (!candidateCoords || !lastOrderCoords) {
             return { candidate, quickScore: -Infinity, distanceKm: Infinity }
           }
-          
+
           const distanceKm = getCachedDistance(lastOrderCoords, candidateCoords)
-          
+
           // Быстрая оценка на основе расстояния и готовности
           let quickScore = 0
           const readyAt = candidate.readyAtSource || candidate.readyAt || null
           const now = Date.now()
-          
+
           if (readyAt) {
             const minutesUntilReady = (readyAt - now) / (1000 * 60)
             if (minutesUntilReady <= 0) quickScore += 200
@@ -3810,12 +3737,12 @@ export const AutoPlanner: React.FC = () => {
           } else {
             quickScore += 150
           }
-          
+
           // УЛУЧШЕНИЕ: Более строгий штраф за расстояние
           // Максимальное расстояние между соседними заказами - 15 км (реалистичный маршрут)
           const maxDistKm = Math.min(optimizedSettings.maxDistanceBetweenOrdersKm || 15, 15)
           const strictMaxDistKm = 15 // Жесткий лимит для реалистичности
-          
+
           // Сильный штраф за большие расстояния
           if (distanceKm > strictMaxDistKm) {
             quickScore -= 2000 // Очень большой штраф за превышение
@@ -3825,15 +3752,15 @@ export const AutoPlanner: React.FC = () => {
             // Бонус за близость (чем ближе, тем лучше)
             quickScore += Math.max(0, 50 * (1 - distanceKm / maxDistKm))
           }
-          
+
           // Дополнительный штраф если превышает лимит
           if (optimizedSettings.maxDistanceBetweenOrdersKm && distanceKm > optimizedSettings.maxDistanceBetweenOrdersKm) {
             quickScore -= 1000
           }
-          
+
           return { candidate, quickScore, distanceKm }
         })
-        
+
         // Сортируем по быстрой оценке и берем топ кандидатов
         quickCandidates.sort((a, b) => b.quickScore - a.quickScore)
         // УЛУЧШЕНИЕ: Более строгая фильтрация - только реалистичные расстояния (макс 15 км)
@@ -3841,16 +3768,15 @@ export const AutoPlanner: React.FC = () => {
         const topCandidates = quickCandidates
           .filter(c => c.quickScore > 0 && c.distanceKm <= strictMaxDistance)
           .slice(0, Math.min(20, compatibleCandidates.length)) // Ограничиваем до 20 лучших
-        
+
         const candidatesToEvaluate = topCandidates.map(c => c.candidate)
-        console.log(`📊 Быстрая фильтрация: ${compatibleCandidates.length} -> ${candidatesToEvaluate.length} топ-кандидатов`)
         
         setOptimizationProgress({
           current: routes.length + 1,
           total: enrichedForPlanning.length,
           message: `Оценка ${candidatesToEvaluate.length} кандидатов для маршрута #${routes.length + 1}...`
         })
-        
+
         // УЛУЧШЕНИЕ 2: Получаем координаты базы для расчета обратного пути
         const baseCoords = depotCoords || await getCoordinates(defaultStartAddress)
         const directionTracker: RouteDirectionTracker = {
@@ -3862,7 +3788,7 @@ export const AutoPlanner: React.FC = () => {
           updateDirectionTracker(directionTracker, bearingBetween(baseCoords, lastOrderCoords))
         }
         const routePosition = routeChain.length / Math.max(1, routeChain.length + 1)
-        
+
         // ОПТИМИЗАЦИЯ 5: Предварительно загружаем координаты всех кандидатов параллельно
         const candidateCoordsMap = new Map<any, Coordinates | null>()
         await Promise.all(
@@ -3879,13 +3805,13 @@ export const AutoPlanner: React.FC = () => {
             candidateCoordsMap.set(candidate, coords)
           })
         )
-        
+
         // ОПТИМИЗАЦИЯ 3: Параллельная оценка кандидатов с кэшированием координат
         const candidateEvaluations = await Promise.all(
           candidatesToEvaluate.map(async (candidate, idx) => {
             // ОПТИМИЗАЦИЯ 5: Используем предзагруженные координаты
             const candidateCoords = candidateCoordsMap.get(candidate) || null
-            
+
             // УЛУЧШЕНИЕ 2: Используем улучшенную оценку кандидата V2 с учетом обратного пути
             const enhancedEval = enhancedCandidateEvaluationV2(
               candidate as Order,
@@ -3897,7 +3823,7 @@ export const AutoPlanner: React.FC = () => {
                 routePosition
               }
             )
-            
+
             // Дополнительная оценка для совместимости (используем старую логику как дополнение)
             // ОПТИМИЗАЦИЯ: Используем кэшированные координаты для быстрой оценки
             const basicEval = candidateCoords && lastOrderCoords
@@ -3912,13 +3838,13 @@ export const AutoPlanner: React.FC = () => {
                   routeChain,
                   enrichedForPlanning
                 )
-            
+
             // Комбинируем оценки: 75% улучшенной V2, 25% базовой (увеличиваем вес V2)
             const combinedScore = enhancedEval.score * 0.75 + basicEval.score * 0.25
-            
-            return { 
-              candidate, 
-              originalIndex: idx, 
+
+            return {
+              candidate,
+              originalIndex: idx,
               score: combinedScore,
               distanceKm: enhancedEval.distance || basicEval.distanceKm || 0,
               timeCompatibility: enhancedEval.timeCompatibility,
@@ -3931,16 +3857,16 @@ export const AutoPlanner: React.FC = () => {
             }
           })
         )
-        
+
         // Сортируем по оценке (лучшие первыми) и фильтруем явно неподходящие
         candidateEvaluations.sort((a, b) => b.score - a.score)
         // УЛУЧШЕНИЕ: Строгая фильтрация по расстоянию - не более 15 км между заказами
         const strictMaxDistanceBetweenOrders = 15 // Жесткий лимит для реалистичности
-        const promisingCandidates = candidateEvaluations.filter(e => 
-          e.score > 0 && 
+        const promisingCandidates = candidateEvaluations.filter(e =>
+          e.score > 0 &&
           e.distanceKm <= strictMaxDistanceBetweenOrders // Строгий лимит расстояния
         )
-        
+
         // УЛУЧШЕНИЕ АЛГОРИТМА 1: Раннее завершение если найден отличный кандидат (score > 300)
         const excellentCandidates = promisingCandidates.filter(e => e.score > 300)
         if (excellentCandidates.length > 0 && routeChain.length < 2) {
@@ -3948,13 +3874,13 @@ export const AutoPlanner: React.FC = () => {
           // Используем только отличных кандидатов для первого заказа
           promisingCandidates.splice(0, promisingCandidates.length, ...excellentCandidates.slice(0, 10))
         }
-        
+
           // УЛУЧШЕНИЕ АЛГОРИТМА 2: Улучшенная эвристика - приоритизация по комбинации факторов
         promisingCandidates.sort((a, b) => {
           // Комбинированная оценка: score + бонус за близость + бонус за готовность
           const aBonus = (a.timeCompatibility ? 50 : 0) + (a.zoneMatch ? 30 : 0) + (a.deadlineUrgency || 0)
           const bBonus = (b.timeCompatibility ? 50 : 0) + (b.zoneMatch ? 30 : 0) + (b.deadlineUrgency || 0)
-          
+
           // УЛУЧШЕНИЕ: Бонус за доставку как можно раньше от планового времени
           // Если у кандидата есть дедлайн, даем бонус за возможность доставить раньше
           let aEarlyDeliveryBonus = 0
@@ -3975,27 +3901,26 @@ export const AutoPlanner: React.FC = () => {
             else if (minutesBeforeDeadline > 15) bEarlyDeliveryBonus = 20
             else if (minutesBeforeDeadline > 0) bEarlyDeliveryBonus = 10
           }
-          
+
           // УЛУЧШЕНИЕ АЛГОРИТМА 3: Дополнительные факторы качества
           // Бонус за эффективность маршрута (меньше обратного пути)
           const aReturnBonus = a.returnDistance && a.returnDistance < 5 ? 20 : 0
           const bReturnBonus = b.returnDistance && b.returnDistance < 5 ? 20 : 0
-          
+
           // Бонус за позицию в маршруте (лучше в начале или конце)
           const aPositionBonus = (a.routePositionScore || 1) > 1.1 ? 15 : 0
           const bPositionBonus = (b.routePositionScore || 1) > 1.1 ? 15 : 0
-          
+
           // Бонус за отсутствие разрушения маршрута
           const aDisruptionBonus = (a.routeDisruptionScore || 1) > 1.0 ? 10 : 0
           const bDisruptionBonus = (b.routeDisruptionScore || 1) > 1.0 ? 10 : 0
-          
+
           const aTotal = a.score + aBonus + aEarlyDeliveryBonus + aReturnBonus + aPositionBonus + aDisruptionBonus
           const bTotal = b.score + bBonus + bEarlyDeliveryBonus + bReturnBonus + bPositionBonus + bDisruptionBonus
-          
+
           return bTotal - aTotal
         })
-        
-        console.log(`📊 Оценено кандидатов: ${candidateEvaluations.length}, перспективных: ${promisingCandidates.length}`)
+
 
         // ОПТИМИЗАЦИЯ 6: Параллельная предварительная проверка топ-кандидатов (первые 5)
         const topCandidatesToPreCheck = promisingCandidates.slice(0, Math.min(5, promisingCandidates.length))
@@ -4018,7 +3943,7 @@ export const AutoPlanner: React.FC = () => {
             }
           })
         )
-        
+
         // Создаем Map для быстрого доступа к предпроверенным результатам
         const preCheckMap = new Map<any, any>()
         preCheckResults.forEach(({ evalItem, result }) => {
@@ -4026,8 +3951,7 @@ export const AutoPlanner: React.FC = () => {
             preCheckMap.set(evalItem.candidate, result)
           }
         })
-        
-        console.log(`⚡ Предпроверено ${preCheckMap.size} из ${topCandidatesToPreCheck.length} топ-кандидатов`)
+
 
         // Greedy add next orders by score (близость + дедлайн)
         // Максимум заказов = maxStopsPerRoute (это МАКСИМАЛЬНОЕ ограничение, не обязательное)
@@ -4038,52 +3962,46 @@ export const AutoPlanner: React.FC = () => {
         let processedCount = 0
         let noImprovementCount = 0 // Счетчик последовательных попыток без улучшения
         const maxNoImprovement = 5 // Максимум попыток без улучшения перед завершением маршрута
-        
+
         for (const evalItem of promisingCandidates) {
           if (routeChain.length >= runtimeMaxStopsPerRoute) {
-            console.log(`📊 Маршрут достиг максимального количества точек (${runtimeMaxStopsPerRoute})`)
             break
           }
           if (processedCount >= adaptiveLimit) {
-            console.log(`📊 Достигнут лимит проверок (${adaptiveLimit})`)
             break
           }
           if (noImprovementCount >= maxNoImprovement && routeChain.length > 1) {
-            console.log(`📊 Маршрут завершен: ${noImprovementCount} последовательных попыток без улучшения`)
             break
           }
-          
+
           const candidate = evalItem.candidate
-          
+
           // ОПТИМИЗАЦИЯ 4: Быстрая проверка использованных заказов через Set
           const candidateId = getOrderId(candidate)
           if (usedOrderIds.has(candidateId)) {
-            console.log(`⏭️ Заказ ${candidate.orderNumber || candidate.raw?.orderNumber || '?'} уже использован, пропускаем`)
             processedCount++
             continue
           }
-          
+
           // Проверка времени готовности уже сделана в предварительной фильтрации,
           // но дублируем для надежности
           if (!isReadyTimeCompatible(candidate, routeChain, optimizedSettings.maxReadyTimeDifferenceMinutes)) {
             processedCount++
             continue
           }
-          
+
           // УЛУЧШЕНИЕ: Строгая проверка максимального расстояния - не более 15 км между заказами
           const strictMaxDistance = 15 // Жесткий лимит для реалистичности
           const distanceKm = evalItem.distanceKm
           if (distanceKm > strictMaxDistance) {
-            console.log(`⏭️ Пропущен заказ "${candidate.address.substring(0, 40)}...": расстояние ${distanceKm.toFixed(1)} км превышает реалистичный лимит ${strictMaxDistance} км`)
             processedCount++
             noImprovementCount++
             continue
           }
-          
+
           // Дополнительная проверка по настройкам (если они еще строже)
           if (optimizedSettings.maxDistanceBetweenOrdersKm !== null && optimizedSettings.maxDistanceBetweenOrdersKm > 0) {
             if (distanceKm > optimizedSettings.maxDistanceBetweenOrdersKm) {
-              console.log(`⏭️ Пропущен заказ "${candidate.address.substring(0, 40)}...": предварительное расстояние ${distanceKm.toFixed(1)} км превышает лимит ${optimizedSettings.maxDistanceBetweenOrdersKm} км`)
               processedCount++
               noImprovementCount++
               continue
@@ -4092,7 +4010,6 @@ export const AutoPlanner: React.FC = () => {
 
           const candidateBucket = candidate._directionBucket ?? null
           if (!isBucketCompatible(routeDirectionBucket, candidateBucket, routeChain.length)) {
-            console.log(`⏭️ Пропущен заказ "${candidate.address.substring(0, 40)}..." из-за направления (корзина ${candidateBucket ?? '—'} против ${routeDirectionBucket ?? '—'})`)
             processedCount++
             noImprovementCount++
             continue
@@ -4118,15 +4035,14 @@ export const AutoPlanner: React.FC = () => {
               const diffText = directionTracker.primary !== null && candidateBearingFromBase !== null
                 ? angularDifference(directionTracker.primary, candidateBearingFromBase).toFixed(0)
                 : null
-              console.log(`⏭️ Пропущен заказ "${candidate.address.substring(0, 40)}..." из-за разворота маршрута${diffText ? ` (отклонение ${diffText}°)` : ''}`)
               processedCount++
               noImprovementCount++
               continue
             }
           }
-          
+
           const trialChain: any[] = [...routeChain, candidate]
-          
+
             try {
             // ОПТИМИЗАЦИЯ 6: Используем предпроверенный результат если доступен
             let result = preCheckMap.get(candidate)
@@ -4141,16 +4057,15 @@ export const AutoPlanner: React.FC = () => {
                 maxReadyTimeDiffMinutes: optimizedSettings.maxReadyTimeDifferenceMinutes
               })
             }
-            
+
             const feasible = result.feasible
             const legs = result.legs
-            
+
             if (!feasible || !legs || legs.length === 0) {
-              console.log(`⚠️ Кандидат "${candidate.address.substring(0, 40)}..." не подходит (не удалось построить маршрут)`)
               processedCount++
               continue
             }
-            
+
             // УЛУЧШЕНИЕ: Строгая проверка максимального расстояния между соседними заказами - не более 15 км
             const strictMaxDistanceBetweenOrders = 15 // Жесткий лимит для реалистичности
               let exceedsLimit = false
@@ -4160,7 +4075,7 @@ export const AutoPlanner: React.FC = () => {
                 if (legIdx >= legs.length) break // Защита от выхода за границы
                 const leg = legs[legIdx]
                 const legDistanceKm = (leg.distance?.value || 0) / 1000
-                
+
                 // Сначала проверяем жесткий лимит 15 км
                 if (legDistanceKm > strictMaxDistanceBetweenOrders) {
                   exceedsLimit = true
@@ -4170,11 +4085,9 @@ export const AutoPlanner: React.FC = () => {
                   const order2Addr = order2.address?.substring(0, 40) || '?'
                   const order1Num = order1.orderNumber || order1.raw?.orderNumber || '?'
                   const order2Num = order2.orderNumber || order2.raw?.orderNumber || '?'
-                  console.log(`⏭️ Пропущен маршрут: расстояние ${legDistanceKm.toFixed(1)} км между заказами превышает реалистичный лимит ${strictMaxDistanceBetweenOrders} км`)
-                  console.log(`   Заказ ${order1Num} "${order1Addr}..." → Заказ ${order2Num} "${order2Addr}..."`)
                   break
                 }
-                
+
                 // Дополнительная проверка по настройкам (если они еще строже)
                 if (optimizedSettings.maxDistanceBetweenOrdersKm !== null && optimizedSettings.maxDistanceBetweenOrdersKm > 0) {
                   if (legDistanceKm > optimizedSettings.maxDistanceBetweenOrdersKm) {
@@ -4185,8 +4098,6 @@ export const AutoPlanner: React.FC = () => {
                     const order2Addr = order2.address?.substring(0, 40) || '?'
                     const order1Num = order1.orderNumber || order1.raw?.orderNumber || '?'
                     const order2Num = order2.orderNumber || order2.raw?.orderNumber || '?'
-                    console.log(`⏭️ Пропущен маршрут: расстояние между заказами ${legDistanceKm.toFixed(1)} км превышает лимит ${optimizedSettings.maxDistanceBetweenOrdersKm} км`)
-                    console.log(`   Заказ ${order1Num} "${order1Addr}..." → Заказ ${order2Num} "${order2Addr}..."`)
                     break
                   }
                 }
@@ -4214,7 +4125,7 @@ export const AutoPlanner: React.FC = () => {
           let currentEta = startTime
           let totalWaitMs = 0
           let ok = true
-          
+
           // Проверяем каждый заказ по порядку
           // leg[0] = путь от стартового адреса к первому заказу
           // leg[1..n-1] = пути между заказами
@@ -4222,32 +4133,31 @@ export const AutoPlanner: React.FC = () => {
           for (let j = 0; j < trialChain.length; j++) {
             const legIndex = j // leg[j] - путь к заказу j (или от start, или от предыдущего заказа)
             if (legIndex >= legs.length - 1) break // -1 потому что последний leg это путь к финишу
-            
+
             const leg = legs[legIndex]
             // Используем duration_in_traffic если доступно (учитывает трафик), иначе duration
             const travelSeconds = leg.duration_in_traffic?.value || leg.duration?.value || 0
             const travel = travelSeconds * 1000
             currentEta += travel
-            
+
             const node = trialChain[j] // текущий заказ
             // ВАЖНО: Используем readyAtSource (время на кухню без упаковки), а не readyAt (с упаковкой)
             // Заказ может быть готов за 5 минут до или после времени на кухню (окно ±5 минут)
             // If node has readyAtSource in future, we allow waiting (courier can wait), but enforce deadline if present
             const deadline = node.deadlineAt
             const readyAt = node.readyAtSource || node.readyAt || null
-            
+
             // Если readyAt отсутствует, считаем заказ готовым (не ждем)
             if (readyAt) {
               // Окно готовности: заказ может быть готов от (readyAt - 5 мин) до (readyAt + 5 мин)
               const readyWindowStart = readyAt - KITCHEN_READY_WINDOW_MS
               const readyWindowEnd = readyAt + KITCHEN_READY_WINDOW_MS
-              
+
               if (currentEta < readyWindowStart) {
                 // Курьер приедет раньше, чем за 5 минут до готовности - нужно ждать
                 const wait = readyWindowStart - currentEta
                 const waitMin = wait / 60000
-                if (waitMin > maxWaitPerStopMin) { 
-                  console.log(`⚠️ Заказ ${node.orderNumber || '?'} не может быть добавлен: ожидание ${waitMin.toFixed(1)} мин превышает лимит ${maxWaitPerStopMin} мин`)
+                if (waitMin > maxWaitPerStopMin) {
                   ok = false
                   break
                 }
@@ -4264,21 +4174,20 @@ export const AutoPlanner: React.FC = () => {
                 // Не добавляем ожидание
               }
             }
-            
+
             // Добавляем время на отдачу заказа (+5 минут) после прибытия
             currentEta += DELIVERY_TIME_MS
-            
+
             // УЛУЧШЕНИЕ: Приоритизация доставки как можно раньше от планового времени
             // Проверяем дедлайн: форс-мажор (+9 минут) расширяет дедлайн (не добавляется к ETA)
             // Плановое время 10:00 -> с форс-мажором дедлайн становится 10:09
             if (deadline) {
               const deadlineWithForceMajeure = deadline + FORCE_MAJEURE_MS
               if (currentEta > deadlineWithForceMajeure) {
-                console.log(`⚠️ Заказ ${node.orderNumber || '?'} не может быть добавлен: дедлайн будет нарушен (ETA: ${new Date(currentEta).toLocaleString()}, дедлайн+форс-мажор: ${new Date(deadlineWithForceMajeure).toLocaleString()})`)
                 ok = false
                 break
               }
-              
+
               // БОНУС: Доставка как можно раньше от планового времени
               // Если можем доставить заказ значительно раньше дедлайна - это хорошо
               const timeBeforeDeadline = (deadline - currentEta) / (1000 * 60) // минуты до дедлайна
@@ -4291,7 +4200,6 @@ export const AutoPlanner: React.FC = () => {
                 console.log(`✅ Заказ ${node.orderNumber || '?'} будет доставлен за ${timeBeforeDeadline.toFixed(0)} мин до дедлайна`)
               } else if (timeBeforeDeadline > 0) {
                 // Доставляем менее чем за 15 минут до дедлайна - приемлемо, но не идеально
-                console.log(`⚠️ Заказ ${node.orderNumber || '?'} будет доставлен за ${timeBeforeDeadline.toFixed(0)} мин до дедлайна - близко к лимиту`)
               }
             } else {
               // Если дедлайн не найден, это не критично, но логируем для информации
@@ -4312,15 +4220,15 @@ export const AutoPlanner: React.FC = () => {
           const distanceToLastOrder = legs.slice(0, trialChain.length).reduce((acc: number, leg: any) => {
             return acc + (leg.distance?.value || 0)
           }, 0)
-          
+
           // Добавляем только время на отдачу для каждого заказа (форс-мажор расширяет дедлайн, не добавляется к времени)
           const deliveryTimeSeconds = trialChain.length * DELIVERY_TIME_MINUTES * 60
-          
+
           // Проверяем лимиты только по времени/дистанции до последнего заказа (без возврата)
           const totalMin = (timeToLastOrder + totalWaitMs / 1000 + deliveryTimeSeconds) / 60
           const totalKm = distanceToLastOrder / 1000
           const adjustedTotalMin = totalMin + runtimeTrafficBufferMinutes
-          
+
           // Проверка эффективности маршрута (пункт 9)
           const routeEfficiency = calculateRouteEfficiency(
             trialChain,
@@ -4328,36 +4236,35 @@ export const AutoPlanner: React.FC = () => {
             timeToLastOrder + deliveryTimeSeconds,
             totalWaitMs / 1000
           )
-          
-          if (ok && adjustedTotalMin <= runtimeMaxRouteDurationMin && totalKm <= runtimeMaxRouteDistanceKm && 
+
+          if (ok && adjustedTotalMin <= runtimeMaxRouteDurationMin && totalKm <= runtimeMaxRouteDistanceKm &&
               routeEfficiency >= optimizedSettings.minRouteEfficiency) {
-            
+
             // Проверяем, что кандидат еще не был добавлен в другой маршрут (защита от дубликатов)
-            const candidateId = candidate.id || candidate.raw?.id || 
+            const candidateId = candidate.id || candidate.raw?.id ||
               `${candidate.orderNumber || candidate.raw?.orderNumber || ''}_${candidate.address || ''}`
             const alreadyInRoute = routeChain.some(existing => {
-              const existingId = existing.id || existing.raw?.id || 
+              const existingId = existing.id || existing.raw?.id ||
                 `${existing.orderNumber || existing.raw?.orderNumber || ''}_${existing.address || ''}`
               return existingId === candidateId && existingId !== ''
             })
-            
+
             if (alreadyInRoute) {
               console.warn(`⚠️ Кандидат "${candidate.address.substring(0, 40)}..." уже в маршруте, пропускаем`)
               processedCount++
               noImprovementCount++
               continue
             }
-            
+
             // Проверяем улучшение маршрута: если эффективность очень низкая, пропускаем
             // Но не блокируем добавление, если маршрут еще короткий или эффективность приемлема
             const minAcceptableEfficiency = 0.3 // Минимальная приемлемая эффективность
             if (routeEfficiency < minAcceptableEfficiency && routeChain.length >= 2) {
-              console.log(`⏭️ Пропущен заказ: низкая эффективность маршрута (${(routeEfficiency * 100).toFixed(0)}% < ${(minAcceptableEfficiency * 100).toFixed(0)}%)`)
               noImprovementCount++
               processedCount++
               continue
             }
-            
+
             routeChain = trialChain
             usedOrderIds.add(candidateId) // ОПТИМИЗАЦИЯ 4: Отмечаем заказ как использованный
           if (routeDirectionBucket === null && candidate._directionBucket != null) {
@@ -4367,7 +4274,7 @@ export const AutoPlanner: React.FC = () => {
             // ОПТИМИЗАЦИЯ 7: Фильтруем remaining более эффективно
             filterRemaining()
             console.log(`🗑️ Заказ ${candidate.orderNumber || candidate.raw?.orderNumber || '?'} добавлен в маршрут (осталось: ${remaining.length})`)
-            
+
             // ОПТИМИЗАЦИЯ 5: Обновляем координаты последнего заказа (уже должны быть в candidateCoordsMap)
             if (!candidateCoords) {
               candidateCoords = candidateCoordsMap.get(candidate) || await getCoordinates(candidate.address)
@@ -4381,27 +4288,27 @@ export const AutoPlanner: React.FC = () => {
                 updateDirectionTracker(directionTracker, bearingBetween(directionTracker.base, candidateCoords))
               }
             }
-            
+
             // Формируем детальное описание с метриками и альтернативами
             const candidateReadyAt = candidate.readyAtSource || candidate.readyAt || null
-            const candidateReadyTime = candidateReadyAt 
+            const candidateReadyTime = candidateReadyAt
               ? new Date(candidateReadyAt).toLocaleTimeString()
               : 'не указано'
-            
+
             // Вычисляем метрики совместимости
             const routeReadyTimes = routeChain.map(o => o.readyAtSource || o.readyAt || Date.now())
             const minRouteReady = Math.min(...routeReadyTimes)
             const maxRouteReady = Math.max(...routeReadyTimes)
-            const readyTimeDiff = candidateReadyAt 
+            const readyTimeDiff = candidateReadyAt
               ? Math.abs(candidateReadyAt - (minRouteReady + maxRouteReady) / 2) / (1000 * 60)
               : 0
             const readyTimeCompatible = readyTimeDiff <= optimizedSettings.maxReadyTimeDifferenceMinutes
-            
+
             const candidateZone = candidate.deliveryZone || extractZoneFromAddress(candidate.address)
             const routeZones = routeChain.map(o => o.deliveryZone || extractZoneFromAddress(o.address))
             const zoneMatch = routeZones.some(z => z === candidateZone)
-            
-            const deadlineInfo = candidate.deadlineAt 
+
+            const deadlineInfo = candidate.deadlineAt
               ? {
                   deadline: new Date(candidate.deadlineAt).toLocaleTimeString(),
                   arrival: new Date(currentEta).toLocaleTimeString(),
@@ -4409,20 +4316,20 @@ export const AutoPlanner: React.FC = () => {
                   ok: currentEta <= candidate.deadlineAt + 9 * 60 * 1000
                 }
               : null
-            
+
             // Вычисляем оценки совместимости по факторам
-            const timeCompatibilityScore = readyTimeCompatible 
+            const timeCompatibilityScore = readyTimeCompatible
               ? Math.max(0, 100 - (readyTimeDiff / optimizedSettings.maxReadyTimeDifferenceMinutes) * 100)
               : 0
-            const distanceScore = evalItem.distanceKm 
+            const distanceScore = evalItem.distanceKm
               ? Math.max(0, 100 - (evalItem.distanceKm / (optimizedSettings.maxDistanceBetweenOrdersKm || 10)) * 100)
               : 100
             const zoneScore = zoneMatch ? 100 : 0
-            const deadlineScore = deadlineInfo 
+            const deadlineScore = deadlineInfo
               ? (deadlineInfo.ok ? Math.min(100, deadlineInfo.margin * 10) : 0)
               : 50
             const efficiencyScore = routeEfficiency * 100
-            
+
             const overallCompatibility = (
               timeCompatibilityScore * 0.3 +
               distanceScore * 0.25 +
@@ -4430,7 +4337,7 @@ export const AutoPlanner: React.FC = () => {
               deadlineScore * 0.15 +
               efficiencyScore * 0.1
             )
-            
+
             // Находим альтернативные кандидаты для сравнения
             const alternativeCandidates = candidateEvaluations
               .filter(e => e.candidate !== candidate && e.score > 0)
@@ -4440,15 +4347,15 @@ export const AutoPlanner: React.FC = () => {
                 orderNumber: e.candidate.orderNumber || e.candidate.raw?.orderNumber || '?',
                 score: e.score.toFixed(0),
                 distance: e.distanceKm.toFixed(1),
-                reason: e.distanceKm > evalItem.distanceKm ? 'дальше' : 
+                reason: e.distanceKm > evalItem.distanceKm ? 'дальше' :
                        (e.candidate.deliveryZone || extractZoneFromAddress(e.candidate.address)) !== candidateZone ? 'другая зона' :
                        'ниже оценка'
               }))
-            
+
             // Формируем детальное описание (используем | как разделитель для парсинга)
             // Убираем чекбоксы из метрик - они будут в отдельной секции логики
             const reason = `✅ Заказ #${candidate.orderNumber || candidate.raw?.orderNumber || '?'} "${candidate.address.substring(0, 50)}..." объединен с заказами ${routeChain.map((o, idx) => `#${o.orderNumber || o.raw?.orderNumber || idx + 1}`).join(', ')} | 📊 Оценка совместимости: ${overallCompatibility.toFixed(0)}/100 | ⏰ Время готовности: ${candidateReadyTime} (разница с маршрутом: ${readyTimeDiff.toFixed(0)} мин) | 📍 Расстояние: ${evalItem.distanceKm.toFixed(1)} км от предыдущего заказа | 🏘️ Зона доставки: ${candidateZone} | ⏱️ Дедлайн: ${deadlineInfo ? `${deadlineInfo.arrival} → ${deadlineInfo.deadline} (${deadlineInfo.margin > 0 ? '+' : ''}${deadlineInfo.margin} мин запас)` : 'не указан'} | 📈 Эффективность маршрута: ${(routeEfficiency * 100).toFixed(0)}% | 🎯 Почему именно этот заказ: | • Время готовности: разница ${readyTimeDiff.toFixed(0)} мин с маршрутом (лимит: ${optimizedSettings.maxReadyTimeDifferenceMinutes} мин) | • Расстояние от заказа #${routeChain[routeChain.length - 1].orderNumber || routeChain.length}: ${evalItem.distanceKm.toFixed(1)} км (лимит: ${optimizedSettings.maxDistanceBetweenOrdersKm || 'нет'} км) | • Зона доставки: ${candidateZone}${zoneMatch ? ' (совпадает с маршрутом)' : ' (другая зона)'} | • Дедлайн: ${deadlineInfo ? `прибытие ${deadlineInfo.arrival}, дедлайн ${deadlineInfo.deadline}, запас ${deadlineInfo.margin > 0 ? '+' : ''}${deadlineInfo.margin} мин` : 'не указан'} | • Эффективность маршрута: ${(routeEfficiency * 100).toFixed(0)}% (минимум: 30%) | 📊 Сравнение с альтернативами: | ${alternativeCandidates.length > 0 ? alternativeCandidates.map(alt => `• Заказ #${alt.orderNumber}: оценка ${alt.score}/100 (${alt.reason})`).join(' | ') : '• Альтернативные кандидаты не найдены'} | 💡 Результат: маршрут эффективен на ${(routeEfficiency * 100).toFixed(0)}%${routeChain.length > 1 ? ` (добавление заказа ${routeEfficiency >= 0.3 ? 'улучшило' : 'не ухудшило'} маршрут)` : ''} | 🔍 Логика формирования: | • Временная совместимость: ${readyTimeCompatible ? 'совместимо' : 'несовместимо'} (разница ${readyTimeDiff.toFixed(0)} мин, лимит ${optimizedSettings.maxReadyTimeDifferenceMinutes} мин) | • Географическая близость: ${evalItem.distanceKm.toFixed(1)} км от предыдущего заказа${evalItem.distanceKm <= (optimizedSettings.maxDistanceBetweenOrdersKm || 10) ? ' (в пределах лимита)' : ' (превышает лимит)'} | • Соблюдение дедлайнов: ${deadlineInfo ? (deadlineInfo.ok ? 'соблюден' : 'нарушен') + ` (прибытие ${deadlineInfo.arrival}, дедлайн ${deadlineInfo.deadline}, запас ${deadlineInfo.margin > 0 ? '+' : ''}${deadlineInfo.margin} мин)` : 'не указан'}`
-            
+
             routeReasons.push(reason)
             console.log('✅ Создан детальный reason:', {
               orderNumber: candidate.orderNumber || candidate.raw?.orderNumber,
@@ -4459,12 +4366,10 @@ export const AutoPlanner: React.FC = () => {
               reasonPreview: reason.substring(0, 200)
             })
             console.log(`✅ Добавлен заказ в маршрут, точек: ${routeChain.length}`)
-            
+
             // Прерываем цикл, так как нашли подходящий заказ
             break
           } else {
-            if (!ok) console.log(`⚠️ Кандидат "${candidate.address.substring(0, 40)}..." не подходит (нарушает дедлайн или лимит ожидания)`)
-            else console.log(`⚠️ Кандидат "${candidate.address.substring(0, 40)}..." не подходит (превышает лимиты: ${totalMin.toFixed(1)}мин/${totalKm.toFixed(1)}км)`)
             processedCount++
           }
           } catch (err) {
@@ -4485,7 +4390,7 @@ export const AutoPlanner: React.FC = () => {
         const trafficInfo = finalCheck.trafficInfo
         const totalTrafficDelay = finalCheck.totalTrafficDelay || 0
         const hasCriticalTraffic = finalCheck.hasCriticalTraffic || false
-        
+
         // Улучшенная локальная оптимизация: проверяем все возможные перестановки (пункт 5)
         if (routeChain.length >= 2) {
           console.log(`🔧 Проверяю локальную оптимизацию для ${routeChain.length} заказов...`)
@@ -4494,20 +4399,20 @@ export const AutoPlanner: React.FC = () => {
             total: enrichedForPlanning.length,
             message: `Оптимизация маршрута #${routes.length + 1}...`
           })
-          
+
           let improved = true
           let iterations = 0
           const maxIterations = routeChain.length <= 3 ? 5 : 3 // Больше итераций для коротких маршрутов
-          
+
           while (improved && iterations < maxIterations) {
             improved = false
             iterations++
-            
+
             // Пробуем все возможные перестановки (не только соседние)
             // Для производительности ограничиваем количество проверок
             const maxSwaps = Math.min(routeChain.length * (routeChain.length - 1) / 2, 20)
             let swapCount = 0
-            
+
             for (let i = 0; i < routeChain.length && swapCount < maxSwaps; i++) {
               for (let j = i + 2; j < routeChain.length && swapCount < maxSwaps; j++) {
                 swapCount++
@@ -4515,12 +4420,12 @@ export const AutoPlanner: React.FC = () => {
                 // Переставляем заказ i в позицию после j
                 const [removed] = testChain.splice(i, 1)
                 testChain.splice(j, 0, removed)
-                
+
                 // Проверяем разницу во времени готовности
                 if (!isReadyTimeCompatible(testChain[Math.min(i, j)], testChain, optimizedSettings.maxReadyTimeDifferenceMinutes)) {
                   continue
                 }
-                
+
                 const testResult = await apiManager.checkRoute(testChain, {
                   includeStartEnd: true,
                   priority: 'low' // Низкий приоритет для оптимизации
@@ -4528,7 +4433,7 @@ export const AutoPlanner: React.FC = () => {
                 if (testResult.feasible && testResult.legs) {
                   const testDuration = testResult.totalDuration ?? 0
                   const testDistance = testResult.totalDistance ?? 0
-                  
+
                   // Проверяем, лучше ли новый маршрут и соблюдает ли дедлайны
                   // ВАЖНО: Используем readyAtSource (время на кухню без упаковки), а не readyAt (с упаковкой)
                   // Заказ может быть готов за 5 минут до или после времени на кухню (окно ±5 минут)
@@ -4542,15 +4447,15 @@ export const AutoPlanner: React.FC = () => {
                   }
                   let testEta = testStartTime
                   let testOk = true
-                  
+
                   for (let k = 0; k < testChain.length && k < testResult.legs.length - 1; k++) {
                     const leg = testResult.legs[k]
                     // Используем duration_in_traffic если доступно (учитывает трафик)
                     const travelSeconds = leg.duration_in_traffic?.value || leg.duration?.value || 0
                     testEta += travelSeconds * 1000
-                    
+
                     const node = testChain[k]
-                    
+
                     // ВАЖНО: Используем readyAtSource (время на кухню без упаковки), а не readyAt (с упаковкой)
                     // Заказ может быть готов за 5 минут до или после времени на кухню (окно ±5 минут)
                     const nodeReadyAt = node.readyAtSource || node.readyAt || null
@@ -4558,7 +4463,7 @@ export const AutoPlanner: React.FC = () => {
                       // Окно готовности: заказ может быть готов от (readyAt - 5 мин) до (readyAt + 5 мин)
                       const readyWindowStart = nodeReadyAt - KITCHEN_READY_WINDOW_MS
                       const readyWindowEnd = nodeReadyAt + KITCHEN_READY_WINDOW_MS
-                      
+
                       if (testEta < readyWindowStart) {
                         // Курьер приедет раньше, чем за 5 минут до готовности - нужно ждать
                         const wait = (readyWindowStart - testEta) / 60000
@@ -4575,10 +4480,10 @@ export const AutoPlanner: React.FC = () => {
                         // Не добавляем ожидание
                       }
                     }
-                    
+
                     // Добавляем время на отдачу заказа (+5 минут)
                     testEta += DELIVERY_TIME_MS
-                    
+
                     // Проверяем дедлайн: форс-мажор (+9 минут) расширяет дедлайн
                     if (node.deadlineAt) {
                       const deadlineWithForceMajeure = node.deadlineAt + FORCE_MAJEURE_MS
@@ -4588,13 +4493,13 @@ export const AutoPlanner: React.FC = () => {
                       }
                     }
                   }
-                  
+
                   // Если новый маршрут лучше по времени ИЛИ расстоянию (но главное - соблюдает дедлайны)
                   // Приоритет: соблюдение дедлайнов важнее сокращения расстояния
                   const timeBetter = testDuration < finalTotalDuration
                   const distanceBetter = testDistance < finalTotalDistance
                   const timeNotMuchWorse = testDuration <= finalTotalDuration * 1.1
-                  
+
                   // Применяем оптимизацию только если:
                   // 1. Соблюдает дедлайны (testOk)
                   // 2. Лучше по расстоянию ИЛИ времени
@@ -4610,7 +4515,7 @@ export const AutoPlanner: React.FC = () => {
                     const improvement = []
                     if (savedTime > 0) improvement.push(`время уменьшено на ${savedTime.toFixed(1)} мин`)
                     if (savedDistance > 0) improvement.push(`дистанция уменьшена на ${(savedDistance / 1000).toFixed(1)} км`)
-                    routeReasons.push(`🔧 Локальная оптимизация (2-opt): улучшен порядок заказов | ${improvement.join(', ')} | 
+                    routeReasons.push(`🔧 Локальная оптимизация (2-opt): улучшен порядок заказов | ${improvement.join(', ')} |
                       Все дедлайны соблюдены`)
                     console.log(`✅ Локальная оптимизация улучшила маршрут (итерация ${iterations})`)
                     break // Начнём заново с нового порядка
@@ -4620,21 +4525,21 @@ export const AutoPlanner: React.FC = () => {
             }
           }
         }
-        
+
         // Общее время включает возврат, но это только для информации
         
         // Finalize routeChain into a route object
         // Старт и финиш - это defaultStartAddress и defaultEndAddress
         const waypoints = routeChain.map(n => ({ address: n.address }))
-        
+
         // Сохраняем номера заказов для отображения
         const orderNumbers = routeChain.map((n, idx) => n.orderNumber || n.raw?.orderNumber || `#${idx + 1}`)
-        
+
         routes.push({
           id: `auto-${now}-${routes.length + 1}`,
           name: (() => {
             const orderNums = orderNumbers.slice(0, 5) // Показываем максимум 5 номеров
-            const orderNumsStr = orderNums.length > 0 
+            const orderNumsStr = orderNums.length > 0
               ? orderNums.join(', ') + (orderNumbers.length > 5 ? '...' : '')
               : `${routeChain.length} заказов`
             return `Маршрут ${routes.length + 1} (${orderNumsStr})`
@@ -4682,7 +4587,7 @@ export const AutoPlanner: React.FC = () => {
           ? `, пробки: ${totalTrafficDelay.toFixed(1)} мин${hasCriticalTraffic ? ' ⚠️' : ''}`
           : ''
         console.log(`✅ Маршрут #${routes.length} создан, точек: ${routeChain.length}, ${(finalTotalDuration / 60).toFixed(1)} мин${trafficInfoStr}, ${(finalTotalDistance / 1000).toFixed(1)} км`)
-        
+
         // ОПТИМИЗАЦИЯ 8: Очистка памяти - удаляем неиспользуемые данные из candidateCoordsMap
         // Оставляем только координаты для заказов в текущем маршруте
         const routeOrderIds = new Set(routeChain.map(o => getOrderId(o)))
@@ -4723,14 +4628,14 @@ export const AutoPlanner: React.FC = () => {
               priority: 'low'
             })
             if (subCheck.feasible && subCheck.legs) {
-              const subOrderNumbers = subChain.map((n: any, idx: number) => 
+              const subOrderNumbers = subChain.map((n: any, idx: number) =>
                 n.orderNumber || n.raw?.orderNumber || `#${idx + 1}`
               )
               finalRoutes.push({
                 id: `${route.id}-split-${i + 1}`,
                 name: (() => {
                   const orderNums = subOrderNumbers.slice(0, 5)
-                  const orderNumsStr = orderNums.length > 0 
+                  const orderNumsStr = orderNums.length > 0
                     ? orderNums.join(', ') + (subOrderNumbers.length > 5 ? '...' : '')
                     : `${subChain.length} заказов`
                   return `Маршрут ${finalRoutes.length + 1} (${orderNumsStr})`
@@ -4765,7 +4670,7 @@ export const AutoPlanner: React.FC = () => {
           total: finalRoutes.length,
           message: 'Глобальная оптимизация маршрутов...'
         })
-        
+
         // Преобразуем маршруты в формат для оптимизации
         const routesForOptimization: RouteForRebalancing[] = finalRoutes.map(route => ({
           orders: route.routeChainFull || [],
@@ -4773,7 +4678,7 @@ export const AutoPlanner: React.FC = () => {
           totalDuration: route.totalDuration,
           _originalRoute: route
         }))
-        
+
         // Глобальная оптимизация
         const globalOptimizationContext: GlobalOptimizationContext = {
           checkChainFeasible: async (orders: Order[]) => {
@@ -4788,27 +4693,27 @@ export const AutoPlanner: React.FC = () => {
           maxReadyTimeDifferenceMinutes: optimizedSettings.maxReadyTimeDifferenceMinutes,
           maxWaitPerStopMin
         }
-        
+
         const optimizedRoutes = await globalRouteOptimization(routesForOptimization, globalOptimizationContext)
-        
+
         // Пересоздаем маршруты с оптимизированным распределением
         const newOptimizedRoutes: any[] = []
         for (const optimizedRoute of optimizedRoutes) {
           if (optimizedRoute.orders.length === 0) continue
-          
+
           const check = await apiManager.checkRoute(optimizedRoute.orders, {
             includeStartEnd: true,
             priority: 'low'
           })
           if (check.feasible && check.legs) {
-            const orderNumbers = optimizedRoute.orders.map((n: any, idx: number) => 
+            const orderNumbers = optimizedRoute.orders.map((n: any, idx: number) =>
               n.orderNumber || n.raw?.orderNumber || `#${idx + 1}`
             )
-            
+
             // Сохраняем оригинальные reasons из исходного маршрута
             const originalRoute = (optimizedRoute as any)._originalRoute
             const originalReasons = originalRoute?.reasons || []
-            
+
             newOptimizedRoutes.push({
               id: `route_${Date.now()}_${Math.random()}`,
               name: `Маршрут ${newOptimizedRoutes.length + 1} (${optimizedRoute.orders.length} заказов)`,
@@ -4830,13 +4735,13 @@ export const AutoPlanner: React.FC = () => {
             })
           }
         }
-        
+
         if (newOptimizedRoutes.length > 0) {
           finalRoutes = newOptimizedRoutes
           console.log(`✅ Глобальная оптимизация завершена: ${finalRoutes.length} маршрутов`)
-        }
+          }
       }
-      
+
       // УЛУЧШЕННАЯ РЕБАЛАНСИРОВКА: Перераспределение заказов между маршрутами с учетом времени
       if (finalRoutes.length > 1) {
         console.log('⚖️ Улучшенная ребалансировка маршрутов с учетом времени...')
@@ -4845,7 +4750,7 @@ export const AutoPlanner: React.FC = () => {
           total: finalRoutes.length,
           message: 'Ребалансировка маршрутов...'
         })
-        
+
         // Преобразуем маршруты в формат для ребалансировки
         const routesForRebalancing: RouteForRebalancing[] = finalRoutes.map(route => ({
           orders: route.routeChainFull || [],
@@ -4853,7 +4758,7 @@ export const AutoPlanner: React.FC = () => {
           totalDuration: route.totalDuration,
           _originalRoute: route // Сохраняем ссылку на оригинальный маршрут
         }))
-        
+
         // УЛУЧШЕНИЕ: Используем улучшенную ребалансировку V3 с учетом времени
         const rebalanceContext: RebalanceContext & {
           checkChainFeasible?: (orders: Order[]) => Promise<{ feasible: boolean; legs?: any[]; totalDuration?: number; totalDistance?: number; }>
@@ -4883,7 +4788,7 @@ export const AutoPlanner: React.FC = () => {
           maxReadyTimeDifferenceMinutes: optimizedSettings.maxReadyTimeDifferenceMinutes,
           maxWaitPerStopMin
         }
-        
+
         // Сохраняем метрики до ребалансировки для сравнения
         const beforeMetrics = finalRoutes.map(route => ({
           id: route.id,
@@ -4892,14 +4797,14 @@ export const AutoPlanner: React.FC = () => {
           duration: route.totalDuration || 0,
           orderNumbers: route.orderNumbers || []
         }))
-        
+
         const rebalanced = await rebalanceRoutesV3(routesForRebalancing, runtimeMaxStopsPerRoute, rebalanceContext)
-        
+
         // Если маршруты изменились, пересчитываем их
-        if (rebalanced.length !== finalRoutes.length || 
+        if (rebalanced.length !== finalRoutes.length ||
             rebalanced.some((r, i) => r.orders.length !== routesForRebalancing[i].orders.length)) {
           console.log(`✅ Ребалансировка: ${finalRoutes.length} -> ${rebalanced.length} маршрутов`)
-          
+
           // Вычисляем статистику изменений
           const totalOrdersBefore = beforeMetrics.reduce((sum, m) => sum + m.stops, 0)
           const totalOrdersAfter = rebalanced.reduce((sum, r) => sum + r.orders.length, 0)
@@ -4913,69 +4818,69 @@ export const AutoPlanner: React.FC = () => {
             const diff = r.orders.length - avgLoadAfter
             return sum + (diff * diff)
           }, 0) / Math.max(1, rebalanced.length)
-          const loadBalanceImprovement = loadVarianceBefore > 0 
+          const loadBalanceImprovement = loadVarianceBefore > 0
             ? ((loadVarianceBefore - loadVarianceAfter) / loadVarianceBefore * 100).toFixed(1)
             : '0'
-          
+
           // Пересоздаем маршруты с новым распределением заказов
           const newFinalRoutes: any[] = []
           for (let idx = 0; idx < rebalanced.length; idx++) {
             const rebalancedRoute = rebalanced[idx]
             if (rebalancedRoute.orders.length === 0) continue
-            
+
             // Проверяем feasibility нового маршрута
             const check = await apiManager.checkRoute(rebalancedRoute.orders, {
               includeStartEnd: true,
               priority: 'low'
             })
             if (check.feasible && check.legs) {
-              const orderNumbers = rebalancedRoute.orders.map((n: any, idx: number) => 
+              const orderNumbers = rebalancedRoute.orders.map((n: any, idx: number) =>
                 n.orderNumber || n.raw?.orderNumber || `#${idx + 1}`
               )
-              
+
               // Находим соответствующий старый маршрут для сравнения
-              const oldRoute = beforeMetrics.find(m => 
+              const oldRoute = beforeMetrics.find(m =>
                 m.orderNumbers.some((num: string) => orderNumbers.includes(num))
               ) || beforeMetrics[idx]
-              
+
               // Находим оригинальный маршрут из finalRoutes для сохранения reasons
               const originalRoute = finalRoutes.find(r => {
-                const routeOrderNumbers = (r.orderNumbers || []).map((n: any) => 
+                const routeOrderNumbers = (r.orderNumbers || []).map((n: any) =>
                   typeof n === 'string' ? n : (n.orderNumber || n.raw?.orderNumber || '')
                 )
                 return routeOrderNumbers.some((num: string) => orderNumbers.includes(num))
               }) || finalRoutes[idx]
-              
+
               const stopsChanged = rebalancedRoute.orders.length - (oldRoute?.stops || 0)
               const distanceChanged = ((check.totalDistance || 0) - (oldRoute?.distance || 0)) / 1000
               const durationChanged = ((check.totalDuration || 0) - (oldRoute?.duration || 0)) / 60
-              
+
               // Сохраняем оригинальные reasons из исходного маршрута
               const originalReasons = originalRoute?.reasons || []
-              
+
               // Формируем детальную причину ребалансировки
               const rebalanceReasons: string[] = []
               rebalanceReasons.push(`⚖️ Ребалансированный маршрут`)
-              
+
               if (stopsChanged !== 0) {
                 rebalanceReasons.push(`Заказов: ${oldRoute?.stops || 0} → ${rebalancedRoute.orders.length} (${stopsChanged > 0 ? '+' : ''}${stopsChanged})`)
               }
-              
+
               if (Math.abs(distanceChanged) > 0.1) {
                 rebalanceReasons.push(`Дистанция: ${((oldRoute?.distance || 0) / 1000).toFixed(1)} → ${((check.totalDistance || 0) / 1000).toFixed(1)} км (${distanceChanged > 0 ? '+' : ''}${distanceChanged.toFixed(1)} км)`)
               }
-              
+
               if (Math.abs(durationChanged) > 0.5) {
                 rebalanceReasons.push(`Время: ${((oldRoute?.duration || 0) / 60).toFixed(1)} → ${((check.totalDuration || 0) / 60).toFixed(1)} мин (${durationChanged > 0 ? '+' : ''}${durationChanged.toFixed(1)} мин)`)
               }
-              
+
               if (idx === 0) {
                 // Добавляем общую статистику только для первого маршрута
                 rebalanceReasons.push(`📊 Общая статистика: ${beforeMetrics.length} → ${rebalanced.length} маршрутов`)
                 rebalanceReasons.push(`📊 Балансировка нагрузки улучшена на ${loadBalanceImprovement}%`)
                 rebalanceReasons.push(`📊 Средняя нагрузка: ${avgLoadBefore.toFixed(1)} → ${avgLoadAfter.toFixed(1)} заказов/маршрут`)
               }
-              
+
               newFinalRoutes.push({
                 id: `route_${Date.now()}_${Math.random()}`,
                 name: (() => {
@@ -4983,7 +4888,7 @@ export const AutoPlanner: React.FC = () => {
                     .map((o: any) => o.orderNumber || o.raw?.orderNumber)
                     .filter((n: any) => n)
                     .slice(0, 5) // Показываем максимум 5 номеров
-                  const orderNumsStr = orderNumbers.length > 0 
+                  const orderNumsStr = orderNumbers.length > 0
                     ? orderNumbers.join(', ') + (rebalancedRoute.orders.length > 5 ? '...' : '')
                     : `${rebalancedRoute.orders.length} заказов`
                   return `Маршрут ${newFinalRoutes.length + 1} (${orderNumsStr})`
@@ -5006,27 +4911,26 @@ export const AutoPlanner: React.FC = () => {
               })
             }
           }
-          
+
           if (newFinalRoutes.length > 0) {
             finalRoutes = newFinalRoutes
             console.log(`✅ Ребалансировка завершена: ${finalRoutes.length} маршрутов`)
-          }
+            }
         } else {
           console.log('ℹ️ Ребалансировка не требуется: маршруты уже сбалансированы')
-        }
+          }
       }
-      
+
       // Фильтрация маршрутов по типу курьера и ограничениям
       if (selectedCourierType !== 'all') {
         console.log(`🔍 Фильтрация маршрутов по типу курьера: ${selectedCourierType}`)
         const filteredByType = filterRoutesByCourierType(finalRoutes, selectedCourierType, courierSchedules)
         const removedCount = finalRoutes.length - filteredByType.length
         if (removedCount > 0) {
-          console.log(`⚠️ Исключено ${removedCount} маршрутов, не подходящих для типа "${selectedCourierType}"`)
-        }
+          }
         finalRoutes = filteredByType
       }
-      
+
       // Назначение маршрутов курьерам с учетом графика работы (если включено)
       if (enableScheduleFiltering && courierSchedules.length > 0) {
         console.log('📅 Назначение маршрутов курьерам с учетом графика работы...')
@@ -5035,7 +4939,7 @@ export const AutoPlanner: React.FC = () => {
           total: finalRoutes.length,
           message: 'Назначение курьеров...'
         })
-        
+
         // Назначаем маршруты курьерам
         const assignedRoutes: RouteAssignment[] = []
         for (const route of finalRoutes) {
@@ -5045,7 +4949,7 @@ export const AutoPlanner: React.FC = () => {
             estimatedDurationMinutes: (route.totalDuration || 0) / 60,
             readyAt: route.routeChainFull?.[0]?.readyAtSource || route.routeChainFull?.[0]?.readyAt,
           }
-          
+
           // Передаем заказы с дедлайнами для анализа доступности курьеров
           const assignment = assignRouteToCourier(routeData, courierSchedules)
           if (assignment && assignment.isFeasible) {
@@ -5062,10 +4966,10 @@ export const AutoPlanner: React.FC = () => {
             route.assignmentError = assignment.reason
           }
         }
-        
+
         console.log(`✅ Назначено ${assignedRoutes.length} маршрутов из ${finalRoutes.length}`)
-      }
-      
+        }
+
       // Постобработка: объединение близких коротких маршрутов (пункт 10)
       if (finalRoutes.length > 1) {
         console.log('🔗 Постобработка: проверка возможности объединения маршрутов...')
@@ -5074,37 +4978,37 @@ export const AutoPlanner: React.FC = () => {
           total: enrichedForPlanningGrouped.length,
           message: 'Постобработка маршрутов...'
         })
-        
+
         const shortRoutes = finalRoutes.filter(r => r.stopsCount <= 2 && r.totalDuration / 60 < runtimeMaxRouteDurationMin * 0.7)
-        
+
         for (let i = 0; i < shortRoutes.length - 1; i++) {
           for (let j = i + 1; j < shortRoutes.length; j++) {
             const route1 = shortRoutes[i]
             const route2 = shortRoutes[j]
-            
+
             const orders1 = route1.routeChainFull || []
             const orders2 = route2.routeChainFull || []
             const combinedStops = orders1.length + orders2.length
-            
+
             // Проверяем лимиты
             if (combinedStops > runtimeMaxStopsPerRoute) continue
-            
+
             // Проверяем совместимость по времени готовности
             const allOrders = [...orders1, ...orders2]
             const readySpread = getReadyTimeSpread(allOrders)
             const maxSpread = optimizedSettings.maxReadyTimeDifferenceMinutes * 60 * 1000
             if (readySpread > maxSpread) continue
-            
+
             // Проверяем feasibility объединенного маршрута
             const combinedCheck = await apiManager.checkRoute(allOrders, {
               includeStartEnd: true,
               priority: 'low'
             })
             if (!combinedCheck.feasible) continue
-            
+
             const combinedDuration = (combinedCheck.totalDuration || 0) / 60
             const combinedDistance = (combinedCheck.totalDistance || 0) / 1000
-            
+
             if (combinedDuration <= runtimeMaxRouteDurationMin && combinedDistance <= runtimeMaxRouteDistanceKm) {
               // Объединяем маршруты
               route1.routeChainFull = allOrders
@@ -5116,20 +5020,20 @@ export const AutoPlanner: React.FC = () => {
               route1.totalDistanceKm = combinedDistance.toFixed(1)
               route1.directionsLegs = combinedCheck.legs
               route1.name = `${route1.name} + ${route2.name}`
-              
+
               // Удаляем второй маршрут
               const route2Index = finalRoutes.findIndex(r => r.id === route2.id)
               if (route2Index !== -1) {
                 finalRoutes.splice(route2Index, 1)
               }
-              
+
               console.log(`✅ Объединены маршруты: ${route1.name}`)
               break
             }
           }
         }
       }
-      
+
       // Сбрасываем прогресс
       setOptimizationProgress(null)
 
@@ -5156,12 +5060,12 @@ export const AutoPlanner: React.FC = () => {
             estimatedStartTime: Date.now(),
             directionsLegs: route.directionsLegs
           }
-          
+
           const notifications = generateRouteNotifications(routeInfo, notificationPreferences)
           if (notifications.length > 0) {
             notificationsMap.set(route.id, notifications)
             console.log(`✅ Сгенерировано ${notifications.length} уведомлений для маршрута ${route.name}`)
-          }
+            }
         }
       }
 
@@ -5170,14 +5074,13 @@ export const AutoPlanner: React.FC = () => {
       const totalPlanningTime = (planningEndTime - planningStartTime) / 1000
       console.log(`✅ Автоматическая оптимизация маршрутов завершена. Создано маршрутов: ${finalRoutes.length}`)
       console.log(`⏱️ Общее время планирования: ${totalPlanningTime.toFixed(1)}с`)
-      
+
       // Выводим статистику кэша
       const cacheStats = apiManager.getCacheStats()
-      console.log('📊 Статистика оптимизации Google API:')
       console.log(`  - Кэшированных пар точек: ${cacheStats.pointPairs}`)
       console.log(`  - Кэшированных маршрутов: ${cacheStats.routes}`)
       console.log(`  - Экономия запросов: ~${Math.round((cacheStats.pointPairs + cacheStats.routes) * 0.7)}%`)
-      
+
       // ОПТИМИЗАЦИЯ: Выводим метрики производительности
       const totalOrders = ordersToPlan.length
       const avgTimePerOrder = totalOrders > 0 ? (totalPlanningTime / totalOrders).toFixed(2) : '0'
@@ -5188,10 +5091,10 @@ export const AutoPlanner: React.FC = () => {
       console.log(`  - Среднее время на заказ: ${avgTimePerOrder}с`)
       console.log(`  - Среднее время на маршрут: ${avgTimePerRoute}с`)
       console.log(`  - Эффективность: ${totalOrders > 0 ? ((finalRoutes.length / totalOrders) * 100).toFixed(1) : '0'}% заказов в маршрутах`)
-      
+
       setPlannedRoutes(finalRoutes)
       setRouteNotifications(notificationsMap)
-      
+
       // Сохраняем в историю и рассчитываем аналитику
       if (finalRoutes.length > 0) {
         // Расчет статистики для истории
@@ -5199,7 +5102,7 @@ export const AutoPlanner: React.FC = () => {
         const totalDistance = finalRoutes.reduce((sum, r) => sum + (r.totalDistance || 0), 0) / 1000
         const totalDuration = finalRoutes.reduce((sum, r) => sum + (r.totalDuration || 0), 0) / 60
         const avgEfficiency = finalRoutes.reduce((sum, r) => sum + (r.routeEfficiency || 0), 0) / finalRoutes.length
-        
+
         // Сохраняем в историю (с обработкой ошибок переполнения)
         try {
           const historyId = routeHistory.save(
@@ -5220,7 +5123,7 @@ export const AutoPlanner: React.FC = () => {
             }
           )
           console.log(`📝 Маршруты сохранены в историю: ${historyId}`)
-          
+
           // Обновляем список истории
           setRouteHistoryEntries(routeHistory.getAll())
         } catch (error: any) {
@@ -5228,24 +5131,23 @@ export const AutoPlanner: React.FC = () => {
           console.warn('⚠️ Не удалось сохранить маршруты в историю:', error.message || error)
           // Продолжаем работу, даже если история не сохранилась
         }
-        
+
         // Рассчитываем аналитику
         const analytics = calculateRouteAnalytics(finalRoutes)
         setRouteAnalytics(analytics)
-        console.log('📊 Аналитика рассчитана:', analytics)
-        
+
         // Рассчитываем метрики эффективности
         const efficiencyMetrics = calculateRouteEfficiencyMetrics(finalRoutes)
         setRouteEfficiencyMetrics(efficiencyMetrics)
-        
+
         // Получаем предложения по улучшению
         const suggestions = suggestRouteImprovements(efficiencyMetrics)
         setEfficiencySuggestions(suggestions)
-        
+
         console.log('⚡ Метрики эффективности:', efficiencyMetrics)
         if (suggestions.length > 0) {
           console.log('💡 Предложения по улучшению:', suggestions)
-        }
+          }
       }
       if (finalRoutes.length > 0) {
         const totalDelay = finalRoutes.reduce((sum, route) => sum + (route.totalTrafficDelay || 0), 0)
@@ -5277,12 +5179,12 @@ export const AutoPlanner: React.FC = () => {
       } else {
         setPlanTrafficImpact(null)
       }
-      
+
       if (finalRoutes.length === 0) {
         const msg = 'Не удалось создать маршруты. Проверьте фильтры и убедитесь, что заказы могут быть объединены.'
         setErrorMsg(msg)
         console.warn('⚠️', msg)
-      }
+        }
     } catch (e: any) {
       const errorMsg = e?.message || 'Неизвестная ошибка'
       console.error('❌ Ошибка автопланирования:', e)
@@ -5291,7 +5193,6 @@ export const AutoPlanner: React.FC = () => {
     } finally {
       setIsPlanning(false)
       setOptimizationProgress(null)
-      console.log('🏁 Планирование завершено (успешно или с ошибкой)')
     }
   }, [excelData, fileName, maxRouteDurationMin, maxRouteDistanceKm, maxWaitPerStopMin, maxStopsPerRoute, enableOrderCombining, combineMaxDistanceMeters, combineMaxTimeWindowMinutes, enableNotifications, notificationPreferences, orderFilters, filteredOrders, routePlanningSettings, selectedCourierType, enableScheduleFiltering, courierSchedules, trafficModeOverride])
 
@@ -5312,8 +5213,8 @@ export const AutoPlanner: React.FC = () => {
       {/* Заголовок с градиентом */}
       <div className={clsx(
         'rounded-3xl p-8 shadow-2xl border-2 overflow-hidden relative',
-        isDark 
-          ? 'bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 border-gray-700' 
+        isDark
+          ? 'bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 border-gray-700'
           : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-blue-200'
       )}>
         <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10 opacity-50"></div>
@@ -5322,8 +5223,8 @@ export const AutoPlanner: React.FC = () => {
             <div className="flex items-center gap-4">
               <div className={clsx(
                 'p-4 rounded-2xl shadow-lg',
-                isDark 
-                  ? 'bg-gradient-to-br from-blue-600 to-purple-600' 
+                isDark
+                  ? 'bg-gradient-to-br from-blue-600 to-purple-600'
                   : 'bg-gradient-to-br from-blue-500 to-indigo-600'
               )}>
                 <SparklesIconSolid className="w-8 h-8 text-white" />
@@ -5331,8 +5232,8 @@ export const AutoPlanner: React.FC = () => {
               <div>
                 <h2 className={clsx(
                   'text-3xl font-bold mb-1 bg-gradient-to-r bg-clip-text text-transparent',
-                  isDark 
-                    ? 'from-blue-400 to-purple-400' 
+                  isDark
+                    ? 'from-blue-400 to-purple-400'
                     : 'from-blue-600 to-indigo-600'
                 )}>
                   Автоматическая оптимизация маршрутов
@@ -5356,8 +5257,8 @@ export const AutoPlanner: React.FC = () => {
                 }}
                 className={clsx(
                   'p-3 rounded-xl transition-all hover:scale-105',
-                  isDark 
-                    ? 'bg-gray-700 hover:bg-gray-600 text-blue-400' 
+                  isDark
+                    ? 'bg-gray-700 hover:bg-gray-600 text-blue-400'
                     : 'bg-white hover:bg-blue-50 text-blue-600 shadow-lg'
                 )}
               >
@@ -5365,14 +5266,14 @@ export const AutoPlanner: React.FC = () => {
               </button>
             </Tooltip>
           </div>
-          
+
           {/* Статистика */}
           {excelData && ordersCount > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
               <div className={clsx(
                 'p-4 rounded-xl border backdrop-blur-sm',
-                isDark 
-                  ? 'bg-gray-800/50 border-gray-700' 
+                isDark
+                  ? 'bg-gray-800/50 border-gray-700'
                   : 'bg-white/70 border-blue-200'
               )}>
                 <div className="flex items-center gap-3">
@@ -5388,13 +5289,13 @@ export const AutoPlanner: React.FC = () => {
                   </div>
                 </div>
               </div>
-              
+
               {plannedRoutes.length > 0 && (
                 <>
                   <div className={clsx(
                     'p-4 rounded-xl border backdrop-blur-sm',
-                    isDark 
-                      ? 'bg-gray-800/50 border-gray-700' 
+                    isDark
+                      ? 'bg-gray-800/50 border-gray-700'
                       : 'bg-white/70 border-green-200'
                   )}>
                     <div className="flex items-center gap-3">
@@ -5410,11 +5311,11 @@ export const AutoPlanner: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className={clsx(
                     'p-4 rounded-xl border backdrop-blur-sm',
-                    isDark 
-                      ? 'bg-gray-800/50 border-gray-700' 
+                    isDark
+                      ? 'bg-gray-800/50 border-gray-700'
                       : 'bg-white/70 border-purple-200'
                   )}>
                     <div className="flex items-center gap-3">
@@ -5427,18 +5328,18 @@ export const AutoPlanner: React.FC = () => {
                       <div>
                         <div className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-600')}>Среднее время</div>
                         <div className={clsx('text-xl font-bold', isDark ? 'text-white' : 'text-gray-900')}>
-                          {plannedRoutes.length > 0 
+                          {plannedRoutes.length > 0
                             ? `${(plannedRoutes.reduce((sum, r) => sum + (parseFloat(r.totalDurationMin) || 0), 0) / plannedRoutes.length).toFixed(0)} мин`
                             : '—'}
                         </div>
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className={clsx(
                     'p-4 rounded-xl border backdrop-blur-sm',
-                    isDark 
-                      ? 'bg-gray-800/50 border-gray-700' 
+                    isDark
+                      ? 'bg-gray-800/50 border-gray-700'
                       : 'bg-white/70 border-orange-200'
                   )}>
                     <div className="flex items-center gap-3">
@@ -5451,7 +5352,7 @@ export const AutoPlanner: React.FC = () => {
                       <div>
                         <div className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-600')}>Средняя дистанция</div>
                         <div className={clsx('text-xl font-bold', isDark ? 'text-white' : 'text-gray-900')}>
-                          {plannedRoutes.length > 0 
+                          {plannedRoutes.length > 0
                             ? `${(plannedRoutes.reduce((sum, r) => sum + (parseFloat(r.totalDistanceKm) || 0), 0) / plannedRoutes.length).toFixed(1)} км`
                             : '—'}
                         </div>
@@ -5464,7 +5365,7 @@ export const AutoPlanner: React.FC = () => {
           )}
         </div>
       </div>
-      
+
       {/* Основной контент */}
       <div className={clsx(
         'rounded-3xl p-4 shadow-xl border-2',
@@ -5475,8 +5376,8 @@ export const AutoPlanner: React.FC = () => {
           {/* Загрузка файла */}
           <div className={clsx(
             'rounded-xl p-4 border-2 transition-all hover:shadow-lg',
-            isDark 
-              ? 'border-blue-700/50 bg-gradient-to-br from-gray-800/50 to-gray-900/50 hover:border-blue-600' 
+            isDark
+              ? 'border-blue-700/50 bg-gradient-to-br from-gray-800/50 to-gray-900/50 hover:border-blue-600'
               : 'border-blue-200 bg-gradient-to-br from-blue-50/50 to-indigo-50/50 hover:border-blue-300'
           )}>
             <div className="flex items-center gap-2 mb-3">
@@ -5492,14 +5393,14 @@ export const AutoPlanner: React.FC = () => {
             </div>
             <label className={clsx(
               'block w-full p-3 rounded-lg border-2 border-dashed cursor-pointer transition-all',
-              isDark 
-                ? 'border-gray-600 bg-gray-800/50 hover:border-blue-500 hover:bg-gray-800' 
+              isDark
+                ? 'border-gray-600 bg-gray-800/50 hover:border-blue-500 hover:bg-gray-800'
                 : 'border-gray-300 bg-white hover:border-blue-400 hover:bg-blue-50'
             )} data-tour="upload">
-              <input 
-                type="file" 
-                accept=".xlsx,.xls" 
-                onChange={onFileChange} 
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={onFileChange}
                 disabled={isProcessing}
                 className="hidden"
               />
@@ -5568,8 +5469,8 @@ export const AutoPlanner: React.FC = () => {
           {/* Фильтры маршрута - компактная версия */}
           <div className={clsx(
             'rounded-xl p-4 border-2 transition-all hover:shadow-lg',
-            isDark 
-              ? 'border-purple-700/50 bg-gradient-to-br from-gray-800/50 to-gray-900/50 hover:border-purple-600' 
+            isDark
+              ? 'border-purple-700/50 bg-gradient-to-br from-gray-800/50 to-gray-900/50 hover:border-purple-600'
               : 'border-purple-200 bg-gradient-to-br from-purple-50/50 to-pink-50/50 hover:border-purple-300'
           )} data-tour="settings">
             <div className="flex items-center gap-2 mb-3">
@@ -5748,7 +5649,7 @@ export const AutoPlanner: React.FC = () => {
                 Баланс - оптимальное соотношение времени и расстояния. Минимум расстояния - самый короткий путь. Минимум времени - самый быстрый маршрут.
               </div>
                 </div>
-                
+
                 {/* Разрешить разделение длинных маршрутов */}
                 <div>
               <label className="flex items-center gap-3 text-sm">
@@ -5764,7 +5665,7 @@ export const AutoPlanner: React.FC = () => {
                 Автоматически разделять маршруты, которые превышают максимальное количество точек или длительность
               </div>
                 </div>
-                
+
                 {/* Макс. разница времени готовности */}
                 <div>
               <label className="flex items-center justify-between gap-3 text-sm">
@@ -5783,7 +5684,7 @@ export const AutoPlanner: React.FC = () => {
                 Не объединять в один маршрут заказы с разницей времени готовности больше указанного значения
               </div>
                 </div>
-                
+
                 {/* Избегать пробок */}
                 <div>
               <label className="flex items-center gap-3 text-sm">
@@ -5799,7 +5700,7 @@ export const AutoPlanner: React.FC = () => {
                 Учитывать текущую ситуацию с пробками при построении маршрутов
               </div>
                 </div>
-                
+
                 {/* Фильтр по типу курьера */}
                 <div>
               <label className="flex items-center justify-between gap-3 text-sm">
@@ -5815,14 +5716,14 @@ export const AutoPlanner: React.FC = () => {
                 </select>
               </label>
               <div className={clsx('text-xs mt-1', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                {selectedCourierType === 'all' 
+                {selectedCourierType === 'all'
                   ? 'Маршруты для всех типов курьеров'
                   : selectedCourierType === 'car'
                   ? 'Только маршруты для авто курьеров (без ограничений по расстоянию)'
                   : `Только маршруты для мото курьеров (максимум ${VEHICLE_LIMITS.motorcycle.maxDistanceKm} км)`}
               </div>
                 </div>
-                
+
                 {/* Учет графика работы */}
                 <div>
               <div className="flex items-center justify-between mb-2">
@@ -5843,8 +5744,8 @@ export const AutoPlanner: React.FC = () => {
                     onClick={() => setShowScheduleModal(true)}
                     className={clsx(
                       'px-3 py-1 text-xs rounded-lg font-medium transition-colors',
-                      isDark 
-                        ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                      isDark
+                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
                         : 'bg-blue-600 hover:bg-blue-700 text-white'
                     )}
                   >
@@ -5852,8 +5753,8 @@ export const AutoPlanner: React.FC = () => {
                   </button>
                   <label className={clsx(
                     'px-3 py-1 text-xs rounded-lg font-medium transition-colors cursor-pointer',
-                    isDark 
-                      ? 'bg-green-600 hover:bg-green-700 text-white' 
+                    isDark
+                      ? 'bg-green-600 hover:bg-green-700 text-white'
                       : 'bg-green-600 hover:bg-green-700 text-white'
                   )}>
                     Загрузить из Excel
@@ -5899,7 +5800,7 @@ export const AutoPlanner: React.FC = () => {
                 </div>
               </div>
               <div className={clsx('text-xs mt-1 ml-6', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                {courierSchedules.length === 0 
+                {courierSchedules.length === 0
                   ? 'Добавьте графики курьеров для учета при формировании маршрутов'
                   : enableScheduleFiltering
                     ? `Учитывается график работы ${courierSchedules.length} курьеров (время начала работы, все работают до закрытия)`
@@ -5942,16 +5843,16 @@ export const AutoPlanner: React.FC = () => {
                   />
                   <span className={clsx(isDark ? 'text-gray-300' : 'text-gray-700')}>Включить фильтры</span>
                 </label>
-                
+
                 {orderFilters.enabled && (
                   <>
                     {/* Статистика */}
                     <div className={clsx('text-xs p-2 rounded', isDark ? 'bg-gray-900/50 text-gray-400' : 'bg-gray-100 text-gray-600')}>
-                      Всего заказов: {ordersCount} | 
+                      Всего заказов: {ordersCount} |
                       После фильтрации: {filteredOrders.length} |
                       Исключено: {ordersCount - filteredOrders.length}
                     </div>
-                    
+
                     {/* Способ оплаты */}
                     {availableFilters.paymentMethods.length > 0 && (
                       <div>
@@ -5976,7 +5877,7 @@ export const AutoPlanner: React.FC = () => {
                         </div>
                       </div>
                     )}
-                    
+
                     {/* Зона доставки */}
                     {availableFilters.deliveryZones.length > 0 && (
                       <div>
@@ -6001,7 +5902,7 @@ export const AutoPlanner: React.FC = () => {
                         </div>
                       </div>
                     )}
-                    
+
                     {/* Статус */}
                     {availableFilters.statuses.length > 0 && (
                       <div>
@@ -6026,7 +5927,7 @@ export const AutoPlanner: React.FC = () => {
                         </div>
                       </div>
                     )}
-                    
+
                     {/* Тип заказа */}
                     {availableFilters.orderTypes.length > 0 && (
                       <div>
@@ -6051,7 +5952,7 @@ export const AutoPlanner: React.FC = () => {
                         </div>
                       </div>
                     )}
-                    
+
                     {/* Дополнительные фильтры */}
                     <div className="space-y-2 pt-2 border-t border-gray-600">
                       <label className="flex items-center gap-3 text-sm">
@@ -6064,7 +5965,7 @@ export const AutoPlanner: React.FC = () => {
                         <span className={clsx(isDark ? 'text-gray-300' : 'text-gray-700')}>Исключить исполненные заказы</span>
                       </label>
                     </div>
-                    
+
                     {/* Кнопка сброса фильтров */}
                     <button
                       onClick={() => setOrderFilters({
@@ -6096,13 +5997,13 @@ export const AutoPlanner: React.FC = () => {
               {errorMsg}
             </div>
           )}
-          
+
           {/* Визуализация прогресса оптимизации (пункт 14) */}
           {optimizationProgress && (
             <div className={clsx(
               'mb-4 rounded-2xl p-6 border-2 shadow-lg',
-              isDark 
-                ? 'border-blue-600/50 bg-gradient-to-br from-blue-900/30 to-indigo-900/30' 
+              isDark
+                ? 'border-blue-600/50 bg-gradient-to-br from-blue-900/30 to-indigo-900/30'
                 : 'border-blue-300 bg-gradient-to-br from-blue-50 to-indigo-50'
             )}>
               <div className="flex items-center gap-3 mb-4">
@@ -6183,7 +6084,7 @@ export const AutoPlanner: React.FC = () => {
               </div>
             </div>
           )}
-          
+
           <button
             onClick={planRoutes}
             disabled={isPlanning || (ordersCount === 0)}
@@ -6279,7 +6180,7 @@ export const AutoPlanner: React.FC = () => {
                   ℹ️ Сектор не задан. Тепловая карта будет показывать общую информацию о трафике. Для более точных данных задайте сектор в настройках.
                 </div>
               ) : null}
-              <Suspense 
+              <Suspense
                 fallback={
                   <div className={clsx('text-sm text-center py-8', isDark ? 'text-gray-400' : 'text-gray-600')}>
                     Загрузка карты трафика...
@@ -6415,7 +6316,7 @@ export const AutoPlanner: React.FC = () => {
           <div className="mt-6" data-tour="routes">
             <div className={clsx('flex items-center justify-between mb-4 flex-wrap gap-3', isDark ? 'text-gray-300' : 'text-gray-700')}>
               <div className={clsx('text-sm', isDark ? 'text-gray-300' : 'text-gray-700')}>
-                {plannedRoutes.length > 0 
+                {plannedRoutes.length > 0
                   ? `Сформировано маршрутов: ${plannedRoutes.length}${excludedOutsideSector > 0 ? ` (исключено вне сектора: ${excludedOutsideSector})` : ''}`
                   : 'Маршруты не созданы. Проверьте фильтры и логи в консоли браузера (F12).'}
               </div>
@@ -6432,7 +6333,7 @@ export const AutoPlanner: React.FC = () => {
                     <ChartBarIcon className="w-5 h-5" />
                     <span>Аналитика</span>
                   </button>
-                  
+
                   {/* Кнопка истории */}
                   <button
                     onClick={() => {
@@ -6457,7 +6358,7 @@ export const AutoPlanner: React.FC = () => {
                   </button>
                 </div>
               )}
-              
+
               {/* Метрики эффективности и предложения */}
               {plannedRoutes.length > 0 && routeEfficiencyMetrics && (
                 <div className={clsx('mt-4 p-4 rounded-xl border-2', isDark ? 'border-teal-700/50 bg-teal-900/20' : 'border-teal-200 bg-teal-50/50')}>
@@ -6512,11 +6413,11 @@ export const AutoPlanner: React.FC = () => {
                   className={clsx(
                     'rounded-3xl p-6 border-2 transition-all duration-300 transform hover:scale-[1.02] relative overflow-hidden',
                     selectedRoute?.id === r.id
-                      ? (isDark 
-                          ? 'border-blue-500 bg-gradient-to-br from-blue-900/40 via-indigo-900/30 to-purple-900/40 ring-4 ring-blue-500/50 shadow-2xl' 
+                      ? (isDark
+                          ? 'border-blue-500 bg-gradient-to-br from-blue-900/40 via-indigo-900/30 to-purple-900/40 ring-4 ring-blue-500/50 shadow-2xl'
                           : 'border-blue-500 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 ring-4 ring-blue-500/30 shadow-2xl')
-                      : (isDark 
-                          ? 'border-gray-700/50 bg-gradient-to-br from-gray-800/60 to-gray-900/60 hover:border-gray-600 hover:shadow-xl' 
+                      : (isDark
+                          ? 'border-gray-700/50 bg-gradient-to-br from-gray-800/60 to-gray-900/60 hover:border-gray-600 hover:shadow-xl'
                           : 'border-gray-200 bg-gradient-to-br from-white to-gray-50/50 hover:border-blue-300 hover:shadow-xl')
                   )}
                 >
@@ -6527,12 +6428,12 @@ export const AutoPlanner: React.FC = () => {
                       ? 'bg-gradient-to-br from-blue-500 to-purple-500'
                       : 'bg-gradient-to-br from-gray-400 to-gray-600'
                   )}></div>
-                  
+
                   {/* Заголовок маршрута - кликабельная область */}
-                  <div 
+                  <div
                     className="relative z-10 flex items-start justify-between mb-4"
                   >
-                    <div 
+                    <div
                       className="flex-1 cursor-pointer"
                       onClick={(e) => {
                         e.stopPropagation()
@@ -6573,7 +6474,7 @@ export const AutoPlanner: React.FC = () => {
                           )}
                         </div>
                       </div>
-                      
+
                       {/* Статистика маршрута - улучшенный дизайн */}
                       <div className="grid grid-cols-3 gap-3 mb-4">
                         <div className={clsx(
@@ -6625,7 +6526,7 @@ export const AutoPlanner: React.FC = () => {
                           <div className={clsx('text-xs mt-1', isDark ? 'text-gray-500' : 'text-gray-500')}>км</div>
                         </div>
                       </div>
-                      
+
                       {/* Отображаем все заказы из routeChainFull, даже если нет orderNumber */}
                         {r.routeChainFull && r.routeChainFull.length > 0 ? (
                           <div onClick={(e) => e.stopPropagation()}>
@@ -6641,17 +6542,17 @@ export const AutoPlanner: React.FC = () => {
                                       // Используем raw из fullOrder, если есть, иначе сам fullOrder
                                       // Также проверяем, что raw содержит все поля из Excel
                                       const orderRaw = fullOrder.raw || fullOrder
-                                      
+
                                       // Дополнительно проверяем: если raw не содержит нужные поля, но они есть в fullOrder
                                       // объединяем данные
                                       const combinedData = orderRaw === fullOrder ? fullOrder : { ...fullOrder, ...orderRaw }
-                                      
+
                                       // Функции для парсинга времени (с поддержкой формата Excel)
                                       const parseTime = (val: any): number | null => {
                                         if (!val && val !== 0) return null
                                         const s = String(val).trim()
                                         if (!s) return null
-                                        
+
                                         // Формат Excel дата+время: "2/11/25 13:06" или "M/d/yy HH:mm"
                                         const excelDateTimeMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i)
                                         if (excelDateTimeMatch) {
@@ -6661,11 +6562,11 @@ export const AutoPlanner: React.FC = () => {
                                           let hour = parseInt(excelDateTimeMatch[4], 10)
                                           const minute = parseInt(excelDateTimeMatch[5], 10)
                                           const ampm = excelDateTimeMatch[7]
-                                          
+
                                           if (year < 100) {
                                             year += year < 50 ? 2000 : 1900
                                           }
-                                          
+
                                           if (ampm) {
                                             if (ampm.toUpperCase() === 'PM' && hour !== 12) {
                                               hour += 12
@@ -6673,20 +6574,20 @@ export const AutoPlanner: React.FC = () => {
                                               hour = 0
                                             }
                                           }
-                                          
+
                                           const date = new Date(year, month - 1, day, hour, minute, 0)
                                           if (!isNaN(date.getTime())) {
                                             return date.getTime()
                                           }
                                         }
-                                        
+
                                         // Формат только время: "HH:mm:ss AM/PM" или "HH:mm:ss"
                                         const timeOnlyMatch = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i)
                                         if (timeOnlyMatch) {
                                           let hour = parseInt(timeOnlyMatch[1], 10)
                                           const minute = parseInt(timeOnlyMatch[2], 10)
                                           const ampm = timeOnlyMatch[4]
-                                          
+
                                           if (ampm) {
                                             if (ampm.toUpperCase() === 'PM' && hour !== 12) {
                                               hour += 12
@@ -6694,12 +6595,12 @@ export const AutoPlanner: React.FC = () => {
                                               hour = 0
                                             }
                                           }
-                                          
+
                                           const base = new Date()
                                           base.setHours(hour, minute, 0, 0)
                                           return base.getTime()
                                         }
-                                        
+
                                         // Формат HH:mm (простой)
                                         const simpleTimeMatch = s.match(/^([01]?\d|2[0-3]):([0-5]\d)$/)
                                         if (simpleTimeMatch) {
@@ -6707,18 +6608,18 @@ export const AutoPlanner: React.FC = () => {
                                           base.setHours(parseInt(simpleTimeMatch[1], 10), parseInt(simpleTimeMatch[2], 10), 0, 0)
                                           return base.getTime()
                                         }
-                                        
+
                                         // Попытка распарсить как Date
                                         const d = new Date(s)
                                         if (!isNaN(d.getTime()) && d.getFullYear() > 2000) {
                                           return d.getTime()
                                         }
-                                        
+
                                         return null
                                       }
-                                      
+
                                       const getKitchenTime = (o: any): number | null => {
-                                        
+
                                         // Ищем время во всех возможных полях, проверяя как точные совпадения, так и регистронезависимо
                                         const possibleFields = [
                                           'время на кухню', 'время_на_кухню', 'Время на кухню', 'Время_на_кухню', 'ВРЕМЯ НА КУХНЮ',
@@ -6729,7 +6630,7 @@ export const AutoPlanner: React.FC = () => {
                                           'Готовность', 'готовность', 'ГОТОВНОСТЬ',
                                           'kitchenTime' // Из excelProcessor
                                         ]
-                                        
+
                                         // Сначала проверяем точные совпадения
                                         for (const field of possibleFields) {
                                           const value = o[field]
@@ -6741,7 +6642,7 @@ export const AutoPlanner: React.FC = () => {
                                             }
                                           }
                                         }
-                                        
+
                                         // Затем проверяем регистронезависимо все ключи объекта на наличие полных фраз
                                         // Расширенный поиск по ключевым словам
                                         const searchPhrases = [
@@ -6751,7 +6652,7 @@ export const AutoPlanner: React.FC = () => {
                                           'готовность', 'ready time', 'ready_time', 'readytime',
                                           'time to kitchen', 'timetokitchen'
                                         ]
-                                        
+
                                         // Сначала ищем по полному совпадению фразы
                                         for (const key in o) {
                                           const lowerKey = key.toLowerCase().trim()
@@ -6762,15 +6663,15 @@ export const AutoPlanner: React.FC = () => {
                                             }
                                           }
                                         }
-                                        
+
                                         // Если не нашли, пробуем найти по отдельным ключевым словам
                                         const keywords = ['кухню', 'kitchen', 'готовности', 'ready']
                                         for (const key in o) {
                                           const lowerKey = key.toLowerCase().trim()
                                           // Пропускаем поля, связанные с плановым временем
-                                          if (lowerKey.includes('планов') || lowerKey.includes('planned') || 
+                                          if (lowerKey.includes('планов') || lowerKey.includes('planned') ||
                                               lowerKey.includes('дедлайн') || lowerKey.includes('deadline')) continue
-                                          
+
                                           // Проверяем, содержит ли название поля ключевые слова
                                           for (const keyword of keywords) {
                                             if (lowerKey.includes(keyword)) {
@@ -6779,13 +6680,13 @@ export const AutoPlanner: React.FC = () => {
                                             }
                                           }
                                         }
-                                        
+
                                         return null
                                       }
-                                      
+
                                       const getPlannedTime = (o: any): number | null => {
                                         // Используем ту же функцию parseTime, что определена выше
-                                        
+
                                         // Ищем время во всех возможных полях
                                         const possibleFields = [
                                           'плановое время', 'плановое_время', 'Плановое время', 'Плановое_время', 'ПЛАНОВОЕ ВРЕМЯ',
@@ -6798,7 +6699,7 @@ export const AutoPlanner: React.FC = () => {
                                           'доставить к', 'доставить_к', 'Доставить к', // Из Excel таблицы
                                           'plannedTime' // Из excelProcessor
                                         ]
-                                        
+
                                         // Сначала проверяем точные совпадения
                                         for (const field of possibleFields) {
                                           const value = o[field]
@@ -6810,7 +6711,7 @@ export const AutoPlanner: React.FC = () => {
                                             }
                                           }
                                         }
-                                        
+
                                         // Затем проверяем регистронезависимо все ключи объекта на наличие полных фраз (исключая поля связанные с кухней)
                                         const searchPhrases = [
                                           'плановое время', 'плановое_время', 'плановоевремя', 'плановоевремя',
@@ -6819,14 +6720,14 @@ export const AutoPlanner: React.FC = () => {
                                           'время доставки', 'время_доставки', 'времядодоставки',
                                           'delivery_time', 'deliverytime', 'delivery time', 'deliverytime'
                                         ]
-                                        
+
                                         // Сначала ищем по полному совпадению фразы
                                         for (const key in o) {
                                           const lowerKey = key.toLowerCase().trim()
                                           // Пропускаем поля связанные с кухней
-                                          if (lowerKey.includes('кухню') || lowerKey.includes('kitchen') || 
+                                          if (lowerKey.includes('кухню') || lowerKey.includes('kitchen') ||
                                               lowerKey.includes('готовности') || lowerKey.includes('ready')) continue
-                                          
+
                                           // Ищем полные фразы в названии поля
                                           for (const phrase of searchPhrases) {
                                             if (lowerKey === phrase || lowerKey.includes(phrase)) {
@@ -6835,7 +6736,7 @@ export const AutoPlanner: React.FC = () => {
                                             }
                                           }
                                         }
-                                        
+
                                         // Если не нашли, пробуем найти по отдельным ключевым словам
                                         const keywords = ['планов', 'planned', 'дедлайн', 'deadline', 'доставки', 'delivery']
                                         for (const key in o) {
@@ -6843,7 +6744,7 @@ export const AutoPlanner: React.FC = () => {
                                           // Пропускаем поля связанные с кухней
                                           if (lowerKey.includes('кухню') || lowerKey.includes('kitchen') ||
                                               lowerKey.includes('готовности') || lowerKey.includes('ready')) continue
-                                          
+
                                           // Проверяем, содержит ли название поля ключевые слова
                                           for (const keyword of keywords) {
                                             if (lowerKey.includes(keyword)) {
@@ -6852,15 +6753,15 @@ export const AutoPlanner: React.FC = () => {
                                             }
                                           }
                                         }
-                                        
+
                                         return null
                                       }
-                                      
+
                                       // ВАЖНО: Для отображения "время на кухню" используем readyAtSource (без упаковки),
                                       // а НЕ readyAt (который содержит +4 минуты упаковки)
                                       let readyAt = fullOrder.readyAtSource || null
                                       let deadlineAt = fullOrder.deadlineAt
-                                      
+
                                       // Пробуем извлечь из combinedData (объединенные данные)
                                       if ((!readyAt || readyAt === null)) {
                                         // Сначала из combinedData (БЕЗ добавления упаковки, т.к. это время готовности)
@@ -6868,13 +6769,13 @@ export const AutoPlanner: React.FC = () => {
                                         if (ready) {
                                           readyAt = ready // БЕЗ +4 мин упаковки для отображения
                                           console.log('✅ Найдено время на кухню в combinedData:', ready)
-                                        } else if (orderRaw && orderRaw !== fullOrder) {
+                                          } else if (orderRaw && orderRaw !== fullOrder) {
                                           // Затем из orderRaw отдельно
                                           const ready2 = getKitchenTime(orderRaw)
                                           if (ready2) {
                                             readyAt = ready2 // БЕЗ +4 мин упаковки для отображения
                                             console.log('✅ Найдено время на кухню в orderRaw:', ready2)
-                                          }
+                                            }
                                         }
                                         // И наконец из fullOrder напрямую
                                         if (!readyAt) {
@@ -6882,23 +6783,23 @@ export const AutoPlanner: React.FC = () => {
                                           if (ready3) {
                                             readyAt = ready3 // БЕЗ +4 мин упаковки для отображения
                                             console.log('✅ Найдено время на кухню в fullOrder:', ready3)
-                                          }
+                                            }
                                         }
                                       }
-                                      
+
                                       if ((!deadlineAt || deadlineAt === null)) {
                                         // Сначала из combinedData
                                         const deadline = getPlannedTime(combinedData)
                                         if (deadline) {
                                           deadlineAt = deadline
                                           console.log('✅ Найдено плановое время в combinedData:', deadline)
-                                        } else if (orderRaw && orderRaw !== fullOrder) {
+                                          } else if (orderRaw && orderRaw !== fullOrder) {
                                           // Затем из orderRaw отдельно
                                           const deadline2 = getPlannedTime(orderRaw)
                                           if (deadline2) {
                                             deadlineAt = deadline2
                                             console.log('✅ Найдено плановое время в orderRaw:', deadline2)
-                                          }
+                                            }
                                         }
                                         // И наконец из fullOrder напрямую
                                         if (!deadlineAt) {
@@ -6906,25 +6807,25 @@ export const AutoPlanner: React.FC = () => {
                                           if (deadline3) {
                                             deadlineAt = deadline3
                                             console.log('✅ Найдено плановое время в fullOrder:', deadline3)
-                                          }
+                                            }
                                         }
                                       }
-                                      
+
                                       // Отладочная информация - показываем все поля для диагностики
                                       const allKeysRaw = orderRaw ? Object.keys(orderRaw) : []
                                       const allKeysFull = Object.keys(fullOrder)
                                       const allKeysCombined = Object.keys(combinedData)
-                                      
+
                                       const timeRelatedKeys = [...allKeysRaw, ...allKeysFull, ...allKeysCombined]
                                         .filter((key, index, self) => self.indexOf(key) === index) // уникальные
                                         .filter(key => {
                                           const lowerKey = key.toLowerCase()
-                                          return lowerKey.includes('время') || lowerKey.includes('time') || 
+                                          return lowerKey.includes('время') || lowerKey.includes('time') ||
                                                  lowerKey.includes('кухню') || lowerKey.includes('kitchen') ||
                                                  lowerKey.includes('планов') || lowerKey.includes('planned') ||
                                                  lowerKey.includes('дедлайн') || lowerKey.includes('deadline')
                                         })
-                                      
+
                                       console.log('🔍 Отладка данных заказа:', {
                                         orderNumber: orderNum,
                                         'fullOrder.readyAt': fullOrder.readyAt,
@@ -6948,10 +6849,10 @@ export const AutoPlanner: React.FC = () => {
                                           return acc
                                         }, {} as Record<string, any>)
                                       })
-                                      
+
                                       // Собираем все данные для selectedOrder, убеждаясь что raw содержит все поля из Excel
                                       const finalRaw = combinedData || orderRaw || fullOrder
-                                      
+
                                       console.log('📦 [Установка selectedOrder]', {
                                         orderNumber: orderNum,
                                         'fullOrder.address': fullOrder.address,
@@ -6965,7 +6866,7 @@ export const AutoPlanner: React.FC = () => {
                                         'finalRaw["плановое время"]': finalRaw['плановое время'],
                                         'finalRaw["доставить к"]': finalRaw['доставить к'],
                                       })
-                                      
+
                                       // Защита от undefined и обеспечение корректной структуры
                                       const safeOrder = {
                                         orderNumber: orderNum || '',
@@ -6976,7 +6877,7 @@ export const AutoPlanner: React.FC = () => {
                                         deadlineAtSource: fullOrder?.deadlineAtSource || combinedData?.deadlineAtSource || orderRaw?.deadlineAtSource || null,
                                         raw: finalRaw || {} // Всегда объект, даже если пустой
                                       }
-                                      
+
                                       setSelectedOrder(safeOrder)
                                     }
                                   }}
@@ -7053,14 +6954,14 @@ export const AutoPlanner: React.FC = () => {
                         )}
                     </div>
                   </div>
-                  
+
                   {/* Развернутый контент маршрута */}
                   {selectedRoute?.id === r.id && (
-                    <div 
+                    <div
                       className={clsx('mt-4 pt-4 border-t space-y-4', isDark ? 'border-gray-700' : 'border-gray-200')}
                       onClick={(e) => e.stopPropagation()} // Предотвращаем всплытие кликов
                     >
-                      
+
                       {/* Порядок адресов */}
                       {r.routeChain && (
                         <div onClick={(e) => e.stopPropagation()}>
@@ -7083,7 +6984,7 @@ export const AutoPlanner: React.FC = () => {
                           </div>
                         </div>
                       )}
-                      
+
                       {/* Уведомления */}
                       {enableNotifications && routeNotifications.has(r.id) && (
                         <div onClick={(e) => e.stopPropagation()}>
@@ -7130,30 +7031,30 @@ export const AutoPlanner: React.FC = () => {
                       )}
 
                       {/* Карта */}
-                      <RouteMap 
-                        route={r} 
+                      <RouteMap
+                        route={r}
                         onMarkerClick={(fullOrder) => {
                           // Находим индекс заказа в маршруте
-                          const orderIdx = r.routeChainFull?.findIndex((o: any) => 
-                            o.address === fullOrder.address && 
+                          const orderIdx = r.routeChainFull?.findIndex((o: any) =>
+                            o.address === fullOrder.address &&
                             (o.orderNumber === fullOrder.orderNumber || o.raw?.orderNumber === fullOrder.raw?.orderNumber)
                           ) ?? -1
-                          
+
                           if (orderIdx >= 0 && r.orderNumbers) {
                             const orderNum = r.orderNumbers[orderIdx]
-                            
+
                             // Используем ту же логику, что и при клике на номер заказа
                             const orderRaw = fullOrder.raw || fullOrder
-                            
+
                             // Объединяем данные из fullOrder и orderRaw
                             const combinedData = orderRaw === fullOrder ? fullOrder : { ...fullOrder, ...orderRaw }
-                            
+
                             // Функции для парсинга времени (с поддержкой формата Excel)
                             const parseTime = (val: any): number | null => {
                               if (!val && val !== 0) return null
                               const s = String(val).trim()
                               if (!s) return null
-                              
+
                               // Формат Excel дата+время: "2/11/25 13:06" или "M/d/yy HH:mm" (месяц/день/год)
                               // ИЛИ "29/10/25 13:30" или "DD/MM/YY HH:mm" (день/месяц/год) - когда день > 12
                               const excelDateTimeMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i)
@@ -7165,7 +7066,7 @@ export const AutoPlanner: React.FC = () => {
                                 const minute = parseInt(excelDateTimeMatch[5], 10)
                                 const timeSecond = excelDateTimeMatch[6] ? parseInt(excelDateTimeMatch[6], 10) : 0
                                 const ampm = excelDateTimeMatch[7]
-                                
+
                                 // Определяем формат: если первое число > 12, это DD/MM/YY (день/месяц/год)
                                 // Иначе это M/d/yy (месяц/день/год)
                                 let month, day
@@ -7183,11 +7084,11 @@ export const AutoPlanner: React.FC = () => {
                                   month = first
                                   day = secondNum
                                 }
-                                
+
                                 if (year < 100) {
                                   year += year < 50 ? 2000 : 1900
                                 }
-                                
+
                                 if (ampm) {
                                   if (ampm.toUpperCase() === 'PM' && hour !== 12) {
                                     hour += 12
@@ -7195,25 +7096,25 @@ export const AutoPlanner: React.FC = () => {
                                     hour = 0
                                   }
                                 }
-                                
+
                                 // Валидация даты
                                 if (month < 1 || month > 12 || day < 1 || day > 31) {
                                   return null
                                 }
-                                
+
                                 const date = new Date(year, month - 1, day, hour, minute, timeSecond)
                                 if (!isNaN(date.getTime())) {
                                   return date.getTime()
                                 }
                               }
-                              
+
                               // Формат только время: "HH:mm:ss AM/PM" или "HH:mm:ss"
                               const timeOnlyMatch = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i)
                               if (timeOnlyMatch) {
                                 let hour = parseInt(timeOnlyMatch[1], 10)
                                 const minute = parseInt(timeOnlyMatch[2], 10)
                                 const ampm = timeOnlyMatch[4]
-                                
+
                                 if (ampm) {
                                   if (ampm.toUpperCase() === 'PM' && hour !== 12) {
                                     hour += 12
@@ -7221,12 +7122,12 @@ export const AutoPlanner: React.FC = () => {
                                     hour = 0
                                   }
                                 }
-                                
+
                                 const base = new Date()
                                 base.setHours(hour, minute, 0, 0)
                                 return base.getTime()
                               }
-                              
+
                               // Формат "HH:MM"
                               const m = s.match(/^([01]?\d|2[0-3]):([0-5]\d)$/)
                               if (m) {
@@ -7234,16 +7135,16 @@ export const AutoPlanner: React.FC = () => {
                                 base.setHours(parseInt(m[1], 10), parseInt(m[2], 10), 0, 0)
                                 return base.getTime()
                               }
-                              
+
                               // Попытка распарсить как Date
                               const d = new Date(s)
                               if (!isNaN(d.getTime()) && d.getFullYear() > 2000) {
                                 return d.getTime()
                               }
-                              
+
                               return null
                             }
-                            
+
                             const getKitchenTime = (o: any): number | null => {
                               // Сначала проверяем точные совпадения
                               const exactFields = [
@@ -7258,7 +7159,7 @@ export const AutoPlanner: React.FC = () => {
                                 'Время готовности', 'время готовности', 'Готовность', 'готовность',
                                 'kitchenTime' // Из excelProcessor
                               ]
-                              
+
                               for (const field of exactFields) {
                                 const value = o[field]
                                 if (value !== undefined && value !== null && String(value).trim() !== '') {
@@ -7269,7 +7170,7 @@ export const AutoPlanner: React.FC = () => {
                                   }
                                 }
                               }
-                              
+
                               // Проверяем также raw данные если они есть
                               if (o.raw) {
                                 for (const field of exactFields) {
@@ -7283,7 +7184,7 @@ export const AutoPlanner: React.FC = () => {
                                   }
                                 }
                               }
-                              
+
                               // Затем проверяем регистронезависимо на наличие полных фраз
                               const searchPhrases = [
                                 'время на кухню', 'время_на_кухню', 'времянакухню',
@@ -7294,7 +7195,7 @@ export const AutoPlanner: React.FC = () => {
                                 'час готовності',
                                 'готовность', 'готовність'
                               ]
-                              
+
                               // Сначала ищем по точным фразам в основных полях
                               for (const key in o) {
                                 if (key === 'raw') continue
@@ -7309,7 +7210,7 @@ export const AutoPlanner: React.FC = () => {
                                   }
                                 }
                               }
-                              
+
                               // Затем ищем в raw по точным фразам
                               if (o.raw) {
                                 for (const key in o.raw) {
@@ -7325,25 +7226,25 @@ export const AutoPlanner: React.FC = () => {
                                   }
                                 }
                               }
-                              
+
                               // Если не нашли, ищем по ключевым словам (более гибкий поиск)
                               const keywords = ['кухню', 'кухні', 'kitchen', 'готовности', 'готовності', 'ready']
-                              
+
                               // В основных полях
                               for (const key in o) {
                                 if (key === 'raw') continue
                                 const lowerKey = key.toLowerCase().trim()
-                                
+
                                 // Проверяем, содержит ли название ключевые слова
                                 const hasKeyword = keywords.some(kw => lowerKey.includes(kw))
                                 // Исключаем поля, связанные с плановым временем/дедлайном
-                                const isNotDeadline = !lowerKey.includes('планов') && 
-                                                       !lowerKey.includes('planned') && 
-                                                       !lowerKey.includes('дедлайн') && 
+                                const isNotDeadline = !lowerKey.includes('планов') &&
+                                                       !lowerKey.includes('planned') &&
+                                                       !lowerKey.includes('дедлайн') &&
                                                        !lowerKey.includes('deadline') &&
                                                        !lowerKey.includes('доставки') &&
                                                        !lowerKey.includes('delivery')
-                                
+
                                 if (hasKeyword && isNotDeadline) {
                                   const parsed = parseTime(o[key])
                                   if (parsed) {
@@ -7352,22 +7253,22 @@ export const AutoPlanner: React.FC = () => {
                                   }
                                 }
                               }
-                              
+
                               // В raw данных
                               if (o.raw) {
                                 for (const key in o.raw) {
                                   const lowerKey = key.toLowerCase().trim()
-                                  
+
                                   // Проверяем, содержит ли название ключевые слова
                                   const hasKeyword = keywords.some(kw => lowerKey.includes(kw))
                                   // Исключаем поля, связанные с плановым временем/дедлайном
-                                  const isNotDeadline = !lowerKey.includes('планов') && 
-                                                         !lowerKey.includes('planned') && 
-                                                         !lowerKey.includes('дедлайн') && 
+                                  const isNotDeadline = !lowerKey.includes('планов') &&
+                                                         !lowerKey.includes('planned') &&
+                                                         !lowerKey.includes('дедлайн') &&
                                                          !lowerKey.includes('deadline') &&
                                                          !lowerKey.includes('доставки') &&
                                                          !lowerKey.includes('delivery')
-                                  
+
                                   if (hasKeyword && isNotDeadline) {
                                     const parsed = parseTime(o.raw[key])
                                     if (parsed) {
@@ -7377,10 +7278,10 @@ export const AutoPlanner: React.FC = () => {
                                   }
                                 }
                               }
-                              
+
                               return null
                             }
-                            
+
                             const getPlannedTime = (o: any): number | null => {
                               // Используем ту же функцию parseTime, что определена выше
                               // Сначала проверяем точные совпадения
@@ -7394,7 +7295,7 @@ export const AutoPlanner: React.FC = () => {
                                 'доставить к', 'доставить_к', 'Доставить к', // Из Excel таблицы
                                 'plannedTime' // Из excelProcessor
                               ]
-                              
+
                               for (const field of exactFields) {
                                 const value = o[field]
                                 if (value !== undefined && value !== null && String(value).trim() !== '') {
@@ -7405,7 +7306,7 @@ export const AutoPlanner: React.FC = () => {
                                   }
                                 }
                               }
-                              
+
                               // Проверяем также raw данные если они есть
                               if (o.raw) {
                                 for (const field of exactFields) {
@@ -7419,7 +7320,7 @@ export const AutoPlanner: React.FC = () => {
                                   }
                                 }
                               }
-                              
+
                               // Затем проверяем регистронезависимо на наличие полных фраз (исключая поля связанные с кухней)
                               const searchPhrases = [
                                 'плановое время', 'плановое_время', 'плановоевремя',
@@ -7432,7 +7333,7 @@ export const AutoPlanner: React.FC = () => {
                                 const lowerKey = key.toLowerCase().trim()
                                 // Пропускаем поля связанные с кухней
                                 if (lowerKey.includes('кухню') || lowerKey.includes('kitchen')) continue
-                                
+
                                 for (const phrase of searchPhrases) {
                                   if (lowerKey === phrase || lowerKey.includes(phrase)) {
                                     const parsed = parseTime(o[key])
@@ -7440,14 +7341,14 @@ export const AutoPlanner: React.FC = () => {
                                   }
                                 }
                               }
-                              
+
                               return null
                             }
-                            
+
                             // ВАЖНО: Для отображения "время на кухню" используем readyAtSource (без упаковки)
                             let readyAt = fullOrder.readyAtSource || null
                             let deadlineAt = fullOrder.deadlineAt
-                            
+
                             // Пробуем извлечь из combinedData (объединенные данные)
                             if ((!readyAt || readyAt === null)) {
                               // Сначала из combinedData (БЕЗ добавления упаковки, т.к. это время готовности)
@@ -7472,7 +7373,7 @@ export const AutoPlanner: React.FC = () => {
                                 }
                               }
                             }
-                            
+
                             if ((!deadlineAt || deadlineAt === null)) {
                               // Сначала из combinedData
                               const deadline = getPlannedTime(combinedData)
@@ -7496,10 +7397,10 @@ export const AutoPlanner: React.FC = () => {
                                 }
                               }
                             }
-                            
+
                             // Собираем все данные для selectedOrder, убеждаясь что raw содержит все поля из Excel
                             const finalRaw = combinedData || orderRaw || fullOrder
-                            
+
                             console.log('📦 [Установка selectedOrder из маркера]', {
                               orderNumber: orderNum,
                               'fullOrder.address': fullOrder.address,
@@ -7513,7 +7414,7 @@ export const AutoPlanner: React.FC = () => {
                               'finalRaw["плановое время"]': finalRaw['плановое время'],
                               'finalRaw["доставить к"]': finalRaw['доставить к'],
                             })
-                            
+
                             // Защита от undefined и обеспечение корректной структуры
                             const safeOrder = {
                               orderNumber: orderNum || '',
@@ -7524,7 +7425,7 @@ export const AutoPlanner: React.FC = () => {
                               deadlineAtSource: fullOrder?.deadlineAtSource || combinedData?.deadlineAtSource || orderRaw?.deadlineAtSource || null,
                               raw: finalRaw || {} // Всегда объект, даже если пустой
                             }
-                            
+
                             setSelectedOrder(safeOrder)
                           }
                         }}
@@ -7536,7 +7437,7 @@ export const AutoPlanner: React.FC = () => {
             </div>
           </div>
         )}
-        
+
         {isPlanning && (
           <div className={clsx('mt-6 rounded-lg p-4 border', isDark ? 'border-blue-700 bg-blue-900/20' : 'border-blue-200 bg-blue-50')}>
             <div className={clsx('text-sm', isDark ? 'text-blue-200' : 'text-blue-700')}>
@@ -7548,11 +7449,11 @@ export const AutoPlanner: React.FC = () => {
 
       {/* Модальное окно с информацией о заказе */}
       {selectedOrder && (
-        <div 
+        <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
           onClick={() => setSelectedOrder(null)}
         >
-          <div 
+          <div
             className={clsx(
               'relative w-full max-w-md mx-4 rounded-xl shadow-2xl',
               isDark ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'
@@ -7604,36 +7505,36 @@ export const AutoPlanner: React.FC = () => {
                       </div>
                     )
                   }
-                  
+
                   // ВАЖНО: Для отображения "время на кухню" используем readyAtSource (без упаковки),
                   // а НЕ readyAt (который содержит +4 минуты упаковки)
                   let readyAt: number | null = selectedOrder.readyAtSource || null
                   let readyText: string | null = null // Для длительностей (например, "43мин.")
-                  
+
                   // Если readyAtSource не найден, пробуем найти время в raw данных
                   // (getKitchenTime недоступна здесь, поэтому используем прямую проверку)
-                  
+
                   // Локальная функция парсинга времени (без рекурсии)
                   // isKitchenTime: если true, то для Excel serial numbers извлекаем только время и применяем к дате заказа
                   const parseTimeLocal = (val: any, depth: number = 0, isKitchenTime: boolean = false): number | null => {
                     // Защита от бесконечной рекурсии
                     if (depth > 3) return null
-                    
+
                     if (!val && val !== 0) return null
                     const s = String(val).trim()
                     if (!s) return null
-                    
+
                     // Пропускаем некорректные значения Excel (##########)
                     if (s.includes('#')) {
                       return null
                     }
-                    
+
                     const strVal = s.toLowerCase()
                     // Пропускаем длительности (но сохраняем их как текст)
                     if (strVal.includes('мин.') || strVal.includes('час') || strVal.includes('min') || strVal.includes('hour')) {
                       return null
                     }
-                    
+
                     // Формат DD.MM.YYYY HH:MM:SS или DD.MM.YYYY HH:MM (например, "10.10.2025 11:02:21")
                     const dotDateTimeMatch = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/i)
                     if (dotDateTimeMatch) {
@@ -7643,13 +7544,13 @@ export const AutoPlanner: React.FC = () => {
                       let hour = parseInt(dotDateTimeMatch[4], 10)
                       const minute = parseInt(dotDateTimeMatch[5], 10)
                       const second = dotDateTimeMatch[6] ? parseInt(dotDateTimeMatch[6], 10) : 0
-                      
+
                       const date = new Date(year, month - 1, day, hour, minute, second)
                       if (!isNaN(date.getTime())) {
                         return date.getTime()
                       }
                     }
-                    
+
                     // Формат только время с секундами: "HH:mm:ss AM/PM" или "HH:mm:ss" (например, "11:48:17", "10:32:21 AM")
                     const timeOnlyMatch = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i)
                     if (timeOnlyMatch) {
@@ -7657,7 +7558,7 @@ export const AutoPlanner: React.FC = () => {
                       const minute = parseInt(timeOnlyMatch[2], 10)
                       const second = timeOnlyMatch[3] ? parseInt(timeOnlyMatch[3], 10) : 0
                       const ampm = timeOnlyMatch[4]
-                      
+
                       if (ampm) {
                         if (ampm.toUpperCase() === 'PM' && hour !== 12) {
                           hour += 12
@@ -7665,12 +7566,12 @@ export const AutoPlanner: React.FC = () => {
                           hour = 0
                         }
                       }
-                      
+
                       const base = new Date()
                       base.setHours(hour, minute, second, 0)
                       return base.getTime()
                     }
-                    
+
                     // Формат HH:mm (простой)
                     const simpleTimeMatch = s.match(/^([01]?\d|2[0-3]):([0-5]\d)$/)
                     if (simpleTimeMatch) {
@@ -7678,7 +7579,7 @@ export const AutoPlanner: React.FC = () => {
                       base.setHours(parseInt(simpleTimeMatch[1], 10), parseInt(simpleTimeMatch[2], 10), 0, 0)
                       return base.getTime()
                     }
-                    
+
                     // Пробуем распарсить как Excel serial number (дата+время или только время)
                     // Сначала проверяем, является ли это числом (или строкой с числом)
                     const excelTime = typeof val === 'number' ? val : parseFloat(s)
@@ -7690,7 +7591,7 @@ export const AutoPlanner: React.FC = () => {
                         // Excel serial date: количество дней с 1 января 1900 + дробная часть (время дня)
                         const days = Math.floor(excelTime)
                         const timeFraction = excelTime - days
-                        
+
                         // Для "время на кухню" извлекаем только время и применяем к дате заказа
                         if (isKitchenTime) {
                           // Извлекаем только время из дробной части (более точный расчет)
@@ -7699,10 +7600,10 @@ export const AutoPlanner: React.FC = () => {
                           const hours = Math.floor(totalHours)
                           const minutes = Math.floor((totalHours - hours) * 60)
                           const seconds = Math.round(((totalHours - hours) * 60 - minutes) * 60)
-                          
+
                           // Пытаемся найти дату заказа из других полей
                           let targetDate = new Date()
-                          
+
                           // Сначала проверяем готовые поля объекта заказа
                           if (selectedOrder?.deadlineAt) {
                             const deadlineDate = new Date(selectedOrder.deadlineAt)
@@ -7710,11 +7611,11 @@ export const AutoPlanner: React.FC = () => {
                               targetDate = new Date(deadlineDate.getFullYear(), deadlineDate.getMonth(), deadlineDate.getDate(), 0, 0, 0, 0)
                             }
                           }
-                          
+
                           // Затем проверяем raw данные
                           if (selectedOrder?.raw && depth < 2) {
                             // Ищем дату в полях "доставить к", "плановое время" и т.д.
-                            const dateKeys = ['доставить к', 'доставить_к', 'плановое время', 'плановое_время', 
+                            const dateKeys = ['доставить к', 'доставить_к', 'плановое время', 'плановое_время',
                                              'Дата.доставить к', 'Дата.плановое время', 'plannedTime', 'deadlineAt']
                             for (const dateKey of dateKeys) {
                               const dateValue = selectedOrder.raw[dateKey]
@@ -7746,10 +7647,10 @@ export const AutoPlanner: React.FC = () => {
                               }
                             }
                           }
-                          
+
                           // Применяем извлеченное время к дате заказа
                           targetDate.setHours(hours, minutes, seconds, 0)
-                          
+
                           if (!isNaN(targetDate.getTime())) {
                             console.log(`✅ [parseTimeLocal] Распарсен Excel serial для времени на кухню: ${excelTime} → время ${hours}:${String(minutes).padStart(2, '0')} применено к дате ${targetDate.toLocaleDateString('ru-RU')}`)
                             return targetDate.getTime()
@@ -7761,15 +7662,15 @@ export const AutoPlanner: React.FC = () => {
                           // JavaScript Date использует UTC, поэтому используем UTC методы
                           const excelEpoch = new Date(Date.UTC(1899, 11, 30)) // 30 декабря 1899 UTC
                           const date = new Date(excelEpoch.getTime() + days * 86400 * 1000)
-                          
+
                           // Добавляем время дня (дробная часть) - более точный расчет
                           const totalHours = timeFraction * 24
                           const hours = Math.floor(totalHours)
                           const minutes = Math.floor((totalHours - hours) * 60)
                           const seconds = Math.round(((totalHours - hours) * 60 - minutes) * 60)
-                          
+
                           date.setUTCHours(hours, minutes, seconds, 0)
-                          
+
                           if (!isNaN(date.getTime()) && date.getFullYear() > 2000) {
                             console.log(`✅ [parseTimeLocal] Распарсен Excel serial date+time: ${excelTime} → ${date.toLocaleString('ru-RU')}`)
                             return date.getTime()
@@ -7782,11 +7683,11 @@ export const AutoPlanner: React.FC = () => {
                         const totalMinutes = Math.round(excelTime * 24 * 60) // Общее количество минут в дне
                         const hours = Math.floor(totalMinutes / 60)
                         const minutes = totalMinutes % 60
-                        
+
                         // Используем дату из "доставить к" или "плановое время", если она доступна
                         let targetDate = new Date()
                         if (selectedOrder?.raw && depth < 2) {
-                          const dateKeys = ['доставить к', 'доставить_к', 'плановое время', 'плановое_время', 
+                          const dateKeys = ['доставить к', 'доставить_к', 'плановое время', 'плановое_время',
                                            'Дата.доставить к', 'Дата.плановое время', 'plannedTime']
                           for (const dateKey of dateKeys) {
                             const dateValue = selectedOrder.raw[dateKey]
@@ -7818,21 +7719,21 @@ export const AutoPlanner: React.FC = () => {
                             }
                           }
                         }
-                        
+
                         targetDate.setHours(hours, minutes, 0, 0)
                         return targetDate.getTime()
                       }
                     }
-                    
+
                     // Пробуем распарсить как дату/время
                     const date = new Date(s)
                     if (!isNaN(date.getTime()) && date.getFullYear() > 2000) {
                       return date.getTime()
                     }
-                    
+
                     return null
                   }
-                  
+
                   // Проверяем основные поля объекта ПЕРВЫМИ (включая русские/украинские названия)
                   const directFields = [
                     'kitchenTime', 'kitchen_time', 'KitchenTime', 'KITCHEN_TIME',
@@ -7866,7 +7767,7 @@ export const AutoPlanner: React.FC = () => {
                       }
                     }
                   }
-                  
+
                   // Если не нашли в основных полях, проверяем raw
                   if (!readyAt && !readyText && selectedOrder?.raw) {
                     // Проверяем основные поля в raw (включая русские/украинские)
@@ -7877,9 +7778,9 @@ export const AutoPlanner: React.FC = () => {
                         const strVal = String(value).trim().toLowerCase()
                         // Проверяем, это длительность или время
                         // Важно: не блокируем парсинг Excel serial numbers (числа >= 25569)
-                        const isDuration = strVal.includes('мин.') || 
-                                          (strVal.includes('час') && !/^\d+\.?\d*$/.test(strVal)) || 
-                                          strVal.includes('min') || 
+                        const isDuration = strVal.includes('мин.') ||
+                                          (strVal.includes('час') && !/^\d+\.?\d*$/.test(strVal)) ||
+                                          strVal.includes('min') ||
                                           strVal.includes('hour')
                         if (isDuration) {
                           readyText = String(value).trim()
@@ -7893,12 +7794,11 @@ export const AutoPlanner: React.FC = () => {
                             console.log(`✅ [Модальное окно] Найдено время на кухню в raw.${field}: ${value} → ${new Date(parsed).toLocaleString('ru-RU')}`)
                             break
                           } else {
-                            console.log(`⚠️ [Модальное окно] Не удалось распарсить raw.${field} = ${value}`)
-                          }
+                            }
                         }
                       }
                     }
-                    
+
                     // Затем проверяем регистронезависимый поиск по всем ключам в raw (на случай нестандартных названий)
                     if (!readyAt && !readyText) {
                       const raw = selectedOrder.raw
@@ -7910,7 +7810,7 @@ export const AutoPlanner: React.FC = () => {
                         'час готовності',
                         'готовность', 'готовність'
                       ]
-                      
+
                       // Сначала ищем по точным фразам
                       for (const key in raw) {
                         if (!raw.hasOwnProperty(key)) continue
@@ -7938,24 +7838,24 @@ export const AutoPlanner: React.FC = () => {
                         }
                         if (readyAt || readyText) break
                       }
-                      
+
                       // Если не нашли, ищем по ключевым словам (более гибкий поиск)
                       if (!readyAt && !readyText) {
                         const keywords = ['кухню', 'кухні', 'kitchen', 'готовности', 'готовності', 'ready']
                         for (const key in raw) {
                           if (!raw.hasOwnProperty(key)) continue
                           const lowerKey = key.toLowerCase().trim()
-                          
+
                           // Проверяем, содержит ли название ключевые слова
                           const hasKeyword = keywords.some(kw => lowerKey.includes(kw))
                           // Исключаем поля, связанные с плановым временем/дедлайном
-                          const isNotDeadline = !lowerKey.includes('планов') && 
-                                                 !lowerKey.includes('planned') && 
-                                                 !lowerKey.includes('дедлайн') && 
+                          const isNotDeadline = !lowerKey.includes('планов') &&
+                                                 !lowerKey.includes('planned') &&
+                                                 !lowerKey.includes('дедлайн') &&
                                                  !lowerKey.includes('deadline') &&
                                                  !lowerKey.includes('доставки') &&
                                                  !lowerKey.includes('delivery')
-                          
+
                           if (hasKeyword && isNotDeadline) {
                             const value = raw[key]
                             if (value !== undefined && value !== null && String(value).trim() !== '') {
@@ -7981,13 +7881,13 @@ export const AutoPlanner: React.FC = () => {
                           }
                         }
                       }
-                      
+
                       // Если все еще не нашли, логируем все доступные ключи для отладки
                       if (!readyAt && !readyText) {
                         const allKeys = Object.keys(raw || {})
                         const timeRelatedKeys = allKeys.filter(key => {
                           const lowerKey = key.toLowerCase()
-                          return lowerKey.includes('время') || lowerKey.includes('time') || 
+                          return lowerKey.includes('время') || lowerKey.includes('time') ||
                                  lowerKey.includes('кухню') || lowerKey.includes('кухні') || lowerKey.includes('kitchen') ||
                                  lowerKey.includes('готовности') || lowerKey.includes('готовності') || lowerKey.includes('ready')
                         })
@@ -8002,7 +7902,7 @@ export const AutoPlanner: React.FC = () => {
                       }
                     }
                   }
-                  
+
                   // Отображаем результат
                   if (readyAt) {
                     return (
@@ -8046,11 +7946,11 @@ export const AutoPlanner: React.FC = () => {
                       </div>
                     )
                   }
-                  
+
                   // Используем правильную логику поиска времени
                   let deadlineAt: number | null = selectedOrder.deadlineAtSource || selectedOrder.deadlineAt || null
                   let deadlineText: string | null = null // Для длительностей (например, "43мин.")
-                  
+
                   // Локальная функция парсинга времени (без рекурсии)
                   const parseTimeLocal = (val: any, depth: number = 0): number | null => {
                     // Защита от бесконечной рекурсии
@@ -8058,18 +7958,18 @@ export const AutoPlanner: React.FC = () => {
                     if (!val && val !== 0) return null
                     const s = String(val).trim()
                     if (!s) return null
-                    
+
                     // Пропускаем некорректные значения Excel (##########)
                     if (s.includes('#')) {
                       return null
                     }
-                    
+
                     const strVal = s.toLowerCase()
                     // Пропускаем длительности (но сохраняем их как текст)
                     if (strVal.includes('мин.') || strVal.includes('час') || strVal.includes('min') || strVal.includes('hour')) {
                       return null
                     }
-                    
+
                     // Формат DD.MM.YYYY HH:MM:SS или DD.MM.YYYY HH:MM (например, "10.10.2025 11:02:21")
                     const dotDateTimeMatch = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/i)
                     if (dotDateTimeMatch) {
@@ -8079,13 +7979,13 @@ export const AutoPlanner: React.FC = () => {
                       let hour = parseInt(dotDateTimeMatch[4], 10)
                       const minute = parseInt(dotDateTimeMatch[5], 10)
                       const second = dotDateTimeMatch[6] ? parseInt(dotDateTimeMatch[6], 10) : 0
-                      
+
                       const date = new Date(year, month - 1, day, hour, minute, second)
                       if (!isNaN(date.getTime())) {
                         return date.getTime()
                       }
                     }
-                    
+
                     // Формат только время с секундами: "HH:mm:ss AM/PM" или "HH:mm:ss" (например, "11:48:17", "10:32:21 AM")
                     const timeOnlyMatch = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i)
                     if (timeOnlyMatch) {
@@ -8093,7 +7993,7 @@ export const AutoPlanner: React.FC = () => {
                       const minute = parseInt(timeOnlyMatch[2], 10)
                       const second = timeOnlyMatch[3] ? parseInt(timeOnlyMatch[3], 10) : 0
                       const ampm = timeOnlyMatch[4]
-                      
+
                       if (ampm) {
                         if (ampm.toUpperCase() === 'PM' && hour !== 12) {
                           hour += 12
@@ -8101,12 +8001,12 @@ export const AutoPlanner: React.FC = () => {
                           hour = 0
                         }
                       }
-                      
+
                       const base = new Date()
                       base.setHours(hour, minute, second, 0)
                       return base.getTime()
                     }
-                    
+
                     // Формат HH:mm (простой)
                     const simpleTimeMatch = s.match(/^([01]?\d|2[0-3]):([0-5]\d)$/)
                     if (simpleTimeMatch) {
@@ -8114,16 +8014,16 @@ export const AutoPlanner: React.FC = () => {
                       base.setHours(parseInt(simpleTimeMatch[1], 10), parseInt(simpleTimeMatch[2], 10), 0, 0)
                       return base.getTime()
                     }
-                    
+
                     // Пробуем распарсить как дату/время
                     const date = new Date(s)
                     if (!isNaN(date.getTime()) && date.getFullYear() > 2000) {
                       return date.getTime()
                     }
-                    
+
                     return null
                   }
-                  
+
                   // Проверяем основные поля объекта ПЕРВЫМИ
                   const directFields = ['plannedTime', 'planned_time', 'PlannedTime', 'PLANNED_TIME']
                   for (const field of directFields) {
@@ -8145,7 +8045,7 @@ export const AutoPlanner: React.FC = () => {
                       }
                     }
                   }
-                  
+
                   // Если не нашли в основных полях, проверяем raw
                   if (!deadlineAt && !deadlineText && selectedOrder?.raw) {
                     // Проверяем основные поля в raw
@@ -8167,7 +8067,7 @@ export const AutoPlanner: React.FC = () => {
                         }
                       }
                     }
-                    
+
                     // Затем проверяем русские названия полей в raw
                     if (!deadlineAt && !deadlineText) {
                       const raw = selectedOrder.raw
@@ -8181,7 +8081,7 @@ export const AutoPlanner: React.FC = () => {
                         'delivery_time', 'deliveryTime',
                         'доставить к', 'доставить_к'
                       ]
-                      
+
                       for (const field of timeFields) {
                         const value = raw?.[field]
                         if (value !== undefined && value !== null && String(value).trim() !== '') {
@@ -8202,7 +8102,7 @@ export const AutoPlanner: React.FC = () => {
                       }
                     }
                   }
-                  
+
                   // Отображаем результат
                   if (deadlineAt) {
                     return (
@@ -8268,8 +8168,8 @@ export const AutoPlanner: React.FC = () => {
                 onClick={() => setSelectedOrder(null)}
                 className={clsx(
                   'px-4 py-2 rounded-lg font-medium transition-colors',
-                  isDark 
-                    ? 'bg-blue-600 hover:bg-blue-500 text-white' 
+                  isDark
+                    ? 'bg-blue-600 hover:bg-blue-500 text-white'
                     : 'bg-blue-600 hover:bg-blue-700 text-white'
                 )}
               >
@@ -8282,14 +8182,14 @@ export const AutoPlanner: React.FC = () => {
 
       {/* Модальное окно управления графиками курьеров */}
       {showScheduleModal && (
-        <div 
+        <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
           onClick={() => {
             setShowScheduleModal(false)
             setEditingSchedule(null)
           }}
         >
-          <div 
+          <div
             className={clsx(
               'relative w-full max-w-4xl mx-4 max-h-[90vh] rounded-xl shadow-2xl overflow-hidden',
               isDark ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'
@@ -8334,8 +8234,8 @@ export const AutoPlanner: React.FC = () => {
                   }}
                   className={clsx(
                     'w-full px-4 py-2 rounded-lg font-medium transition-colors',
-                    isDark 
-                      ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                    isDark
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white'
                       : 'bg-blue-600 hover:bg-blue-700 text-white'
                   )}
                 >
@@ -8363,7 +8263,7 @@ export const AutoPlanner: React.FC = () => {
                               {schedule.courierName}
                             </div>
                             <div className={clsx('text-xs mt-1', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                              {schedule.vehicleType === 'car' ? '🚗 Авто' : '🏍️ Мото'} • 
+                              {schedule.vehicleType === 'car' ? '🚗 Авто' : '🏍️ Мото'} •
                               {schedule.isActive ? ' ✅ Активен' : ' ❌ Неактивен'}
                             </div>
                           </div>
@@ -8372,8 +8272,8 @@ export const AutoPlanner: React.FC = () => {
                               onClick={() => setEditingSchedule(schedule)}
                               className={clsx(
                                 'px-3 py-1 text-xs rounded font-medium transition-colors',
-                                isDark 
-                                  ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                                isDark
+                                  ? 'bg-blue-600 hover:bg-blue-700 text-white'
                                   : 'bg-blue-600 hover:bg-blue-700 text-white'
                               )}
                             >
@@ -8385,8 +8285,8 @@ export const AutoPlanner: React.FC = () => {
                               }}
                               className={clsx(
                                 'px-3 py-1 text-xs rounded font-medium transition-colors',
-                                isDark 
-                                  ? 'bg-red-600 hover:bg-red-700 text-white' 
+                                isDark
+                                  ? 'bg-red-600 hover:bg-red-700 text-white'
                                   : 'bg-red-600 hover:bg-red-700 text-white'
                               )}
                             >
@@ -8416,11 +8316,11 @@ export const AutoPlanner: React.FC = () => {
 
       {/* Модальное окно редактирования графика */}
       {editingSchedule && (
-        <div 
+        <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50"
           onClick={() => setEditingSchedule(null)}
         >
-          <div 
+          <div
             className={clsx(
               'relative w-full max-w-2xl mx-4 max-h-[90vh] rounded-xl shadow-2xl overflow-hidden',
               isDark ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'
@@ -8460,8 +8360,8 @@ export const AutoPlanner: React.FC = () => {
                     onChange={(e) => setEditingSchedule({ ...editingSchedule, courierName: e.target.value })}
                     className={clsx(
                       'w-full px-3 py-2 rounded-lg border',
-                      isDark 
-                        ? 'bg-gray-700 border-gray-600 text-white' 
+                      isDark
+                        ? 'bg-gray-700 border-gray-600 text-white'
                         : 'bg-white border-gray-300 text-gray-900'
                     )}
                     placeholder="Введите имя курьера"
@@ -8475,15 +8375,15 @@ export const AutoPlanner: React.FC = () => {
                   </label>
                   <select
                     value={editingSchedule.vehicleType}
-                    onChange={(e) => setEditingSchedule({ 
-                      ...editingSchedule, 
+                    onChange={(e) => setEditingSchedule({
+                      ...editingSchedule,
                       vehicleType: e.target.value as 'car' | 'motorcycle',
                       maxDistanceKm: e.target.value === 'motorcycle' ? VEHICLE_LIMITS.motorcycle.maxDistanceKm : undefined
                     })}
                     className={clsx(
                       'w-full px-3 py-2 rounded-lg border',
-                      isDark 
-                        ? 'bg-gray-700 border-gray-600 text-white' 
+                      isDark
+                        ? 'bg-gray-700 border-gray-600 text-white'
                         : 'bg-white border-gray-300 text-gray-900'
                     )}
                   >
@@ -8534,8 +8434,8 @@ export const AutoPlanner: React.FC = () => {
                               }}
                               className={clsx(
                                 'text-xs px-2 py-1 rounded',
-                                isDark 
-                                  ? 'bg-red-600 hover:bg-red-700 text-white' 
+                                isDark
+                                  ? 'bg-red-600 hover:bg-red-700 text-white'
                                   : 'bg-red-600 hover:bg-red-700 text-white'
                               )}
                             >
@@ -8556,8 +8456,8 @@ export const AutoPlanner: React.FC = () => {
                               }}
                               className={clsx(
                                 'w-full px-2 py-1 rounded border text-sm',
-                                isDark 
-                                  ? 'bg-gray-700 border-gray-600 text-white' 
+                                isDark
+                                  ? 'bg-gray-700 border-gray-600 text-white'
                                   : 'bg-white border-gray-300 text-gray-900'
                               )}
                             />
@@ -8570,8 +8470,8 @@ export const AutoPlanner: React.FC = () => {
                         id="newDaySelect"
                         className={clsx(
                           'w-full px-3 py-2 rounded-lg border text-sm',
-                          isDark 
-                            ? 'bg-gray-700 border-gray-600 text-white' 
+                          isDark
+                            ? 'bg-gray-700 border-gray-600 text-white'
                             : 'bg-white border-gray-300 text-gray-900'
                         )}
                         defaultValue="1"
@@ -8607,8 +8507,8 @@ export const AutoPlanner: React.FC = () => {
                         }}
                         className={clsx(
                           'w-full px-3 py-2 rounded-lg text-sm font-medium transition-colors',
-                          isDark 
-                            ? 'bg-gray-700 hover:bg-gray-600 text-white border border-gray-600' 
+                          isDark
+                            ? 'bg-gray-700 hover:bg-gray-600 text-white border border-gray-600'
                             : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300'
                         )}
                       >
@@ -8629,8 +8529,8 @@ export const AutoPlanner: React.FC = () => {
                 onClick={() => setEditingSchedule(null)}
                 className={clsx(
                   'px-4 py-2 rounded-lg font-medium transition-colors',
-                  isDark 
-                    ? 'bg-gray-700 hover:bg-gray-600 text-white' 
+                  isDark
+                    ? 'bg-gray-700 hover:bg-gray-600 text-white'
                     : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
                 )}
               >
@@ -8654,8 +8554,8 @@ export const AutoPlanner: React.FC = () => {
                 }}
                 className={clsx(
                   'px-4 py-2 rounded-lg font-medium transition-colors',
-                  isDark 
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                  isDark
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
                     : 'bg-blue-600 hover:bg-blue-700 text-white'
                 )}
               >
@@ -8668,11 +8568,11 @@ export const AutoPlanner: React.FC = () => {
 
       {/* Модальное окно аналитики */}
       {showAnalyticsModal && routeAnalytics && (
-        <div 
+        <div
           className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm"
           onClick={() => setShowAnalyticsModal(false)}
         >
-          <div 
+          <div
             className={clsx(
               'relative w-full max-w-4xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col mx-4',
               isDark ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 border-2 border-gray-700' : 'bg-gradient-to-br from-white via-gray-50 to-white border-2 border-gray-200'
@@ -8716,7 +8616,7 @@ export const AutoPlanner: React.FC = () => {
                     <div className="text-xs opacity-70">мин</div>
                   </div>
                 </div>
-                
+
                 {/* Эффективность */}
                 <div className={clsx('p-6 rounded-xl border-2', isDark ? 'border-purple-600/30 bg-purple-900/20' : 'border-purple-200 bg-purple-50')}>
                   <h3 className={clsx('text-lg font-bold mb-4', isDark ? 'text-purple-300' : 'text-purple-700')}>Эффективность</h3>
@@ -8727,7 +8627,7 @@ export const AutoPlanner: React.FC = () => {
                         <span className="font-bold">{((routeAnalytics.avgEfficiency || 0) * 100).toFixed(0)}%</span>
                       </div>
                       <div className={clsx('h-3 rounded-full overflow-hidden', isDark ? 'bg-gray-700' : 'bg-gray-200')}>
-                        <div 
+                        <div
                           className={clsx('h-full transition-all', routeAnalytics.avgEfficiency > 0.7 ? 'bg-green-500' : routeAnalytics.avgEfficiency > 0.5 ? 'bg-yellow-500' : 'bg-red-500')}
                           style={{ width: `${(routeAnalytics.avgEfficiency || 0) * 100}%` }}
                         />
@@ -8753,7 +8653,7 @@ export const AutoPlanner: React.FC = () => {
                     </div>
                   </div>
                 </div>
-                
+
                 {/* Временные метрики */}
                 <div className={clsx('p-6 rounded-xl border-2', isDark ? 'border-orange-600/30 bg-orange-900/20' : 'border-orange-200 bg-orange-50')}>
                   <h3 className={clsx('text-lg font-bold mb-4', isDark ? 'text-orange-300' : 'text-orange-700')}>Соблюдение дедлайнов</h3>
@@ -8776,20 +8676,20 @@ export const AutoPlanner: React.FC = () => {
                     </div>
                   </div>
                 </div>
-                
+
               </div>
             </div>
           </div>
         </div>
       )}
-      
+
       {/* Модальное окно истории */}
       {showHistoryModal && (
-        <div 
+        <div
           className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm"
           onClick={() => setShowHistoryModal(false)}
         >
-          <div 
+          <div
             className={clsx(
               'relative w-full max-w-4xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col mx-4',
               isDark ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 border-2 border-gray-700' : 'bg-gradient-to-br from-white via-gray-50 to-white border-2 border-gray-200'
@@ -8890,10 +8790,10 @@ export const AutoPlanner: React.FC = () => {
           </div>
         </div>
       )}
-      
+
       {/* Модальное окно полноэкранного просмотра маршрута */}
       {expandedRouteModal && (
-        <div 
+        <div
           className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm"
           onClick={() => {
             // Закрываем меню экспорта при клике на фон
@@ -8904,7 +8804,7 @@ export const AutoPlanner: React.FC = () => {
             }
           }}
         >
-          <div 
+          <div
             className={clsx(
               'relative w-full h-full max-w-[95vw] max-h-[95vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col',
               isDark ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 border-2 border-gray-700' : 'bg-gradient-to-br from-white via-gray-50 to-white border-2 border-gray-200'
@@ -8952,7 +8852,7 @@ export const AutoPlanner: React.FC = () => {
             </div>
 
             {/* Содержимое - скроллируемое */}
-            <div 
+            <div
               className="flex-1 overflow-y-auto p-8"
               onClick={(e) => {
                 // Закрываем меню экспорта при клике вне его
@@ -8966,8 +8866,8 @@ export const AutoPlanner: React.FC = () => {
                 {/* Статистика маршрута */}
                 <div className={clsx(
                   'p-6 rounded-2xl border-2 grid grid-cols-2 md:grid-cols-4 gap-6',
-                  isDark 
-                    ? 'bg-gradient-to-br from-gray-900/80 to-gray-800/80 border-gray-700' 
+                  isDark
+                    ? 'bg-gradient-to-br from-gray-900/80 to-gray-800/80 border-gray-700'
                     : 'bg-gradient-to-br from-gray-50 to-white border-gray-200'
                 )}>
                   <div className={clsx(
@@ -9016,7 +8916,7 @@ export const AutoPlanner: React.FC = () => {
                     {expandedRouteModal.totalTrafficDelay && expandedRouteModal.totalTrafficDelay > 0 && (
                       <div className={clsx(
                         'text-xs mt-2 px-2 py-1 rounded-lg font-medium',
-                        expandedRouteModal.hasCriticalTraffic 
+                        expandedRouteModal.hasCriticalTraffic
                           ? (isDark ? 'bg-red-900/50 text-red-300' : 'bg-red-100 text-red-700')
                           : (isDark ? 'bg-orange-900/50 text-orange-300' : 'bg-orange-100 text-orange-700')
                       )}>
@@ -9036,7 +8936,7 @@ export const AutoPlanner: React.FC = () => {
                     </div>
                     <div className={clsx('text-3xl font-bold', isDark ? 'text-purple-400' : 'text-purple-600')}>
                       {(() => {
-                        const efficiency = expandedRouteModal.routeEfficiency || (expandedRouteModal.totalDistance && expandedRouteModal.totalDuration 
+                        const efficiency = expandedRouteModal.routeEfficiency || (expandedRouteModal.totalDistance && expandedRouteModal.totalDuration
                           ? Math.min(1, (expandedRouteModal.stopsCount || 1) * 5 / ((expandedRouteModal.totalDistance / 1000) / (expandedRouteModal.totalDuration / 60 / 60)))
                           : 0.5)
                         return `${(efficiency * 100).toFixed(0)}%`
@@ -9044,7 +8944,7 @@ export const AutoPlanner: React.FC = () => {
                     </div>
                   </div>
                 </div>
-                
+
                 {/* Детальная информация о маршруте */}
                 <div className={clsx('mt-6 space-y-6', isDark ? 'text-gray-200' : 'text-gray-800')}>
                   {/* Логика формирования маршрута */}
@@ -9053,7 +8953,7 @@ export const AutoPlanner: React.FC = () => {
                         <span>📋</span>
                         <span>Логика формирования маршрута</span>
                       </div>
-                      
+
                       {/* Информация о пробках */}
                       {expandedRouteModal.trafficInfo && expandedRouteModal.trafficInfo.length > 0 && (
                         <div className={clsx('mb-4 p-4 rounded-xl', isDark ? 'bg-orange-900/20 border-orange-700 border-2' : 'bg-orange-50 border-orange-300 border-2', expandedRouteModal.hasCriticalTraffic ? 'border-l-4' : 'border-l-2')}>
@@ -9117,7 +9017,7 @@ export const AutoPlanner: React.FC = () => {
                               `Заказов: ${expandedRouteModal.stopsCount || 0}\n` +
                               `Расстояние: ${expandedRouteModal.totalDistanceKm || '?'} км\n` +
                               `Время: ${expandedRouteModal.totalDurationMin || '?'} мин\n` +
-                              `Заказы: ${(expandedRouteModal.routeChainFull || []).map((o: any) => 
+                              `Заказы: ${(expandedRouteModal.routeChainFull || []).map((o: any) =>
                                 o.orderNumber || o.raw?.orderNumber || '?'
                               ).join(', ')}`
                             navigator.clipboard.writeText(routeText)
@@ -9130,7 +9030,7 @@ export const AutoPlanner: React.FC = () => {
                         >
                           📋 Копировать информацию
                         </button>
-                        
+
                         {/* Меню экспорта */}
                         <div className="relative" onClick={(e) => e.stopPropagation()} data-tour="export">
                           <button
@@ -9148,9 +9048,9 @@ export const AutoPlanner: React.FC = () => {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                             </svg>
                           </button>
-                          
+
                           {showExportMenu === expandedRouteModal.id && (
-                            <div 
+                            <div
                               className={clsx(
                                 'absolute top-full left-0 mt-2 rounded-lg shadow-xl border-2 z-[100] min-w-[200px]',
                                 isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'

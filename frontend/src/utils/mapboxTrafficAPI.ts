@@ -54,14 +54,14 @@ export async function getMapboxTraffic(
     const response = await fetch(url)
     if (!response.ok) {
       const errorText = await response.text()
-      console.error('Mapbox API error:', response.status, errorText)
+      
       throw new Error(`Mapbox API error: ${response.status}`)
     }
     
     const data: MapboxRouteResponse = await response.json()
     
     if (!data.routes || data.routes.length === 0) {
-      console.warn('Mapbox: No routes found')
+      
       return []
     }
     
@@ -101,11 +101,10 @@ export async function getMapboxTraffic(
         }
       })
     }
-    
-    console.log(`✅ Mapbox Traffic: получено ${trafficData.length} сегментов с данными о трафике`)
+
     return trafficData
   } catch (error) {
-    console.error('Mapbox Traffic API error:', error)
+    
     return []
   }
 }

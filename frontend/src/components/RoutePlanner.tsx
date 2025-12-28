@@ -131,7 +131,7 @@ export const RoutePlanner: React.FC = () => {
       totalDistance += calculateDistance(orders[i].address, orders[i + 1].address)
     }
     
-    // Добавляем расстояние от депо
+    // Добавляем расстояние от тт
     totalDistance += 0.5
     totalDistance += 0.5
     
@@ -141,7 +141,7 @@ export const RoutePlanner: React.FC = () => {
   // Расчет времени маршрута
   const calculateRouteDuration = (orders: any[]): number => {
     const distance = calculateRouteDistance(orders)
-    const drivingTime = (distance / 30) * 60 // 30 км/ч средняя скорость
+    const drivingTime = (distance / 45) * 60 // 45 км/ч средняя скорость
     const deliveryTime = orders.length * 5 // 5 минут на заказ
     
     return drivingTime + deliveryTime

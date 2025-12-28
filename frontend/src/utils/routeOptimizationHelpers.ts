@@ -1572,9 +1572,7 @@ export async function globalRouteOptimization(
   context: GlobalOptimizationContext
 ): Promise<RouteForRebalancing[]> {
   if (routes.length < 2) return routes
-  
-  console.log(`🌐 Глобальная оптимизация: ${routes.length} маршрутов`)
-  
+
   let improved = true
   let iterations = 0
   const maxIterations = 3
@@ -1678,7 +1676,6 @@ export async function globalRouteOptimization(
         if (bestTargetRoute && bestImprovement > 0) {
           moveOrderBetweenRoutes(order, sourceRoute, bestTargetRoute)
           improved = true
-          console.log(`✅ Глобальная оптимизация: перемещен заказ между маршрутами (улучшение: ${bestImprovement.toFixed(2)})`)
         }
       }
     }
@@ -1717,7 +1714,6 @@ export async function globalRouteOptimization(
               route.orders = testRoute
               routeImproved = true
               improved = true
-              console.log(`✅ Глобальная оптимизация: переставлены заказы внутри маршрута (${oldDistance.toFixed(1)} → ${newDistance.toFixed(1)} км)`)
               break
             }
           }
@@ -1727,7 +1723,6 @@ export async function globalRouteOptimization(
     }
   }
   
-  console.log(`✅ Глобальная оптимизация завершена (итераций: ${iterations})`)
   return routes
 }
 
@@ -1748,9 +1743,7 @@ export async function rebalanceRoutesV3(
   }
 ): Promise<RouteForRebalancing[]> {
   if (routes.length < 2) return routes
-  
-  console.log(`⚖️ Улучшенная ребалансировка с учетом времени: ${routes.length} маршрутов`)
-  
+
   const maxReadyTimeDiff = context?.maxReadyTimeDifferenceMinutes || 60
   const maxWait = context?.maxWaitPerStopMin || 15
   
@@ -1867,8 +1860,6 @@ export async function rebalanceRoutesV3(
             }
           }
         }
-        
-        console.log(`✅ Ребалансировка: перемещен заказ (оценка совместимости: ${bestMove.score.toFixed(2)})`)
       } else {
         break
       }
@@ -1905,8 +1896,7 @@ export async function rebalanceRoutesV3(
       merged.push(route)
     }
   }
-  
-  console.log(`✅ Улучшенная ребалансировка завершена: ${routes.length} → ${merged.length} маршрутов`)
+
   return merged
 }
 

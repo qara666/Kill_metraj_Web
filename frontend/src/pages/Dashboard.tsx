@@ -9,6 +9,8 @@ import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { clsx } from 'clsx'
 import * as api from '../services/api'
+import { fastopertorApi } from '../services/fastopertorApi'
+import { localStorageUtils } from '../utils/localStorage'
 const ExcelDebugLogs = lazy(() => import('../components/ExcelDebugLogs').then(module => ({ default: module.ExcelDebugLogs })))
 const ExcelDataPreview = lazy(() => import('../components/ExcelDataPreview').then(module => ({ default: module.ExcelDataPreview })))
 
@@ -184,6 +186,71 @@ export const Dashboard: React.FC = () => {
       }
     }
   }
+
+  // Автоматическая загрузка данных из Fastopertor API
+  useEffect(() => {
+    const loadFastopertorData = async () => {
+      const settings = localStorageUtils.getAllSettings()
+      
+      if (!settings.enableFastopertorApi || !settings.fastopertorApiUrl || !settings.fastopertorApiKey) {
+        return
+      }
+
+      try {
+        log('🔄 Начало загрузки данных из Fastopertor API...')
+        
+        const result = await fastopertorApi.fetchData({
+          apiUrl: settings.fastopertorApiUrl,
+          apiKey: settings.fastopertorApiKey,
+          endpoint: settings.fastopertorEndpoint || '/api/orders'
+        })
+
+        if (result.success && result.data) {
+          // Преобразуем данные в формат ExcelData
+          const transformedData = {
+            orders: result.data.orders || [],
+            couriers: result.data.couriers || [],
+            paymentMethods: result.data.paymentMethods || [],
+            routes: result.data.routes || [],
+            errors: result.data.errors || [],
+            warnings: result.data.warnings || [],
+            summary: {
+              totalOrders: result.data.orders?.length || 0,
+              totalCouriers: result.data.couriers?.length || 0,
+              totalPaymentMethods: result.data.paymentMethods?.length || 0,
+              totalRoutes: result.data.routes?.length || 0,
+              errors: result.data.errors?.length || 0,
+              warnings: result.data.warnings?.length || 0
+            }
+          }
+
+          // Объединяем с существующими данными
+          const mergedData = mergeExcelData(transformedData, excelData)
+          setExcelData(mergedData)
+          
+          log(`✅ Данные из Fastopertor API загружены: ${transformedData.orders.length} заказов, ${transformedData.couriers.length} курьеров`)
+          toast.success(`Данные из Fastopertor API загружены: ${transformedData.orders.length} заказов`)
+        } else {
+          log(`❌ Ошибка загрузки данных из Fastopertor API: ${result.error || 'Неизвестная ошибка'}`)
+          toast.error(`Ошибка загрузки из Fastopertor API: ${result.error || 'Неизвестная ошибка'}`)
+        }
+      } catch (error) {
+        log(`❌ Критическая ошибка при загрузке данных из Fastopertor API: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`)
+        toast.error(`Ошибка загрузки из Fastopertor API: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`)
+      }
+    }
+
+    // Загружаем данные при монтировании компонента, если включена опция
+    loadFastopertorData()
+
+    // Настраиваем периодическую загрузку каждые 5 минут
+    const interval = setInterval(() => {
+      loadFastopertorData()
+    }, 5 * 60 * 1000) // 5 минут
+
+    return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Запускаем только при монтировании, mergeExcelData и setExcelData стабильны
 
   // Hydrate state from localStorage on mount
   useEffect(() => {

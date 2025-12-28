@@ -16,6 +16,8 @@ import { LoadingSpinner } from './LoadingSpinner'
 import { clsx } from 'clsx'
 import { useTheme } from '../contexts/ThemeContext'
 import { processHtmlUrl, isValidUrl, processHtmlFile } from '../utils/htmlProcessor'
+import { fastopertorApi } from '../services/fastopertorApi'
+import { localStorageUtils } from '../utils/localStorage'
 
 interface ExcelUploadSectionProps {
   onFileSelect: (file: File) => void
@@ -39,6 +41,7 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
   const { isDark } = useTheme()
   const [htmlUrl, setHtmlUrl] = useState<string>('')
   const [isProcessingHtml, setIsProcessingHtml] = useState<boolean>(false)
+  const [isLoadingFastopertor, setIsLoadingFastopertor] = useState<boolean>(false)
 
   const processLocalHtmlFile = useCallback(async (file: File) => {
     if (!onHtmlDataLoad) {
@@ -376,6 +379,64 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
             HTML страница должна содержать таблицу с данными в том же формате, что и Excel файл
           </p>
         </div>
+
+        {/* Секция для Fastopertor API загрузки */}
+        {(() => {
+          const settings = localStorageUtils.getAllSettings()
+          const isFastopertorEnabled = settings.enableFastopertorApi && settings.fastopertorApiUrl && settings.fastopertorApiKey
+          
+          if (!isFastopertorEnabled) return null
+
+          return (
+            <div className={clsx(
+              'mt-6 p-4 rounded-lg border',
+              isDark ? 'bg-gray-800/50 border-gray-700' : 'bg-gray-50 border-gray-200'
+            )}>
+              <div className="flex items-center gap-2 mb-3">
+                <CloudArrowUpIcon className={clsx('h-5 w-5', isDark ? 'text-purple-400' : 'text-purple-600')} />
+                <label className={clsx(
+                  'text-sm font-medium',
+                  isDark ? 'text-gray-200' : 'text-gray-700'
+                )}>
+                  Загрузка данных из Fastopertor API
+                </label>
+              </div>
+              
+              <button
+                onClick={handleLoadFastopertorData}
+                disabled={isLoadingFastopertor || isProcessing}
+                className={clsx(
+                  'w-full px-4 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2',
+                  isLoadingFastopertor || isProcessing
+                    ? isDark 
+                      ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
+                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : isDark 
+                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700' 
+                      : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700'
+                )}
+              >
+                {isLoadingFastopertor ? (
+                  <>
+                    <LoadingSpinner size="sm" />
+                    <span>Загрузка из API...</span>
+                  </>
+                ) : (
+                  <>
+                    <CloudArrowUpIcon className="h-5 w-5" />
+                    <span>Загрузить данные из Fastopertor API</span>
+                  </>
+                )}
+              </button>
+              <p className={clsx(
+                'text-xs mt-2',
+                isDark ? 'text-gray-400' : 'text-gray-500'
+              )}>
+                Данные будут автоматически загружаться каждые 5 минут, если включена автоматическая загрузка в настройках
+              </p>
+            </div>
+          )
+        })()}
 
         {/* Кнопки действий */}
         {selectedFile && (

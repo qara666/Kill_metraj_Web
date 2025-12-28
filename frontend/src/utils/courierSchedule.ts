@@ -198,7 +198,6 @@ export function assignRouteToCourier(
     
     // Если курьеров мало (меньше 2), приоритизируем раннее начало маршрута
     if (availableAtDeadline < 2) {
-      console.log(`⚠️ В плановое время заказа (${new Date(earliestDeadline).toLocaleString()}) доступно только ${availableAtDeadline} курьеров. Начинаем маршрут раньше.`)
     }
   }
 
@@ -472,7 +471,7 @@ export function parseCourierScheduleFromExcel(
   const schedules: CourierSchedule[] = []
   
   if (!excelData || excelData.length < 2) {
-    console.warn('⚠️ [parseCourierScheduleFromExcel] Недостаточно данных для парсинга графика')
+    
     return schedules
   }
   
@@ -482,10 +481,10 @@ export function parseCourierScheduleFromExcel(
     const headerFirstCell = String(excelData[0][0] || '').toLowerCase().trim()
     if (headerFirstCell.includes('мото') || headerFirstCell.includes('motorcycle')) {
       defaultVehicleType = 'motorcycle'
-      console.log(`✅ [parseCourierScheduleFromExcel] Определен тип транспорта из заголовка: Мото`)
+      
     } else if (headerFirstCell.includes('авто') || headerFirstCell.includes('auto') || headerFirstCell.includes('car')) {
       defaultVehicleType = 'car'
-      console.log(`✅ [parseCourierScheduleFromExcel] Определен тип транспорта из заголовка: Авто`)
+      
     }
   }
   
@@ -510,13 +509,13 @@ export function parseCourierScheduleFromExcel(
     const hasDays = Object.keys(dayNamesMap).some(day => rowStr.includes(day))
     if (hasDays) {
       headerRowIndex = i
-      console.log(`✅ [parseCourierScheduleFromExcel] Найдена строка с днями недели в строке ${i + 1}`)
+      
       break
     }
   }
   
   if (headerRowIndex === -1) {
-    console.warn('⚠️ [parseCourierScheduleFromExcel] Не найдена строка с днями недели')
+    
     return schedules
   }
   
@@ -532,14 +531,13 @@ export function parseCourierScheduleFromExcel(
     for (const [dayName, dayOfWeek] of Object.entries(dayNamesMap)) {
       if (cellValue.includes(dayName)) {
         dayColumnIndices.push({ dayOfWeek, columnIndex: col })
-        console.log(`✅ [parseCourierScheduleFromExcel] Найден день "${dayName}" (${dayOfWeek}) в столбце ${col}`)
         break
       }
     }
   }
   
   if (dayColumnIndices.length === 0) {
-    console.warn('⚠️ [parseCourierScheduleFromExcel] Не найдены столбцы с днями недели')
+    
     return schedules
   }
   
@@ -591,8 +589,6 @@ export function parseCourierScheduleFromExcel(
           dayOfWeek,
           startTime,
         })
-        
-        console.log(`✅ [parseCourierScheduleFromExcel] ${courierName}: ${dayOfWeek} (${['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'][dayOfWeek]}) - начало работы: ${startTime}`)
       }
     }
     
@@ -608,11 +604,10 @@ export function parseCourierScheduleFromExcel(
       }
       
       schedules.push(schedule)
-      console.log(`✅ [parseCourierScheduleFromExcel] Создан график для ${courierName}: ${workDays.length} рабочих дней`)
+      
     }
   }
-  
-  console.log(`✅ [parseCourierScheduleFromExcel] Всего создано графиков: ${schedules.length}`)
+
   return schedules
 }
 

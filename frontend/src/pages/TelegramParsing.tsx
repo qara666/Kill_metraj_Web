@@ -43,16 +43,37 @@ export const TelegramParsing: React.FC = () => {
   
   // Состояния для подключения к Telegram
   const [showConnectionModal, setShowConnectionModal] = useState(false)
-  const [connectionData, setConnectionData] = useState<TelegramConnection>({
-    apiId: '',
-    apiHash: '',
-    phoneNumber: ''
-  })
+  
+  // Загружаем сохраненные данные подключения из localStorage
+  const loadSavedConnectionData = useCallback(() => {
+    try {
+      const saved = localStorage.getItem('telegram_connection_data')
+      if (saved) {
+        return JSON.parse(saved)
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки сохраненных данных подключения:', error)
+    }
+    return {
+      apiId: '',
+      apiHash: '',
+      phoneNumber: ''
+    }
+  }, [])
+
+  const [connectionData, setConnectionData] = useState<TelegramConnection>(loadSavedConnectionData)
   const [isConnecting, setIsConnecting] = useState(false)
   const [isConnected, setIsConnected] = useState(false)
   const [needsAuth, setNeedsAuth] = useState(false)
   const [phoneCodeHash, setPhoneCodeHash] = useState<string | null>(null)
   const [phoneCode, setPhoneCode] = useState('')
+
+  // Сохранение данных подключения в localStorage
+  useEffect(() => {
+    if (connectionData.apiId || connectionData.apiHash) {
+      localStorage.setItem('telegram_connection_data', JSON.stringify(connectionData))
+    }
+  }, [connectionData])
 
   // Состояния для парсинга Telegram
   const [searchQuery, setSearchQuery] = useState('')
@@ -61,8 +82,9 @@ export const TelegramParsing: React.FC = () => {
   const [selectedChats, setSelectedChats] = useState<Set<string>>(new Set())
   const [availableChats, setAvailableChats] = useState<TelegramChat[]>([])
   const [showChatFilter, setShowChatFilter] = useState(false)
-  const [chatFilterType, setChatFilterType] = useState<'all' | 'group' | 'channel' | 'private'>('all')
+  const [chatFilterType, setChatFilterType] = useState<'all' | 'group' | 'channel' | 'private' | 'favorites'>('all')
   const [chatSearchTerm, setChatSearchTerm] = useState('')
+  const [favoriteChats, setFavoriteChats] = useState<Set<string>>(new Set())
 
   // Извлечение семизначных цифр из запроса
   const extractSevenDigitNumbers = useCallback((text: string): string[] => {
@@ -79,10 +101,10 @@ export const TelegramParsing: React.FC = () => {
         id: chat.id,
         name: chat.name,
         type: chat.type,
-        isSelected: true // По умолчанию выбираем все
+        isSelected: false // По умолчанию все выключены
       }))
       setAvailableChats(telegramChats)
-      setSelectedChats(new Set(telegramChats.map(c => c.id)))
+      setSelectedChats(new Set()) // По умолчанию ничего не выбрано
     } catch (error) {
       console.error('Ошибка загрузки чатов:', error)
       alert('Не удалось загрузить список чатов. Проверьте подключение к Telegram.')
@@ -164,6 +186,9 @@ export const TelegramParsing: React.FC = () => {
       )
       
       if (result.success) {
+        // Сохраняем данные подключения в localStorage
+        localStorage.setItem('telegram_connection_data', JSON.stringify(connectionData))
+        
         // Устанавливаем состояние подключения - подключение успешно, не перезаписываем на false
         setIsConnected(true)
         setNeedsAuth(false)
@@ -243,6 +268,9 @@ export const TelegramParsing: React.FC = () => {
       )
       
       if (result.success) {
+        // Сохраняем данные подключения в localStorage
+        localStorage.setItem('telegram_connection_data', JSON.stringify(connectionData))
+        
         // Устанавливаем состояние подключения - подключение успешно, не перезаписываем на false
         setIsConnected(true)
         setNeedsAuth(false)
@@ -289,6 +317,13 @@ export const TelegramParsing: React.FC = () => {
       setAvailableChats([])
       setSelectedChats(new Set())
       setSearchResults([])
+      // Очищаем сохраненные данные подключения при отключении
+      localStorage.removeItem('telegram_connection_data')
+      setConnectionData({
+        apiId: '',
+        apiHash: '',
+        phoneNumber: ''
+      })
     } catch (error) {
       console.error('Ошибка отключения:', error)
     }
@@ -323,21 +358,51 @@ export const TelegramParsing: React.FC = () => {
       // Извлекаем семизначные цифры
       const numbers = extractSevenDigitNumbers(searchQuery)
       
-      if (numbers.length === 0) {
-        console.warn('В запросе не найдено семизначных цифр. Поиск будет выполнен по тексту.')
-      }
+      const partialNumbers = telegramService.extractPartialNumbers(searchQuery)
 
-      // Поиск через Telegram API
       const messages = await telegramService.searchMessages({
         query: searchQuery,
         chatIds: Array.from(selectedChats),
-        limit: 100
+        limit: 30
       })
 
-      // Преобразуем результаты в формат для отображения
       const results: SearchResult[] = messages.map(msg => {
-        // Находим совпавший номер или текст
-        const matched = numbers.find(num => msg.text.includes(num)) || searchQuery.trim()
+        let matched = searchQuery.trim()
+        let matchedVariant = ''
+        
+        for (const num of numbers) {
+          if (telegramService.containsNumberOrPart(msg.text, num)) {
+            if (msg.text.includes(num)) {
+              matched = num
+              matchedVariant = num
+            } else {
+              const variants = telegramService.generateSearchVariants(num)
+              for (const variant of variants) {
+                if (variant !== num && msg.text.includes(variant)) {
+                  matched = num
+                  matchedVariant = `${variant} (часть ${num})`
+                  break
+                }
+              }
+            }
+            break
+          }
+        }
+        
+        if (!matchedVariant) {
+          const partialNumbers = telegramService.extractPartialNumbers(searchQuery)
+          for (const part of partialNumbers) {
+            const fullNumbers = telegramService.extractFullNumbersEndingWith(msg.text, part)
+            if (fullNumbers.length > 0) {
+              matched = fullNumbers[0]
+              matchedVariant = `${part} → ${fullNumbers[0]}`
+              break
+            } else if (msg.text.includes(part)) {
+              matched = part
+              matchedVariant = part
+            }
+          }
+        }
         
         return {
           chatId: msg.chatId,
@@ -346,7 +411,7 @@ export const TelegramParsing: React.FC = () => {
           messageText: msg.text,
           date: msg.date,
           author: msg.author,
-          matchedQuery: matched
+          matchedQuery: matchedVariant || matched
         }
       })
 
@@ -368,7 +433,9 @@ export const TelegramParsing: React.FC = () => {
     let filtered = availableChats
 
     // Фильтр по типу
-    if (chatFilterType !== 'all') {
+    if (chatFilterType === 'favorites') {
+      filtered = filtered.filter(chat => favoriteChats.has(chat.id))
+    } else if (chatFilterType !== 'all') {
       filtered = filtered.filter(chat => chat.type === chatFilterType)
     }
 
@@ -381,7 +448,34 @@ export const TelegramParsing: React.FC = () => {
     }
 
     return filtered
-  }, [availableChats, chatFilterType, chatSearchTerm])
+  }, [availableChats, chatFilterType, chatSearchTerm, favoriteChats])
+
+  // Переключение избранного
+  const toggleFavorite = useCallback((chatId: string) => {
+    setFavoriteChats(prev => {
+      const next = new Set(prev)
+      if (next.has(chatId)) {
+        next.delete(chatId)
+      } else {
+        next.add(chatId)
+      }
+      // Сохраняем в localStorage
+      localStorage.setItem('telegram_favorite_chats', JSON.stringify(Array.from(next)))
+      return next
+    })
+  }, [])
+
+  // Загрузка избранных чатов из localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('telegram_favorite_chats')
+      if (saved) {
+        setFavoriteChats(new Set(JSON.parse(saved)))
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки избранных чатов:', error)
+    }
+  }, [])
 
   // Переключение выбора чата
   const toggleChatSelection = useCallback((chatId: string) => {
@@ -405,17 +499,49 @@ export const TelegramParsing: React.FC = () => {
     }
   }, [filteredChats])
 
-  // Проверка статуса подключения при загрузке
+  // Проверка статуса подключения при загрузке и восстановление сессии
   useEffect(() => {
-    const checkStatus = async () => {
+    const checkStatusAndRestore = async () => {
+      // Проверяем статус подключения
       const connected = await telegramService.checkConnectionStatus()
       setIsConnected(connected)
+      
+      // Если подключение активно, загружаем чаты
       if (connected) {
-        loadChats()
+        await loadChats()
+      } else {
+        // Если подключение не активно, но есть сохраненные данные, пытаемся восстановить сессию
+        const savedData = loadSavedConnectionData()
+        if (savedData.apiId && savedData.apiHash) {
+          try {
+            // Очищаем API Hash от всех невидимых символов
+            const cleanApiHash = savedData.apiHash.replace(/[\s\n\r\t\u00A0\u2000-\u200B\u2028\u2029\uFEFF]/g, '').trim()
+            
+            // Пытаемся инициализировать с сохраненными данными
+            const result = await telegramService.initialize(
+              savedData.apiId.trim(),
+              cleanApiHash,
+              savedData.phoneNumber?.trim() || ''
+            )
+            
+            if (result.success) {
+              setIsConnected(true)
+              await loadChats()
+            } else if (result.needsAuth) {
+              // Требуется авторизация - показываем модальное окно
+              setNeedsAuth(true)
+              setPhoneCodeHash(result.phoneCodeHash || null)
+              setShowConnectionModal(true)
+            }
+          } catch (error) {
+            console.error('Ошибка восстановления сессии:', error)
+            // Не показываем ошибку пользователю, просто оставляем как есть
+          }
+        }
       }
     }
-    checkStatus()
-  }, [loadChats])
+    checkStatusAndRestore()
+  }, [loadChats, loadSavedConnectionData])
 
   return (
     <div className="space-y-6 p-6">
@@ -554,7 +680,7 @@ export const TelegramParsing: React.FC = () => {
             <textarea
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Введите текст с семизначными номерами для поиска (например: 1234567, 7654321)..."
+              placeholder="Введите семизначный номер (например: 1214508) или его часть (например: 4508). Поиск найдет сообщения с полными номерами, заканчивающимися на введенную часть..."
               className={clsx(
                 'w-full px-4 py-3 rounded-lg border-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors resize-none',
                 isDark 
@@ -565,11 +691,17 @@ export const TelegramParsing: React.FC = () => {
             />
             <div className="mt-2 flex items-center justify-between">
               <div className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                {extractSevenDigitNumbers(searchQuery).length > 0 && (
+                {extractSevenDigitNumbers(searchQuery).length > 0 ? (
                   <span>
                     Найдено семизначных номеров: {extractSevenDigitNumbers(searchQuery).length}
+                    <span className="ml-2 text-blue-400">(поиск по полным номерам и их частям)</span>
                   </span>
-                )}
+                ) : telegramService.extractPartialNumbers(searchQuery).length > 0 ? (
+                  <span>
+                    Найдено частичных номеров: {telegramService.extractPartialNumbers(searchQuery).length}
+                    <span className="ml-2 text-green-400">(поиск по частям и полным номерам, заканчивающимся на эти части)</span>
+                  </span>
+                ) : null}
               </div>
               <button
                 onClick={handleSearch}
@@ -661,8 +793,8 @@ export const TelegramParsing: React.FC = () => {
 
                 {/* Фильтр по типу */}
                 <div className="mb-4">
-                  <div className="flex gap-2">
-                    {(['all', 'group', 'channel', 'private'] as const).map(type => (
+                  <div className="flex gap-2 flex-wrap">
+                    {(['all', 'favorites', 'group', 'channel', 'private'] as const).map(type => (
                       <button
                         key={type}
                         onClick={() => setChatFilterType(type)}
@@ -677,7 +809,7 @@ export const TelegramParsing: React.FC = () => {
                               : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                         )}
                       >
-                        {type === 'all' ? 'Все' : type === 'group' ? 'Группы' : type === 'channel' ? 'Каналы' : 'Личные'}
+                        {type === 'all' ? 'Все' : type === 'favorites' ? '⭐ Избранное' : type === 'group' ? 'Группы' : type === 'channel' ? 'Каналы' : 'Личные'}
                       </button>
                     ))}
                   </div>
@@ -735,13 +867,35 @@ export const TelegramParsing: React.FC = () => {
                           className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                         />
                         <div className="flex-1">
-                          <div className={clsx('font-medium', isDark ? 'text-gray-200' : 'text-gray-900')}>
+                          <div className={clsx('font-medium flex items-center gap-2', isDark ? 'text-gray-200' : 'text-gray-900')}>
                             {chat.name}
+                            {favoriteChats.has(chat.id) && (
+                              <span className="text-yellow-400">⭐</span>
+                            )}
                           </div>
                           <div className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
                             {chat.type === 'group' ? 'Группа' : chat.type === 'channel' ? 'Канал' : 'Личные сообщения'}
                           </div>
                         </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleFavorite(chat.id)
+                          }}
+                          className={clsx(
+                            'p-1 rounded transition-colors',
+                            favoriteChats.has(chat.id)
+                              ? 'text-yellow-400'
+                              : isDark
+                                ? 'text-gray-500 hover:text-yellow-400'
+                                : 'text-gray-400 hover:text-yellow-500'
+                          )}
+                          title={favoriteChats.has(chat.id) ? 'Убрать из избранного' : 'Добавить в избранное'}
+                        >
+                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                          </svg>
+                        </button>
                       </label>
                     ))
                   )}

@@ -3,6 +3,7 @@ const cors = require('cors');
 const multer = require('multer');
 const ExcelService = require('./src/services/ExcelService_v3');
 const telegramRoutes = require('./src/routes/telegramRoutes');
+const fastopertorRoutes = require('./src/routes/fastopertorRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -162,6 +163,9 @@ app.get('/api/analytics/route-analytics', (_req, res) => res.json({ success: tru
 
 // Telegram routes
 app.use('/api/telegram', telegramRoutes);
+
+// Fastopertor API routes
+app.use('/api/fastopertor', fastopertorRoutes);
 
 app.get('/debug/logs', (req, res) => {
   res.json({

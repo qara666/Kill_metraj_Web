@@ -135,11 +135,20 @@ export const localStorageUtils = {
       const persistentMap = localStorageUtils.getCourierVehicleMap()
       const maxCriticalRouteDistanceKm = localStorage.getItem('km_max_critical_route_distance_km')
       const citySectors = localStorage.getItem('km_city_sectors')
+      const fastopertorApiUrl = localStorage.getItem('km_fastopertor_api_url') || ''
+      const fastopertorApiKey = localStorage.getItem('km_fastopertor_api_key') || ''
+      const fastopertorEndpoint = localStorage.getItem('km_fastopertor_endpoint') || '/api/orders'
+      const enableFastopertorApi = localStorage.getItem('km_enable_fastopertor_api') === 'true'
+
       return settingsJson ? {
         ...JSON.parse(settingsJson),
         courierVehicleMap: persistentMap,
         maxCriticalRouteDistanceKm: maxCriticalRouteDistanceKm ? parseFloat(maxCriticalRouteDistanceKm) : 120,
-        citySectors: citySectors ? JSON.parse(citySectors) : {}
+        citySectors: citySectors ? JSON.parse(citySectors) : {},
+        fastopertorApiUrl,
+        fastopertorApiKey,
+        fastopertorEndpoint,
+        enableFastopertorApi
       } : {
         googleMapsApiKey: localStorage.getItem('google_maps_api_key') || '',
         mapboxToken: localStorage.getItem('km_mapbox_token') || '',
@@ -148,7 +157,11 @@ export const localStorageUtils = {
         cityBias: localStorage.getItem('km_city_bias') || '',
         courierVehicleMap: persistentMap,
         maxCriticalRouteDistanceKm: maxCriticalRouteDistanceKm ? parseFloat(maxCriticalRouteDistanceKm) : 120,
-        citySectors: citySectors ? JSON.parse(citySectors) : {}
+        citySectors: citySectors ? JSON.parse(citySectors) : {},
+        fastopertorApiUrl,
+        fastopertorApiKey,
+        fastopertorEndpoint,
+        enableFastopertorApi
       }
     } catch (error) {
       console.error('Error reading settings:', error)
@@ -190,6 +203,19 @@ export const localStorageUtils = {
       }
       if (settings.citySectors !== undefined) {
         localStorage.setItem('km_city_sectors', JSON.stringify(settings.citySectors || {}))
+      }
+      // Save Fastopertor API settings
+      if (settings.fastopertorApiUrl !== undefined) {
+        localStorage.setItem('km_fastopertor_api_url', settings.fastopertorApiUrl)
+      }
+      if (settings.fastopertorApiKey !== undefined) {
+        localStorage.setItem('km_fastopertor_api_key', settings.fastopertorApiKey)
+      }
+      if (settings.fastopertorEndpoint !== undefined) {
+        localStorage.setItem('km_fastopertor_endpoint', settings.fastopertorEndpoint)
+      }
+      if (settings.enableFastopertorApi !== undefined) {
+        localStorage.setItem('km_enable_fastopertor_api', settings.enableFastopertorApi ? 'true' : 'false')
       }
       // Save courier vehicle map separately
       if (courierVehicleMap && typeof courierVehicleMap === 'object') {
