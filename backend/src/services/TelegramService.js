@@ -1365,42 +1365,42 @@ class TelegramService {
           for (const batch of chatBatches) {
             // Параллельный поиск в батче чатов по всем вариантам
             const batchPromises = batch.map(async (chatId) => {
-              try {
-                const entity = await client.getEntity(chatId);
+            try {
+              const entity = await client.getEntity(chatId);
                 const batchResults = [];
                 
                 // Ищем по каждому варианту (полный номер и его части)
                 for (const searchVariant of searchVariants) {
                   try {
-                    const messages = await client.getMessages(entity, {
+              const messages = await client.getMessages(entity, {
                       search: searchVariant,
-                      limit: limit
-                    });
+                limit: limit
+              });
 
-                    for (const msg of messages) {
+              for (const msg of messages) {
                       const messageDate = msg.date ? new Date(msg.date * 1000) : null;
                       if (messageDate && (messageDate < filterDate || messageDate > filterDateTo)) {
                         continue;
                       }
                       
-                      const messageText = msg.text || msg.message || '';
+                const messageText = msg.text || msg.message || '';
                       if (messageText && this.containsNumberOrPart(messageText, fullNumber)) {
                         const existing = batchResults.find(r => r.id === msg.id && r.chatId === chatId);
                         if (!existing) {
-                          const sender = msg.sender;
+                  const sender = msg.sender;
                           batchResults.push({
-                            id: msg.id,
-                            chatId: chatId,
-                            chatName: entity.title || entity.firstName || entity.name || 'Без названия',
-                            text: messageText,
+                    id: msg.id,
+                    chatId: chatId,
+                    chatName: entity.title || entity.firstName || entity.name || 'Без названия',
+                    text: messageText,
                             date: msg.date ? (typeof msg.date === 'number' ? msg.date * 1000 : msg.date) : null,
-                            author: sender ? (sender.firstName || sender.username || 'Неизвестно') : undefined,
-                            authorId: msg.senderId ? msg.senderId.toString() : undefined,
-                            isForwarded: msg.fwdFrom !== undefined,
-                            forwardedFrom: msg.fwdFrom?.fromId?.toString()
-                          });
-                        }
-                      }
+                    author: sender ? (sender.firstName || sender.username || 'Неизвестно') : undefined,
+                    authorId: msg.senderId ? msg.senderId.toString() : undefined,
+                    isForwarded: msg.fwdFrom !== undefined,
+                    forwardedFrom: msg.fwdFrom?.fromId?.toString()
+                  });
+                }
+              }
                     }
                   } catch (searchError) {
                     // Игнорируем ошибки поиска по конкретному варианту
@@ -1409,10 +1409,10 @@ class TelegramService {
                 }
                 
                 return batchResults;
-              } catch (error) {
-                console.error(`Ошибка поиска в чате ${chatId}:`, error);
+            } catch (error) {
+              console.error(`Ошибка поиска в чате ${chatId}:`, error);
                 return [];
-              }
+            }
             });
             
             const batchResults = await Promise.all(batchPromises);
@@ -1527,36 +1527,36 @@ class TelegramService {
           
           for (const batch of chatBatches) {
             const batchPromises = batch.map(async (chatId) => {
-              try {
-                const entity = await client.getEntity(chatId);
-                const messages = await client.getMessages(entity, {
-                  search: query,
-                  limit: limit
-                });
+          try {
+            const entity = await client.getEntity(chatId);
+            const messages = await client.getMessages(entity, {
+              search: query,
+              limit: limit
+            });
 
                 const batchResults = [];
-                for (const msg of messages) {
+            for (const msg of messages) {
                   const messageDate = msg.date ? new Date(msg.date * 1000) : null;
                   if (messageDate && (messageDate < filterDate || messageDate > filterDateTo)) {
                     continue;
                   }
                   
-                  const messageText = msg.text || msg.message || '';
-                  const sender = msg.sender;
+              const messageText = msg.text || msg.message || '';
+              const sender = msg.sender;
                   batchResults.push({
-                    id: msg.id,
-                    chatId: chatId,
-                    chatName: entity.title || entity.firstName || entity.name || 'Без названия',
-                    text: messageText,
+                id: msg.id,
+                chatId: chatId,
+                chatName: entity.title || entity.firstName || entity.name || 'Без названия',
+                text: messageText,
                     date: msg.date ? (typeof msg.date === 'number' ? msg.date * 1000 : msg.date) : null,
-                    author: sender ? (sender.firstName || sender.username || 'Неизвестно') : undefined,
-                    authorId: msg.senderId ? msg.senderId.toString() : undefined,
-                    isForwarded: msg.fwdFrom !== undefined,
-                    forwardedFrom: msg.fwdFrom?.fromId?.toString()
-                  });
-                }
+                author: sender ? (sender.firstName || sender.username || 'Неизвестно') : undefined,
+                authorId: msg.senderId ? msg.senderId.toString() : undefined,
+                isForwarded: msg.fwdFrom !== undefined,
+                forwardedFrom: msg.fwdFrom?.fromId?.toString()
+              });
+            }
                 return batchResults;
-              } catch (error) {
+          } catch (error) {
                 return [];
               }
             });

@@ -10,7 +10,7 @@ interface LogEntry {
 class Logger {
   private logs: LogEntry[] = [];
   private maxLogs = 1000;
-  private enabled = process.env.NODE_ENV !== 'production';
+  private enabled = import.meta.env.MODE !== 'production';
 
   private log(level: LogLevel, message: string, data?: any) {
     const entry: LogEntry = {

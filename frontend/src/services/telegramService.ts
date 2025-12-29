@@ -290,7 +290,7 @@ class TelegramService {
             date = new Date();
           }
           return {
-            ...msg,
+          ...msg,
             date
           };
         });
