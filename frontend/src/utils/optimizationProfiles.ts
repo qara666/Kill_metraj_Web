@@ -2,9 +2,9 @@
  * Настройки и профили оптимизации маршрутов
  */
 
-import type { OptimizationOptions } from './advancedRouteOptimization'
-import type { TrafficAwareOptions } from './trafficAwareOptimization'
-import type { BatchingOptions } from './trafficAwareOptimization'
+import type { OptimizationOptions } from './routes/advancedRouteOptimization'
+import type { TrafficAwareOptions } from './routes/trafficAwareOptimization'
+import type { BatchingOptions } from './routes/trafficAwareOptimization'
 
 export type OptimizationProfile = 'fast' | 'balanced' | 'best' | 'custom'
 

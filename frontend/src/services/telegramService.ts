@@ -276,11 +276,24 @@ class TelegramService {
       const result = await response.json();
       
       if (result.success && result.messages) {
-        // Преобразуем даты из строк в Date объекты
-        return result.messages.map((msg: any) => ({
-          ...msg,
-          date: new Date(msg.date)
-        }));
+        return result.messages.map((msg: any) => {
+          let date: Date;
+          if (msg.date) {
+            if (typeof msg.date === 'number') {
+              date = new Date(msg.date);
+            } else if (typeof msg.date === 'string') {
+              date = new Date(msg.date);
+            } else {
+              date = new Date();
+            }
+          } else {
+            date = new Date();
+          }
+          return {
+            ...msg,
+            date
+          };
+        });
       } else {
         throw new Error(result.error || 'Не удалось выполнить поиск');
       }
@@ -297,6 +310,79 @@ class TelegramService {
     const regex = /\b\d{7}\b/g
     const matches = text.match(regex) || []
     return [...new Set(matches)] // Убираем дубликаты
+  }
+
+  /**
+   * Извлечение частичных номеров (4-6 цифр) из текста
+   */
+  extractPartialNumbers(text: string): string[] {
+    const regex = /\b\d{4,6}\b/g
+    const matches = text.match(regex) || []
+    return [...new Set(matches)] // Убираем дубликаты
+  }
+
+  /**
+   * Проверка, заканчивается ли семизначный номер на указанную часть
+   */
+  numberEndsWith(fullNumber: string, part: string): boolean {
+    if (!fullNumber || !part || fullNumber.length !== 7) return false
+    return fullNumber.endsWith(part)
+  }
+
+  /**
+   * Извлечение всех семизначных номеров из текста, которые заканчиваются на указанную часть
+   */
+  extractFullNumbersEndingWith(text: string, part: string): string[] {
+    if (!text || !part) return []
+    const regex = /\b\d{7}\b/g
+    const matches = text.match(regex) || []
+    return matches.filter(num => this.numberEndsWith(num, part))
+  }
+
+  /**
+   * Генерация вариантов поиска для семизначного номера
+   * Возвращает полный номер и его части (последние 4-6 цифр)
+   */
+  generateSearchVariants(fullNumber: string): string[] {
+    if (!fullNumber || fullNumber.length !== 7) {
+      return [fullNumber]
+    }
+    
+    const variants = [fullNumber] // Полный номер
+    // Последние 6 цифр
+    if (fullNumber.length >= 6) {
+      variants.push(fullNumber.slice(1))
+    }
+    // Последние 5 цифр
+    if (fullNumber.length >= 5) {
+      variants.push(fullNumber.slice(2))
+    }
+    // Последние 4 цифры
+    if (fullNumber.length >= 4) {
+      variants.push(fullNumber.slice(3))
+    }
+    
+    return [...new Set(variants)] // Убираем дубликаты
+  }
+
+  /**
+   * Проверка, содержит ли текст номер или его часть
+   */
+  containsNumberOrPart(text: string, fullNumber: string): boolean {
+    if (!text || !fullNumber) return false
+    
+    // Проверяем полный номер
+    if (text.includes(fullNumber)) return true
+    
+    // Проверяем части номера (последние 4-6 цифр)
+    const variants = this.generateSearchVariants(fullNumber)
+    for (const variant of variants) {
+      if (variant !== fullNumber && text.includes(variant)) {
+        return true
+      }
+    }
+    
+    return false
   }
 
   /**

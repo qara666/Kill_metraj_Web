@@ -2,14 +2,14 @@
  * Интеграция многоалгоритмной оптимизации, батчинга и анализа покрытия
  */
 
-import type { Order } from './routeOptimization'
+import type { Order } from './routes/routeOptimization'
 import type { ProfileSettings } from './optimizationProfiles'
-import type { OrderBatch } from './trafficAwareOptimization'
-import type { CoverageAnalysis } from './coverageAnalysis'
+import type { OrderBatch } from './routes/trafficAwareOptimization'
+import type { CoverageAnalysis } from './processing/coverageAnalysis'
 
-import { multiAlgorithmOptimization } from './advancedRouteOptimization'
-import { optimizeWithTraffic, batchOrdersByTime } from './trafficAwareOptimization'
-import { createWorkloadHeatmap } from './coverageAnalysis'
+import { multiAlgorithmOptimization } from './routes/advancedRouteOptimization'
+import { optimizeWithTraffic, batchOrdersByTime } from './routes/trafficAwareOptimization'
+import { createWorkloadHeatmap } from './processing/coverageAnalysis'
 import { getOptimizationSettings } from './optimizationProfiles'
 
 export interface EnhancedRoutePlan {
@@ -178,7 +178,7 @@ export async function planEnhancedRoutes(
   if (enableCoverageAnalysis && deliveryZone) {
     console.log('📊 Анализ покрытия зоны доставки...')
     
-    const { analyzeCoverage } = await import('./coverageAnalysis')
+    const { analyzeCoverage } = await import('./processing/coverageAnalysis')
     
     if (deliveryZone.polygon) {
       coverageAnalysis = analyzeCoverage(orders, {

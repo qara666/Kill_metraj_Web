@@ -3,6 +3,9 @@ const cors = require('cors');
 const multer = require('multer');
 const ExcelService = require('./src/services/ExcelService_v3');
 const telegramRoutes = require('./src/routes/telegramRoutes');
+const fastopertorRoutes = require('./src/routes/fastopertorRoutes');
+const logger = require('./src/utils/logger');
+const { generalLimiter, uploadLimiter, telegramLimiter } = require('./src/middleware/rateLimiter');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -22,6 +25,18 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Request logging middleware
+app.use((req, res, next) => {
+  logger.info(`${req.method} ${req.path}`, {
+    ip: req.ip,
+    userAgent: req.get('user-agent')
+  });
+  next();
+});
+
+// Apply rate limiting
+app.use('/api/', generalLimiter);
+
 // Настройка multer
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
@@ -29,12 +44,12 @@ const upload = multer({ storage: storage });
 // ExcelService
 const excelService = new ExcelService();
 
-// Логи
+// Legacy logs array for backward compatibility
 const logs = [];
 const addLog = (message) => {
   const timestamp = new Date().toISOString();
   logs.push(`[${timestamp}] ${message}`);
-  console.log(`[LOG] ${message}`);
+  logger.info(message);
 };
 
 // Маршруты
@@ -55,7 +70,7 @@ app.get('/api/telegram/test', (req, res) => {
   });
 });
 
-app.post('/api/upload/excel', upload.single('file'), async (req, res) => {
+app.post('/api/upload/excel', uploadLimiter, upload.single('file'), async (req, res) => {
   try {
     addLog('Начало обработки Excel файла');
     
@@ -110,8 +125,11 @@ app.post('/api/upload/excel', upload.single('file'), async (req, res) => {
       });
     }
   } catch (error) {
-    addLog(`Критическая ошибка: ${error.message}`);
-    console.error('Ошибка:', error);
+    logger.error('Ошибка обработки Excel файла', {
+      error: error.message,
+      stack: error.stack,
+      fileName: req.file?.originalname
+    });
     res.status(500).json({
       success: false,
       error: 'Внутренняя ошибка сервера'
@@ -160,8 +178,11 @@ app.get('/api/analytics/dashboard', (_req, res) => res.json({ success: true, dat
 app.get('/api/analytics/courier-performance', (_req, res) => res.json({ success: true, data: [] }))
 app.get('/api/analytics/route-analytics', (_req, res) => res.json({ success: true, data: {} }))
 
-// Telegram routes
-app.use('/api/telegram', telegramRoutes);
+// Telegram routes with rate limiting
+app.use('/api/telegram', telegramLimiter, telegramRoutes);
+
+// Fastopertor API routes
+app.use('/api/fastopertor', fastopertorRoutes);
 
 app.get('/debug/logs', (req, res) => {
   res.json({
@@ -182,10 +203,26 @@ app.post('/api/upload/test-api-key', (req, res) => {
   });
 });
 
+// Error handling middleware
+app.use((err, req, res, next) => {
+  logger.error('Unhandled error', {
+    error: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method
+  });
+  res.status(500).json({
+    success: false,
+    error: 'Внутренняя ошибка сервера'
+  });
+});
+
 // Запуск
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Простой сервер запущен на 0.0.0.0:${PORT}`);
-  addLog('Сервер запущен');
+  logger.info(`🚀 Сервер запущен на 0.0.0.0:${PORT}`, {
+    port: PORT,
+    env: process.env.NODE_ENV || 'development'
+  });
 });
 
 

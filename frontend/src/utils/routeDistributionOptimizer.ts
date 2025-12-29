@@ -1,7 +1,7 @@
 // Расширенная система оптимизации распределения маршрутов
 
-import type { Order } from './routeOptimizationHelpers'
-import { calculateRouteEfficiencyMetrics, type RouteEfficiencyMetrics } from './routeEfficiency'
+import type { Order } from './routes/routeOptimizationHelpers'
+import { calculateRouteEfficiencyMetrics, type RouteEfficiencyMetrics } from './routes/routeEfficiency'
 
 // ============================================================================
 // ИНТЕРФЕЙСЫ И ТИПЫ

@@ -8,8 +8,20 @@ const { StringSession } = require('telegram/sessions');
 const { Api } = require('telegram/tl');
 const fs = require('fs').promises;
 const path = require('path');
+const logger = require('../utils/logger');
 
 class TelegramService {
+    async handleIncomingMessage(message) {
+        try {
+            logger.debug('Обработка входящего сообщения Telegram', { messageId: message?.id });
+        } catch (error) {
+            logger.error('Ошибка обработки сообщения Telegram', { error: error.message, stack: error.stack });
+        }
+    }
+
+    logAction(action, details) {
+        logger.info(`Telegram action: ${action}`, details);
+    }
   constructor() {
     this.clients = new Map(); // Храним клиенты по sessionId
     this.sessionsDir = path.join(__dirname, '../../sessions');
@@ -20,7 +32,7 @@ class TelegramService {
     try {
       await fs.mkdir(this.sessionsDir, { recursive: true });
     } catch (error) {
-      console.error('Ошибка создания директории sessions:', error);
+      logger.error('Ошибка создания директории sessions', { error: error.message });
     }
   }
 
@@ -50,9 +62,9 @@ class TelegramService {
         savedAt: new Date().toISOString()
       };
       await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
-      console.log('Конфигурация сессии сохранена:', sessionId.substring(0, 20) + '...');
+      logger.debug('Конфигурация сессии сохранена', { sessionId: sessionId.substring(0, 20) + '...' });
     } catch (error) {
-      console.error('Ошибка сохранения конфигурации сессии:', error);
+      logger.error('Ошибка сохранения конфигурации сессии', { error: error.message });
     }
   }
 
@@ -69,7 +81,7 @@ class TelegramService {
         apiHash: config.apiHash
       };
     } catch (error) {
-      console.log('Конфигурация сессии не найдена или повреждена:', error.message);
+      logger.debug('Конфигурация сессии не найдена или повреждена', { error: error.message });
       return null;
     }
   }
@@ -259,7 +271,13 @@ class TelegramService {
       let client;
       
       try {
-        session = new StringSession(stringSession || '');
+        // Используем stringSession, который был определен выше (строка 228)
+        // Если сессия пустая, создаем новую пустую сессию
+        if (!stringSession || stringSession.trim().length === 0) {
+          console.log('Создаем новую пустую сессию');
+          stringSession = '';
+        }
+        session = new StringSession(stringSession);
         console.log('Сессия создана успешно');
       } catch (sessionError) {
         console.error('Ошибка создания сессии:', sessionError);
@@ -274,7 +292,7 @@ class TelegramService {
         // Добавляем дополнительные параметры для надежного подключения
         // ВАЖНО: apiId и apiHash должны быть переданы как числа и строка соответственно
         // Создаем клиент с явным указанием типов, как в тестовом скрипте
-        client = new TelegramClient(session, Number(apiIdNum), String(cleanApiHash), {
+        client = new TelegramClient(session, apiIdNum, cleanApiHash, {
           connectionRetries: 5,
           retryDelay: 1000,
           timeout: 10000,
@@ -1314,87 +1332,247 @@ class TelegramService {
    */
   async searchMessages(sessionId, options) {
     try {
-      const { query, chatIds, dateFrom, dateTo, limit = 100 } = options;
+      const { query, chatIds, dateFrom, dateTo, limit = 30 } = options;
       const client = await this.getClient(sessionId);
       const results = [];
+
+      const now = new Date();
+      const weekAgo = new Date(now);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      weekAgo.setHours(0, 0, 0, 0);
+      
+      const filterDate = dateFrom ? (typeof dateFrom === 'string' ? new Date(dateFrom) : new Date(dateFrom)) : weekAgo;
+      const filterDateTo = dateTo ? (typeof dateTo === 'string' ? new Date(dateTo) : new Date(dateTo)) : now;
 
       // Извлекаем семизначные номера
       const sevenDigitNumbers = this.extractSevenDigitNumbers(query);
 
-      // Если есть семизначные номера, ищем по каждому
+      // Если есть семизначные номера, ищем по каждому (оптимизировано: батчинг)
       if (sevenDigitNumbers.length > 0) {
-        for (const number of sevenDigitNumbers) {
-          for (const chatId of chatIds || []) {
-            try {
-              const entity = await client.getEntity(chatId);
-              const messages = await client.getMessages(entity, {
-                search: number,
-                limit: limit
-              });
+        // Ограничиваем количество номеров для поиска (первые 5)
+        const numbersToSearch = sevenDigitNumbers.slice(0, 5);
+        
+        for (const fullNumber of numbersToSearch) {
+          // Генерируем варианты поиска (полный номер + части)
+          const searchVariants = this.generateSearchVariants(fullNumber);
+          
+          // Обрабатываем чаты батчами по 3 для ускорения
+          const chatBatches = [];
+          for (let i = 0; i < (chatIds || []).length; i += 3) {
+            chatBatches.push((chatIds || []).slice(i, i + 3));
+          }
+          
+          for (const batch of chatBatches) {
+            // Параллельный поиск в батче чатов по всем вариантам
+            const batchPromises = batch.map(async (chatId) => {
+              try {
+                const entity = await client.getEntity(chatId);
+                const batchResults = [];
+                
+                // Ищем по каждому варианту (полный номер и его части)
+                for (const searchVariant of searchVariants) {
+                  try {
+                    const messages = await client.getMessages(entity, {
+                      search: searchVariant,
+                      limit: limit
+                    });
 
-              for (const msg of messages) {
-                const messageText = msg.text || msg.message || '';
-                if (messageText && messageText.includes(number)) {
+                    for (const msg of messages) {
+                      const messageDate = msg.date ? new Date(msg.date * 1000) : null;
+                      if (messageDate && (messageDate < filterDate || messageDate > filterDateTo)) {
+                        continue;
+                      }
+                      
+                      const messageText = msg.text || msg.message || '';
+                      if (messageText && this.containsNumberOrPart(messageText, fullNumber)) {
+                        const existing = batchResults.find(r => r.id === msg.id && r.chatId === chatId);
+                        if (!existing) {
+                          const sender = msg.sender;
+                          batchResults.push({
+                            id: msg.id,
+                            chatId: chatId,
+                            chatName: entity.title || entity.firstName || entity.name || 'Без названия',
+                            text: messageText,
+                            date: msg.date ? (typeof msg.date === 'number' ? msg.date * 1000 : msg.date) : null,
+                            author: sender ? (sender.firstName || sender.username || 'Неизвестно') : undefined,
+                            authorId: msg.senderId ? msg.senderId.toString() : undefined,
+                            isForwarded: msg.fwdFrom !== undefined,
+                            forwardedFrom: msg.fwdFrom?.fromId?.toString()
+                          });
+                        }
+                      }
+                    }
+                  } catch (searchError) {
+                    // Игнорируем ошибки поиска по конкретному варианту
+                    console.warn(`Ошибка поиска по варианту ${searchVariant} в чате ${chatId}:`, searchError.message);
+                  }
+                }
+                
+                return batchResults;
+              } catch (error) {
+                console.error(`Ошибка поиска в чате ${chatId}:`, error);
+                return [];
+              }
+            });
+            
+            const batchResults = await Promise.all(batchPromises);
+            results.push(...batchResults.flat());
+          }
+        }
+      }
+
+      if (query.trim() && sevenDigitNumbers.length === 0) {
+        const partialNumbers = this.extractPartialNumbers(query);
+        
+        if (partialNumbers.length > 0) {
+          for (const part of partialNumbers.slice(0, 5)) {
+            const chatBatches = [];
+            for (let i = 0; i < (chatIds || []).length; i += 3) {
+              chatBatches.push((chatIds || []).slice(i, i + 3));
+            }
+            
+            for (const batch of chatBatches) {
+              const batchPromises = batch.map(async (chatId) => {
+                try {
+                  const entity = await client.getEntity(chatId);
+                  const batchResults = [];
+                  
+                  try {
+                    const searchMessages = await client.getMessages(entity, {
+                      search: part,
+                      limit: limit
+                    });
+                    
+                    for (const msg of searchMessages) {
+                      const messageDate = msg.date ? new Date(msg.date * 1000) : null;
+                      if (messageDate && (messageDate < filterDate || messageDate > filterDateTo)) {
+                        continue;
+                      }
+                      
+                      const messageText = msg.text || msg.message || '';
+                      const fullNumbers = this.extractFullNumbersEndingWith(messageText, part);
+                      if (fullNumbers.length > 0 || messageText.includes(part)) {
+                        const existing = batchResults.find(r => r.id === msg.id && r.chatId === chatId);
+                        if (!existing) {
+                          const sender = msg.sender;
+                          batchResults.push({
+                            id: msg.id,
+                            chatId: chatId,
+                            chatName: entity.title || entity.firstName || entity.name || 'Без названия',
+                            text: messageText,
+                            date: msg.date ? (typeof msg.date === 'number' ? msg.date * 1000 : msg.date) : null,
+                            author: sender ? (sender.firstName || sender.username || 'Неизвестно') : undefined,
+                            authorId: msg.senderId ? msg.senderId.toString() : undefined,
+                            isForwarded: msg.fwdFrom !== undefined,
+                            forwardedFrom: msg.fwdFrom?.fromId?.toString()
+                          });
+                        }
+                      }
+                    }
+                  } catch (searchError) {
+                  }
+                  
+                  try {
+                    const checkLimit = 200;
+                    const recentMessages = await client.getMessages(entity, {
+                      limit: checkLimit
+                    });
+                    
+                    for (const msg of recentMessages) {
+                      const messageDate = msg.date ? new Date(msg.date * 1000) : null;
+                      if (messageDate && (messageDate < filterDate || messageDate > filterDateTo)) {
+                        continue;
+                      }
+                      
+                      const messageText = msg.text || msg.message || '';
+                      if (!messageText) continue;
+                      
+                      const fullNumbers = this.extractFullNumbersEndingWith(messageText, part);
+                      if (fullNumbers.length > 0) {
+                        const existing = batchResults.find(r => r.id === msg.id && r.chatId === chatId);
+                        if (!existing) {
+                          const sender = msg.sender;
+                          batchResults.push({
+                            id: msg.id,
+                            chatId: chatId,
+                            chatName: entity.title || entity.firstName || entity.name || 'Без названия',
+                            text: messageText,
+                            date: msg.date ? (typeof msg.date === 'number' ? msg.date * 1000 : msg.date) : null,
+                            author: sender ? (sender.firstName || sender.username || 'Неизвестно') : undefined,
+                            authorId: msg.senderId ? msg.senderId.toString() : undefined,
+                            isForwarded: msg.fwdFrom !== undefined,
+                            forwardedFrom: msg.fwdFrom?.fromId?.toString()
+                          });
+                        }
+                      }
+                    }
+                  } catch (recentError) {
+                  }
+                  
+                  return batchResults;
+                } catch (error) {
+                  return [];
+                }
+              });
+              
+              const batchResults = await Promise.all(batchPromises);
+              results.push(...batchResults.flat());
+            }
+          }
+        } else {
+          const chatBatches = [];
+          for (let i = 0; i < (chatIds || []).length; i += 3) {
+            chatBatches.push((chatIds || []).slice(i, i + 3));
+          }
+          
+          for (const batch of chatBatches) {
+            const batchPromises = batch.map(async (chatId) => {
+              try {
+                const entity = await client.getEntity(chatId);
+                const messages = await client.getMessages(entity, {
+                  search: query,
+                  limit: limit
+                });
+
+                const batchResults = [];
+                for (const msg of messages) {
+                  const messageDate = msg.date ? new Date(msg.date * 1000) : null;
+                  if (messageDate && (messageDate < filterDate || messageDate > filterDateTo)) {
+                    continue;
+                  }
+                  
+                  const messageText = msg.text || msg.message || '';
                   const sender = msg.sender;
-                  results.push({
+                  batchResults.push({
                     id: msg.id,
                     chatId: chatId,
                     chatName: entity.title || entity.firstName || entity.name || 'Без названия',
                     text: messageText,
-                    date: msg.date,
+                    date: msg.date ? (typeof msg.date === 'number' ? msg.date * 1000 : msg.date) : null,
                     author: sender ? (sender.firstName || sender.username || 'Неизвестно') : undefined,
                     authorId: msg.senderId ? msg.senderId.toString() : undefined,
                     isForwarded: msg.fwdFrom !== undefined,
                     forwardedFrom: msg.fwdFrom?.fromId?.toString()
                   });
                 }
+                return batchResults;
+              } catch (error) {
+                return [];
               }
-            } catch (error) {
-              console.error(`Ошибка поиска в чате ${chatId}:`, error);
-            }
-          }
-        }
-      }
-
-      // Если есть текст запроса (не только цифры), ищем и по нему
-      if (query.trim() && sevenDigitNumbers.length === 0) {
-        for (const chatId of chatIds || []) {
-          try {
-            const entity = await client.getEntity(chatId);
-            const messages = await client.getMessages(entity, {
-              search: query,
-              limit: limit
             });
-
-            for (const msg of messages) {
-              const messageText = msg.text || msg.message || '';
-              const sender = msg.sender;
-              results.push({
-                id: msg.id,
-                chatId: chatId,
-                chatName: entity.title || entity.firstName || entity.name || 'Без названия',
-                text: messageText,
-                date: msg.date,
-                author: sender ? (sender.firstName || sender.username || 'Неизвестно') : undefined,
-                authorId: msg.senderId ? msg.senderId.toString() : undefined,
-                isForwarded: msg.fwdFrom !== undefined,
-                forwardedFrom: msg.fwdFrom?.fromId?.toString()
-              });
-            }
-          } catch (error) {
-            console.error(`Ошибка поиска в чате ${chatId}:`, error);
+            
+            const batchResults = await Promise.all(batchPromises);
+            results.push(...batchResults.flat());
           }
         }
       }
 
-      // Убираем дубликаты
       const uniqueResults = results.filter((result, index, self) =>
         index === self.findIndex(r => r.id === result.id && r.chatId === result.chatId)
       );
 
       return { success: true, messages: uniqueResults };
     } catch (error) {
-      console.error('Ошибка поиска сообщений:', error);
       return {
         success: false,
         error: error.message || 'Неизвестная ошибка'
@@ -1402,13 +1580,77 @@ class TelegramService {
     }
   }
 
-  /**
-   * Извлечение семизначных цифр из текста
-   */
   extractSevenDigitNumbers(text) {
     const regex = /\b\d{7}\b/g;
     const matches = text.match(regex) || [];
-    return [...new Set(matches)]; // Убираем дубликаты
+    return [...new Set(matches)];
+  }
+
+  extractPartialNumbers(text) {
+    const regex = /\b\d{4,6}\b/g;
+    const matches = text.match(regex) || [];
+    return [...new Set(matches)];
+  }
+
+  numberEndsWith(fullNumber, part) {
+    if (!fullNumber || !part || fullNumber.length !== 7) {
+      return false;
+    }
+    return fullNumber.endsWith(part);
+  }
+
+  extractFullNumbersEndingWith(text, part) {
+    if (!text || !part) return [];
+    const regex = /\d{7}/g;
+    const matches = text.match(regex) || [];
+    return matches.filter(num => num.endsWith(part));
+  }
+
+  /**
+   * Генерация вариантов поиска для семизначного номера
+   * Возвращает полный номер и его части (последние 4-6 цифр)
+   * Например, для 1214508 вернет: ['1214508', '214508', '14508', '4508']
+   */
+  generateSearchVariants(fullNumber) {
+    if (!fullNumber || fullNumber.length !== 7) {
+      return [fullNumber];
+    }
+    
+    const variants = [fullNumber]; // Полный номер
+    // Последние 6 цифр
+    if (fullNumber.length >= 6) {
+      variants.push(fullNumber.slice(1));
+    }
+    // Последние 5 цифр
+    if (fullNumber.length >= 5) {
+      variants.push(fullNumber.slice(2));
+    }
+    // Последние 4 цифры
+    if (fullNumber.length >= 4) {
+      variants.push(fullNumber.slice(3));
+    }
+    
+    return [...new Set(variants)]; // Убираем дубликаты
+  }
+
+  /**
+   * Проверка, содержит ли текст номер или его часть
+   */
+  containsNumberOrPart(text, fullNumber) {
+    if (!text || !fullNumber) return false;
+    
+    // Проверяем полный номер
+    if (text.includes(fullNumber)) return true;
+    
+    // Проверяем части номера (последние 4-6 цифр)
+    const variants = this.generateSearchVariants(fullNumber);
+    for (const variant of variants) {
+      if (variant !== fullNumber && text.includes(variant)) {
+        return true;
+      }
+    }
+    
+    return false;
   }
 
   /**

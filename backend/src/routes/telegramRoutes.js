@@ -5,6 +5,7 @@
 const express = require('express');
 const router = express.Router();
 const telegramService = require('../services/TelegramService');
+const logger = require('../utils/logger');
 
 /**
  * POST /api/telegram/initialize
@@ -14,13 +15,10 @@ router.post('/initialize', async (req, res) => {
   try {
     const { sessionId, apiId, apiHash, phoneNumber } = req.body;
 
-    // Логируем входящие данные для отладки
-    console.log('Получен запрос на инициализацию:', {
+    logger.info('Получен запрос на инициализацию Telegram', {
       sessionId: sessionId ? `${sessionId.substring(0, 10)}...` : 'undefined',
       apiId: apiId ? String(apiId).substring(0, 5) + '...' : 'undefined',
-      apiHash: apiHash ? `${apiHash.substring(0, 5)}...` : 'undefined',
       apiHashLength: apiHash ? apiHash.length : 0,
-      phoneNumber: phoneNumber ? phoneNumber.substring(0, 10) + '...' : 'undefined',
       phoneNumberLength: phoneNumber ? phoneNumber.length : 0
     });
 
@@ -60,10 +58,9 @@ router.post('/initialize', async (req, res) => {
     const cleanApiHash = apiHash.trim();
     const cleanPhoneNumber = phoneNumber ? phoneNumber.trim() : '';
 
-    console.log('Очищенные данные:', {
+    logger.debug('Очищенные данные инициализации', {
       apiId: cleanApiId.substring(0, 5) + '...',
       apiHashLength: cleanApiHash.length,
-      phoneNumber: cleanPhoneNumber.substring(0, 10) + '...',
       phoneNumberLength: cleanPhoneNumber.length
     });
 
@@ -82,7 +79,10 @@ router.post('/initialize', async (req, res) => {
       res.status(400).json(result); // 400 для ошибок валидации
     }
   } catch (error) {
-    console.error('Ошибка инициализации Telegram:', error);
+    logger.error('Ошибка инициализации Telegram', {
+      error: error.message,
+      stack: error.stack
+    });
     // Безопасное извлечение сообщения об ошибке
     let errorMessage = 'Неизвестная ошибка';
     try {
@@ -172,7 +172,10 @@ router.post('/complete-auth', async (req, res) => {
       res.status(400).json(result); // 400 для ошибок валидации
     }
   } catch (error) {
-    console.error('Ошибка завершения авторизации:', error);
+    logger.error('Ошибка завершения авторизации Telegram', {
+      error: error.message,
+      stack: error.stack
+    });
     res.status(500).json({
       success: false,
       error: error.message || 'Неизвестная ошибка'
@@ -194,7 +197,10 @@ router.get('/status/:sessionId', async (req, res) => {
       connected: isConnected
     });
   } catch (error) {
-    console.error('Ошибка проверки статуса:', error);
+    logger.error('Ошибка проверки статуса Telegram', {
+      error: error.message,
+      stack: error.stack
+    });
     res.status(500).json({
       success: false,
       error: error.message || 'Неизвестная ошибка'
@@ -217,7 +223,10 @@ router.get('/chats/:sessionId', async (req, res) => {
       res.status(500).json(result);
     }
   } catch (error) {
-    console.error('Ошибка получения чатов:', error);
+    logger.error('Ошибка получения чатов Telegram', {
+      error: error.message,
+      stack: error.stack
+    });
     res.status(500).json({
       success: false,
       error: error.message || 'Неизвестная ошибка'
@@ -255,7 +264,10 @@ router.post('/search/:sessionId', async (req, res) => {
       res.status(500).json(result);
     }
   } catch (error) {
-    console.error('Ошибка поиска сообщений:', error);
+    logger.error('Ошибка поиска сообщений Telegram', {
+      error: error.message,
+      stack: error.stack
+    });
     res.status(500).json({
       success: false,
       error: error.message || 'Неизвестная ошибка'
@@ -278,7 +290,10 @@ router.post('/disconnect/:sessionId', async (req, res) => {
       res.status(500).json(result);
     }
   } catch (error) {
-    console.error('Ошибка отключения:', error);
+    logger.error('Ошибка отключения Telegram', {
+      error: error.message,
+      stack: error.stack
+    });
     res.status(500).json({
       success: false,
       error: error.message || 'Неизвестная ошибка'

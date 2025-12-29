@@ -1,16 +1,18 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
-import { LoadingSpinner } from '../components/LoadingSpinner'
-import { ApiKeyNotification } from '../components/ApiKeyNotification'
-import { ExcelUploadSection } from '../components/ExcelUploadSection'
-import { ExcelResultsDisplay } from '../components/ExcelResultsDisplay'
+import { LoadingSpinner } from '../components/shared/LoadingSpinner'
+import { ApiKeyNotification } from '../components/modals/ApiKeyNotification'
+import { ExcelUploadSection } from '../components/excel/ExcelUploadSection'
+import { ExcelResultsDisplay } from '../components/excel/ExcelResultsDisplay'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { clsx } from 'clsx'
 import * as api from '../services/api'
-const ExcelDebugLogs = lazy(() => import('../components/ExcelDebugLogs').then(module => ({ default: module.ExcelDebugLogs })))
-const ExcelDataPreview = lazy(() => import('../components/ExcelDataPreview').then(module => ({ default: module.ExcelDataPreview })))
+import { fastopertorApi } from '../services/fastopertorApi'
+import { localStorageUtils } from '../utils/ui/localStorage'
+const ExcelDebugLogs = lazy(() => import('../components/excel/ExcelDebugLogs').then(module => ({ default: module.ExcelDebugLogs })))
+const ExcelDataPreview = lazy(() => import('../components/excel/ExcelDataPreview').then(module => ({ default: module.ExcelDataPreview })))
 
 export const Dashboard: React.FC = () => {
   const { excelData, setExcelData, clearExcelData } = useExcelData()
@@ -24,18 +26,15 @@ export const Dashboard: React.FC = () => {
   const queryClient = useQueryClient()
 
   const log = (message: string) => {
-    console.log('[Dashboard]', message)
     const entry = `${new Date().toLocaleTimeString()} — ${message}`
     setLogs(prev => [entry, ...prev].slice(0, 200))
   }
 
-  // Функция для объединения данных с проверкой дубликатов
   const mergeExcelData = (newData: any, existingData: any) => {
     if (!existingData || !newData) {
       return newData || existingData || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [] }
     }
 
-    // Объединяем заказы, исключая дубликаты по номеру заказа
     const existingOrders = Array.isArray(existingData.orders) ? existingData.orders : []
     const newOrders = Array.isArray(newData.orders) ? newData.orders : []
     const mergedOrders = [...existingOrders]
@@ -44,19 +43,16 @@ export const Dashboard: React.FC = () => {
     let duplicateOrders = 0
     
     newOrders.forEach((newOrder: any) => {
-      // Создаем стабильный ID на основе orderNumber если его нет
       if (!newOrder.id) {
         newOrder.id = `order_${newOrder.orderNumber || Math.random()}`
       }
       
-      // Более точная проверка дубликатов - учитываем только orderNumber, если он есть
       let isDuplicate = false
       if (newOrder.orderNumber) {
         isDuplicate = existingOrders.some((existingOrder: any) => 
           existingOrder.orderNumber === newOrder.orderNumber
         )
       } else {
-        // Если нет orderNumber, проверяем по адресу и другим полям
         isDuplicate = existingOrders.some((existingOrder: any) => 
           existingOrder.address === newOrder.address &&
           existingOrder.courierName === newOrder.courierName &&
@@ -69,12 +65,8 @@ export const Dashboard: React.FC = () => {
         addedOrders++
       } else {
         duplicateOrders++
-        // Логируем дубликат для отладки
-        console.log(`Дубликат заказа: ${newOrder.orderNumber || 'без номера'} - ${newOrder.address}`)
       }
     })
-
-    // Объединяем курьеров, исключая дубликаты по имени
     const existingCouriers = Array.isArray(existingData.couriers) ? existingData.couriers : []
     const newCouriers = Array.isArray(newData.couriers) ? newData.couriers : []
     const mergedCouriers = [...existingCouriers]
@@ -95,7 +87,6 @@ export const Dashboard: React.FC = () => {
       }
     })
 
-    // Объединяем способы оплаты, исключая дубликаты
     const existingPaymentMethods = Array.isArray(existingData.paymentMethods) ? existingData.paymentMethods : []
     const newPaymentMethods = Array.isArray(newData.paymentMethods) ? newData.paymentMethods : []
     const mergedPaymentMethods = [...existingPaymentMethods]
@@ -116,7 +107,6 @@ export const Dashboard: React.FC = () => {
       }
     })
 
-    // Объединяем маршруты, исключая дубликаты по ID
     const existingRoutes = Array.isArray(existingData.routes) ? existingData.routes : []
     const newRoutes = Array.isArray(newData.routes) ? newData.routes : []
     const mergedRoutes = [...existingRoutes]
@@ -137,7 +127,6 @@ export const Dashboard: React.FC = () => {
       }
     })
 
-    // Объединяем ошибки, преобразуя объекты в строки
     const existingErrors = Array.isArray(existingData.errors) ? existingData.errors : []
     const newErrors = Array.isArray(newData.errors) ? newData.errors : []
     
@@ -151,16 +140,13 @@ export const Dashboard: React.FC = () => {
     
     const mergedErrors = [...existingErrorsAsStrings, ...newErrorsAsStrings]
 
-    // Логируем результаты объединения
     log(`Объединение данных: +${addedOrders} заказов (${duplicateOrders} дубликатов), +${addedCouriers} курьеров (${duplicateCouriers} дубликатов), +${addedPaymentMethods} способов оплаты (${duplicatePaymentMethods} дубликатов), +${addedRoutes} маршрутов (${duplicateRoutes} дубликатов)`)
     
-    // Дополнительное логирование для отладки заказов
     if (addedOrders > 0) {
       const newOrderNumbers = newOrders.slice(0, 3).map((order: any) => order.orderNumber).join(', ')
       log(`Новые заказы: ${newOrderNumbers}${newOrders.length > 3 ? '...' : ''}`)
     }
     
-    // Дополнительная диагностика если заказы не добавились
     if (addedOrders === 0 && newOrders.length > 0) {
       log(`⚠️ ДИАГНОСТИКА: Все ${newOrders.length} заказов считаются дубликатами!`)
       log(`Примеры новых заказов: ${newOrders.slice(0, 2).map((o: any) => `№${o.orderNumber || 'N/A'}`).join(', ')}`)
@@ -185,10 +171,67 @@ export const Dashboard: React.FC = () => {
     }
   }
 
-  // Hydrate state from localStorage on mount
+  useEffect(() => {
+    const loadFastopertorData = async () => {
+      const settings = localStorageUtils.getAllSettings()
+      
+      if (!settings.enableFastopertorApi || !settings.fastopertorApiUrl || !settings.fastopertorApiKey) {
+        return
+      }
+
+      try {
+        log('🔄 Начало загрузки данных из Fastopertor API...')
+        
+        const result = await fastopertorApi.fetchData({
+          apiUrl: settings.fastopertorApiUrl,
+          apiKey: settings.fastopertorApiKey,
+          endpoint: settings.fastopertorEndpoint || '/api/orders'
+        })
+
+        if (result.success && result.data) {
+          const transformedData = {
+            orders: result.data.orders || [],
+            couriers: result.data.couriers || [],
+            paymentMethods: result.data.paymentMethods || [],
+            routes: result.data.routes || [],
+            errors: result.data.errors || [],
+            warnings: result.data.warnings || [],
+            summary: {
+              totalOrders: result.data.orders?.length || 0,
+              totalCouriers: result.data.couriers?.length || 0,
+              totalPaymentMethods: result.data.paymentMethods?.length || 0,
+              totalRoutes: result.data.routes?.length || 0,
+              errors: result.data.errors?.length || 0,
+              warnings: result.data.warnings?.length || 0
+            }
+          }
+
+          const mergedData = mergeExcelData(transformedData, excelData)
+          setExcelData(mergedData)
+          
+          log(`✅ Данные из Fastopertor API загружены: ${transformedData.orders.length} заказов, ${transformedData.couriers.length} курьеров`)
+          toast.success(`Данные из Fastopertor API загружены: ${transformedData.orders.length} заказов`)
+        } else {
+          log(`❌ Ошибка загрузки данных из Fastopertor API: ${result.error || 'Неизвестная ошибка'}`)
+          toast.error(`Ошибка загрузки из Fastopertor API: ${result.error || 'Неизвестная ошибка'}`)
+        }
+      } catch (error) {
+        log(`❌ Критическая ошибка при загрузке данных из Fastopertor API: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`)
+        toast.error(`Ошибка загрузки из Fastopertor API: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`)
+      }
+    }
+
+    loadFastopertorData()
+
+    const interval = setInterval(() => {
+      loadFastopertorData()
+    }, 5 * 60 * 1000)
+
+    return () => clearInterval(interval)
+  }, [])
+
   useEffect(() => {
     try {
-      // Восстанавливаем логи
       const storedLogs = localStorage.getItem('km_dashboard_logs')
       if (storedLogs) {
         const parsed = JSON.parse(storedLogs)
@@ -198,7 +241,6 @@ export const Dashboard: React.FC = () => {
       }
 
 
-      // Восстанавливаем Excel логи
       const storedExcelLogs = localStorage.getItem('km_dashboard_excel_logs')
       if (storedExcelLogs) {
         const parsed = JSON.parse(storedExcelLogs)
@@ -207,11 +249,9 @@ export const Dashboard: React.FC = () => {
         }
       }
     } catch (error) {
-      console.warn('Ошибка восстановления состояния из localStorage:', error)
     }
   }, [])
 
-  // Persist logs to localStorage whenever they change
   useEffect(() => {
     try {
       localStorage.setItem('km_dashboard_logs', JSON.stringify(logs))
@@ -219,7 +259,6 @@ export const Dashboard: React.FC = () => {
   }, [logs])
 
 
-  // Persist Excel logs to localStorage whenever they change
   useEffect(() => {
     try {
       if (excelLogs.length > 0) {
@@ -229,18 +268,15 @@ export const Dashboard: React.FC = () => {
   }, [excelLogs])
 
 
-  // Process Excel file mutation
   const processFileMutation = useMutation({
     mutationFn: api.uploadApi.uploadExcelFile,
     onSuccess: (resp: any) => {
-      // Normalize backend response to UI-friendly shape
       const data: any = resp?.data || {}
       const orders = Array.isArray((data as any).orders) ? (data as any).orders : []
       const couriers = Array.isArray((data as any).couriers) ? (data as any).couriers : []
       const paymentMethods = Array.isArray((data as any).paymentMethods) ? (data as any).paymentMethods : []
       const routes = Array.isArray((data as any).routes) ? (data as any).routes : []
       const errorsArr = Array.isArray((data as any).errors) ? (data as any).errors : []
-      // Преобразуем объекты ошибок в строки
       const errorsAsStrings = errorsArr.map((error: any) => 
         typeof error === 'string' ? error : `Строка ${error.row || 'N/A'}: ${error.message || 'Неизвестная ошибка'}`
       )
@@ -262,7 +298,6 @@ export const Dashboard: React.FC = () => {
         }
       }
 
-      // Объединяем новые данные с существующими
       let mergedData: any
       try {
         mergedData = mergeExcelData(newData, excelData || null)
@@ -270,17 +305,14 @@ export const Dashboard: React.FC = () => {
             mergedData.routes = [...excelData.routes]
         }
         
-        // Убеждаемся, что все массивы определены
         if (!mergedData.orders) mergedData.orders = []
         if (!mergedData.couriers) mergedData.couriers = []
         if (!mergedData.paymentMethods) mergedData.paymentMethods = []
         if (!mergedData.routes) mergedData.routes = []
         if (!mergedData.errors) mergedData.errors = []
         
-        // Сохраняем данные в контекст (это автоматически сохранит в localStorage)
         setExcelData(mergedData)
         
-        // Дополнительно проверяем, что данные сохранились
         try {
           const saved = localStorage.getItem('km_dashboard_processed_data')
           if (saved) {
@@ -290,10 +322,7 @@ export const Dashboard: React.FC = () => {
             log(`⚠️ Данные не сохранились в localStorage!`)
           }
         } catch (e) {
-          console.warn('Ошибка проверки сохранения:', e)
         }
-        
-        // Логируем результаты объединения
         const existingOrdersCount = excelData?.orders?.length || 0
         const newOrdersCount = (orders as any[]).length
         const finalOrdersCount = mergedData.orders.length
@@ -306,13 +335,10 @@ export const Dashboard: React.FC = () => {
         }
         
       } catch (error) {
-        console.error('Ошибка при объединении данных:', error)
-        // Если объединение не удалось, просто используем новые данные
         if (newData && excelData?.routes && excelData.routes.length > 0 && (!newData.routes || newData.routes.length === 0)) {
             newData.routes = [...excelData.routes]
         }
         
-        // Убеждаемся, что все массивы определены
         if (!newData.orders) newData.orders = []
         if (!newData.couriers) newData.couriers = []
         if (!newData.paymentMethods) newData.paymentMethods = []
@@ -324,23 +350,18 @@ export const Dashboard: React.FC = () => {
         log(`Ошибка объединения данных, используются только новые данные`)
       }
       
-      // Инвалидируем кэш маршрутов для обновления состояния
       queryClient.invalidateQueries({ queryKey: ['routes'] })
-      
-      // Extract Excel debug logs if available
       const responseData = resp as any;
       if (responseData?.data?.debug?.logs) {
         setExcelLogs(responseData.data.debug.logs);
         log(`Excel логи отримано: ${responseData.data.debug.logs.length} записів`);
       }
       
-      // Показываем предпросмотр данных
       setPreviewData(data);
       setShowDataPreview(true);
       queryClient.invalidateQueries({ queryKey: ['routes'] })
     },
     onError: (error: any) => {
-      console.error('Ошибка обработки файла:', error)
       const msg = error?.response?.data?.error || error?.message || 'Не вдалося обробити файл'
       toast.error(msg)
       log(`Помилка обробки файлу: ${msg}`)
@@ -352,7 +373,6 @@ export const Dashboard: React.FC = () => {
 
   const handleExcelFileSelect = (file: File) => {
     setSelectedFile(file)
-    // НЕ очищаем предыдущие результаты - будем объединять данные
     log(`Выбран Excel файл: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`)
   }
 
@@ -370,27 +390,22 @@ export const Dashboard: React.FC = () => {
     setShowDataPreview(false)
     setExcelLogs([])
     
-    // Очищаем localStorage
     try {
       localStorage.removeItem('km_dashboard_excel_logs')
     } catch (error) {
-      console.warn('Ошибка очистки localStorage:', error)
     }
     
     log('Результаты Excel обработки очищены (можно загрузить новые файлы)')
   }
 
-  // Обработчик для HTML данных
   const handleHtmlDataLoad = (data: any) => {
     try {
-      // Нормализуем данные HTML в тот же формат, что и Excel
       const orders = Array.isArray(data.orders) ? data.orders : []
       const couriers = Array.isArray(data.couriers) ? data.couriers : []
       const paymentMethods = Array.isArray(data.paymentMethods) ? data.paymentMethods : []
       const routes = Array.isArray(data.routes) ? data.routes : []
       const errorsArr = Array.isArray(data.errors) ? data.errors : []
       
-      // Преобразуем объекты ошибок в строки
       const errorsAsStrings = errorsArr.map((error: any) => 
         typeof error === 'string' ? error : `Строка ${error.row || 'N/A'}: ${error.message || 'Неизвестная ошибка'}`
       )
@@ -412,7 +427,6 @@ export const Dashboard: React.FC = () => {
         }
       }
 
-      // Объединяем новые данные с существующими
       let mergedData: any
       const newOrdersCount = orders.length
       const existingOrdersCount = excelData?.orders?.length || 0
@@ -423,17 +437,14 @@ export const Dashboard: React.FC = () => {
           mergedData.routes = [...excelData.routes]
         }
         
-        // Убеждаемся, что все массивы определены
         if (!mergedData.orders) mergedData.orders = []
         if (!mergedData.couriers) mergedData.couriers = []
         if (!mergedData.paymentMethods) mergedData.paymentMethods = []
         if (!mergedData.routes) mergedData.routes = []
         if (!mergedData.errors) mergedData.errors = []
         
-        // Сохраняем данные в контекст (это автоматически сохранит в localStorage)
         setExcelData(mergedData)
         
-        // Логируем результаты объединения
         const finalOrdersCount = mergedData.orders.length
         
         log(`HTML файл обработан: заказов=${newOrdersCount}, курьеров=${couriers.length}, ошибок=${errorsAsStrings.length}`)
@@ -443,22 +454,17 @@ export const Dashboard: React.FC = () => {
           log(`⚠️ ВНИМАНИЕ: Новые заказы не добавились! Возможно, все заказы считаются дубликатами.`)
         }
         
-        // Показываем предпросмотр данных
         setPreviewData(data)
         setShowDataPreview(true)
         
-        // Инвалидируем кэш маршрутов для обновления состояния
         queryClient.invalidateQueries({ queryKey: ['routes'] })
         
         toast.success(`Успешно загружено ${newOrdersCount} заказов из HTML файла`)
       } catch (error) {
-        console.error('Ошибка при объединении HTML данных:', error)
-        // Если объединение не удалось, просто используем новые данные
         if (newData && excelData?.routes && excelData.routes.length > 0 && (!newData.routes || newData.routes.length === 0)) {
           newData.routes = [...excelData.routes]
         }
         
-        // Убеждаемся, что все массивы определены
         if (!newData.orders) newData.orders = []
         if (!newData.couriers) newData.couriers = []
         if (!newData.paymentMethods) newData.paymentMethods = []
@@ -473,7 +479,6 @@ export const Dashboard: React.FC = () => {
         toast.success(`Успешно загружено ${newOrdersCount} заказов из HTML файла`)
       }
     } catch (error: any) {
-      console.error('Ошибка обработки HTML данных:', error)
       toast.error(`Ошибка обработки HTML данных: ${error.message || 'Неизвестная ошибка'}`)
       log(`Ошибка обработки HTML данных: ${error.message || 'Неизвестная ошибка'}`)
     }
@@ -490,10 +495,8 @@ export const Dashboard: React.FC = () => {
       'space-y-6 transition-colors duration-300',
       isDark ? 'text-gray-100' : 'text-gray-900'
     )}>
-      {/* API Key Notification */}
       <ApiKeyNotification />
 
-      {/* Excel Upload Section */}
       <ExcelUploadSection
         onFileSelect={handleExcelFileSelect}
         onProcessFile={handleExcelProcessFile}
@@ -505,7 +508,6 @@ export const Dashboard: React.FC = () => {
       />
 
 
-      {/* Excel Results Display */}
       {excelData && (
         <ExcelResultsDisplay 
           data={excelData} 
@@ -516,7 +518,6 @@ export const Dashboard: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-        {/* Logs panel */}
         <div className="lg:col-span-2">
           <div className="card p-6">
             <div className="flex items-center justify-between mb-4">
@@ -587,13 +588,10 @@ export const Dashboard: React.FC = () => {
         </div>
 
 
-        {/* Main Content */}
         <div className="lg:col-span-2">
-          {/* Content here */}
         </div>
       </div>
 
-      {/* Excel Debug Logs Modal */}
       <Suspense fallback={<LoadingSpinner />}>
         <ExcelDebugLogs 
           logs={excelLogs}
@@ -602,7 +600,6 @@ export const Dashboard: React.FC = () => {
         />
       </Suspense>
 
-      {/* Excel Data Preview Modal */}
       <Suspense fallback={<LoadingSpinner />}>
         <ExcelDataPreview 
           data={previewData}
