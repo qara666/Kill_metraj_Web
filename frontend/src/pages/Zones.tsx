@@ -8,8 +8,8 @@ import {
   DocumentArrowUpIcon,
   ExclamationTriangleIcon
 } from '@heroicons/react/24/outline'
-import { ZoneDetails } from '../components/ZoneDetails'
-import { LoadingSpinner } from '../components/LoadingSpinner'
+import { ZoneDetails } from '../components/zone/ZoneDetails'
+import { LoadingSpinner } from '../components/shared/LoadingSpinner'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
 import * as XLSX from 'xlsx'

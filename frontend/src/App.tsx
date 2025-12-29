@@ -7,7 +7,7 @@ const Analytics = React.lazy(() => import('./pages/Analytics').then(m => ({ defa
 const AutoPlanner = React.lazy(() => import('./pages/AutoPlanner').then(m => ({ default: m.AutoPlanner })))
 const Settings = React.lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })))
 const TelegramParsing = React.lazy(() => import('./pages/TelegramParsing').then(m => ({ default: m.TelegramParsing })))
-import { Layout } from './components/Layout'
+import { Layout } from './components/shared/Layout'
 import { ExcelDataProvider } from './contexts/ExcelDataContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 

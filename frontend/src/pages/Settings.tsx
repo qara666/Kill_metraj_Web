@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-hot-toast'
 import { CogIcon, KeyIcon, MapIcon, ChevronDownIcon, ChevronUpIcon, TruckIcon, ShieldCheckIcon } from '@heroicons/react/24/outline'
-import { LoadingSpinner } from '../components/LoadingSpinner'
-import { CitySectorsEditor, CitySectors } from '../components/CitySectorsEditor'
-import { localStorageUtils } from '../utils/localStorage'
-import { validateGoogleMapsApiKey } from '../utils/apiKeyValidator'
+import { LoadingSpinner } from '../components/shared/LoadingSpinner'
+import { CitySectorsEditor, CitySectors } from '../components/zone/CitySectorsEditor'
+import { localStorageUtils } from '../utils/ui/localStorage'
+import { validateGoogleMapsApiKey } from '../utils/api/apiKeyValidator'
 import { useTheme } from '../contexts/ThemeContext'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { clsx } from 'clsx'
+import { fastopertorApi } from '../services/fastopertorApi'
 
 interface SettingsForm {
   googleMapsApiKey: string
@@ -26,6 +27,11 @@ interface SettingsForm {
   enableAdaptiveThresholds: boolean // Включить адаптивные пороги
   courierVehicleMap: Record<string, 'car' | 'motorcycle'>
   maxCriticalRouteDistanceKm: number
+  // Fastopertor API settings
+  fastopertorApiUrl: string
+  fastopertorApiKey: string
+  fastopertorEndpoint: string
+  enableFastopertorApi: boolean
 }
 
 const CourierVehicleEditor: React.FC<{
@@ -325,6 +331,9 @@ export const Settings: React.FC = () => {
   const [isTestingApiKey, setIsTestingApiKey] = useState(false)
   const [apiKeyStatus, setApiKeyStatus] = useState<'unknown' | 'valid' | 'invalid'>('unknown')
   const [apiKeyDetails, setApiKeyDetails] = useState<string>('')
+  const [isValidatingFastopertor, setIsValidatingFastopertor] = useState(false)
+  const [fastopertorStatus, setFastopertorStatus] = useState<'unknown' | 'valid' | 'invalid'>('unknown')
+  const [fastopertorDetails, setFastopertorDetails] = useState<string>('')
 
   // Извлекаем имена курьеров из Excel данных
   const courierNames = React.useMemo(() => {
@@ -350,7 +359,11 @@ export const Settings: React.FC = () => {
       enableCoordinateValidation: true,
       enableAdaptiveThresholds: true,
       courierVehicleMap: {},
-      maxCriticalRouteDistanceKm: 120
+      maxCriticalRouteDistanceKm: 120,
+      fastopertorApiUrl: '',
+      fastopertorApiKey: '',
+      fastopertorEndpoint: '/api/orders',
+      enableFastopertorApi: false
     }
   })
 
@@ -380,6 +393,10 @@ export const Settings: React.FC = () => {
     setValue('enableAdaptiveThresholds', settings.enableAdaptiveThresholds ?? true)
     setValue('courierVehicleMap', settings.courierVehicleMap ?? {})
     setValue('maxCriticalRouteDistanceKm', settings.maxCriticalRouteDistanceKm ?? 120)
+    setValue('fastopertorApiUrl', settings.fastopertorApiUrl || '')
+    setValue('fastopertorApiKey', settings.fastopertorApiKey || '')
+    setValue('fastopertorEndpoint', settings.fastopertorEndpoint || '/api/orders')
+    setValue('enableFastopertorApi', settings.enableFastopertorApi ?? false)
     
     // Check if API key is valid when loading
     if (settings.googleMapsApiKey) {
@@ -432,6 +449,41 @@ export const Settings: React.FC = () => {
       toast.error(`Не удалось проверить API ключ: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`)
     } finally {
       setIsTestingApiKey(false)
+    }
+  }
+
+  const validateFastopertorApi = async () => {
+    const apiUrl = watch('fastopertorApiUrl')
+    const apiKey = watch('fastopertorApiKey')
+
+    if (!apiUrl.trim() || !apiKey.trim()) {
+      toast.error('Пожалуйста, введите API URL и API Key для Fastopertor')
+      return
+    }
+
+    setIsValidatingFastopertor(true)
+    try {
+      const result = await fastopertorApi.validateApi({
+        apiUrl: apiUrl.trim(),
+        apiKey: apiKey.trim(),
+        endpoint: watch('fastopertorEndpoint')
+      })
+
+      if (result.success && result.valid) {
+        setFastopertorStatus('valid')
+        setFastopertorDetails(result.message || 'API подключение успешно')
+        toast.success('✓ Fastopertor API подключение успешно!')
+      } else {
+        setFastopertorStatus('invalid')
+        setFastopertorDetails(result.error || 'Не удалось подключиться к API')
+        toast.error(`Fastopertor API: ${result.error || 'Ошибка подключения'}`)
+      }
+    } catch (error) {
+      setFastopertorStatus('invalid')
+      setFastopertorDetails(error instanceof Error ? error.message : 'Неизвестная ошибка')
+      toast.error(`Ошибка валидации Fastopertor API: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`)
+    } finally {
+      setIsValidatingFastopertor(false)
     }
   }
 
@@ -614,6 +666,102 @@ export const Settings: React.FC = () => {
               </p>
             </div>
           </div>
+          {/* Fastopertor API Settings */}
+          <CollapsibleSection
+            isDark={isDark}
+            icon={<ShieldCheckIcon className="h-4 w-4" />}
+            title="Fastopertor API (автоматическая загрузка данных)"
+          >
+            <div className="space-y-4">
+              <div className="flex items-center">
+                <input 
+                  type="checkbox" 
+                  className="checkbox" 
+                  {...register('enableFastopertorApi')} 
+                />
+                <span className={clsx('ml-2 text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>
+                  Включить автоматическую загрузку данных из Fastopertor API
+                </span>
+              </div>
+
+              <div>
+                <label className={clsx('text-sm font-medium', isDark ? 'text-gray-300' : 'text-gray-700')}>
+                  API URL
+                </label>
+                <input
+                  type="text"
+                  className="input mt-1"
+                  placeholder="https://api.fastopertor.com"
+                  {...register('fastopertorApiUrl')}
+                />
+                <p className={clsx('mt-1 text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                  Базовый URL API Fastopertor
+                </p>
+              </div>
+
+              <div>
+                <label className={clsx('text-sm font-medium', isDark ? 'text-gray-300' : 'text-gray-700')}>
+                  API Key
+                </label>
+                <div className="mt-1 flex rounded-md shadow-sm">
+                  <input
+                    type="password"
+                    className="input rounded-r-none"
+                    placeholder="Введите ваш Fastopertor API ключ"
+                    {...register('fastopertorApiKey')}
+                  />
+                  <button
+                    type="button"
+                    onClick={validateFastopertorApi}
+                    disabled={isValidatingFastopertor || !watch('fastopertorApiUrl')?.trim() || !watch('fastopertorApiKey')?.trim()}
+                    className="btn-outline rounded-l-none border-l-0"
+                  >
+                    {isValidatingFastopertor ? (
+                      <LoadingSpinner size="sm" />
+                    ) : (
+                      'Проверить'
+                    )}
+                  </button>
+                </div>
+                {fastopertorStatus === 'valid' && (
+                  <div className="mt-1">
+                    <p className="text-sm text-green-600">✓ API подключение успешно</p>
+                    {fastopertorDetails && (
+                      <p className="text-xs text-gray-500">Статус: {fastopertorDetails}</p>
+                    )}
+                  </div>
+                )}
+                {fastopertorStatus === 'invalid' && (
+                  <div className="mt-1">
+                    <p className="text-sm text-red-600">✗ API подключение не удалось</p>
+                    {fastopertorDetails && (
+                      <p className="text-xs text-gray-500">Ошибка: {fastopertorDetails}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className={clsx('text-sm font-medium', isDark ? 'text-gray-300' : 'text-gray-700')}>
+                  Endpoint (опционально)
+                </label>
+                <input
+                  type="text"
+                  className="input mt-1"
+                  placeholder="/api/orders"
+                  {...register('fastopertorEndpoint')}
+                />
+                <p className={clsx('mt-1 text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                  Endpoint для получения данных (по умолчанию: /api/orders)
+                </p>
+              </div>
+
+              <p className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                При включении этой опции данные будут автоматически загружаться из Fastopertor API вместо ручной загрузки через drag-and-drop.
+              </p>
+            </div>
+          </CollapsibleSection>
+
           {/* Google Maps API Key */}
           <div>
             <label className="label">
