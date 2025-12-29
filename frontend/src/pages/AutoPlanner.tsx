@@ -1273,7 +1273,6 @@ export const AutoPlanner: React.FC = () => {
         return
       }
 
-      const mapsLoadStart = Date.now()
       await googleMapsLoader.load()
 
       const gmaps: any = (window as any).google?.maps
@@ -2365,7 +2364,6 @@ export const AutoPlanner: React.FC = () => {
                 // Пробуем парсить через parseTime (для форматов даты и времени типа "29.10.2025 13:30:00")
                 const parsed = parseTime(value)
                 if (parsed) {
-                  const parsedDate = new Date(parsed)
                   return parsed
                 } else {
                   console.log(`❌ [getPlannedTime] Не удалось распарсить "${key}" (${strVal}) через parseTime`)
@@ -4023,9 +4021,6 @@ export const AutoPlanner: React.FC = () => {
               }
             }
             if (!isDirectionCompatible(directionTracker, candidateBearingFromBase, routeChain.length)) {
-              const diffText = directionTracker.primary !== null && candidateBearingFromBase !== null
-                ? angularDifference(directionTracker.primary, candidateBearingFromBase).toFixed(0)
-                : null
               processedCount++
               noImprovementCount++
               continue
@@ -4070,12 +4065,6 @@ export const AutoPlanner: React.FC = () => {
                 // Сначала проверяем жесткий лимит 15 км
                 if (legDistanceKm > strictMaxDistanceBetweenOrders) {
                   exceedsLimit = true
-                  const order1 = trialChain[legIdx - 1]
-                  const order2 = trialChain[legIdx]
-                  const order1Addr = order1.address?.substring(0, 40) || '?'
-                  const order2Addr = order2.address?.substring(0, 40) || '?'
-                  const order1Num = order1.orderNumber || order1.raw?.orderNumber || '?'
-                  const order2Num = order2.orderNumber || order2.raw?.orderNumber || '?'
                   break
                 }
 
@@ -4083,12 +4072,6 @@ export const AutoPlanner: React.FC = () => {
                 if (optimizedSettings.maxDistanceBetweenOrdersKm !== null && optimizedSettings.maxDistanceBetweenOrdersKm > 0) {
                   if (legDistanceKm > optimizedSettings.maxDistanceBetweenOrdersKm) {
                     exceedsLimit = true
-                    const order1 = trialChain[legIdx - 1]
-                    const order2 = trialChain[legIdx]
-                    const order1Addr = order1.address?.substring(0, 40) || '?'
-                    const order2Addr = order2.address?.substring(0, 40) || '?'
-                    const order1Num = order1.orderNumber || order1.raw?.orderNumber || '?'
-                    const order2Num = order2.orderNumber || order2.raw?.orderNumber || '?'
                     break
                   }
                 }

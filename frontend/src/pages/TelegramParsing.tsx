@@ -358,7 +358,7 @@ export const TelegramParsing: React.FC = () => {
       // Извлекаем семизначные цифры
       const numbers = extractSevenDigitNumbers(searchQuery)
       
-      const partialNumbers = telegramService.extractPartialNumbers(searchQuery)
+      telegramService.extractPartialNumbers(searchQuery)
 
       const now = new Date()
       const weekAgo = new Date(now)
