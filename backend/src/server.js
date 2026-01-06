@@ -8,12 +8,35 @@ const PORT = process.env.PORT || 5001;
 
 // Middleware
 // Middleware
+const allowedHeaders = [
+  'Content-Type',
+  'Authorization',
+  'x-api-key',
+  'X-API-KEY',
+  'X-Requested-With',
+  'Accept',
+  'Origin'
+];
+
 app.use(cors({
-  origin: true,
+  origin: function (origin, callback) {
+    // Allow all origins (true) with credentials
+    callback(null, true);
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'X-API-KEY', 'X-Requested-With', 'Accept'],
-  credentials: true
+  allowedHeaders: allowedHeaders,
+  credentials: true,
+  optionsSuccessStatus: 200
 }));
+
+// Manual OPTIONS handler for extra robustness with custom headers
+app.options('*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', allowedHeaders.join(', '));
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.status(200).send();
+});
 app.use(express.json());
 
 // Настройка multer для загрузки файлов

@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react'
-import { 
-  ChartBarIcon, 
-  TruckIcon, 
+import {
+  ChartBarIcon,
+  TruckIcon,
   CurrencyDollarIcon,
   ArrowTrendingUpIcon,
   FireIcon,
@@ -41,39 +41,41 @@ export const AnalyticsDashboard: React.FC = () => {
     const routes = excelData.routes || []
 
     // Анализ курьеров с расширенными метриками
-    const courierStats = Array.isArray(couriers) ? couriers.map((courier: any) => {
-      const courierOrders = Array.isArray(orders) ? orders.filter((order: any) => order.courier === courier.name) : []
-      const courierRoutes = Array.isArray(routes) ? routes.filter((route: any) => route.courier === courier.name) : []
-      
-      // Расчет эффективности
-      const totalDistance = courierRoutes.reduce((sum: number, route: any) => {
-        const ordersCount = route.orders?.length || 0
-        if (route.isOptimized && route.totalDistance) {
-          return sum + route.totalDistance + (ordersCount * 0.5)
-        } else {
-          return sum + 1.0 + (ordersCount * 0.5)
+    const courierStats = Array.isArray(couriers) ? couriers
+      .filter((c: any) => c && c.name) // Фильтруем пустых курьеров
+      .map((courier: any) => {
+        const courierOrders = Array.isArray(orders) ? orders.filter((order: any) => order && order.courier === courier.name) : []
+        const courierRoutes = Array.isArray(routes) ? routes.filter((route: any) => route && route.courier === courier.name) : []
+
+        // Расчет эффективности
+        const totalDistance = courierRoutes.reduce((sum: number, route: any) => {
+          const ordersCount = route.orders?.length || 0
+          if (route.isOptimized && route.totalDistance) {
+            return sum + route.totalDistance + (ordersCount * 0.5)
+          } else {
+            return sum + 1.0 + (ordersCount * 0.5)
+          }
+        }, 0)
+
+        const efficiency = courierOrders.length > 0 ? courierOrders.length / Math.max(totalDistance, 1) : 0
+        const avgDeliveryTime = courierRoutes.length > 0 ?
+          courierRoutes.reduce((sum: number, route: any) => sum + (route.totalDuration || 0), 0) / courierRoutes.length : 0
+
+        return {
+          name: courier.name,
+          vehicleType: courier.vehicleType || 'car',
+          totalOrders: courierOrders.length,
+          totalAmount: courierOrders.reduce((sum: number, order: any) => sum + (order.amount || 0), 0),
+          totalDistance,
+          routesCount: courierRoutes.length,
+          averageOrderValue: courierOrders.length > 0 ?
+            courierOrders.reduce((sum: number, order: any) => sum + (order.amount || 0), 0) / courierOrders.length : 0,
+          efficiency,
+          avgDeliveryTime,
+          utilizationRate: courierOrders.length / Math.max(courierRoutes.length * 5, 1), // Предполагаем 5 заказов на маршрут
+          performanceScore: calculatePerformanceScore(courierOrders.length, totalDistance, avgDeliveryTime)
         }
-      }, 0)
-
-      const efficiency = courierOrders.length > 0 ? courierOrders.length / Math.max(totalDistance, 1) : 0
-      const avgDeliveryTime = courierRoutes.length > 0 ? 
-        courierRoutes.reduce((sum: number, route: any) => sum + (route.totalDuration || 0), 0) / courierRoutes.length : 0
-
-      return {
-        name: courier.name,
-        vehicleType: courier.vehicleType || 'car',
-        totalOrders: courierOrders.length,
-        totalAmount: courierOrders.reduce((sum: number, order: any) => sum + (order.amount || 0), 0),
-        totalDistance,
-        routesCount: courierRoutes.length,
-        averageOrderValue: courierOrders.length > 0 ? 
-          courierOrders.reduce((sum: number, order: any) => sum + (order.amount || 0), 0) / courierOrders.length : 0,
-        efficiency,
-        avgDeliveryTime,
-        utilizationRate: courierOrders.length / Math.max(courierRoutes.length * 5, 1), // Предполагаем 5 заказов на маршрут
-        performanceScore: calculatePerformanceScore(courierOrders.length, totalDistance, avgDeliveryTime)
-      }
-    }) : []
+      }) : []
 
     // Топ курьеры по эффективности
     const topCouriers = [...courierStats]
@@ -100,6 +102,7 @@ export const AnalyticsDashboard: React.FC = () => {
 
     // Анализ по зонам доставки
     const zoneStats = Array.isArray(orders) ? orders.reduce((zones: any, order: any) => {
+      if (!order) return zones
       const zone = order.zone || 'Неизвестно'
       if (!zones[zone]) {
         zones[zone] = { count: 0, amount: 0, avgDistance: 0 }
@@ -111,9 +114,10 @@ export const AnalyticsDashboard: React.FC = () => {
 
     // Анализ по времени
     const timeStats = Array.isArray(orders) ? orders.reduce((stats: any, order: any) => {
+      if (!order) return stats
       const hour = new Date(order.created || Date.now()).getHours()
       const timeSlot = hour < 12 ? 'Утро' : hour < 18 ? 'День' : 'Вечер'
-      
+
       if (!stats[timeSlot]) {
         stats[timeSlot] = { count: 0, amount: 0, efficiency: 0 }
       }
@@ -127,7 +131,7 @@ export const AnalyticsDashboard: React.FC = () => {
       totalRoutes: Array.isArray(routes) ? routes.length : 0,
       optimizedRoutes: Array.isArray(routes) ? routes.filter((route: any) => route.isOptimized).length : 0,
       totalDistance: Array.isArray(routes) ? routes.reduce((sum: number, route: any) => sum + (route.totalDistance || 0), 0) : 0,
-      averageRouteDistance: Array.isArray(routes) && routes.length > 0 ? 
+      averageRouteDistance: Array.isArray(routes) && routes.length > 0 ?
         routes.reduce((sum: number, route: any) => sum + (route.totalDistance || 0), 0) / routes.length : 0,
       avgOrdersPerRoute: Array.isArray(routes) && routes.length > 0 ?
         routes.reduce((sum: number, route: any) => sum + (route.orders?.length || 0), 0) / routes.length : 0
@@ -142,7 +146,7 @@ export const AnalyticsDashboard: React.FC = () => {
       routeStats,
       totalOrders: Array.isArray(orders) ? orders.length : 0,
       totalAmount: Array.isArray(orders) ? orders.reduce((sum: number, order: any) => sum + (order.amount || 0), 0) : 0,
-      averageOrderValue: Array.isArray(orders) && orders.length > 0 ? 
+      averageOrderValue: Array.isArray(orders) && orders.length > 0 ?
         orders.reduce((sum: number, order: any) => sum + (order.amount || 0), 0) / orders.length : 0,
       predictions,
       efficiencyAnalysis,
@@ -186,7 +190,7 @@ export const AnalyticsDashboard: React.FC = () => {
     // Простые прогнозы на основе трендов
     const recentOrders = orders.slice(-50) // Последние 50 заказов
     const avgOrdersPerDay = recentOrders.length / 7 // Предполагаем недельный период
-    
+
     const predictions = {
       nextWeekOrders: Math.round(avgOrdersPerDay * 7),
       nextWeekRevenue: Math.round(avgOrdersPerDay * 7 * (orders.reduce((sum, order) => sum + (order.amount || 0), 0) / orders.length)),
@@ -240,43 +244,43 @@ export const AnalyticsDashboard: React.FC = () => {
 
   function generateImprovementSuggestions(courierStats: any[], routes: any[]): string[] {
     const suggestions = []
-    
+
     const avgEfficiency = courierStats.reduce((sum, courier) => sum + courier.efficiency, 0) / courierStats.length
     const lowEfficiencyCouriers = courierStats.filter(c => c.efficiency < avgEfficiency * 0.8)
-    
+
     if (lowEfficiencyCouriers.length > 0) {
       suggestions.push(`Обучить ${lowEfficiencyCouriers.length} курьеров оптимизации маршрутов`)
     }
-    
+
     const unoptimizedRoutes = routes.filter(r => !r.isOptimized)
     if (unoptimizedRoutes.length > 0) {
       suggestions.push(`Оптимизировать ${unoptimizedRoutes.length} неоптимизированных маршрутов`)
     }
-    
+
     const avgDistance = courierStats.reduce((sum, courier) => sum + courier.totalDistance, 0) / courierStats.length
     const highDistanceCouriers = courierStats.filter(c => c.totalDistance > avgDistance * 1.5)
     if (highDistanceCouriers.length > 0) {
       suggestions.push(`Пересмотреть зоны доставки для ${highDistanceCouriers.length} курьеров`)
     }
-    
+
     return suggestions
   }
 
   function generateLoadBalancingRecommendations(courierStats: any[]): string[] {
     const recommendations = []
-    
+
     const avgLoad = courierStats.reduce((sum, courier) => sum + courier.totalOrders, 0) / courierStats.length
     const overloadedCouriers = courierStats.filter(c => c.totalOrders > avgLoad * 1.3)
     const underloadedCouriers = courierStats.filter(c => c.totalOrders < avgLoad * 0.7)
-    
+
     if (overloadedCouriers.length > 0 && underloadedCouriers.length > 0) {
       recommendations.push(`Перераспределить заказы между ${overloadedCouriers.length} перегруженными и ${underloadedCouriers.length} недогруженными курьерами`)
     }
-    
+
     if (overloadedCouriers.length > 0) {
       recommendations.push(`Рассмотреть найм дополнительных курьеров для зон с высокой нагрузкой`)
     }
-    
+
     return recommendations
   }
 
@@ -322,8 +326,8 @@ export const AnalyticsDashboard: React.FC = () => {
               onChange={(e) => setSelectedPeriod(e.target.value as any)}
               className={clsx(
                 'px-3 py-2 rounded-lg border text-sm',
-                isDark 
-                  ? 'bg-gray-700 border-gray-600 text-white' 
+                isDark
+                  ? 'bg-gray-700 border-gray-600 text-white'
                   : 'bg-white border-gray-300 text-gray-900'
               )}
             >
@@ -336,8 +340,8 @@ export const AnalyticsDashboard: React.FC = () => {
               onChange={(e) => setSelectedMetric(e.target.value as any)}
               className={clsx(
                 'px-3 py-2 rounded-lg border text-sm',
-                isDark 
-                  ? 'bg-gray-700 border-gray-600 text-white' 
+                isDark
+                  ? 'bg-gray-700 border-gray-600 text-white'
                   : 'bg-white border-gray-300 text-gray-900'
               )}
             >
@@ -375,7 +379,7 @@ export const AnalyticsDashboard: React.FC = () => {
             </div>
           </div>
         </div>
-        
+
         <div className={clsx(
           'rounded-lg shadow-sm border p-6 transition-all duration-200 hover:shadow-md',
           isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
@@ -400,7 +404,7 @@ export const AnalyticsDashboard: React.FC = () => {
             </div>
           </div>
         </div>
-        
+
         <div className={clsx(
           'rounded-lg shadow-sm border p-6 transition-all duration-200 hover:shadow-md',
           isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
@@ -425,7 +429,7 @@ export const AnalyticsDashboard: React.FC = () => {
             </div>
           </div>
         </div>
-        
+
         <div className={clsx(
           'rounded-lg shadow-sm border p-6 transition-all duration-200 hover:shadow-md',
           isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
@@ -474,10 +478,10 @@ export const AnalyticsDashboard: React.FC = () => {
             </span>
           </div>
         </div>
-        
+
         <div className="space-y-4">
           {enhancedAnalytics.topCouriers.slice(0, 5).map((courier: any, index: number) => (
-            <div key={courier.name} className={clsx(
+            <div key={courier?.name || index} className={clsx(
               'flex items-center justify-between p-4 rounded-lg transition-all duration-200 hover:shadow-md',
               isDark ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-50 hover:bg-gray-100'
             )}>
@@ -485,9 +489,9 @@ export const AnalyticsDashboard: React.FC = () => {
                 <div className={clsx(
                   'w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold',
                   index === 0 ? 'bg-yellow-100 text-yellow-800' :
-                  index === 1 ? 'bg-gray-100 text-gray-800' :
-                  index === 2 ? 'bg-orange-100 text-orange-800' :
-                  'bg-blue-100 text-blue-800'
+                    index === 1 ? 'bg-gray-100 text-gray-800' :
+                      index === 2 ? 'bg-orange-100 text-orange-800' :
+                        'bg-blue-100 text-blue-800'
                 )}>
                   {index + 1}
                 </div>
@@ -506,7 +510,7 @@ export const AnalyticsDashboard: React.FC = () => {
                   </p>
                 </div>
               </div>
-              
+
               <div className="flex items-center space-x-6">
                 <div className="text-center">
                   <p className={clsx(
@@ -522,7 +526,7 @@ export const AnalyticsDashboard: React.FC = () => {
                     {courier.totalOrders}
                   </p>
                 </div>
-                
+
                 <div className="text-center">
                   <p className={clsx(
                     'text-sm font-medium',
@@ -534,7 +538,7 @@ export const AnalyticsDashboard: React.FC = () => {
                     {courier.efficiency.toFixed(2)}
                   </p>
                 </div>
-                
+
                 <div className="text-center">
                   <p className={clsx(
                     'text-sm font-medium',
