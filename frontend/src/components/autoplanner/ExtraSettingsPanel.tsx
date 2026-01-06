@@ -14,7 +14,6 @@ interface ExtraSettingsPanelProps {
     updatePlanningSettings: (updates: any) => void;
     setEnableNotifications: (val: boolean) => void;
     setNotificationPreferences: (val: NotificationPreferences) => void;
-    onManualSync?: () => void;
 }
 
 export const ExtraSettingsPanel: React.FC<ExtraSettingsPanelProps> = React.memo(({
@@ -29,7 +28,6 @@ export const ExtraSettingsPanel: React.FC<ExtraSettingsPanelProps> = React.memo(
     updatePlanningSettings,
     setEnableNotifications,
     setNotificationPreferences,
-    onManualSync
 }) => {
     return (
         <div className="space-y-4">

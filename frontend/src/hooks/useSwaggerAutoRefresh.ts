@@ -40,7 +40,7 @@ export const useSwaggerAutoRefresh = ({
         swaggerDateShiftFilterEnabled
     } = useAutoPlannerStore();
 
-    const intervalRef = useRef<NodeJS.Timeout | null>(null);
+    const intervalRef = useRef<any>(null);
     const retryCountRef = useRef(0);
     const isMountedRef = useRef(true);
 

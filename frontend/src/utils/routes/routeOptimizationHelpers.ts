@@ -5,6 +5,8 @@
 import { routeOptimizationCache } from './routeOptimizationCache'
 import { Order, Coordinates, TrafficSnapshot } from '../../types'
 
+export type { Order, Coordinates, TrafficSnapshot }
+
 /**
  * Вычисляет расстояние Haversine между двумя точками
  */

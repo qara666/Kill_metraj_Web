@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from 'react'
+import { useMemo } from 'react'
 
 export interface TrafficStats {
     avgSpeed: number

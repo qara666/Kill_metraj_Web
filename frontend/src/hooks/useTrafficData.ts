@@ -1,8 +1,6 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import {
     getMapboxTrafficForSegment,
-    calculateTrafficDelay,
-    getTrafficSeverity,
     MapboxTrafficData
 } from '../utils/maps/mapboxTrafficAPI'
 import { getUkraineTrafficForRoute } from '../utils/maps/ukraineTrafficAPI'
@@ -15,15 +13,7 @@ export interface TrafficSegmentWithHistory extends MapboxTrafficData {
     key?: string
 }
 
-interface PerformanceMetrics {
-    apiCalls: number
-    cacheHits: number
-    cacheMisses: number
-    totalLoadTime: number
-    averageResponseTime: number
-    errors: number
-    lastUpdate: number
-}
+
 
 const CACHE_TTL = 5 * 60 * 1000
 const REFRESH_INTERVAL_MS = 30 * 60 * 1000
@@ -36,8 +26,6 @@ export const useTrafficData = (
     denseSampling: boolean,
     segmentsStorageKey: string,
     trafficCacheStorageKey: string,
-    snapshotStorageKey: string,
-    sectorName: string,
     onDataUpdate: (segments: TrafficSegmentWithHistory[], timestamp: number) => void
 ) => {
     const [loading, setLoading] = useState(false)
@@ -45,11 +33,7 @@ export const useTrafficData = (
     const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 })
     const segmentStoreRef = useRef<Map<string, TrafficSegmentWithHistory>>(new Map())
     const lastPersistedTimestampRef = useRef<number>(0)
-    const pairCursorRef = useRef(0)
     const trafficCache = useRef(new Map<string, { data: MapboxTrafficData[]; timestamp: number; key: string }>())
-    const performanceMetrics = useRef<PerformanceMetrics>({
-        apiCalls: 0, cacheHits: 0, cacheMisses: 0, totalLoadTime: 0, averageResponseTime: 0, errors: 0, lastUpdate: Date.now()
-    })
 
     // Cache helpers
     const getCachedData = useCallback((key: string): MapboxTrafficData[] | null => {
