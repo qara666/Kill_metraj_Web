@@ -55,7 +55,7 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({ sectorPath, sect
 
   const segmentsStorageKey = `km_traffic_segments_${sectorStorageKey}`
   const trafficCacheStorageKey = `km_traffic_cache_${sectorStorageKey}`
-  const snapshotStorageKey = `km_traffic_snapshot_${sectorStorageKey}`
+
 
   // Hooks integration
   const { updateSectorLayer, updateTrafficLayers, updateSegmentLayer, toggleOfficialTraffic } = useMapboxLayers(heatmapBoost)
@@ -98,8 +98,6 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({ sectorPath, sect
     featureFlags.denseSampling,
     segmentsStorageKey,
     trafficCacheStorageKey,
-    snapshotStorageKey,
-    sectorName || '',
     onDataUpdate
   )
 
