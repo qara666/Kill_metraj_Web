@@ -338,7 +338,7 @@ export const Settings: React.FC = () => {
     if (!excelData?.couriers || !Array.isArray(excelData.couriers)) {
       return []
     }
-    return excelData.couriers.map((courier: any) => courier.name || courier).filter(Boolean)
+    return excelData.couriers.map((courier: any) => (courier ? (courier.name || courier) : null)).filter(Boolean)
   }, [excelData?.couriers])
 
   const { register, handleSubmit, watch, setValue } = useForm<SettingsForm>({
