@@ -21,7 +21,7 @@ export function optimizeRouteOrder2Opt(
     const calculateTotalDist = (r: Order[]) => {
         let dist = 0;
         if (context.startCoords && r[0].coords) {
-            dist += getCachedDistance(context.startCoords as any, r[0].coords);
+            dist += getCachedDistance(context.startCoords, r[0].coords);
         }
         for (let i = 0; i < r.length - 1; i++) {
             if (r[i].coords && r[i + 1].coords) {
@@ -29,7 +29,7 @@ export function optimizeRouteOrder2Opt(
             }
         }
         if (context.endCoords && r[r.length - 1].coords) {
-            dist += getCachedDistance(r[r.length - 1].coords, context.endCoords as any);
+            dist += getCachedDistance(r[r.length - 1].coords!, context.endCoords);
         }
         return dist;
     };
