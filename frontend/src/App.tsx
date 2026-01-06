@@ -8,28 +8,36 @@ const AutoPlanner = React.lazy(() => import('./pages/AutoPlanner').then(m => ({ 
 const Settings = React.lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })))
 const TelegramParsing = React.lazy(() => import('./pages/TelegramParsing').then(m => ({ default: m.TelegramParsing })))
 import { Layout } from './components/shared/Layout'
+import { GlobalSwaggerFetcher } from './components/shared/GlobalSwaggerFetcher'
 import { ExcelDataProvider } from './contexts/ExcelDataContext'
 import { ThemeProvider } from './contexts/ThemeContext'
+import { ErrorProvider } from './contexts/ErrorContext'
+import { ErrorBoundary } from './components/shared/ErrorBoundary'
 
 function App() {
   return (
-    <ThemeProvider>
-      <ExcelDataProvider>
-        <Layout>
-          <Suspense fallback={<div className="p-6 text-sm text-gray-500">Загрузка...</div>}>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/routes" element={<RoutesPage />} />
-              <Route path="/couriers" element={<Couriers />} />
-              <Route path="/autoplanner" element={<AutoPlanner />} />
-              <Route path="/analytics" element={<Analytics />} />
-              <Route path="/telegram-parsing" element={<TelegramParsing />} />
-              <Route path="/settings" element={<Settings />} />
-            </Routes>
-          </Suspense>
-        </Layout>
-      </ExcelDataProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <ErrorProvider>
+          <ExcelDataProvider>
+            <GlobalSwaggerFetcher />
+            <Layout>
+              <Suspense fallback={<div className="p-6 text-sm text-gray-500">Загрузка...</div>}>
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/routes" element={<RoutesPage />} />
+                  <Route path="/couriers" element={<Couriers />} />
+                  <Route path="/autoplanner" element={<AutoPlanner />} />
+                  <Route path="/analytics" element={<Analytics />} />
+                  <Route path="/telegram-parsing" element={<TelegramParsing />} />
+                  <Route path="/settings" element={<Settings />} />
+                </Routes>
+              </Suspense>
+            </Layout>
+          </ExcelDataProvider>
+        </ErrorProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   )
 }
 

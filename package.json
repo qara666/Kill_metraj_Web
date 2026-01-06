@@ -4,7 +4,9 @@
   "main": "backend/simple_server.js",
   "scripts": {
     "start": "node backend/simple_server.js",
-    "dev": "nodemon backend/server.js"
+    "dev": "nodemon backend/server.js",
+    "analyze:functions": "node scripts/analyze_functions.js",
+    "generate:func-report": "node scripts/generate_function_report.js"
   },
   "dependencies": {
     "express": "^4.17.1",

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef, useLayoutEffect } from 'react'
 import { VariableSizeList as List, areEqual } from 'react-window'
-import { 
-  MapIcon, 
-  TruckIcon, 
+import {
+  MapIcon,
+  TruckIcon,
   PlusIcon,
   TrashIcon,
   ClockIcon,
@@ -73,13 +73,13 @@ interface RouteManagementProps {
 }
 
 // Мемоизированный компонент для заказа
-const OrderItem = memo(({ 
-  order, 
-  isSelected, 
-  selectionOrder, 
-  onSelect, 
-  onMoveUp, 
-  onMoveDown, 
+const OrderItem = memo(({
+  order,
+  isSelected,
+  selectionOrder,
+  onSelect,
+  onMoveUp,
+  onMoveDown,
   isInRoute,
   isDark = false
 }: {
@@ -98,16 +98,16 @@ const OrderItem = memo(({
       className={clsx(
         'p-3 rounded-lg border transition-all duration-200 ease-in-out transform hover:scale-[1.01]',
         isSelected
-          ? isDark 
-            ? 'bg-blue-600/20 border-blue-500 ring-2 ring-blue-500 cursor-pointer shadow-md' 
+          ? isDark
+            ? 'bg-blue-600/20 border-blue-500 ring-2 ring-blue-500 cursor-pointer shadow-md'
             : 'bg-blue-50 border-blue-200 ring-2 ring-blue-500 cursor-pointer shadow-md'
           : isInRoute
-          ? isDark 
-            ? 'bg-yellow-600/20 border-yellow-500 cursor-not-allowed opacity-60' 
-            : 'bg-yellow-50 border-yellow-200 cursor-not-allowed opacity-60'
-          : isDark 
-            ? 'bg-gray-700 border-gray-600 hover:bg-gray-600 cursor-pointer hover:shadow-sm' 
-            : 'bg-gray-50 border-gray-200 hover:bg-gray-100 cursor-pointer hover:shadow-sm'
+            ? isDark
+              ? 'bg-yellow-600/20 border-yellow-500 cursor-not-allowed opacity-60'
+              : 'bg-yellow-50 border-yellow-200 cursor-not-allowed opacity-60'
+            : isDark
+              ? 'bg-gray-700 border-gray-600 hover:bg-gray-600 cursor-pointer hover:shadow-sm'
+              : 'bg-gray-50 border-gray-200 hover:bg-gray-100 cursor-pointer hover:shadow-sm'
       )}
     >
       <div className="flex items-start justify-between">
@@ -133,8 +133,8 @@ const OrderItem = memo(({
                     disabled={selectionOrder === 1}
                     className={clsx(
                       'p-1 transition-colors disabled:opacity-30 disabled:cursor-not-allowed',
-                      isDark 
-                        ? 'text-blue-400 hover:text-blue-300' 
+                      isDark
+                        ? 'text-blue-400 hover:text-blue-300'
                         : 'text-blue-600 hover:text-blue-800'
                     )}
                     title="Переместить вверх"
@@ -149,8 +149,8 @@ const OrderItem = memo(({
                     disabled={selectionOrder === 0}
                     className={clsx(
                       'p-1 transition-colors disabled:opacity-30 disabled:cursor-not-allowed',
-                      isDark 
-                        ? 'text-blue-400 hover:text-blue-300' 
+                      isDark
+                        ? 'text-blue-400 hover:text-blue-300'
                         : 'text-blue-600 hover:text-blue-800'
                     )}
                     title="Переместить вниз"
@@ -167,8 +167,8 @@ const OrderItem = memo(({
             {isInRoute && (
               <span className={clsx(
                 'text-xs px-2 py-1 rounded',
-                isDark 
-                  ? 'bg-yellow-600/20 text-yellow-300' 
+                isDark
+                  ? 'bg-yellow-600/20 text-yellow-300'
                   : 'bg-yellow-100 text-yellow-800'
               )}>
                 В маршруте
@@ -229,7 +229,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [routeAnomalies, setRouteAnomalies] = useState<Map<string, RouteAnomalyCheck>>(new Map())
   // Disambiguation modal state for choosing among multiple in-sector candidates
-  const [disambModal, setDisambModal] = useState<{ open: boolean; title: string; options: Array<{label: string; distanceMeters?: number; res: any}> } | null>(null)
+  const [disambModal, setDisambModal] = useState<{ open: boolean; title: string; options: Array<{ label: string; distanceMeters?: number; res: any }> } | null>(null)
   const disambResolver = useRef<(choice: any | null) => void>()
 
   // Состояния для системы помощи
@@ -298,14 +298,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     }
 
     const grouped: { [courier: string]: Order[] } = {}
-    
+
     excelData.orders.forEach((order: any) => {
       if (order.courier && order.address) {
         const courierName = order.courier
         if (!grouped[courierName]) {
           grouped[courierName] = []
         }
-        
+
         grouped[courierName].push({
           id: order.id || `order_${order.orderNumber || Math.random()}`,
           orderNumber: order.orderNumber || 'N/A',
@@ -328,16 +328,16 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const getAvailableOrdersCount = (courierName: string) => {
     const allOrders = courierOrders[courierName] || []
     const ordersInRoutes = new Set()
-    
-  // Собираем ID всех заказов, которые уже в маршрутах
-  ;(excelData?.routes || []).forEach((route: Route) => {
-    if (route.courier === courierName) {
-      route.orders.forEach((order: Order) => {
-        ordersInRoutes.add(order.id)
+
+      // Собираем ID всех заказов, которые уже в маршрутах
+      ; (excelData?.routes || []).forEach((route: Route) => {
+        if (route.courier === courierName) {
+          route.orders.forEach((order: Order) => {
+            ordersInRoutes.add(order.id)
+          })
+        }
       })
-    }
-  })
-    
+
     // Возвращаем количество заказов, которые НЕ в маршрутах
     return allOrders.filter(order => !ordersInRoutes.has(order.id)).length
   }
@@ -396,9 +396,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   // Функция для поиска заказов по номеру
   const searchOrders = useCallback((orders: Order[]) => {
     if (!debouncedSearchTerm.trim()) return orders
-    
+
     const searchTerm = debouncedSearchTerm.toLowerCase().trim()
-    return orders.filter(order => 
+    return orders.filter(order =>
       order.orderNumber.toLowerCase().includes(searchTerm) ||
       order.customerName.toLowerCase().includes(searchTerm) ||
       order.address.toLowerCase().includes(searchTerm)
@@ -410,16 +410,18 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     return [...orders].sort((a, b) => {
       const aInRoute = isOrderInExistingRoute(a.id)
       const bInRoute = isOrderInExistingRoute(b.id)
-      
+
       // Сначала сортируем по статусу: доступные заказы сверху, в маршрутах снизу
       if (aInRoute && !bInRoute) return 1
       if (!aInRoute && bInRoute) return -1
-      
-      // Если оба в одном статусе, сортируем по времени
+
       if (!a.plannedTime && !b.plannedTime) return 0
       if (!a.plannedTime) return 1
       if (!b.plannedTime) return -1
-      return a.plannedTime.localeCompare(b.plannedTime)
+
+      const timeA = String(a.plannedTime || '');
+      const timeB = String(b.plannedTime || '');
+      return timeA.localeCompare(timeB)
     })
   }
 
@@ -427,21 +429,21 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const isRouteDuplicate = (courierName: string, selectedOrderIds: Set<string>) => {
     return excelData?.routes?.some((route: Route) => {
       if (route.courier !== courierName) return false
-      
+
       const routeOrderIds = new Set(route.orders.map((order: Order) => order.id))
       if (routeOrderIds.size !== selectedOrderIds.size) return false
-      
+
       for (const id of selectedOrderIds) {
         if (!routeOrderIds.has(id)) return false
       }
-      
+
       return true
     }) || false
   }
 
   // Проверяем, включен ли заказ в существующий маршрут
   const isOrderInExistingRoute = (orderId: string) => {
-    return excelData?.routes?.some((route: Route) => 
+    return excelData?.routes?.some((route: Route) =>
       route.orders.some((order: Order) => order.id === orderId)
     ) || false
   }
@@ -559,10 +561,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     const currentIndex = selectedOrdersOrder.indexOf(orderId)
     if (currentIndex > 0) {
       const newOrder = [...selectedOrdersOrder]
-      ;[newOrder[currentIndex - 1], newOrder[currentIndex]] = [newOrder[currentIndex], newOrder[currentIndex - 1]]
+        ;[newOrder[currentIndex - 1], newOrder[currentIndex]] = [newOrder[currentIndex], newOrder[currentIndex - 1]]
       // На всякий случай устраняем дубликаты
       const seen = new Set<string>()
-      setSelectedOrdersOrder(newOrder.filter(id => (seen.has(id) ? false : (seen.add(id), true))) )
+      setSelectedOrdersOrder(newOrder.filter(id => (seen.has(id) ? false : (seen.add(id), true))))
     }
   }, [selectedOrdersOrder])
 
@@ -570,9 +572,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     const currentIndex = selectedOrdersOrder.indexOf(orderId)
     if (currentIndex < selectedOrdersOrder.length - 1) {
       const newOrder = [...selectedOrdersOrder]
-      ;[newOrder[currentIndex], newOrder[currentIndex + 1]] = [newOrder[currentIndex + 1], newOrder[currentIndex]]
+        ;[newOrder[currentIndex], newOrder[currentIndex + 1]] = [newOrder[currentIndex + 1], newOrder[currentIndex]]
       const seen = new Set<string>()
-      setSelectedOrdersOrder(newOrder.filter(id => (seen.has(id) ? false : (seen.add(id), true))) )
+      setSelectedOrdersOrder(newOrder.filter(id => (seen.has(id) ? false : (seen.add(id), true))))
     }
   }, [selectedOrdersOrder])
 
@@ -617,7 +619,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         alert('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ в настройках.')
         return
       }
-      
+
       try {
         await googleMapsLoader.load()
         setGoogleMapsReady(true)
@@ -642,10 +644,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     // Добавляем новый маршрут в список маршрутов (функциональный апдейт во избежание гонок состояний)
     updateExcelData((prev: any) => ({
       ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
-      routes: [ ...(prev?.routes || []), newRoute ],
+      routes: [...(prev?.routes || []), newRoute],
       orders: (prev?.orders || [])
     }))
-    
+
     // Сбрасываем выбор заказов и порядок
     setSelectedOrders(new Set())
     setSelectedOrdersOrder([])
@@ -659,13 +661,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   // Функция для очистки адреса от лишней информации
   const cleanAddress = (address: string) => {
     if (!address) return address
-    
+
     // Удаляем информацию после номера дома (подъезд, этаж, подвал и т.д.)
     const cleaned = address
       .replace(/,\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
       .replace(/,\s*\d+\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
       .trim()
-    
+
     return cleaned
   }
 
@@ -697,7 +699,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         alert('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ в настройках.')
         return
       }
-      
+
       // Пытаемся загрузить Google Maps API если он не готов
       try {
         await googleMapsLoader.load()
@@ -791,7 +793,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           [/\bлін\.?\b/iu, 'лінія']
         ]
         tokenPairs.forEach(([from, to]) => {
-          try { variants.add(replaceTokens(base, from, to)) } catch {}
+          try { variants.add(replaceTokens(base, from, to)) } catch { }
         })
 
         // Нормализация номера линии: 1-а ↔ 1а ↔ 1
@@ -856,7 +858,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             else if (d <= 5000) score += 60
             else if (d <= 10000) score += 30
             else score += Math.max(0, 10 - Math.floor((d - 10000) / 2000))
-          } catch {}
+          } catch { }
         }
 
         return score
@@ -977,7 +979,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         if (inside.length > 1) {
           const withDistances = inside.map((r: any) => {
             let d
-            try { if (refPoint) d = window.google.maps.geometry.spherical.computeDistanceBetween(r.geometry.location, refPoint) } catch {}
+            try { if (refPoint) d = window.google.maps.geometry.spherical.computeDistanceBetween(r.geometry.location, refPoint) } catch { }
             return { label: r.formatted_address || 'Кандидат', distanceMeters: d, res: r }
           })
           const choice: any = await new Promise(resolve => {
@@ -1059,14 +1061,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             const r = waypointResList[i]
             if (r && !isInside(r.geometry.location)) {
               // eslint-disable-next-line no-await-in-loop
-              const prev = i === 0 ? (originRes?.geometry?.location || null) : (waypointResList[i-1]?.geometry?.location || null)
+              const prev = i === 0 ? (originRes?.geometry?.location || null) : (waypointResList[i - 1]?.geometry?.location || null)
               const fix = await geocodeInsideOnly(route.orders[i].address, prev)
               if (fix) waypointResList[i] = fix
             }
           }
           // destination
           if (destinationRes && !isInside(destinationRes.geometry.location)) {
-            const prev = waypointResList.length > 0 ? (waypointResList[waypointResList.length-1]?.geometry?.location || null) : (originRes?.geometry?.location || null)
+            const prev = waypointResList.length > 0 ? (waypointResList[waypointResList.length - 1]?.geometry?.location || null) : (originRes?.geometry?.location || null)
             const fix = await geocodeInsideOnly(route.endAddress, prev)
             if (fix) destinationRes = fix
           }
@@ -1113,124 +1115,124 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
       const result = await googleApiCache.getDirections(request)
       if (result) {
-          // Если задан сектор (полигон) для города — проверяем попадание всех точек
-          const settings = localStorageUtils.getAllSettings()
-          const city = cityCtx.city
-          if (city && settings.citySectors && settings.citySectors[city] && settings.citySectors[city].length >= 3 && window.google?.maps?.geometry?.poly) {
-            try {
-              const sectorPath = settings.citySectors[city]
-              const polygon = new window.google.maps.Polygon({ paths: sectorPath })
-              const legs = result.routes[0].legs
-              const points: any[] = []
-              if (legs.length > 0) {
-                points.push(legs[0].start_location)
-                legs.forEach((leg: any) => points.push(leg.end_location))
-              }
-              const outside = points.some((pt: any) => !window.google.maps.geometry.poly.containsLocation(pt, polygon))
-              if (outside) {
-                console.warn('Некоторые точки вне сектора города — маршрут помечен как ложный, расчет отклонен')
-                alert('Точки маршрута находятся вне заданного сектора города. Проверьте адреса или границы сектора в Настройках.')
-                setIsCalculating(false)
-                return
-              }
-            } catch (e) {
-              // Если вдруг нет geometry, продолжаем без проверки
+        // Если задан сектор (полигон) для города — проверяем попадание всех точек
+        const settings = localStorageUtils.getAllSettings()
+        const city = cityCtx.city
+        if (city && settings.citySectors && settings.citySectors[city] && settings.citySectors[city].length >= 3 && window.google?.maps?.geometry?.poly) {
+          try {
+            const sectorPath = settings.citySectors[city]
+            const polygon = new window.google.maps.Polygon({ paths: sectorPath })
+            const legs = result.routes[0].legs
+            const points: any[] = []
+            if (legs.length > 0) {
+              points.push(legs[0].start_location)
+              legs.forEach((leg: any) => points.push(leg.end_location))
             }
+            const outside = points.some((pt: any) => !window.google.maps.geometry.poly.containsLocation(pt, polygon))
+            if (outside) {
+              console.warn('Некоторые точки вне сектора города — маршрут помечен как ложный, расчет отклонен')
+              alert('Точки маршрута находятся вне заданного сектора города. Проверьте адреса или границы сектора в Настройках.')
+              setIsCalculating(false)
+              return
+            }
+          } catch (e) {
+            // Если вдруг нет geometry, продолжаем без проверки
           }
+        }
 
-          // Используем точное расстояние из Google Maps API
-          const totalDistance = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
-          const totalDuration = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
+        // Используем точное расстояние из Google Maps API
+        const totalDistance = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
+        const totalDuration = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
 
-          // Конвертируем в километры с высокой точностью
-          const distanceKm = totalDistance / 1000
-          // Критическая отсечка аномалий (из настроек, по умолчанию 120км)
-          const maxKm = settings?.maxCriticalRouteDistanceKm ?? 120
-          if (distanceKm > maxKm) {
-            console.warn(`Аномальное расстояние: ${distanceKm.toFixed(1)} км > ${maxKm} км. Повторяем расчет с принудительным городом/страной.`)
-            // Повторная попытка с жестким добавлением города/страны
-            const forcedRequest = request
-            const result2 = await googleApiCache.getDirections(forcedRequest)
-            if (result2) {
-              const totalDistance2 = result2.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
-              const totalDuration2 = result2.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
-              const distanceKm2 = totalDistance2 / 1000
-              console.log('Retry Distance Calculation (forced city/country):', {
-                distanceKm2,
-                legs: result2.routes[0].legs.map((leg: any, i: number) => ({
-                  i,
-                  startAddress: leg.start_address,
-                  endAddress: leg.end_address,
-                  distance: leg.distance,
-                  duration: leg.duration
-                }))
-              })
-              updateExcelData((prev: any) => ({
-                ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
-                routes: (prev?.routes || []).map((r: Route) =>
-                  r.id === route.id
-                    ? {
-                        ...r,
-                        totalDistance: distanceKm2,
-                        totalDuration: totalDuration2 / 60,
-                        isOptimized: true,
-                        geoMeta: routeGeoMeta
-                      }
-                    : r
-                )
+        // Конвертируем в километры с высокой точностью
+        const distanceKm = totalDistance / 1000
+        // Критическая отсечка аномалий (из настроек, по умолчанию 120км)
+        const maxKm = settings?.maxCriticalRouteDistanceKm ?? 120
+        if (distanceKm > maxKm) {
+          console.warn(`Аномальное расстояние: ${distanceKm.toFixed(1)} км > ${maxKm} км. Повторяем расчет с принудительным городом/страной.`)
+          // Повторная попытка с жестким добавлением города/страны
+          const forcedRequest = request
+          const result2 = await googleApiCache.getDirections(forcedRequest)
+          if (result2) {
+            const totalDistance2 = result2.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
+            const totalDuration2 = result2.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
+            const distanceKm2 = totalDistance2 / 1000
+            console.log('Retry Distance Calculation (forced city/country):', {
+              distanceKm2,
+              legs: result2.routes[0].legs.map((leg: any, i: number) => ({
+                i,
+                startAddress: leg.start_address,
+                endAddress: leg.end_address,
+                distance: leg.distance,
+                duration: leg.duration
               }))
-            } else {
-              console.error('Ошибка повторного расчета маршрута')
-            }
-            setIsCalculating(false)
-            return
-          }
-          
-          // Проверяем, что маршрут не превышает 100км (возможная ошибка в адресе)
-          if (distanceKm > 100) {
-            console.warn(`Маршрут превышает 100км (${distanceKm.toFixed(1)}км). Возможна ошибка в адресе.`)
-          }
-
-          // Логируем для отладки и сравнения с Google Maps UI
-          console.log('Google Maps API Distance Calculation:', {
-            totalDistanceMeters: totalDistance,
-            distanceKm: distanceKm,
-            distanceKmRounded: Math.round(distanceKm * 10) / 10, // Округление как в Google Maps UI
-            legs: result.routes[0].legs.map((leg: any, index: number) => ({
-              legIndex: index,
-              distance: leg.distance,
-              duration: leg.duration,
-              startAddress: leg.start_address,
-              endAddress: leg.end_address
-            })),
-            routeSummary: result.routes[0].summary,
-            warnings: result.routes[0].warnings || []
-          })
-
-          updateExcelData((prev: any) => ({
-            ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
-            routes: (prev?.routes || []).map((r: Route) =>
-              r.id === route.id
-                ? {
+            })
+            updateExcelData((prev: any) => ({
+              ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
+              routes: (prev?.routes || []).map((r: Route) =>
+                r.id === route.id
+                  ? {
                     ...r,
-                    totalDistance: distanceKm,
-                    totalDuration: totalDuration / 60,
+                    totalDistance: distanceKm2,
+                    totalDuration: totalDuration2 / 60,
                     isOptimized: true,
                     geoMeta: routeGeoMeta
                   }
-                : r
-            )
-          }))
-        } else {
-          console.error('Ошибка расчета маршрута')
+                  : r
+              )
+            }))
+          } else {
+            console.error('Ошибка повторного расчета маршрута')
+          }
+          setIsCalculating(false)
+          return
         }
-        
-        setIsCalculating(false)
-      } catch (error: any) {
-        console.error('Ошибка при расчете маршрута:', error)
-        alert(`Ошибка при расчете маршрута: ${error.message || 'Неизвестная ошибка'}`)
-        setIsCalculating(false)
+
+        // Проверяем, что маршрут не превышает 100км (возможная ошибка в адресе)
+        if (distanceKm > 100) {
+          console.warn(`Маршрут превышает 100км (${distanceKm.toFixed(1)}км). Возможна ошибка в адресе.`)
+        }
+
+        // Логируем для отладки и сравнения с Google Maps UI
+        console.log('Google Maps API Distance Calculation:', {
+          totalDistanceMeters: totalDistance,
+          distanceKm: distanceKm,
+          distanceKmRounded: Math.round(distanceKm * 10) / 10, // Округление как в Google Maps UI
+          legs: result.routes[0].legs.map((leg: any, index: number) => ({
+            legIndex: index,
+            distance: leg.distance,
+            duration: leg.duration,
+            startAddress: leg.start_address,
+            endAddress: leg.end_address
+          })),
+          routeSummary: result.routes[0].summary,
+          warnings: result.routes[0].warnings || []
+        })
+
+        updateExcelData((prev: any) => ({
+          ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
+          routes: (prev?.routes || []).map((r: Route) =>
+            r.id === route.id
+              ? {
+                ...r,
+                totalDistance: distanceKm,
+                totalDuration: totalDuration / 60,
+                isOptimized: true,
+                geoMeta: routeGeoMeta
+              }
+              : r
+          )
+        }))
+      } else {
+        console.error('Ошибка расчета маршрута')
       }
+
+      setIsCalculating(false)
+    } catch (error: any) {
+      console.error('Ошибка при расчете маршрута:', error)
+      alert(`Ошибка при расчете маршрута: ${error.message || 'Неизвестная ошибка'}`)
+      setIsCalculating(false)
+    }
   }
 
   const deleteRoute = (routeId: string) => {
@@ -1266,25 +1268,27 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
     // Обновляем адрес в заказе
     const updatedOrder = { ...editingOrder, address: newAddress }
-    
+
     // Обновляем только маршруты, содержащие этот заказ
-    updateExcelData({ ...(excelData || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }), routes: (excelData?.routes || []).map((route: Route) => {
-      const orderIndex = route.orders.findIndex((order: Order) => order.id === editingOrder.id)
-      if (orderIndex !== -1) {
-        const updatedRouteOrders = [...route.orders]
-        updatedRouteOrders[orderIndex] = updatedOrder
-        return {
-          ...route,
-          orders: updatedRouteOrders,
-          isOptimized: false,
-          totalDistance: 0,
-          totalDuration: 0
+    updateExcelData({
+      ...(excelData || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }), routes: (excelData?.routes || []).map((route: Route) => {
+        const orderIndex = route.orders.findIndex((order: Order) => order.id === editingOrder.id)
+        if (orderIndex !== -1) {
+          const updatedRouteOrders = [...route.orders]
+          updatedRouteOrders[orderIndex] = updatedOrder
+          return {
+            ...route,
+            orders: updatedRouteOrders,
+            isOptimized: false,
+            totalDistance: 0,
+            totalDuration: 0
+          }
         }
-      }
-      return route
-    }), orders: ((excelData?.orders || []).map((order: any) =>
-      order.id === editingOrder.id ? { ...order, address: newAddress } : order
-    )) })
+        return route
+      }), orders: ((excelData?.orders || []).map((order: any) =>
+        order.id === editingOrder.id ? { ...order, address: newAddress } : order
+      ))
+    })
 
     // Сохраняем в localStorage
     try {
@@ -1399,8 +1403,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       {/* Header */}
       <div className={clsx(
         'rounded-3xl p-8 shadow-2xl border-2 overflow-hidden relative',
-        isDark 
-          ? 'bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 border-gray-700' 
+        isDark
+          ? 'bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 border-gray-700'
           : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-blue-200'
       )}>
         <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10 opacity-50"></div>
@@ -1409,8 +1413,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             <div className="flex items-center gap-4">
               <div className={clsx(
                 'p-4 rounded-2xl shadow-lg',
-                isDark 
-                  ? 'bg-gradient-to-br from-blue-600 to-purple-600' 
+                isDark
+                  ? 'bg-gradient-to-br from-blue-600 to-purple-600'
                   : 'bg-gradient-to-br from-blue-500 to-indigo-600'
               )}>
                 <MapIcon className="w-8 h-8 text-white" />
@@ -1418,8 +1422,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
               <div>
                 <h1 className={clsx(
                   'text-3xl font-bold mb-1 bg-gradient-to-r bg-clip-text text-transparent',
-                  isDark 
-                    ? 'from-blue-400 to-purple-400' 
+                  isDark
+                    ? 'from-blue-400 to-purple-400'
                     : 'from-blue-600 to-indigo-600'
                 )}>
                   Управление маршрутами
@@ -1450,8 +1454,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   }}
                   className={clsx(
                     'p-3 rounded-xl transition-all hover:scale-105',
-                    isDark 
-                      ? 'bg-gray-700 hover:bg-gray-600 text-blue-400' 
+                    isDark
+                      ? 'bg-gray-700 hover:bg-gray-600 text-blue-400'
                       : 'bg-white hover:bg-blue-50 text-blue-600 shadow-lg'
                   )}
                 >
@@ -1486,11 +1490,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   className={clsx(
                     'px-3 py-1 text-xs rounded-full transition-colors',
                     courierFilter === 'all'
-                      ? isDark 
-                        ? 'bg-blue-600 text-white' 
+                      ? isDark
+                        ? 'bg-blue-600 text-white'
                         : 'bg-blue-100 text-blue-800'
-                      : isDark 
-                        ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
+                      : isDark
+                        ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   )}
                 >
@@ -1501,11 +1505,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   className={clsx(
                     'px-3 py-1 text-xs rounded-full flex items-center space-x-1 transition-colors',
                     courierFilter === 'car'
-                      ? isDark 
-                        ? 'bg-green-600 text-white' 
+                      ? isDark
+                        ? 'bg-green-600 text-white'
                         : 'bg-green-100 text-green-800'
-                      : isDark 
-                        ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
+                      : isDark
+                        ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   )}
                 >
@@ -1517,11 +1521,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   className={clsx(
                     'px-3 py-1 text-xs rounded-full flex items-center space-x-1 transition-colors',
                     courierFilter === 'motorcycle'
-                      ? isDark 
-                        ? 'bg-orange-600 text-white' 
+                      ? isDark
+                        ? 'bg-orange-600 text-white'
                         : 'bg-orange-100 text-orange-800'
-                      : isDark 
-                        ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
+                      : isDark
+                        ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   )}
                 >
@@ -1530,7 +1534,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 </button>
               </div>
             </div>
-            
+
             {paginatedCouriers.length === 0 ? (
               <div className="text-center py-8">
                 <TruckIcon className={clsx(
@@ -1541,7 +1545,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   'mt-2 text-sm',
                   isDark ? 'text-gray-400' : 'text-gray-500'
                 )}>
-                  {couriers.length === 0 
+                  {couriers.length === 0
                     ? 'Загрузите Excel файл для отображения курьеров'
                     : 'Нет курьеров выбранного типа'
                   }
@@ -1558,11 +1562,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                       className={clsx(
                         'w-full text-left p-3 rounded-lg border transition-all duration-200 ease-in-out transform hover:scale-[1.02]',
                         selectedCourier === courierName
-                          ? isDark 
-                            ? 'bg-blue-600/20 border-blue-500 text-blue-100 shadow-md' 
+                          ? isDark
+                            ? 'bg-blue-600/20 border-blue-500 text-blue-100 shadow-md'
                             : 'bg-blue-50 border-blue-200 text-blue-900 shadow-md'
-                          : isDark 
-                            ? 'bg-gray-700 border-gray-600 hover:bg-gray-600 hover:shadow-sm text-gray-200' 
+                          : isDark
+                            ? 'bg-gray-700 border-gray-600 hover:bg-gray-600 hover:shadow-sm text-gray-200'
                             : 'bg-gray-50 border-gray-200 hover:bg-gray-100 hover:shadow-sm text-gray-900'
                       )}
                     >
@@ -1570,19 +1574,19 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                         <div className="flex items-center space-x-3">
                           <TruckIcon className={clsx(
                             'h-5 w-5',
-                            vehicleType === 'car' 
-                              ? isDark ? 'text-green-400' : 'text-green-600' 
+                            vehicleType === 'car'
+                              ? isDark ? 'text-green-400' : 'text-green-600'
                               : isDark ? 'text-orange-400' : 'text-orange-600'
                           )} />
                           <span className="font-medium">{courierName}</span>
                           <span className={clsx(
                             'text-xs px-2 py-1 rounded-full',
-                            vehicleType === 'car' 
-                              ? isDark 
-                                ? 'bg-green-600/20 text-green-300' 
+                            vehicleType === 'car'
+                              ? isDark
+                                ? 'bg-green-600/20 text-green-300'
                                 : 'bg-green-100 text-green-800'
-                              : isDark 
-                                ? 'bg-orange-600/20 text-orange-300' 
+                              : isDark
+                                ? 'bg-orange-600/20 text-orange-300'
                                 : 'bg-orange-100 text-orange-800'
                           )}>
                             {vehicleType === 'car' ? 'Авто' : 'Мото'}
@@ -1609,8 +1613,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   disabled={courierPage === 0}
                   className={clsx(
                     'px-3 py-1 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
-                    isDark 
-                      ? 'text-gray-300 hover:text-white disabled:text-gray-500' 
+                    isDark
+                      ? 'text-gray-300 hover:text-white disabled:text-gray-500'
                       : 'text-gray-600 hover:text-gray-800 disabled:text-gray-400'
                   )}
                 >
@@ -1627,8 +1631,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   disabled={courierPage >= totalCourierPages - 1}
                   className={clsx(
                     'px-3 py-1 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
-                    isDark 
-                      ? 'text-gray-300 hover:text-white disabled:text-gray-500' 
+                    isDark
+                      ? 'text-gray-300 hover:text-white disabled:text-gray-500'
                       : 'text-gray-600 hover:text-gray-800 disabled:text-gray-400'
                   )}
                 >
@@ -1661,18 +1665,18 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   className={clsx(
                     'flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-colors',
                     selectedOrders.size === 0 || isRouteDuplicate(selectedCourier, selectedOrders)
-                      ? isDark 
-                        ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
+                      ? isDark
+                        ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
                         : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : isDark 
-                        ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                      : isDark
+                        ? 'bg-blue-600 text-white hover:bg-blue-700'
                         : 'bg-blue-600 text-white hover:bg-blue-700'
                   )}
                 >
                   <PlusIcon className="h-4 w-4" />
                   <span>
-                    {isRouteDuplicate(selectedCourier, selectedOrders) 
-                      ? 'Маршрут уже существует' 
+                    {isRouteDuplicate(selectedCourier, selectedOrders)
+                      ? 'Маршрут уже существует'
                       : `Создать маршрут (${selectedOrders.size})`}
                   </span>
                   {selectedOrders.size > 0 && !isRouteDuplicate(selectedCourier, selectedOrders) && (
@@ -1707,8 +1711,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                     onChange={(e) => setOrderSearchTerm(e.target.value)}
                     className={clsx(
                       'w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors',
-                      isDark 
-                        ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                      isDark
+                        ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400'
                         : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
                     )}
                   />
@@ -1716,25 +1720,25 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
               </div>
 
-              <div 
+              <div
                 className={clsx(
                   'max-h-96 overflow-y-auto scrollbar-thin',
-                  isDark 
-                    ? 'scrollbar-thumb-gray-600 scrollbar-track-gray-800' 
+                  isDark
+                    ? 'scrollbar-thumb-gray-600 scrollbar-track-gray-800'
                     : 'scrollbar-thumb-gray-300 scrollbar-track-gray-100'
                 )}
                 data-tour="order-select"
               >
                 {(() => {
-    let allOrders = sortOrdersByTime(
-      searchOrders(courierOrders[selectedCourier] || [])
-    )
-    // Дедупликация на случай дублей данных из источника
-    const seenOrders = new Set<string>()
-    allOrders = allOrders.filter(o => (seenOrders.has(o.id) ? false : (seenOrders.add(o.id), true)))
+                  let allOrders = sortOrdersByTime(
+                    searchOrders(courierOrders[selectedCourier] || [])
+                  )
+                  // Дедупликация на случай дублей данных из источника
+                  const seenOrders = new Set<string>()
+                  allOrders = allOrders.filter(o => (seenOrders.has(o.id) ? false : (seenOrders.add(o.id), true)))
                   const availableOrders = allOrders.filter(order => !isOrderInExistingRoute(order.id))
                   const ordersInRoutes = allOrders.filter(order => isOrderInExistingRoute(order.id))
-                  
+
                   return (
                     <div className="space-y-4">
                       {/* Доступные заказы */}
@@ -1784,7 +1788,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                           </div>
                         </div>
                       )}
-                      
+
                       {/* Заказы в маршрутах */}
                       {ordersInRoutes.length > 0 && (
                         <div>
@@ -1818,9 +1822,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                     order={order}
                                     isSelected={false}
                                     selectionOrder={0}
-                                    onSelect={() => {}}
-                                    onMoveUp={() => {}}
-                                    onMoveDown={() => {}}
+                                    onSelect={() => { }}
+                                    onMoveUp={() => { }}
+                                    onMoveDown={() => { }}
                                     isInRoute={true}
                                     setSize={setInRouteSize}
                                   />
@@ -1855,8 +1859,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 onClick={clearAllRoutes}
                 className={clsx(
                   'text-sm font-medium transition-colors',
-                  isDark 
-                    ? 'text-red-400 hover:text-red-300' 
+                  isDark
+                    ? 'text-red-400 hover:text-red-300'
                     : 'text-red-600 hover:text-red-800'
                 )}
               >
@@ -1864,7 +1868,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
               </button>
             )}
           </div>
-            
+
           {(excelData?.routes?.length ?? 0) === 0 ? (
             <div className="text-center py-8">
               <MapIcon className={clsx(
@@ -1878,17 +1882,17 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             </div>
           ) : (
             <div className="space-y-4" data-tour="route-list">
-                {paginatedRoutes.map(route => (
-                  <div key={route.id} className={clsx(
-                    'border rounded-lg p-4 transition-all duration-200 ease-in-out hover:shadow-md hover:scale-[1.01]',
-                    isDark ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-white'
-                  )}>
+              {paginatedRoutes.map(route => (
+                <div key={route.id} className={clsx(
+                  'border rounded-lg p-4 transition-all duration-200 ease-in-out hover:shadow-md hover:scale-[1.01]',
+                  isDark ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-white'
+                )}>
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center space-x-2">
                       <TruckIcon className={clsx(
                         'h-5 w-5',
-                        getCourierVehicleType(route.courier) === 'car' 
-                          ? isDark ? 'text-green-400' : 'text-green-600' 
+                        getCourierVehicleType(route.courier) === 'car'
+                          ? isDark ? 'text-green-400' : 'text-green-600'
                           : isDark ? 'text-orange-400' : 'text-orange-600'
                       )} />
                       <div>
@@ -1905,12 +1909,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                       </div>
                       <span className={clsx(
                         'text-xs px-2 py-1 rounded-full',
-                        getCourierVehicleType(route.courier) === 'car' 
-                          ? isDark 
-                            ? 'bg-green-600/20 text-green-300' 
+                        getCourierVehicleType(route.courier) === 'car'
+                          ? isDark
+                            ? 'bg-green-600/20 text-green-300'
                             : 'bg-green-100 text-green-800'
-                          : isDark 
-                            ? 'bg-orange-600/20 text-orange-300' 
+                          : isDark
+                            ? 'bg-orange-600/20 text-orange-300'
                             : 'bg-orange-100 text-orange-800'
                       )}>
                         {getCourierVehicleType(route.courier) === 'car' ? 'Авто' : 'Мото'}
@@ -1922,8 +1926,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                         disabled={isCalculating}
                         className={clsx(
                           'p-1 transition-colors disabled:opacity-50',
-                          isDark 
-                            ? 'text-gray-400 hover:text-blue-400' 
+                          isDark
+                            ? 'text-gray-400 hover:text-blue-400'
                             : 'text-gray-400 hover:text-blue-600'
                         )}
                         title={route.isOptimized ? "Открыть маршрут в Google Maps" : "Рассчитать расстояние"}
@@ -1935,8 +1939,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                         disabled={isCalculating}
                         className={clsx(
                           'p-1 transition-colors disabled:opacity-50',
-                          isDark 
-                            ? 'text-gray-400 hover:text-green-400' 
+                          isDark
+                            ? 'text-gray-400 hover:text-green-400'
                             : 'text-gray-400 hover:text-green-600'
                         )}
                         title="Пересчитать маршрут"
@@ -1947,8 +1951,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                         onClick={() => deleteRoute(route.id)}
                         className={clsx(
                           'p-2 rounded-lg transition-all duration-200 ease-in-out transform hover:scale-110',
-                          isDark 
-                            ? 'text-gray-400 hover:text-red-400 hover:bg-red-900/20' 
+                          isDark
+                            ? 'text-gray-400 hover:text-red-400 hover:bg-red-900/20'
                             : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
                         )}
                         title="Удалить маршрут"
@@ -1959,7 +1963,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   </div>
 
                   <div className="space-y-2">
-                      {route.orders.map((order: Order, index: number) => {
+                    {route.orders.map((order: Order, index: number) => {
                       const anomalyCheck = routeAnomalies.get(route.id)
                       const meta = (route as any).geoMeta?.waypoints?.[index]
                       const metaBadge = meta ? (
@@ -1983,17 +1987,17 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                           {/* ZIP badge removed by user request */}
                         </div>
                       ) : null
-                      const hasAddressIssues = anomalyCheck?.errors.some(error => 
+                      const hasAddressIssues = anomalyCheck?.errors.some(error =>
                         error.includes('адрес') || error.includes('адресов')
                       )
-                      
+
                       return (
                         <div key={order.id} className="flex items-start justify-between text-sm group py-3">
                           <div className="flex items-start space-x-3 flex-1">
                             <span className={clsx(
                               'mt-1 w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold',
-                              isDark 
-                                ? 'bg-blue-600/20 text-blue-300' 
+                              isDark
+                                ? 'bg-blue-600/20 text-blue-300'
                                 : 'bg-blue-100 text-blue-800'
                             )}>
                               {index + 1}
@@ -2043,8 +2047,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                               onClick={() => handleEditAddress(order)}
                               className={clsx(
                                 'p-1.5 rounded',
-                                isDark 
-                                  ? 'text-gray-400 hover:text-blue-400 hover:bg-blue-900/20' 
+                                isDark
+                                  ? 'text-gray-400 hover:text-blue-400 hover:bg-blue-900/20'
                                   : 'text-gray-500 hover:text-blue-600 hover:bg-blue-100'
                               )}
                               title="Редактировать адрес"
@@ -2106,14 +2110,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                         )}>
                           ✓ Маршрут создан
                         </div>
-                        
+
                         {/* Отображение аномалий маршрута */}
                         {(() => {
                           const anomalyCheck = routeAnomalies.get(route.id)
                           if (!anomalyCheck || (!anomalyCheck.hasAnomalies && anomalyCheck.warnings.length === 0)) {
                             return null
                           }
-                          
+
                           return (
                             <div className="mt-2 space-y-1">
                               {anomalyCheck.errors.length > 0 && (
@@ -2132,7 +2136,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                   </ul>
                                 </div>
                               )}
-                              
+
                               {anomalyCheck.warnings.length > 0 && (
                                 <div className={clsx(
                                   'text-xs p-2 rounded',
@@ -2175,8 +2179,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 disabled={routePage === 0}
                 className={clsx(
                   'px-3 py-1 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
-                  isDark 
-                    ? 'text-gray-300 hover:text-white disabled:text-gray-500' 
+                  isDark
+                    ? 'text-gray-300 hover:text-white disabled:text-gray-500'
                     : 'text-gray-600 hover:text-gray-800 disabled:text-gray-400'
                 )}
               >
@@ -2193,8 +2197,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 disabled={routePage >= totalRoutePages - 1}
                 className={clsx(
                   'px-3 py-1 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
-                  isDark 
-                    ? 'text-gray-300 hover:text-white disabled:text-gray-500' 
+                  isDark
+                    ? 'text-gray-300 hover:text-white disabled:text-gray-500'
                     : 'text-gray-600 hover:text-gray-800 disabled:text-gray-400'
                 )}
               >
@@ -2224,7 +2228,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 </p>
               </div>
             </div>
-            
+
             <div className="mb-6">
               <p className="text-gray-700 mb-2">
                 Вы уверены, что хотите удалить маршрут для курьера <strong>{routeToDelete.courier}</strong>?
@@ -2255,7 +2259,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 )}
               </div>
             </div>
-            
+
             <div className="flex space-x-3">
               <button
                 onClick={cancelDeleteRoute}
@@ -2361,10 +2365,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
               setHasSeenHelp(true)
             }}
             steps={[
-          {
-            id: 'courier-select',
-            title: '👤 Выбор курьера',
-            content: `📋 Начните с выбора курьера из списка слева.
+              {
+                id: 'courier-select',
+                title: '👤 Выбор курьера',
+                content: `📋 Начните с выбора курьера из списка слева.
 
 🎯 Что делать:
 1. Найдите нужного курьера в списке
@@ -2372,13 +2376,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 3. После выбора вы увидите доступные заказы справа
 
 💡 Подсказка: Используйте фильтры "Все", "Авто" или "Мото" для быстрого поиска нужного типа курьера.`,
-            target: '[data-tour="courier-select"]',
-            position: 'right'
-          },
-          {
-            id: 'order-select',
-            title: '📦 Выбор заказов',
-            content: `🖱️ Кликните на заказы, чтобы добавить их в маршрут.
+                target: '[data-tour="courier-select"]',
+                position: 'right'
+              },
+              {
+                id: 'order-select',
+                title: '📦 Выбор заказов',
+                content: `🖱️ Кликните на заказы, чтобы добавить их в маршрут.
 
 📊 Как это работает:
 • Порядок выбора = порядок доставки
@@ -2391,13 +2395,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 3. Используйте стрелки для изменения порядка
 
 ⚠️ Заказы, уже находящиеся в других маршрутах, нельзя выбрать.`,
-            target: '[data-tour="order-select"]',
-            position: 'left'
-          },
-          {
-            id: 'create-route',
-            title: '✨ Создание маршрута',
-            content: `🚀 После выбора заказов нажмите кнопку "Создать маршрут".
+                target: '[data-tour="order-select"]',
+                position: 'left'
+              },
+              {
+                id: 'create-route',
+                title: '✨ Создание маршрута',
+                content: `🚀 После выбора заказов нажмите кнопку "Создать маршрут".
 
 ⚙️ Что происходит:
 1. Система создает новый маршрут
@@ -2409,13 +2413,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 • Должен быть выбран хотя бы один заказ
 
 💡 После создания маршрут автоматически рассчитывается через Google Maps API.`,
-            target: '[data-tour="create-route"]',
-            position: 'top'
-          },
-          {
-            id: 'route-list',
-            title: '🗺️ Список маршрутов',
-            content: `📋 Здесь отображаются все созданные маршруты.
+                target: '[data-tour="create-route"]',
+                position: 'top'
+              },
+              {
+                id: 'route-list',
+                title: '🗺️ Список маршрутов',
+                content: `📋 Здесь отображаются все созданные маршруты.
 
 🎯 Доступные действия:
 🗺️ Открыть в Google Maps - просмотр маршрута
@@ -2427,10 +2431,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 • Общее расстояние (км)
 • Время в пути (минуты)
 • Статус оптимизации`,
-            target: '[data-tour="route-list"]',
-            position: 'top'
-          }
-        ] as TourStep[]}
+                target: '[data-tour="route-list"]',
+                position: 'top'
+              }
+            ] as TourStep[]}
           />
         </Suspense>
       )}

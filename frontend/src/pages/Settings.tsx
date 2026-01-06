@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-hot-toast'
-import { CogIcon, KeyIcon, MapIcon, ChevronDownIcon, ChevronUpIcon, TruckIcon, ShieldCheckIcon } from '@heroicons/react/24/outline'
+import { CogIcon, KeyIcon, MapIcon, ChevronDownIcon, ChevronUpIcon, TruckIcon, ShieldCheckIcon, ArrowPathIcon } from '@heroicons/react/24/outline'
 import { LoadingSpinner } from '../components/shared/LoadingSpinner'
+import { SwaggerSettingsPanel } from '../components/autoplanner/SwaggerSettingsPanel'
 import { CitySectorsEditor, CitySectors } from '../components/zone/CitySectorsEditor'
 import { localStorageUtils } from '../utils/ui/localStorage'
 import { validateGoogleMapsApiKey } from '../utils/api/apiKeyValidator'
 import { useTheme } from '../contexts/ThemeContext'
 import { useExcelData } from '../contexts/ExcelDataContext'
+import { useAutoPlannerStore } from '../stores/useAutoPlannerStore'
 import { clsx } from 'clsx'
 import { fastopertorApi } from '../services/fastopertorApi'
 
@@ -52,8 +54,8 @@ const CourierVehicleEditor: React.FC<{
   return (
     <div className={clsx(
       'rounded-xl border shadow-lg transition-all duration-200 overflow-hidden',
-      isDark 
-        ? 'bg-gray-800 border-gray-700' 
+      isDark
+        ? 'bg-gray-800 border-gray-700'
         : 'bg-white border-gray-200',
       isExpanded && 'shadow-xl'
     )}>
@@ -62,16 +64,16 @@ const CourierVehicleEditor: React.FC<{
         onClick={() => setIsExpanded(!isExpanded)}
         className={clsx(
           'w-full flex items-center justify-between p-5 transition-all duration-200 group',
-          isDark 
-            ? 'hover:bg-gray-700/50 hover:border-gray-600' 
+          isDark
+            ? 'hover:bg-gray-700/50 hover:border-gray-600'
             : 'hover:bg-gray-50/80 hover:border-gray-300'
         )}
       >
         <div className="flex items-center space-x-3">
           <div className={clsx(
             'p-2 rounded-lg transition-all duration-200',
-            isDark 
-              ? 'bg-orange-600/20 text-orange-400 group-hover:bg-orange-600/30 group-hover:scale-110' 
+            isDark
+              ? 'bg-orange-600/20 text-orange-400 group-hover:bg-orange-600/30 group-hover:scale-110'
               : 'bg-orange-100 text-orange-600 group-hover:bg-orange-200 group-hover:scale-110'
           )}>
             <TruckIcon className="h-5 w-5" />
@@ -84,8 +86,8 @@ const CourierVehicleEditor: React.FC<{
           </span>
           <span className={clsx(
             'px-3 py-1 rounded-full text-xs font-semibold transition-all',
-            isDark 
-              ? 'bg-blue-600/30 text-blue-300 border border-blue-500/50' 
+            isDark
+              ? 'bg-blue-600/30 text-blue-300 border border-blue-500/50'
               : 'bg-blue-100 text-blue-700 border border-blue-200'
           )}>
             {sortedCouriers.length}
@@ -94,8 +96,8 @@ const CourierVehicleEditor: React.FC<{
         <div className={clsx(
           'transition-all duration-200',
           isExpanded && 'rotate-180',
-          isDark 
-            ? 'text-gray-400 group-hover:text-white' 
+          isDark
+            ? 'text-gray-400 group-hover:text-white'
             : 'text-gray-600 group-hover:text-gray-800'
         )}>
           {isExpanded ? (
@@ -109,8 +111,8 @@ const CourierVehicleEditor: React.FC<{
       {isExpanded && (
         <div className={clsx(
           'border-t p-6',
-          isDark 
-            ? 'border-gray-700 bg-gray-800' 
+          isDark
+            ? 'border-gray-700 bg-gray-800'
             : 'border-gray-200 bg-white'
         )}>
           {sortedCouriers.length === 0 ? (
@@ -159,8 +161,8 @@ const CourierVehicleEditor: React.FC<{
                         }}
                         className={clsx(
                           'ml-2 px-2 py-1 rounded text-xs transition-colors',
-                          isDark 
-                            ? 'bg-red-600/20 text-red-300 hover:bg-red-600/30' 
+                          isDark
+                            ? 'bg-red-600/20 text-red-300 hover:bg-red-600/30'
                             : 'bg-red-50 text-red-600 hover:bg-red-100'
                         )}
                         title="Удалить настройку типа (полностью из памяти)"
@@ -181,149 +183,149 @@ const CourierVehicleEditor: React.FC<{
 
 const CollapsibleSection: React.FC<{ isDark: boolean; icon: React.ReactNode; title: string; children: React.ReactNode }>
   = ({ isDark, icon, title, children }) => {
-  const [isExpanded, setIsExpanded] = useState(false)
-  return (
-    <div className={clsx(
-      'rounded-xl border shadow-lg transition-all duration-200 overflow-hidden',
-      isDark 
-        ? 'bg-gray-800 border-gray-700' 
-        : 'bg-white border-gray-200',
-      isExpanded && 'shadow-xl'
-    )}>
-      <button
-        type="button"
-        onClick={() => setIsExpanded(!isExpanded)}
-        className={clsx(
-          'w-full flex items-center justify-between p-5 transition-all duration-200 group',
-          isDark 
-            ? 'hover:bg-gray-700/50 hover:border-gray-600' 
-            : 'hover:bg-gray-50/80 hover:border-gray-300'
-        )}
-      >
-        <div className="flex items-center space-x-3">
-          <div className={clsx(
-            'p-2 rounded-lg transition-all duration-200',
-            isDark 
-              ? 'bg-blue-600/20 text-blue-400 group-hover:bg-blue-600/30 group-hover:scale-110' 
-              : 'bg-blue-100 text-blue-600 group-hover:bg-blue-200 group-hover:scale-110'
-          )}>
-            {icon}
-          </div>
-          <span className={clsx(
-            'font-semibold text-lg transition-colors',
-            isDark ? 'text-gray-200 group-hover:text-white' : 'text-gray-900 group-hover:text-gray-800'
-          )}>
-            {title}
-          </span>
-        </div>
-        <div className={clsx(
-          'transition-all duration-200',
-          isExpanded && 'rotate-180',
-          isDark 
-            ? 'text-gray-400 group-hover:text-white' 
-            : 'text-gray-600 group-hover:text-gray-800'
-        )}>
-          {isExpanded ? (
-            <ChevronUpIcon className="h-6 w-6" />
-          ) : (
-            <ChevronDownIcon className="h-6 w-6" />
+    const [isExpanded, setIsExpanded] = useState(false)
+    return (
+      <div className={clsx(
+        'rounded-xl border shadow-lg transition-all duration-200 overflow-hidden',
+        isDark
+          ? 'bg-gray-800 border-gray-700'
+          : 'bg-white border-gray-200',
+        isExpanded && 'shadow-xl'
+      )}>
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className={clsx(
+            'w-full flex items-center justify-between p-5 transition-all duration-200 group',
+            isDark
+              ? 'hover:bg-gray-700/50 hover:border-gray-600'
+              : 'hover:bg-gray-50/80 hover:border-gray-300'
           )}
-        </div>
-      </button>
-      {isExpanded && (
-        <div className={clsx(
-          'border-t p-6',
-          isDark 
-            ? 'border-gray-700 bg-gray-800' 
-            : 'border-gray-200 bg-white'
-        )}>
-          {children}
-        </div>
-      )}
-    </div>
-  )
-}
+        >
+          <div className="flex items-center space-x-3">
+            <div className={clsx(
+              'p-2 rounded-lg transition-all duration-200',
+              isDark
+                ? 'bg-blue-600/20 text-blue-400 group-hover:bg-blue-600/30 group-hover:scale-110'
+                : 'bg-blue-100 text-blue-600 group-hover:bg-blue-200 group-hover:scale-110'
+            )}>
+              {icon}
+            </div>
+            <span className={clsx(
+              'font-semibold text-lg transition-colors',
+              isDark ? 'text-gray-200 group-hover:text-white' : 'text-gray-900 group-hover:text-gray-800'
+            )}>
+              {title}
+            </span>
+          </div>
+          <div className={clsx(
+            'transition-all duration-200',
+            isExpanded && 'rotate-180',
+            isDark
+              ? 'text-gray-400 group-hover:text-white'
+              : 'text-gray-600 group-hover:text-gray-800'
+          )}>
+            {isExpanded ? (
+              <ChevronUpIcon className="h-6 w-6" />
+            ) : (
+              <ChevronDownIcon className="h-6 w-6" />
+            )}
+          </div>
+        </button>
+        {isExpanded && (
+          <div className={clsx(
+            'border-t p-6',
+            isDark
+              ? 'border-gray-700 bg-gray-800'
+              : 'border-gray-200 bg-white'
+          )}>
+            {children}
+          </div>
+        )}
+      </div>
+    )
+  }
 
 const CityBiasSection: React.FC<{ isDark: boolean; value: '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'; onChange: (v: '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса') => void }>
   = ({ isDark, value, onChange }) => {
-  const [isExpanded, setIsExpanded] = useState(true)
-  return (
-    <div className={clsx(
-      'rounded-xl border shadow-lg transition-all duration-200 overflow-hidden',
-      isDark 
-        ? 'bg-gray-800 border-gray-700' 
-        : 'bg-white border-gray-200',
-      isExpanded && 'shadow-xl'
-    )}>
-      <button
-        type="button"
-        onClick={() => setIsExpanded(!isExpanded)}
-        className={clsx(
-          'w-full flex items-center justify-between p-5 transition-all duration-200 group',
-          isDark 
-            ? 'hover:bg-gray-700/50 hover:border-gray-600' 
-            : 'hover:bg-gray-50/80 hover:border-gray-300'
-        )}
-      >
-        <div className="flex items-center space-x-3">
-          <div className={clsx(
-            'p-2 rounded-lg transition-all duration-200',
-            isDark 
-              ? 'bg-green-600/20 text-green-400 group-hover:bg-green-600/30 group-hover:scale-110' 
-              : 'bg-green-100 text-green-600 group-hover:bg-green-200 group-hover:scale-110'
-          )}>
-            <MapIcon className="h-5 w-5" />
-          </div>
-          <span className={clsx(
-            'font-semibold text-lg transition-colors',
-            isDark ? 'text-gray-200 group-hover:text-white' : 'text-gray-900 group-hover:text-gray-800'
-          )}>
-            Город для маршрутов (обязателен)
-          </span>
-        </div>
-        <div className={clsx(
-          'transition-all duration-200',
-          isExpanded && 'rotate-180',
-          isDark 
-            ? 'text-gray-400 group-hover:text-white' 
-            : 'text-gray-600 group-hover:text-gray-800'
-        )}>
-          {isExpanded ? (
-            <ChevronUpIcon className="h-6 w-6" />
-          ) : (
-            <ChevronDownIcon className="h-6 w-6" />
+    const [isExpanded, setIsExpanded] = useState(true)
+    return (
+      <div className={clsx(
+        'rounded-xl border shadow-lg transition-all duration-200 overflow-hidden',
+        isDark
+          ? 'bg-gray-800 border-gray-700'
+          : 'bg-white border-gray-200',
+        isExpanded && 'shadow-xl'
+      )}>
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className={clsx(
+            'w-full flex items-center justify-between p-5 transition-all duration-200 group',
+            isDark
+              ? 'hover:bg-gray-700/50 hover:border-gray-600'
+              : 'hover:bg-gray-50/80 hover:border-gray-300'
           )}
-        </div>
-      </button>
-      {isExpanded && (
-        <div className={clsx(
-          'border-t p-6',
-          isDark 
-            ? 'border-gray-700 bg-gray-800' 
-            : 'border-gray-200 bg-white'
-        )}>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <label className="text-sm">Выберите город</label>
-            <select
-              className="input md:col-span-2"
-              value={value}
-              onChange={(e) => onChange(e.target.value as any)}
-            >
-              <option value="">— Не выбран —</option>
-              <option value="Киев">Киев</option>
-              <option value="Харьков">Харьков</option>
-              <option value="Полтава">Полтава</option>
-              <option value="Одесса">Одесса</option>
-            </select>
+        >
+          <div className="flex items-center space-x-3">
+            <div className={clsx(
+              'p-2 rounded-lg transition-all duration-200',
+              isDark
+                ? 'bg-green-600/20 text-green-400 group-hover:bg-green-600/30 group-hover:scale-110'
+                : 'bg-green-100 text-green-600 group-hover:bg-green-200 group-hover:scale-110'
+            )}>
+              <MapIcon className="h-5 w-5" />
+            </div>
+            <span className={clsx(
+              'font-semibold text-lg transition-colors',
+              isDark ? 'text-gray-200 group-hover:text-white' : 'text-gray-900 group-hover:text-gray-800'
+            )}>
+              Город для маршрутов (обязателен)
+            </span>
           </div>
-          <p className={clsx('mt-2 text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
-            Расчёт и геокодирование будут учитывать только выбранный город. Без выбора города создание маршрута запрещено.
-          </p>
-        </div>
-      )}
-    </div>
-  )
-}
+          <div className={clsx(
+            'transition-all duration-200',
+            isExpanded && 'rotate-180',
+            isDark
+              ? 'text-gray-400 group-hover:text-white'
+              : 'text-gray-600 group-hover:text-gray-800'
+          )}>
+            {isExpanded ? (
+              <ChevronUpIcon className="h-6 w-6" />
+            ) : (
+              <ChevronDownIcon className="h-6 w-6" />
+            )}
+          </div>
+        </button>
+        {isExpanded && (
+          <div className={clsx(
+            'border-t p-6',
+            isDark
+              ? 'border-gray-700 bg-gray-800'
+              : 'border-gray-200 bg-white'
+          )}>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <label className="text-sm">Выберите город</label>
+              <select
+                className="input md:col-span-2"
+                value={value}
+                onChange={(e) => onChange(e.target.value as any)}
+              >
+                <option value="">— Не выбран —</option>
+                <option value="Киев">Киев</option>
+                <option value="Харьков">Харьков</option>
+                <option value="Полтава">Полтава</option>
+                <option value="Одесса">Одесса</option>
+              </select>
+            </div>
+            <p className={clsx('mt-2 text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
+              Расчёт и геокодирование будут учитывать только выбранный город. Без выбора города создание маршрута запрещено.
+            </p>
+          </div>
+        )}
+      </div>
+    )
+  }
 
 export const Settings: React.FC = () => {
   const { isDark } = useTheme()
@@ -331,10 +333,6 @@ export const Settings: React.FC = () => {
   const [isTestingApiKey, setIsTestingApiKey] = useState(false)
   const [apiKeyStatus, setApiKeyStatus] = useState<'unknown' | 'valid' | 'invalid'>('unknown')
   const [apiKeyDetails, setApiKeyDetails] = useState<string>('')
-  const [isValidatingFastopertor, setIsValidatingFastopertor] = useState(false)
-  const [fastopertorStatus, setFastopertorStatus] = useState<'unknown' | 'valid' | 'invalid'>('unknown')
-  const [fastopertorDetails, setFastopertorDetails] = useState<string>('')
-
   // Извлекаем имена курьеров из Excel данных
   const courierNames = React.useMemo(() => {
     if (!excelData?.couriers || !Array.isArray(excelData.couriers)) {
@@ -362,7 +360,7 @@ export const Settings: React.FC = () => {
       maxCriticalRouteDistanceKm: 120,
       fastopertorApiUrl: '',
       fastopertorApiKey: '',
-      fastopertorEndpoint: '/api/orders',
+      fastopertorEndpoint: '',
       enableFastopertorApi: false
     }
   })
@@ -371,42 +369,9 @@ export const Settings: React.FC = () => {
   const googleMapsApiKey = watch('googleMapsApiKey') || ''
   const courierVehicleMap = watch('courierVehicleMap') || {}
 
-  // Load settings from localStorage on component mount
-  useEffect(() => {
-    const settings = localStorageUtils.getAllSettings()
-    
-    setValue('googleMapsApiKey', settings.googleMapsApiKey)
-    // Загружаем Mapbox Token из localStorage, если он есть, иначе оставляем пустым
-    const savedMapboxToken = localStorage.getItem('km_mapbox_token')
-    setValue('mapboxToken', (savedMapboxToken || settings.mapboxToken || '').trim())
-    setValue('defaultStartAddress', settings.defaultStartAddress)
-    setValue('defaultEndAddress', settings.defaultEndAddress)
-    setValue('cityBias', settings.cityBias || '')
-    setValue('citySectors', settings.citySectors || {})
-    // Аномалии (с дефолтами)
-    setValue('anomalyFilterEnabled', settings.anomalyFilterEnabled ?? true)
-    setValue('anomalyMaxLegDistanceKm', settings.anomalyMaxLegDistanceKm ?? 10)
-    setValue('anomalyMaxTotalDistanceKm', settings.anomalyMaxTotalDistanceKm ?? 35)
-    setValue('anomalyMaxAvgPerOrderKm', settings.anomalyMaxAvgPerOrderKm ?? 25)
-    setValue('addressQualityThreshold', settings.addressQualityThreshold ?? 60)
-    setValue('enableCoordinateValidation', settings.enableCoordinateValidation ?? true)
-    setValue('enableAdaptiveThresholds', settings.enableAdaptiveThresholds ?? true)
-    setValue('courierVehicleMap', settings.courierVehicleMap ?? {})
-    setValue('maxCriticalRouteDistanceKm', settings.maxCriticalRouteDistanceKm ?? 120)
-    setValue('fastopertorApiUrl', settings.fastopertorApiUrl || '')
-    setValue('fastopertorApiKey', settings.fastopertorApiKey || '')
-    setValue('fastopertorEndpoint', settings.fastopertorEndpoint || '/api/orders')
-    setValue('enableFastopertorApi', settings.enableFastopertorApi ?? false)
-    
-    // Check if API key is valid when loading
-    if (settings.googleMapsApiKey) {
-      checkApiKeyStatus(settings.googleMapsApiKey)
-    }
-  }, [setValue])
-
   const checkApiKeyStatus = async (apiKey: string) => {
     if (!apiKey.trim()) return
-    
+
     try {
       const validationResult = validateGoogleMapsApiKey(apiKey)
       if (validationResult) {
@@ -422,7 +387,31 @@ export const Settings: React.FC = () => {
     }
   }
 
-  
+  // Load settings from localStorage on component mount
+  useEffect(() => {
+    const settings = localStorageUtils.getAllSettings()
+
+    setValue('googleMapsApiKey', settings.googleMapsApiKey)
+    const savedMapboxToken = localStorage.getItem('km_mapbox_token')
+    setValue('mapboxToken', (savedMapboxToken || settings.mapboxToken || '').trim())
+    setValue('defaultStartAddress', settings.defaultStartAddress)
+    setValue('defaultEndAddress', settings.defaultEndAddress)
+    setValue('cityBias', settings.cityBias || '')
+    setValue('citySectors', settings.citySectors || {})
+    setValue('anomalyFilterEnabled', settings.anomalyFilterEnabled ?? true)
+    setValue('anomalyMaxLegDistanceKm', settings.anomalyMaxLegDistanceKm ?? 10)
+    setValue('anomalyMaxTotalDistanceKm', settings.anomalyMaxTotalDistanceKm ?? 35)
+    setValue('anomalyMaxAvgPerOrderKm', settings.anomalyMaxAvgPerOrderKm ?? 25)
+    setValue('addressQualityThreshold', settings.addressQualityThreshold ?? 60)
+    setValue('enableCoordinateValidation', settings.enableCoordinateValidation ?? true)
+    setValue('enableAdaptiveThresholds', settings.enableAdaptiveThresholds ?? true)
+    setValue('courierVehicleMap', settings.courierVehicleMap ?? {})
+    setValue('maxCriticalRouteDistanceKm', settings.maxCriticalRouteDistanceKm ?? 120)
+
+    if (settings.googleMapsApiKey) {
+      checkApiKeyStatus(settings.googleMapsApiKey)
+    }
+  }, [setValue])
 
   const testApiKey = async () => {
     if (!googleMapsApiKey.trim()) {
@@ -436,7 +425,6 @@ export const Settings: React.FC = () => {
       if (validationResult) {
         setApiKeyStatus('valid')
         setApiKeyDetails('OK')
-        // Save API key to localStorage when it's valid
         localStorageUtils.setApiKey(googleMapsApiKey)
         toast.success('✓ API ключ действителен и сохранен!')
       } else {
@@ -452,40 +440,6 @@ export const Settings: React.FC = () => {
     }
   }
 
-  const validateFastopertorApi = async () => {
-    const apiUrl = watch('fastopertorApiUrl')
-    const apiKey = watch('fastopertorApiKey')
-
-    if (!apiUrl.trim() || !apiKey.trim()) {
-      toast.error('Пожалуйста, введите API URL и API Key для Fastopertor')
-      return
-    }
-
-    setIsValidatingFastopertor(true)
-    try {
-      const result = await fastopertorApi.validateApi({
-        apiUrl: apiUrl.trim(),
-        apiKey: apiKey.trim(),
-        endpoint: watch('fastopertorEndpoint')
-      })
-
-      if (result.success && result.valid) {
-        setFastopertorStatus('valid')
-        setFastopertorDetails(result.message || 'API подключение успешно')
-        toast.success('✓ Fastopertor API подключение успешно!')
-      } else {
-        setFastopertorStatus('invalid')
-        setFastopertorDetails(result.error || 'Не удалось подключиться к API')
-        toast.error(`Fastopertor API: ${result.error || 'Ошибка подключения'}`)
-      }
-    } catch (error) {
-      setFastopertorStatus('invalid')
-      setFastopertorDetails(error instanceof Error ? error.message : 'Неизвестная ошибка')
-      toast.error(`Ошибка валидации Fastopertor API: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`)
-    } finally {
-      setIsValidatingFastopertor(false)
-    }
-  }
 
   const onSubmit = (data: SettingsForm) => {
     // Нормализуем и сохраняем. Если Mapbox пустой — удаляем ключ, чтобы поле по умолчанию было пустым.
@@ -493,18 +447,18 @@ export const Settings: React.FC = () => {
     const normalizedData = { ...data, mapboxToken: normalizedToken }
 
     localStorageUtils.setAllSettings(normalizedData)
-    
+
     if (normalizedToken) {
       localStorage.setItem('km_mapbox_token', normalizedToken)
     } else {
       localStorage.removeItem('km_mapbox_token')
     }
-    
+
     // Check API key status after saving
     if (data.googleMapsApiKey.trim()) {
       checkApiKeyStatus(data.googleMapsApiKey)
     }
-    
+
     toast.success('Настройки успешно сохранены!')
   }
 
@@ -513,7 +467,7 @@ export const Settings: React.FC = () => {
     if (Object.keys(courierVehicleMap).length > 0) {
       try {
         localStorageUtils.setCourierVehicleMap(courierVehicleMap)
-      } catch {}
+      } catch { }
     }
   }, [courierVehicleMap])
 
@@ -522,7 +476,7 @@ export const Settings: React.FC = () => {
       try {
         // Сохраняем Google Maps API Key перед очисткой
         const currentApiKey = localStorageUtils.getApiKey()
-        
+
         // Очищаем все данные из localStorage
         localStorage.removeItem('km_dashboard_logs')
         localStorage.removeItem('km_dashboard_processed_data')
@@ -532,17 +486,21 @@ export const Settings: React.FC = () => {
         // Дополнительно очищаем сохраненные маршруты и связанные данные
         localStorage.removeItem('km_routes')
         localStorage.removeItem('km_excel_data')
-        
+
+        // ВАЖНО: Очищаем хранилище Zustand (autoplanner store)
+        localStorage.removeItem('autoplanner-ui-storage')
+        useAutoPlannerStore.persist.clearStorage()
+
         // Очищаем все настройки
         localStorageUtils.clearAllSettings()
-        
+
         // Восстанавливаем Google Maps API Key
         if (currentApiKey) {
           localStorageUtils.setApiKey(currentApiKey)
         }
-        
+
         toast.success('Все данные очищены!')
-        
+
         // Перезагружаем страницу для полной очистки состояния
         window.location.reload()
       } catch (error) {
@@ -560,8 +518,8 @@ export const Settings: React.FC = () => {
       {/* Header */}
       <div className={clsx(
         'rounded-2xl shadow-lg border p-8',
-        isDark 
-          ? 'bg-gray-800 border-gray-700' 
+        isDark
+          ? 'bg-gray-800 border-gray-700'
           : 'bg-white border-gray-200'
       )}>
         <div className="flex items-center justify-between">
@@ -583,8 +541,8 @@ export const Settings: React.FC = () => {
       {/* Settings Form */}
       <div className={clsx(
         'rounded-2xl shadow-lg border p-8',
-        isDark 
-          ? 'bg-gray-800 border-gray-700' 
+        isDark
+          ? 'bg-gray-800 border-gray-700'
           : 'bg-white border-gray-200'
       )}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -604,6 +562,21 @@ export const Settings: React.FC = () => {
               onChange={(next) => setValue('citySectors', next)}
             />
           </CollapsibleSection>
+
+          {/* Автообновление FO (Swagger) */}
+          <CollapsibleSection
+            isDark={isDark}
+            icon={<ArrowPathIcon className="h-4 w-4" />}
+            title="Автообновление FO (Swagger)"
+          >
+            <SwaggerSettingsPanel
+              isDark={isDark}
+              onManualSync={() => {
+                toast.success('Запущен процесс синхронизации Swagger...')
+              }}
+            />
+          </CollapsibleSection>
+
           {/* Фильтр аномалий маршрута (collapsible) */}
           <CollapsibleSection
             isDark={isDark}
@@ -630,7 +603,7 @@ export const Settings: React.FC = () => {
                 </div>
               </div>
             </div>
-              {/* Расширенная фильтрация (перенесено сюда) */}
+            {/* Расширенная фильтрация (перенесено сюда) */}
             <div className="mt-4 space-y-3">
               <div className="flex items-center">
                 <input type="checkbox" className="checkbox" {...register('enableCoordinateValidation')} />
@@ -661,106 +634,12 @@ export const Settings: React.FC = () => {
                 {...register('mapboxToken')}
               />
               <p className={clsx('mt-1 text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                Используется для отслеживания пробок в реальном времени в Украине/Киеве. 
+                Используется для отслеживания пробок в реальном времени в Украине/Киеве.
                 Бесплатный лимит: 50,000 запросов/месяц.
               </p>
             </div>
           </div>
-          {/* Fastopertor API Settings */}
-          <CollapsibleSection
-            isDark={isDark}
-            icon={<ShieldCheckIcon className="h-4 w-4" />}
-            title="Fastopertor API (автоматическая загрузка данных)"
-          >
-            <div className="space-y-4">
-              <div className="flex items-center">
-                <input 
-                  type="checkbox" 
-                  className="checkbox" 
-                  {...register('enableFastopertorApi')} 
-                />
-                <span className={clsx('ml-2 text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>
-                  Включить автоматическую загрузку данных из Fastopertor API
-                </span>
-              </div>
 
-              <div>
-                <label className={clsx('text-sm font-medium', isDark ? 'text-gray-300' : 'text-gray-700')}>
-                  API URL
-                </label>
-                <input
-                  type="text"
-                  className="input mt-1"
-                  placeholder="https://api.fastopertor.com"
-                  {...register('fastopertorApiUrl')}
-                />
-                <p className={clsx('mt-1 text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                  Базовый URL API Fastopertor
-                </p>
-              </div>
-
-              <div>
-                <label className={clsx('text-sm font-medium', isDark ? 'text-gray-300' : 'text-gray-700')}>
-                  API Key
-                </label>
-                <div className="mt-1 flex rounded-md shadow-sm">
-                  <input
-                    type="password"
-                    className="input rounded-r-none"
-                    placeholder="Введите ваш Fastopertor API ключ"
-                    {...register('fastopertorApiKey')}
-                  />
-                  <button
-                    type="button"
-                    onClick={validateFastopertorApi}
-                    disabled={isValidatingFastopertor || !watch('fastopertorApiUrl')?.trim() || !watch('fastopertorApiKey')?.trim()}
-                    className="btn-outline rounded-l-none border-l-0"
-                  >
-                    {isValidatingFastopertor ? (
-                      <LoadingSpinner size="sm" />
-                    ) : (
-                      'Проверить'
-                    )}
-                  </button>
-                </div>
-                {fastopertorStatus === 'valid' && (
-                  <div className="mt-1">
-                    <p className="text-sm text-green-600">✓ API подключение успешно</p>
-                    {fastopertorDetails && (
-                      <p className="text-xs text-gray-500">Статус: {fastopertorDetails}</p>
-                    )}
-                  </div>
-                )}
-                {fastopertorStatus === 'invalid' && (
-                  <div className="mt-1">
-                    <p className="text-sm text-red-600">✗ API подключение не удалось</p>
-                    {fastopertorDetails && (
-                      <p className="text-xs text-gray-500">Ошибка: {fastopertorDetails}</p>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className={clsx('text-sm font-medium', isDark ? 'text-gray-300' : 'text-gray-700')}>
-                  Endpoint (опционально)
-                </label>
-                <input
-                  type="text"
-                  className="input mt-1"
-                  placeholder="/api/orders"
-                  {...register('fastopertorEndpoint')}
-                />
-                <p className={clsx('mt-1 text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                  Endpoint для получения данных (по умолчанию: /api/orders)
-                </p>
-              </div>
-
-              <p className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                При включении этой опции данные будут автоматически загружаться из Fastopertor API вместо ручной загрузки через drag-and-drop.
-              </p>
-            </div>
-          </CollapsibleSection>
 
           {/* Google Maps API Key */}
           <div>
@@ -806,9 +685,9 @@ export const Settings: React.FC = () => {
             )}
             <p className="mt-1 text-xs text-gray-500">
               Необходим для геокодирования адресов и расчета маршрутов. Получите API ключ в{' '}
-              <a 
-                href="https://console.cloud.google.com/" 
-                target="_blank" 
+              <a
+                href="https://console.cloud.google.com/"
+                target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary-600 hover:text-primary-500"
               >
@@ -880,9 +759,9 @@ export const Settings: React.FC = () => {
           </CollapsibleSection>
 
           {/* Action Buttons */}
-            <div className="flex justify-between gap-4">
-            <button 
-              type="button" 
+          <div className="flex justify-between gap-4">
+            <button
+              type="button"
               onClick={handleClearAllData}
               className={clsx(
                 'px-6 py-3 rounded-xl font-semibold transition-all duration-200 flex items-center gap-2 shadow-lg hover:scale-105',
@@ -894,8 +773,8 @@ export const Settings: React.FC = () => {
               <CogIcon className="h-5 w-5" />
               Очистить все данные
             </button>
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               className={clsx(
                 'px-6 py-3 rounded-xl font-semibold transition-all duration-200 flex items-center gap-2 shadow-lg hover:scale-105',
                 'bg-gradient-to-r from-blue-600 via-blue-500 to-pink-500 hover:from-blue-700 hover:via-blue-600 hover:to-pink-600 text-white'

@@ -14,7 +14,7 @@ export interface WorkloadHeatmapProps {
   onHeatmapDataLoad?: (data: WorkloadHeatmapData[]) => void
 }
 
-export const WorkloadHeatmap: React.FC<WorkloadHeatmapProps> = ({
+export const WorkloadHeatmap = React.memo<WorkloadHeatmapProps>(({
   orders,
   sectorPath,
   onHeatmapDataLoad
@@ -39,9 +39,9 @@ export const WorkloadHeatmap: React.FC<WorkloadHeatmapProps> = ({
           zoom: 12,
           center: sectorPath && sectorPath.length > 0
             ? {
-                lat: sectorPath.reduce((sum, p) => sum + p.lat, 0) / sectorPath.length,
-                lng: sectorPath.reduce((sum, p) => sum + p.lng, 0) / sectorPath.length
-              }
+              lat: sectorPath.reduce((sum, p) => sum + p.lat, 0) / sectorPath.length,
+              lng: sectorPath.reduce((sum, p) => sum + p.lng, 0) / sectorPath.length
+            }
             : { lat: 50.4501, lng: 30.5234 },
           mapTypeControl: true,
           streetViewControl: false,
@@ -74,10 +74,10 @@ export const WorkloadHeatmap: React.FC<WorkloadHeatmapProps> = ({
             radius: 50,
             opacity: 0.6,
             gradient: [
-                'rgba(0, 255, 0, 0)',      // Зеленый (низкая загрузка)
-                'rgba(255, 255, 0, 0.4)',  // Желтый (средняя загрузка)
-                'rgba(255, 165, 0, 0.7)',  // Оранжевый (высокая загрузка)
-                'rgba(255, 0, 0, 1)'       // Красный (критическая загрузка)
+              'rgba(0, 255, 0, 0)',      // Зеленый (низкая загрузка)
+              'rgba(255, 255, 0, 0.4)',  // Желтый (средняя загрузка)
+              'rgba(255, 165, 0, 0.7)',  // Оранжевый (высокая загрузка)
+              'rgba(255, 0, 0, 1)'       // Красный (критическая загрузка)
             ],
             maxIntensity: Math.max(...heatmapData.map(d => d.orderCount), 1)
           })
@@ -89,7 +89,7 @@ export const WorkloadHeatmap: React.FC<WorkloadHeatmapProps> = ({
 
         // Добавляем маркеры для критических зон
         const criticalZones = heatmapData.filter(d => d.workload === 'critical' || d.workload === 'high')
-        
+
         markersRef.current.forEach(m => m.setMap(null))
         markersRef.current = []
 
@@ -155,5 +155,5 @@ export const WorkloadHeatmap: React.FC<WorkloadHeatmapProps> = ({
       />
     </div>
   )
-}
+})
 

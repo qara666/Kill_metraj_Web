@@ -25,12 +25,19 @@ class Logger {
       this.logs.shift();
     }
 
-    if (this.enabled || level === 'error') {
-      const prefix = `[${entry.timestamp}] [${level.toUpperCase()}]`;
+    if (this.enabled || level === 'error' || level === 'warn') {
+      const styles = {
+        debug: 'color: #7f8c8d',
+        info: 'color: #2980b9',
+        warn: 'color: #f39c12; font-weight: bold',
+        error: 'color: #c0392b; font-weight: bold'
+      };
+
+      const prefix = `%c[${entry.timestamp}] [${level.toUpperCase()}]`;
       if (data) {
-        console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](prefix, message, data);
+        console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](prefix, styles[level], message, data);
       } else {
-        console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](prefix, message);
+        console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](prefix, styles[level], message);
       }
     }
   }
@@ -56,6 +63,16 @@ class Logger {
       return this.logs.filter(log => log.level === level);
     }
     return [...this.logs];
+  }
+
+  saveLogsExport() {
+    const blob = new Blob([JSON.stringify(this.logs, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `logs-${new Date().toISOString()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   clear() {

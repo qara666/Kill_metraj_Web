@@ -2,48 +2,7 @@
  * Система умных уведомлений для маршрутов
  */
 
-export interface NotificationPreferences {
-  enableWarnings: boolean // Включить предупреждения о рисках
-  enableTrafficWarnings: boolean // Включить предупреждения о пробках
-}
-
-export interface OrderInfo {
-  orderNumber: string | number
-  address: string
-  customerName?: string
-  customerPhone?: string
-  readyAt: number | null
-  deadlineAt: number | null
-  estimatedArrivalTime: number | null
-  raw?: any
-}
-
-export interface RouteInfo {
-  id: string
-  name: string
-  routeChain: OrderInfo[]
-  startAddress: string
-  endAddress: string
-  estimatedStartTime: number
-  directionsLegs?: any[]
-}
-
-export type NotificationType = 
-  | 'route_delay_warning' // Предупреждение о задержке
-  | 'deadline_risk' // Риск опоздания
-  | 'traffic_warning' // Предупреждение о пробках
-  | 'route_optimization_suggestion' // Предложение по оптимизации маршрута
-
-export interface Notification {
-  id: string
-  type: NotificationType
-  timestamp: number
-  routeId: string
-  orderNumber?: string | number
-  message: string
-  priority: 'low' | 'medium' | 'high' | 'critical'
-  sent: boolean
-}
+import { NotificationPreferences, OrderInfo, RouteInfo, NotificationType, Notification } from '../../types'
 
 /**
  * Генерирует уведомления для маршрута
@@ -79,7 +38,7 @@ export function generateRouteNotifications(
       // Форс-мажор расширяет дедлайн: плановое время + 9 минут
       const deadlineWithForceMajeure = order.deadlineAt + FORCE_MAJEURE_MS
       const timeToDeadline = deadlineWithForceMajeure - order.estimatedArrivalTime
-      
+
       // Риск опоздания к дедлайну (с учетом форс-мажора)
       if (timeToDeadline < 5 * 60 * 1000 && timeToDeadline > 0) { // Меньше 5 минут до дедлайна с форс-мажором
         notifications.push({
@@ -156,7 +115,7 @@ function calculateOrderETAs(route: RouteInfo): OrderInfo[] {
 
       // Добавляем время на отдачу заказа (+5 минут)
       currentTime += DELIVERY_TIME_MS
-      
+
       // Форс-мажор (+9 минут) расширяет дедлайн, не добавляется к ETA
 
       ordersWithETA.push({
