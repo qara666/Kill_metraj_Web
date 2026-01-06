@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx'
 
 import { ProcessedExcelData } from '../../types'
+export type { ProcessedExcelData }
 
 export const processExcelFile = async (file: File): Promise<ProcessedExcelData> => {
   const fileName = file.name.toLowerCase()

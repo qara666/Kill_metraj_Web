@@ -8,6 +8,8 @@ import {
     type TrafficPlanImpact,
     type TrafficPresetMode
 } from '../types'
+
+export type { TrafficPresetMode }
 import { GoogleAPIManager } from '../utils/api/googleAPIManager'
 import { routeOptimizationCache } from '../utils/routes/routeOptimizationCache'
 import { routeHistory } from '../utils/routes/routeHistory'

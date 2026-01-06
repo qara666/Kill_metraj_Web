@@ -175,7 +175,7 @@ export const AutoPlanner: React.FC = () => {
   const { swaggerTimeDeliveryBeg, swaggerTimeDeliveryEnd } = useAutoPlannerStore();
 
   // Auto-refresh hook - automatically syncs data every 5 minutes
-  const { performSync: performManualSync } = useSwaggerAutoRefresh({
+  useSwaggerAutoRefresh({
     dateTimeDeliveryBeg: swaggerTimeDeliveryBeg,
     dateTimeDeliveryEnd: swaggerTimeDeliveryEnd,
     onDataLoaded: handleSwaggerDataLoaded,
@@ -365,7 +365,6 @@ export const AutoPlanner: React.FC = () => {
               updatePlanningSettings={updatePlanningSettings}
               setEnableNotifications={setEnableNotifications}
               setNotificationPreferences={setNotificationPreferences}
-              onManualSync={performManualSync}
             />
           </div>
         </div>

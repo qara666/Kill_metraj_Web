@@ -1,6 +1,7 @@
 // Утилита для сохранения истории оптимизаций маршрутов
 
-import { RouteHistoryEntry, Route, Order } from '../../types'
+import { RouteHistoryEntry } from '../../types'
+export type { RouteHistoryEntry }
 
 const HISTORY_STORAGE_KEY = 'km_route_history'
 const MAX_HISTORY_ENTRIES = 20 // Уменьшено с 50 до 20 для экономии места

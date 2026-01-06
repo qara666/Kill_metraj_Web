@@ -11,7 +11,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useAutoPlannerStore } from '../stores/useAutoPlannerStore'
 import { clsx } from 'clsx'
-import { fastopertorApi } from '../services/fastopertorApi'
+
 
 interface SettingsForm {
   googleMapsApiKey: string

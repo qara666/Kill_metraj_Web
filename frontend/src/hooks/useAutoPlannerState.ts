@@ -4,9 +4,7 @@ import {
     TrafficPlanImpact,
     TrafficPresetInfo,
     RouteHistoryEntry,
-    NotificationPreferences,
-    ProcessedExcelData,
-    Route
+    NotificationPreferences
 } from '../types'
 import { routeHistory } from '../utils/routes/routeHistory'
 import { calculateRouteAnalytics } from '../utils/routes/routeAnalytics'
