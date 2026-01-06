@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react'
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react'
 import { localStorageUtils } from '../utils/ui/localStorage'
 
 interface ExcelData {
@@ -55,7 +55,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     }
   }, [])
 
-  const setExcelData = (data: ExcelData | null) => {
+  const setExcelData = useCallback((data: ExcelData | null) => {
     if (window && (window as any).debugExcel) console.warn('[ExcelDataProvider:SET]', data, (new Error()).stack)
     if (data) {
       const val = applyCourierVehicleMap(data)
@@ -65,28 +65,34 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       setExcelDataState(null)
       localStorage.removeItem('km_dashboard_processed_data')
     }
-  }
+  }, [])
 
-  const updateExcelData = (dataOrUpdater: ExcelData | ((prev: ExcelData) => ExcelData)) => {
+  const updateExcelData = useCallback((dataOrUpdater: ExcelData | ((prev: ExcelData) => ExcelData)) => {
     setExcelDataState(prev => {
       let next: ExcelData;
       if (typeof dataOrUpdater === 'function') {
-        next = applyCourierVehicleMap((dataOrUpdater as (p: ExcelData) => ExcelData)(prev!));
+        const updater = dataOrUpdater as (p: ExcelData) => ExcelData;
+        const prevSafe = prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: {} } as any;
+        console.log('[ExcelDataContext] updateExcelData calling updater with prev:', prevSafe);
+        next = applyCourierVehicleMap(updater(prevSafe));
       } else {
+        console.log('[ExcelDataContext] updateExcelData calling applyCourierVehicleMap with new data:', dataOrUpdater);
         next = applyCourierVehicleMap(dataOrUpdater);
       }
+
+      console.log('[ExcelDataContext] New state computed:', next);
       localStorage.setItem('km_dashboard_processed_data', JSON.stringify(next));
       return next;
     });
-  }
+  }, [])
 
-  const clearExcelData = () => {
+  const clearExcelData = useCallback(() => {
     if (window && (window as any).debugExcel) console.warn('[ExcelDataProvider:CLEAR]', (new Error()).stack)
     setExcelDataState(null)
     localStorage.removeItem('km_dashboard_processed_data')
-  }
+  }, [])
 
-  const updateRouteData = (newRoutes: any[]) => {
+  const updateRouteData = useCallback((newRoutes: any[]) => {
     if (window && (window as any).debugExcel) console.warn('[ExcelDataProvider:UPDATEROUTE]', newRoutes, (new Error()).stack)
     setExcelDataState(prev => {
       if (prev) {
@@ -97,15 +103,15 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
         }
       }
     })
-  }
+  }, [])
 
   return (
-    <ExcelDataContext.Provider value={{ 
-      excelData, 
-      setExcelData, 
-      updateExcelData, 
-      clearExcelData, 
-      updateRouteData 
+    <ExcelDataContext.Provider value={{
+      excelData,
+      setExcelData,
+      updateExcelData,
+      clearExcelData,
+      updateRouteData
     }}>
       {children}
     </ExcelDataContext.Provider>
@@ -128,7 +134,8 @@ function applyCourierVehicleMap(data: any): any {
       paymentMethods: Array.isArray(data.paymentMethods) ? data.paymentMethods : [],
       errors: Array.isArray(data.errors) ? data.errors : []
     }
-  } catch {
+  } catch (e) {
+    console.error('CRITICAL ERROR in applyCourierVehicleMap:', e);
     return {
       ...data,
       routes: Array.isArray(data.routes) ? data.routes : [],

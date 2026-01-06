@@ -186,8 +186,45 @@ class ExcelService {
       };
     }
 
-    const headers = jsonData[0];
-    const dataRows = jsonData.slice(1);
+    // ВАЖНО: Ищем заголовки в первых 10 строках (не только в первой!)
+    let headerRowIndex = 0;
+    let headers = [];
+    
+    this.addDebugLog(`Поиск заголовков в первых 10 строках...`);
+    
+    for (let i = 0; i < Math.min(10, jsonData.length); i++) {
+      const row = jsonData[i];
+      const rowStr = row.map(c => String(c || '').toLowerCase()).join('|');
+      const nonEmptyCells = row.filter(c => c !== null && c !== undefined && String(c).trim() !== '');
+      
+      this.addDebugLog(`Строка ${i + 1}: ${nonEmptyCells.length} непустых ячеек`);
+      
+      if (nonEmptyCells.length < 3) {
+        this.addDebugLog(`Пропускаем строку ${i + 1}: слишком мало данных`);
+        continue;
+      }
+      
+      if (rowStr.includes('адрес') || rowStr.includes('address') ||
+          rowStr.includes('номер') || rowStr.includes('number') || rowStr.includes('№') ||
+          rowStr.includes('телефон') || rowStr.includes('phone') ||
+          rowStr.includes('курьер') || rowStr.includes('courier') ||
+          rowStr.includes('сумма') || rowStr.includes('amount') ||
+          rowStr.includes('клиент') || rowStr.includes('customer') ||
+          rowStr.includes('оплат') || rowStr.includes('payment')) {
+        headerRowIndex = i;
+        headers = row;
+        this.addDebugLog(`✅ Найдена строка заголовков в строке ${i + 1}!`);
+        break;
+      }
+    }
+    
+    if (headers.length === 0) {
+      this.addDebugLog(`⚠️ Заголовки не найдены автоматически, используем первую строку`);
+      headers = jsonData[0];
+      headerRowIndex = 0;
+    }
+    
+    const dataRows = jsonData.slice(headerRowIndex + 1);
 
     this.addDebugLog(`Заголовки листа "${sheetName}"`, {
       headers,
@@ -249,12 +286,7 @@ class ExcelService {
           if (order.courier) {
             couriers.push({
               name: order.courier,
-              orders: [{
-                id: order.id,
-                customer: order.customerName,
-                address: order.address,
-                amount: order.amount
-              }],
+              orderList: [{ id: order.id, customer: order.customerName, address: order.address, amount: order.amount }],
               orderCount: 1,
               totalAmount: order.amount,
               zones: [],
@@ -266,12 +298,7 @@ class ExcelService {
           if (order.paymentMethod) {
             paymentMethods.push({
               method: order.paymentMethod,
-              orders: [{
-                id: order.id,
-                customer: order.customerName,
-                amount: order.amount,
-                status: order.status
-              }],
+              orderList: [{ id: order.id, customer: order.customerName, amount: order.amount, status: order.status }],
               orderCount: 1,
               totalAmount: order.amount,
               averageAmount: order.amount
@@ -282,12 +309,7 @@ class ExcelService {
           if (order.address) {
             addresses.push({
               full: order.address,
-              orders: [{
-                id: order.id,
-                customer: order.customerName,
-                courier: order.courier,
-                amount: order.amount
-              }],
+              orderList: [{ id: order.id, customer: order.customerName, courier: order.courier, amount: order.amount }],
               orderCount: 1,
               totalAmount: order.amount,
               zones: [],
@@ -348,7 +370,7 @@ class ExcelService {
       }
       
       // АДРЕС - ищем "адрес", "address"
-      else if (includesAny(noApostrophes, ['адрес', 'address', 'доставки', 'delivery'])) {
+      else if (includesAny(noApostrophes, ['адрес', 'address', 'доставки', 'delivery', 'куда', 'улица', 'street', 'место'])) {
         if (headerMap.address === undefined) {
           headerMap.address = index;
           this.addDebugLog(`Найден адрес в колонке ${index}: "${originalHeader}"`);
@@ -372,7 +394,7 @@ class ExcelService {
       }
       
       // СУММА - ищем "оплате", "сумма", "amount", "price", "к оплате"
-      else if (includesAny(noApostrophes, ['оплате', 'сумма', 'amount', 'price', 'стоимость', 'к оплате', 'to pay', 'оплате', 'pay', 'сумма к оплате', 'к оплате сумма', 'стоимость заказа', 'заказ сумма', 'заказа сумма'])) {
+      else if (includesAny(noApostrophes, ['оплате', 'сумма', 'amount', 'price', 'стоимость', 'к оплате', 'to pay', 'оплате', 'pay', 'сумма к оплате', 'к оплате сумма', 'стоимость заказа', 'заказ сумма', 'заказа сумма', 'всего'])) {
         if (headerMap.amount === undefined) {
           headerMap.amount = index;
           this.addDebugLog(`Найден сумма в колонке ${index}: "${originalHeader}"`);
@@ -518,26 +540,22 @@ class ExcelService {
       if (!uniqueCouriers[courier.name]) {
         uniqueCouriers[courier.name] = {
           name: courier.name,
-          orders: [],
-          orderCount: 0,
+          orders: 0, // Frontend expects count here
+          orderList: [],
           totalAmount: 0,
           zones: [],
           paymentMethods: []
         };
       }
       
-      uniqueCouriers[courier.name].orders.push(...courier.orders);
-      uniqueCouriers[courier.name].orderCount += courier.orderCount;
-      uniqueCouriers[courier.name].totalAmount += courier.totalAmount;
-      uniqueCouriers[courier.name].paymentMethods = [...new Set([...uniqueCouriers[courier.name].paymentMethods, ...courier.paymentMethods])];
+      if (courier.orderList) uniqueCouriers[courier.name].orderList.push(...courier.orderList);
+      uniqueCouriers[courier.name].orders += (courier.orderCount || 0);
+      uniqueCouriers[courier.name].totalAmount += (courier.totalAmount || 0);
+      uniqueCouriers[courier.name].paymentMethods = [...new Set([...uniqueCouriers[courier.name].paymentMethods, ...(courier.paymentMethods || [])])];
     });
 
     const result = Object.values(uniqueCouriers);
-    this.addDebugLog('Созданы уникальные списки', { 
-      couriers: result.length, 
-      paymentMethods: 0 
-    });
-    
+    this.addDebugLog('Созданы уникальные курьеры', { count: result.length });
     return result;
   }
 
@@ -547,21 +565,20 @@ class ExcelService {
       if (!uniqueMethods[method.method]) {
         uniqueMethods[method.method] = {
           method: method.method,
-          orders: [],
-          orderCount: 0,
+          orders: 0, // Frontend expects count
+          orderList: [],
           totalAmount: 0,
           averageAmount: 0
         };
       }
       
-      uniqueMethods[method.method].orders.push(...method.orders);
-      uniqueMethods[method.method].orderCount += method.orderCount;
-      uniqueMethods[method.method].totalAmount += method.totalAmount;
+      if (method.orderList) uniqueMethods[method.method].orderList.push(...method.orderList);
+      uniqueMethods[method.method].orders += (method.orderCount || 0);
+      uniqueMethods[method.method].totalAmount += (method.totalAmount || 0);
     });
 
-    // Рассчитываем средние суммы
     Object.values(uniqueMethods).forEach(method => {
-      method.averageAmount = method.orderCount > 0 ? method.totalAmount / method.orderCount : 0;
+      method.averageAmount = method.orders > 0 ? method.totalAmount / method.orders : 0;
     });
 
     return Object.values(uniqueMethods);
@@ -573,18 +590,18 @@ class ExcelService {
       if (!uniqueAddresses[address.full]) {
         uniqueAddresses[address.full] = {
           full: address.full,
-          orders: [],
-          orderCount: 0,
+          orders: 0, // Frontend expects count
+          orderList: [],
           totalAmount: 0,
           zones: [],
           couriers: []
         };
       }
       
-      uniqueAddresses[address.full].orders.push(...address.orders);
-      uniqueAddresses[address.full].orderCount += address.orderCount;
-      uniqueAddresses[address.full].totalAmount += address.totalAmount;
-      uniqueAddresses[address.full].couriers = [...new Set([...uniqueAddresses[address.full].couriers, ...address.couriers])];
+      if (address.orderList) uniqueAddresses[address.full].orderList.push(...address.orderList);
+      uniqueAddresses[address.full].orders += (address.orderCount || 0);
+      uniqueAddresses[address.full].totalAmount += (address.totalAmount || 0);
+      uniqueAddresses[address.full].couriers = [...new Set([...uniqueAddresses[address.full].couriers, ...(address.couriers || [])])];
     });
 
     return Object.values(uniqueAddresses);

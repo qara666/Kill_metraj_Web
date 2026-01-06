@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { 
+import {
   DocumentTextIcon,
   UserGroupIcon,
   CreditCardIcon,
@@ -18,6 +18,23 @@ interface ExcelResultsDisplayProps {
   data: any
   summary: any
 }
+
+const safeRender = (val: any): React.ReactNode => {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') return String(val);
+  if (Array.isArray(val)) return val.length.toString();
+  if (typeof val === 'object') {
+    // If it's an object, check for known string fields or just JSON stringify
+    if (val.formattedAddress) return val.formattedAddress;
+    if (val.name) return val.name;
+    try {
+      return JSON.stringify(val);
+    } catch {
+      return '[Object]';
+    }
+  }
+  return '';
+};
 
 export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, summary }) => {
   const [expandedSections, setExpandedSections] = useState({
@@ -40,7 +57,7 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
   const sortCouriers = (couriers: any[]) => {
     return [...couriers].sort((a, b) => {
       let aValue, bValue
-      
+
       if (courierSortBy === 'name') {
         aValue = a.name || ''
         bValue = b.name || ''
@@ -48,7 +65,7 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
         aValue = a.orders || 0
         bValue = b.orders || 0
       }
-      
+
       if (courierSortOrder === 'asc') {
         return aValue > bValue ? 1 : -1
       } else {
@@ -78,7 +95,7 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
       {/* Заказы */}
       {orders && orders.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <div 
+          <div
             className="flex items-center justify-between cursor-pointer"
             onClick={() => toggleSection('orders')}
           >
@@ -92,7 +109,7 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
               <EyeIcon className="h-5 w-5 text-gray-400" />
             )}
           </div>
-          
+
           {expandedSections.orders && (
             <div className="mt-4 space-y-3 max-h-96 overflow-y-auto">
               {orders.map((order: any, index: number) => (
@@ -106,47 +123,47 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
                         {order.amount && (
                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                             <CurrencyDollarIcon className="h-3 w-3 mr-1" />
-                            {order.amount} грн
+                            {safeRender(order.amount)} грн
                           </span>
                         )}
                       </div>
-                      
+
                       <div className="space-y-1 text-sm text-gray-600">
                         <div className="flex items-center">
                           <MapPinIcon className="h-4 w-4 mr-2 text-gray-400" />
-                          <span>{order.address}</span>
+                          <span>{safeRender(order.address)}</span>
                         </div>
-                        
+
                         {order.courier && (
                           <div className="flex items-center">
                             <TruckIcon className="h-4 w-4 mr-2 text-gray-400" />
-                            <span>Курьер: {order.courier}</span>
+                            <span>Курьер: {safeRender(order.courier)}</span>
                           </div>
                         )}
-                        
+
                         {order.paymentMethod && (
                           <div className="flex items-center">
                             <CreditCardIcon className="h-4 w-4 mr-2 text-gray-400" />
-                            <span>Оплата: {order.paymentMethod}</span>
+                            <span>Оплата: {safeRender(order.paymentMethod)}</span>
                           </div>
                         )}
-                        
+
                         {order.customerName && (
                           <div className="flex items-center">
                             <UserIcon className="h-4 w-4 mr-2 text-gray-400" />
-                            <span>Клиент: {order.customerName}</span>
+                            <span>Клиент: {safeRender(order.customerName)}</span>
                           </div>
                         )}
-                        
+
                         {order.phone && (
                           <div className="flex items-center">
                             <PhoneIcon className="h-4 w-4 mr-2 text-gray-400" />
-                            <span>Телефон: {order.phone}</span>
+                            <span>Телефон: {safeRender(order.phone)}</span>
                           </div>
                         )}
                       </div>
                     </div>
-                    
+
                     <div className="ml-4">
                       {order.geocoded ? (
                         <CheckCircleIcon className="h-5 w-5 text-green-500" />
@@ -166,7 +183,7 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
       {couriers && couriers.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between">
-            <div 
+            <div
               className="flex items-center cursor-pointer"
               onClick={() => toggleSection('couriers')}
             >
@@ -180,33 +197,31 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
                 <EyeIcon className="h-5 w-5 text-gray-400 ml-2" />
               )}
             </div>
-            
+
             {expandedSections.couriers && (
               <div className="flex space-x-2">
                 <button
                   onClick={() => handleCourierSort('name')}
-                  className={`px-3 py-1 text-xs rounded ${
-                    courierSortBy === 'name' 
-                      ? 'bg-blue-100 text-blue-800' 
-                      : 'bg-gray-100 text-gray-600'
-                  }`}
+                  className={`px-3 py-1 text-xs rounded ${courierSortBy === 'name'
+                    ? 'bg-blue-100 text-blue-800'
+                    : 'bg-gray-100 text-gray-600'
+                    }`}
                 >
                   По имени {courierSortBy === 'name' && (courierSortOrder === 'asc' ? '↑' : '↓')}
                 </button>
                 <button
                   onClick={() => handleCourierSort('orders')}
-                  className={`px-3 py-1 text-xs rounded ${
-                    courierSortBy === 'orders' 
-                      ? 'bg-blue-100 text-blue-800' 
-                      : 'bg-gray-100 text-gray-600'
-                  }`}
+                  className={`px-3 py-1 text-xs rounded ${courierSortBy === 'orders'
+                    ? 'bg-blue-100 text-blue-800'
+                    : 'bg-gray-100 text-gray-600'
+                    }`}
                 >
                   По заказам {courierSortBy === 'orders' && (courierSortOrder === 'asc' ? '↑' : '↓')}
                 </button>
               </div>
             )}
           </div>
-          
+
           {expandedSections.couriers && (
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {sortCouriers(couriers).map((courier: any, index: number) => (
@@ -215,11 +230,11 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
                     <TruckIcon className="h-5 w-5 text-green-600" />
                     <span className="font-medium text-gray-900">{courier.name}</span>
                   </div>
-                  
+
                   <div className="space-y-1 text-sm text-gray-600">
                     <div className="flex justify-between">
                       <span>Заказов:</span>
-                      <span className="font-medium">{courier.orders || 0}</span>
+                      <span className="font-medium">{safeRender(courier.orders)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Статус:</span>
@@ -245,7 +260,7 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
       {/* Ошибки */}
       {errors && errors.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm border border-red-200 p-6">
-          <div 
+          <div
             className="flex items-center justify-between cursor-pointer"
             onClick={() => toggleSection('errors')}
           >
@@ -259,7 +274,7 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
               <EyeIcon className="h-5 w-5 text-gray-400" />
             )}
           </div>
-          
+
           {expandedSections.errors && (
             <div className="mt-4 space-y-2 max-h-40 overflow-y-auto">
               {errors.map((error: any, index: number) => (
@@ -277,7 +292,7 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
       {/* Предупреждения */}
       {warnings && warnings.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm border border-yellow-200 p-6">
-          <div 
+          <div
             className="flex items-center justify-between cursor-pointer"
             onClick={() => toggleSection('warnings')}
           >
@@ -291,7 +306,7 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
               <EyeIcon className="h-5 w-5 text-gray-400" />
             )}
           </div>
-          
+
           {expandedSections.warnings && (
             <div className="mt-4 space-y-2 max-h-40 overflow-y-auto">
               {warnings.map((warning: string, index: number) => (

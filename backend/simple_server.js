@@ -63,17 +63,17 @@ app.get('/api/health', (req, res) => {
 
 // Тестовый эндпоинт для проверки Telegram роутов
 app.get('/api/telegram/test', (req, res) => {
-  res.json({ 
-    success: true, 
+  res.json({
+    success: true,
     message: 'Telegram routes are working',
-    timestamp: new Date().toISOString() 
+    timestamp: new Date().toISOString()
   });
 });
 
 app.post('/api/upload/excel', uploadLimiter, upload.single('file'), async (req, res) => {
   try {
     addLog('Начало обработки Excel файла');
-    
+
     if (!req.file) {
       addLog('Ошибка: файл не предоставлен');
       return res.status(400).json({
@@ -85,9 +85,9 @@ app.post('/api/upload/excel', uploadLimiter, upload.single('file'), async (req, 
     addLog(`Получен файл: ${req.file.originalname}, размер: ${req.file.size} байт`);
 
     const result = await excelService.processExcelFile(req.file.buffer);
-    
+
     addLog(`Результат: успех=${result.success}, заказов=${result.data?.orders?.length || 0}`);
-    
+
     if (result.success) {
       // Добавляем дополнительную информацию для предпросмотра
       const enhancedData = {
@@ -205,6 +205,22 @@ app.post('/api/upload/test-api-key', (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
+  const { ApiError } = require('./src/utils/errors');
+
+  if (err instanceof ApiError) {
+    logger.warn(`${err.name}: ${err.message}`, {
+      statusCode: err.statusCode,
+      details: err.details,
+      path: req.path
+    });
+    return res.status(err.statusCode).json({
+      success: false,
+      error: err.name,
+      message: err.message,
+      details: err.details
+    });
+  }
+
   logger.error('Unhandled error', {
     error: err.message,
     stack: err.stack,
@@ -213,7 +229,8 @@ app.use((err, req, res, next) => {
   });
   res.status(500).json({
     success: false,
-    error: 'Внутренняя ошибка сервера'
+    error: 'InternalServerError',
+    message: 'Внутренняя ошибка сервера'
   });
 });
 

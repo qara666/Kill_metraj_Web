@@ -1,73 +1,23 @@
-// Расширенная аналитика эффективности маршрутов
+import { RouteAnalytics, Route, Order, Coordinates } from '../../types'
 
-export interface RouteAnalytics {
-  // Общая статистика
-  totalRoutes: number
-  totalOrders: number
-  totalDistance: number
-  totalDuration: number
-  avgDistancePerRoute: number
-  avgDurationPerRoute: number
-  avgOrdersPerRoute: number
-  
-  // Эффективность
-  avgEfficiency: number
-  efficiencyDistribution: {
-    excellent: number // > 80%
-    good: number // 60-80%
-    average: number // 40-60%
-    poor: number // < 40%
-  }
-  
-  // Временные метрики
-  timeWindowCompliance: {
-    onTime: number
-    late: number
-    early: number
-    noDeadline: number
-  }
-  
-  // Географические метрики
-  zoneDistribution: Record<string, number>
-  avgDistanceBetweenStops: number
-  maxDistanceBetweenStops: number
-  
-  // Пробки
-  totalTrafficDelay: number
-  routesWithTraffic: number
-  criticalTrafficRoutes: number
-  
-  // Распределение нагрузки
-  loadBalance: {
-    minOrders: number
-    maxOrders: number
-    stdDev: number
-    isBalanced: boolean
-  }
-  
-  // Рекомендации
-  recommendations: string[]
-}
-
-export const calculateRouteAnalytics = (routes: any[]): RouteAnalytics => {
+export const calculateRouteAnalytics = (routes: Route[]): RouteAnalytics => {
   if (!routes || routes.length === 0) {
     return getEmptyAnalytics()
   }
 
   const totalRoutes = routes.length
   const totalOrders = routes.reduce((sum, r) => sum + (r.stopsCount || r.routeChainFull?.length || 0), 0)
-  const totalDistance = routes.reduce((sum, r) => sum + (r.totalDistance || 0), 0)
-  const totalDuration = routes.reduce((sum, r) => sum + (r.totalDuration || 0), 0)
-  
+  const totalDistance = routes.reduce((sum, r) => sum + (Number(r.totalDistance) || 0), 0)
+  const totalDuration = routes.reduce((sum, r) => sum + (Number(r.totalDuration) || 0), 0)
+
   const efficiencies = routes
     .map(r => r.routeEfficiency || 0)
     .filter(e => e > 0)
-  
+
   const avgEfficiency = efficiencies.length > 0
     ? efficiencies.reduce((sum, e) => sum + e, 0) / efficiencies.length
     : 0
 
-  // Распределение эффективности
   const efficiencyDistribution = {
     excellent: efficiencies.filter(e => e > 0.8).length,
     good: efficiencies.filter(e => e > 0.6 && e <= 0.8).length,
@@ -75,85 +25,78 @@ export const calculateRouteAnalytics = (routes: any[]): RouteAnalytics => {
     poor: efficiencies.filter(e => e <= 0.4).length
   }
 
-  // Временные метрики
   let onTime = 0
   let late = 0
   let early = 0
   let noDeadline = 0
-  
+
   routes.forEach(route => {
     const orders = route.routeChainFull || []
-    orders.forEach((order: any) => {
+    orders.forEach((order: Order) => {
       if (!order.deadlineAt) {
         noDeadline++
         return
       }
-      
-      // Упрощенная проверка (в реальности нужно учитывать время в пути)
+
       const now = Date.now()
       const timeUntilDeadline = order.deadlineAt - now
       const minutesUntilDeadline = timeUntilDeadline / (1000 * 60)
-      
+
       if (minutesUntilDeadline < -15) late++
       else if (minutesUntilDeadline > 30) early++
       else onTime++
     })
   })
 
-  // Географические метрики
   const zoneDistribution: Record<string, number> = {}
   const distancesBetweenStops: number[] = []
-  
+
   routes.forEach(route => {
     const orders = route.routeChainFull || []
-    orders.forEach((order: any, idx: number) => {
+    orders.forEach((order: Order, idx: number) => {
       const zone = order.deliveryZone || order.raw?.deliveryZone || order.raw?.['Зона доставки'] || 'Не указана'
       zoneDistribution[zone] = (zoneDistribution[zone] || 0) + 1
-      
-      // Расстояние между соседними остановками
+
       if (idx > 0 && order.coords && orders[idx - 1]?.coords) {
         const dist = calculateDistance(
-          orders[idx - 1].coords,
-          order.coords
+          orders[idx - 1].coords!,
+          order.coords!
         )
         distancesBetweenStops.push(dist)
       }
     })
   })
 
-  // Пробки
   const totalTrafficDelay = routes.reduce((sum, r) => sum + (r.totalTrafficDelay || 0), 0)
   const routesWithTraffic = routes.filter(r => r.totalTrafficDelay && r.totalTrafficDelay > 0).length
   const criticalTrafficRoutes = routes.filter(r => r.hasCriticalTraffic).length
 
-  // Распределение нагрузки
   const ordersPerRoute = routes.map(r => r.stopsCount || r.routeChainFull?.length || 0)
   const minOrders = Math.min(...ordersPerRoute)
   const maxOrders = Math.max(...ordersPerRoute)
   const avgOrders = ordersPerRoute.reduce((sum, n) => sum + n, 0) / ordersPerRoute.length
   const variance = ordersPerRoute.reduce((sum, n) => sum + Math.pow(n - avgOrders, 2), 0) / ordersPerRoute.length
   const stdDev = Math.sqrt(variance)
-  const isBalanced = stdDev < 1.5 // Считаем сбалансированным, если стандартное отклонение < 1.5
+  const isBalanced = stdDev < 1.5
 
-  // Рекомендации
   const recommendations: string[] = []
-  
+
   if (avgEfficiency < 0.5) {
     recommendations.push('Низкая эффективность маршрутов. Рекомендуется пересмотреть группировку заказов.')
   }
-  
+
   if (late > totalOrders * 0.1) {
     recommendations.push(`Много просроченных заказов (${late}). Увеличьте приоритет срочных заказов.`)
   }
-  
+
   if (!isBalanced) {
     recommendations.push('Неравномерное распределение нагрузки между курьерами. Включите балансировку нагрузки.')
   }
-  
+
   if (criticalTrafficRoutes > 0) {
     recommendations.push(`${criticalTrafficRoutes} маршрутов с критическими пробками. Рассмотрите возможность перепланирования.`)
   }
-  
+
   if (Object.keys(zoneDistribution).length > 1 && maxOrders - minOrders > 3) {
     recommendations.push('Большая разница в количестве заказов между маршрутами. Используйте группировку по зонам.')
   }
@@ -163,9 +106,9 @@ export const calculateRouteAnalytics = (routes: any[]): RouteAnalytics => {
     totalOrders,
     totalDistance,
     totalDuration,
-    avgDistancePerRoute: totalDistance / totalRoutes / 1000, // в км
-    avgDurationPerRoute: totalDuration / totalRoutes / 60, // в минутах
-    avgOrdersPerRoute: totalOrders / totalRoutes,
+    avgDistancePerRoute: totalRoutes > 0 ? (totalDistance / totalRoutes / 1000) : 0,
+    avgDurationPerRoute: totalRoutes > 0 ? (totalDuration / totalRoutes / 60) : 0,
+    avgOrdersPerRoute: totalRoutes > 0 ? (totalOrders / totalRoutes) : 0,
     avgEfficiency,
     efficiencyDistribution,
     timeWindowCompliance: {
@@ -230,9 +173,8 @@ const getEmptyAnalytics = (): RouteAnalytics => ({
   recommendations: []
 })
 
-// Вспомогательная функция для расчета расстояния
 const calculateDistance = (coord1: Coordinates, coord2: Coordinates): number => {
-  const R = 6371000 // Радиус Земли в метрах
+  const R = 6371000
   const lat1 = coord1.lat * Math.PI / 180
   const lat2 = coord2.lat * Math.PI / 180
   const deltaLat = (coord2.lat - coord1.lat) * Math.PI / 180
@@ -245,9 +187,3 @@ const calculateDistance = (coord1: Coordinates, coord2: Coordinates): number => 
 
   return R * c
 }
-
-interface Coordinates {
-  lat: number
-  lng: number
-}
-

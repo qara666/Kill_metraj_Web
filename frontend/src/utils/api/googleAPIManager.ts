@@ -3,14 +3,29 @@
  * Включает: кэширование, батчинг, приоритизацию, предварительную фильтрацию
  */
 
-import { Order, getCachedDistance, isReadyTimeCompatible } from '../routes/routeOptimizationHelpers'
-import type { Coordinates } from '../routes/routeOptimizationHelpers'
-import { 
+import type { Order, Coordinates } from '../../types'
+import { getCachedDistance, isReadyTimeCompatible } from '../routes/routeOptimizationHelpers'
+import {
   getUkraineTrafficForOrders,
   UkraineTrafficInfo,
   calculateTotalTrafficDelay,
   hasCriticalTraffic
 } from '../maps/ukraineTrafficAPI'
+
+// ============================================================================
+// ТИПЫ И ИНТЕРФЕЙСЫ
+// ============================================================================
+
+export interface DirectionsLeg {
+  distance?: { text: string; value: number }
+  duration?: { text: string; value: number }
+  duration_in_traffic?: { text: string; value: number }
+  start_address?: string
+  end_address?: string
+  start_location?: Coordinates
+  end_location?: Coordinates
+  steps?: any[]
+}
 
 // ============================================================================
 // КЭШИРОВАНИЕ
@@ -22,7 +37,7 @@ import {
 const pointToPointCache = new Map<string, {
   distance: number
   duration: number
-  legs?: any[]
+  legs?: DirectionsLeg[]
   timestamp: number
 }>()
 
@@ -31,7 +46,7 @@ const pointToPointCache = new Map<string, {
  */
 const routeFeasibilityCache = new Map<string, {
   feasible: boolean
-  legs?: any[]
+  legs?: DirectionsLeg[]
   totalDuration?: number
   totalDistance?: number
   timestamp: number
@@ -51,7 +66,7 @@ function generatePointPairKey(from: Coordinates, to: Coordinates): string {
  * Генерирует ключ для маршрута
  */
 function generateRouteKey(chain: Order[]): string {
-  return chain.map(o => 
+  return chain.map(o =>
     `${o.orderNumber || ''}_${o.coords?.lat?.toFixed(6) || ''}_${o.coords?.lng?.toFixed(6) || ''}`
   ).join('|')
 }
@@ -66,20 +81,20 @@ function getCachedPointPair(from: Coordinates, to: Coordinates): {
 } | null {
   const key1 = generatePointPairKey(from, to)
   const key2 = generatePointPairKey(to, from) // Обратное направление
-  
+
   const cached1 = pointToPointCache.get(key1)
   const cached2 = pointToPointCache.get(key2)
   const cached = cached1 || cached2
-  
+
   if (!cached) return null
-  
+
   const now = Date.now()
   if (now - cached.timestamp > CACHE_TTL) {
     pointToPointCache.delete(key1)
     pointToPointCache.delete(key2)
     return null
   }
-  
+
   // Если это обратное направление, переворачиваем legs
   if (cached2 && !cached1) {
     return {
@@ -88,7 +103,7 @@ function getCachedPointPair(from: Coordinates, to: Coordinates): {
       legs: cached.legs ? [...cached.legs].reverse() : undefined
     }
   }
-  
+
   return {
     distance: cached.distance,
     duration: cached.duration,
@@ -109,11 +124,11 @@ function cachePointPair(
   const key1 = generatePointPairKey(from, to)
   const key2 = generatePointPairKey(to, from)
   const timestamp = Date.now()
-  
+
   const data = { distance, duration, legs, timestamp }
   pointToPointCache.set(key1, data)
   pointToPointCache.set(key2, { ...data, legs: legs ? [...legs].reverse() : undefined })
-  
+
   // Очистка старых записей
   if (pointToPointCache.size > MAX_CACHE_SIZE) {
     const now = Date.now()
@@ -130,12 +145,12 @@ function cachePointPair(
  */
 function smartCacheCheck(chain: Order[]): {
   feasible: boolean
-  legs?: any[]
+  legs?: DirectionsLeg[]
   totalDuration?: number
   totalDistance?: number
 } | null {
   if (chain.length === 0) return null
-  
+
   // 1. Проверяем полный маршрут в кэше
   const fullKey = generateRouteKey(chain)
   const fullCached = routeFeasibilityCache.get(fullKey)
@@ -152,48 +167,48 @@ function smartCacheCheck(chain: Order[]): {
       routeFeasibilityCache.delete(fullKey)
     }
   }
-  
+
   // 2. Пытаемся собрать из сегментов (пар точек)
   if (chain.length >= 2 && chain.every(o => o.coords)) {
     const segments: Array<{ distance: number; duration: number; legs?: any[] }> = []
     let allCached = true
-    
+
     for (let i = 0; i < chain.length - 1; i++) {
       const from = chain[i].coords!
       const to = chain[i + 1].coords!
       const cached = getCachedPointPair(from, to)
-      
+
       if (!cached) {
         allCached = false
         break
       }
-      
+
       segments.push(cached)
     }
-    
+
     if (allCached && segments.length > 0) {
       // Собираем полный маршрут из сегментов
       const totalDistance = segments.reduce((sum, s) => sum + s.distance, 0)
       const totalDuration = segments.reduce((sum, s) => sum + s.duration, 0)
       const legs = segments.flatMap(s => s.legs || [])
-      
+
       const result = {
         feasible: true,
         legs,
         totalDistance,
         totalDuration
       }
-      
+
       // Сохраняем в полный кэш для будущего использования
       routeFeasibilityCache.set(fullKey, {
         ...result,
         timestamp: Date.now()
       })
-      
+
       return result
     }
   }
-  
+
   return null
 }
 
@@ -214,7 +229,7 @@ function cacheRouteResult(
     ...result,
     timestamp: Date.now()
   })
-  
+
   // Сохраняем также пары точек для переиспользования
   if (result.feasible && result.legs && chain.length >= 2 && chain.every(o => o.coords)) {
     const legs = result.legs
@@ -222,7 +237,7 @@ function cacheRouteResult(
       const from = chain[i].coords!
       const to = chain[i + 1].coords!
       const leg = legs[i]
-      
+
       if (leg) {
         const distance = leg.distance?.value || 0
         const duration = leg.duration_in_traffic?.value || leg.duration?.value || 0
@@ -230,7 +245,7 @@ function cacheRouteResult(
       }
     }
   }
-  
+
   // Очистка старых записей
   if (routeFeasibilityCache.size > MAX_CACHE_SIZE) {
     const now = Date.now()
@@ -257,25 +272,25 @@ export async function quickFeasibilityCheck(
   if (chain.length === 0) {
     return { feasible: true }
   }
-  
+
   // 1. Проверка координат
   if (!chain.every(o => o.coords)) {
     return { feasible: true, reason: 'Некоторые заказы без координат, нужна проверка API' }
   }
-  
+
   // 2. Проверка Haversine для всех пар
   if (maxDistanceKm) {
     for (let i = 0; i < chain.length - 1; i++) {
       const from = chain[i].coords!
       const to = chain[i + 1].coords!
       const dist = getCachedDistance(from, to)
-      
+
       if (dist > maxDistanceKm * 1.5) {
         return { feasible: false, reason: `Расстояние ${dist.toFixed(1)}км превышает лимит ${maxDistanceKm}км` }
       }
     }
   }
-  
+
   // 3. Проверка временной совместимости
   if (chain.length > 1) {
     // Используем существующую функцию isReadyTimeCompatible для консистентности
@@ -289,7 +304,7 @@ export async function quickFeasibilityCheck(
       return { feasible: false, reason: `Разница во времени готовности ${diff.toFixed(0)}мин превышает лимит ${maxReadyTimeDiffMinutes}мин` }
     }
   }
-  
+
   return { feasible: true }
 }
 
@@ -311,11 +326,11 @@ class GoogleAPIBatchQueue {
   private processing = false
   private batchTimeout: ReturnType<typeof setTimeout> | null = null
   private makeAPIRequestFn?: (chain: Order[], includeStartEnd: boolean) => Promise<any>
-  
+
   setMakeAPIRequest(fn: (chain: Order[], includeStartEnd: boolean) => Promise<any>) {
     this.makeAPIRequestFn = fn
   }
-  
+
   async addRequest(
     chain: Order[],
     includeStartEnd: boolean,
@@ -329,13 +344,13 @@ class GoogleAPIBatchQueue {
         reject,
         priority
       }
-      
+
       if (priority === 'high') {
         this.highPriorityQueue.push(request)
       } else {
         this.lowPriorityQueue.push(request)
       }
-      
+
       // Запускаем обработку
       if (this.highPriorityQueue.length >= 5 || (this.lowPriorityQueue.length >= 10 && !this.processing)) {
         this.processBatch()
@@ -344,17 +359,17 @@ class GoogleAPIBatchQueue {
       }
     })
   }
-  
+
   private async processBatch() {
     if (this.processing) return
-    
+
     if (this.batchTimeout) {
       clearTimeout(this.batchTimeout)
       this.batchTimeout = null
     }
-    
+
     this.processing = true
-    
+
     try {
       // Сначала обрабатываем высокий приоритет
       while (this.highPriorityQueue.length > 0) {
@@ -362,7 +377,7 @@ class GoogleAPIBatchQueue {
         await this.processRequestBatch(batch)
         await this.delay(50) // Небольшая задержка между батчами
       }
-      
+
       // Потом низкий приоритет
       while (this.lowPriorityQueue.length > 0) {
         const batch = this.lowPriorityQueue.splice(0, 10)
@@ -373,18 +388,18 @@ class GoogleAPIBatchQueue {
       this.processing = false
     }
   }
-  
+
   private async processRequestBatch(batch: QueuedRequest[]) {
     if (!this.makeAPIRequestFn) {
       batch.forEach(req => req.reject(new Error('makeAPIRequest не установлен')))
       return
     }
-    
-    // Обрабатываем параллельно, но с ограничением
+
+    // Обрабатываем последовательно или параллельно с индивидуальными ретраями
     const results = await Promise.allSettled(
-      batch.map(req => this.makeAPIRequestFn!(req.chain, req.includeStartEnd))
+      batch.map(req => this.withRetry(() => this.makeAPIRequestFn!(req.chain, req.includeStartEnd)))
     )
-    
+
     batch.forEach((req, idx) => {
       const result = results[idx]
       if (result.status === 'fulfilled') {
@@ -394,7 +409,41 @@ class GoogleAPIBatchQueue {
       }
     })
   }
-  
+
+  private async withRetry<T>(fn: () => Promise<T>, maxRetries = 4, baseDelay = 1000): Promise<T> {
+    let lastError: Error | any = null;
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        return await fn();
+      } catch (error: any) {
+        lastError = error;
+        const errorMessage = error?.message || String(error);
+        const status = error?.status || (error as any)?.code;
+
+        // Retry on specific Google Maps errors or network issues
+        const isRetryable =
+          errorMessage.includes('OVER_QUERY_LIMIT') ||
+          errorMessage.includes('UNKNOWN_ERROR') ||
+          errorMessage.includes('quota') ||
+          status === 'OVER_QUERY_LIMIT' ||
+          status === 'UNKNOWN_ERROR' ||
+          !navigator.onLine;
+
+        if (!isRetryable || i === maxRetries - 1) {
+          if (i > 0) {
+            console.error(`❌ GoogleAPIManager: Все попытки (${i + 1}) провалены. Ошибка: ${errorMessage}`);
+          }
+          break;
+        }
+
+        const delayMs = baseDelay * Math.pow(2, i) + (Math.random() * 300);
+        console.warn(`⚠️ GoogleAPIManager: Попытка ${i + 1} провалена (${errorMessage}). Повтор через ${Math.round(delayMs)}ms...`);
+        await this.delay(delayMs);
+      }
+    }
+    throw lastError;
+  }
+
   private delay(ms: number): Promise<void> {
     return new Promise<void>(resolve => setTimeout(resolve, ms))
   }
@@ -407,7 +456,7 @@ class GoogleAPIBatchQueue {
 export interface GoogleAPIManagerConfig {
   checkChainFeasible: (chain: Order[], includeStartEnd: boolean) => Promise<{
     feasible: boolean
-    legs?: any[]
+    legs?: DirectionsLeg[]
     totalDuration?: number
     totalDistance?: number
   }>
@@ -421,17 +470,17 @@ export interface GoogleAPIManagerConfig {
 export class GoogleAPIManager {
   private batchQueue: GoogleAPIBatchQueue
   private config: GoogleAPIManagerConfig
-  
+
   constructor(config: GoogleAPIManagerConfig) {
     this.config = config
     this.batchQueue = new GoogleAPIBatchQueue()
-    
+
     // Устанавливаем функцию для выполнения API запросов
     this.batchQueue.setMakeAPIRequest(async (chain: Order[], includeStartEnd: boolean) => {
       return this.config.checkChainFeasible(chain, includeStartEnd)
     })
   }
-  
+
   /**
    * Основной метод проверки маршрута
    */
@@ -447,7 +496,7 @@ export class GoogleAPIManager {
     } = {}
   ): Promise<{
     feasible: boolean
-    legs?: any[]
+    legs?: DirectionsLeg[]
     totalDuration?: number
     totalDistance?: number
   }> {
@@ -457,7 +506,7 @@ export class GoogleAPIManager {
     const prefilter = options.prefilter !== false
     const maxDistanceKm = options.maxDistanceKm ?? this.config.maxDistanceKm ?? null
     const maxReadyTimeDiff = options.maxReadyTimeDiffMinutes ?? this.config.maxReadyTimeDiffMinutes ?? 60
-    
+
     // 1. Предварительная фильтрация (быстрая проверка без API)
     if (prefilter) {
       const quickCheck = await quickFeasibilityCheck(chain, maxDistanceKm, maxReadyTimeDiff)
@@ -469,7 +518,7 @@ export class GoogleAPIManager {
         }
       }
     }
-    
+
     // 2. Проверка кэша
     if (useCache) {
       const cached = smartCacheCheck(chain)
@@ -477,18 +526,18 @@ export class GoogleAPIManager {
         return cached
       }
     }
-    
+
     // 3. Вызов API через батч-очередь
     const result = await this.batchQueue.addRequest(chain, includeStartEnd, priority)
-    
+
     // 4. Сохраняем в кэш
     if (useCache && result.feasible) {
       cacheRouteResult(chain, result)
     }
-    
+
     return result
   }
-  
+
   /**
    * Проверка маршрута с учетом трафика Mapbox
    */
@@ -504,7 +553,7 @@ export class GoogleAPIManager {
     } = {}
   ): Promise<{
     feasible: boolean
-    legs?: any[]
+    legs?: DirectionsLeg[]
     totalDuration?: number
     totalDistance?: number
     trafficInfo?: UkraineTrafficInfo[]
@@ -513,17 +562,17 @@ export class GoogleAPIManager {
     hasCriticalTraffic?: boolean
   }> {
     const result = await this.checkRoute(chain, options)
-    
+
     // Если есть токен Mapbox и маршрут feasible, получаем данные о трафике
     if (this.config.mapboxToken && result.feasible && chain.length >= 2 && chain.every(o => o.coords)) {
       try {
         const trafficInfo = await getUkraineTrafficForOrders(chain, this.config.mapboxToken)
-        
+
         if (trafficInfo.length > 0) {
           const totalDelay = calculateTotalTrafficDelay(trafficInfo)
           const adjustedDuration = (result.totalDuration || 0) + (totalDelay * 60) // конвертируем минуты в секунды
           const critical = hasCriticalTraffic(trafficInfo)
-          
+
           return {
             ...result,
             adjustedDuration,
@@ -536,10 +585,10 @@ export class GoogleAPIManager {
         console.warn('Failed to get Mapbox traffic data:', error)
       }
     }
-    
+
     return result
   }
-  
+
   /**
    * Очистка кэша
    */
@@ -547,7 +596,7 @@ export class GoogleAPIManager {
     pointToPointCache.clear()
     routeFeasibilityCache.clear()
   }
-  
+
   /**
    * Получение статистики кэша
    */

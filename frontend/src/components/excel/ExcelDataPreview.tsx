@@ -55,7 +55,7 @@ export const ExcelDataPreview: React.FC<ExcelDataPreviewProps> = ({ data, isVisi
             {/* Orders */}
             <div className={clsx(
               'rounded-lg p-4 border',
-              orders.length > 0 
+              orders.length > 0
                 ? (isDark ? 'bg-blue-900/20 border-blue-700' : 'bg-blue-50 border-blue-200')
                 : (isDark ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200')
             )}>
@@ -170,7 +170,7 @@ export const ExcelDataPreview: React.FC<ExcelDataPreviewProps> = ({ data, isVisi
                 {errors.map((error: any, index: number) => (
                   <div key={index} className="mb-2 text-sm">
                     <span className={isDark ? 'text-red-400' : 'text-red-600'}>
-                      Строка {error.row}: {error.message}
+                      Строка {typeof error.row === 'object' ? JSON.stringify(error.row) : (error.row || 'N/A')}: {typeof error.message === 'object' ? JSON.stringify(error.message) : (error.message || 'Неизвестная ошибка')}
                     </span>
                   </div>
                 ))}

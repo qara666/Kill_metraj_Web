@@ -4,6 +4,7 @@ const Courier = require('../models/Courier');
 const Route = require('../models/Route');
 const Order = require('../models/Order');
 const PaymentMethod = require('../models/PaymentMethod');
+const logger = require('../utils/logger');
 
 class UploadController {
   constructor() {
@@ -15,11 +16,11 @@ class UploadController {
    */
   configureMulter() {
     const storage = multer.memoryStorage();
-    
+
     const fileFilter = (req, file, cb) => {
       if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-          file.mimetype === 'application/vnd.ms-excel' ||
-          file.mimetype === 'text/csv') {
+        file.mimetype === 'application/vnd.ms-excel' ||
+        file.mimetype === 'text/csv') {
         cb(null, true);
       } else {
         cb(new Error('Дозволені тільки Excel та CSV файли'), false);
@@ -40,40 +41,24 @@ class UploadController {
    */
   async uploadExcel(req, res) {
     try {
-      console.log('🚀 UploadController: Начало обработки Excel файла');
-      
-      if (global.addDebugLog) {
-        global.addDebugLog('🚀 UploadController: Начало обработки Excel файла');
-      }
-      
+      logger.info('🚀 UploadController: Начало обработки Excel файла');
+
       if (!req.file) {
-        console.log('❌ UploadController: Файл не загружен');
-        if (global.addDebugLog) {
-          global.addDebugLog('❌ UploadController: Файл не загружен');
-        }
+        logger.warn('❌ UploadController: Файл не загружен');
         return res.status(400).json({
           success: false,
           error: 'Файл не завантажено'
         });
       }
 
-      console.log(`📁 UploadController: Файл получен - ${req.file.originalname}, размер: ${req.file.size} байт`);
-      if (global.addDebugLog) {
-        global.addDebugLog(`📁 UploadController: Файл получен - ${req.file.originalname}, размер: ${req.file.size} байт`);
-      }
+      logger.info(`📁 UploadController: Файл получен - ${req.file.originalname}, размер: ${req.file.size} байт`);
 
       // Обробляємо Excel файл
-      console.log('🔄 UploadController: Вызываем ExcelService.processExcelFile');
-      if (global.addDebugLog) {
-        global.addDebugLog('🔄 UploadController: Вызываем ExcelService.processExcelFile');
-      }
-      
+      logger.info('🔄 UploadController: Вызываем ExcelService.processExcelFile');
+
       const result = await this.excelService.processExcelFile(req.file.buffer, req.file.originalname);
-      
-      console.log('✅ UploadController: ExcelService вернул результат:', result.success);
-      if (global.addDebugLog) {
-        global.addDebugLog('✅ UploadController: ExcelService вернул результат', { success: result.success, error: result.error });
-      }
+
+      logger.info('✅ UploadController: ExcelService вернул результат:', { success: result.success });
 
       if (!result.success) {
         return res.status(400).json({
@@ -107,7 +92,7 @@ class UploadController {
         message: `Файл успішно оброблено! Замовлень: ${savedData.orders.length}, Курєрів: ${savedData.couriers.length}, Спосібів оплати: ${savedData.paymentMethods.length}`
       });
     } catch (error) {
-      console.error('Помилка обробки Excel файлу:', error);
+      logger.error('Помилка обробки Excel файлу:', error);
       res.status(500).json({
         success: false,
         error: 'Не вдалося обробити Excel файл',
@@ -201,11 +186,11 @@ class UploadController {
    */
   async createRoutesFromOrders(orders, couriers) {
     const routes = [];
-    
+
     try {
       // Групуємо замовлення за курєрами
       const ordersByCourier = {};
-      
+
       for (const order of orders) {
         if (order.courier) {
           const courierId = order.courier.toString();
@@ -223,7 +208,7 @@ class UploadController {
           if (!courier) continue;
 
           const waypoints = [];
-          
+
           // Створюємо waypoints з замовлень
           for (const order of courierOrders) {
             const waypoint = {
@@ -285,12 +270,12 @@ class UploadController {
           }
 
         } catch (error) {
-          console.error(`Помилка створення маршруту для курєра ${courierId}:`, error);
+          logger.error(`Помилка створення маршруту для курєра ${courierId}:`, error);
         }
       }
 
     } catch (error) {
-      console.error('Помилка створення маршрутів:', error);
+      logger.error('Помилка створення маршрутів:', error);
     }
 
     return routes;

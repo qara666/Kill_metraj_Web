@@ -1,25 +1,10 @@
 import * as XLSX from 'xlsx'
 
-export interface ProcessedExcelData {
-  orders: any[]
-  couriers: any[]
-  paymentMethods: any[]
-  routes: any[]
-  errors: any[]
-  summary: {
-    totalRows: number
-    successfulGeocoding: number
-    failedGeocoding: number
-    orders: number
-    couriers: number
-    paymentMethods: number
-    errors: any[]
-  }
-}
+import { ProcessedExcelData } from '../../types'
 
 export const processExcelFile = async (file: File): Promise<ProcessedExcelData> => {
   const fileName = file.name.toLowerCase()
-  
+
   if (fileName.endsWith('.csv')) {
     return processCsvFile(file)
   } else {
@@ -31,40 +16,40 @@ export const processExcelFile = async (file: File): Promise<ProcessedExcelData> 
 const processCsvFile = async (file: File): Promise<ProcessedExcelData> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    
+
     reader.onload = (e) => {
       try {
         const csvText = e.target?.result as string
         if (!csvText) {
           throw new Error('Не удалось прочитать CSV файл')
         }
-        
+
         const lines = csvText.split('\n').filter(line => line.trim())
         if (lines.length < 2) {
           throw new Error('CSV файл должен содержать заголовки и данные')
         }
-        
+
         const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''))
-        
+
         const rows = lines.slice(1).map(line => {
           const cells = line.split(',').map(cell => cell.trim().replace(/"/g, ''))
           return cells
         })
-        
+
         const jsonData = [headers, ...rows]
         const result = processJsonData(jsonData)
         resolve(result)
-        
+
       } catch (error) {
         console.error('Ошибка обработки CSV файла:', error)
         reject(error)
       }
     }
-    
+
     reader.onerror = () => {
       reject(new Error('Ошибка чтения CSV файла'))
     }
-    
+
     reader.readAsText(file)
   })
 }
@@ -73,7 +58,7 @@ const processCsvFile = async (file: File): Promise<ProcessedExcelData> => {
 const processExcelFileInternal = async (file: File): Promise<ProcessedExcelData> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    
+
     reader.onload = (e) => {
       try {
         const data = e.target?.result
@@ -84,7 +69,7 @@ const processExcelFileInternal = async (file: File): Promise<ProcessedExcelData>
         const arrayBuffer = data as ArrayBuffer
         const workbook = XLSX.read(arrayBuffer, { type: 'array' })
         const sheetNames = workbook.SheetNames
-        
+
         if (sheetNames.length === 0) {
           throw new Error('В файле нет листов')
         }
@@ -92,24 +77,24 @@ const processExcelFileInternal = async (file: File): Promise<ProcessedExcelData>
         const firstSheetName = sheetNames[0]
         const worksheet = workbook.Sheets[firstSheetName]
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][]
-        
+
         if (jsonData.length < 2) {
           throw new Error('Файл должен содержать заголовки и данные')
         }
 
         const result = processJsonData(jsonData)
         resolve(result)
-        
+
       } catch (error) {
         console.error('Ошибка обработки Excel файла:', error)
         reject(error)
       }
     }
-    
+
     reader.onerror = () => {
       reject(new Error('Ошибка чтения файла'))
     }
-    
+
     reader.readAsArrayBuffer(file)
   })
 }
@@ -120,85 +105,101 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
   let headers: string[] = []
   let subHeaderRowIndex = -1
   let subHeaders: string[] = []
-  
-  // ВАЖНО: Логируем первые 5 строк для диагностики
-  console.log('📋 [Excel Processor] Первые 5 строк файла для поиска заголовков:')
-  for (let i = 0; i < Math.min(5, jsonData.length); i++) {
+
+  // ВАЖНО: Логируем первые 10 строк для диагностики
+  console.log('📋 [Excel Processor] Первые 10 строк файла для поиска заголовков:')
+  for (let i = 0; i < Math.min(10, jsonData.length); i++) {
     const row = jsonData[i] as any[]
-    console.log(`  Строка ${i + 1}:`, row.slice(0, 15).map((c, idx) => `${idx}: "${String(c || '').substring(0, 30)}"`))
+    const nonEmptyCells = row.filter(c => c !== null && c !== undefined && String(c).trim() !== '')
+    console.log(`  Строка ${i + 1} (${nonEmptyCells.length} непустых ячеек):`, row.slice(0, 20).map((c, idx) => `${idx}: "${String(c || '').substring(0, 30)}"`))
   }
-  
+
   // Ищем строку, которая содержит ключевые слова заголовков
-  for (let i = 0; i < Math.min(5, jsonData.length); i++) {
+  // Расширяем поиск до 10 строк для файлов с пустыми строками вначале
+  for (let i = 0; i < Math.min(10, jsonData.length); i++) {
     const row = jsonData[i] as any[]
     const rowStr = row.map(c => String(c || '').toLowerCase()).join('|')
-    
-    // Проверяем наличие ключевых заголовков (включая время)
-    if (rowStr.includes('адрес') || rowStr.includes('address') || 
-        rowStr.includes('номер') || rowStr.includes('number') ||
-        rowStr.includes('телефон') || rowStr.includes('phone') ||
-        rowStr.includes('время') || rowStr.includes('time') ||
-        rowStr.includes('дата') || rowStr.includes('date') ||
-        rowStr.includes('кухню') || rowStr.includes('kitchen') ||
-        rowStr.includes('плановое') || rowStr.includes('planned') ||
-        rowStr.includes('доставить') || rowStr.includes('deliver')) {
+
+    // Подсчитываем количество непустых ячеек
+    const nonEmptyCells = row.filter(c => c !== null && c !== undefined && String(c).trim() !== '')
+
+    // Пропускаем строки с менее чем 3 непустыми ячейками (вероятно, не заголовки)
+    if (nonEmptyCells.length < 3) {
+      console.log(`⏭️ [Excel Processor] Пропускаем строку ${i + 1}: слишком мало данных (${nonEmptyCells.length} ячеек)`)
+      continue
+    }
+
+    // Проверяем наличие ключевых заголовков (расширенный список)
+    if (rowStr.includes('адрес') || rowStr.includes('address') ||
+      rowStr.includes('номер') || rowStr.includes('number') || rowStr.includes('№') ||
+      rowStr.includes('телефон') || rowStr.includes('phone') ||
+      rowStr.includes('время') || rowStr.includes('time') ||
+      rowStr.includes('дата') || rowStr.includes('date') ||
+      rowStr.includes('кухню') || rowStr.includes('kitchen') ||
+      rowStr.includes('плановое') || rowStr.includes('planned') ||
+      rowStr.includes('доставить') || rowStr.includes('deliver') ||
+      rowStr.includes('заказ') || rowStr.includes('order') ||
+      rowStr.includes('состояние') || rowStr.includes('status') ||
+      rowStr.includes('сумма') || rowStr.includes('amount') ||
+      rowStr.includes('клиент') || rowStr.includes('customer') ||
+      rowStr.includes('курьер') || rowStr.includes('courier')) {
       headerRowIndex = i
       headers = row.map(c => String(c || '').trim())
       console.log(`✅ [Excel Processor] Найдена строка заголовков в строке ${i + 1}:`, headers.slice(0, 20))
       console.log(`📋 [Excel Processor] Все заголовки (${headers.length}):`, headers)
-      
+
       // ВАЖНО: Проверяем следующую строку на наличие подзаголовков
       // Если в строке заголовков есть "Дата", проверяем следующую строку на подзаголовки
       const hasDateHeader = headers.some(h => {
         const lower = String(h || '').toLowerCase().trim()
         return lower === 'дата' || lower === 'date'
       })
-      
+
       if (hasDateHeader && i + 1 < jsonData.length) {
         const nextRow = jsonData[i + 1] as any[]
         const nextRowStr = nextRow.map(c => String(c || '').toLowerCase()).join('|')
-        
+
         // Проверяем, содержит ли следующая строка подзаголовки времени
         if (nextRowStr.includes('время на кухню') || nextRowStr.includes('kitchen') ||
-            nextRowStr.includes('доставить к') || nextRowStr.includes('deliver') ||
-            nextRowStr.includes('плановое') || nextRowStr.includes('planned') ||
-            nextRowStr.includes('создания') || nextRowStr.includes('creation')) {
+          nextRowStr.includes('доставить к') || nextRowStr.includes('deliver') ||
+          nextRowStr.includes('плановое') || nextRowStr.includes('planned') ||
+          nextRowStr.includes('создания') || nextRowStr.includes('creation')) {
           subHeaderRowIndex = i + 1
           subHeaders = nextRow.map(c => String(c || '').trim())
           console.log(`✅ [Excel Processor] Найдена строка подзаголовков в строке ${i + 2}:`, subHeaders.slice(0, 20))
           console.log(`📋 [Excel Processor] Все подзаголовки (${subHeaders.length}):`, subHeaders)
         }
       }
-      
+
       break
     }
   }
-  
+
   // Если не нашли, используем первую строку
   if (headers.length === 0) {
     headers = (jsonData[0] || []).map(c => String(c || '').trim())
     console.log('⚠️ [Excel Processor] Используем первую строку как заголовки:', headers.slice(0, 20))
-    
+
     // Проверяем вторую строку на подзаголовки
     if (jsonData.length > 1) {
       const secondRow = jsonData[1] as any[]
       const secondRowStr = secondRow.map(c => String(c || '').toLowerCase()).join('|')
       if (secondRowStr.includes('время на кухню') || secondRowStr.includes('kitchen') ||
-          secondRowStr.includes('доставить к') || secondRowStr.includes('deliver') ||
-          secondRowStr.includes('плановое') || secondRowStr.includes('planned')) {
+        secondRowStr.includes('доставить к') || secondRowStr.includes('deliver') ||
+        secondRowStr.includes('плановое') || secondRowStr.includes('planned')) {
         subHeaderRowIndex = 1
         subHeaders = secondRow.map(c => String(c || '').trim())
         console.log(`✅ [Excel Processor] Найдена строка подзаголовков в строке 2:`, subHeaders.slice(0, 20))
       }
     }
   }
-  
+
   // ВАЖНО: Объединяем заголовки с подзаголовками
   // Если есть подзаголовки, создаем составные ключи типа "Дата.время на кухню"
   if (subHeaders.length > 0 && headers.length > 0) {
     const mergedHeaders: string[] = []
     const maxLength = Math.max(headers.length, subHeaders.length)
-    
+
     // Находим индекс столбца "Дата" в основных заголовках
     let dateHeaderIndex = -1
     for (let i = 0; i < headers.length; i++) {
@@ -208,20 +209,20 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
         break
       }
     }
-    
+
     console.log(`📋 [Excel Processor] Индекс столбца "Дата": ${dateHeaderIndex}`)
-    
+
     // ВАЖНО: Создаем один ключ на столбец, чтобы сохранить правильную индексацию
     // ПРОБЛЕМА: Когда "Дата" объединена на несколько столбцов, в headers только первый столбец содержит "Дата",
     // остальные пустые, но в subHeaders все столбцы содержат подзаголовки ("создания", "время на кухню", и т.д.)
     for (let i = 0; i < maxLength; i++) {
       const mainHeader = headers[i] || ''
       const subHeader = subHeaders[i] || ''
-      
+
       // ВАЖНО: Сначала проверяем, находимся ли мы в области "Дата" (даже если mainHeader пустой)
       // Если dateHeaderIndex найден, проверяем, находимся ли мы в диапазоне [dateHeaderIndex, dateHeaderIndex + 4)
       const isInDateRange = dateHeaderIndex >= 0 && i >= dateHeaderIndex && i < dateHeaderIndex + 4
-      
+
       // Если мы в области "Дата" и есть подзаголовок, создаем составной ключ "Дата.подзаголовок"
       if (isInDateRange && subHeader) {
         // Используем оригинальное написание "Дата" из headers[dateHeaderIndex], если оно есть
@@ -257,11 +258,11 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
         mergedHeaders.push('')
       }
     }
-    
+
     // ВАЖНО: Также создаем дополнительные ключи для обратной совместимости
     // Но не добавляем их в основной массив headers, чтобы не сломать индексацию
     // Вместо этого, мы будем добавлять их в rowData при создании
-    
+
     // Обновляем headers с объединенными заголовками
     if (mergedHeaders.length > 0) {
       headers = mergedHeaders
@@ -269,28 +270,28 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
       console.log(`📋 [Excel Processor] Все объединенные заголовки:`, headers)
     }
   }
-  
+
   // Нормализуем заголовки - убираем лишние пробелы, приводим к нижнему регистру для поиска
   const normalizedHeaders = headers.map(h => h.toLowerCase().trim())
-  
+
   // ВАЖНО: Логируем ВСЕ заголовки для отладки
   console.log(`📋 Заголовки Excel (все):`, headers)
-  
+
   // Находим заголовки, связанные со временем
-  const timeRelatedHeaders: Array<{index: number, header: string}> = []
+  const timeRelatedHeaders: Array<{ index: number, header: string }> = []
   headers.forEach((h, idx) => {
     const lowerHeader = h.toLowerCase().trim()
-    if (lowerHeader.includes('время') || lowerHeader.includes('time') || 
-        lowerHeader.includes('дата') || lowerHeader.includes('date') ||
-        lowerHeader.includes('кухню') || lowerHeader.includes('kitchen') ||
-        lowerHeader.includes('плановое') || lowerHeader.includes('planned') ||
-        lowerHeader.includes('доставить') || lowerHeader.includes('deliver') ||
-        lowerHeader.includes('дедлайн') || lowerHeader.includes('deadline')) {
-      timeRelatedHeaders.push({index: idx, header: h})
+    if (lowerHeader.includes('время') || lowerHeader.includes('time') ||
+      lowerHeader.includes('дата') || lowerHeader.includes('date') ||
+      lowerHeader.includes('кухню') || lowerHeader.includes('kitchen') ||
+      lowerHeader.includes('плановое') || lowerHeader.includes('planned') ||
+      lowerHeader.includes('доставить') || lowerHeader.includes('deliver') ||
+      lowerHeader.includes('дедлайн') || lowerHeader.includes('deadline')) {
+      timeRelatedHeaders.push({ index: idx, header: h })
     }
   })
   console.log(`📋 Заголовки, связанные со временем:`, timeRelatedHeaders)
-  
+
   // Ищем индекс колонки с адресом (проверяем различные варианты)
   // Список колонок, которые точно НЕ являются адресами
   const excludeColumns = [
@@ -304,19 +305,19 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
     'дата', 'date', 'время', 'time',
     'зона доставки', 'delivery_zone', 'zone'
   ]
-  
+
   // Сначала ищем точное совпадение "Адрес" или "Address"
   const exactAddressIndices: number[] = []
   const possibleAddressIndices: number[] = []
-  
+
   normalizedHeaders.forEach((h, idx) => {
     const lowerHeader = h.toLowerCase().trim()
-    
+
     // Пропускаем исключенные колонки
     if (excludeColumns.some(excl => lowerHeader.includes(excl))) {
       return
     }
-    
+
     // Точное совпадение
     if (lowerHeader === 'адрес' || lowerHeader === 'address') {
       exactAddressIndices.push(idx)
@@ -326,41 +327,56 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
       possibleAddressIndices.push(idx)
     }
   })
-  
+
   // Приоритет: сначала точные совпадения, потом возможные
   const addressColumnIndices = [...exactAddressIndices, ...possibleAddressIndices]
-  
+
   console.log('Точные колонки с адресом:', exactAddressIndices.map(i => `${i}: "${headers[i]}"`))
   console.log('Возможные колонки с адресом:', possibleAddressIndices.map(i => `${i}: "${headers[i]}"`))
-  
+
   // ВАЖНО: Если есть подзаголовки, пропускаем и строку заголовков, и строку подзаголовков
   const dataStartRow = subHeaderRowIndex >= 0 ? subHeaderRowIndex + 1 : headerRowIndex + 1
   const rows = jsonData.slice(dataStartRow) as any[][]
-  
+
   console.log(`📋 [Excel Processor] Строка начала данных: ${dataStartRow + 1} (пропущено ${dataStartRow} строк заголовков)`)
-  
+
   const orders: any[] = []
   const couriers: any[] = []
   const paymentMethods: any[] = []
   const errors: any[] = []
-  
+
   // Логируем заголовки для отладки (уже логировали выше)
   console.log('📋 Всего строк данных:', rows.length)
-  
+
   // Выводим заголовки, связанные со временем (уже логировали выше в timeRelatedHeaders)
-  
+
   // Функция для валидации адреса - проверяем, что это действительно адрес, а не инструкция/комментарий
   const isValidAddress = (str: string, columnName?: string): boolean => {
-    if (!str || str.trim().length < 5) return false
-    
+    if (!str || str.trim().length < 3) return false
+
     const lowerStr = str.toLowerCase().trim()
     const lowerColName = (columnName || '').toLowerCase().trim()
-    
-    // Исключаем известные не-адресные колонки
-    if (excludeColumns.some(excl => lowerColName.includes(excl))) {
+
+    // ВАЖНО: Сначала проверяем, является ли колонка ЯВНО адресной
+    const isExplicitAddressColumn = lowerColName &&
+      (lowerColName.includes('address') ||
+        lowerColName.includes('адрес') ||
+        lowerColName.includes('addr') ||
+        lowerColName.includes('куда') ||
+        lowerColName.includes('доставка') ||
+        lowerColName.includes('delivery') ||
+        lowerColName.includes('улица') ||
+        lowerColName.includes('street') ||
+        lowerColName.includes('место') ||
+        lowerColName.includes('location') ||
+        lowerColName.includes('пункт') ||
+        lowerColName.includes('point'));
+
+    // Исключаем известные не-адресные колонки, ТОЛЬКО если это не явная колонка адреса
+    if (!isExplicitAddressColumn && excludeColumns.some(excl => lowerColName.includes(excl))) {
       return false
     }
-    
+
     // Исключаем инструкции, комментарии, имена, способы оплаты, даты
     const invalidPatterns = [
       /зателефонувати|зателефоновать|позвонить|call|звон/i,
@@ -385,14 +401,14 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
       /контроль|шеф|дн$/i, // "Контроль шефом!", "дн"
       /^[а-яёіїєa-z]{3,20}$/i // только одно слово (имя без фамилии)
     ]
-    
+
     // Проверяем, что это не инструкция/комментарий/имя/способ оплаты/дата
     for (const pattern of invalidPatterns) {
       if (pattern.test(lowerStr)) {
         return false
       }
     }
-    
+
     // Адрес должен содержать хотя бы один из следующих маркеров:
     // - название улицы/проспекта/бульвара
     // - номер дома (цифра)
@@ -400,48 +416,57 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
     const addressMarkers = [
       /\b(вул|вулиця|улица|ул\.?|проспект|просп\.?|провулок|пров\.?|бульвар|бул\.?|линия|лінія|лін|площа|площадь|пл\.?|пер\.?|переулок|str|street)\b/i,
       /\b\d+[а-яa-z]?[,\s]/, // номер дома с разделителем (например, "14,", "14а ")
+      /\b\d+[а-яa-z]?$/, // номер дома в конце строки (например, "Ленина 5")
       /\b(киев|київ|kiev|kyiv|одесса|одеса|харьков|харків|полтава|украина|ukraine)\b/i,
       /\b(под\.?|подъезд|під\.?|під'їзд|д\/ф|д\.ф|кв\.?|квартира|эт\.?|этаж|етаж|floor|л\/с|л\.с|кл|apartment|habteka)\b/i
     ]
-    
+
     // Должен содержать хотя бы один маркер адреса
     const hasAddressMarker = addressMarkers.some(pattern => pattern.test(lowerStr))
-    
+
     // Не должен быть только телефоном, email или числом
     const isNotPhone = !/^[\d\+\-\(\)\s]+$/.test(str)
     const isNotEmail = !/^[\w\.-]+@[\w\.-]+\.\w+$/.test(str)
     const isNotOnlyNumber = !/^\d+$/.test(str)
-    
+
     // Должен быть достаточно длинным и содержать кириллицу/латиницу
-    const hasText = str.length > 10 && /[а-яА-ЯёЁіІїЇєЄa-zA-Z]/.test(str)
-    
+    const hasText = str.length > 2 && /[а-яА-ЯёЁіІїЇєЄa-zA-Z]/.test(str)
+
     // Должен содержать хотя бы один номер (дома, квартиры и т.д.)
     const hasNumber = /\d/.test(str)
-    
+
+    if (isExplicitAddressColumn && hasText) {
+      // Если это точно колонка адреса, пропускаем проверку маркеров, если текст достаточно длинный
+      // Но все равно проверяем на garbage (email, phone)
+      if (isNotPhone && isNotEmail && isNotOnlyNumber) {
+        return true;
+      }
+    }
+
     return hasAddressMarker && isNotPhone && isNotEmail && isNotOnlyNumber && hasText && hasNumber
   }
-  
+
   rows.forEach((row, index) => {
     try {
       // Пропускаем пустые строки
       if (!row || row.length === 0 || row.every(cell => !cell || String(cell).trim() === '')) {
+        console.log(`⏭️ [Строка ${index + dataStartRow + 1}] Пропускаем пустую строку`)
         return
       }
-      
-      // Детальное логирование для первых 5 строк для диагностики
-      if (index < 5) {
-        console.log(`\n📋 [Строка ${index + 2}] Обработка строки данных:`)
-        console.log(`   Заголовки (первые 10):`, headers.slice(0, 10).map((h, i) => `${i}: "${h}"`))
-        console.log(`   Значения (первые 10):`, row.slice(0, 10).map((v, i) => `${i}: "${String(v || '').substring(0, 40)}"`))
+
+      // Логируем обработку каждой строки (первые 10 строк)
+      if (index < 10) {
+        console.log(`\n🔍 [Строка ${index + dataStartRow + 1}] Начинаем обработку:`)
+        console.log(`   Первые 10 значений:`, row.slice(0, 10).map((v, i) => `${i}: "${String(v || '').substring(0, 30)}"`))
       }
-      
+
       const rowData = createRowData(row, headers)
-      
+
       // Логируем созданные rowData для первых строк
-      if (index < 5) {
-        console.log(`   Созданные ключи rowData:`, Object.keys(rowData).slice(0, 15))
+      if (index < 10) {
+        console.log(`   Созданные ключи rowData (первые 15):`, Object.keys(rowData).slice(0, 15))
       }
-      
+
       // Улучшенный поиск адреса - проверяем все колонки, которые могут содержать адрес
       let foundAddress = ''
       if (addressColumnIndices.length > 0) {
@@ -453,26 +478,26 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
             { idx: idx + 1, offset: 1 }, // следующая колонка (комментарий к адресу)
             { idx: idx - 1, offset: -1 } // предыдущая колонка
           ]
-          
+
           for (const { idx: checkIdx, offset } of cellsToCheck) {
             if (checkIdx < 0 || checkIdx >= row.length) continue
-            
+
             const val = row[checkIdx]
             if (val && String(val).trim().length > 5) {
               const strVal = String(val).trim()
               const colName = headers[checkIdx] || headers[idx] || ''
-              
+
               // Пропускаем если это точно комментарий к адресу
               const lowerColName = colName.toLowerCase().trim()
               if (lowerColName.includes('комментарий') || lowerColName.includes('comment')) {
                 console.log(`⏭️ Пропускаем комментарий к адресу в колонке "${colName}" (индекс ${checkIdx}): ${strVal.substring(0, 40)}`)
                 continue
               }
-              
+
               // Логируем все проверки для отладки
               const isValid = isValidAddress(strVal, colName)
               console.log(`🔍 Проверяем значение в колонке "${colName}" (индекс ${checkIdx}): "${strVal.substring(0, 40)}" - ${isValid ? '✅ валидный адрес' : '❌ не адрес'}`)
-              
+
               // Используем строгую валидацию адреса
               if (isValid) {
                 foundAddress = strVal
@@ -481,11 +506,11 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
               }
             }
           }
-          
+
           if (foundAddress) break
         }
       }
-      
+
       // Если адрес не найден в специальных колонках, ищем по всему ряду (но исключаем известные не-адресные колонки)
       if (!foundAddress) {
         // Сначала пробуем более мягкую валидацию для HTML данных
@@ -493,48 +518,48 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
           const val = row[i]
           const colName = headers[i] || ''
           const lowerColName = colName.toLowerCase().trim()
-          
+
           // Пропускаем известные не-адресные колонки
           if (excludeColumns.some(excl => lowerColName.includes(excl))) {
             continue
           }
-          
+
           // Пропускаем если это точно комментарий к адресу
           if (lowerColName.includes('комментарий') || lowerColName.includes('comment')) {
             continue
           }
-          
+
           if (val && (typeof val === 'string' || typeof val === 'number')) {
             const strVal = String(val).trim()
-            
+
             // Для первых строк логируем все значения для диагностики
             if (index < 5) {
               console.log(`🔍 [Строка ${index + 2}] Проверяем колонку "${colName}" (индекс ${i}): "${strVal.substring(0, 60)}"`)
             }
-            
+
             // Используем строгую валидацию адреса
             if (isValidAddress(strVal, colName)) {
               foundAddress = strVal
               console.log(`✅ Найден валидный адрес в колонке "${colName}" (индекс ${i}): ${strVal.substring(0, 60)}`)
               break
             }
-            
+
             // Если строгая валидация не прошла, пробуем более мягкую для длинных строк
             if (strVal.length > 15 && !foundAddress) {
               // Мягкая валидация: содержит хотя бы один маркер адреса и не является явно не-адресом
               const hasAnyAddressMarker = /\b(вул|вулиця|улица|ул\.?|проспект|просп\.?|провулок|пров\.?|бульвар|бул\.?|линия|лінія|лін|площа|площадь|пл\.?|пер\.?|переулок|str|street)\b/i.test(strVal) ||
-                                         /\b\d+[а-яa-z]?[,\s]/.test(strVal) ||
-                                         /\b(киев|київ|kiev|kyiv|одесса|одеса|харьков|харків|полтава|украина|ukraine)\b/i.test(strVal)
-              
+                /\b\d+[а-яa-z]?[,\s]/.test(strVal) ||
+                /\b(киев|київ|kiev|kyiv|одесса|одеса|харьков|харків|полтава|украина|ukraine)\b/i.test(strVal)
+
               const isNotExplicitlyNotAddress = !/^[\d\+\-\(\)\s]+$/.test(strVal) && // не только телефон
-                                                !/^[\w\.-]+@[\w\.-]+\.\w+$/.test(strVal) && // не email
-                                                !/^\d{7,8}$/.test(strVal) && // не только номер заказа
-                                                !/^[а-яёіїє]{2,20}\s+[а-яёіїє]{2,20}$/i.test(strVal) && // не только имя
-                                                !/^[a-z]{2,20}\s+[a-z]{2,20}$/i.test(strVal) && // не только имя латиницей
-                                                !/зателефонувати|зателефоновать|позвонить|call|звон/i.test(strVal) &&
-                                                !/хвилин|минут|minutes/i.test(strVal) &&
-                                                !/примітка|примечание|note|комментарий|коментар/i.test(strVal)
-              
+                !/^[\w\.-]+@[\w\.-]+\.\w+$/.test(strVal) && // не email
+                !/^\d{7,8}$/.test(strVal) && // не только номер заказа
+                !/^[а-яёіїє]{2,20}\s+[а-яёіїє]{2,20}$/i.test(strVal) && // не только имя
+                !/^[a-z]{2,20}\s+[a-z]{2,20}$/i.test(strVal) && // не только имя латиницей
+                !/зателефонувати|зателефоновать|позвонить|call|звон/i.test(strVal) &&
+                !/хвилин|минут|minutes/i.test(strVal) &&
+                !/примітка|примечание|note|комментарий|коментар/i.test(strVal)
+
               if (hasAnyAddressMarker && isNotExplicitlyNotAddress && /[а-яА-ЯёЁіІїЇєЄa-zA-Z]/.test(strVal) && /\d/.test(strVal)) {
                 foundAddress = strVal
                 console.log(`✅ Найден адрес (мягкая валидация) в колонке "${colName}" (индекс ${i}): ${strVal.substring(0, 60)}`)
@@ -544,13 +569,13 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
           }
         }
       }
-      
+
       // Добавляем найденный адрес в rowData, если его там нет
       if (foundAddress && !rowData.address && !rowData['адрес'] && !rowData['address']) {
         rowData.address = foundAddress
         rowData['адрес'] = foundAddress
       }
-      
+
       // Если есть номер заказа (7-значное число), считаем это заказом
       const orderNumber = findOrderNumber(rowData)
       if (orderNumber) {
@@ -565,7 +590,7 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
         }
         return
       }
-      
+
       if (isOrderRow(rowData)) {
         const order = createOrder(rowData, index)
         if (foundAddress) {
@@ -598,15 +623,21 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
             ...rowData // Добавляем все остальные поля из исходных данных
           }
           orders.push(order)
-          console.log(`Создан заказ из строки ${index + 2} с адресом: ${foundAddress.substring(0, 50)}`)
+          console.log(`✅ [Строка ${index + 2}] Создан заказ из строки с адресом: ${foundAddress.substring(0, 50)}`)
         } else {
           // Детальное логирование для диагностики
           console.warn(`⚠️ [Строка ${index + 2}] Не удалось определить тип записи и не найден адрес`)
-          console.warn(`   Заголовки:`, headers.slice(0, 10))
-          console.warn(`   Значения:`, row.slice(0, 10).map(v => String(v || '').substring(0, 40)))
-          console.warn(`   rowData ключи:`, Object.keys(rowData).slice(0, 15))
-          console.warn(`   rowData значения (первые 10):`, Object.keys(rowData).slice(0, 10).map(k => `${k}: "${String(rowData[k] || '').substring(0, 30)}"`))
-          
+          console.warn(`   📋 Проверки:`)
+          console.warn(`      - isOrderRow: ${isOrderRow(rowData)}`)
+          console.warn(`      - isCourierRow: ${isCourierRow(rowData)}`)
+          console.warn(`      - isPaymentMethodRow: ${isPaymentMethodRow(rowData)}`)
+          console.warn(`      - findOrderNumber: ${findOrderNumber(rowData)}`)
+          console.warn(`      - foundAddress: "${foundAddress}"`)
+          console.warn(`   📋 Заголовки (первые 10):`, headers.slice(0, 10))
+          console.warn(`   📋 Значения (первые 10):`, row.slice(0, 10).map(v => String(v || '').substring(0, 40)))
+          console.warn(`   📋 rowData ключи (первые 15):`, Object.keys(rowData).slice(0, 15))
+          console.warn(`   📋 rowData значения (первые 10):`, Object.keys(rowData).slice(0, 10).map(k => `${k}: "${String(rowData[k] || '').substring(0, 30)}"`))
+
           errors.push({
             row: index + 2,
             message: `Не удалось определить тип записи и не найден адрес. Проверенные колонки: ${headers.slice(0, 10).join(', ')}`,
@@ -626,12 +657,22 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
       })
     }
   })
-  
+
   console.log(`Обработано заказов: ${orders.length}, курьеров: ${couriers.length}, способов оплаты: ${paymentMethods.length}`)
+
+  if (orders.length === 0) {
+    console.warn('⚠️ [Excel Processor] НЕ НАЙДЕНО ЗАКАЗОВ! Проверьте:')
+    console.warn('  1. Заголовки файла:', headers.slice(0, 15))
+    console.warn('  2. Первая строка данных:', rows[0]?.slice(0, 15))
+    console.warn('  3. Найденные колонки адресов:', addressColumnIndices.map(i => `${i}: "${headers[i]}"`))
+    console.warn('  4. Всего строк данных:', rows.length)
+    console.warn('  5. Ошибки:', errors.length > 0 ? errors.slice(0, 3) : 'нет')
+  }
+
   if (orders.length > 0) {
-    console.log('Примеры заказов:', orders.slice(0, 3).map(o => ({ 
-      orderNumber: o.orderNumber, 
-      address: o.address?.substring(0, 50) || 'нет адреса' 
+    console.log('Примеры заказов:', orders.slice(0, 3).map(o => ({
+      orderNumber: o.orderNumber,
+      address: o.address?.substring(0, 50) || 'нет адреса'
     })))
   }
 
@@ -656,13 +697,13 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
 
 const createRowData = (row: any[], headers: string[]): Record<string, any> => {
   const rowData: Record<string, any> = {}
-  
+
   headers.forEach((header, index) => {
     if (header && row[index] !== undefined) {
       const value = row[index]
       // Сохраняем значение с оригинальным названием заголовка
       rowData[header] = value
-      
+
       // ВАЖНО: Если заголовок содержит точку (например, "Дата.время на кухню"),
       // также сохраняем просто подзаголовок для обратной совместимости
       if (header.includes('.')) {
@@ -677,7 +718,7 @@ const createRowData = (row: any[], headers: string[]): Record<string, any> => {
           }
         }
       }
-      
+
       // ВАЖНО: Также сохраняем с нормализованным ключом (нижний регистр, без пробелов)
       // Это помогает при поиске полей, если заголовки немного отличаются
       const normalizedHeader = header.toLowerCase().trim()
@@ -689,32 +730,32 @@ const createRowData = (row: any[], headers: string[]): Record<string, any> => {
       }
     }
   })
-  
+
   // ВАЖНО: Логируем для всех строк с данными (первые 5 и строки с проблемными заказами)
   const orderNumberMatch = row.find((cell: any) => {
     const str = String(cell || '').trim()
     return /^\d{7,8}$/.test(str) || str.includes('9323351') || str.includes('9324097') || str.includes('9328519')
   })
-  
+
   if (orderNumberMatch || row.length > 0) {
     const orderNum = String(orderNumberMatch || row[0] || '').trim()
     // Логируем для всех заказов (первые 10) и проблемных заказов
-    const shouldLog = !orderNum || orderNum.length === 0 || parseInt(orderNum) < 100 || 
-                      orderNum.includes('9323351') || orderNum.includes('9324097') || 
-                      parseInt(orderNum) >= 9320000 && parseInt(orderNum) <= 9330000
-    
+    const shouldLog = !orderNum || orderNum.length === 0 || parseInt(orderNum) < 100 ||
+      orderNum.includes('9323351') || orderNum.includes('9324097') ||
+      parseInt(orderNum) >= 9320000 && parseInt(orderNum) <= 9330000
+
     if (shouldLog) {
       // Находим все ключи, связанные со временем
       const timeKeys = Object.keys(rowData).filter(k => {
         const lower = k.toLowerCase()
-        return lower.includes('время') || lower.includes('time') || 
-               lower.includes('дата') || lower.includes('date') ||
-               lower.includes('кухню') || lower.includes('kitchen') ||
-               lower.includes('плановое') || lower.includes('planned') ||
-               lower.includes('доставить') || lower.includes('deliver') ||
-               lower.includes('создания') || lower.includes('creation')
+        return lower.includes('время') || lower.includes('time') ||
+          lower.includes('дата') || lower.includes('date') ||
+          lower.includes('кухню') || lower.includes('kitchen') ||
+          lower.includes('плановое') || lower.includes('planned') ||
+          lower.includes('доставить') || lower.includes('deliver') ||
+          lower.includes('создания') || lower.includes('creation')
       })
-      
+
       console.log(`📋 [createRowData] Создание rowData для строки (заказ: ${orderNum || 'не определен'}):`, {
         'headers (первые 25)': headers.slice(0, 25),
         'row values (первые 25)': row.slice(0, 25).map((v, i) => `${i}: "${String(v).substring(0, 40)}"`),
@@ -737,15 +778,15 @@ const createRowData = (row: any[], headers: string[]): Record<string, any> => {
       })
     }
   }
-  
+
   return rowData
 }
 
 const isOrderRow = (rowData: Record<string, any>): boolean => {
-  const hasOrderNumber = hasValue(rowData, ['номер', 'number', 'orderNumber', 'order_number', 'номер_заказа'])
-  const hasAddress = hasValue(rowData, ['адрес', 'address', 'адрес_доставки', 'адресс'])
-  const hasAmount = hasValue(rowData, ['сумма', 'amount', 'цена', 'price', 'стоимость', 'total'])
-  
+  const hasOrderNumber = hasValue(rowData, ['номер', 'number', 'orderNumber', 'order_number', 'номер_заказа', '№', 'id'])
+  const hasAddress = hasValue(rowData, ['адрес', 'address', 'адрес_доставки', 'адресс', 'куда', 'улица', 'street', 'delivery'])
+  const hasAmount = hasValue(rowData, ['сумма', 'amount', 'цена', 'price', 'стоимость', 'total', 'к оплате'])
+
   return (hasOrderNumber || hasAddress) && (hasAmount || hasAddress)
 }
 
@@ -753,14 +794,14 @@ const isOrderRow = (rowData: Record<string, any>): boolean => {
 const isCourierRow = (rowData: Record<string, any>): boolean => {
   const hasName = hasValue(rowData, ['имя', 'name', 'курьер', 'courier', 'курьер_имя', 'courier_name'])
   const hasPhone = hasValue(rowData, ['телефон', 'phone', 'телефон_курьера', 'courier_phone'])
-  
+
   return hasName && hasPhone && !isOrderRow(rowData)
 }
 
 // Проверяет, является ли строка способом оплаты
 const isPaymentMethodRow = (rowData: Record<string, any>): boolean => {
   const hasPaymentType = hasValue(rowData, ['оплата', 'payment', 'способ', 'метод_оплаты', 'payment_method'])
-  
+
   return hasPaymentType && !isOrderRow(rowData) && !isCourierRow(rowData)
 }
 
@@ -770,7 +811,7 @@ const hasValue = (rowData: Record<string, any>, fields: string[]): boolean => {
     acc[key.toLowerCase()] = rowData[key]
     return acc
   }, {} as Record<string, any>)
-  
+
   return fields.some(field => {
     const value = lowerRowData[field.toLowerCase()]
     return value !== undefined && value !== null && value !== ''
@@ -785,19 +826,34 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
     'адрес доставки', 'адрес доставки', 'delivery_address',
     'адреса', 'адреса доставки', 'адреса_доставки'
   ]) || ''
-  
-  // Функция для валидации адреса
+
+  // Функция для валидации адреса (синхронизирована с основной логикой)
   const isValidAddress = (str: string, columnName?: string): boolean => {
-    if (!str || str.trim().length < 5) return false
-    
+    if (!str || str.trim().length < 3) return false
+
     const lowerStr = str.toLowerCase().trim()
     const lowerColName = (columnName || '').toLowerCase().trim()
-    
-    // Исключаем известные не-адресные колонки
-    if (excludeCols.some(excl => lowerColName.includes(excl))) {
+
+    // ВАЖНО: Сначала проверяем, является ли колонка ЯВНО адресной
+    const isExplicitAddressColumn = lowerColName &&
+      (lowerColName.includes('address') ||
+        lowerColName.includes('адрес') ||
+        lowerColName.includes('addr') ||
+        lowerColName.includes('куда') ||
+        lowerColName.includes('доставка') ||
+        lowerColName.includes('delivery') ||
+        lowerColName.includes('улица') ||
+        lowerColName.includes('street') ||
+        lowerColName.includes('место') ||
+        lowerColName.includes('location') ||
+        lowerColName.includes('пункт') ||
+        lowerColName.includes('point'));
+
+    // Исключаем известные не-адресные колонки, ТОЛЬКО если это не явная колонка адреса
+    if (!isExplicitAddressColumn && excludeCols.some(excl => lowerColName.includes(excl))) {
       return false
     }
-    
+
     // Исключаем инструкции и комментарии
     const invalidPatterns = [
       /зателефонувати|зателефоновать|позвонить|call|звон/i,
@@ -807,33 +863,52 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
       /инструкция|інструкція|instruction/i,
       /упаковка|упаковка|packaging/i,
       /коментар|комментарий|comment/i,
-      /примечание|примітка|note/i
+      /примечание|примітка|note/i,
+      /безготівка|безготівка_|наличные|нал|card|карта|payment|оплата/i,
+      /qr|мульті|мульти|multi/i,
+      /glovo:|code:|delivery|доставка курьером/i,
+      /^\d{7,8}$/, // только номер заказа (7-8 цифр)
+      /^[а-яёіїє]{2,20}\s+[а-яёіїє]{2,20}$/i, // только имя и фамилия (2 слова по 2-20 букв)
+      /^[a-z]{2,20}\s+[a-z]{2,20}$/i, // только имя и фамилия латиницей
+      /^зона\s+\d+/i, // зона доставки
+      /исполнен|доставляется|в обработке/i,
+      // Новые паттерны для исключения: имена + даты, короткие комментарии
+      /^[а-яёіїєa-z]{3,15}\s+\d{1,2}[\.\/]\d{1,2}[\.\/]\d{2,4}/i, // "голуб 13.12.24", "Христина 27/11/06"
+      /^[а-яёіїєa-z]{3,15}\s+\d{1,2}[\.\/]\d{1,2}\s+[а-яёіїєa-z]{2,5}$/i, // "16.02 иван дн"
+      /контроль|шеф|дн$/i, // "Контроль шефом!", "дн"
+      /^[а-яёіїєa-z]{3,20}$/i // только одно слово (имя без фамилии)
     ]
-    
+
     for (const pattern of invalidPatterns) {
       if (pattern.test(lowerStr)) {
         return false
       }
     }
-    
+
     // Адрес должен содержать маркеры адреса
     const addressMarkers = [
-      /\b(вул|вулиця|улица|ул\.?|проспект|просп\.?|провулок|пров\.?|бульвар|бул\.?|линия|лінія|лін|площа|площадь)\b/i,
+      /\b(вул|вулиця|улица|ул\.?|проспект|просп\.?|провулок|пров\.?|бульвар|бул\.?|линия|лінія|лін|площа|площадь|пл\.?|пер\.?|переулок|str|street)\b/i,
       /\b\d+[а-я]?\b/, // номер дома
-      /\b(киев|київ|kiev|kyiv|одесса|одеса|харьков|харків|полтава)\b/i
+      /\b\d+[а-яa-z]?$/, // номер дома в конце строки (например, "Ленина 5")
+      /\b(киев|київ|kiev|kyiv|одесса|одеса|харьков|харків|полтава|украина|ukraine)\b/i
     ]
-    
+
     const hasAddressMarker = addressMarkers.some(pattern => pattern.test(lowerStr))
     const isNotPhone = !/^[\d\+\-\(\)\s]+$/.test(str)
     const isNotEmail = !/^[\w\.-]+@[\w\.-]+\.\w+$/.test(str)
     const isNotOnlyNumber = !/^\d+$/.test(str)
-    const hasText = str.length > 10 && /[а-яА-ЯёЁіІїЇєЄa-zA-Z]/.test(str)
-    
+    const hasText = str.length > 2 && /[а-яА-ЯёЁіІїЇєЄa-zA-Z]/.test(str)
     const hasNumber = /\d/.test(str)
-    
+
+    if (isExplicitAddressColumn && hasText) {
+      if (isNotPhone && isNotEmail && isNotOnlyNumber) {
+        return true;
+      }
+    }
+
     return hasAddressMarker && isNotPhone && isNotEmail && isNotOnlyNumber && hasText && hasNumber
   }
-  
+
   // Если адрес не найден стандартным способом, пробуем найти валидный адрес
   // Список колонок, которые точно НЕ являются адресами
   const excludeCols = [
@@ -847,7 +922,7 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
     'дата', 'date', 'время', 'time',
     'зона доставки', 'delivery_zone', 'zone'
   ]
-  
+
   let finalAddress = address
   // Проверяем валидность адреса (isValidAddress принимает columnName как опциональный параметр)
   if (!finalAddress || !isValidAddress(finalAddress)) {
@@ -858,7 +933,7 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
       if (excludeCols.some(excl => lowerKey.includes(excl))) {
         continue
       }
-      
+
       const value = rowData[key]
       if (value && typeof value === 'string') {
         const strVal = String(value).trim()
@@ -872,7 +947,7 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
       }
     }
   }
-  
+
   // Извлекаем все нужные поля по ключевым словам (независимо от порядка столбцов)
   const getFieldByKeywords = (keywords: string[], fieldName: string): string => {
     for (const key in rowData) {
@@ -891,13 +966,13 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
     }
     return ''
   }
-  
+
   // Адрес уже найден в finalAddress
   // Состояние
   const status = getFieldByKeywords([
     'состояние', 'status', 'статус', 'state', 'статус заказа', 'состояние заказа'
   ], 'состояние')
-  
+
   // ВАЖНО: Время на кухню - улучшенный поиск с учетом ВСЕХ возможных названий столбцов
   // Из скриншота: столбец "Дата" (K3-N3) содержит подстолбец "время на кухню" (L4)
   // Формат значения: "13:00:00", "13:30:00", "20:12:24" (только время дня)
@@ -914,7 +989,7 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
     'date.время на кухню', 'date время на кухню', 'date_время_на_кухню',
     'Дата.время на кухню', 'Дата время на кухню', 'Дата_время_на_кухню'
   ], 'время на кухню')
-  
+
   // Если не нашли, проверяем ВСЕ ключи в rowData, которые содержат "время" И "кухню"
   // Учитываем все варианты написания, включая подстолбцы из столбца "Дата"
   // ВАЖНО: из скриншота видно, что подстолбец может называться просто "время на кухню" (без префикса "Дата.")
@@ -924,18 +999,18 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
       // Ищем ключи, которые содержат и "время" и "кухню", или "kitchen" и "time"
       // Также учитываем вложенные структуры типа "Дата.время на кухню" или просто "время на кухню"
       // ВАЖНО: проверяем точное совпадение "время на кухню" (с пробелами) или варианты с "Дата."
-      const exactMatch = lowerKey === 'время на кухню' || lowerKey === 'время_на_кухню' || 
-                        lowerKey.includes('дата.время на кухню') || lowerKey.includes('дата.время_на_кухню') ||
-                        lowerKey.includes('date.время на кухню') || lowerKey.includes('date.время_на_кухню')
+      const exactMatch = lowerKey === 'время на кухню' || lowerKey === 'время_на_кухню' ||
+        lowerKey.includes('дата.время на кухню') || lowerKey.includes('дата.время_на_кухню') ||
+        lowerKey.includes('date.время на кухню') || lowerKey.includes('date.время_на_кухню')
       const hasTime = lowerKey.includes('время') || lowerKey.includes('time')
       const hasKitchen = lowerKey.includes('кухню') || lowerKey.includes('кухня') || lowerKey.includes('kitchen')
       const hasReady = lowerKey.includes('готов') || lowerKey.includes('готовность') || lowerKey.includes('ready')
-      
+
       // Если это точное совпадение или содержит "время" и "кухню"
-      if ((exactMatch || (hasTime && (hasKitchen || hasReady))) && 
-          !lowerKey.includes('плановое') && !lowerKey.includes('planned') &&
-          !lowerKey.includes('доставки') && !lowerKey.includes('delivery') &&
-          !lowerKey.includes('доставить') && !lowerKey.includes('deliver')) {
+      if ((exactMatch || (hasTime && (hasKitchen || hasReady))) &&
+        !lowerKey.includes('плановое') && !lowerKey.includes('planned') &&
+        !lowerKey.includes('доставки') && !lowerKey.includes('delivery') &&
+        !lowerKey.includes('доставить') && !lowerKey.includes('deliver')) {
         const value = rowData[key]
         if (value !== undefined && value !== null && String(value).trim() !== '') {
           const strVal = String(value).trim()
@@ -949,7 +1024,7 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
       }
     }
   }
-  
+
   // Если все еще не нашли, проверяем столбец "Дата" - он может содержать дату и время
   // Excel serial date (например, 45963.524247685185) содержит и дату, и время
   if (!kitchenTime && rowData['Дата']) {
@@ -972,15 +1047,15 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
       }
     }
   }
-  
+
   // Если все еще не нашли, пробуем поиск только по "кухню" или "готов" (без требования "время")
   if (!kitchenTime) {
     for (const key in rowData) {
       const lowerKey = key.toLowerCase().trim()
       if ((lowerKey.includes('кухню') || lowerKey.includes('кухня') || lowerKey.includes('kitchen') ||
-           (lowerKey.includes('готов') && !lowerKey.includes('доставки'))) && 
-          !lowerKey.includes('плановое') && !lowerKey.includes('planned') &&
-          !lowerKey.includes('доставить') && !lowerKey.includes('deliver')) {
+        (lowerKey.includes('готов') && !lowerKey.includes('доставки'))) &&
+        !lowerKey.includes('плановое') && !lowerKey.includes('planned') &&
+        !lowerKey.includes('доставить') && !lowerKey.includes('deliver')) {
         const value = rowData[key]
         if (value !== undefined && value !== null && String(value).trim() !== '') {
           const strVal = String(value).trim().toLowerCase()
@@ -988,8 +1063,8 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
           if (!strVal.includes('мин.') && !strVal.includes('час')) {
             // Проверяем, что это похоже на время/дату, а не на длительность
             const fullValue = String(value).trim()
-            if (fullValue.includes(':') || fullValue.includes('/') || fullValue.includes('.') || 
-                !isNaN(parseFloat(fullValue))) {
+            if (fullValue.includes(':') || fullValue.includes('/') || fullValue.includes('.') ||
+              !isNaN(parseFloat(fullValue))) {
               kitchenTime = fullValue
               console.log(`✅ [Excel Processor] Найдено "время на кухню" (только по "кухню"/"готов") в поле "${key}": ${kitchenTime}`)
               break
@@ -999,7 +1074,7 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
       }
     }
   }
-  
+
   // ВАЖНО: Плановое время - улучшенный поиск с учетом ВСЕХ возможных названий столбцов
   // Из скриншота: столбец "Дата" (K3-N3) содержит подстолбцы:
   //   - "доставить к" (M4) - формат: "29.10.2025 13:30" (дата и время)
@@ -1021,39 +1096,39 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
     'date.доставить к', 'date доставить к', 'date_доставить_к', 'date.доставитьк',
     'Дата.доставить к', 'Дата доставить к', 'Дата_доставить_к', 'Дата.доставитьк'
   ], 'плановое время')
-  
+
   // ВАЖНО: "Время доставки" может содержать длительность (например, "20мин."), а не время!
   // Если нашли "Время доставки", но там длительность - пропускаем и ищем дальше
-  if (plannedTime && (String(plannedTime).toLowerCase().includes('мин.') || 
-                      String(plannedTime).toLowerCase().includes('час'))) {
+  if (plannedTime && (String(plannedTime).toLowerCase().includes('мин.') ||
+    String(plannedTime).toLowerCase().includes('час'))) {
     console.log(`⚠️ [Excel Processor] "Время доставки" содержит длительность "${plannedTime}", ищем дальше...`)
     plannedTime = ''
   }
-  
+
   // Если не нашли, проверяем ВСЕ ключи в rowData, которые содержат "плановое" И "время", или "доставить к"
   // ВАЖНО: из скриншота видно, что подстолбцы могут называться просто "доставить к" или "плановое время" (без префикса "Дата.")
   if (!plannedTime) {
     for (const key in rowData) {
       const lowerKey = key.toLowerCase().trim()
       // ВАЖНО: проверяем точное совпадение "доставить к" или "плановое время" (с пробелами) или варианты с "Дата."
-      const exactMatch = lowerKey === 'доставить к' || lowerKey === 'доставить_к' || 
-                        lowerKey === 'плановое время' || lowerKey === 'плановое_время' ||
-                        lowerKey.includes('дата.доставить к') || lowerKey.includes('дата.доставить_к') ||
-                        lowerKey.includes('дата.плановое время') || lowerKey.includes('дата.плановое_время') ||
-                        lowerKey.includes('date.доставить к') || lowerKey.includes('date.доставить_к') ||
-                        lowerKey.includes('date.плановое время') || lowerKey.includes('date.плановое_время')
+      const exactMatch = lowerKey === 'доставить к' || lowerKey === 'доставить_к' ||
+        lowerKey === 'плановое время' || lowerKey === 'плановое_время' ||
+        lowerKey.includes('дата.доставить к') || lowerKey.includes('дата.доставить_к') ||
+        lowerKey.includes('дата.плановое время') || lowerKey.includes('дата.плановое_время') ||
+        lowerKey.includes('date.доставить к') || lowerKey.includes('date.доставить_к') ||
+        lowerKey.includes('date.плановое время') || lowerKey.includes('date.плановое_время')
       // Ищем ключи, которые содержат "плановое" и "время", или "доставить" и "к", или "planned" и "time"
       const hasPlanned = lowerKey.includes('плановое') || lowerKey.includes('planned')
       const hasTime = lowerKey.includes('время') || lowerKey.includes('time')
       const hasDeliver = lowerKey.includes('доставить') && (lowerKey.includes('к') || lowerKey.includes('к'))
       const hasDeadline = lowerKey.includes('дедлайн') || lowerKey.includes('deadline')
-      
+
       // ВАЖНО: НЕ используем "время доставки", если там длительность
       const isDeliveryTime = lowerKey.includes('время доставки') || lowerKey.includes('delivery time')
-      
+
       // Если это точное совпадение или содержит нужные ключевые слова
-      if ((exactMatch || ((hasPlanned && hasTime) || hasDeliver || hasDeadline)) && 
-          !lowerKey.includes('кухню') && !lowerKey.includes('kitchen')) {
+      if ((exactMatch || ((hasPlanned && hasTime) || hasDeliver || hasDeadline)) &&
+        !lowerKey.includes('кухню') && !lowerKey.includes('kitchen')) {
         const value = rowData[key]
         if (value !== undefined && value !== null && String(value).trim() !== '') {
           const strVal = String(value).trim().toLowerCase()
@@ -1069,7 +1144,7 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
       }
     }
   }
-  
+
   // Если не нашли, проверяем столбец "Дата" - он может содержать дату и время
   // Excel serial date (например, 45963.524247685185) содержит и дату, и время
   if (!plannedTime && rowData['Дата']) {
@@ -1092,15 +1167,15 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
       }
     }
   }
-  
+
   // Если все еще не нашли, пробуем поиск только по "плановое", "доставить к" или "дедлайн"
   if (!plannedTime) {
     for (const key in rowData) {
       const lowerKey = key.toLowerCase().trim()
-      if ((lowerKey.includes('плановое') || lowerKey.includes('planned') || 
-           (lowerKey.includes('доставить') && lowerKey.includes('к')) ||
-           lowerKey.includes('дедлайн') || lowerKey.includes('deadline')) &&
-          !lowerKey.includes('кухню') && !lowerKey.includes('kitchen')) {
+      if ((lowerKey.includes('плановое') || lowerKey.includes('planned') ||
+        (lowerKey.includes('доставить') && lowerKey.includes('к')) ||
+        lowerKey.includes('дедлайн') || lowerKey.includes('deadline')) &&
+        !lowerKey.includes('кухню') && !lowerKey.includes('kitchen')) {
         const value = rowData[key]
         if (value !== undefined && value !== null && String(value).trim() !== '') {
           const strVal = String(value).trim().toLowerCase()
@@ -1108,8 +1183,8 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
           if (!strVal.includes('мин.') && !strVal.includes('час')) {
             // Проверяем, что это похоже на время/дату
             const fullValue = String(value).trim()
-            if (fullValue.includes(':') || fullValue.includes('/') || fullValue.includes('.') || 
-                !isNaN(parseFloat(fullValue))) {
+            if (fullValue.includes(':') || fullValue.includes('/') || fullValue.includes('.') ||
+              !isNaN(parseFloat(fullValue))) {
               plannedTime = fullValue
               console.log(`✅ [Excel Processor] Найдено "плановое время" (по ключевому слову) в поле "${key}": ${plannedTime}`)
               break
@@ -1119,9 +1194,9 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
       }
     }
   }
-  
+
   const orderNumber = getValue(rowData, ['номер', 'number', 'orderNumber']) || `ORD-${index + 1}`
-  
+
   // Собираем все оригинальные поля из Excel с их оригинальными названиями
   // Важно: сначала spread rowData, чтобы сохранить оригинальные названия полей из Excel
   const order: any = {
@@ -1147,21 +1222,21 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
     // ВАЖНО: Сохраняем rowData как raw для доступа в AutoPlanner
     raw: { ...rowData }
   }
-  
+
   // ВАЖНО: Детальное логирование для диагностики проблем с временем
   const shouldLog = index < 5 || String(orderNumber).includes('9328519') || String(orderNumber).includes('9352250')
   if (shouldLog) {
     // Ищем все ключи, связанные со временем
     const timeRelatedKeys = Object.keys(rowData).filter(k => {
       const lower = k.toLowerCase()
-      return lower.includes('время') || lower.includes('time') || 
-             lower.includes('дата') || lower.includes('date') ||
-             lower.includes('кухню') || lower.includes('kitchen') ||
-             lower.includes('плановое') || lower.includes('planned') ||
-             lower.includes('доставить') || lower.includes('deliver') ||
-             lower.includes('дедлайн') || lower.includes('deadline')
+      return lower.includes('время') || lower.includes('time') ||
+        lower.includes('дата') || lower.includes('date') ||
+        lower.includes('кухню') || lower.includes('kitchen') ||
+        lower.includes('плановое') || lower.includes('planned') ||
+        lower.includes('доставить') || lower.includes('deliver') ||
+        lower.includes('дедлайн') || lower.includes('deadline')
     })
-    
+
     console.log(`📋 [Excel Processor] Заказ ${orderNumber} (строка ${index + 2}):`, {
       'finalAddress': finalAddress?.substring(0, 50) || 'не найден',
       'kitchenTime (извлеченное)': kitchenTime || 'не найдено',
@@ -1181,7 +1256,7 @@ const createOrder = (rowData: Record<string, any>, index: number): any => {
       'order.raw ключи': order.raw ? Object.keys(order.raw).slice(0, 30) : [],
     })
   }
-  
+
   return order
 }
 
@@ -1213,7 +1288,7 @@ const getValue = (rowData: Record<string, any>, fields: string[]): string => {
     acc[key.toLowerCase()] = rowData[key]
     return acc
   }, {} as Record<string, any>)
-  
+
   for (const field of fields) {
     const value = lowerRowData[field.toLowerCase()]
     if (value !== undefined && value !== null && value !== '') {
@@ -1243,7 +1318,7 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
     'адрес доставки', 'delivery_address',
     'адреса', 'адреса доставки', 'адреса_доставки'
   ])
-  
+
   // Функция для валидации адреса (улучшенная версия)
   const excludeCols = [
     'заказчик', 'customer', 'клиент', 'client', 'имя', 'name',
@@ -1256,18 +1331,33 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
     'дата', 'date', 'время', 'time',
     'зона доставки', 'delivery_zone', 'zone'
   ]
-  
+
   const isValidAddress = (str: string, columnName?: string): boolean => {
-    if (!str || str.trim().length < 5) return false
-    
+    if (!str || str.trim().length < 3) return false
+
     const lowerStr = str.toLowerCase().trim()
     const lowerColName = (columnName || '').toLowerCase().trim()
-    
-    // Исключаем известные не-адресные колонки
-    if (excludeCols.some(excl => lowerColName.includes(excl))) {
+
+    // ВАЖНО: Сначала проверяем, является ли колонка ЯВНО адресной
+    const isExplicitAddressColumn = lowerColName &&
+      (lowerColName.includes('address') ||
+        lowerColName.includes('адрес') ||
+        lowerColName.includes('addr') ||
+        lowerColName.includes('куда') ||
+        lowerColName.includes('доставка') ||
+        lowerColName.includes('delivery') ||
+        lowerColName.includes('улица') ||
+        lowerColName.includes('street') ||
+        lowerColName.includes('место') ||
+        lowerColName.includes('location') ||
+        lowerColName.includes('пункт') ||
+        lowerColName.includes('point'));
+
+    // Исключаем известные не-адресные колонки, ТОЛЬКО если это не явная колонка адреса
+    if (!isExplicitAddressColumn && excludeCols.some(excl => lowerColName.includes(excl))) {
       return false
     }
-    
+
     const invalidPatterns = [
       /зателефонувати|зателефоновать|позвонить|call|звон/i,
       /хвилин|минут|minutes/i,
@@ -1284,37 +1374,48 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
       /^[а-яёіїє]{2,20}\s+[а-яёіїє]{2,20}$/i, // только имя и фамилия
       /^[a-z]{2,20}\s+[a-z]{2,20}$/i, // только имя и фамилия латиницей
       /^зона\s+\d+/i,
-      /исполнен|доставляется|в обработке/i
+      /исполнен|доставляется|в обработке/i,
+      /^[а-яёіїєa-z]{3,15}\s+\d{1,2}[\.\/]\d{1,2}[\.\/]\d{2,4}/i,
+      /^[а-яёіїєa-z]{3,15}\s+\d{1,2}[\.\/]\d{1,2}\s+[а-яёіїєa-z]{2,5}$/i,
+      /контроль|шеф|дн$/i,
+      /^[а-яёіїєa-z]{3,20}$/i
     ]
-    
+
     for (const pattern of invalidPatterns) {
       if (pattern.test(lowerStr)) {
         return false
       }
     }
-    
+
     const addressMarkers = [
-      /\b(вул|вулиця|улица|ул\.?|проспект|просп\.?|провулок|пров\.?|бульвар|бул\.?|линия|лінія|лін|площа|площадь|пл\.?|пер\.?|переулок)\b/i,
-      /\b\d+[а-я]?[,\s]/,
+      /\b(вул|вулиця|улица|ул\.?|проспект|просп\.?|провулок|пров\.?|бульвар|бул\.?|линия|лінія|лін|площа|площадь|пл\.?|пер\.?|переулок|str|street)\b/i,
+      /\b\d+[а-яa-z]?[,\s]/,
+      /\b\d+[а-яa-z]?$/,
       /\b(киев|київ|kiev|kyiv|одесса|одеса|харьков|харків|полтава|украина|ukraine)\b/i,
-      /\b(под\.?|подъезд|д\/ф|д\.ф|кв\.?|квартира|эт\.?|этаж|floor)\b/i
+      /\b(под\.?|подъезд|під\.?|під'їзд|д\/ф|д\.ф|кв\.?|квартира|эт\.?|этаж|етаж|floor|л\/с|л\.с|кл|apartment|habteka)\b/i
     ]
-    
+
     const hasAddressMarker = addressMarkers.some(pattern => pattern.test(lowerStr))
     const isNotPhone = !/^[\d\+\-\(\)\s]+$/.test(str)
     const isNotEmail = !/^[\w\.-]+@[\w\.-]+\.\w+$/.test(str)
     const isNotOnlyNumber = !/^\d+$/.test(str)
-    const hasText = str.length > 10 && /[а-яА-ЯёЁіІїЇєЄa-zA-Z]/.test(str)
+    const hasText = str.length > 2 && /[а-яА-ЯёЁіІїЇєЄa-zA-Z]/.test(str)
     const hasNumber = /\d/.test(str)
-    
+
+    if (isExplicitAddressColumn && hasText) {
+      if (isNotPhone && isNotEmail && isNotOnlyNumber) {
+        return true;
+      }
+    }
+
     return hasAddressMarker && isNotPhone && isNotEmail && isNotOnlyNumber && hasText && hasNumber
   }
-  
+
   // Проверяем, что найденный адрес валиден
   if (address && !isValidAddress(address, 'адрес')) {
     address = ''
   }
-  
+
   // Если не нашли валидный адрес, ищем в других полях (но исключаем известные не-адресные)
   if (!address || !isValidAddress(address, 'адрес')) {
     address = ''
@@ -1324,7 +1425,7 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
       if (excludeCols.some(excl => lowerKey.includes(excl))) {
         continue
       }
-      
+
       const value = rowData[key]
       if (value && typeof value === 'string' && String(value).trim() !== orderNumber) {
         const strVal = String(value).trim()
@@ -1337,7 +1438,7 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
       }
     }
   }
-  
+
   // Извлекаем все нужные поля по ключевым словам (независимо от порядка столбцов)
   const getFieldByKeywords = (keywords: string[], fieldName: string): string => {
     for (const key in rowData) {
@@ -1356,13 +1457,13 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
     }
     return ''
   }
-  
+
   // Адрес уже найден в address
   // Состояние
   const status = getFieldByKeywords([
     'состояние', 'status', 'статус', 'state', 'статус заказа', 'состояние заказа'
   ], 'состояние')
-  
+
   // Время на кухню
   const kitchenTime = getFieldByKeywords([
     'время на кухню', 'время_на_кухню', 'временакухню', 'времянакухню',
@@ -1370,7 +1471,7 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
     'время готовности', 'время_готовности', 'времяготовности',
     'ready time', 'ready_time', 'readytime'
   ], 'время на кухню')
-  
+
   // Плановое время
   const plannedTime = getFieldByKeywords([
     'плановое время', 'плановое_время', 'плановоевремя',
@@ -1379,7 +1480,7 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
     'delivery time', 'delivery_time', 'deliverytime',
     'дедлайн', 'deadline', 'deadline_time'
   ], 'плановое время')
-  
+
   return {
     id: `order_${Date.now()}_${index}`,
     orderNumber,

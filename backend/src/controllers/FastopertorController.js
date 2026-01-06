@@ -1,272 +1,163 @@
 const axios = require('axios');
+const Joi = require('joi');
+const logger = require('../utils/logger');
+const { ApiError, ValidationError, FastopertorError } = require('../utils/errors');
+const { formatApiUrl, transformFastopertorData } = require('../utils/fastopertorHelpers');
+
+// Простой in-memory кэш для API ответов
+const cache = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 минут
 
 class FastopertorController {
     /**
+     * Схемы валидации
+     */
+    static schemas = {
+        fetch: Joi.object({
+            apiUrl: Joi.string().uri().required(),
+            apiKey: Joi.string().required(),
+            endpoint: Joi.string().allow('', null),
+            useCache: Joi.boolean().default(true)
+        }),
+        validate: Joi.object({
+            apiUrl: Joi.string().uri().required(),
+            apiKey: Joi.string().required()
+        })
+    };
+
+    /**
      * Получить данные из Fastopertor API
      */
-    async fetchData(req, res) {
+    async fetchData(req, res, next) {
+        const startTime = Date.now();
         try {
-            const { apiUrl, apiKey, endpoint } = req.body;
-
-            if (!apiUrl || !apiKey) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'API URL и API Key обязательны'
-                });
+            // 1. Валидация входных параметров
+            const { error, value } = FastopertorController.schemas.fetch.validate(req.body);
+            if (error) {
+                throw new ValidationError('Ошибка валидации параметров', error.details);
             }
 
-            // Валидация API URL
-            let validatedUrl;
-            try {
-                validatedUrl = new URL(apiUrl);
-            } catch (error) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'Неверный формат API URL'
-                });
+            const { apiUrl, apiKey, endpoint, useCache } = value;
+            const fullUrl = formatApiUrl(apiUrl, endpoint);
+
+            // 2. Проверка кэша
+            const cacheKey = `${fullUrl}_${apiKey}`;
+            if (useCache && cache.has(cacheKey)) {
+                const cached = cache.get(cacheKey);
+                if (Date.now() - cached.timestamp < CACHE_TTL) {
+                    logger.info(`🎯 FastopertorController: Возврат данных из кэша для ${fullUrl}`);
+                    return res.json({
+                        success: true,
+                        data: cached.data,
+                        fromCache: true,
+                        cachedAt: new Date(cached.timestamp).toISOString()
+                    });
+                }
             }
 
-            // Формируем полный URL endpoint
-            const fullUrl = endpoint 
-                ? `${validatedUrl.origin}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`
-                : validatedUrl.href;
+            logger.info(`🔄 FastopertorController: Выполнение запроса к ${fullUrl}`);
 
-            console.log(`🔄 FastopertorController: Запрос к ${fullUrl}`);
-
-            // Выполняем запрос к Fastopertor API
+            // 3. Выполнение запроса
             const response = await axios.get(fullUrl, {
                 headers: {
                     'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json',
                     'Accept': 'application/json'
                 },
-                timeout: 30000 // 30 секунд таймаут
+                timeout: 30000
             });
 
-            // Проверяем статус ответа
-            if (response.status !== 200) {
-                return res.status(response.status).json({
-                    success: false,
-                    error: `API вернул статус ${response.status}`,
-                    details: response.data
+            const duration = Date.now() - startTime;
+            const dataSize = JSON.stringify(response.data).length;
+
+            logger.info(`✅ FastopertorController: Ответ получен за ${duration}ms, размер: ${dataSize} байт`);
+
+            // 4. Трансформация данных
+            const transformedData = transformFastopertorData(response.data);
+
+            // 5. Сохранение в кэш
+            if (useCache) {
+                cache.set(cacheKey, {
+                    data: transformedData,
+                    timestamp: Date.now()
                 });
             }
-
-            // Преобразуем данные в формат приложения
-            const transformedData = this.transformFastopertorData(response.data);
 
             res.json({
                 success: true,
                 data: transformedData,
-                raw: response.data, // Возвращаем также сырые данные для отладки
-                message: 'Данные успешно получены из Fastopertor API'
+                performance: {
+                    durationMs: duration,
+                    dataSizeBytes: dataSize
+                }
             });
 
         } catch (error) {
-            console.error('❌ FastopertorController: Ошибка получения данных:', error);
-
-            if (error.response) {
-                // API вернул ошибку
-                return res.status(error.response.status).json({
-                    success: false,
-                    error: `Ошибка API: ${error.response.status}`,
-                    details: error.response.data,
-                    message: error.response.data?.message || error.message
-                });
-            } else if (error.request) {
-                // Запрос был отправлен, но ответа не получено
-                return res.status(503).json({
-                    success: false,
-                    error: 'Не удалось подключиться к API',
-                    details: error.message
-                });
-            } else {
-                // Ошибка при настройке запроса
-                return res.status(500).json({
-                    success: false,
-                    error: 'Ошибка при выполнении запроса',
-                    details: error.message
-                });
-            }
+            next(this._mapError(error));
         }
     }
 
     /**
      * Валидация API подключения
      */
-    async validateApi(req, res) {
+    async validateApi(req, res, next) {
         try {
-            const { apiUrl, apiKey } = req.body;
-
-            if (!apiUrl || !apiKey) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'API URL и API Key обязательны'
-                });
+            const { error, value } = FastopertorController.schemas.validate.validate(req.body);
+            if (error) {
+                throw new ValidationError('Ошибка валидации параметров', error.details);
             }
 
-            // Валидация API URL
-            let validatedUrl;
-            try {
-                validatedUrl = new URL(apiUrl);
-            } catch (error) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'Неверный формат API URL'
-                });
-            }
+            const { apiUrl, apiKey } = value;
+            const testUrl = formatApiUrl(apiUrl, '/health');
 
-            // Пробуем выполнить простой запрос для проверки
-            const testUrl = `${validatedUrl.origin}/health`; // Предполагаем наличие health endpoint
+            logger.info(`🔍 FastopertorController: Валидация API по адресу ${testUrl}`);
 
             try {
                 const response = await axios.get(testUrl, {
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: 10000 // 10 секунд для валидации
+                    headers: { 'Authorization': `Bearer ${apiKey}` },
+                    timeout: 10000
                 });
 
                 res.json({
                     success: true,
                     valid: response.status === 200,
-                    message: 'API подключение успешно'
+                    message: 'API подключение успешно подтверждено'
                 });
-            } catch (error) {
-                // Пробуем альтернативный endpoint
-                try {
-                    const altResponse = await axios.get(validatedUrl.href, {
-                        headers: {
-                            'Authorization': `Bearer ${apiKey}`,
-                            'Content-Type': 'application/json'
-                        },
-                        timeout: 10000
-                    });
+            } catch (err) {
+                // Если /health не существует, пробуем основной URL
+                const mainUrl = formatApiUrl(apiUrl);
+                const response = await axios.get(mainUrl, {
+                    headers: { 'Authorization': `Bearer ${apiKey}` },
+                    timeout: 10000
+                });
 
-                    res.json({
-                        success: true,
-                        valid: altResponse.status === 200,
-                        message: 'API подключение успешно'
-                    });
-                } catch (altError) {
-                    res.json({
-                        success: false,
-                        valid: false,
-                        error: 'Не удалось подключиться к API',
-                        details: altError.response?.data || altError.message
-                    });
-                }
+                res.json({
+                    success: true,
+                    valid: response.status === 200,
+                    message: 'API подключение успешно подтверждено (через основной URL)'
+                });
             }
         } catch (error) {
-            console.error('❌ FastopertorController: Ошибка валидации:', error);
-            res.status(500).json({
-                success: false,
-                valid: false,
-                error: 'Ошибка при валидации API',
-                details: error.message
-            });
+            next(this._mapError(error));
         }
     }
 
     /**
-     * Преобразование данных из Fastopertor в формат приложения
+     * Маппинг ошибок в custom Error классы
      */
-    transformFastopertorData(data) {
-        // Если данные уже в правильном формате
-        if (data.orders && data.couriers) {
-            return {
-                orders: this.transformOrders(data.orders),
-                couriers: this.transformCouriers(data.couriers),
-                paymentMethods: data.paymentMethods || [],
-                routes: data.routes || [],
-                errors: [],
-                warnings: []
-            };
+    _mapError(error) {
+        if (error instanceof ApiError) return error;
+
+        if (error.response) {
+            return new FastopertorError(
+                `Fastopertor API вернул ошибку: ${error.response.status}`,
+                error.response.status,
+                error.response.data
+            );
+        } else if (error.request) {
+            return new FastopertorError('Не удалось получить ответ от Fastopertor API (Timeout)', 504);
         }
 
-        // Если данные в другом формате, пытаемся преобразовать
-        const transformed = {
-            orders: [],
-            couriers: [],
-            paymentMethods: [],
-            routes: [],
-            errors: [],
-            warnings: []
-        };
-
-        // Пытаемся найти заказы в разных возможных форматах
-        if (Array.isArray(data)) {
-            // Если данные - массив, предполагаем что это заказы
-            transformed.orders = this.transformOrders(data);
-        } else if (data.data && Array.isArray(data.data)) {
-            transformed.orders = this.transformOrders(data.data);
-        } else if (data.results && Array.isArray(data.results)) {
-            transformed.orders = this.transformOrders(data.results);
-        }
-
-        // Пытаемся найти курьеров
-        if (data.couriers && Array.isArray(data.couriers)) {
-            transformed.couriers = this.transformCouriers(data.couriers);
-        } else if (data.drivers && Array.isArray(data.drivers)) {
-            transformed.couriers = this.transformCouriers(data.drivers);
-        }
-
-        return transformed;
-    }
-
-    /**
-     * Преобразование заказов
-     */
-    transformOrders(orders) {
-        if (!Array.isArray(orders)) {
-            return [];
-        }
-
-        return orders.map((order, index) => ({
-            orderNumber: order.orderNumber || order.order_id || order.id || `ORDER_${index + 1}`,
-            address: order.address || order.delivery_address || order.address_full || '',
-            phone: order.phone || order.phone_number || order.contact_phone || '',
-            customerName: order.customerName || order.customer_name || order.client_name || '',
-            amount: order.amount || order.total || order.sum || 0,
-            courier: order.courier || order.courier_name || order.driver || '',
-            paymentMethod: order.paymentMethod || order.payment_method || order.payment || '',
-            plannedTime: order.plannedTime || order.planned_time || order.delivery_time || null,
-            readyAt: order.readyAt || order.ready_at || order.ready_time || null,
-            deadlineAt: order.deadlineAt || order.deadline_at || order.deadline || null,
-            note: order.note || order.notes || order.comment || '',
-            priority: order.priority || 'normal',
-            status: order.status || 'pending',
-            raw: order // Сохраняем исходные данные
-        }));
-    }
-
-    /**
-     * Преобразование курьеров
-     */
-    transformCouriers(couriers) {
-        if (!Array.isArray(couriers)) {
-            return [];
-        }
-
-        return couriers.map((courier, index) => ({
-            name: courier.name || courier.driver_name || courier.full_name || `COURIER_${index + 1}`,
-            phoneNumber: courier.phoneNumber || courier.phone || courier.phone_number || '',
-            email: courier.email || '',
-            vehicleType: courier.vehicleType || courier.vehicle_type || 'car',
-            isActive: courier.isActive !== undefined ? courier.isActive : (courier.active !== undefined ? courier.active : true),
-            location: courier.location || courier.current_location || '',
-            raw: courier // Сохраняем исходные данные
-        }));
-    }
-
-    async sendOrders(req, res) {
-        try {
-            const orders = await Order.find(); // Получаем данные о заказах из базы данных
-            return res.json(orders);
-        } catch (error) {
-            return res.status(500).json({ message: 'Ошибка при получении данных о заказах' });
-        }
+        return error;
     }
 }
 

@@ -1,26 +1,6 @@
 // Утилита для сохранения истории оптимизаций маршрутов
 
-export interface RouteHistoryEntry {
-  id: string
-  timestamp: number
-  routes: any[]
-  settings: {
-    maxRouteDurationMin: number
-    maxRouteDistanceKm: number
-    maxStopsPerRoute: number
-    trafficMode: string
-    [key: string]: any
-  }
-  stats: {
-    totalRoutes: number
-    totalOrders: number
-    totalDistance: number
-    totalDuration: number
-    avgEfficiency: number
-  }
-  name?: string
-  description?: string
-}
+import { RouteHistoryEntry, Route, Order } from '../../types'
 
 const HISTORY_STORAGE_KEY = 'km_route_history'
 const MAX_HISTORY_ENTRIES = 20 // Уменьшено с 50 до 20 для экономии места
@@ -59,7 +39,7 @@ function minimizeRoutes(routes: any[]): any[] {
       t: route.totalDurationMin || (route.totalDuration ? (route.totalDuration / 60).toFixed(1) : '0'), // 't' вместо 'totalDurationMin'
       s: route.stopsCount || minimizedChain.length, // 's' вместо 'stopsCount'
     }
-    
+
     // Добавляем только если есть значение
     if (route.name) minimized.n = route.name // 'n' вместо 'name'
     if (minimizedChain.length > 0) {
@@ -87,7 +67,7 @@ export const routeHistory = {
     try {
       // Минимизируем размер маршрутов
       const minimizedRoutes = minimizeRoutes(routes)
-      
+
       const entry: RouteHistoryEntry = {
         id: `history_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         timestamp: Date.now(),
@@ -100,7 +80,7 @@ export const routeHistory = {
 
       const history = routeHistory.getAll()
       history.unshift(entry) // Добавляем в начало
-      
+
       // Агрессивная очистка: оставляем только последние записи
       const targetEntries = Math.min(MAX_HISTORY_ENTRIES, 15) // Еще больше уменьшаем при переполнении
       if (history.length > targetEntries) {
@@ -109,7 +89,7 @@ export const routeHistory = {
 
       // Пробуем сохранить
       const dataToSave = JSON.stringify(history)
-      
+
       // Проверяем размер перед сохранением
       if (!checkStorageSize(dataToSave)) {
         console.warn('⚠️ Данные слишком большие, удаляем старые записи...')
@@ -117,7 +97,7 @@ export const routeHistory = {
         const halfSize = Math.floor(history.length / 2)
         history.splice(halfSize)
         const reducedData = JSON.stringify(history)
-        
+
         if (!checkStorageSize(reducedData)) {
           // Если все еще слишком большие, оставляем только последние 5
           history.splice(5)
@@ -130,13 +110,13 @@ export const routeHistory = {
       // Обработка QuotaExceededError
       if (error.name === 'QuotaExceededError' || error.message?.includes('quota')) {
         console.warn('⚠️ localStorage переполнен, очищаем старые записи...')
-        
+
         try {
           const history = routeHistory.getAll()
           // Оставляем только последние 5 записей
           const reducedHistory = history.slice(0, 5)
           localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(reducedHistory))
-          
+
           // Пробуем сохранить текущую запись еще раз
           const minimizedRoutes = minimizeRoutes(routes)
           const entry: RouteHistoryEntry = {
@@ -150,7 +130,7 @@ export const routeHistory = {
           }
           reducedHistory.unshift(entry)
           reducedHistory.splice(5) // Оставляем максимум 5
-          
+
           localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(reducedHistory))
           console.log('✅ История сохранена после очистки')
           return entry.id
@@ -188,7 +168,7 @@ export const routeHistory = {
   _expandMinimizedRoute: (minimized: any): any => {
     // Если уже развернутый формат (старый), возвращаем как есть
     if (minimized.id && minimized.startAddress) return minimized
-    
+
     // Восстанавливаем из минимизированного формата
     const expanded: any = {
       id: minimized.i,
@@ -199,10 +179,10 @@ export const routeHistory = {
       totalDurationMin: minimized.t,
       stopsCount: minimized.s
     }
-    
+
     if (minimized.n) expanded.name = minimized.n
     if (minimized.o) expanded.orderNumbers = minimized.o
-    
+
     // Восстанавливаем routeChainFull из минимизированного формата
     if (minimized.c && Array.isArray(minimized.c)) {
       expanded.routeChainFull = minimized.c.map((item: any) => {
@@ -215,7 +195,7 @@ export const routeHistory = {
         }
       })
     }
-    
+
     return expanded
   },
 
@@ -225,7 +205,7 @@ export const routeHistory = {
     try {
       const stored = localStorage.getItem(HISTORY_STORAGE_KEY)
       if (!stored) return []
-      
+
       const parsed = JSON.parse(stored)
       // Восстанавливаем минимизированные маршруты (если нужно)
       return parsed.map((entry: RouteHistoryEntry) => {
@@ -254,17 +234,17 @@ export const routeHistory = {
     try {
       const stored = localStorage.getItem(HISTORY_STORAGE_KEY)
       if (!stored) return false
-      
+
       const history = JSON.parse(stored)
       const filtered = history.filter((entry: RouteHistoryEntry) => entry.id !== id)
       if (filtered.length === history.length) return false
-      
+
       // Сохраняем в минимизированном формате
       const minimizedFiltered = filtered.map((entry: RouteHistoryEntry) => ({
         ...entry,
         routes: minimizeRoutes(entry.routes)
       }))
-      
+
       localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(minimizedFiltered))
       return true
     } catch (error) {
@@ -288,7 +268,7 @@ export const routeHistory = {
   } | null => {
     const entry1 = routeHistory.get(id1)
     const entry2 = routeHistory.get(id2)
-    
+
     if (!entry1 || !entry2) return null
 
     return {

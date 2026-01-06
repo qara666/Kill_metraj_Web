@@ -93,7 +93,7 @@ export const CitySectorsEditor: React.FC<{
     }
     if (city) init()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [city])
+  }, [city, value]) // Добавили value в зависимости, чтобы перерисовывать при изменении извне
 
   const persist = (poly: any) => {
     const path = poly.getPath()
@@ -130,8 +130,8 @@ export const CitySectorsEditor: React.FC<{
             }}
             className={clsx(
               'absolute top-2 right-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors z-10',
-              isDark 
-                ? 'bg-red-600 hover:bg-red-700 text-white' 
+              isDark
+                ? 'bg-red-600 hover:bg-red-700 text-white'
                 : 'bg-red-500 hover:bg-red-600 text-white'
             )}
           >
