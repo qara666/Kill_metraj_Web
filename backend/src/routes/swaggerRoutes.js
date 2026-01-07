@@ -29,13 +29,13 @@ router.get('/orders', async (req, res) => {
             departmentId
         } = req.query;
 
-        const apiKey = req.headers['x-api-key'];
+        const apiKey = req.headers['x-api-key'] || req.query.apiKey;
 
         // Валидация обязательных параметров
         if (!apiKey) {
             return res.status(400).json({
                 success: false,
-                error: 'API ключ не предоставлен. Используйте заголовок x-api-key'
+                error: 'API ключ не предоставлен. Используйте заголовок x-api-key или параметр apiKey в URL'
             });
         }
 
