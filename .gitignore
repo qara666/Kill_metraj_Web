@@ -148,20 +148,9 @@ temp/
 *.sw?
 
 # Local development
-.local
 
-
-
-
-
-
-
-
-
-
-
-
-
+# Allow Render SPA redirects
+!frontend/public/_redirects
 
 
 
