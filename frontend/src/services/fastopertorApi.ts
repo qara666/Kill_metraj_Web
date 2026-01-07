@@ -73,8 +73,7 @@ class FastopertorApiService {
       queryParams.append('top', String(params.top || 200));
 
       if (params.apiKey) {
-        // API KEY is normally in headers, but some implementations might expect it in query
-        // However, our backend expects it in headers 'x-api-key'
+        queryParams.append('apiKey', params.apiKey);
       }
 
       if (params.dateShift && params.dateShift.trim() && params.dateShift !== 'undefined') {
@@ -94,12 +93,10 @@ class FastopertorApiService {
       }
 
       // Отправка запроса к Swagger API
+      // ВАЖНО: Мы НЕ передаем кастомные заголовки (x-api-key, Content-Type),
+      // чтобы запрос считался "Simple Request" и браузер не делал OPTIONS pre-flight check.
       const response = await fetch(`${API_URL}/api/swagger/orders?${queryParams.toString()}`, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': params.apiKey,
-        },
       })
 
       if (!response.ok) {
