@@ -70,7 +70,7 @@ class FastopertorApiService {
       // Формирование URL с query параметрами
       const queryParams = new URLSearchParams();
 
-      queryParams.append('top', String(params.top || 200));
+      queryParams.append('top', String(params.top || 1000));
 
       if (params.apiKey) {
         queryParams.append('apiKey', params.apiKey);
@@ -143,7 +143,7 @@ class FastopertorApiService {
     deliveryEnd.setHours(23, 0, 0, 0)
 
     return {
-      top: 200,
+      top: 1000,
       dateShift,
       timeDeliveryBeg: formatDateTimeForSwagger(deliveryStart),
       timeDeliveryEnd: formatDateTimeForSwagger(deliveryEnd),

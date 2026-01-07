@@ -13,7 +13,7 @@ class ExcelService {
     };
     this.debugLogs.push(logEntry);
     console.log(`[DEBUG] ${message}`, data || '');
-    
+
     if (global.addDebugLog) {
       global.addDebugLog(message, data);
     }
@@ -22,16 +22,16 @@ class ExcelService {
   async processExcelFile(buffer) {
     this.debugLogs = [];
     this.addDebugLog('Начало обработки Excel файла');
-    
+
     try {
-      const workbook = XLSX.read(buffer, { 
+      const workbook = XLSX.read(buffer, {
         type: 'buffer',
         cellDates: true,
         cellNF: false,
         cellText: false,
         raw: false
       });
-      
+
       this.addDebugLog('Excel файл успешно прочитан', {
         sheetNames: workbook.SheetNames,
         totalSheets: workbook.SheetNames.length
@@ -68,17 +68,17 @@ class ExcelService {
       // Обрабатываем каждый лист
       for (const sheetName of workbook.SheetNames) {
         this.addDebugLog(`Обработка листа: ${sheetName}`);
-        
+
         const sheet = workbook.Sheets[sheetName];
         const sheetData = this.processSheet(sheet, sheetName);
-        
+
         result.orders.push(...sheetData.orders);
         result.couriers.push(...sheetData.couriers);
         result.paymentMethods.push(...sheetData.paymentMethods);
         result.addresses.push(...sheetData.addresses);
         result.errors.push(...sheetData.errors);
         result.warnings.push(...sheetData.warnings);
-        
+
         result.debug.sheets.push({
           name: sheetName,
           orders: sheetData.orders.length,
@@ -165,12 +165,12 @@ class ExcelService {
 
   processSheet(sheet, sheetName) {
     this.addDebugLog(`Обработка листа "${sheetName}"`);
-    
+
     // Читаем данные из листа
-    const jsonData = XLSX.utils.sheet_to_json(sheet, { 
-      header: 1, 
+    const jsonData = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
       defval: '',
-      raw: false 
+      raw: false
     });
 
     if (jsonData.length < 2) {
@@ -189,41 +189,41 @@ class ExcelService {
     // ВАЖНО: Ищем заголовки в первых 10 строках (не только в первой!)
     let headerRowIndex = 0;
     let headers = [];
-    
+
     this.addDebugLog(`Поиск заголовков в первых 10 строках...`);
-    
+
     for (let i = 0; i < Math.min(10, jsonData.length); i++) {
       const row = jsonData[i];
       const rowStr = row.map(c => String(c || '').toLowerCase()).join('|');
       const nonEmptyCells = row.filter(c => c !== null && c !== undefined && String(c).trim() !== '');
-      
+
       this.addDebugLog(`Строка ${i + 1}: ${nonEmptyCells.length} непустых ячеек`);
-      
+
       if (nonEmptyCells.length < 3) {
         this.addDebugLog(`Пропускаем строку ${i + 1}: слишком мало данных`);
         continue;
       }
-      
+
       if (rowStr.includes('адрес') || rowStr.includes('address') ||
-          rowStr.includes('номер') || rowStr.includes('number') || rowStr.includes('№') ||
-          rowStr.includes('телефон') || rowStr.includes('phone') ||
-          rowStr.includes('курьер') || rowStr.includes('courier') ||
-          rowStr.includes('сумма') || rowStr.includes('amount') ||
-          rowStr.includes('клиент') || rowStr.includes('customer') ||
-          rowStr.includes('оплат') || rowStr.includes('payment')) {
+        rowStr.includes('номер') || rowStr.includes('number') || rowStr.includes('№') ||
+        rowStr.includes('телефон') || rowStr.includes('phone') ||
+        rowStr.includes('курьер') || rowStr.includes('courier') ||
+        rowStr.includes('сумма') || rowStr.includes('amount') ||
+        rowStr.includes('клиент') || rowStr.includes('customer') ||
+        rowStr.includes('оплат') || rowStr.includes('payment')) {
         headerRowIndex = i;
         headers = row;
         this.addDebugLog(`✅ Найдена строка заголовков в строке ${i + 1}!`);
         break;
       }
     }
-    
+
     if (headers.length === 0) {
       this.addDebugLog(`⚠️ Заголовки не найдены автоматически, используем первую строку`);
       headers = jsonData[0];
       headerRowIndex = 0;
     }
-    
+
     const dataRows = jsonData.slice(headerRowIndex + 1);
 
     this.addDebugLog(`Заголовки листа "${sheetName}"`, {
@@ -234,7 +234,7 @@ class ExcelService {
 
     // Маппинг заголовков под реальную структуру
     const headerMap = this.mapHeaders(headers);
-    
+
     this.addDebugLog(`Маппинг заголовков для "${sheetName}"`, headerMap);
 
     if (!headerMap.address) {
@@ -263,7 +263,7 @@ class ExcelService {
 
     dataRows.forEach((row, index) => {
       const rowNumber = index + 2; // +2 потому что первая строка - заголовки, а индексация с 0
-      
+
       try {
         this.addDebugLog(`Обработка строки ${rowNumber}`, {
           row,
@@ -278,10 +278,10 @@ class ExcelService {
         }
 
         const order = this.processOrderRow(row, headerMap, rowNumber);
-        
+
         if (order) {
           orders.push(order);
-          
+
           // Добавляем курьера
           if (order.courier) {
             couriers.push({
@@ -342,18 +342,18 @@ class ExcelService {
   // НОВЫЙ маппинг заголовков под реальную структуру данных
   mapHeaders(headers) {
     this.addDebugLog('Начинаем маппинг заголовков', { headers });
-    
+
     const headerMap = {};
-    
+
     headers.forEach((header, index) => {
       if (!header) return;
-      
+
       const originalHeader = header.toString();
       const normalizedHeader = originalHeader.toLowerCase().trim();
       const noApostrophes = normalizedHeader.replace(/[''`]/g, '');
-      
+
       this.addDebugLog(`Анализ заголовка ${index}: "${originalHeader}" -> "${normalizedHeader}"`);
-      
+
       const includesAny = (s, arr) => {
         const result = arr.some(k => s.includes(k));
         this.addDebugLog(`Проверка "${s}" включает любой из [${arr.join(', ')}] = ${result}`);
@@ -361,14 +361,14 @@ class ExcelService {
       };
 
       // НОМЕР ЗАКАЗА - ищем "номер", "№", "id"
-      if (includesAny(noApostrophes, ['номер', '№', 'number', 'id', 'заказ', 'замовлення']) && 
-          !includesAny(noApostrophes, ['заказчик', 'клиент', 'customer', 'имя', 'name'])) {
+      if (includesAny(noApostrophes, ['номер', '№', 'number', 'id', 'заказ', 'замовлення']) &&
+        !includesAny(noApostrophes, ['заказчик', 'клиент', 'customer', 'имя', 'name'])) {
         if (headerMap.orderNumber === undefined) {
           headerMap.orderNumber = index;
           this.addDebugLog(`Найден номер заказа в колонке ${index}: "${originalHeader}"`);
         }
       }
-      
+
       // АДРЕС - ищем "адрес", "address"
       else if (includesAny(noApostrophes, ['адрес', 'address', 'доставки', 'delivery', 'куда', 'улица', 'street', 'место'])) {
         if (headerMap.address === undefined) {
@@ -376,7 +376,7 @@ class ExcelService {
           this.addDebugLog(`Найден адрес в колонке ${index}: "${originalHeader}"`);
         }
       }
-      
+
       // КУРЬЕР - ищем "курьер", "courier", "доставщик"
       else if (includesAny(noApostrophes, ['курьер', 'courier', 'доставщик', 'delivery', 'driver'])) {
         if (headerMap.courier === undefined) {
@@ -384,7 +384,7 @@ class ExcelService {
           this.addDebugLog(`Найден курьер в колонке ${index}: "${originalHeader}"`);
         }
       }
-      
+
       // СПОСОБ ОПЛАТЫ - ищем "оплаты", "payment", "способ"
       else if (includesAny(noApostrophes, ['оплаты', 'payment', 'способ', 'method', 'оплата', 'pay'])) {
         if (headerMap.paymentMethod === undefined) {
@@ -392,7 +392,7 @@ class ExcelService {
           this.addDebugLog(`Найден способ оплаты в колонке ${index}: "${originalHeader}"`);
         }
       }
-      
+
       // СУММА - ищем "оплате", "сумма", "amount", "price", "к оплате"
       else if (includesAny(noApostrophes, ['оплате', 'сумма', 'amount', 'price', 'стоимость', 'к оплате', 'to pay', 'оплате', 'pay', 'сумма к оплате', 'к оплате сумма', 'стоимость заказа', 'заказ сумма', 'заказа сумма', 'всего'])) {
         if (headerMap.amount === undefined) {
@@ -400,7 +400,7 @@ class ExcelService {
           this.addDebugLog(`Найден сумма в колонке ${index}: "${originalHeader}"`);
         }
       }
-      
+
       // ТЕЛЕФОН - ищем "телефон", "phone", "тел"
       else if (includesAny(noApostrophes, ['телефон', 'phone', 'тел', 'мобильный', 'mobile'])) {
         if (headerMap.phone === undefined) {
@@ -408,7 +408,7 @@ class ExcelService {
           this.addDebugLog(`Найден телефон в колонке ${index}: "${originalHeader}"`);
         }
       }
-      
+
       // ИМЯ КЛИЕНТА - ищем "заказчик", "клиент", "имя", "customer", "name"
       else if (includesAny(noApostrophes, ['заказчик', 'клиент', 'имя', 'customer', 'name', 'заказчик (имя)', 'клиент (имя)'])) {
         if (headerMap.customerName === undefined) {
@@ -416,7 +416,7 @@ class ExcelService {
           this.addDebugLog(`Найден имя клиента в колонке ${index}: "${originalHeader}"`);
         }
       }
-      
+
       // СТАТУС - ищем "состояние", "статус", "status", "state"
       else if (includesAny(noApostrophes, ['состояние', 'статус', 'status', 'state'])) {
         if (headerMap.status === undefined) {
@@ -424,16 +424,16 @@ class ExcelService {
           this.addDebugLog(`Найден статус в колонке ${index}: "${originalHeader}"`);
         }
       }
-      
+
       // ТИП ЗАКАЗА - ищем "тип", "type", "заказа"
-      else if (includesAny(noApostrophes, ['тип', 'type', 'заказа', 'order type']) && 
-               !includesAny(noApostrophes, ['заказчик', 'клиент', 'customer'])) {
+      else if (includesAny(noApostrophes, ['тип', 'type', 'заказа', 'order type']) &&
+        !includesAny(noApostrophes, ['заказчик', 'клиент', 'customer'])) {
         if (headerMap.orderType === undefined) {
           headerMap.orderType = index;
           this.addDebugLog(`Найден тип заказа в колонке ${index}: "${originalHeader}"`);
         }
       }
-      
+
       // КОММЕНТАРИИ - ищем "комментарии", "комментарий", "comment"
       else if (includesAny(noApostrophes, ['комментарии', 'комментарий', 'comment', 'примечание', 'note'])) {
         if (headerMap.comment === undefined) {
@@ -482,7 +482,7 @@ class ExcelService {
         type: typeof amountValue,
         stringValue: amountValue.toString()
       });
-      
+
       if (typeof amountValue === 'number') {
         amount = amountValue;
       } else {
@@ -534,7 +534,7 @@ class ExcelService {
 
   removeDuplicateCouriers(couriers) {
     this.addDebugLog('Создание уникальных курьеров и способов оплаты');
-    
+
     const uniqueCouriers = {};
     couriers.forEach(courier => {
       if (!uniqueCouriers[courier.name]) {
@@ -547,7 +547,7 @@ class ExcelService {
           paymentMethods: []
         };
       }
-      
+
       if (courier.orderList) uniqueCouriers[courier.name].orderList.push(...courier.orderList);
       uniqueCouriers[courier.name].orders += (courier.orderCount || 0);
       uniqueCouriers[courier.name].totalAmount += (courier.totalAmount || 0);
@@ -571,7 +571,7 @@ class ExcelService {
           averageAmount: 0
         };
       }
-      
+
       if (method.orderList) uniqueMethods[method.method].orderList.push(...method.orderList);
       uniqueMethods[method.method].orders += (method.orderCount || 0);
       uniqueMethods[method.method].totalAmount += (method.totalAmount || 0);
@@ -597,7 +597,7 @@ class ExcelService {
           couriers: []
         };
       }
-      
+
       if (address.orderList) uniqueAddresses[address.full].orderList.push(...address.orderList);
       uniqueAddresses[address.full].orders += (address.orderCount || 0);
       uniqueAddresses[address.full].totalAmount += (address.totalAmount || 0);
@@ -609,18 +609,18 @@ class ExcelService {
 
   calculateStatistics(orders) {
     this.addDebugLog('Структурирование данных');
-    
+
     const totalOrders = orders.length;
     const totalAmount = orders.reduce((sum, order) => sum + (order.amount || 0), 0);
     const averageAmount = totalOrders > 0 ? totalAmount / totalOrders : 0;
-    
-    const deliveryCount = orders.filter(order => 
-      order.type?.toLowerCase().includes('доставка') || 
+
+    const deliveryCount = orders.filter(order =>
+      order.type?.toLowerCase().includes('доставка') ||
       order.type?.toLowerCase().includes('delivery')
     ).length;
-    
-    const pickupCount = orders.filter(order => 
-      order.type?.toLowerCase().includes('самовывоз') || 
+
+    const pickupCount = orders.filter(order =>
+      order.type?.toLowerCase().includes('самовывоз') ||
       order.type?.toLowerCase().includes('pickup')
     ).length;
 

@@ -31,12 +31,19 @@ export const transformSwaggerData = (
 
     // Преобразование курьеров
     swaggerData.couriers.forEach((swaggerCourier) => {
+        // Пропускаем "ID:0", так как это техническое обозначение неназначенного заказа в Swagger
+        if (swaggerCourier.name === 'ID:0') return;
+
         couriers.push({
             name: swaggerCourier.name,
             isActive: swaggerCourier.isActive,
             vehicleType: swaggerCourier.vehicleType || 'car',
         });
     });
+
+    // Если в списке курьеров нет "Не назначен", добавляем его для группировки неназначенных заказов
+    // Но фактически мы будем использовать это имя в заказах, и UI сам их сгруппирует
+
 
     // Преобразование заказов
     swaggerData.orders.forEach((swaggerOrder, index) => {
@@ -94,7 +101,7 @@ const transformSwaggerOrder = (swaggerOrder: SwaggerOrderResponse, baseDate: str
         deadlineAt,
         plannedTime: swaggerOrder.plannedTime, // Keep as string (HH:MM) for compatibility with UI sorting/display
         deliveryZone: swaggerOrder.deliveryZone,
-        courier: swaggerOrder.courier,
+        courier: swaggerOrder.courier === 'ID:0' ? 'Не назначен' : swaggerOrder.courier,
         amount: swaggerOrder.amount,
         paymentMethod: swaggerOrder.paymentMethod,
         status: swaggerOrder.status,
