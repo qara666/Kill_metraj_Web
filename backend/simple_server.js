@@ -1,6 +1,6 @@
 const express = require('express');
-const cors = require('cors');
 const multer = require('multer');
+const swaggerRoutes = require('./src/routes/swaggerRoutes');
 const ExcelService = require('./src/services/ExcelService_v3');
 const telegramRoutes = require('./src/routes/telegramRoutes');
 const fastopertorRoutes = require('./src/routes/fastopertorRoutes');
@@ -10,19 +10,19 @@ const { generalLimiter, uploadLimiter, telegramLimiter } = require('./src/middle
 const app = express();
 const PORT = process.env.PORT || 5001;
 
-// Middleware
-app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'https://kill-metraj-frontend.onrender.com',
-    'https://kill-metraj-web.onrender.com'
-  ],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+// Manual Robust CORS Middleware (Wildcard Origin)
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-API-KEY, X-Requested-With, Accept, Origin');
+  res.header('Access-Control-Max-Age', '86400'); // 24 hours
+
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
 app.use(express.json());
 
 // Request logging middleware
@@ -183,6 +183,9 @@ app.use('/api/telegram', telegramLimiter, telegramRoutes);
 
 // Fastopertor API routes
 app.use('/api/fastopertor', fastopertorRoutes);
+
+// Swagger API routes
+app.use('/api/swagger', swaggerRoutes);
 
 app.get('/debug/logs', (req, res) => {
   res.json({
