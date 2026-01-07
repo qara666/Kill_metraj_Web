@@ -22,7 +22,7 @@ const SWAGGER_API_BASE_URL = 'http://app.yaposhka.kh.ua:4999';
 router.get('/orders', async (req, res) => {
     try {
         const {
-            top = 200,
+            top = 1000,
             dateShift,
             timeDeliveryBeg,
             timeDeliveryEnd,
