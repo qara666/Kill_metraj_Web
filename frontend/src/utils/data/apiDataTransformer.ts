@@ -1,11 +1,11 @@
 import { ProcessedExcelData, Order } from '../../types';
-import { SwaggerOrderResponse, SwaggerApiResponse } from '../../types/SwaggerApiTypes';
+import { DashboardOrderResponse, DashboardApiResponse } from '../../types/DashboardApiTypes';
 
 /**
- * Преобразование данных Swagger API в формат ProcessedExcelData
+ * Преобразование данных Dashboard API в формат ProcessedExcelData
  */
-export const transformSwaggerData = (
-    swaggerData: SwaggerApiResponse,
+export const transformDashboardData = (
+    apiData: DashboardApiResponse,
     baseDate: string,
     fallbackDate?: string // format dd.mm.yyyy or YYYY-MM-DD
 ): ProcessedExcelData => {
@@ -30,8 +30,8 @@ export const transformSwaggerData = (
     const errors: any[] = [];
 
     // Преобразование курьеров
-    swaggerData.couriers.forEach((swaggerCourier) => {
-        // Пропускаем "ID:0", так как это техническое обозначение неназначенного заказа в Swagger
+    apiData.couriers.forEach((swaggerCourier) => {
+        // Пропускаем "ID:0", так как это техническое обозначение неназначенного заказа в API
         if (swaggerCourier.name === 'ID:0') return;
 
         couriers.push({
@@ -46,12 +46,12 @@ export const transformSwaggerData = (
 
 
     // Преобразование заказов
-    swaggerData.orders.forEach((swaggerOrder, index) => {
+    apiData.orders.forEach((swaggerOrder, index) => {
         try {
             if (index < 3) {
-                console.log(`[swaggerDataTransformer] Raw order ${index}:`, swaggerOrder);
+                console.log(`[dashboardTransformer] Raw order ${index}:`, swaggerOrder);
             }
-            const order = transformSwaggerOrder(swaggerOrder, effectiveDate, index);
+            const order = transformDashboardOrder(swaggerOrder, effectiveDate, index);
             orders.push(order);
         } catch (error) {
             errors.push({
@@ -69,7 +69,7 @@ export const transformSwaggerData = (
         routes: [],
         errors,
         summary: {
-            totalRows: swaggerData.orders.length,
+            totalRows: apiData.orders.length,
             successfulGeocoding: 0, // Будет обновлено после геокодирования
             failedGeocoding: 0,
             orders: orders.length,
@@ -81,9 +81,9 @@ export const transformSwaggerData = (
 };
 
 /**
- * Преобразование одного заказа из формата Swagger в внутренний формат
+ * Преобразование одного заказа из формата API в внутренний формат
  */
-const transformSwaggerOrder = (swaggerOrder: SwaggerOrderResponse, baseDate: string, index: number): Order => {
+const transformDashboardOrder = (swaggerOrder: DashboardOrderResponse, baseDate: string, index: number): Order => {
     // Парсинг времени готовности на кухне
     const readyAtSource = parseTimeToTimestamp(baseDate, swaggerOrder.kitchenTime);
 
@@ -145,9 +145,9 @@ const parseTimeToTimestamp = (baseDate: string, timeString: string): number | nu
 };
 
 /**
- * Форматирование даты для Swagger API (dd.mm.yyyy)
+ * Форматирование даты для Dashboard API (dd.mm.yyyy)
  */
-export const formatDateForSwagger = (date: Date): string => {
+export const formatDateForApi = (date: Date): string => {
     const day = String(date.getDate()).padStart(2, '0');
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const year = date.getFullYear();
@@ -155,10 +155,10 @@ export const formatDateForSwagger = (date: Date): string => {
 };
 
 /**
- * Форматирование даты и времени для Swagger API (dd.mm.yyyy HH:MM:SS)
+ * Форматирование даты и времени для Dashboard API (dd.mm.yyyy HH:MM:SS)
  */
-export const formatDateTimeForSwagger = (date: Date): string => {
-    const dateStr = formatDateForSwagger(date);
+export const formatDateTimeForApi = (date: Date): string => {
+    const dateStr = formatDateForApi(date);
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
     const seconds = String(date.getSeconds()).padStart(2, '0');
@@ -166,12 +166,12 @@ export const formatDateTimeForSwagger = (date: Date): string => {
 };
 
 /**
- * Геокодирование заказов из Swagger API
+ * Геокодирование заказов из Dashboard API
  * @param orders Массив заказов для геокодирования
  * @param geocodingService Сервис геокодирования
  * @returns Обновленные заказы с координатами
  */
-export const geocodeSwaggerOrders = async (
+export const geocodeDashboardOrders = async (
     orders: Order[],
     geocodingService: any
 ): Promise<{ orders: Order[]; successCount: number; failCount: number }> => {

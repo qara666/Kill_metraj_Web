@@ -1,6 +1,6 @@
-// Swagger API Type Definitions for Order Management
+// Dashboard API Type Definitions for Order Management
 
-export interface SwaggerOrderResponse {
+export interface DashboardOrderResponse {
     orderNumber: string;          // Номер заказа
     address: string;               // Адрес доставки
     status: string;                // Статус
@@ -19,13 +19,13 @@ export interface SwaggerOrderResponse {
     totalTime: string;             // Общее время (например "1ч. 12мин.")
 }
 
-export interface SwaggerCourierResponse {
+export interface DashboardCourierResponse {
     name: string;                  // Имя курьера
     isActive: boolean;             // Активен
     vehicleType?: 'car' | 'motorcycle' | 'pedestrian';  // Тип транспорта
 }
 
-export interface SwaggerApiParams {
+export interface DashboardApiParams {
     top?: number;                  // Максимальное количество записей (1-2000)
     dateShift?: string;            // Дата смены в формате dd.mm.yyyy (теперь опционально)
     timeDeliveryBeg?: string;      // Начало окна доставки (формат "dd.mm.yyyy HH:MM:SS")
@@ -34,17 +34,17 @@ export interface SwaggerApiParams {
     apiKey: string;                // API ключ (передается в заголовке x-api-key)
 }
 
-export interface SwaggerApiResponse {
-    orders: SwaggerOrderResponse[];
-    couriers: SwaggerCourierResponse[];
+export interface DashboardApiResponse {
+    orders: DashboardOrderResponse[];
+    couriers: DashboardCourierResponse[];
 }
 
-export interface SwaggerApiError {
+export interface DashboardApiError {
     success: false;
     error: string;
     details?: any;
 }
 
-export type SwaggerApiResult =
-    | { success: true; data: SwaggerApiResponse }
-    | SwaggerApiError;
+export type DashboardApiResult =
+    | { success: true; data: DashboardApiResponse }
+    | DashboardApiError;

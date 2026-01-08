@@ -2,24 +2,25 @@ const express = require('express');
 const axios = require('axios');
 const router = express.Router();
 
-// Базовый URL Swagger API
-const SWAGGER_API_BASE_URL = 'http://app.yaposhka.kh.ua:4999';
+// Базовый URL Dashboard API
+const DASHBOARD_API_BASE_URL = 'http://app.yaposhka.kh.ua:4999';
 
 /**
- * GET /api/swagger/orders
- * Получение заказов из Swagger API
+ * GET /api/v1/dashboard
+ * Получение данных дашборда (заказы и курьеры)
  * 
  * Query параметры:
- * - top: количество записей (по умолчанию 200)
+ * - top: количество записей (по умолчанию 1000)
  * - dateShift: дата смены (формат dd.mm.yyyy)
  * - timeDeliveryBeg: начало окна доставки (формат dd.mm.yyyy HH:MM:SS)
  * - timeDeliveryEnd: конец окна доставки (формат dd.mm.yyyy HH:MM:SS)
  * - departmentId: ID подразделения
+ * - apiKey: API ключ (альтернатива заголовку x-api-key)
  * 
  * Headers:
  * - x-api-key: API ключ для аутентификации
  */
-router.get('/orders', async (req, res) => {
+router.get('/dashboard', async (req, res) => {
     try {
         const {
             top = 1000,
@@ -51,14 +52,14 @@ router.get('/orders', async (req, res) => {
         if (timeDeliveryEnd) params.timeDeliveryEnd = timeDeliveryEnd;
         if (departmentId) params.departmentId = parseInt(departmentId, 10);
 
-        console.log('📡 Запрос к Swagger API:', {
-            url: `${SWAGGER_API_BASE_URL}/api/v1/dashboard`,
+        console.log('📡 Запрос к Dashboard API:', {
+            url: `${DASHBOARD_API_BASE_URL}/api/v1/dashboard`,
             params,
             hasApiKey: !!apiKey
         });
 
-        // Запрос к Swagger API
-        const response = await axios.get(`${SWAGGER_API_BASE_URL}/api/v1/dashboard`, {
+        // Запрос к Dashboard API
+        const response = await axios.get(`${DASHBOARD_API_BASE_URL}/api/v1/dashboard`, {
             params,
             headers: {
                 'x-api-key': apiKey,
@@ -67,7 +68,7 @@ router.get('/orders', async (req, res) => {
             timeout: 30000 // 30 секунд
         });
 
-        console.log('✅ Получен ответ от Swagger API:', {
+        console.log('✅ Получен ответ от Dashboard API:', {
             ordersCount: response.data.orders?.length || 0,
             couriersCount: response.data.couriers?.length || 0
         });
@@ -76,21 +77,21 @@ router.get('/orders', async (req, res) => {
         res.json(response.data);
 
     } catch (error) {
-        console.error('❌ Ошибка при запросе к Swagger API:', error.message);
+        console.error('❌ Ошибка при запросе к Dashboard API:', error.message);
 
         // Обработка различных типов ошибок
         if (error.response) {
-            // Ошибка от Swagger API
+            // Ошибка от API
             return res.status(error.response.status).json({
                 success: false,
-                error: error.response.data?.detail || error.response.data?.message || 'Ошибка Swagger API',
+                error: error.response.data?.detail || error.response.data?.message || 'Ошибка Dashboard API',
                 details: error.response.data
             });
         } else if (error.request) {
             // Нет ответа от сервера
             return res.status(503).json({
                 success: false,
-                error: 'Swagger API недоступен. Проверьте подключение к серверу.',
+                error: 'Dashboard API недоступен. Проверьте подключение к серверу.',
                 details: error.message
             });
         } else {
@@ -105,24 +106,24 @@ router.get('/orders', async (req, res) => {
 });
 
 /**
- * GET /api/swagger/health
- * Проверка доступности Swagger API
+ * GET /api/v1/health
+ * Проверка доступности Dashboard API
  */
 router.get('/health', async (req, res) => {
     try {
-        const response = await axios.get(`${SWAGGER_API_BASE_URL}/health`, {
+        const response = await axios.get(`${DASHBOARD_API_BASE_URL}/health`, {
             timeout: 5000
         });
 
         res.json({
             success: true,
-            swaggerApiStatus: 'available',
-            swaggerResponse: response.data
+            apiStatus: 'available',
+            apiResponse: response.data
         });
     } catch (error) {
         res.status(503).json({
             success: false,
-            swaggerApiStatus: 'unavailable',
+            apiStatus: 'unavailable',
             error: error.message
         });
     }

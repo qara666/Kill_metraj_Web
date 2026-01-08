@@ -10,55 +10,55 @@ import {
 } from '@heroicons/react/24/outline';
 import { useAutoPlannerStore } from '../../stores/useAutoPlannerStore';
 
-interface SwaggerSettingsPanelProps {
+interface DashboardSettingsPanelProps {
     isDark: boolean;
     onManualSync?: () => void;
 }
 
-export const SwaggerSettingsPanel: React.FC<SwaggerSettingsPanelProps> = ({
+export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
     isDark,
     onManualSync
 }) => {
     const {
-        swaggerApiKey,
-        swaggerDepartmentId,
-        swaggerAutoRefreshEnabled,
-        swaggerLastSyncTime,
-        swaggerNextSyncTime,
-        swaggerSyncStatus,
-        swaggerTimeDeliveryBeg,
-        swaggerTimeDeliveryEnd,
-        swaggerDateShift,
-        setSwaggerApiKey,
-        setSwaggerDepartmentId,
-        setSwaggerAutoRefreshEnabled,
-        setSwaggerTimeDeliveryBeg,
-        setSwaggerTimeDeliveryEnd,
-        setSwaggerDateShift,
-        swaggerDateShiftFilterEnabled,
-        setSwaggerDateShiftFilterEnabled,
-        triggerSwaggerManualSync
+        apiKey,
+        apiDepartmentId,
+        apiAutoRefreshEnabled,
+        apiLastSyncTime,
+        apiNextSyncTime,
+        apiSyncStatus,
+        apiTimeDeliveryBeg,
+        apiTimeDeliveryEnd,
+        apiDateShift,
+        setApiKey,
+        setApiDepartmentId,
+        setApiAutoRefreshEnabled,
+        setApiTimeDeliveryBeg,
+        setApiTimeDeliveryEnd,
+        setApiDateShift,
+        apiDateShiftFilterEnabled,
+        setApiDateShiftFilterEnabled,
+        triggerApiManualSync
     } = useAutoPlannerStore();
 
-    const [localApiKey, setLocalApiKey] = useState(swaggerApiKey || '');
-    const [localDepartmentId, setLocalDepartmentId] = useState<string>(swaggerDepartmentId?.toString() || '');
+    const [localApiKey, setLocalApiKey] = useState(apiKey || '');
+    const [localDepartmentId, setLocalDepartmentId] = useState<string>(apiDepartmentId?.toString() || '');
 
     const handleSaveSettings = useCallback(() => {
-        setSwaggerApiKey(localApiKey.trim());
-        setSwaggerDepartmentId(localDepartmentId ? parseInt(localDepartmentId, 10) : null);
-    }, [localApiKey, localDepartmentId, setSwaggerApiKey, setSwaggerDepartmentId]);
+        setApiKey(localApiKey.trim());
+        setApiDepartmentId(localDepartmentId ? parseInt(localDepartmentId, 10) : null);
+    }, [localApiKey, localDepartmentId, setApiKey, setApiDepartmentId]);
 
     const handleToggleAutoRefresh = useCallback(() => {
-        if (!swaggerAutoRefreshEnabled && localApiKey.trim()) {
+        if (!apiAutoRefreshEnabled && localApiKey.trim()) {
             handleSaveSettings();
         }
-        setSwaggerAutoRefreshEnabled(!swaggerAutoRefreshEnabled);
-    }, [swaggerAutoRefreshEnabled, localApiKey, handleSaveSettings, setSwaggerAutoRefreshEnabled]);
+        setApiAutoRefreshEnabled(!apiAutoRefreshEnabled);
+    }, [apiAutoRefreshEnabled, localApiKey, handleSaveSettings, setApiAutoRefreshEnabled]);
 
     // Sync Time inputs with Date Shift
     React.useEffect(() => {
-        if (swaggerDateShift && swaggerTimeDeliveryBeg && swaggerTimeDeliveryEnd) {
-            const datePart = swaggerDateShift; // YYYY-MM-DD
+        if (apiDateShift && apiTimeDeliveryBeg && apiTimeDeliveryEnd) {
+            const datePart = apiDateShift; // YYYY-MM-DD
 
             // Helper to replace date part of datetime-local string
             const replaceDate = (datetime: string, newDate: string) => {
@@ -68,20 +68,20 @@ export const SwaggerSettingsPanel: React.FC<SwaggerSettingsPanelProps> = ({
                 return `${newDate}T${parts[1]}`;
             };
 
-            const newStart = replaceDate(swaggerTimeDeliveryBeg, datePart);
-            const newEnd = replaceDate(swaggerTimeDeliveryEnd, datePart);
+            const newStart = replaceDate(apiTimeDeliveryBeg, datePart);
+            const newEnd = replaceDate(apiTimeDeliveryEnd, datePart);
 
             // Only update if actually different to avoid loops
-            if (newStart !== swaggerTimeDeliveryBeg) setSwaggerTimeDeliveryBeg(newStart);
-            if (newEnd !== swaggerTimeDeliveryEnd) setSwaggerTimeDeliveryEnd(newEnd);
+            if (newStart !== apiTimeDeliveryBeg) setApiTimeDeliveryBeg(newStart);
+            if (newEnd !== apiTimeDeliveryEnd) setApiTimeDeliveryEnd(newEnd);
         }
-    }, [swaggerDateShift, swaggerTimeDeliveryBeg, swaggerTimeDeliveryEnd, setSwaggerTimeDeliveryBeg, setSwaggerTimeDeliveryEnd]);
+    }, [apiDateShift, apiTimeDeliveryBeg, apiTimeDeliveryEnd, setApiTimeDeliveryBeg, setApiTimeDeliveryEnd]);
 
     const handleManualSync = useCallback(() => {
         handleSaveSettings(); // Ensure settings are saved before sync
-        triggerSwaggerManualSync();
+        triggerApiManualSync();
         if (onManualSync) onManualSync();
-    }, [handleSaveSettings, triggerSwaggerManualSync, onManualSync]);
+    }, [handleSaveSettings, triggerApiManualSync, onManualSync]);
 
     const formatTimeAgo = (timestamp: number | null) => {
         if (!timestamp) return 'Никогда';
@@ -103,7 +103,7 @@ export const SwaggerSettingsPanel: React.FC<SwaggerSettingsPanelProps> = ({
     };
 
     const getStatusIcon = () => {
-        switch (swaggerSyncStatus) {
+        switch (apiSyncStatus) {
             case 'syncing':
                 return <ArrowPathIcon className="w-4 h-4 animate-spin text-blue-500" />;
             case 'error':
@@ -118,14 +118,14 @@ export const SwaggerSettingsPanel: React.FC<SwaggerSettingsPanelProps> = ({
     return (
         <div className="space-y-4">
             <p className={clsx('text-xs mb-3', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                Настройка интеграции с FO (Swagger API) для автоматического получения заказов.
+                Настройка интеграции с Dashboard API для автоматического получения заказов.
                 Вы можете использовать ручную выгрузку через Excel, отключив автообновление.
             </p>
 
             {/* Auto-Refresh Toggle */}
             <div className={clsx(
                 'flex items-center justify-between p-3 rounded-xl border transition-all',
-                swaggerAutoRefreshEnabled
+                apiAutoRefreshEnabled
                     ? (isDark ? 'bg-blue-900/20 border-blue-700/50' : 'bg-blue-50 border-blue-200')
                     : (isDark ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-200')
             )}>
@@ -133,25 +133,25 @@ export const SwaggerSettingsPanel: React.FC<SwaggerSettingsPanelProps> = ({
                     <div className="relative">
                         <input
                             type="checkbox"
-                            checked={swaggerAutoRefreshEnabled}
+                            checked={apiAutoRefreshEnabled}
                             onChange={handleToggleAutoRefresh}
                             className="sr-only"
                         />
                         <div className={clsx(
                             "w-10 h-6 rounded-full transition-colors",
-                            swaggerAutoRefreshEnabled ? "bg-blue-600" : (isDark ? "bg-gray-600" : "bg-gray-300")
+                            apiAutoRefreshEnabled ? "bg-blue-600" : (isDark ? "bg-gray-600" : "bg-gray-300")
                         )}></div>
                         <div className={clsx(
                             "absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform",
-                            swaggerAutoRefreshEnabled ? "translate-x-4" : "translate-x-0"
+                            apiAutoRefreshEnabled ? "translate-x-4" : "translate-x-0"
                         )}></div>
                     </div>
                     <div>
                         <div className={clsx('font-medium text-sm', isDark ? 'text-gray-200' : 'text-gray-900')}>
-                            Автообновление FO
+                            Автообновление API
                         </div>
                         <div className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                            {swaggerAutoRefreshEnabled
+                            {apiAutoRefreshEnabled
                                 ? 'Включено: данные обновляются каждые 5 мин'
                                 : 'Выключено: используется только ручной режим или Excel'}
                         </div>
@@ -167,14 +167,14 @@ export const SwaggerSettingsPanel: React.FC<SwaggerSettingsPanelProps> = ({
                 <div className="flex items-center gap-2">
                     {getStatusIcon()}
                     <span className={clsx(isDark ? 'text-gray-300' : 'text-gray-700')}>
-                        {swaggerSyncStatus === 'syncing' && 'Синхронизация...'}
-                        {swaggerSyncStatus === 'error' && 'Ошибка синхронизации'}
-                        {swaggerSyncStatus === 'idle' && `Последняя: ${formatTimeAgo(swaggerLastSyncTime)}`}
+                        {apiSyncStatus === 'syncing' && 'Синхронизация...'}
+                        {apiSyncStatus === 'error' && 'Ошибка синхронизации'}
+                        {apiSyncStatus === 'idle' && `Последняя: ${formatTimeAgo(apiLastSyncTime)}`}
                     </span>
                 </div>
-                {swaggerAutoRefreshEnabled && (
+                {apiAutoRefreshEnabled && (
                     <span className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-600')}>
-                        Следующая: {formatTimeUntil(swaggerNextSyncTime)}
+                        Следующая: {formatTimeUntil(apiNextSyncTime)}
                     </span>
                 )}
             </div>
@@ -209,12 +209,12 @@ export const SwaggerSettingsPanel: React.FC<SwaggerSettingsPanelProps> = ({
                             Дата смены (dateShift)
                         </label>
                         <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-gray-500">{swaggerDateShiftFilterEnabled ? 'Вкл' : 'Выкл'}</span>
+                            <span className="text-[10px] text-gray-500">{apiDateShiftFilterEnabled ? 'Вкл' : 'Выкл'}</span>
                             <label className="relative inline-flex items-center cursor-pointer scale-75 origin-right">
                                 <input
                                     type="checkbox"
-                                    checked={swaggerDateShiftFilterEnabled}
-                                    onChange={(e) => setSwaggerDateShiftFilterEnabled(e.target.checked)}
+                                    checked={apiDateShiftFilterEnabled}
+                                    onChange={(e) => setApiDateShiftFilterEnabled(e.target.checked)}
                                     className="sr-only peer"
                                 />
                                 <div className="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
@@ -223,13 +223,13 @@ export const SwaggerSettingsPanel: React.FC<SwaggerSettingsPanelProps> = ({
                     </div>
                     <input
                         type="date"
-                        value={swaggerDateShift}
-                        disabled={!swaggerDateShiftFilterEnabled}
-                        onChange={(e) => setSwaggerDateShift(e.target.value)}
+                        value={apiDateShift}
+                        disabled={!apiDateShiftFilterEnabled}
+                        onChange={(e) => setApiDateShift(e.target.value)}
                         placeholder="Оставьте пустым для автоопределения"
                         className={clsx(
                             'w-full px-3 py-1.5 rounded-lg text-xs border transition-colors',
-                            !swaggerDateShiftFilterEnabled && 'opacity-50 cursor-not-allowed',
+                            !apiDateShiftFilterEnabled && 'opacity-50 cursor-not-allowed',
                             isDark
                                 ? 'bg-gray-900 border-gray-700 text-gray-100 focus:border-blue-500'
                                 : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
@@ -249,8 +249,8 @@ export const SwaggerSettingsPanel: React.FC<SwaggerSettingsPanelProps> = ({
                         </label>
                         <input
                             type="datetime-local"
-                            value={swaggerTimeDeliveryBeg}
-                            onChange={(e) => setSwaggerTimeDeliveryBeg(e.target.value)}
+                            value={apiTimeDeliveryBeg}
+                            onChange={(e) => setApiTimeDeliveryBeg(e.target.value)}
                             className={clsx(
                                 'w-full px-2 py-1.5 rounded-lg text-xs border transition-colors',
                                 isDark
@@ -266,8 +266,8 @@ export const SwaggerSettingsPanel: React.FC<SwaggerSettingsPanelProps> = ({
                         </label>
                         <input
                             type="datetime-local"
-                            value={swaggerTimeDeliveryEnd}
-                            onChange={(e) => setSwaggerTimeDeliveryEnd(e.target.value)}
+                            value={apiTimeDeliveryEnd}
+                            onChange={(e) => setApiTimeDeliveryEnd(e.target.value)}
                             className={clsx(
                                 'w-full px-2 py-1.5 rounded-lg text-xs border transition-colors',
                                 isDark
@@ -309,25 +309,25 @@ export const SwaggerSettingsPanel: React.FC<SwaggerSettingsPanelProps> = ({
                                 : 'bg-blue-500 hover:bg-blue-600 text-white'
                         )}
                     >
-                        Сохранить настройки FO
+                        Сохранить настройки API
                     </button>
                     <button
                         onClick={handleManualSync}
-                        disabled={swaggerSyncStatus === 'syncing' || !localApiKey.trim()}
+                        disabled={apiSyncStatus === 'syncing' || !localApiKey.trim()}
                         className={clsx(
                             'flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1',
-                            swaggerSyncStatus === 'syncing' || !localApiKey.trim()
+                            apiSyncStatus === 'syncing' || !localApiKey.trim()
                                 ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
                                 : isDark
                                     ? 'bg-green-600 hover:bg-green-700 text-white'
                                     : 'bg-green-500 hover:bg-green-600 text-white'
                         )}
                     >
-                        <ArrowPathIcon className={clsx('w-3 h-3', swaggerSyncStatus === 'syncing' && 'animate-spin')} />
+                        <ArrowPathIcon className={clsx('w-3 h-3', apiSyncStatus === 'syncing' && 'animate-spin')} />
                         Синхронизировать сейчас
                     </button>
                 </div>
             </div>
-        </div >
+        </div>
     );
 };

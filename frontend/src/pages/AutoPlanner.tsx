@@ -44,7 +44,7 @@ import { CoverageAnalysisView } from '../components/autoplanner/CoverageAnalysis
 import { ExcelDataPreview } from '../components/excel/ExcelDataPreview'
 import { useExcelImporter } from '../hooks/useExcelImporter'
 import { useAutoPlannerStore } from '../stores/useAutoPlannerStore'
-import { useSwaggerAutoRefresh } from '../hooks/useSwaggerAutoRefresh'
+import { useDashboardAutoRefresh } from '../hooks/useDashboardAutoRefresh'
 
 // Lazy loaded components
 import type { TourStep } from '../components/features/HelpTour'
@@ -156,10 +156,10 @@ export const AutoPlanner: React.FC = () => {
   // State to control Data Preview modal
   const [showDataPreview, setShowDataPreview] = useState(false);
 
-  // Обработчик загрузки данных из Swagger API (перемещен из ImportSection)
-  const handleSwaggerDataLoaded = useCallback(async (data: ProcessedExcelData) => {
+  // Обработчик загрузки данных из Dashboard API (перемещен из ImportSection)
+  const handleDashboardDataLoaded = useCallback(async (data: ProcessedExcelData) => {
     setExcelData(data);
-    logger.info(`✅ Загружено ${data.orders.length} заказов из Swagger API`);
+    logger.info(`✅ Загружено ${data.orders.length} заказов из Dashboard API`);
 
     // Автоматическое добавление курьеров
     if (data.couriers && data.couriers.length > 0) {
@@ -172,14 +172,14 @@ export const AutoPlanner: React.FC = () => {
   }, [setExcelData, setCourierSchedules]);
 
   // Get time window from store
-  const { swaggerTimeDeliveryBeg, swaggerTimeDeliveryEnd } = useAutoPlannerStore();
+  const { apiTimeDeliveryBeg, apiTimeDeliveryEnd } = useAutoPlannerStore();
 
   // Auto-refresh hook - automatically syncs data every 5 minutes
-  useSwaggerAutoRefresh({
-    dateTimeDeliveryBeg: swaggerTimeDeliveryBeg,
-    dateTimeDeliveryEnd: swaggerTimeDeliveryEnd,
-    onDataLoaded: handleSwaggerDataLoaded,
-    enabled: true, // Hook will check swaggerAutoRefreshEnabled internally
+  useDashboardAutoRefresh({
+    dateTimeDeliveryBeg: apiTimeDeliveryBeg,
+    dateTimeDeliveryEnd: apiTimeDeliveryEnd,
+    onDataLoaded: handleDashboardDataLoaded,
+    enabled: true,
   });
 
   const { enableOrderCombining, combineMaxDistanceMeters, combineMaxTimeWindowMinutes } = routePlanningSettings

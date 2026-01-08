@@ -1,35 +1,35 @@
 import { describe, it, expect } from 'vitest';
-import { transformSwaggerData, formatDateForSwagger, formatDateTimeForSwagger } from '../swaggerDataTransformer';
-import { SwaggerApiResponse } from '../../../types/SwaggerApiTypes';
+import { transformDashboardData, formatDateForApi, formatDateTimeForApi } from '../apiDataTransformer';
+import { DashboardApiResponse } from '../../../types/DashboardApiTypes';
 
-describe('swaggerDataTransformer', () => {
-    describe('formatDateForSwagger', () => {
+describe('apiDataTransformer', () => {
+    describe('formatDateForApi', () => {
         it('should format date correctly', () => {
             const date = new Date(2026, 0, 5); // January 5, 2026
-            expect(formatDateForSwagger(date)).toBe('05.01.2026');
+            expect(formatDateForApi(date)).toBe('05.01.2026');
         });
 
         it('should pad single digits', () => {
             const date = new Date(2026, 8, 9); // September 9, 2026
-            expect(formatDateForSwagger(date)).toBe('09.09.2026');
+            expect(formatDateForApi(date)).toBe('09.09.2026');
         });
     });
 
-    describe('formatDateTimeForSwagger', () => {
+    describe('formatDateTimeForApi', () => {
         it('should format datetime correctly', () => {
             const date = new Date(2026, 0, 5, 14, 30, 45); // January 5, 2026 14:30:45
-            expect(formatDateTimeForSwagger(date)).toBe('05.01.2026 14:30:45');
+            expect(formatDateTimeForApi(date)).toBe('05.01.2026 14:30:45');
         });
 
         it('should pad single digits in time', () => {
             const date = new Date(2026, 0, 5, 9, 5, 3); // January 5, 2026 09:05:03
-            expect(formatDateTimeForSwagger(date)).toBe('05.01.2026 09:05:03');
+            expect(formatDateTimeForApi(date)).toBe('05.01.2026 09:05:03');
         });
     });
 
-    describe('transformSwaggerData', () => {
-        it('should transform valid Swagger response', () => {
-            const swaggerResponse: SwaggerApiResponse = {
+    describe('transformDashboardData', () => {
+        it('should transform valid Dashboard response', () => {
+            const apiResponse: DashboardApiResponse = {
                 orders: [
                     {
                         orderNumber: '1033851',
@@ -59,7 +59,7 @@ describe('swaggerDataTransformer', () => {
                 ],
             };
 
-            const result = transformSwaggerData(swaggerResponse, '05.01.2026');
+            const result = transformDashboardData(apiResponse, '05.01.2026');
 
             expect(result.orders).toHaveLength(1);
             expect(result.couriers).toHaveLength(1);
@@ -71,7 +71,7 @@ describe('swaggerDataTransformer', () => {
         });
 
         it('should parse time correctly', () => {
-            const swaggerResponse: SwaggerApiResponse = {
+            const apiResponse: DashboardApiResponse = {
                 orders: [
                     {
                         orderNumber: '123',
@@ -95,7 +95,7 @@ describe('swaggerDataTransformer', () => {
                 couriers: [],
             };
 
-            const result = transformSwaggerData(swaggerResponse, '05.01.2026');
+            const result = transformDashboardData(apiResponse, '05.01.2026');
             const order = result.orders[0];
 
             // Проверка что времена были распарсены
@@ -109,7 +109,7 @@ describe('swaggerDataTransformer', () => {
         });
 
         it('should handle errors gracefully', () => {
-            const swaggerResponse: SwaggerApiResponse = {
+            const apiResponse: DashboardApiResponse = {
                 orders: [
                     {
                         orderNumber: '123',
@@ -133,7 +133,7 @@ describe('swaggerDataTransformer', () => {
                 couriers: [],
             };
 
-            const result = transformSwaggerData(swaggerResponse, '05.01.2026');
+            const result = transformDashboardData(apiResponse, '05.01.2026');
 
             expect(result.orders).toHaveLength(1);
             expect(result.errors).toHaveLength(0);
@@ -141,7 +141,7 @@ describe('swaggerDataTransformer', () => {
         });
 
         it('should handle missing optional fields', () => {
-            const swaggerResponse: SwaggerApiResponse = {
+            const apiResponse: DashboardApiResponse = {
                 orders: [
                     {
                         orderNumber: '123',
@@ -165,7 +165,7 @@ describe('swaggerDataTransformer', () => {
                 couriers: [],
             };
 
-            const result = transformSwaggerData(swaggerResponse, '05.01.2026');
+            const result = transformDashboardData(apiResponse, '05.01.2026');
 
             expect(result.orders).toHaveLength(1);
             expect(result.orders[0].readyAtSource).toBeNull();

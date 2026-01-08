@@ -21,26 +21,26 @@ interface AutoPlannerUIState {
     enableWorkloadHeatmap: boolean;
     enableScheduleFiltering: boolean;
 
-    // Swagger API settings
-    swaggerApiKey: string;
-    swaggerDepartmentId: number | null;
-    lastSwaggerImport: {
+    // Dashboard API settings
+    apiKey: string;
+    apiDepartmentId: number | null;
+    lastApiImport: {
         dateShift: string;
         timeDeliveryBeg: string;
         timeDeliveryEnd: string;
     } | null;
 
     // Auto-refresh settings
-    swaggerAutoRefreshEnabled: boolean;
-    swaggerLastSyncTime: number | null;
-    swaggerNextSyncTime: number | null;
-    swaggerSyncStatus: 'idle' | 'syncing' | 'error';
-    swaggerSyncError: string | null;
-    swaggerTimeDeliveryBeg: string; // datetime-local format
-    swaggerTimeDeliveryEnd: string; // datetime-local format
-    swaggerDateShift: string; // YYYY-MM-DD
-    swaggerDateShiftFilterEnabled: boolean; // Toggle for dateShift
-    swaggerManualSyncTrigger: number | null;
+    apiAutoRefreshEnabled: boolean;
+    apiLastSyncTime: number | null;
+    apiNextSyncTime: number | null;
+    apiSyncStatus: 'idle' | 'syncing' | 'error';
+    apiSyncError: string | null;
+    apiTimeDeliveryBeg: string; // datetime-local format
+    apiTimeDeliveryEnd: string; // datetime-local format
+    apiDateShift: string; // YYYY-MM-DD
+    apiDateShiftFilterEnabled: boolean; // Toggle for dateShift
+    apiManualSyncTrigger: number | null;
 
     // UI Actions
     setTrafficHeatmapCollapsed: (collapsed: boolean) => void;
@@ -52,22 +52,22 @@ interface AutoPlannerUIState {
     toggleScheduleFiltering: () => void;
     setEnableScheduleFiltering: (enabled: boolean) => void;
 
-    // Swagger API actions
-    setSwaggerApiKey: (apiKey: string) => void;
-    setSwaggerDepartmentId: (departmentId: number | null) => void;
-    setLastSwaggerImport: (params: { dateShift: string; timeDeliveryBeg: string; timeDeliveryEnd: string }) => void;
+    // Dashboard API actions
+    setApiKey: (apiKey: string) => void;
+    setApiDepartmentId: (departmentId: number | null) => void;
+    setLastApiImport: (params: { dateShift: string; timeDeliveryBeg: string; timeDeliveryEnd: string }) => void;
 
     // Auto-refresh actions
-    setSwaggerAutoRefreshEnabled: (enabled: boolean) => void;
-    setSwaggerLastSyncTime: (time: number | null) => void;
-    setSwaggerNextSyncTime: (time: number | null) => void;
-    setSwaggerSyncStatus: (status: 'idle' | 'syncing' | 'error') => void;
-    setSwaggerSyncError: (error: string | null) => void;
-    setSwaggerTimeDeliveryBeg: (time: string) => void;
-    setSwaggerTimeDeliveryEnd: (time: string) => void;
-    setSwaggerDateShift: (date: string) => void;
-    setSwaggerDateShiftFilterEnabled: (enabled: boolean) => void;
-    triggerSwaggerManualSync: () => void;
+    setApiAutoRefreshEnabled: (enabled: boolean) => void;
+    setApiLastSyncTime: (time: number | null) => void;
+    setApiNextSyncTime: (time: number | null) => void;
+    setApiSyncStatus: (status: 'idle' | 'syncing' | 'error') => void;
+    setApiSyncError: (error: string | null) => void;
+    setApiTimeDeliveryBeg: (time: string) => void;
+    setApiTimeDeliveryEnd: (time: string) => void;
+    setApiDateShift: (date: string) => void;
+    setApiDateShiftFilterEnabled: (enabled: boolean) => void;
+    triggerApiManualSync: () => void;
 }
 
 export const useAutoPlannerStore = create<AutoPlannerUIState>()(
@@ -75,33 +75,33 @@ export const useAutoPlannerStore = create<AutoPlannerUIState>()(
         (set) => ({
             isFiltersExpanded: false,
 
-            // Swagger defaults
-            swaggerApiKey: '',
-            swaggerDepartmentId: null,
-            swaggerAutoRefreshEnabled: false,
-            swaggerLastSyncTime: null,
-            swaggerNextSyncTime: null,
-            swaggerSyncStatus: 'idle',
-            swaggerSyncError: null,
-            swaggerTimeDeliveryBeg: (() => {
+            // Dashboard defaults
+            apiKey: '',
+            apiDepartmentId: null,
+            apiAutoRefreshEnabled: false,
+            apiLastSyncTime: null,
+            apiNextSyncTime: null,
+            apiSyncStatus: 'idle',
+            apiSyncError: null,
+            apiTimeDeliveryBeg: (() => {
                 const now = new Date();
                 now.setHours(11, 0, 0, 0);
                 return formatDateTimeForInput(now);
             })(),
-            swaggerTimeDeliveryEnd: (() => {
+            apiTimeDeliveryEnd: (() => {
                 const now = new Date();
                 now.setHours(23, 0, 0, 0);
                 return formatDateTimeForInput(now);
             })(),
-            swaggerDateShift: (() => {
+            apiDateShift: (() => {
                 const now = new Date();
                 const year = now.getFullYear();
                 const month = String(now.getMonth() + 1).padStart(2, '0');
                 const day = String(now.getDate()).padStart(2, '0');
                 return `${year}-${month}-${day}`;
             })(),
-            swaggerDateShiftFilterEnabled: true,
-            swaggerManualSyncTrigger: null,
+            apiDateShiftFilterEnabled: true,
+            apiManualSyncTrigger: null,
 
             // Collapsed states defaults
             isTrafficHeatmapCollapsed: true,
@@ -109,7 +109,7 @@ export const useAutoPlannerStore = create<AutoPlannerUIState>()(
             enableCoverageAnalysis: false,
             enableWorkloadHeatmap: false,
             enableScheduleFiltering: false,
-            lastSwaggerImport: null,
+            lastApiImport: null,
 
             setTrafficHeatmapCollapsed: (collapsed) => set({ isTrafficHeatmapCollapsed: collapsed }),
             setWorkloadHeatmapCollapsed: (collapsed) => set({ isWorkloadHeatmapCollapsed: collapsed }),
@@ -120,23 +120,23 @@ export const useAutoPlannerStore = create<AutoPlannerUIState>()(
             toggleScheduleFiltering: () => set((state) => ({ enableScheduleFiltering: !state.enableScheduleFiltering })),
             setEnableScheduleFiltering: (enabled) => set({ enableScheduleFiltering: enabled }),
 
-            setSwaggerApiKey: (key) => set({ swaggerApiKey: key }),
-            setSwaggerDepartmentId: (id) => set({ swaggerDepartmentId: id }),
-            setLastSwaggerImport: (params) => set({ lastSwaggerImport: params }),
+            setApiKey: (key) => set({ apiKey: key }),
+            setApiDepartmentId: (id) => set({ apiDepartmentId: id }),
+            setLastApiImport: (params) => set({ lastApiImport: params }),
 
-            setSwaggerAutoRefreshEnabled: (enabled) => set({ swaggerAutoRefreshEnabled: enabled }),
-            setSwaggerLastSyncTime: (time) => set({ swaggerLastSyncTime: time }),
-            setSwaggerNextSyncTime: (time) => set({ swaggerNextSyncTime: time }),
-            setSwaggerSyncStatus: (status) => set({ swaggerSyncStatus: status }),
-            setSwaggerSyncError: (error) => set({ swaggerSyncError: error }),
-            setSwaggerTimeDeliveryBeg: (time) => set({ swaggerTimeDeliveryBeg: time }),
-            setSwaggerTimeDeliveryEnd: (time) => set({ swaggerTimeDeliveryEnd: time }),
-            setSwaggerDateShift: (date) => set({ swaggerDateShift: date }),
-            setSwaggerDateShiftFilterEnabled: (enabled) => set({ swaggerDateShiftFilterEnabled: enabled }),
-            triggerSwaggerManualSync: () => set({ swaggerManualSyncTrigger: Date.now() }),
+            setApiAutoRefreshEnabled: (enabled) => set({ apiAutoRefreshEnabled: enabled }),
+            setApiLastSyncTime: (time) => set({ apiLastSyncTime: time }),
+            setApiNextSyncTime: (time) => set({ apiNextSyncTime: time }),
+            setApiSyncStatus: (status) => set({ apiSyncStatus: status }),
+            setApiSyncError: (error) => set({ apiSyncError: error }),
+            setApiTimeDeliveryBeg: (time) => set({ apiTimeDeliveryBeg: time }),
+            setApiTimeDeliveryEnd: (time) => set({ apiTimeDeliveryEnd: time }),
+            setApiDateShift: (date) => set({ apiDateShift: date }),
+            setApiDateShiftFilterEnabled: (enabled) => set({ apiDateShiftFilterEnabled: enabled }),
+            triggerApiManualSync: () => set({ apiManualSyncTrigger: Date.now() }),
         }),
         {
-            name: 'autoplanner-ui-storage',
+            name: 'autoplanner-ui-storage-v2', // Updated storage name to force clean slate or handle migration
         }
     )
 );

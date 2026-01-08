@@ -1,6 +1,6 @@
 const express = require('express');
 const multer = require('multer');
-const swaggerRoutes = require('./src/routes/swaggerRoutes');
+const dashboardRoutes = require('./src/routes/dashboardRoutes');
 const ExcelService = require('./src/services/ExcelService_v3');
 const telegramRoutes = require('./src/routes/telegramRoutes');
 const fastopertorRoutes = require('./src/routes/fastopertorRoutes');
@@ -184,8 +184,8 @@ app.use('/api/telegram', telegramLimiter, telegramRoutes);
 // Fastopertor API routes
 app.use('/api/fastopertor', fastopertorRoutes);
 
-// Swagger API routes
-app.use('/api/swagger', swaggerRoutes);
+// Dashboard API routes (mirrors real API v1)
+app.use('/api/v1', dashboardRoutes);
 
 app.get('/debug/logs', (req, res) => {
   res.json({
