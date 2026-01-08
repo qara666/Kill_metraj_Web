@@ -1,7 +1,7 @@
 import { ProcessedExcelData } from '../../types';
 
 /**
- * Объединяет новые данные Excel/Swagger с существующими, избегая дубликатов.
+ * Объединяет новые данные Excel/Dashboard API с существующими, избегая дубликатов.
  * @param newData Новые данные для объединения
  * @param existingData Существующие данные
  * @returns Объединенные данные

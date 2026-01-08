@@ -11,7 +11,7 @@ export const queryClient = new QueryClient({
             cacheTime: 10 * 60 * 1000,
             // Повторная попытка при ошибке
             retry: 2,
-            // Не обновлять при фокусе окна (для Swagger API это избыточно)
+            // Не обновлять при фокусе окна (для Dashboard API это избыточно)
             refetchOnWindowFocus: false,
             // Не обновлять при восстановлении соединения
             refetchOnReconnect: false,

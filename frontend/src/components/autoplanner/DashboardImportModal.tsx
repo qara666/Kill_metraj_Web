@@ -1,12 +1,12 @@
 import React, { useState, useCallback } from 'react';
 import { clsx } from 'clsx';
 import { ClockIcon, BuildingOfficeIcon, KeyIcon } from '@heroicons/react/24/outline';
-import { fastopertorApi } from '../../services/fastopertorApi';
+import { dashboardApi } from '../../services/dashboardApi';
 import { useAutoPlannerStore } from '../../stores/useAutoPlannerStore';
 import { ProcessedExcelData } from '../../types';
-import { formatDateForSwagger, formatDateTimeForSwagger } from '../../utils/data/swaggerDataTransformer';
+import { formatDateForApi, formatDateTimeForApi } from '../../utils/data/apiDataTransformer';
 
-interface SwaggerImportModalProps {
+interface DashboardImportModalProps {
     isOpen: boolean;
     onClose: () => void;
     onDataLoaded: (data: ProcessedExcelData) => void;
@@ -28,16 +28,22 @@ const parseDateTimeFromInput = (dateTimeString: string): Date => {
     return new Date(dateTimeString);
 };
 
-export const SwaggerImportModal: React.FC<SwaggerImportModalProps> = ({
+export const DashboardImportModal: React.FC<DashboardImportModalProps> = ({
     isOpen,
     onClose,
     onDataLoaded,
     isDark,
 }) => {
-    const { swaggerApiKey, swaggerDepartmentId, setSwaggerApiKey, setSwaggerDepartmentId, setLastSwaggerImport } = useAutoPlannerStore();
+    const {
+        apiKey,
+        apiDepartmentId,
+        setApiKey,
+        setApiDepartmentId,
+        setLastApiImport
+    } = useAutoPlannerStore();
 
-    const [localApiKey, setLocalApiKey] = useState(swaggerApiKey);
-    const [localDepartmentId, setLocalDepartmentId] = useState<string>(swaggerDepartmentId?.toString() || '');
+    const [localApiKey, setLocalApiKey] = useState(apiKey);
+    const [localDepartmentId, setLocalDepartmentId] = useState<string>(apiDepartmentId?.toString() || '');
 
     // Инициализация с текущей датой и временем
     const [dateTimeDeliveryBeg, setDateTimeDeliveryBeg] = useState(() => {
@@ -70,31 +76,31 @@ export const SwaggerImportModal: React.FC<SwaggerImportModalProps> = ({
             const deliveryEnd = parseDateTimeFromInput(dateTimeDeliveryEnd);
 
             // Получение dateShift из начальной даты
-            const dateShift = formatDateForSwagger(deliveryStart);
+            const dateShift = formatDateForApi(deliveryStart);
 
             const params = {
                 apiKey: localApiKey.trim(),
                 dateShift,
-                timeDeliveryBeg: formatDateTimeForSwagger(deliveryStart),
-                timeDeliveryEnd: formatDateTimeForSwagger(deliveryEnd),
+                timeDeliveryBeg: formatDateTimeForApi(deliveryStart),
+                timeDeliveryEnd: formatDateTimeForApi(deliveryEnd),
                 departmentId: localDepartmentId ? parseInt(localDepartmentId, 10) : undefined,
-                top: 200,
+                top: 1000,
             };
 
-            console.log('📤 Отправка запроса к Swagger API:', params);
+            console.log('📤 Отправка запроса к Dashboard API:', params);
             const startTime = performance.now();
 
-            const result = await fastopertorApi.fetchOrdersFromSwagger(params);
+            const result = await dashboardApi.fetchOrdersFromDashboard(params);
 
             const endTime = performance.now();
             const duration = endTime - startTime;
-            console.log(`⏱️ Загрузка из Swagger API заняла ${duration.toFixed(2)}ms`);
+            console.log(`⏱️ Загрузка из Dashboard API заняла ${duration.toFixed(2)}ms`);
 
             if (result.success && result.data) {
                 // Сохранение настроек
-                setSwaggerApiKey(localApiKey.trim());
-                setSwaggerDepartmentId(params.departmentId || null);
-                setLastSwaggerImport({
+                setApiKey(localApiKey.trim());
+                setApiDepartmentId(params.departmentId || null);
+                setLastApiImport({
                     dateShift: params.dateShift,
                     timeDeliveryBeg: params.timeDeliveryBeg,
                     timeDeliveryEnd: params.timeDeliveryEnd,
@@ -107,12 +113,12 @@ export const SwaggerImportModal: React.FC<SwaggerImportModalProps> = ({
                 setError(result.error || 'Неизвестная ошибка при загрузке данных');
             }
         } catch (err) {
-            console.error('❌ Ошибка загрузки из Swagger API:', err);
+            console.error('❌ Ошибка загрузки из Dashboard API:', err);
             setError(err instanceof Error ? err.message : 'Произошла ошибка');
         } finally {
             setIsLoading(false);
         }
-    }, [localApiKey, dateTimeDeliveryBeg, dateTimeDeliveryEnd, localDepartmentId, setSwaggerApiKey, setSwaggerDepartmentId, setLastSwaggerImport, onDataLoaded, onClose]);
+    }, [localApiKey, dateTimeDeliveryBeg, dateTimeDeliveryEnd, localDepartmentId, setApiKey, setApiDepartmentId, setLastApiImport, onDataLoaded, onClose]);
 
     if (!isOpen) return null;
 
@@ -128,10 +134,10 @@ export const SwaggerImportModal: React.FC<SwaggerImportModalProps> = ({
                     isDark ? 'border-gray-700 bg-gray-800/50' : 'border-gray-200 bg-gray-50'
                 )}>
                     <h3 className={clsx('text-lg font-bold', isDark ? 'text-white' : 'text-gray-900')}>
-                        Загрузка из Swagger API
+                        Загрузка из Dashboard API
                     </h3>
                     <p className={clsx('text-sm mt-1', isDark ? 'text-gray-400' : 'text-gray-600')}>
-                        Настройте параметры для получения заказов
+                        Настройте параметры для получения заказов через API
                     </p>
                 </div>
 
@@ -175,7 +181,7 @@ export const SwaggerImportModal: React.FC<SwaggerImportModalProps> = ({
                             )}
                         />
                         <p className={clsx('text-xs mt-1', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                            Формат: {formatDateTimeForSwagger(parseDateTimeFromInput(dateTimeDeliveryBeg))}
+                            Формат: {formatDateTimeForApi(parseDateTimeFromInput(dateTimeDeliveryBeg))}
                         </p>
                     </div>
 
@@ -197,7 +203,7 @@ export const SwaggerImportModal: React.FC<SwaggerImportModalProps> = ({
                             )}
                         />
                         <p className={clsx('text-xs mt-1', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                            Формат: {formatDateTimeForSwagger(parseDateTimeFromInput(dateTimeDeliveryEnd))}
+                            Формат: {formatDateTimeForApi(parseDateTimeFromInput(dateTimeDeliveryEnd))}
                         </p>
                     </div>
 

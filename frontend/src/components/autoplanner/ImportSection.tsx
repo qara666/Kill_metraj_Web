@@ -58,7 +58,7 @@ export const ImportSection: React.FC<ImportSectionProps> = ({
         if (file) await handleFile(file);
     }, [handleFile]);
 
-    // Swagger Import moved to AutoPlanner.tsx -> ExtraSettingsPanel
+    // Dashboard API Import moved to AutoPlanner.tsx -> ExtraSettingsPanel
 
     return (
         <FileUploadPanel

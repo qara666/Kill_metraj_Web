@@ -8,7 +8,7 @@ const AutoPlanner = React.lazy(() => import('./pages/AutoPlanner').then(m => ({ 
 const Settings = React.lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })))
 const TelegramParsing = React.lazy(() => import('./pages/TelegramParsing').then(m => ({ default: m.TelegramParsing })))
 import { Layout } from './components/shared/Layout'
-import { GlobalSwaggerFetcher } from './components/shared/GlobalSwaggerFetcher'
+import { GlobalDashboardFetcher } from './components/shared/GlobalDashboardFetcher'
 import { ExcelDataProvider } from './contexts/ExcelDataContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { ErrorProvider } from './contexts/ErrorContext'
@@ -20,7 +20,7 @@ function App() {
       <ThemeProvider>
         <ErrorProvider>
           <ExcelDataProvider>
-            <GlobalSwaggerFetcher />
+            <GlobalDashboardFetcher />
             <Layout>
               <Suspense fallback={<div className="p-6 text-sm text-gray-500">Загрузка...</div>}>
                 <Routes>

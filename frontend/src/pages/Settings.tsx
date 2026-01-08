@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form'
 import { toast } from 'react-hot-toast'
 import { CogIcon, KeyIcon, MapIcon, ChevronDownIcon, ChevronUpIcon, TruckIcon, ShieldCheckIcon, ArrowPathIcon } from '@heroicons/react/24/outline'
 import { LoadingSpinner } from '../components/shared/LoadingSpinner'
-import { SwaggerSettingsPanel } from '../components/autoplanner/SwaggerSettingsPanel'
+import { DashboardSettingsPanel } from '../components/autoplanner/DashboardSettingsPanel'
 import { CitySectorsEditor, CitySectors } from '../components/zone/CitySectorsEditor'
 import { localStorageUtils } from '../utils/ui/localStorage'
 import { validateGoogleMapsApiKey } from '../utils/api/apiKeyValidator'
@@ -567,12 +567,12 @@ export const Settings: React.FC = () => {
           <CollapsibleSection
             isDark={isDark}
             icon={<ArrowPathIcon className="h-4 w-4" />}
-            title="Автообновление FO (Swagger)"
+            title="Автообновление API (Dashboard)"
           >
-            <SwaggerSettingsPanel
+            <DashboardSettingsPanel
               isDark={isDark}
               onManualSync={() => {
-                toast.success('Запущен процесс синхронизации Swagger...')
+                toast.success('Запущен процесс синхронизации Dashboard API...')
               }}
             />
           </CollapsibleSection>

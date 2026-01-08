@@ -69,7 +69,7 @@ export const FileUploadPanel: React.FC<FileUploadPanelProps> = React.memo(({
                     )}
                 </label>
 
-                {/* Swagger Import Button removed - moved to Control Panel */}
+                {/* Dashboard API Import Button removed - moved to Control Panel */}
 
                 <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
                     <div className="text-xs font-medium mb-2 opacity-70">Или загрузите по ссылке HTML</div>
