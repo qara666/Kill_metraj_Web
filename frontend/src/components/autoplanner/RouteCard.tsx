@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { clsx } from 'clsx';
 import {
+    InboxIcon,
     TruckIcon,
     ClockIcon,
     MapPinIcon,
@@ -33,6 +34,7 @@ export const RouteCard: React.FC<RouteCardProps> = React.memo(({
     enableNotifications,
     onExpand
 }) => {
+    const isUnassigned = route.name === 'Не назначен';
     const efficiencyMetrics = useMemo(() => calculateRouteEfficiencyMetrics([route]), [route]);
 
     const notifications = useMemo(() => {
@@ -47,16 +49,26 @@ export const RouteCard: React.FC<RouteCardProps> = React.memo(({
                 'rounded-3xl p-6 border-2 transition-all duration-300 transform hover:scale-[1.02] relative overflow-hidden',
                 isSelected
                     ? (isDark
-                        ? 'border-blue-500 bg-gradient-to-br from-blue-900/40 via-indigo-900/30 to-purple-900/40 ring-4 ring-blue-500/50 shadow-2xl'
-                        : 'border-blue-500 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 ring-4 ring-blue-500/30 shadow-2xl')
+                        ? (isUnassigned
+                            ? 'border-yellow-500 bg-gradient-to-br from-yellow-900/40 via-orange-900/30 to-red-900/40 ring-4 ring-yellow-500/50 shadow-2xl'
+                            : 'border-blue-500 bg-gradient-to-br from-blue-900/40 via-indigo-900/30 to-purple-900/40 ring-4 ring-blue-500/50 shadow-2xl')
+                        : (isUnassigned
+                            ? 'border-yellow-500 bg-gradient-to-br from-yellow-50 via-orange-50 to-red-50 ring-4 ring-yellow-500/30 shadow-2xl'
+                            : 'border-blue-500 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 ring-4 ring-blue-500/30 shadow-2xl'))
                     : (isDark
-                        ? 'border-gray-700/50 bg-gradient-to-br from-gray-800/60 to-gray-900/60 hover:border-gray-600 hover:shadow-xl'
-                        : 'border-gray-200 bg-gradient-to-br from-white to-gray-50/50 hover:border-blue-300 hover:shadow-xl')
+                        ? (isUnassigned
+                            ? 'border-yellow-700/50 bg-gradient-to-br from-yellow-900/40 to-orange-900/40 hover:border-yellow-600 hover:shadow-xl'
+                            : 'border-gray-700/50 bg-gradient-to-br from-gray-800/60 to-gray-900/60 hover:border-gray-600 hover:shadow-xl')
+                        : (isUnassigned
+                            ? 'border-yellow-200 bg-gradient-to-br from-yellow-50/50 to-orange-50/50 hover:border-yellow-400 hover:shadow-xl'
+                            : 'border-gray-200 bg-gradient-to-br from-white to-gray-50/50 hover:border-blue-300 hover:shadow-xl'))
             )}
         >
             <div className={clsx(
                 'absolute top-0 right-0 w-32 h-32 rounded-full blur-3xl opacity-20',
-                isSelected ? 'bg-gradient-to-br from-blue-500 to-purple-500' : 'bg-gradient-to-br from-gray-400 to-gray-600'
+                isSelected
+                    ? (isUnassigned ? 'bg-gradient-to-br from-yellow-500 to-orange-600' : 'bg-gradient-to-br from-blue-500 to-purple-500')
+                    : 'bg-gradient-to-br from-gray-400 to-gray-600'
             )}></div>
 
             <div className="relative z-10 flex items-start justify-between mb-4">
@@ -68,10 +80,16 @@ export const RouteCard: React.FC<RouteCardProps> = React.memo(({
                         <div className={clsx(
                             'p-3 rounded-2xl shadow-lg',
                             isSelected
-                                ? (isDark ? 'bg-gradient-to-br from-blue-600 to-indigo-600' : 'bg-gradient-to-br from-blue-500 to-indigo-500')
+                                ? (isDark
+                                    ? (isUnassigned ? 'bg-gradient-to-br from-yellow-600 to-orange-600' : 'bg-gradient-to-br from-blue-600 to-indigo-600')
+                                    : (isUnassigned ? 'bg-gradient-to-br from-yellow-500 to-orange-500' : 'bg-gradient-to-br from-blue-500 to-indigo-500'))
                                 : (isDark ? 'bg-gradient-to-br from-gray-700 to-gray-800' : 'bg-gradient-to-br from-gray-200 to-gray-300')
                         )}>
-                            <TruckIcon className={clsx('w-6 h-6', isSelected ? 'text-white' : (isDark ? 'text-gray-300' : 'text-gray-700'))} />
+                            {isUnassigned ? (
+                                <InboxIcon className={clsx('w-6 h-6', isSelected ? 'text-white' : (isDark ? 'text-gray-300' : 'text-gray-700'))} />
+                            ) : (
+                                <TruckIcon className={clsx('w-6 h-6', isSelected ? 'text-white' : (isDark ? 'text-gray-300' : 'text-gray-700'))} />
+                            )}
                         </div>
                         <div className="flex-1">
                             <div className={clsx('text-xl font-bold mb-1', isDark ? 'text-white' : 'text-gray-900')}>

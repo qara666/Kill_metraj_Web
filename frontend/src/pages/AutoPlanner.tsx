@@ -45,6 +45,7 @@ import { ExcelDataPreview } from '../components/excel/ExcelDataPreview'
 import { useExcelImporter } from '../hooks/useExcelImporter'
 import { useAutoPlannerStore } from '../stores/useAutoPlannerStore'
 import { useDashboardAutoRefresh } from '../hooks/useDashboardAutoRefresh'
+import { mergeExcelData } from '../utils/data/dataMerging'
 
 // Lazy loaded components
 import type { TourStep } from '../components/features/HelpTour'
@@ -105,7 +106,7 @@ export const AutoPlanner: React.FC = () => {
   // --- New Hooks ---
   const state = useAutoPlannerState()
   const {
-    excelData, setExcelData,
+    excelData, setExcelData, updateExcelData,
     selectedOrder, setSelectedOrder,
     plannedRoutes, setPlannedRoutes,
     errorMsg, setErrorMsg,
@@ -158,7 +159,14 @@ export const AutoPlanner: React.FC = () => {
 
   // Обработчик загрузки данных из Dashboard API (перемещен из ImportSection)
   const handleDashboardDataLoaded = useCallback(async (data: ProcessedExcelData) => {
-    setExcelData(data);
+    // Используем updateExcelData для безопасного объединения данных и сохранения маршрутов
+    updateExcelData((prevData: any) => {
+      const merged = mergeExcelData(data, prevData);
+      logger.info(`✅ Данные обновлены (AutoPlanner): ${merged.orders.length} заказов, ${merged.routes.length} сохраненных маршрутов`);
+      return merged;
+    });
+
+    // setExcelData(data); // Заменено на updateExcelData
     logger.info(`✅ Загружено ${data.orders.length} заказов из Dashboard API`);
 
     // Автоматическое добавление курьеров
@@ -169,7 +177,7 @@ export const AutoPlanner: React.FC = () => {
 
     setShowDataPreview(true); // Show preview modal
     // Геокодирование выполняется автоматически через useEffect при изменении excelData
-  }, [setExcelData, setCourierSchedules]);
+  }, [updateExcelData, setCourierSchedules]);
 
   // Get time window from store
   const { apiTimeDeliveryBeg, apiTimeDeliveryEnd } = useAutoPlannerStore();

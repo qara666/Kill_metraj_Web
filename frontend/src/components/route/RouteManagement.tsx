@@ -3,6 +3,7 @@ import { VariableSizeList as List, areEqual } from 'react-window'
 import {
   MapIcon,
   TruckIcon,
+  InboxIcon,
   PlusIcon,
   TrashIcon,
   ClockIcon,
@@ -27,6 +28,11 @@ import { Tooltip } from '../shared/Tooltip'
 import { googleApiCache } from '../../services/googleApiCache'
 import { lazy, Suspense } from 'react'
 import type { TourStep } from '../features/HelpTour'
+import { useDashboardAutoRefresh } from '../../hooks/useDashboardAutoRefresh'
+import { useAutoPlannerStore } from '../../stores/useAutoPlannerStore'
+import { mergeExcelData } from '../../utils/data/dataMerging'
+import { logger } from '../../utils/ui/logger'
+import { ProcessedExcelData } from '../../types'
 
 // Ленивая загрузка тяжелых компонентов
 const HelpModalRoutes = lazy(() => import('../modals/HelpModalRoutes').then(m => ({ default: m.HelpModalRoutes })))
@@ -207,6 +213,88 @@ const OrderItem = memo(({
   )
 }, areEqual)
 
+const CourierListItem = memo(({
+  courierName,
+  vehicleType,
+  isSelected,
+  onSelect,
+  availableOrdersCount,
+  isDark
+}: {
+  courierName: string
+  vehicleType: string
+  isSelected: boolean
+  onSelect: (name: string) => void
+  availableOrdersCount: number
+  isDark: boolean
+}) => {
+  const isUnassigned = courierName === 'Не назначен'
+
+  return (
+    <button
+      onClick={() => onSelect(courierName)}
+      className={clsx(
+        'w-full text-left p-3 rounded-lg border transition-all duration-200 ease-in-out transform hover:scale-[1.02]',
+        isSelected
+          ? isDark
+            ? (isUnassigned
+              ? 'bg-yellow-600/20 border-yellow-500 text-yellow-100 shadow-md ring-1 ring-yellow-500'
+              : 'bg-blue-600/20 border-blue-500 text-blue-100 shadow-md')
+            : (isUnassigned
+              ? 'bg-yellow-50 border-yellow-300 text-yellow-900 shadow-md ring-1 ring-yellow-400'
+              : 'bg-blue-50 border-blue-200 text-blue-900 shadow-md')
+          : isDark
+            ? (isUnassigned
+              ? 'bg-yellow-900/10 border-yellow-800 hover:bg-yellow-900/20 text-yellow-200'
+              : 'bg-gray-700 border-gray-600 hover:bg-gray-600 hover:shadow-sm text-gray-200')
+            : (isUnassigned
+              ? 'bg-yellow-50/50 border-yellow-200 hover:bg-yellow-100/50 text-yellow-900'
+              : 'bg-gray-50 border-gray-200 hover:bg-gray-100 hover:shadow-sm text-gray-900')
+      )}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          {isUnassigned ? (
+            <InboxIcon className={clsx(
+              'h-5 w-5',
+              isDark ? 'text-yellow-400' : 'text-yellow-600'
+            )} />
+          ) : (
+            <TruckIcon className={clsx(
+              'h-5 w-5',
+              vehicleType === 'car'
+                ? isDark ? 'text-green-400' : 'text-green-600'
+                : isDark ? 'text-orange-400' : 'text-orange-600'
+            )} />
+          )}
+          <span className={clsx("font-medium", isUnassigned && "text-lg")}>{courierName}</span>
+          {!isUnassigned && (
+            <span className={clsx(
+              'text-xs px-2 py-1 rounded-full',
+              vehicleType === 'car'
+                ? isDark
+                  ? 'bg-green-600/20 text-green-300'
+                  : 'bg-green-100 text-green-800'
+                : isDark
+                  ? 'bg-orange-600/20 text-orange-300'
+                  : 'bg-orange-100 text-orange-800'
+            )}>
+              {vehicleType === 'car' ? 'Авто' : 'Мото'}
+            </span>
+          )}
+        </div>
+        <span className={clsx(
+          'text-sm',
+          isDark ? 'text-gray-400' : 'text-gray-500',
+          isUnassigned && 'font-bold'
+        )}>
+          {availableOrdersCount} заказов
+        </span>
+      </div>
+    </button>
+  )
+}, areEqual)
+
 export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const { excelData, updateExcelData } = useExcelData()
   const { isDark } = useTheme()
@@ -241,6 +329,36 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     }
     return false
   })
+
+  // --- Auto Refresh Logic ---
+  // Get time window from store
+  const { apiTimeDeliveryBeg, apiTimeDeliveryEnd } = useAutoPlannerStore();
+
+  // Обработчик загрузки данных из Dashboard API с использованием mergeExcelData
+  const handleDashboardDataLoaded = useCallback(async (data: ProcessedExcelData) => {
+    // ВАЖНО: Используем updateExcelData с функцией обратного вызова или mergeExcelData напрямую с текущим состоянием,
+    // но так как updateExcelData уже имеет доступ к prev state, лучше использовать функциональное обновление.
+    // Однако, excelData доступен в замыкании.
+    // Используем безопасное объединение, чтобы не потерять маршруты.
+
+    // Но так как у нас есть доступ к updateExcelData, мы можем сделать так:
+    updateExcelData((prevData: any) => {
+      const merged = mergeExcelData(data, prevData);
+      logger.info(`✅ Данные обновлены (RouteManagement): ${merged.orders.length} заказов, ${merged.routes.length} сохраненных маршрутов`);
+      return merged;
+    });
+
+  }, [updateExcelData]);
+
+  // Auto-refresh hook - automatically syncs data every 5 minutes
+  // Включаем на этой странице тоже, чтобы данные не устаревали
+  useDashboardAutoRefresh({
+    dateTimeDeliveryBeg: apiTimeDeliveryBeg,
+    dateTimeDeliveryEnd: apiTimeDeliveryEnd,
+    onDataLoaded: handleDashboardDataLoaded,
+    enabled: true,
+  });
+
 
   // Показываем помощь новым пользователям через 2 секунды после загрузки
   useEffect(() => {
@@ -364,7 +482,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       const vehicleType = getCourierVehicleType(courierName)
       return vehicleType === courierFilter
     })
-    .sort((a, b) => a.localeCompare(b, 'ru'))
+    .sort((a, b) => {
+      // Сортировка: "Не назначен" всегда сверху
+      if (a === 'Не назначен') return -1;
+      if (b === 'Не назначен') return 1;
+      return a.localeCompare(b, 'ru');
+    })
 
   // Пагинация курьеров (6 на страницу)
   const COURIERS_PER_PAGE = 6
@@ -1398,6 +1521,47 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     return translations[locationType] || locationType
   }
 
+
+
+
+  const handleDeleteRoute = () => {
+    if (routeToDelete) {
+      updateExcelData(prev => ({
+        ...prev,
+        routes: (prev.routes || []).filter(r => r.id !== routeToDelete.id)
+      }))
+      setRouteToDelete(null)
+      setShowDeleteModal(false)
+    }
+  }
+
+  // Обновление адреса заказа
+  const handleAddressUpdate = (orderId: string, newAddress: string) => {
+    // Находим заказ и обновляем адрес
+    updateExcelData(prev => {
+      const newOrders = prev.orders.map(o => {
+        if (o.id === orderId) {
+          return { ...o, address: newAddress }
+        }
+        return o
+      })
+      return { ...prev, orders: newOrders }
+    })
+    setEditingOrder(null)
+    setShowAddressEditModal(false)
+  }
+
+  // Обработчик разрешения неоднозначности (выбор варианта)
+  const handleDisambiguationResolve = (choice: any | null) => {
+    if (disambResolver.current) {
+      disambResolver.current(choice)
+      disambResolver.current = undefined
+    }
+    setDisambModal(null)
+  }
+
+
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -1556,50 +1720,15 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 {paginatedCouriers.map(courierName => {
                   const vehicleType = getCourierVehicleType(courierName)
                   return (
-                    <button
+                    <CourierListItem
                       key={courierName}
-                      onClick={() => handleCourierSelect(courierName)}
-                      className={clsx(
-                        'w-full text-left p-3 rounded-lg border transition-all duration-200 ease-in-out transform hover:scale-[1.02]',
-                        selectedCourier === courierName
-                          ? isDark
-                            ? 'bg-blue-600/20 border-blue-500 text-blue-100 shadow-md'
-                            : 'bg-blue-50 border-blue-200 text-blue-900 shadow-md'
-                          : isDark
-                            ? 'bg-gray-700 border-gray-600 hover:bg-gray-600 hover:shadow-sm text-gray-200'
-                            : 'bg-gray-50 border-gray-200 hover:bg-gray-100 hover:shadow-sm text-gray-900'
-                      )}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <TruckIcon className={clsx(
-                            'h-5 w-5',
-                            vehicleType === 'car'
-                              ? isDark ? 'text-green-400' : 'text-green-600'
-                              : isDark ? 'text-orange-400' : 'text-orange-600'
-                          )} />
-                          <span className="font-medium">{courierName}</span>
-                          <span className={clsx(
-                            'text-xs px-2 py-1 rounded-full',
-                            vehicleType === 'car'
-                              ? isDark
-                                ? 'bg-green-600/20 text-green-300'
-                                : 'bg-green-100 text-green-800'
-                              : isDark
-                                ? 'bg-orange-600/20 text-orange-300'
-                                : 'bg-orange-100 text-orange-800'
-                          )}>
-                            {vehicleType === 'car' ? 'Авто' : 'Мото'}
-                          </span>
-                        </div>
-                        <span className={clsx(
-                          'text-sm',
-                          isDark ? 'text-gray-400' : 'text-gray-500'
-                        )}>
-                          {getAvailableOrdersCount(courierName)} заказов
-                        </span>
-                      </div>
-                    </button>
+                      courierName={courierName}
+                      vehicleType={vehicleType}
+                      isSelected={selectedCourier === courierName}
+                      onSelect={handleCourierSelect}
+                      availableOrdersCount={getAvailableOrdersCount(courierName)}
+                      isDark={isDark}
+                    />
                   )
                 })}
               </div>
@@ -2437,6 +2566,113 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             ] as TourStep[]}
           />
         </Suspense>
+      )}
+
+      {/* Модальное окно редактирования адреса */}
+      {showAddressEditModal && editingOrder && (
+        <AddressEditModal
+          isOpen={showAddressEditModal}
+          onClose={() => {
+            setShowAddressEditModal(false)
+            setEditingOrder(null)
+          }}
+          onSave={(newAddress) => handleAddressUpdate(editingOrder.id, newAddress)}
+          currentAddress={editingOrder.address}
+          orderNumber={editingOrder.orderNumber}
+          customerName={editingOrder.customerName}
+          isDark={isDark}
+        />
+      )}
+
+      {/* Модальное окно удаления маршрута */}
+      {showDeleteModal && routeToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className={clsx(
+            'w-full max-w-md rounded-2xl p-6 shadow-2xl transform transition-all',
+            isDark ? 'bg-gray-800 border border-gray-700' : 'bg-white'
+          )}>
+            <div className="text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 mb-4">
+                <TrashIcon className="h-6 w-6 text-red-600" aria-hidden="true" />
+              </div>
+              <h3 className={clsx("text-lg font-medium leading-6 mb-2", isDark ? "text-white" : "text-gray-900")}>
+                Удалить маршрут?
+              </h3>
+              <p className={clsx("text-sm mb-6", isDark ? "text-gray-400" : "text-gray-500")}>
+                Вы уверенны, что хотите удалить этот маршрут? Это действие нельзя отменить.
+              </p>
+              <div className="flex justify-center space-x-3">
+                <button
+                  type="button"
+                  className={clsx(
+                    "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+                    isDark
+                      ? "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  )}
+                  onClick={() => setShowDeleteModal(false)}
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors shadow-lg shadow-red-600/30"
+                  onClick={handleDeleteRoute}
+                >
+                  Удалить
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модальное окно разрешения неоднозначности геокодирования */}
+      {disambModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className={clsx(
+            'w-full max-w-lg rounded-2xl p-6 shadow-2xl transform transition-all max-h-[90vh] overflow-y-auto',
+            isDark ? 'bg-gray-800 border border-gray-700' : 'bg-white'
+          )}>
+            <h3 className={clsx("text-lg font-bold mb-1", isDark ? "text-white" : "text-gray-900")}>
+              Уточните адрес
+            </h3>
+            <p className={clsx("text-sm mb-4", isDark ? "text-gray-400" : "text-gray-500")}>
+              {disambModal.title}
+            </p>
+
+            <div className="space-y-2 mb-6">
+              {disambModal.options.map((option, idx) => (
+                <button
+                  key={idx}
+                  className={clsx(
+                    "w-full text-left p-3 rounded-xl border transition-all hover:scale-[1.01]",
+                    isDark
+                      ? "bg-gray-700 border-gray-600 hover:bg-gray-600 text-gray-200"
+                      : "bg-gray-50 border-gray-200 hover:bg-blue-50 hover:border-blue-300 text-gray-800"
+                  )}
+                  onClick={() => handleDisambiguationResolve(option.res)}
+                >
+                  <div className="font-medium">{option.label}</div>
+                  {option.distanceMeters !== undefined && (
+                    <div className={clsx("text-xs mt-1", isDark ? "text-gray-400" : "text-gray-500")}>
+                      Расстояние от точки: {Math.round(option.distanceMeters)} м
+                    </div>
+                  )}
+                </button>
+              ))}
+              <button
+                className={clsx(
+                  "w-full text-center p-2 rounded-lg text-sm transition-colors mt-2",
+                  isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-black"
+                )}
+                onClick={() => handleDisambiguationResolve(null)}
+              >
+                Пропустить / Не использовать
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

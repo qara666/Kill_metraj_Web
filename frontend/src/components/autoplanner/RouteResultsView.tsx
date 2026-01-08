@@ -29,14 +29,23 @@ export const RouteResultsView: React.FC<RouteResultsViewProps> = React.memo(({
     const routeEfficiencyMetrics = useMemo(() => calculateRouteEfficiencyMetrics(plannedRoutes), [plannedRoutes]);
     const efficiencySuggestions = useMemo(() => suggestRouteImprovements(routeEfficiencyMetrics), [routeEfficiencyMetrics]);
 
+    // Sort routes: "Не назначен" first, then others
+    const sortedRoutes = useMemo(() => {
+        return [...plannedRoutes].sort((a, b) => {
+            if (a.name === 'Не назначен') return -1;
+            if (b.name === 'Не назначен') return 1;
+            return 0; // Keep original order for others
+        });
+    }, [plannedRoutes]);
+
     // Group routes into pairs for 2-column layout
     const rows = useMemo(() => {
         const chunks = [];
-        for (let i = 0; i < plannedRoutes.length; i += 2) {
-            chunks.push(plannedRoutes.slice(i, i + 2));
+        for (let i = 0; i < sortedRoutes.length; i += 2) {
+            chunks.push(sortedRoutes.slice(i, i + 2));
         }
         return chunks;
-    }, [plannedRoutes]);
+    }, [sortedRoutes]);
 
     // Recalculate heights when selectedRoute changes
     useEffect(() => {
