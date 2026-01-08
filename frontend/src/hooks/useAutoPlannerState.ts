@@ -15,7 +15,7 @@ const FILE_NAME_STORAGE_KEY = 'km_file_name'
 import { useExcelData } from '../contexts/ExcelDataContext'
 
 export const useAutoPlannerState = () => {
-    const { excelData, setExcelData } = useExcelData()
+    const { excelData, setExcelData, updateExcelData } = useExcelData()
     const [fileName, setFileName] = useState('')
     const [selectedOrder, setSelectedOrder] = useState<any>(null)
     const [isProcessing, setIsProcessing] = useState(false)
@@ -115,7 +115,7 @@ export const useAutoPlannerState = () => {
     }, [fileName])
 
     return {
-        excelData, setExcelData,
+        excelData, setExcelData, updateExcelData,
         fileName, setFileName,
         selectedOrder, setSelectedOrder,
         isProcessing, setIsProcessing,
