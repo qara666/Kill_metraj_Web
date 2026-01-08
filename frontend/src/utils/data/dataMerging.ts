@@ -13,47 +13,80 @@ export const mergeExcelData = (newData: any, existingData: any): ProcessedExcelD
 
     const existingOrders = Array.isArray(existingData.orders) ? existingData.orders : [];
     const newOrders = Array.isArray(newData.orders) ? newData.orders : [];
-    const mergedOrders = [...existingOrders];
+
+    // Создаем Map новых заказов для быстрого поиска
+    const newOrdersMap = new Map();
+    newOrders.forEach((order: any) => {
+        // Генерация ID если нет
+        if (!order.id) {
+            order.id = `order_${order.orderNumber || Math.random()}`;
+        }
+        if (order.orderNumber) {
+            newOrdersMap.set(order.orderNumber, order);
+        }
+    });
+
+    // 1. Обновляем существующие заказы (Merge Strategy)
+    const mergedOrders = existingOrders.map((existingOrder: any) => {
+        const newOrder = newOrdersMap.get(existingOrder.orderNumber);
+
+        if (newOrder) {
+            // Если заказ есть в новых данных, обновляем его поля (статус, курьер и т.д.)
+            return {
+                ...existingOrder, // Берем существующие поля (включая UI state)
+                ...newOrder,      // Перезаписываем новыми данными с сервера
+
+                // ЯВНО ВОССТАНАВЛИВАЕМ Важные локальные состояния:
+                id: existingOrder.id,                  // ID не должен меняться
+                isSelected: existingOrder.isSelected,  // Сохраняем выделение
+                isInRoute: existingOrder.isInRoute,    // Сохраняем принадлежность маршруту
+
+                // Геокоординаты сохраняем, если адрес не изменился (чтобы не мигало/не пересчитывало)
+                coords: (existingOrder.address === newOrder.address && existingOrder.coords)
+                    ? existingOrder.coords
+                    : newOrder.coords,
+            };
+        }
+        return existingOrder; // Если заказа нет в новом ответе, сохраняем старый
+    });
 
     let addedOrders = 0;
-    let duplicateOrders = 0;
 
+    // 2. Добавляем новые заказы
     newOrders.forEach((newOrder: any) => {
-        // Генерация ID если нет
-        if (!newOrder.id) {
-            newOrder.id = `order_${newOrder.orderNumber || Math.random()}`;
-        }
-
-        let isDuplicate = false;
-        if (newOrder.orderNumber) {
-            // Поиск дубликатов по номеру заказа
-            isDuplicate = existingOrders.some((existingOrder: any) =>
-                existingOrder.orderNumber === newOrder.orderNumber
-            );
-        } else {
-            // Эвристический поиск дубликатов
-            isDuplicate = existingOrders.some((existingOrder: any) =>
-                existingOrder.address === newOrder.address &&
-                existingOrder.courierName === newOrder.courierName &&
-                existingOrder.plannedTime === newOrder.plannedTime
-            );
-        }
+        const isDuplicate = existingOrders.some((existingOrder: any) =>
+            existingOrder.orderNumber === newOrder.orderNumber
+        );
 
         if (!isDuplicate) {
             mergedOrders.push(newOrder);
             addedOrders++;
-        } else {
-            duplicateOrders++;
         }
     });
 
     const existingCouriers = Array.isArray(existingData.couriers) ? existingData.couriers : [];
     const newCouriers = Array.isArray(newData.couriers) ? newData.couriers : [];
-    const mergedCouriers = [...existingCouriers];
+
+    const newCouriersMap = new Map();
+    newCouriers.forEach((c: any) => newCouriersMap.set(c.name, c));
+
+    // 1. Обновляем и сохраняем существующие
+    const mergedCouriers = existingCouriers.map((existingCourier: any) => {
+        const newCourier = newCouriersMap.get(existingCourier.name);
+        if (newCourier) {
+            // Merge updates
+            return {
+                ...existingCourier,
+                ...newCourier,
+                // Preserve sensitive local state if any exists (currently couriers are simple objects)
+            };
+        }
+        return existingCourier;
+    });
 
     let addedCouriers = 0;
-    let duplicateCouriers = 0;
 
+    // 2. Добавляем новые
     newCouriers.forEach((newCourier: any) => {
         const isDuplicate = existingCouriers.some((existingCourier: any) =>
             existingCourier.name === newCourier.name
@@ -62,8 +95,6 @@ export const mergeExcelData = (newData: any, existingData: any): ProcessedExcelD
         if (!isDuplicate) {
             mergedCouriers.push(newCourier);
             addedCouriers++;
-        } else {
-            duplicateCouriers++;
         }
     });
 
