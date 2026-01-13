@@ -32,7 +32,7 @@ export const mergeExcelData = (newData: any, existingData: any): ProcessedExcelD
 
         if (newOrder) {
             // Если заказ есть в новых данных, обновляем его поля (статус, курьер и т.д.)
-            return {
+            const mergedOrder = {
                 ...existingOrder, // Берем существующие поля (включая UI state)
                 ...newOrder,      // Перезаписываем новыми данными с сервера
 
@@ -40,12 +40,20 @@ export const mergeExcelData = (newData: any, existingData: any): ProcessedExcelD
                 id: existingOrder.id,                  // ID не должен меняться
                 isSelected: existingOrder.isSelected,  // Сохраняем выделение
                 isInRoute: existingOrder.isInRoute,    // Сохраняем принадлежность маршруту
+                handoverAt: existingOrder.handoverAt,  // Сохраняем уже записанное время
 
                 // Геокоординаты сохраняем, если адрес не изменился (чтобы не мигало/не пересчитывало)
                 coords: (existingOrder.address === newOrder.address && existingOrder.coords)
                     ? existingOrder.coords
                     : newOrder.coords,
             };
+
+            // Phase 4.4: Отслеживаем переход в статус "Доставляется"
+            if (newOrder.status === 'Доставляется' && (!mergedOrder.handoverAt || (existingOrder.status !== 'Доставляется'))) {
+                mergedOrder.handoverAt = mergedOrder.handoverAt || Date.now();
+            }
+
+            return mergedOrder;
         }
         return existingOrder; // Если заказа нет в новом ответе, сохраняем старый
     });
@@ -59,6 +67,10 @@ export const mergeExcelData = (newData: any, existingData: any): ProcessedExcelD
         );
 
         if (!isDuplicate) {
+            // Phase 4.4: Если новый заказ уже в статусе Доставляется
+            if (newOrder.status === 'Доставляется' && !newOrder.handoverAt) {
+                newOrder.handoverAt = Date.now();
+            }
             mergedOrders.push(newOrder);
             addedOrders++;
         }

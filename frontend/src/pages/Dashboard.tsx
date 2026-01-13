@@ -323,7 +323,10 @@ export const Dashboard: React.FC = () => {
         <div className="lg:col-span-2">
           <div className="card p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">Логи</h2>
+              <h2 className={clsx(
+                'text-lg font-semibold',
+                isDark ? 'text-gray-100' : 'text-gray-900'
+              )}>Логи</h2>
               <div className="space-x-2">
                 {excelLogs.length > 0 && (
                   <button

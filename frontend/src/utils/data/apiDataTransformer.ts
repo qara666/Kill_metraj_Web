@@ -7,21 +7,20 @@ import { DashboardOrderResponse, DashboardApiResponse } from '../../types/Dashbo
 export const transformDashboardData = (
     apiData: DashboardApiResponse,
     baseDate: string,
-    fallbackDate?: string // format dd.mm.yyyy or YYYY-MM-DD
+    fallbackDate?: string // format dd.mm.yyyy or YYYY-MM-DD HH:mm:ss
 ): ProcessedExcelData => {
-    // If baseDate is missing, try to extract date from fallbackDate (which is likely dateTimeDeliveryBeg)
-    let effectiveDate = baseDate;
+    // Truncate function to get only dd.mm.yyyy
+    const getOnlyDate = (s: string) => s.split(' ')[0].split('T')[0];
+
+    let effectiveDate = baseDate ? getOnlyDate(baseDate) : '';
+
     if (!effectiveDate && fallbackDate) {
-        if (fallbackDate.includes('T')) {
-            // It's a datetime-local format: YYYY-MM-DDTHH:mm
-            const datePart = fallbackDate.split('T')[0];
-            const [y, m, d] = datePart.split('-');
+        const dPart = getOnlyDate(fallbackDate);
+        if (dPart.includes('-')) {
+            const [y, m, d] = dPart.split('-');
             effectiveDate = `${d}.${m}.${y}`;
-        } else if (fallbackDate.includes('-')) {
-            const [y, m, d] = fallbackDate.split('-');
-            effectiveDate = `${d}.${m}.${y}`;
-        } else if (fallbackDate.includes('.')) {
-            effectiveDate = fallbackDate;
+        } else {
+            effectiveDate = dPart;
         }
     }
 
@@ -84,14 +83,31 @@ export const transformDashboardData = (
  * Преобразование одного заказа из формата API в внутренний формат
  */
 const transformDashboardOrder = (swaggerOrder: DashboardOrderResponse, baseDate: string, index: number): Order => {
+    // Вспомогательная функция для проверки на "пустое" или "нулевое" время
+    const isTimeEmpty = (t?: string) => !t || t === '00:00' || t === '00:00:00';
+
     // Парсинг времени готовности на кухне
     const readyAtSource = parseTimeToTimestamp(baseDate, swaggerOrder.kitchenTime);
 
-    // Парсинг дедлайна доставки
-    const deadlineAt = parseTimeToTimestamp(baseDate, swaggerOrder.deliverBy);
+    // Парсинг дедлайна доставки. 
+    // Приоритет: deliverBy (SLA), затем plannedTime. Игнорируем 00:00.
+    let deadlineAt = null;
+    let deadlineStr = '';
 
-    // Парсинг планового времени - used to be here, now just keeping HH:MM string for compatibility
-    // const plannedTime = parseTimeToTimestamp(baseDate, swaggerOrder.plannedTime);
+    if (!isTimeEmpty(swaggerOrder.deliverBy)) {
+        deadlineAt = parseTimeToTimestamp(baseDate, swaggerOrder.deliverBy);
+        deadlineStr = swaggerOrder.deliverBy;
+    } else if (!isTimeEmpty(swaggerOrder.plannedTime)) {
+        deadlineAt = parseTimeToTimestamp(baseDate, swaggerOrder.plannedTime);
+        deadlineStr = swaggerOrder.plannedTime;
+    }
+
+    // Если все еще пусто — пробуем получить хоть что-то (даже 00:00) или вычисляем дефолт
+    if (!deadlineAt && readyAtSource) {
+        deadlineAt = readyAtSource + 60 * 60 * 1000; // Дефолт: +1 час от кухни
+        const d = new Date(deadlineAt);
+        deadlineStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    }
 
     return {
         idx: index,
@@ -99,7 +115,7 @@ const transformDashboardOrder = (swaggerOrder: DashboardOrderResponse, baseDate:
         orderNumber: swaggerOrder.orderNumber,
         readyAtSource,
         deadlineAt,
-        plannedTime: swaggerOrder.plannedTime, // Keep as string (HH:MM) for compatibility with UI sorting/display
+        plannedTime: deadlineStr || 'Без времени',
         deliveryZone: swaggerOrder.deliveryZone,
         courier: swaggerOrder.courier === 'ID:0' ? 'Не назначен' : swaggerOrder.courier,
         amount: swaggerOrder.amount,
@@ -111,7 +127,7 @@ const transformDashboardOrder = (swaggerOrder: DashboardOrderResponse, baseDate:
         deliveryTime: swaggerOrder.deliveryTime,
         changeAmount: swaggerOrder.changeAmount,
         totalTime: swaggerOrder.totalTime,
-        coords: null, // Будет заполнено геокодированием позже
+        coords: null,
         isSelected: false,
         isInRoute: false,
         raw: swaggerOrder,
@@ -128,11 +144,16 @@ const parseTimeToTimestamp = (baseDate: string, timeString: string): number | nu
     if (!timeString || !baseDate) return null;
 
     try {
-        // Парсинг базовой даты (dd.mm.yyyy)
-        const [day, month, year] = baseDate.split('.').map(Number);
+        // Убеждаемся, что берем только дату (dd.mm.yyyy), даже если пришла строка с временем
+        const datePart = baseDate.split(' ')[0].split('T')[0];
+        const [day, month, year] = datePart.split('.').map(Number);
 
         // Парсинг времени (HH:MM)
         const [hours, minutes] = timeString.split(':').map(Number);
+
+        if (isNaN(day) || isNaN(month) || isNaN(year) || isNaN(hours) || isNaN(minutes)) {
+            return null;
+        }
 
         // Создание Date объекта
         const date = new Date(year, month - 1, day, hours, minutes, 0, 0);

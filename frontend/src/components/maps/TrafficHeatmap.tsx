@@ -84,16 +84,16 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({ sectorPath, sect
     }
   }, [updateSegmentLayer, updateTrafficLayers, filterSeverity, displayMode])
 
-  const pairsToCheck = useMemo(() => {
+  const waypoints = useMemo(() => {
     if (!sectorPath) return []
     return generateTrafficProbes(sectorPath, {
-      gridDensity: featureFlags.denseSampling ? 22 : 14,
-      segmentLengthKm: 0.6
+      gridDensity: featureFlags.denseSampling ? 14 : 10,
+      maxPoints: 120
     })
   }, [sectorPath, featureFlags.denseSampling])
 
   const { loading, error, loadingProgress, fetchTraffic } = useTrafficData(
-    pairsToCheck,
+    waypoints,
     resolvedToken,
     featureFlags.denseSampling,
     segmentsStorageKey,

@@ -13,6 +13,8 @@ import {
   PhoneIcon,
   UserIcon
 } from '@heroicons/react/24/outline'
+import { useTheme } from '../../contexts/ThemeContext'
+import { clsx } from 'clsx'
 
 interface ExcelResultsDisplayProps {
   data: any
@@ -37,12 +39,14 @@ const safeRender = (val: any): React.ReactNode => {
 };
 
 export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, summary }) => {
+  const { isDark } = useTheme()
+  const [expandedCourierZones, setExpandedCourierZones] = useState<Set<string>>(new Set())
   const [expandedSections, setExpandedSections] = useState({
-    orders: true,
     couriers: true,
-    paymentMethods: true,
-    errors: true,
-    warnings: true
+    orders: false,
+    paymentMethods: false,
+    errors: false,
+    warnings: false
   })
   const [courierSortBy, setCourierSortBy] = useState<'name' | 'orders'>('orders')
   const [courierSortOrder, setCourierSortOrder] = useState<'asc' | 'desc'>('desc')
@@ -87,19 +91,72 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
     return null
   }
 
-  const { orders, couriers, errors, warnings } = data
+  const { orders, couriers, routes, errors, warnings } = data
+
+  // Enrich couriers with stats
+  const enrichedCouriers = (couriers || []).map((courier: any) => {
+    const courierName = typeof courier === 'string' ? courier : courier.name;
+    const courierOrders = (orders || []).filter((o: any) => o && o.courier === courierName);
+    const courierRoutes = (routes || []).filter((r: any) => r && r.courier === courierName);
+    const totalAmount = courierOrders.reduce((sum: number, o: any) => sum + (o.amount || 0), 0);
+    const count = courierOrders.length;
+    const routesCount = courierRoutes.length;
+
+    // Calculate zone breakdown using deliveryZone with proper fallback
+    const zoneBreakdown = courierOrders.reduce((acc: Record<string, number>, order: any) => {
+      const zone = order.deliveryZone || order.zone || 'Неизвестно';
+      acc[zone] = (acc[zone] || 0) + 1;
+      return acc;
+    }, {});
+
+    let zoneLabel = 'Малая загрузка';
+    if (count >= 2 && count <= 4) {
+      zoneLabel = 'Зона 2.5 - 4 заказа';
+    } else if (count > 4 && count < 15) {
+      zoneLabel = `Плановая загрузка (${count})`;
+    } else if (count >= 15) {
+      zoneLabel = `Высокая нагрузка (${count})`;
+    }
+
+    return {
+      ...(typeof courier === 'string' ? { name: courier } : courier),
+      ordersCount: count,
+      routesCount,
+      totalAmount,
+      zoneLabel,
+      zoneBreakdown,
+      avgAmount: count > 0 ? totalAmount / count : 0,
+      efficiency: routesCount > 0 ? (count / routesCount).toFixed(1) : '—'
+    };
+  });
+
+  const toggleCourierZones = (courierName: string) => {
+    const next = new Set(expandedCourierZones);
+    if (next.has(courierName)) {
+      next.delete(courierName);
+    } else {
+      next.add(courierName);
+    }
+    setExpandedCourierZones(next);
+  };
 
   return (
     <div className="space-y-6">
 
       {/* Заказы */}
       {orders && orders.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className={clsx(
+          'rounded-lg shadow-sm border p-6',
+          isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+        )}>
           <div
             className="flex items-center justify-between cursor-pointer"
             onClick={() => toggleSection('orders')}
           >
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+            <h3 className={clsx(
+              'text-lg font-semibold flex items-center',
+              isDark ? 'text-gray-100' : 'text-gray-900'
+            )}>
               <DocumentTextIcon className="h-5 w-5 mr-2 text-blue-600" />
               Заказы ({orders.length})
             </h3>
@@ -113,22 +170,34 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
           {expandedSections.orders && (
             <div className="mt-4 space-y-3 max-h-96 overflow-y-auto">
               {orders.map((order: any, index: number) => (
-                <div key={order.orderNumber || index} className="bg-gray-50 p-4 rounded-lg border">
+                <div key={order.orderNumber || index} className={clsx(
+                  'p-4 rounded-lg border',
+                  isDark ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-50 border-gray-200'
+                )}>
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center space-x-3 mb-2">
-                        <span className="font-medium text-gray-900">
+                        <span className={clsx(
+                          'font-medium',
+                          isDark ? 'text-gray-100' : 'text-gray-900'
+                        )}>
                           #{order.orderNumber || `ORDER_${index + 1}`}
                         </span>
                         {order.amount && (
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          <span className={clsx(
+                            'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium',
+                            isDark ? 'bg-green-900/30 text-green-300' : 'bg-green-100 text-green-800'
+                          )}>
                             <CurrencyDollarIcon className="h-3 w-3 mr-1" />
                             {safeRender(order.amount)} грн
                           </span>
                         )}
                       </div>
 
-                      <div className="space-y-1 text-sm text-gray-600">
+                      <div className={clsx(
+                        'space-y-1 text-sm',
+                        isDark ? 'text-gray-400' : 'text-gray-600'
+                      )}>
                         <div className="flex items-center">
                           <MapPinIcon className="h-4 w-4 mr-2 text-gray-400" />
                           <span>{safeRender(order.address)}</span>
@@ -181,13 +250,19 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
 
       {/* Курьеры */}
       {couriers && couriers.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className={clsx(
+          'rounded-lg shadow-sm border p-6',
+          isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+        )}>
           <div className="flex items-center justify-between">
             <div
               className="flex items-center cursor-pointer"
               onClick={() => toggleSection('couriers')}
             >
-              <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+              <h3 className={clsx(
+                'text-lg font-semibold flex items-center',
+                isDark ? 'text-gray-100' : 'text-gray-900'
+              )}>
                 <UserGroupIcon className="h-5 w-5 mr-2 text-green-600" />
                 Курьеры ({couriers.length})
               </h3>
@@ -224,29 +299,97 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
 
           {expandedSections.couriers && (
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {sortCouriers(couriers).map((courier: any, index: number) => (
-                <div key={courier.name || index} className="bg-gray-50 p-4 rounded-lg border">
+              {sortCouriers(enrichedCouriers).map((courier: any, index: number) => (
+                <div key={courier.name || index} className={clsx(
+                  'p-4 rounded-lg border',
+                  isDark ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-50 border-gray-200'
+                )}>
                   <div className="flex items-center space-x-3 mb-2">
                     <TruckIcon className="h-5 w-5 text-green-600" />
-                    <span className="font-medium text-gray-900">{courier.name}</span>
+                    <span className={clsx(
+                      'font-medium',
+                      isDark ? 'text-gray-100' : 'text-gray-900'
+                    )}>{courier.name}</span>
                   </div>
 
-                  <div className="space-y-1 text-sm text-gray-600">
+                  <div className={clsx(
+                    'space-y-1 text-sm',
+                    isDark ? 'text-gray-400' : 'text-gray-600'
+                  )}>
                     <div className="flex justify-between">
                       <span>Заказов:</span>
-                      <span className="font-medium">{safeRender(courier.orders)}</span>
+                      <span className={clsx(
+                        'font-medium',
+                        isDark ? 'text-gray-200' : 'text-gray-900'
+                      )}>{courier.ordersCount}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Статус:</span>
-                      <span className="font-medium text-green-600">Активен</span>
+                      <span>Общая сумма:</span>
+                      <span className={clsx(
+                        'font-medium text-green-500'
+                      )}>{Math.round(courier.totalAmount)} грн</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Зона работы:</span>
-                      <span className="font-medium">Все зоны</span>
+                      <span>Средний чек:</span>
+                      <span className={clsx(
+                        'font-medium',
+                        isDark ? 'text-gray-200' : 'text-gray-900'
+                      )}>{Math.round(courier.avgAmount)} грн</span>
+                    </div>
+                    {courier.vehicleType && (
+                      <div className="flex justify-between">
+                        <span>Транспорт:</span>
+                        <span className={clsx(
+                          'font-medium',
+                          isDark ? 'text-gray-200' : 'text-gray-900'
+                        )}>{courier.vehicleType === 'car' ? 'Авто' : 'Мото'}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span>Маршрутов:</span>
+                      <span className={clsx(
+                        'font-medium',
+                        isDark ? 'text-gray-200' : 'text-gray-900'
+                      )}>{courier.routesCount}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Последний заказ:</span>
-                      <span className="font-medium">Сегодня</span>
+                      <span>Загрузка (заказов/маршрут):</span>
+                      <span className={clsx(
+                        'font-medium',
+                        isDark ? 'text-blue-300' : 'text-blue-600'
+                      )}>{courier.efficiency}</span>
+                    </div>
+                    <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 flex flex-col items-center">
+                      <button
+                        onClick={() => toggleCourierZones(courier.name)}
+                        className={clsx(
+                          'text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer shadow-sm',
+                          courier.ordersCount >= 15
+                            ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                            : courier.ordersCount >= 2
+                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                        )}
+                      >
+                        {courier.zoneLabel}
+                      </button>
+
+                      {expandedCourierZones.has(courier.name) && (
+                        <div className={clsx(
+                          'mt-3 w-full p-2 rounded-lg text-xs space-y-1 animate-in fade-in slide-in-from-top-2 duration-200',
+                          isDark ? 'bg-gray-800/80' : 'bg-white shadow-inner'
+                        )}>
+                          <div className="font-bold border-b border-gray-200 dark:border-gray-700 pb-1 mb-1 text-center">
+                            Распределение по зонам
+                          </div>
+                          {Object.entries(courier.zoneBreakdown).map(([zone, count]) => (
+                            <div key={zone} className="flex justify-between items-center px-1">
+                              <span className="truncate mr-2 max-w-[120px]">{zone}</span>
+                              <span className="font-bold">{count as number} зак.</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -259,12 +402,18 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
 
       {/* Ошибки */}
       {errors && errors.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-red-200 p-6">
+        <div className={clsx(
+          'rounded-lg shadow-sm border p-6',
+          isDark ? 'bg-red-900/10 border-red-800' : 'bg-white border-red-200'
+        )}>
           <div
             className="flex items-center justify-between cursor-pointer"
             onClick={() => toggleSection('errors')}
           >
-            <h3 className="text-lg font-semibold text-red-900 flex items-center">
+            <h3 className={clsx(
+              'text-lg font-semibold flex items-center',
+              isDark ? 'text-red-400' : 'text-red-900'
+            )}>
               <ExclamationTriangleIcon className="h-5 w-5 mr-2 text-red-600" />
               Ошибки ({errors.length})
             </h3>
@@ -291,12 +440,18 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
 
       {/* Предупреждения */}
       {warnings && warnings.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-yellow-200 p-6">
+        <div className={clsx(
+          'rounded-lg shadow-sm border p-6',
+          isDark ? 'bg-yellow-900/10 border-yellow-800' : 'bg-white border-yellow-200'
+        )}>
           <div
             className="flex items-center justify-between cursor-pointer"
             onClick={() => toggleSection('warnings')}
           >
-            <h3 className="text-lg font-semibold text-yellow-900 flex items-center">
+            <h3 className={clsx(
+              'text-lg font-semibold flex items-center',
+              isDark ? 'text-yellow-400' : 'text-yellow-900'
+            )}>
               <ExclamationTriangleIcon className="h-5 w-5 mr-2 text-yellow-600" />
               Предупреждения ({warnings.length})
             </h3>
@@ -310,8 +465,11 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
           {expandedSections.warnings && (
             <div className="mt-4 space-y-2 max-h-40 overflow-y-auto">
               {warnings.map((warning: string, index: number) => (
-                <div key={index} className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
-                  <p className="text-sm text-yellow-800">{warning}</p>
+                <div key={index} className={clsx(
+                  'p-3 rounded-lg border',
+                  isDark ? 'bg-yellow-900/20 border-yellow-800' : 'bg-yellow-50 border-yellow-200'
+                )}>
+                  <p className={clsx('text-sm', isDark ? 'text-yellow-200' : 'text-yellow-800')}>{warning}</p>
                 </div>
               ))}
             </div>

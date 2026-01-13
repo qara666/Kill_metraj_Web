@@ -17,18 +17,16 @@ export const isPointInPolygon = (point: LatLng, polygon: LatLng[]): boolean => {
 }
 
 /**
- * Generates a grid of traffic probe segments inside a polygon
- * @param sectorPath Polygon boundaries
- * @param options Density and sampling options
- * @returns Array of segment pairs [from, to]
+ * Generates an ordered "snake" path of waypoints covering the sector.
+ * This is more efficient than random segments as it covers entire roads with few API calls.
  */
 export const generateTrafficProbes = (
     sectorPath: LatLng[],
-    options: { gridDensity?: number; segmentLengthKm?: number } = {}
-): Array<[LatLng, LatLng]> => {
+    options: { gridDensity?: number; maxPoints?: number } = {}
+): LatLng[] => {
     if (!sectorPath || sectorPath.length < 3) return []
 
-    const { gridDensity = 15, segmentLengthKm = 0.8 } = options
+    const { gridDensity = 12, maxPoints = 100 } = options
 
     // 1. Find bounding box
     let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity
@@ -42,29 +40,36 @@ export const generateTrafficProbes = (
     const latStep = (maxLat - minLat) / gridDensity
     const lngStep = (maxLng - minLng) / gridDensity
 
-    const probes: Array<[LatLng, LatLng]> = []
+    const points: Array<{ lat: number; lng: number; row: number; col: number }> = []
 
-    // 2. Generate grid points
+    // 2. Generate grid points and filter by polygon
     for (let i = 0; i <= gridDensity; i++) {
         for (let j = 0; j <= gridDensity; j++) {
             const lat = minLat + i * latStep
             const lng = minLng + j * lngStep
-            const point: LatLng = { lat, lng }
+            const point = { lat, lng }
 
-            // 3. Only if point is inside or very close to sector
             if (isPointInPolygon(point, sectorPath)) {
-                // Generate a small segment (e.g., horizontal or vertical)
-                // We alternating directions to cover more roads
-                const isHorizontal = (i + j) % 2 === 0
-                const to: LatLng = isHorizontal
-                    ? { lat, lng: lng + (segmentLengthKm / 111) } // roughly 1km per 0.01 deg lng at 45deg lat
-                    : { lat: lat + (segmentLengthKm / 111), lng }
-
-                probes.push([point, to])
+                points.push({ ...point, row: i, col: j })
             }
         }
     }
 
-    // Limit to prevent API overload
-    return probes.slice(0, 100)
+    // 3. Sort points in a "snake" pattern (alternating column order per row)
+    // This creates a continuous path that snoops through the sector
+    const sortedPoints = points.sort((a, b) => {
+        if (a.row !== b.row) return a.row - b.row
+        // Even rows go left-to-right, odd rows go right-to-left
+        return a.row % 2 === 0 ? a.col - b.col : b.col - a.col
+    })
+
+    // 4. Downsample if needed to stay within limits
+    if (sortedPoints.length > maxPoints) {
+        const step = Math.floor(sortedPoints.length / maxPoints)
+        return sortedPoints
+            .filter((_, idx) => idx % step === 0)
+            .map(({ lat, lng }) => ({ lat, lng }))
+    }
+
+    return sortedPoints.map(({ lat, lng }) => ({ lat, lng }))
 }

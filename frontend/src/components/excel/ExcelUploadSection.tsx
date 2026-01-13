@@ -1,8 +1,8 @@
 import React, { useCallback, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { toast } from 'react-hot-toast'
-import { 
-  DocumentArrowUpIcon, 
+import {
+  DocumentArrowUpIcon,
   DocumentTextIcon,
   CloudArrowUpIcon,
   CheckCircleIcon,
@@ -10,7 +10,8 @@ import {
   XMarkIcon,
   UserGroupIcon,
   CreditCardIcon,
-  LinkIcon
+  LinkIcon,
+  ChevronDownIcon
 } from '@heroicons/react/24/outline'
 import { LoadingSpinner } from '../shared/LoadingSpinner'
 import { clsx } from 'clsx'
@@ -39,6 +40,7 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
   const { isDark } = useTheme()
   const [htmlUrl, setHtmlUrl] = useState<string>('')
   const [isProcessingHtml, setIsProcessingHtml] = useState<boolean>(false)
+  const [showHtmlUpload, setShowHtmlUpload] = useState<boolean>(false)
 
   const processLocalHtmlFile = useCallback(async (file: File) => {
     if (!onHtmlDataLoad) {
@@ -98,19 +100,19 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
     onDrop: useCallback((acceptedFiles: File[]) => {
       const file = acceptedFiles[0]
       if (!file) return
-      
+
       const isHtml = /\.html?$/i.test(file.name) || file.type === 'text/html'
-      
+
       if (!isHtml) {
         toast.error('Пожалуйста, выберите HTML файл (.html, .htm)')
         return
       }
-      
+
       if (file.size > 10 * 1024 * 1024) {
         toast.error('Размер файла не должен превышать 10MB')
         return
       }
-      
+
       void processLocalHtmlFile(file)
     }, [processLocalHtmlFile]),
     accept: {
@@ -176,8 +178,8 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
       {/* Заголовок секции */}
       <div className={clsx(
         'rounded-3xl p-8 shadow-2xl border-2 overflow-hidden relative',
-        isDark 
-          ? 'bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 border-gray-700' 
+        isDark
+          ? 'bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 border-gray-700'
           : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-blue-200'
       )}>
         <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10 opacity-50"></div>
@@ -186,8 +188,8 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
             <div className="flex items-center gap-4">
               <div className={clsx(
                 'p-4 rounded-2xl shadow-lg',
-                isDark 
-                  ? 'bg-gradient-to-br from-blue-600 to-purple-600' 
+                isDark
+                  ? 'bg-gradient-to-br from-blue-600 to-purple-600'
                   : 'bg-gradient-to-br from-blue-500 to-indigo-600'
               )}>
                 <DocumentArrowUpIcon className="w-8 h-8 text-white" />
@@ -195,11 +197,11 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
               <div>
                 <h2 className={clsx(
                   'text-3xl font-bold mb-1 bg-gradient-to-r bg-clip-text text-transparent',
-                  isDark 
-                    ? 'from-blue-400 to-purple-400' 
+                  isDark
+                    ? 'from-blue-400 to-purple-400'
                     : 'from-blue-600 to-indigo-600'
                 )}>
-                  Загрузка Excel файлов
+                  Загрузка Excel файлов (устаревшая история но работает)
                 </h2>
                 <p className={clsx('text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>
                   Загрузите Excel файл с заказами для автоматической обработки и создания маршрутов
@@ -220,20 +222,20 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
           className={clsx(
             'border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors',
             isDragActive
-              ? isDark 
-                ? 'border-blue-400 bg-blue-900/20' 
+              ? isDark
+                ? 'border-blue-400 bg-blue-900/20'
                 : 'border-blue-400 bg-blue-50'
               : selectedFile
-              ? isDark 
-                ? 'border-green-400 bg-green-900/20' 
-                : 'border-green-400 bg-green-50'
-              : isDark 
-                ? 'border-gray-600 hover:border-gray-500' 
-                : 'border-gray-300 hover:border-gray-400'
+                ? isDark
+                  ? 'border-green-400 bg-green-900/20'
+                  : 'border-green-400 bg-green-50'
+                : isDark
+                  ? 'border-gray-600 hover:border-gray-500'
+                  : 'border-gray-300 hover:border-gray-400'
           )}
         >
           <input {...getInputProps()} />
-          
+
           {selectedFile ? (
             <div className="space-y-4">
               <div className="flex items-center justify-center">
@@ -280,101 +282,119 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
           )}
         </div>
 
-        {/* Секция для HTML загрузки */}
-        <div className={clsx(
-          'mt-6 p-4 rounded-lg border',
-          isDark ? 'bg-gray-800/50 border-gray-700' : 'bg-gray-50 border-gray-200'
-        )}>
-          <div className="flex items-center gap-2 mb-3">
-            <LinkIcon className={clsx('h-5 w-5', isDark ? 'text-blue-400' : 'text-blue-600')} />
-            <label className={clsx(
-              'text-sm font-medium',
-              isDark ? 'text-gray-200' : 'text-gray-700'
-            )}>
-              Или вставь ссылку на HTML страницу с выгрузки ФастОператора 
-            </label>
-          </div>
-          
-          {/* Отдельная зона drag and drop для HTML */}
-          <div
-            {...getHtmlRootProps()}
+        {/* Секция для HTML загрузки под спойлером */}
+        <div className="mt-6">
+          <button
+            onClick={() => setShowHtmlUpload(!showHtmlUpload)}
             className={clsx(
-              'border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors mb-4',
-              isHtmlDragActive
-                ? isDark 
-                  ? 'border-blue-400 bg-blue-900/20' 
-                  : 'border-blue-400 bg-blue-50'
-                : isDark 
-                  ? 'border-gray-600 hover:border-gray-500' 
-                  : 'border-gray-300 hover:border-gray-400'
+              'flex items-center space-x-2 text-sm font-medium transition-colors mb-2',
+              isDark ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'
             )}
           >
-            <input {...getHtmlInputProps()} />
-            <div className="space-y-2">
-              <DocumentTextIcon className={clsx('h-8 w-8 mx-auto', isDark ? 'text-blue-400' : 'text-blue-600')} />
+            <ChevronDownIcon className={clsx(
+              'h-4 w-4 transition-transform duration-200',
+              showHtmlUpload ? 'rotate-180' : ''
+            )} />
+            <span>Или использовать HTML выгрузку ФастОператора</span>
+          </button>
+
+          {showHtmlUpload && (
+            <div className={clsx(
+              'p-4 rounded-lg border animate-in fade-in slide-in-from-top-2 duration-200',
+              isDark ? 'bg-gray-800/50 border-gray-700' : 'bg-gray-50 border-gray-200'
+            )}>
+              <div className="flex items-center gap-2 mb-3">
+                <LinkIcon className={clsx('h-5 w-5', isDark ? 'text-blue-400' : 'text-blue-600')} />
+                <label className={clsx(
+                  'text-sm font-medium',
+                  isDark ? 'text-gray-200' : 'text-gray-700'
+                )}>
+                  Вставь ссылку на HTML страницу
+                </label>
+              </div>
+
+              {/* Отдельная зона drag and drop для HTML */}
+              <div
+                {...getHtmlRootProps()}
+                className={clsx(
+                  'border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors mb-4',
+                  isHtmlDragActive
+                    ? isDark
+                      ? 'border-blue-400 bg-blue-900/20'
+                      : 'border-blue-400 bg-blue-50'
+                    : isDark
+                      ? 'border-gray-600 hover:border-gray-500'
+                      : 'border-gray-300 hover:border-gray-400'
+                )}
+              >
+                <input {...getHtmlInputProps()} />
+                <div className="space-y-2">
+                  <DocumentTextIcon className={clsx('h-8 w-8 mx-auto', isDark ? 'text-blue-400' : 'text-blue-600')} />
+                  <p className={clsx(
+                    'text-sm font-medium',
+                    isDark ? 'text-gray-200' : 'text-gray-700'
+                  )}>
+                    {isHtmlDragActive ? 'Отпустите HTML файл здесь' : 'Перетащите HTML файл сюда или нажмите для выбора'}
+                  </p>
+                  <p className={clsx(
+                    'text-xs',
+                    isDark ? 'text-gray-400' : 'text-gray-500'
+                  )}>
+                    Поддерживаются файлы .html и .htm
+                  </p>
+                </div>
+              </div>
+
+              {/* Поле для URL */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={htmlUrl}
+                  onChange={(e) => setHtmlUrl(e.target.value)}
+                  placeholder="https://example.com/data.html"
+                  className={clsx(
+                    'flex-1 px-4 py-2 rounded-lg border text-sm',
+                    isDark
+                      ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
+                      : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
+                  )}
+                  disabled={isProcessingHtml || isProcessing}
+                />
+                <button
+                  onClick={handleProcessHtml}
+                  disabled={isProcessingHtml || isProcessing || !htmlUrl.trim()}
+                  className={clsx(
+                    'px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2',
+                    isProcessingHtml || isProcessing || !htmlUrl.trim()
+                      ? isDark
+                        ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : isDark
+                        ? 'bg-blue-600 text-white hover:bg-blue-700'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                  )}
+                >
+                  {isProcessingHtml ? (
+                    <>
+                      <LoadingSpinner size="sm" />
+                      <span>Загрузка...</span>
+                    </>
+                  ) : (
+                    <>
+                      <LinkIcon className="h-4 w-4" />
+                      <span>Загрузить</span>
+                    </>
+                  )}
+                </button>
+              </div>
               <p className={clsx(
-                'text-sm font-medium',
-                isDark ? 'text-gray-200' : 'text-gray-700'
-              )}>
-                {isHtmlDragActive ? 'Отпустите HTML файл здесь' : 'Перетащите HTML файл сюда или нажмите для выбора'}
-              </p>
-              <p className={clsx(
-                'text-xs',
+                'text-xs mt-2',
                 isDark ? 'text-gray-400' : 'text-gray-500'
               )}>
-                Поддерживаются файлы .html и .htm
+                HTML страница должна содержать таблицу с данными в том же формате, что и Excel файл
               </p>
             </div>
-          </div>
-          
-          {/* Поле для URL */}
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={htmlUrl}
-              onChange={(e) => setHtmlUrl(e.target.value)}
-              placeholder="https://example.com/data.html"
-              className={clsx(
-                'flex-1 px-4 py-2 rounded-lg border text-sm',
-                isDark 
-                  ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500' 
-                  : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
-              )}
-              disabled={isProcessingHtml || isProcessing}
-            />
-            <button
-              onClick={handleProcessHtml}
-              disabled={isProcessingHtml || isProcessing || !htmlUrl.trim()}
-              className={clsx(
-                'px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2',
-                isProcessingHtml || isProcessing || !htmlUrl.trim()
-                  ? isDark 
-                    ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
-                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : isDark 
-                    ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
-              )}
-            >
-              {isProcessingHtml ? (
-                <>
-                  <LoadingSpinner size="sm" />
-                  <span>Загрузка...</span>
-                </>
-              ) : (
-                <>
-                  <LinkIcon className="h-4 w-4" />
-                  <span>Загрузить</span>
-                </>
-              )}
-            </button>
-          </div>
-          <p className={clsx(
-            'text-xs mt-2',
-            isDark ? 'text-gray-400' : 'text-gray-500'
-          )}>
-            HTML страница должна содержать таблицу с данными в том же формате, что и Excel файл
-          </p>
+          )}
         </div>
 
 
@@ -388,11 +408,11 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
                 className={clsx(
                   'flex items-center px-4 py-2 rounded-lg font-medium transition-colors',
                   isProcessing
-                    ? isDark 
-                      ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
+                    ? isDark
+                      ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
                       : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : isDark 
-                      ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                    : isDark
+                      ? 'bg-blue-600 text-white hover:bg-blue-700'
                       : 'bg-blue-600 text-white hover:bg-blue-700'
                 )}
               >
@@ -408,7 +428,7 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
                   </>
                 )}
               </button>
-              
+
               <button
                 onClick={() => {
                   onFileSelect(null as any)
@@ -416,8 +436,8 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
                 }}
                 className={clsx(
                   'flex items-center px-4 py-2 rounded-lg border font-medium transition-colors',
-                  isDark 
-                    ? 'border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white' 
+                  isDark
+                    ? 'border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white'
                     : 'border-gray-300 text-gray-700 hover:bg-gray-50 hover:text-gray-900'
                 )}
               >
@@ -425,7 +445,7 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
                 Очистить
               </button>
             </div>
-            
+
             <div className={clsx(
               'text-sm',
               isDark ? 'text-gray-400' : 'text-gray-500'
@@ -460,7 +480,7 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
               <XMarkIcon className="h-5 w-5" />
             </button>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className={clsx(
               'p-4 rounded-lg border',
@@ -476,7 +496,7 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
                 </div>
               </div>
             </div>
-            
+
             <div className={clsx(
               'p-4 rounded-lg border',
               isDark ? 'bg-green-900/20 border-green-500/30' : 'bg-green-50 border-green-200'
@@ -491,7 +511,7 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
                 </div>
               </div>
             </div>
-            
+
             <div className={clsx(
               'p-4 rounded-lg border',
               isDark ? 'bg-purple-900/20 border-purple-500/30' : 'bg-purple-50 border-purple-200'
@@ -506,7 +526,7 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
                 </div>
               </div>
             </div>
-            
+
             <div className={clsx(
               'p-4 rounded-lg border',
               isDark ? 'bg-yellow-900/20 border-yellow-500/30' : 'bg-yellow-50 border-yellow-200'

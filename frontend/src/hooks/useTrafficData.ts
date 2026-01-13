@@ -1,9 +1,8 @@
 import { useState, useCallback, useRef } from 'react'
 import {
-    getMapboxTrafficForSegment,
+    getMapboxTraffic,
     MapboxTrafficData
 } from '../utils/maps/mapboxTrafficAPI'
-import { getUkraineTrafficForRoute } from '../utils/maps/ukraineTrafficAPI'
 
 export interface LatLng { lat: number; lng: number }
 
@@ -13,19 +12,16 @@ export interface TrafficSegmentWithHistory extends MapboxTrafficData {
     key?: string
 }
 
-
-
-const CACHE_TTL = 5 * 60 * 1000
 const REFRESH_INTERVAL_MS = 30 * 60 * 1000
-const BATCH_SIZE = 5
-const BATCH_DELAY = 100
+const MAPBOX_WAYPOINT_LIMIT = 25
+const BATCH_DELAY = 1000 // Increase delay to be safe with rate limits
 
 export const useTrafficData = (
-    pairsToCheck: Array<[LatLng, LatLng]>,
+    waypoints: LatLng[],
     resolvedToken: string,
-    denseSampling: boolean,
+    _denseSampling: boolean,
     segmentsStorageKey: string,
-    trafficCacheStorageKey: string,
+    _trafficCacheStorageKey: string, // Kept for signature compatibility if needed
     onDataUpdate: (segments: TrafficSegmentWithHistory[], timestamp: number) => void
 ) => {
     const [loading, setLoading] = useState(false)
@@ -33,45 +29,11 @@ export const useTrafficData = (
     const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 })
     const segmentStoreRef = useRef<Map<string, TrafficSegmentWithHistory>>(new Map())
     const lastPersistedTimestampRef = useRef<number>(0)
-    const trafficCache = useRef(new Map<string, { data: MapboxTrafficData[]; timestamp: number; key: string }>())
-
-    // Cache helpers
-    const getCachedData = useCallback((key: string): MapboxTrafficData[] | null => {
-        const cached = trafficCache.current.get(key)
-        if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached.data
-
-        if (typeof window !== 'undefined') {
-            try {
-                const stored = localStorage.getItem(trafficCacheStorageKey)
-                if (stored) {
-                    const parsed = JSON.parse(stored)
-                    const entry = parsed[key]
-                    if (entry && Date.now() - entry.timestamp < CACHE_TTL) {
-                        trafficCache.current.set(key, entry)
-                        return entry.data
-                    }
-                }
-            } catch { }
-        }
-        return null
-    }, [trafficCacheStorageKey])
-
-    const setCachedData = useCallback((key: string, data: MapboxTrafficData[]) => {
-        const entry = { data, timestamp: Date.now(), key }
-        trafficCache.current.set(key, entry)
-        if (typeof window !== 'undefined') {
-            try {
-                const stored = localStorage.getItem(trafficCacheStorageKey)
-                const cache = stored ? JSON.parse(stored) : {}
-                cache[key] = entry
-                localStorage.setItem(trafficCacheStorageKey, JSON.stringify(cache))
-            } catch { }
-        }
-    }, [trafficCacheStorageKey])
 
     const fetchTraffic = useCallback(async (options?: { force?: boolean }) => {
-        if (!resolvedToken) return
+        if (!resolvedToken || !waypoints?.length) return
         const nowTs = Date.now()
+
         if (!options?.force && lastPersistedTimestampRef.current && nowTs - lastPersistedTimestampRef.current < REFRESH_INTERVAL_MS) {
             return
         }
@@ -79,60 +41,53 @@ export const useTrafficData = (
         setLoading(true)
         setError(null)
 
-        const totalPairs = pairsToCheck.length
-        const targetSample = denseSampling ? 100 : 60
-        const sampledPairs = pairsToCheck.slice(0, Math.min(targetSample, totalPairs))
+        // Split waypoints into groups of 25
+        const batches: LatLng[][] = []
+        for (let i = 0; i < waypoints.length; i += MAPBOX_WAYPOINT_LIMIT) {
+            batches.push(waypoints.slice(i, i + MAPBOX_WAYPOINT_LIMIT))
+        }
 
-        setLoadingProgress({ current: 0, total: sampledPairs.length })
+        setLoadingProgress({ current: 0, total: batches.length })
 
         try {
             const store = segmentStoreRef.current
-            for (let i = 0; i < sampledPairs.length; i += BATCH_SIZE) {
-                const batch = sampledPairs.slice(i, i + BATCH_SIZE)
-                const batchPromises = batch.map(async (pair) => {
-                    const cacheKey = `${pair[0].lat.toFixed(6)},${pair[0].lng.toFixed(6)}|${pair[1].lat.toFixed(6)},${pair[1].lng.toFixed(6)}`
-                    let segments = getCachedData(cacheKey)
+            // Optional: clear store on "force" refresh if desired, 
+            // but keeping history might be better. 
+            // For full sector coverage update, we just overwrite by key.
 
-                    if (!segments) {
-                        try {
-                            const raw = await getMapboxTrafficForSegment([pair[0].lng, pair[0].lat], [pair[1].lng, pair[1].lat], resolvedToken)
-                            if (raw?.length) {
-                                segments = raw.slice(0, 4) // sample limit
-                                setCachedData(cacheKey, segments)
-                            }
-                        } catch (err) {
-                            // Ukraine Traffic fallback
-                            try {
-                                const historical = await getUkraineTrafficForRoute([[pair[0].lng, pair[0].lat], [pair[1].lng, pair[1].lat]], resolvedToken, { fallbackToHistorical: true })
-                                if (historical?.length) {
-                                    segments = [{
-                                        congestion: historical[0].congestion, speed: historical[0].currentSpeed,
-                                        delay: historical[0].delayMinutes * 60, distance: 0, duration: 0,
-                                        coordinates: [[pair[0].lng, pair[0].lat], [pair[1].lng, pair[1].lat]]
-                                    }]
-                                    setCachedData(cacheKey, segments)
-                                }
-                            } catch { }
-                        }
-                    }
-                    return { data: segments, key: cacheKey }
-                })
+            for (let i = 0; i < batches.length; i++) {
+                const batch = batches[i]
+                if (batch.length < 2) continue
 
-                const results = await Promise.all(batchPromises)
-                results.forEach(res => {
-                    if (res.data) {
-                        res.data.forEach((seg, idx) => {
-                            const key = `${res.key}#${idx}`
+                try {
+                    const coords: Array<[number, number]> = batch.map(p => [p.lng, p.lat])
+                    const segments = await getMapboxTraffic(coords, resolvedToken)
+
+                    if (segments && segments.length > 0) {
+                        segments.forEach((seg, idx) => {
+                            // Create a stable key based on coordinates
+                            const start = seg.coordinates[0]
+                            const key = `batch_${i}_seg_${idx}_${start[0].toFixed(5)},${start[1].toFixed(5)}`
+
                             const existing = store.get(key)
                             const history = (existing?.history || []).slice(-9)
-                            history.push({ timestamp: nowTs, congestion: seg.congestion, speed: seg.speed })
+                            history.push({
+                                timestamp: nowTs,
+                                congestion: seg.congestion,
+                                speed: seg.speed
+                            })
+
                             store.set(key, { ...seg, timestamp: nowTs, history, key })
                         })
                     }
-                })
+                } catch (err) {
+                    console.error('Batch traffic fetch error:', err)
+                }
 
-                setLoadingProgress({ current: Math.min(i + BATCH_SIZE, sampledPairs.length), total: sampledPairs.length })
-                if (i + BATCH_SIZE < sampledPairs.length) await new Promise(r => setTimeout(r, BATCH_DELAY))
+                setLoadingProgress({ current: i + 1, total: batches.length })
+                if (i < batches.length - 1) {
+                    await new Promise(r => setTimeout(r, BATCH_DELAY))
+                }
             }
 
             const allSegments = Array.from(store.values())
@@ -140,14 +95,17 @@ export const useTrafficData = (
             lastPersistedTimestampRef.current = nowTs
 
             if (typeof window !== 'undefined') {
-                localStorage.setItem(segmentsStorageKey, JSON.stringify({ timestamp: nowTs, segments: allSegments }))
+                localStorage.setItem(segmentsStorageKey, JSON.stringify({
+                    timestamp: nowTs,
+                    segments: allSegments
+                }))
             }
         } catch (err) {
             setError('Failed to load traffic data')
         } finally {
             setLoading(false)
         }
-    }, [resolvedToken, pairsToCheck, denseSampling, getCachedData, setCachedData, onDataUpdate, segmentsStorageKey])
+    }, [resolvedToken, waypoints, onDataUpdate, segmentsStorageKey])
 
     return { loading, error, loadingProgress, fetchTraffic }
 }

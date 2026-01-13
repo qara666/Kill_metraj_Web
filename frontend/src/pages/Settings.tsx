@@ -305,7 +305,7 @@ const CityBiasSection: React.FC<{ isDark: boolean; value: '' | 'Киев' | 'Х�
               : 'border-gray-200 bg-white'
           )}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <label className="text-sm">Выберите город</label>
+              <label className={clsx('text-sm font-medium', isDark ? 'text-gray-300' : 'text-gray-700')}>Выберите город</label>
               <select
                 className="input md:col-span-2"
                 value={value}
@@ -590,15 +590,15 @@ export const Settings: React.FC = () => {
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 col-span-1 md:col-span-2">
                 <div>
-                  <div className="text-xs mb-1">Макс. расстояние между точками (км)</div>
+                  <div className={clsx('text-xs mb-1', isDark ? 'text-gray-400' : 'text-gray-500')}>Макс. расстояние между точками (км)</div>
                   <input type="number" step="1" min="1" className="input" {...register('anomalyMaxLegDistanceKm', { valueAsNumber: true })} />
                 </div>
                 <div>
-                  <div className="text-xs mb-1">Макс. общий километраж маршрута (км)</div>
+                  <div className={clsx('text-xs mb-1', isDark ? 'text-gray-400' : 'text-gray-500')}>Макс. общий километраж маршрута (км)</div>
                   <input type="number" step="1" min="1" className="input" {...register('anomalyMaxTotalDistanceKm', { valueAsNumber: true })} />
                 </div>
                 <div>
-                  <div className="text-xs mb-1">Макс. среднее на заказ (км)</div>
+                  <div className={clsx('text-xs mb-1', isDark ? 'text-gray-400' : 'text-gray-500')}>Макс. среднее на заказ (км)</div>
                   <input type="number" step="1" min="1" className="input" {...register('anomalyMaxAvgPerOrderKm', { valueAsNumber: true })} />
                 </div>
               </div>
@@ -614,87 +614,95 @@ export const Settings: React.FC = () => {
                 <span className="ml-2 text-sm">Использовать адаптивные пороги</span>
               </div>
               <div>
-                <div className="text-xs mb-1">Минимальный порог качества адреса (0-100)</div>
+                <div className={clsx('text-xs mb-1', isDark ? 'text-gray-400' : 'text-gray-500')}>Минимальный порог качества адреса (0-100)</div>
                 <input type="number" step="5" min="0" max="100" className="input" {...register('addressQualityThreshold', { valueAsNumber: true })} />
-                <div className="text-xs text-gray-500 mt-1">Адреса с оценкой ниже этого порога будут помечены как подозрительные</div>
+                <div className={clsx('text-xs mt-1', isDark ? 'text-gray-400' : 'text-gray-500')}>Адреса с оценкой ниже этого порога будут помечены как подозрительные</div>
               </div>
             </div>
           </CollapsibleSection>
-          {/* Mapbox Token */}
-          <div>
-            <label className="label">
-              <MapIcon className="h-4 w-4 inline mr-2" />
-              Mapbox Token (для отслеживания пробок)
-            </label>
-            <div className="mt-1">
-              <input
-                type="text"
-                className="input"
-                placeholder="Введите ваш Mapbox токен"
-                {...register('mapboxToken')}
-              />
-              <p className={clsx('mt-1 text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                Используется для отслеживания пробок в реальном времени в Украине/Киеве.
-                Бесплатный лимит: 50,000 запросов/месяц.
-              </p>
-            </div>
-          </div>
-
-
-          {/* Google Maps API Key */}
-          <div>
-            <label className="label">
-              <KeyIcon className="h-4 w-4 inline mr-2" />
-              Google Maps API Ключ
-            </label>
-            <div className="mt-1 flex rounded-md shadow-sm">
-              <input
-                type="password"
-                className="input rounded-r-none"
-                placeholder="Введите ваш Google Maps API ключ"
-                {...register('googleMapsApiKey', { required: true })}
-              />
-              <button
-                type="button"
-                onClick={testApiKey}
-                disabled={isTestingApiKey || !googleMapsApiKey.trim()}
-                className="btn-outline rounded-l-none border-l-0"
-              >
-                {isTestingApiKey ? (
-                  <LoadingSpinner size="sm" />
-                ) : (
-                  'Проверить'
-                )}
-              </button>
-            </div>
-            {apiKeyStatus === 'valid' && (
-              <div className="mt-1">
-                <p className="text-sm text-green-600">✓ API ключ действителен</p>
-                {apiKeyDetails && (
-                  <p className="text-xs text-gray-500">Статус: {apiKeyDetails}</p>
-                )}
+          {/* API Settings Spoiler */}
+          <CollapsibleSection
+            isDark={isDark}
+            icon={<KeyIcon className="h-4 w-4" />}
+            title="Настройки api для маршрутизации"
+          >
+            <div className="space-y-6">
+              {/* Mapbox Token */}
+              <div>
+                <label className="label">
+                  <MapIcon className="h-4 w-4 inline mr-2" />
+                  Mapbox Token (для отслеживания пробок)
+                </label>
+                <div className="mt-1">
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="Введите ваш Mapbox токен"
+                    {...register('mapboxToken')}
+                  />
+                  <p className={clsx('mt-1 text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                    Используется для отслеживания пробок в реальном времени в Украине/Киеве.
+                    Бесплатный лимит: 50,000 запросов/месяц.
+                  </p>
+                </div>
               </div>
-            )}
-            {apiKeyStatus === 'invalid' && (
-              <div className="mt-1">
-                <p className="text-sm text-red-600">✗ API ключ недействителен</p>
-                {apiKeyDetails && (
-                  <p className="text-xs text-gray-500">Ошибка: {apiKeyDetails}</p>
+
+              {/* Google Maps API Key */}
+              <div>
+                <label className="label">
+                  <KeyIcon className="h-4 w-4 inline mr-2" />
+                  Google Maps API Ключ
+                </label>
+                <div className="mt-1 flex rounded-md shadow-sm">
+                  <input
+                    type="password"
+                    className="input rounded-r-none"
+                    placeholder="Введите ваш Google Maps API ключ"
+                    {...register('googleMapsApiKey', { required: true })}
+                  />
+                  <button
+                    type="button"
+                    onClick={testApiKey}
+                    disabled={isTestingApiKey || !googleMapsApiKey.trim()}
+                    className="btn-outline rounded-l-none border-l-0"
+                  >
+                    {isTestingApiKey ? (
+                      <LoadingSpinner size="sm" />
+                    ) : (
+                      'Проверить'
+                    )}
+                  </button>
+                </div>
+                {apiKeyStatus === 'valid' && (
+                  <div className="mt-1">
+                    <p className="text-sm text-green-500 font-medium">✓ API ключ действителен</p>
+                    {apiKeyDetails && (
+                      <p className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>Статус: {apiKeyDetails}</p>
+                    )}
+                  </div>
                 )}
+                {apiKeyStatus === 'invalid' && (
+                  <div className="mt-1">
+                    <p className="text-sm text-red-500 font-medium">✗ API ключ недействителен</p>
+                    {apiKeyDetails && (
+                      <p className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>Ошибка: {apiKeyDetails}</p>
+                    )}
+                  </div>
+                )}
+                <p className={clsx('mt-1 text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                  Необходим для геокодирования адресов и расчета маршрутов. Получите API ключ в{' '}
+                  <a
+                    href="https://console.cloud.google.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary-600 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
+                  >
+                    Google Cloud Console
+                  </a>
+                </p>
               </div>
-            )}
-            <p className="mt-1 text-xs text-gray-500">
-              Необходим для геокодирования адресов и расчета маршрутов. Получите API ключ в{' '}
-              <a
-                href="https://console.cloud.google.com/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary-600 hover:text-primary-500"
-              >
-                Google Cloud Console
-              </a>
-            </p>
-          </div>
+            </div>
+          </CollapsibleSection>
 
           {/* Default Addresses */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -709,7 +717,7 @@ export const Settings: React.FC = () => {
                 placeholder="Введите адрес начала по умолчанию"
                 {...register('defaultStartAddress')}
               />
-              <p className="mt-1 text-xs text-gray-500">
+              <p className={clsx('mt-1 text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
                 Точка начала по умолчанию для всех маршрутов
               </p>
             </div>
@@ -725,7 +733,7 @@ export const Settings: React.FC = () => {
                 placeholder="Введите адрес окончания по умолчанию"
                 {...register('defaultEndAddress')}
               />
-              <p className="mt-1 text-xs text-gray-500">
+              <p className={clsx('mt-1 text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
                 Точка окончания по умолчанию для всех маршрутов
               </p>
             </div>
@@ -750,9 +758,9 @@ export const Settings: React.FC = () => {
             title="Критический лимит для маршрута"
           >
             <div className="mt-2">
-              <div className="text-xs mb-1">Крит. максимальное расстояние маршрута (км)</div>
+              <div className={clsx('text-xs mb-1', isDark ? 'text-gray-400' : 'text-gray-500')}>Крит. максимальное расстояние маршрута (км)</div>
               <input type="number" step="1" min="1" className="input" {...register('maxCriticalRouteDistanceKm', { valueAsNumber: true })} />
-              <div className="text-xs text-gray-500 mt-1">
+              <div className={clsx('text-xs mt-1', isDark ? 'text-gray-400' : 'text-gray-500')}>
                 Если маршрут превышает это значение — будет показан критический warning, маршрут НЕ будет пересчитан
               </div>
             </div>

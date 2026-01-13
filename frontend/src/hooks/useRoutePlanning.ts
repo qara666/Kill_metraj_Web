@@ -11,6 +11,7 @@ import {
 
 export type { TrafficPresetMode }
 import { GoogleAPIManager } from '../utils/api/googleAPIManager'
+import { GeocodingService } from '../services/geocodingService'
 import { routeOptimizationCache } from '../utils/routes/routeOptimizationCache'
 import { routeHistory } from '../utils/routes/routeHistory'
 import { runRoutePlanningAlgorithm } from '../utils/routes/routePlanAlgorithm'
@@ -161,23 +162,26 @@ export const useRoutePlanning = (
             // Geocoding
             setOptimizationProgress({ current: 0, total: validOrders.length, message: 'Геокодирование...' })
             const addresses = Array.from(new Set(validOrders.map(o => o.address).filter(Boolean)))
-            const batchSize = 10
-            for (let i = 0; i < addresses.length; i += batchSize) {
-                const batch = addresses.slice(i, i + batchSize)
-                await Promise.all(batch.map(async addr => {
-                    if (routeOptimizationCache.getCoordinates(addr)) return
-                    const gGeocoder = new window.google.maps.Geocoder()
-                    return new Promise(resolve => {
-                        gGeocoder.geocode({ address: addr, region: 'ua' }, (res: any, status: any) => {
-                            if (status === 'OK' && res?.[0]) {
-                                const loc = res[0].geometry.location
-                                routeOptimizationCache.setCoordinates(addr, { lat: loc.lat(), lng: loc.lng() })
-                            }
-                            resolve(null)
+
+            for (let i = 0; i < addresses.length; i++) {
+                const addr = addresses[i]
+                if (!routeOptimizationCache.getCoordinates(addr)) {
+                    const result = await GeocodingService.geocodeAndCleanAddress(addr, { region: 'ua' })
+                    if (result.success && result.latitude && result.longitude) {
+                        routeOptimizationCache.setCoordinates(addr, {
+                            lat: result.latitude,
+                            lng: result.longitude
                         })
+                    }
+                }
+
+                if (i % 5 === 0 || i === addresses.length - 1) {
+                    setOptimizationProgress({
+                        current: i + 1,
+                        total: addresses.length,
+                        message: `Геокодирование... (${i + 1}/${addresses.length})`
                     })
-                }))
-                setOptimizationProgress({ current: Math.min(i + batchSize, addresses.length), total: addresses.length, message: `Геокодирование...` })
+                }
             }
 
             const depotCoords = routeOptimizationCache.getCoordinates(defaultStartAddress)
