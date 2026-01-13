@@ -567,7 +567,7 @@ export const Settings: React.FC = () => {
           <CollapsibleSection
             isDark={isDark}
             icon={<ArrowPathIcon className="h-4 w-4" />}
-            title="Автообновление API (Dashboard)"
+            title="Автообновление с фаста (API Dashboard)"
           >
             <DashboardSettingsPanel
               isDark={isDark}
