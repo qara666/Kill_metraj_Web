@@ -1813,12 +1813,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                           "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1",
                           isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-100 text-blue-700"
                         )}>
-                          {getCourierVehicleType(selectedCourier) === 'moto' ? (
+                          {getCourierVehicleType(selectedCourier) !== 'car' ? (
                             <TruckIcon className="w-3 h-3" />
                           ) : (
                             <TruckIcon className="w-3 h-3" />
                           )}
-                          <span>{getCourierVehicleType(selectedCourier) === 'moto' ? 'MOTO' : 'AUTO'}</span>
+                          <span>{getCourierVehicleType(selectedCourier) !== 'car' ? 'MOTO' : 'AUTO'}</span>
                         </div>
                       </div>
                       <p className={clsx('text-lg font-bold opacity-60', isDark ? 'text-gray-400' : 'text-gray-500')}>
@@ -1859,7 +1859,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                       setSelectedOrders(new Set(groupOrderIds));
                       setSelectedOrdersOrder(groupOrderIds);
                       // Автоматически создаем маршрут сразу без уведомления
-                      createRoute();
+                      createRoute(group.orders);
                     }}
                   />
                 </div>
