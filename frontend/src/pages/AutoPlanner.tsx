@@ -175,7 +175,7 @@ export const AutoPlanner: React.FC = () => {
       logger.info(`✅ Автоматически добавлено ${data.couriers.length} курьеров`);
     }
 
-    setShowDataPreview(true); // Show preview modal
+    // setShowDataPreview(true); // Убрано по требованию пользователя
     // Геокодирование выполняется автоматически через useEffect при изменении excelData
   }, [updateExcelData, setCourierSchedules]);
 
@@ -248,14 +248,15 @@ export const AutoPlanner: React.FC = () => {
     setRouteAnalytics
   )
 
-  const ordersCount = excelData?.orders?.length || 0
+  const ordersCount = filteredOrders.length
   const planButtonLabel = useMemo(() => {
-    const base = `Автосоздать маршруты${orderFilters.enabled ? ` (${filteredOrders.length} заказов)` : ''}`
-    if (!trafficSnapshot) return base
-    if (trafficAdvisory === 'critical') return `${base} · критический трафик`
-    if (trafficAdvisory === 'high') return `${base} · высокий трафик`
-    return base
-  }, [filteredOrders.length, orderFilters.enabled, trafficSnapshot, trafficAdvisory])
+    const count = filteredOrders.length;
+    const base = count > 0 ? `Оптимизировать ${count} заказов` : 'Нет заказов для планирования';
+    if (!trafficSnapshot) return base;
+    if (trafficAdvisory === 'critical') return `${base} · 🛑 Пробки`;
+    if (trafficAdvisory === 'high') return `${base} · ⚠️ Трафик`;
+    return base;
+  }, [filteredOrders.length, trafficSnapshot, trafficAdvisory]);
 
   return (
     <div className="space-y-6">
@@ -316,26 +317,30 @@ export const AutoPlanner: React.FC = () => {
             </Tooltip>
           </div>
 
-          {/* Статистика */}
-          <AutoPlannerStats excelData={excelData} routes={plannedRoutes} />
         </div>
       </div>
 
       {/* Основной контент */}
       <div className={clsx(
         'rounded-3xl p-4 shadow-xl border-2',
-        isDark ? 'bg-gray-800/80 border-gray-700 backdrop-blur-sm' : 'bg-white border-gray-200'
+        isDark ? 'bg-gray-800/80 backdrop-blur-sm' : 'bg-white border-gray-200'
       )}>
+        {/* Статистика только по неназначенным заказам (которые пойдут в планировщик) */}
+        <AutoPlannerStats
+          excelData={excelData ? { ...excelData, orders: filteredOrders } : null}
+          routes={plannedRoutes}
+        />
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-          {/* Секция импорта */}
-          <ImportSection
-            isDark={isDark}
-            excelData={excelData}
-            setExcelData={setExcelData}
-            setCourierSchedules={setCourierSchedules}
-            ordersCount={excelData?.orders.length || 0}
-          />
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+          <div className="lg:col-span-1">
+            <ImportSection
+              isDark={isDark}
+              excelData={excelData}
+              setExcelData={setExcelData}
+              setCourierSchedules={setCourierSchedules}
+              ordersCount={ordersCount}
+            />
+          </div>
 
           <div className="lg:col-span-2" id="route-settings-panel">
             <RouteSettingsPanel
@@ -360,7 +365,7 @@ export const AutoPlanner: React.FC = () => {
             />
           </div>
 
-          <div className="space-y-4">
+          <div className="lg:col-span-1">
             <ExtraSettingsPanel
               isDark={isDark}
               enableOrderCombining={enableOrderCombining}
@@ -375,6 +380,23 @@ export const AutoPlanner: React.FC = () => {
               setNotificationPreferences={setNotificationPreferences}
             />
           </div>
+        </div>
+
+        {/* Секция управления - теперь на всю ширину внизу */}
+        <div className="mt-8 pt-8 border-t border-dashed border-gray-700/50">
+          <AutoPlannerControls
+            isPlanning={isPlanning}
+            onPlan={planRoutes}
+            onSettings={() => setShowHelpModal(true)}
+            hasData={!!excelData && ordersCount > 0}
+            ordersCount={ordersCount}
+            planButtonLabel={planButtonLabel}
+            isDark={isDark}
+            trafficAdvisory={trafficAdvisory}
+            trafficPreset={trafficPreset}
+            lastPlanPreset={lastPlanPreset}
+            planTrafficImpact={planTrafficImpact}
+          />
         </div>
 
         {/* Секция фильтров */}
@@ -428,25 +450,6 @@ export const AutoPlanner: React.FC = () => {
               </div>
             </div>
           )}
-
-          <AutoPlannerControls
-            isPlanning={isPlanning}
-            onPlan={planRoutes}
-            onSettings={() => {
-              const settingsPanel = document.getElementById('route-settings-panel')
-              if (settingsPanel) {
-                settingsPanel.scrollIntoView({ behavior: 'smooth' })
-              }
-            }}
-            hasData={ordersCount > 0}
-            ordersCount={ordersCount}
-            planButtonLabel={planButtonLabel}
-            isDark={isDark}
-            trafficAdvisory={trafficAdvisory}
-            trafficPreset={trafficPreset}
-            lastPlanPreset={lastPlanPreset}
-            planTrafficImpact={planTrafficImpact}
-          />
         </div>
 
         <TrafficPresetSelector
@@ -847,7 +850,7 @@ export const AutoPlanner: React.FC = () => {
           </Suspense>
         )
       }
-    </div >
+    </div>
   )
 }
 

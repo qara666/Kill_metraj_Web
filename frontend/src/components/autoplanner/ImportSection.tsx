@@ -1,4 +1,5 @@
 import React, { useCallback, useState } from 'react';
+import { clsx } from 'clsx';
 import { FileUploadPanel } from './FileUploadPanel';
 import { processHtmlUrl, isValidUrl } from '../../utils/data/htmlProcessor';
 import { logger } from '../../utils/ui/logger';
@@ -60,17 +61,41 @@ export const ImportSection: React.FC<ImportSectionProps> = ({
 
     // Dashboard API Import moved to AutoPlanner.tsx -> ExtraSettingsPanel
 
+    const [isImportExpanded, setIsImportExpanded] = useState(true);
+
     return (
-        <FileUploadPanel
-            onFileChange={onFileChange}
-            isProcessing={isProcessingExcel}
-            fileName={fileName}
-            ordersCount={ordersCount}
-            htmlUrl={htmlUrl}
-            setHtmlUrl={setHtmlUrl}
-            onHtmlLoad={handleHtmlUrlLoad}
-            isProcessingHtml={isProcessingHtml}
-            isDark={actualIsDark}
-        />
+        <div className={clsx(
+            'rounded-xl border transition-all duration-300',
+            actualIsDark ? 'border-gray-700 bg-gray-800/30' : 'border-gray-200 bg-white'
+        )}>
+            <button
+                onClick={() => setIsImportExpanded(!isImportExpanded)}
+                className={clsx(
+                    'w-full px-4 py-3 flex items-center justify-between transition-colors',
+                    actualIsDark ? 'hover:bg-gray-700/50' : 'hover:bg-gray-50'
+                )}
+            >
+                <div className={clsx('text-sm font-medium flex items-center gap-2', actualIsDark ? 'text-gray-300' : 'text-gray-700')}>
+                    <span>{isImportExpanded ? '▼' : '▶'}</span>
+                    <span>📥 Загрузка данных</span>
+                </div>
+            </button>
+
+            {isImportExpanded && (
+                <div className="p-4 pt-0">
+                    <FileUploadPanel
+                        onFileChange={onFileChange}
+                        isProcessing={isProcessingExcel}
+                        fileName={fileName}
+                        ordersCount={ordersCount}
+                        htmlUrl={htmlUrl}
+                        setHtmlUrl={setHtmlUrl}
+                        onHtmlLoad={handleHtmlUrlLoad}
+                        isProcessingHtml={isProcessingHtml}
+                        isDark={actualIsDark}
+                    />
+                </div>
+            )}
+        </div>
     );
 };

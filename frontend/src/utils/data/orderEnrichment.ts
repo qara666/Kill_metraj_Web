@@ -47,6 +47,20 @@ export const getPlannedTime = (o: any): number | null => {
     return null;
 };
 
+export const getArrivalTime = (o: any): number | null => {
+    if (o.createdAt && typeof o.createdAt === 'number') return o.createdAt;
+    const fields = ['создания', 'создание', 'creation', 'createdAt', 'Дата.создания'];
+    for (const f of fields) {
+        const val = o[f] || o.raw?.[f];
+        if (val) {
+            const p = parseTime(val);
+            if (p) return p;
+        }
+    }
+    // Если ничего не нашли, пробуем вернуть время на кухню как минимально возможное время поступления
+    return getKitchenTime(o);
+};
+
 export const isValidAddress = (str: string): boolean => {
     if (!str || str.trim().length < 5) return false;
     const markers = [/\b(вул|вулиця|улица|ул\.?|проспект|просп\.?|бульвар|бул\.?)\b/i, /\b\d+[а-я]?\b/];

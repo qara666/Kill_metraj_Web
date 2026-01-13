@@ -26,6 +26,9 @@ export interface Order {
   deadlineAt?: number | null
   coords?: Coordinates | null
   deliveryZone?: string
+  status?: string // 'В работе', 'Собран', 'Доставляется', 'Исполнен'
+  handoverAt?: number | null // Время перехода в статус 'Доставляется' (Phase 4.4)
+  manualGroupId?: string | null // Ручное назначение группы (Phase 4.7)
   isSelected?: boolean
   isInRoute?: boolean
   [key: string]: any
@@ -488,4 +491,22 @@ export interface MonitoringStats {
   totalAlerts: number;
   unreadAlerts: number;
   geofenceViolations: number;
+}
+
+export interface RouteCalculationMode {
+  mode: 'automatic' | 'manual';
+  autoTriggerThreshold: number; // Количество заказов для автотриггера
+  recalculateOnAdd: boolean; // Пересчитывать при добавлении
+  recalculateOnRemove: boolean; // Пересчитывать при удалении
+  notifyOnCalculation: boolean; // Показывать уведомления
+}
+
+export interface CourierRouteStatus {
+  courierId: string;
+  courierName: string;
+  ordersCount: number;
+  hasActiveRoute: boolean;
+  routeId?: string;
+  lastCalculated?: number;
+  needsRecalculation: boolean;
 }

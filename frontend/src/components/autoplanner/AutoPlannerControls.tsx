@@ -72,12 +72,12 @@ export const AutoPlannerControls: React.FC<AutoPlannerControlsProps> = React.mem
                     onClick={onPlan}
                     disabled={isPlanning || !hasData || ordersCount === 0}
                     className={clsx(
-                        'relative w-full px-8 py-4 rounded-2xl font-bold text-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg',
+                        'relative w-full px-8 py-5 rounded-3xl font-black text-xl transition-all duration-300 transform hover:scale-[1.02] active:scale-95 shadow-xl',
                         isPlanning || !hasData || ordersCount === 0
                             ? (isDark ? 'bg-gray-700/50 text-gray-400 cursor-not-allowed' : 'bg-gray-200 text-gray-400 cursor-not-allowed')
                             : trafficAdvisory === 'critical'
-                                ? 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white shadow-red-500/50'
-                                : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:via-indigo-500 hover:to-purple-500 text-white shadow-blue-500/50'
+                                ? 'bg-gradient-to-r from-red-600 via-red-700 to-red-800 hover:from-red-500 hover:to-red-600 text-white shadow-red-500/40'
+                                : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:via-indigo-500 hover:to-purple-500 text-white shadow-blue-500/40'
                     )}
                 >
                     <div className="flex items-center justify-center gap-3">

@@ -1171,20 +1171,57 @@ export function enhancedCandidateEvaluationV2(
     }
   }
 
-  // 3. Оценка "разрушения" маршрута
-  if (currentRoute.length > 1) {
-    // Проверяем, не нарушит ли добавление кандидата временную совместимость
-    const timeSpread = getReadyTimeSpread([...currentRoute, candidate])
-    const originalSpread = getReadyTimeSpread(currentRoute)
+  // 3. Оценка "разрушения" маршрута + СТРАТЕГИЧЕСКИЕ ОГРАНИЧЕНИЯ (Phase 2.1)
+  if (currentRoute.length >= 1) {
+    const allOrders = [...currentRoute, candidate];
+
+    // --- Phase 2.1: SLA Constraint (Max 60m delivery span) ---
+    const deadlines = allOrders.map(o => o.deadlineAt).filter((t): t is number => !!t);
+    if (deadlines.length > 1) {
+      const span = Math.max(...deadlines) - Math.min(...deadlines);
+      if (span > 60 * 60 * 1000) {
+        return {
+          ...baseScore,
+          score: -1,
+          routeDisruptionScore: 0,
+          returnDistance: 0,
+          routePositionScore: 0
+        }; // INFEASIBLE: SLA violation
+      }
+    }
+
+    // --- Phase 2.1: Kitchen Constraint (Max 30m ready gap) ---
+    const readyTimes = allOrders.map(o => o.readyAtSource || o.readyAt || Date.now());
+    const readyGap = Math.max(...readyTimes) - Math.min(...readyTimes);
+    if (readyGap > 30 * 60 * 1000) {
+      return {
+        ...baseScore,
+        score: -1,
+        routeDisruptionScore: 0,
+        returnDistance: 0,
+        routePositionScore: 0
+      }; // INFEASIBLE: Kitchen gap too wide
+    }
+
+    // --- Phase 2.3: District Constraint ---
+    const candidateZone = candidate.deliveryZone || extractZoneFromAddress(candidate.address);
+    const hasDifferentZone = currentRoute.some(o => {
+      const zone = o.deliveryZone || extractZoneFromAddress(o.address);
+      return zone && candidateZone && zone !== candidateZone;
+    });
+    if (hasDifferentZone) {
+      score -= 40; // Тяжелый штраф за разные районы
+    }
+
+    const timeSpread = getReadyTimeSpread(allOrders);
+    const originalSpread = getReadyTimeSpread(currentRoute);
 
     if (timeSpread > originalSpread * 1.5) {
-      // Добавление кандидата значительно увеличивает разброс времени
-      routeDisruptionScore = 0.7
-      score *= 0.7
+      routeDisruptionScore = 0.7;
+      score *= 0.7;
     } else if (timeSpread < originalSpread) {
-      // Добавление кандидата улучшает временную совместимость
-      routeDisruptionScore = 1.2
-      score *= 1.2
+      routeDisruptionScore = 1.2;
+      score *= 1.2;
     }
   }
 
@@ -1294,7 +1331,15 @@ export function enhancedCandidateEvaluationV2(
     }
 
     // Проверка на "зигзаг" - если маршрут уже делает зигзаг, штрафуем еще больше
+    // Векторная Гравитация (Dijkstra-lite): Тянем маршрут к его "центру тяжести"
     if (currentRoute.length >= 2) {
+      const avgLat = currentRoute.reduce((s, o) => s + (o.coords?.lat || 0), 0) / currentRoute.length
+      const avgLng = currentRoute.reduce((s, o) => s + (o.coords?.lng || 0), 0) / currentRoute.length
+      const distToCentroid = getCachedDistance(candidate.coords, { lat: avgLat, lng: avgLng })
+
+      // Бонус если кандидат не "улетает" далеко от центра группы
+      if (distToCentroid < 3) score += 15
+
       const prevOrder = currentRoute[currentRoute.length - 2]
       if (prevOrder.coords) {
         const prevToLast = bearingBetween(prevOrder.coords, context.lastOrderCoords)
@@ -2099,14 +2144,16 @@ export function calculateOrderPriorityV2(
 
   let priority = 0
 
-  // 1. Срочность дедлайна (0-100) с адаптивным весом
+  // 1. Срочность дедлайна (Экспоненциальный штраф - НОВОЕ)
   if (order.deadlineAt) {
     const hoursUntilDeadline = (order.deadlineAt - context.currentTime) / (1000 * 60 * 60)
-    let deadlineScore = 0
-    if (hoursUntilDeadline < 1) deadlineScore = 100
-    else if (hoursUntilDeadline < 2) deadlineScore = 80
-    else if (hoursUntilDeadline < 4) deadlineScore = 60
-    else deadlineScore = 40
+
+    // Экспоненциальная функция: приоритет растет взрывообразно при < 1 часа
+    // max(0, 100 * (2 ^ (1 - hoursUntilDeadline)))
+    let deadlineScore = Math.min(250, 100 * Math.pow(2, 1 - hoursUntilDeadline))
+
+    // Если дедлайн уже прошел, даем максимальный приоритет
+    if (hoursUntilDeadline <= 0) deadlineScore = 250
 
     priority += deadlineScore * weights.deadlineWeight
   }

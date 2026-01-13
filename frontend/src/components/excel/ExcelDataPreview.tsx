@@ -7,9 +7,10 @@ interface ExcelDataPreviewProps {
   isVisible: boolean
   onClose: () => void
   onConfirm: () => void
+  isDark?: boolean
 }
 
-export const ExcelDataPreview: React.FC<ExcelDataPreviewProps> = ({ data, isVisible, onClose, onConfirm }) => {
+export const ExcelDataPreview: React.FC<ExcelDataPreviewProps> = ({ data, isVisible, onClose, onConfirm, isDark = false }) => {
   if (!isVisible) return null
 
   const orders = data?.data?.orders || data?.orders || []
@@ -17,8 +18,6 @@ export const ExcelDataPreview: React.FC<ExcelDataPreviewProps> = ({ data, isVisi
   const paymentMethods = data?.data?.paymentMethods || data?.paymentMethods || []
   const errors = data?.data?.errors || data?.errors || []
   const summary = data?.data?.summary || data?.summary || {}
-
-  const isDark = false
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">

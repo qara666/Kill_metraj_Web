@@ -75,11 +75,19 @@ export const useOrderFiltering = (excelData: ProcessedExcelData | null) => {
     }, [excelData])
 
     const filteredOrders = useMemo(() => {
-        if (!excelData?.orders || !orderFilters.enabled) {
-            return excelData?.orders || []
+        if (!excelData?.orders) return []
+
+        // Base restriction: AutoPlanner only takes unassigned orders
+        const baseOrders = excelData.orders.filter((order: any) => {
+            const courier = (order.courier || '').trim();
+            return !courier || courier === 'Не назначен' || courier === 'Не назначено';
+        });
+
+        if (!orderFilters.enabled) {
+            return baseOrders;
         }
 
-        return excelData.orders.filter((order: any) => {
+        return baseOrders.filter((order: any) => {
             if (orderFilters.paymentMethods.length > 0) {
                 const p = String(order.paymentMethod || '').trim().toLowerCase()
                 if (!orderFilters.paymentMethods.some(pm => p.includes(pm.toLowerCase()))) return false

@@ -128,12 +128,23 @@ const PLANNED_TIME_FIELDS = [
     'плановое время', 'плановое_время', 'Плановое время', 'Плановое_время', 'ПЛАНОВОЕ ВРЕМЯ',
     'plannedTime', 'planned_time', 'PlannedTime', 'PLANNED_TIME',
     'Дедлайн', 'дедлайн', 'ДЕДЛАЙН', 'deadline', 'Deadline', 'DEADLINE',
+    'deadlineAt', 'deadline_at', 'DeadlineAt',
+    'deliverBy', 'deliver_by', 'DeliverBy',
     'Время доставки', 'время доставки', 'ВРЕМЯ ДОСТАВКИ',
-    'доставить к', 'доставить_к', 'Доставить к'
+    'доставить к', 'доставить_к', 'Доставить к',
+    'timeDeliveryEnd', 'time_delivery_end', 'TimeDeliveryEnd'
+];
+
+const ARRIVAL_TIME_FIELDS = [
+    'создания', 'создание', 'creation', 'createdAt', 'Дата.создания',
+    'дата.создания', 'Дата создания', 'дата создания', 'CreatedAt'
 ];
 
 export const getKitchenTime = (o: any, baseDate?: Date): number | null => {
     if (!o) return null;
+    // Check property directly if it exists
+    if (o.readyAtSource && typeof o.readyAtSource === 'number') return o.readyAtSource;
+
     for (const field of KITCHEN_TIME_FIELDS) {
         const val = o[field] ?? o.raw?.[field];
         if (val !== undefined && val !== null) {
@@ -146,12 +157,50 @@ export const getKitchenTime = (o: any, baseDate?: Date): number | null => {
 
 export const getPlannedTime = (o: any, baseDate?: Date): number | null => {
     if (!o) return null;
+
+    // Check explicit property first (populated by API transformer)
+    if (o.deadlineAt && typeof o.deadlineAt === 'number') {
+        // If it's a valid timestamp (not 00:00 on some epoch)
+        const date = new Date(o.deadlineAt);
+        if (date.getHours() !== 0 || date.getMinutes() !== 0) {
+            return o.deadlineAt;
+        }
+    }
+
     for (const field of PLANNED_TIME_FIELDS) {
+        const val = o[field] ?? o.raw?.[field];
+        if (val !== undefined && val !== null) {
+            // If the value is "00:00", we should keep searching or handle it as invalid
+            if (typeof val === 'string' && (val === '00:00' || val === '00:00:00')) {
+                continue;
+            }
+
+            const parsed = parseTime(val, { baseDate });
+            if (parsed) return parsed;
+        }
+    }
+    return null;
+};
+
+export const getArrivalTime = (o: any, baseDate?: Date): number | null => {
+    if (!o) return null;
+
+    // Phase 4.4: Если заказ уже в доставке, главным временем "поступления" для группировки 
+    // считается время его передачи курьеру (handoverAt).
+    if (o.status === 'Доставляется' && o.handoverAt) {
+        return o.handoverAt;
+    }
+
+    if (o.createdAt && typeof o.createdAt === 'number') return o.createdAt;
+
+    for (const field of ARRIVAL_TIME_FIELDS) {
         const val = o[field] ?? o.raw?.[field];
         if (val !== undefined && val !== null) {
             const parsed = parseTime(val, { baseDate });
             if (parsed) return parsed;
         }
     }
-    return null;
+
+    // Если время создания не найдено, используем время "на кухню" как прокси
+    return getKitchenTime(o, baseDate);
 };
