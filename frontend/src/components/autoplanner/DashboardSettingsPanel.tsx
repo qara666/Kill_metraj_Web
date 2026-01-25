@@ -39,8 +39,8 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
         setApiTimeDeliveryBeg,
         setApiTimeDeliveryEnd,
         setApiDateShift,
-        apiDateShiftFilterEnabled,
-        setApiDateShiftFilterEnabled,
+        apiTimeFilterEnabled,
+        setApiTimeFilterEnabled,
         triggerApiManualSync
     } = useAutoPlannerStore();
 
@@ -299,40 +299,63 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                 </div>
 
                 {/* Time Window */}
-                <div className="grid grid-cols-2 gap-2">
-                    <div>
-                        <label className={clsx('block text-xs font-medium mb-1', isDark ? 'text-gray-300' : 'text-gray-700')}>
-                            <ClockIcon className="w-3 h-3 inline mr-1" />
-                            Время начала (фильтр)
+                <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                        <label className={clsx('block text-xs font-medium', isDark ? 'text-gray-300' : 'text-gray-700')}>
+                            Время доставки (окно)
                         </label>
-                        <input
-                            type="datetime-local"
-                            value={apiTimeDeliveryBeg}
-                            onChange={(e) => setApiTimeDeliveryBeg(e.target.value)}
-                            className={clsx(
-                                'w-full px-2 py-1.5 rounded-lg text-xs border transition-colors',
-                                isDark
-                                    ? 'bg-gray-900 border-gray-700 text-gray-100 focus:border-blue-500'
-                                    : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
-                            )}
-                        />
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-gray-500">{apiTimeFilterEnabled ? 'Вкл' : 'Выкл'}</span>
+                            <label className="relative inline-flex items-center cursor-pointer scale-75 origin-right">
+                                <input
+                                    type="checkbox"
+                                    checked={apiTimeFilterEnabled}
+                                    onChange={(e) => setApiTimeFilterEnabled(e.target.checked)}
+                                    className="sr-only peer"
+                                />
+                                <div className="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
+                            </label>
+                        </div>
                     </div>
-                    <div>
-                        <label className={clsx('block text-xs font-medium mb-1', isDark ? 'text-gray-300' : 'text-gray-700')}>
-                            <ClockIcon className="w-3 h-3 inline mr-1" />
-                            Время конца (фильтр)
-                        </label>
-                        <input
-                            type="datetime-local"
-                            value={apiTimeDeliveryEnd}
-                            onChange={(e) => setApiTimeDeliveryEnd(e.target.value)}
-                            className={clsx(
-                                'w-full px-2 py-1.5 rounded-lg text-xs border transition-colors',
-                                isDark
-                                    ? 'bg-gray-900 border-gray-700 text-gray-100 focus:border-blue-500'
-                                    : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
-                            )}
-                        />
+                    <div className="grid grid-cols-2 gap-2">
+                        <div>
+                            <label className={clsx('block text-[10px] uppercase font-semibold mb-1', isDark ? 'text-gray-500' : 'text-gray-400')}>
+                                <ClockIcon className="w-3 h-3 inline mr-1" />
+                                Начало
+                            </label>
+                            <input
+                                type="datetime-local"
+                                value={apiTimeDeliveryBeg}
+                                disabled={!apiTimeFilterEnabled}
+                                onChange={(e) => setApiTimeDeliveryBeg(e.target.value)}
+                                className={clsx(
+                                    'w-full px-2 py-1.5 rounded-lg text-xs border transition-colors',
+                                    !apiTimeFilterEnabled && 'opacity-50 cursor-not-allowed',
+                                    isDark
+                                        ? 'bg-gray-900 border-gray-700 text-gray-100 focus:border-blue-500'
+                                        : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+                                )}
+                            />
+                        </div>
+                        <div>
+                            <label className={clsx('block text-[10px] uppercase font-semibold mb-1', isDark ? 'text-gray-500' : 'text-gray-400')}>
+                                <ClockIcon className="w-3 h-3 inline mr-1" />
+                                Конец
+                            </label>
+                            <input
+                                type="datetime-local"
+                                value={apiTimeDeliveryEnd}
+                                disabled={!apiTimeFilterEnabled}
+                                onChange={(e) => setApiTimeDeliveryEnd(e.target.value)}
+                                className={clsx(
+                                    'w-full px-2 py-1.5 rounded-lg text-xs border transition-colors',
+                                    !apiTimeFilterEnabled && 'opacity-50 cursor-not-allowed',
+                                    isDark
+                                        ? 'bg-gray-900 border-gray-700 text-gray-100 focus:border-blue-500'
+                                        : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+                                )}
+                            />
+                        </div>
                     </div>
                 </div>
 
