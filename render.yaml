@@ -1,10 +1,9 @@
 services:
   # Backend Service
   - type: web
-    name: kill-metraj-backend
+    name: yapiko-auto-km-backend
     env: node
-    plan: free # or starter
-    region: frankfurt
+    plan: free
     buildCommand: cd backend && npm install
     startCommand: cd backend && node simple_server.js
     envVars:
@@ -16,15 +15,14 @@ services:
         generateValue: true
       - key: DATABASE_URL
         fromDatabase:
-          name: kill-metraj-db
+          name: yapiko-auto-km-db
           property: connectionString
 
-  # Frontend Service (Now defined as Web Service for robustness)
+  # Frontend Service (Node.js Web Service for robustness)
   - type: web
-    name: kill-metraj-frontend
+    name: yapiko-auto-km-frontend
     env: node
     plan: free
-    region: frankfurt
     buildCommand: cd frontend && npm install && npm run build
     startCommand: cd frontend && node server.js
     envVars:
@@ -35,10 +33,9 @@ services:
       - key: VITE_BACKEND_URL
         fromService:
           type: web
-          name: kill-metraj-backend
+          name: yapiko-auto-km-backend
           property: host
 
 databases:
-  - name: kill-metraj-db
+  - name: yapiko-auto-km-db
     plan: free
-    region: frankfurt
