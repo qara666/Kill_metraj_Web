@@ -1,4 +1,19 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001'
+const getBaseUrl = () => {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
+  if (import.meta.env.VITE_BACKEND_URL) return import.meta.env.VITE_BACKEND_URL
+
+  // If we're on a .onrender.com domain and no URL is set, 
+  // assume the backend is on the same root but with -backend suffix or similar
+  // However, most common is that it's just the current origin if proxied
+  if (typeof window !== 'undefined' && window.location.hostname.includes('onrender.com')) {
+    // Attempt same origin
+    return window.location.origin
+  }
+
+  return 'http://localhost:5001'
+}
+
+const API_URL = getBaseUrl()
 
 export const analyticsApi = {
   getDashboardAnalytics: async () => ({
@@ -22,26 +37,26 @@ export const uploadApi = {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      
+
       const response = await fetch(`${API_URL}/api/upload/excel`, {
         method: 'POST',
         body: formData
       })
-      
+
       if (!response.ok) {
         throw new Error(`Ошибка сервера: ${response.status}`)
       }
-      
+
       const result = await response.json()
-      
+
       if (!result.success) {
         throw new Error(result.error || 'Ошибка обработки файла')
       }
-      
+
       return result
     } catch (error) {
       console.error('Ошибка загрузки файла на сервер:', error)
-      
+
       return {
         success: false,
         message: `Не удалось подключиться к серверу: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,

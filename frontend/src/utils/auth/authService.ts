@@ -9,7 +9,18 @@ import type {
     AuditLog
 } from '../../types/auth'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001'
+const getBaseUrl = () => {
+    if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
+    if (import.meta.env.VITE_BACKEND_URL) return import.meta.env.VITE_BACKEND_URL
+
+    if (typeof window !== 'undefined' && window.location.hostname.includes('onrender.com')) {
+        return window.location.origin
+    }
+
+    return 'http://localhost:5001'
+}
+
+const API_URL = getBaseUrl()
 
 // Токены
 const TOKEN_KEY = 'km_access_token'
