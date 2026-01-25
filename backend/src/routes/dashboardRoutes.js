@@ -1,24 +1,14 @@
 const express = require('express');
 const axios = require('axios');
 const router = express.Router();
+const logger = require('../utils/logger');
 
 // Базовый URL Dashboard API
 const DASHBOARD_API_BASE_URL = 'http://app.yaposhka.kh.ua:4999';
 
 /**
  * GET /api/v1/dashboard
- * Получение данных дашборда (заказы и курьеры)
- * 
- * Query параметры:
- * - top: количество записей (по умолчанию 1000)
- * - dateShift: дата смены (формат dd.mm.yyyy)
- * - timeDeliveryBeg: начало окна доставки (формат dd.mm.yyyy HH:MM:SS)
- * - timeDeliveryEnd: конец окна доставки (формат dd.mm.yyyy HH:MM:SS)
- * - departmentId: ID подразделения
- * - apiKey: API ключ (альтернатива заголовку x-api-key)
- * 
- * Headers:
- * - x-api-key: API ключ для аутентификации
+ * Получение данных дашборда (заказы и курьеры) через прокси
  */
 router.get('/dashboard', async (req, res) => {
     try {
@@ -27,32 +17,34 @@ router.get('/dashboard', async (req, res) => {
             dateShift,
             timeDeliveryBeg,
             timeDeliveryEnd,
-            departmentId
+            departmentId,
+            divisionId
         } = req.query;
 
         const apiKey = req.headers['x-api-key'] || req.query.apiKey;
 
-        // Валидация обязательных параметров
         if (!apiKey) {
             return res.status(400).json({
                 success: false,
-                error: 'API ключ не предоставлен. Используйте заголовок x-api-key или параметр apiKey в URL'
+                error: 'API ключ не предоставлен'
             });
         }
 
-        // Формирование параметров запроса
+        // Формирование параметров запроса для внешнего API
         const params = {
             top: parseInt(top, 10),
         };
 
-        if (dateShift && dateShift !== 'undefined' && dateShift !== 'null') {
-            params.dateShift = dateShift;
-        }
+        // Добавляем параметры только если они предоставлены
+        if (dateShift && dateShift !== 'undefined' && dateShift !== 'null') params.dateShift = dateShift;
         if (timeDeliveryBeg) params.timeDeliveryBeg = timeDeliveryBeg;
         if (timeDeliveryEnd) params.timeDeliveryEnd = timeDeliveryEnd;
-        if (departmentId) params.departmentId = parseInt(departmentId, 10);
 
-        console.log('📡 Запрос к Dashboard API:', {
+        // Используем либо departmentId либо divisionId
+        const finalDeptId = departmentId || divisionId;
+        if (finalDeptId) params.departmentId = parseInt(finalDeptId, 10);
+
+        console.log('📡 Proxy Request to Dashboard API:', {
             url: `${DASHBOARD_API_BASE_URL}/api/v1/dashboard`,
             params,
             hasApiKey: !!apiKey
@@ -65,40 +57,38 @@ router.get('/dashboard', async (req, res) => {
                 'x-api-key': apiKey,
                 'Accept': 'application/json'
             },
-            timeout: 30000 // 30 секунд
+            timeout: 60000 // 60 секунд для надежности
         });
 
-        console.log('✅ Получен ответ от Dashboard API:', {
+        console.log('✅ Dashboard API Success:', {
             ordersCount: response.data.orders?.length || 0,
             couriersCount: response.data.couriers?.length || 0
         });
 
-        // Возврат данных клиенту
+        // Просто пробрасываем ответ
         res.json(response.data);
 
     } catch (error) {
-        console.error('❌ Ошибка при запросе к Dashboard API:', error.message);
+        console.error('❌ Dashboard API Proxy Error:', error.message);
 
-        // Обработка различных типов ошибок
         if (error.response) {
-            // Ошибка от API
+            // Ошибка от внешнего API
             return res.status(error.response.status).json({
                 success: false,
-                error: error.response.data?.detail || error.response.data?.message || 'Ошибка Dashboard API',
+                error: error.response.data?.detail || error.response.data?.message || 'Ошибка внешнего API',
                 details: error.response.data
             });
         } else if (error.request) {
-            // Нет ответа от сервера
+            // Таймаут или отсутствие связи
             return res.status(503).json({
                 success: false,
-                error: 'Dashboard API недоступен. Проверьте подключение к серверу.',
+                error: 'Внешний API недоступен или превышено время ожидания',
                 details: error.message
             });
         } else {
-            // Другие ошибки
             return res.status(500).json({
                 success: false,
-                error: 'Внутренняя ошибка сервера',
+                error: 'Внутренняя ошибка прокси-сервера',
                 details: error.message
             });
         }
@@ -107,25 +97,13 @@ router.get('/dashboard', async (req, res) => {
 
 /**
  * GET /api/v1/health
- * Проверка доступности Dashboard API
  */
 router.get('/health', async (req, res) => {
     try {
-        const response = await axios.get(`${DASHBOARD_API_BASE_URL}/health`, {
-            timeout: 5000
-        });
-
-        res.json({
-            success: true,
-            apiStatus: 'available',
-            apiResponse: response.data
-        });
+        const response = await axios.get(`${DASHBOARD_API_BASE_URL}/health`, { timeout: 5000 });
+        res.json({ success: true, apiStatus: 'available', apiResponse: response.data });
     } catch (error) {
-        res.status(503).json({
-            success: false,
-            apiStatus: 'unavailable',
-            error: error.message
-        });
+        res.status(503).json({ success: false, apiStatus: 'unavailable', error: error.message });
     }
 });
 

@@ -39,7 +39,9 @@ export const DashboardImportModal: React.FC<DashboardImportModalProps> = ({
         apiDepartmentId,
         setApiKey,
         setApiDepartmentId,
-        setLastApiImport
+        setLastApiImport,
+        apiTimeFilterEnabled,
+        setApiTimeFilterEnabled
     } = useAutoPlannerStore();
 
     const [localApiKey, setLocalApiKey] = useState(apiKey);
@@ -78,14 +80,19 @@ export const DashboardImportModal: React.FC<DashboardImportModalProps> = ({
             // Получение dateShift из начальной даты
             const dateShift = formatDateForApi(deliveryStart);
 
-            const params = {
+            const params: any = {
                 apiKey: localApiKey.trim(),
                 dateShift,
-                timeDeliveryBeg: formatDateTimeForApi(deliveryStart),
-                timeDeliveryEnd: formatDateTimeForApi(deliveryEnd),
                 departmentId: localDepartmentId ? parseInt(localDepartmentId, 10) : undefined,
                 top: 1000,
             };
+
+            if (apiTimeFilterEnabled) {
+                Object.assign(params, {
+                    timeDeliveryBeg: formatDateTimeForApi(deliveryStart),
+                    timeDeliveryEnd: formatDateTimeForApi(deliveryEnd),
+                });
+            }
 
             console.log('📤 Отправка запроса к Dashboard API:', params);
             const startTime = performance.now();
@@ -102,8 +109,8 @@ export const DashboardImportModal: React.FC<DashboardImportModalProps> = ({
                 setApiDepartmentId(params.departmentId || null);
                 setLastApiImport({
                     dateShift: params.dateShift,
-                    timeDeliveryBeg: params.timeDeliveryBeg,
-                    timeDeliveryEnd: params.timeDeliveryEnd,
+                    timeDeliveryBeg: params.timeDeliveryBeg || '',
+                    timeDeliveryEnd: params.timeDeliveryEnd || '',
                 });
 
                 console.log(`✅ Загружено ${result.data.orders.length} заказов и ${result.data.couriers.length} курьеров`);
@@ -118,7 +125,7 @@ export const DashboardImportModal: React.FC<DashboardImportModalProps> = ({
         } finally {
             setIsLoading(false);
         }
-    }, [localApiKey, dateTimeDeliveryBeg, dateTimeDeliveryEnd, localDepartmentId, setApiKey, setApiDepartmentId, setLastApiImport, onDataLoaded, onClose]);
+    }, [localApiKey, dateTimeDeliveryBeg, dateTimeDeliveryEnd, localDepartmentId, setApiKey, setApiDepartmentId, setLastApiImport, onDataLoaded, onClose, apiTimeFilterEnabled]);
 
     if (!isOpen) return null;
 
@@ -171,6 +178,7 @@ export const DashboardImportModal: React.FC<DashboardImportModalProps> = ({
                         </label>
                         <input
                             type="datetime-local"
+                            disabled={!apiTimeFilterEnabled}
                             value={dateTimeDeliveryBeg}
                             onChange={(e) => setDateTimeDeliveryBeg(e.target.value)}
                             className={clsx(
@@ -185,8 +193,28 @@ export const DashboardImportModal: React.FC<DashboardImportModalProps> = ({
                         </p>
                     </div>
 
+                    {/* Time Filter Toggle */}
+                    <div className="flex items-center gap-3 py-2">
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={apiTimeFilterEnabled}
+                                onChange={(e) => setApiTimeFilterEnabled(e.target.checked)}
+                                className="sr-only peer"
+                            />
+                            <div className={clsx(
+                                "w-11 h-6 rounded-full peer transition-all duration-200",
+                                isDark ? "bg-gray-700" : "bg-gray-200",
+                                "peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white"
+                            )}></div>
+                        </label>
+                        <span className={clsx('text-sm font-medium', isDark ? 'text-gray-300' : 'text-gray-700')}>
+                            Фильтр по времени доставки (может замедлить запрос)
+                        </span>
+                    </div>
+
                     {/* DateTime Delivery End */}
-                    <div>
+                    <div className={clsx(!apiTimeFilterEnabled && 'opacity-50 pointer-events-none')}>
                         <label className={clsx('block text-sm font-medium mb-2', isDark ? 'text-gray-300' : 'text-gray-700')}>
                             <ClockIcon className="w-4 h-4 inline mr-1" />
                             Конец окна доставки

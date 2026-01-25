@@ -85,12 +85,12 @@ export const localStorageUtils = {
     try {
       const serialized = JSON.stringify(data)
       const size = new Blob([serialized]).size
-      
+
       // Предупреждение если данные слишком большие (>2MB)
       if (size > 2 * 1024 * 1024) {
         console.warn(`⚠️ Данные для ключа "${key}" слишком большие: ${(size / 1024 / 1024).toFixed(2)}MB`)
       }
-      
+
       localStorage.setItem(key, serialized)
     } catch (error: any) {
       if (error.name === 'QuotaExceededError' || error.message?.includes('quota')) {
@@ -104,7 +104,7 @@ export const localStorageUtils = {
             if (!criticalKeys.includes(k) && k.startsWith('km_')) {
               try {
                 localStorage.removeItem(k)
-              } catch {}
+              } catch { }
             }
           })
           // Пробуем сохранить снова
@@ -134,22 +134,37 @@ export const localStorageUtils = {
       const settingsJson = localStorage.getItem('km_settings')
       const persistentMap = localStorageUtils.getCourierVehicleMap()
       const maxCriticalRouteDistanceKm = localStorage.getItem('km_max_critical_route_distance_km')
-      const citySectors = localStorage.getItem('km_city_sectors')
-      return settingsJson ? {
-        ...JSON.parse(settingsJson),
-        courierVehicleMap: persistentMap,
-        maxCriticalRouteDistanceKm: maxCriticalRouteDistanceKm ? parseFloat(maxCriticalRouteDistanceKm) : 120,
-        citySectors: citySectors ? JSON.parse(citySectors) : {}
-      } : {
+      const defaultSettings = {
         googleMapsApiKey: localStorage.getItem('google_maps_api_key') || '',
         mapboxToken: localStorage.getItem('km_mapbox_token') || '',
         defaultStartAddress: localStorage.getItem('km_default_start_address') || 'Макеевская 7, Киев, Украина',
         defaultEndAddress: localStorage.getItem('km_default_end_address') || 'Макеевская 7, Киев, Украина',
         cityBias: localStorage.getItem('km_city_bias') || '',
+        mapStyle: localStorage.getItem('km_map_style') || 'standard',
         courierVehicleMap: persistentMap,
         maxCriticalRouteDistanceKm: maxCriticalRouteDistanceKm ? parseFloat(maxCriticalRouteDistanceKm) : 120,
-        citySectors: citySectors ? JSON.parse(citySectors) : {}
+        kmlData: localStorage.getItem('km_kml_data') ? JSON.parse(localStorage.getItem('km_kml_data')!) : null,
+        kmlSourceUrl: localStorage.getItem('km_kml_source_url') || '',
+        lastKmlSync: localStorage.getItem('km_last_kml_sync') || null,
+        autoSyncKml: localStorage.getItem('km_auto_sync_kml') === 'true',
+        fastopertorApiKey: localStorage.getItem('km_fastopertor_api_key') || '',
+        fastopertorDepartmentId: localStorage.getItem('km_fastopertor_department_id') || ''
       }
+
+      return settingsJson ? {
+        ...JSON.parse(settingsJson),
+        mapStyle: localStorage.getItem('km_map_style') || 'standard',
+        courierVehicleMap: persistentMap,
+        maxCriticalRouteDistanceKm: maxCriticalRouteDistanceKm ? parseFloat(maxCriticalRouteDistanceKm) : 120,
+        kmlData: localStorage.getItem('km_kml_data') ? JSON.parse(localStorage.getItem('km_kml_data')!) : null,
+        kmlSourceUrl: localStorage.getItem('km_kml_source_url') || '',
+        lastKmlSync: localStorage.getItem('km_last_kml_sync') || null,
+        autoSyncKml: localStorage.getItem('km_auto_sync_kml') === 'true',
+        selectedHubs: localStorage.getItem('km_selected_hubs') ? JSON.parse(localStorage.getItem('km_selected_hubs')!) : [],
+        selectedZones: localStorage.getItem('km_selected_zones') ? JSON.parse(localStorage.getItem('km_selected_zones')!) : [],
+        fastopertorApiKey: localStorage.getItem('km_fastopertor_api_key') || '',
+        fastopertorDepartmentId: localStorage.getItem('km_fastopertor_department_id') || ''
+      } : defaultSettings
     } catch (error) {
       console.error('Error reading settings:', error)
       return {
@@ -158,9 +173,15 @@ export const localStorageUtils = {
         defaultStartAddress: localStorage.getItem('km_default_start_address') || 'Макеевская 7, Киев, Украина',
         defaultEndAddress: localStorage.getItem('km_default_end_address') || 'Макеевская 7, Киев, Украина',
         cityBias: localStorage.getItem('km_city_bias') || '',
+        mapStyle: localStorage.getItem('km_map_style') || 'standard',
         courierVehicleMap: localStorageUtils.getCourierVehicleMap(),
         maxCriticalRouteDistanceKm: localStorage.getItem('km_max_critical_route_distance_km') ? parseFloat(localStorage.getItem('km_max_critical_route_distance_km')!) : 120,
-        citySectors: localStorage.getItem('km_city_sectors') ? JSON.parse(localStorage.getItem('km_city_sectors')!) : {}
+        kmlData: localStorage.getItem('km_kml_data') ? JSON.parse(localStorage.getItem('km_kml_data')!) : null,
+        kmlSourceUrl: localStorage.getItem('km_kml_source_url') || '',
+        lastKmlSync: localStorage.getItem('km_last_kml_sync') || null,
+        autoSyncKml: localStorage.getItem('km_auto_sync_kml') === 'true',
+        fastopertorApiKey: localStorage.getItem('km_fastopertor_api_key') || '',
+        fastopertorDepartmentId: localStorage.getItem('km_fastopertor_department_id') || ''
       }
     }
   },
@@ -170,7 +191,10 @@ export const localStorageUtils = {
     try {
       const { courierVehicleMap, ...restSettings } = settings
       localStorage.setItem('km_settings', JSON.stringify(restSettings))
-      if (settings.googleMapsApiKey) {
+      if (settings.mapStyle) {
+        localStorage.setItem('km_map_style', settings.mapStyle)
+      }
+      if (settings.googleMapsApiKey !== undefined) {
         localStorage.setItem('google_maps_api_key', settings.googleMapsApiKey)
       }
       if (settings.mapboxToken !== undefined) {
@@ -188,8 +212,29 @@ export const localStorageUtils = {
       if (settings.cityBias !== undefined) {
         localStorage.setItem('km_city_bias', settings.cityBias)
       }
-      if (settings.citySectors !== undefined) {
-        localStorage.setItem('km_city_sectors', JSON.stringify(settings.citySectors || {}))
+      if (settings.kmlData !== undefined) {
+        localStorage.setItem('km_kml_data', JSON.stringify(settings.kmlData))
+      }
+      if (settings.kmlSourceUrl !== undefined) {
+        localStorage.setItem('km_kml_source_url', settings.kmlSourceUrl)
+      }
+      if (settings.lastKmlSync !== undefined) {
+        localStorage.setItem('km_last_kml_sync', settings.lastKmlSync || '')
+      }
+      if (settings.autoSyncKml !== undefined) {
+        localStorage.setItem('km_auto_sync_kml', settings.autoSyncKml ? 'true' : 'false')
+      }
+      if (settings.selectedHubs !== undefined) {
+        localStorage.setItem('km_selected_hubs', JSON.stringify(settings.selectedHubs || []))
+      }
+      if (settings.selectedZones !== undefined) {
+        localStorage.setItem('km_selected_zones', JSON.stringify(settings.selectedZones || []))
+      }
+      if (settings.fastopertorApiKey !== undefined) {
+        localStorage.setItem('km_fastopertor_api_key', settings.fastopertorApiKey)
+      }
+      if (settings.fastopertorDepartmentId !== undefined) {
+        localStorage.setItem('km_fastopertor_department_id', settings.fastopertorDepartmentId.toString())
       }
       // Save courier vehicle map separately
       if (courierVehicleMap && typeof courierVehicleMap === 'object') {
@@ -201,28 +246,63 @@ export const localStorageUtils = {
     }
   },
 
-  clearAllSettings: (): void => {
+  clearDynamicData: (): void => {
     if (typeof window === 'undefined') return
-    // Keep courier vehicle map in separate storage - IT SURVIVES CLEAR ALL DATA
-    // Also preserve API key for convenience
-    const apiKey = localStorage.getItem('google_maps_api_key')
-    
+
     const keysToRemove = [
-      'km_settings',
       'km_dashboard_logs',
       'km_dashboard_processed_data',
       'km_dashboard_excel_logs',
-      'km_default_start_address',
-      'km_default_end_address',
       'km_routes',
       'km_excel_data',
-      'km_sync_data'
+      'km_sync_data',
+      'km_city_sectors'
     ]
     keysToRemove.forEach(key => localStorage.removeItem(key))
-    
-    // Restore API key
-    if (apiKey) {
-      localStorage.setItem('google_maps_api_key', apiKey)
+
+    // Also clear Zustand store for dynamic data if needed, but handled in UI
+  },
+
+  clearAllSettings: (): void => {
+    if (typeof window === 'undefined') return
+    // Keep courier vehicle map in separate storage - IT SURVIVES CLEAR ALL DATA
+    // Also preserve API keys for convenience
+    const googleApiKey = localStorage.getItem('google_maps_api_key')
+    const mapboxToken = localStorage.getItem('km_mapbox_token')
+    const fastopertorApiKey = localStorage.getItem('km_fastopertor_api_key')
+    const fastopertorDeptId = localStorage.getItem('km_fastopertor_department_id')
+
+    const keysToRemove = [
+      'km_settings',
+      'km_default_start_address',
+      'km_default_end_address',
+      'km_kml_data',
+      'km_kml_source_url',
+      'km_last_kml_sync',
+      'km_auto_sync_kml',
+      'km_selected_hub',
+      'km_selected_hubs',
+      'km_selected_zones',
+      'km_city_bias',
+      'km_map_style',
+      'km_max_critical_route_distance_km',
+      'km_fastopertor_api_key',
+      'km_fastopertor_department_id'
+    ]
+    keysToRemove.forEach(key => localStorage.removeItem(key))
+
+    // Restore API keys
+    if (googleApiKey) {
+      localStorage.setItem('google_maps_api_key', googleApiKey)
+    }
+    if (mapboxToken) {
+      localStorage.setItem('km_mapbox_token', mapboxToken)
+    }
+    if (fastopertorApiKey) {
+      localStorage.setItem('km_fastopertor_api_key', fastopertorApiKey)
+    }
+    if (fastopertorDeptId) {
+      localStorage.setItem('km_fastopertor_department_id', fastopertorDeptId)
     }
   }
 }

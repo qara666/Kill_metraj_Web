@@ -210,6 +210,15 @@ const OrderItem = memo(({
                 </span>
               )
             })()}
+            {(order as any).geoMeta?.zoneName && (
+              <span className={clsx(
+                'px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-widest flex items-center gap-1',
+                isDark ? 'bg-indigo-500/10 text-indigo-400' : 'bg-indigo-100 text-indigo-700'
+              )}>
+                <MapIcon className="w-3 h-3" />
+                {(order as any).geoMeta.zoneName}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -323,6 +332,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [endAddress, setEndAddress] = useState('')
   const [googleMapsReady, setGoogleMapsReady] = useState(false)
   const [courierFilter, setCourierFilter] = useState<string>('all')
+  const [selectedHubs, setSelectedHubs] = useState<string[]>(localStorageUtils.getAllSettings().selectedHubs || [])
+  const [selectedZones, setSelectedZones] = useState<string[]>(localStorageUtils.getAllSettings().selectedZones || [])
   const [routePage, setRoutePage] = useState(0)
   const [routesPerPage] = useState(5) // Количество маршрутов на странице
   const [sortRoutesByNewest] = useState(true)
@@ -398,9 +409,56 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     const settings = localStorageUtils.getAllSettings()
     setStartAddress(settings.defaultStartAddress)
     setEndAddress(settings.defaultEndAddress)
+
+    // Если есть KML данные и только один хаб, выбираем его по умолчанию
+    if (settings.kmlData?.polygons) {
+      const hubs = Array.from(new Set(settings.kmlData.polygons.map((p: any) => p.folderName))) as string[]
+      if (hubs.length === 1 && selectedHubs.length === 0) {
+        setSelectedHubs([hubs[0]])
+      }
+    }
   }, [])
 
+  // Автоматическая установка адреса старта/финиша при выборе хаба (если в KML есть маркер типа "База")
+  useEffect(() => {
+    if (selectedHubs.length === 0) return
+    const settings = localStorageUtils.getAllSettings()
+    if (!settings.kmlData?.markers) return
+
+    // Берем первый выбранный хаб для определения базы
+    const firstHub = selectedHubs[0]
+    const hubMarkers = settings.kmlData.markers.filter((m: any) => m.folderName === firstHub)
+    if (hubMarkers.length > 0) {
+      // Ищем маркер с названием "База", "Base", "Старт" или просто берем первый
+      const baseMarker = hubMarkers.find((m: any) =>
+        /база|base|старт|hub|склад|центр/i.test(m.name)
+      ) || hubMarkers[0]
+
+      if (baseMarker) {
+        // Если у маркера есть координаты, используем их
+        const addr = baseMarker.name
+        setStartAddress(addr)
+        setEndAddress(addr)
+        toast.success(`Установлена база локации: ${addr}`, { icon: '📍', duration: 3000 })
+      }
+    }
+  }, [selectedHubs])
+
   // Проверяем готовность Google Maps
+  useEffect(() => {
+    const handleSettingsUpdate = (e: any) => {
+      const newSettings = e.detail?.settings
+      if (newSettings && newSettings.selectedHubs !== undefined) {
+        setSelectedHubs(newSettings.selectedHubs)
+      }
+      if (newSettings && newSettings.selectedZones !== undefined) {
+        setSelectedZones(newSettings.selectedZones)
+      }
+    }
+    window.addEventListener('km-settings-updated', handleSettingsUpdate)
+    return () => window.removeEventListener('km-settings-updated', handleSettingsUpdate)
+  }, [])
+
   useEffect(() => {
     const initGoogleMaps = async () => {
       try {
@@ -603,6 +661,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     // Дедупликация на случай дублей данных из источника
     const seen = new Set<string>()
     all = all.filter(o => (seen.has(o.id) ? false : (seen.add(o.id), true)))
+
     return all.filter(order => !isOrderInExistingRoute(order.id))
   }, [selectedCourier, courierOrders, orderSearchTerm, excelData?.routes])
 
@@ -612,6 +671,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     // Дедупликация
     const seen = new Set<string>()
     all = all.filter(o => (seen.has(o.id) ? false : (seen.add(o.id), true)))
+
     return all.filter(order => isOrderInExistingRoute(order.id))
   }, [selectedCourier, courierOrders, orderSearchTerm, excelData?.routes])
 
@@ -896,30 +956,34 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
     try {
 
-      // --- Сектор города и границы для геокодирования ---
       const settings = localStorageUtils.getAllSettings()
       const cityCtx = getSelectedCity()
-      const sectorPath = cityCtx.city && settings.citySectors && settings.citySectors[cityCtx.city]
-        ? settings.citySectors[cityCtx.city]
-        : null
 
-      const toLatLng = (p: { lat: number; lng: number }) => new window.google.maps.LatLng(p.lat, p.lng)
+      // Логика секторов: Используем Хабы из KML
+      let hubPolygons = []
+      if (selectedHubs.length > 0 && settings.kmlData?.polygons) {
+        hubPolygons = settings.kmlData.polygons.filter((p: any) => selectedHubs.includes(p.folderName))
+      }
 
-      // Ранее использовали центроид сектора как refPoint; теперь приоритет — предыдущая точка маршрута
+      // Для проверки вхождения используем все ПОЛИГОНЫ хаба (с учетом фильтра зон)
+      const checkInside = (latLng: any) => {
+        if (hubPolygons.length > 0) {
+          return hubPolygons.some((p: any) => {
+            // Если выбраны конкретные зоны, проверяем только их
+            if (selectedZones.length > 0) {
+              const zoneKey = `${p.folderName}:${p.name}`
+              if (!selectedZones.includes(zoneKey)) return false
+            }
 
-      // Границы сектора (bounds) для bias
-      const sectorBounds = (() => {
-        if (!sectorPath || sectorPath.length < 3) return null
-        const b = new window.google.maps.LatLngBounds()
-        sectorPath.forEach((pt: any) => b.extend(toLatLng(pt)))
-        return b
-      })()
+            const poly = new window.google.maps.Polygon({ paths: p.path })
+            return window.google.maps.geometry.poly.containsLocation(latLng, poly)
+          })
+        }
+        return true // Если нет КМЛ ограничений — валидно
+      }
 
-      // Полигон сектора для containsLocation
-      const sectorPolygon = (() => {
-        if (!sectorPath || sectorPath.length < 3 || !window.google?.maps?.geometry?.poly) return null
-        return new window.google.maps.Polygon({ paths: sectorPath })
-      })()
+      // Полигон сектора для containsLocation (используем checkInside вместо прямого полигона)
+      const isInsideSector = (loc: any) => checkInside(loc)
 
       // Извлекаем предполагаемый номер дома из исходной строки (латиница/кириллица, буквы суффикса допустимы)
       const extractHouseNumber = (raw: string): string | null => {
@@ -1039,25 +1103,25 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           region: cityCtx.region,
           componentRestrictions: { country: 'ua' }
         }
-        if (sectorBounds) request.bounds = sectorBounds
         const results: any = await googleApiCache.geocode(request)
         if (!results || results.length === 0) return null
         const expectedHouse = extractHouseNumber(rawAddress)
         const expectedPostal = extractPostal(rawAddress)
         const refPoint = hintPoint || null
-        const inside = sectorPolygon
-          ? results.filter((r: any) => window.google.maps.geometry.poly.containsLocation(r.geometry.location, sectorPolygon))
+        const hasRestriction = hubPolygons.length > 0
+        const inside = hasRestriction
+          ? results.filter((r: any) => isInsideSector(r.geometry.location))
           : []
         const pool = (inside.length > 0 ? inside : results)
         let best = pool[0]
-        let bestScore = scoreCandidate(best, { refPoint, expectedHouse, expectedPostal, inside: sectorPolygon ? window.google.maps.geometry.poly.containsLocation(best.geometry.location, sectorPolygon) : true })
+        let bestScore = scoreCandidate(best, { refPoint, expectedHouse, expectedPostal, inside: hasRestriction ? isInsideSector(best.geometry.location) : true })
         for (let i = 1; i < pool.length; i++) {
           const cand = pool[i]
-          const candScore = scoreCandidate(cand, { refPoint, expectedHouse, expectedPostal, inside: sectorPolygon ? window.google.maps.geometry.poly.containsLocation(cand.geometry.location, sectorPolygon) : true })
+          const candScore = scoreCandidate(cand, { refPoint, expectedHouse, expectedPostal, inside: hasRestriction ? isInsideSector(cand.geometry.location) : true })
           if (candScore > bestScore) { best = cand; bestScore = candScore }
         }
         // если мы выбрали снаружи, а есть варианты внутри, попробуем лучшего внутри
-        if (sectorPolygon && inside.length > 0 && !window.google.maps.geometry.poly.containsLocation(best.geometry.location, sectorPolygon)) {
+        if (hasRestriction && inside.length > 0 && !isInsideSector(best.geometry.location)) {
           let bestIn = inside[0]
           let bestInScore = scoreCandidate(bestIn, { refPoint, expectedHouse, expectedPostal, inside: true })
           for (let i = 1; i < inside.length; i++) {
@@ -1086,18 +1150,18 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
       // Повторная попытка: возвращает ЛУЧШЕГО кандидата ТОЛЬКО внутри полигона (если нет — null)
       const geocodeInsideOnly = async (rawAddress: string, hintPoint?: any): Promise<any | null> => {
-        if (!sectorPolygon) return null
+        const hasRestriction = hubPolygons.length > 0
+        if (!hasRestriction) return null
         const address = cleanAddressForRoute(rawAddress)
         const request: any = {
           address,
           region: cityCtx.region,
           componentRestrictions: { country: 'ua' }
         }
-        if (sectorBounds) request.bounds = sectorBounds
         const results: any = await googleApiCache.geocode(request)
         let gathered = results
         if (!gathered || gathered.length === 0) gathered = []
-        let inside = gathered.filter((r: any) => window.google.maps.geometry.poly.containsLocation(r.geometry.location, sectorPolygon))
+        let inside = gathered.filter((r: any) => isInsideSector(r.geometry.location))
         // Если внутри сектора кандидатов нет — пробуем альтернативные формы улицы
         if (inside.length === 0) {
           const alts = generateStreetVariants(rawAddress)
@@ -1105,7 +1169,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             // eslint-disable-next-line no-await-in-loop
             const altRes: any = await googleApiCache.geocode({ ...request, address: alt })
             if (altRes && altRes.length > 0) {
-              const insideAlt = altRes.filter((r: any) => window.google.maps.geometry.poly.containsLocation(r.geometry.location, sectorPolygon))
+              const insideAlt = altRes.filter((r: any) => isInsideSector(r.geometry.location))
               if (insideAlt.length > 0) { inside = insideAlt; break }
             }
           }
@@ -1125,7 +1189,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
               const withSub = `${address}, ${sub}`
               const subRes: any = await googleApiCache.geocode({ ...request, address: withSub })
               if (subRes && subRes.length > 0) {
-                const insideSub = subRes.filter((r: any) => window.google.maps.geometry.poly.containsLocation(r.geometry.location, sectorPolygon))
+                const insideSub = subRes.filter((r: any) => isInsideSector(r.geometry.location))
                 if (insideSub.length > 0) inside = insideSub
               }
             }
@@ -1180,14 +1244,24 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         const postal = extractPostal(raw)
         const streetNumComp = comps.find((c: any) => c.types?.includes('street_number'))
         const postalComp = comps.find((c: any) => c.types?.includes('postal_code'))
+        const lat = res.geometry?.location?.lat ? res.geometry.location.lat() : undefined
+        const lng = res.geometry?.location?.lng ? res.geometry.location.lng() : undefined
+
+        let zoneInfo = null
+        if (lat !== undefined && lng !== undefined && settings.kmlData) {
+          zoneInfo = AddressValidationService.checkInKmlSectors(lat, lng, settings.kmlData, selectedHubs, selectedZones)
+        }
+
         return {
           locationType: res.geometry?.location_type || 'UNKNOWN',
           placeId: res.place_id || null,
           streetNumberMatched: !!house && ((res.formatted_address || '').toLowerCase().includes(house.toLowerCase()) || (streetNumComp?.long_name || '').toLowerCase() === house.toLowerCase()),
           postalMatched: !!postal && (postalComp?.long_name === postal || (res.formatted_address || '').includes(postal)),
           formatted: res.formatted_address || '',
-          lat: res.geometry?.location?.lat ? res.geometry.location.lat() : undefined,
-          lng: res.geometry?.location?.lng ? res.geometry.location.lng() : undefined
+          lat,
+          lng,
+          zoneName: zoneInfo?.zoneName || null,
+          hubName: zoneInfo?.hubName || null
         }
       }
       const routeGeoMeta: any = {
@@ -1209,24 +1283,23 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       }
 
       // Проверка попадания в сектор (если есть) + повторная попытка для внешних точек
-      if (sectorPolygon) {
-        const isInside = (loc: any) => window.google.maps.geometry.poly.containsLocation(loc, sectorPolygon)
+      if (hubPolygons.length > 0) {
         const all = [originRes, ...waypointResList, destinationRes]
 
         let anyOutside = false
-        all.forEach((r: any) => { if (r && !isInside(r.geometry.location)) anyOutside = true })
+        all.forEach((r: any) => { if (r && !isInsideSector(r.geometry.location)) anyOutside = true })
 
         if (anyOutside) {
           // Пробуем переразрешить только внешние точки строго внутри полигона
           // origin
-          if (originRes && !isInside(originRes.geometry.location)) {
+          if (originRes && !isInsideSector(originRes.geometry.location)) {
             const fix = await geocodeInsideOnly(route.startAddress, null)
             if (fix) originRes = fix
           }
           // waypoints
           for (let i = 0; i < waypointResList.length; i++) {
             const r = waypointResList[i]
-            if (r && !isInside(r.geometry.location)) {
+            if (r && !isInsideSector(r.geometry.location)) {
               // eslint-disable-next-line no-await-in-loop
               const prev = i === 0 ? (originRes?.geometry?.location || null) : (waypointResList[i - 1]?.geometry?.location || null)
               const fix = await geocodeInsideOnly(route.orders[i].address, prev)
@@ -1234,7 +1307,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             }
           }
           // destination
-          if (destinationRes && !isInside(destinationRes.geometry.location)) {
+          if (destinationRes && !isInsideSector(destinationRes.geometry.location)) {
             const prev = waypointResList.length > 0 ? (waypointResList[waypointResList.length - 1]?.geometry?.location || null) : (originRes?.geometry?.location || null)
             const fix = await geocodeInsideOnly(route.endAddress, prev)
             if (fix) destinationRes = fix
@@ -1242,9 +1315,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
           // Повторная валидация
           const allPoints2 = [originRes!.geometry.location, ...waypointResList.map(r => r!.geometry.location), destinationRes!.geometry.location]
-          const stillOutside = allPoints2.some((pt: any) => !isInside(pt))
+          const stillOutside = allPoints2.some((pt: any) => !isInsideSector(pt))
           if (stillOutside) {
-            alert('Некоторые точки маршрута находятся вне заданного сектора города. Проверьте адреса или границы сектора в Настройках.')
+            alert('Некоторые точки маршрута находятся вне выбранного хаба или сектора города. Проверьте адреса.')
             setIsCalculating(false)
             return
           }
@@ -1282,23 +1355,20 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
       const result = await googleApiCache.getDirections(request)
       if (result) {
-        // Если задан сектор (полигон) для города — проверяем попадание всех точек
-        const settings = localStorageUtils.getAllSettings()
+        // Если заданы Хабы или Сектора — проверяем попадание всех точек
         const city = cityCtx.city
-        if (city && settings.citySectors && settings.citySectors[city] && settings.citySectors[city].length >= 3 && window.google?.maps?.geometry?.poly) {
+        if ((hubPolygons.length > 0 || (city && settings.citySectors && settings.citySectors[city] && settings.citySectors[city].length >= 3)) && window.google?.maps?.geometry?.poly) {
           try {
-            const sectorPath = settings.citySectors[city]
-            const polygon = new window.google.maps.Polygon({ paths: sectorPath })
             const legs = result.routes[0].legs
             const points: any[] = []
             if (legs.length > 0) {
               points.push(legs[0].start_location)
               legs.forEach((leg: any) => points.push(leg.end_location))
             }
-            const outside = points.some((pt: any) => !window.google.maps.geometry.poly.containsLocation(pt, polygon))
+            const outside = points.some((pt: any) => !checkInside(pt))
             if (outside) {
-              console.warn('Некоторые точки вне сектора города — маршрут помечен как ложный, расчет отклонен')
-              alert('Точки маршрута находятся вне заданного сектора города. Проверьте адреса или границы сектора в Настройках.')
+              console.warn('Некоторые точки вне разрешенной зоны — маршрут помечен как ложный, расчет отклонен')
+              alert('Точки маршрута находятся вне выбранного хаба или сектора города. Проверьте адреса.')
               setIsCalculating(false)
               return
             }
@@ -1699,6 +1769,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 <div className={`w-2 h-2 rounded-full ${googleMapsReady ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
                 <span>{googleMapsReady ? 'Google Maps готов' : 'Загрузка Google Maps...'}</span>
               </div>
+
             </div>
           </div>
         </div>
@@ -1848,8 +1919,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   </div>
 
                   <CourierTimeWindows
-                    courierId={selectedCourier}
-                    courierName={selectedCourier}
+                    courierId={selectedCourier || ''}
+                    courierName={selectedCourier || ''}
                     orders={availableOrders}
                     isDark={isDark}
                     onJumpToGroup={handleJumpToGroup}
@@ -2182,6 +2253,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                     : (isDark ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-red-50 text-red-700 border-red-200')
                                 )}>
                                   {meta.streetNumberMatched ? '✓ Найден номер дома' : '✗ Не нашел номера дома'}
+                                </span>
+                              )}
+                              {meta.zoneName && (
+                                <span className={clsx(
+                                  'px-2 py-0.5 rounded-lg border',
+                                  isDark ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-purple-50 text-purple-700 border-purple-200'
+                                )}>
+                                  Зона: {meta.zoneName}
                                 </span>
                               )}
                             </div>

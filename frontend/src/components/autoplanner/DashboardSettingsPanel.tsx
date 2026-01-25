@@ -10,6 +10,9 @@ import {
 } from '@heroicons/react/24/outline';
 import { useAutoPlannerStore } from '../../stores/useAutoPlannerStore';
 
+import { useAuth } from '../../contexts/AuthContext';
+import { localStorageUtils } from '../../utils/ui/localStorage';
+
 interface DashboardSettingsPanelProps {
     isDark: boolean;
     onManualSync?: () => void;
@@ -19,6 +22,7 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
     isDark,
     onManualSync
 }) => {
+    const { isAdmin, user } = useAuth();
     const {
         apiKey,
         apiDepartmentId,
@@ -40,10 +44,49 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
         triggerApiManualSync
     } = useAutoPlannerStore();
 
+    // Sync from Global Presets on mount
+    React.useEffect(() => {
+        const settings = localStorageUtils.getAllSettings();
+        if (settings.fastopertorApiKey) {
+            setApiKey(settings.fastopertorApiKey);
+        }
+        if (settings.fastopertorDepartmentId) {
+            const parsed = parseInt(settings.fastopertorDepartmentId, 10);
+            if (!isNaN(parsed)) {
+                setApiDepartmentId(parsed);
+            }
+        }
+
+        // Sync Division ID from User Profile ONLY if not already set in store/settings
+        if (user?.divisionId && !apiDepartmentId && !settings.fastopertorDepartmentId) {
+            const parsedId = parseInt(user.divisionId, 10);
+            if (!isNaN(parsedId)) {
+                setApiDepartmentId(parsedId);
+            }
+        }
+    }, [setApiKey, setApiDepartmentId, user?.divisionId, apiDepartmentId]);
+
     const [localApiKey, setLocalApiKey] = useState(apiKey || '');
+
+    // Update local state when store changes (e.g. after sync)
+    React.useEffect(() => {
+        setLocalApiKey(apiKey || '');
+    }, [apiKey]);
+
     const [localDepartmentId, setLocalDepartmentId] = useState<string>(apiDepartmentId?.toString() || '');
 
+    // Sync local Department ID state when store changes (e.g. from user profile sync)
+    React.useEffect(() => {
+        if (apiDepartmentId) {
+            setLocalDepartmentId(apiDepartmentId.toString());
+        }
+    }, [apiDepartmentId]);
+
     const handleSaveSettings = useCallback(() => {
+        // Only allow saving API Key if admin, or strictly if it's the one from presets? 
+        // Actually, if we disable the input, the user can't change 'localApiKey'.
+        // But if they click save, 'localApiKey' is saved to the store.
+        // If 'localApiKey' was synced from store, it's fine.
         setApiKey(localApiKey.trim());
         setApiDepartmentId(localDepartmentId ? parseInt(localDepartmentId, 10) : null);
     }, [localApiKey, localDepartmentId, setApiKey, setApiDepartmentId]);
@@ -185,15 +228,17 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                 <div>
                     <label className={clsx('block text-xs font-medium mb-1', isDark ? 'text-gray-300' : 'text-gray-700')}>
                         <KeyIcon className="w-3 h-3 inline mr-1" />
-                        API Ключ
+                        API Ключ {isAdmin ? '(Администратор)' : '(Только чтение)'}
                     </label>
                     <input
                         type="password"
                         value={localApiKey}
-                        onChange={(e) => setLocalApiKey(e.target.value)}
-                        placeholder="Введите API ключ"
+                        onChange={(e) => isAdmin && setLocalApiKey(e.target.value)}
+                        disabled={!isAdmin}
+                        placeholder={!isAdmin ? "Ключ задается администратором" : "Введите API ключ"}
                         className={clsx(
                             'w-full px-3 py-1.5 rounded-lg text-xs border transition-colors',
+                            !isAdmin && 'opacity-60 cursor-not-allowed',
                             isDark
                                 ? 'bg-gray-900 border-gray-700 text-gray-100 placeholder-gray-500 focus:border-blue-500'
                                 : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500'
@@ -282,15 +327,17 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                 <div>
                     <label className={clsx('block text-xs font-medium mb-1', isDark ? 'text-gray-300' : 'text-gray-700')}>
                         <BuildingOfficeIcon className="w-3 h-3 inline mr-1" />
-                        ID Подразделения (опционально)
+                        ID Подразделения {isAdmin ? '(Администратор)' : '(Только чтение)'}
                     </label>
                     <input
                         type="number"
                         value={localDepartmentId}
-                        onChange={(e) => setLocalDepartmentId(e.target.value)}
-                        placeholder="100000052"
+                        onChange={(e) => isAdmin && setLocalDepartmentId(e.target.value)}
+                        disabled={!isAdmin}
+                        placeholder={!isAdmin ? "ID задается администратором" : "100000052"}
                         className={clsx(
                             'w-full px-3 py-1.5 rounded-lg text-xs border transition-colors',
+                            !isAdmin && 'opacity-60 cursor-not-allowed',
                             isDark
                                 ? 'bg-gray-900 border-gray-700 text-gray-100 placeholder-gray-500 focus:border-blue-500'
                                 : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500'

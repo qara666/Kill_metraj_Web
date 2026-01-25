@@ -172,6 +172,37 @@ export class AddressValidationService {
   }
 
   /**
+   * Проверка вхождения координат в импортированные KML сектора
+   */
+  static checkInKmlSectors(lat: number, lng: number, kmlData: any, hubNames?: string[], zoneNames?: string[]): { zoneName: string; hubName: string } | null {
+    if (!kmlData || !kmlData.polygons || !Array.isArray(kmlData.polygons)) return null
+    if (typeof window === 'undefined' || !window.google || !window.google.maps) return null
+
+    const point = new window.google.maps.LatLng(lat, lng)
+
+    for (const polyData of kmlData.polygons) {
+      // Фильтр по хабам
+      if (hubNames && hubNames.length > 0 && !hubNames.includes(polyData.folderName)) continue
+
+      // Фильтр по конкретным зонам (если указаны)
+      if (zoneNames && zoneNames.length > 0) {
+        const zoneKey = `${polyData.folderName}:${polyData.name}`
+        if (!zoneNames.includes(zoneKey)) continue
+      }
+
+      const polygon = new window.google.maps.Polygon({ paths: polyData.path })
+      if (window.google.maps.geometry.poly.containsLocation(point, polygon)) {
+        return {
+          zoneName: polyData.name,
+          hubName: polyData.folderName
+        }
+      }
+    }
+
+    return null
+  }
+
+  /**
    * Проверка координат на разумность (для Украины)
    */
   static validateCoordinates(lat: number, lng: number): { isValid: boolean; reason?: string } {
@@ -260,7 +291,7 @@ export class AddressValidationService {
         if (typeof s.anomalyMaxTotalDistanceKm === 'number') maxTotalKm = s.anomalyMaxTotalDistanceKm
         if (typeof s.anomalyMaxAvgPerOrderKm === 'number') maxAvgPerOrderKm = s.anomalyMaxAvgPerOrderKm
       }
-    } catch {}
+    } catch { }
 
     // Получаем адаптивные пороги на основе статистики
     const adaptiveThresholds = this.getAdaptiveThresholds(route.orders.length, route.totalDistance || 0)
@@ -320,7 +351,7 @@ export class AddressValidationService {
     // Валидация адресов заказов с проверкой координат
     const addressValidationResults = route.orders.map(order => {
       const validation = this.validateAddress(order.address)
-      
+
       // Проверяем координаты если они есть
       if (order.latitude && order.longitude) {
         const coordValidation = this.validateCoordinates(order.latitude, order.longitude)
@@ -334,7 +365,7 @@ export class AddressValidationService {
         validation.qualityScore = Math.max(0, (validation.qualityScore || 100) - 15)
         validation.geocodingConfidence = 'low'
       }
-      
+
       return { order, validation }
     })
 
@@ -371,7 +402,7 @@ export class AddressValidationService {
     // Проверка на дублирующиеся адреса
     const addresses = route.orders.map(order => order.address.toLowerCase().trim())
     const uniqueAddresses = new Set(addresses)
-    
+
     if (addresses.length !== uniqueAddresses.size) {
       result.hasAnomalies = true
       result.warnings.push('Обнаружены дублирующиеся адреса в маршруте')
@@ -379,7 +410,7 @@ export class AddressValidationService {
     }
 
     // Эвристика: адреса указывают на разные города — возможны длинные переезды
-    const knownCities = ['киев','київ','kiev','харьков','харків','kharkiv','одесса','одеса','odessa','днепр','дніпро','dnipro','львов','львів','lviv']
+    const knownCities = ['киев', 'київ', 'kiev', 'харьков', 'харків', 'kharkiv', 'одесса', 'одеса', 'odessa', 'днепр', 'дніпро', 'dnipro', 'львов', 'львів', 'lviv']
     const addressCities = addresses.map(a => knownCities.find(c => a.includes(c)) || null).filter(Boolean)
     const distinctCities = new Set(addressCities)
     if (distinctCities.size > 1) {
@@ -433,7 +464,7 @@ export class AddressValidationService {
     // Определение общей уверенности в маршруте
     const totalIssues = result.errors.length + result.warnings.length + result.geocodingIssues
     const qualityRatio = lowQualityAddresses.length / ordersCount
-    
+
     if (totalIssues === 0 && qualityRatio < 0.1) {
       result.routeConfidence = 'high'
     } else if (totalIssues <= 2 && qualityRatio < 0.3) {
@@ -504,7 +535,7 @@ export class AddressValidationService {
   } {
     const validations = route.orders.map(order => {
       const validation = this.validateAddress(order.address)
-      
+
       // Проверяем координаты если они есть
       if (order.latitude && order.longitude) {
         const coordValidation = this.validateCoordinates(order.latitude, order.longitude)
@@ -516,13 +547,13 @@ export class AddressValidationService {
         validation.qualityScore = Math.max(0, (validation.qualityScore || 100) - 15)
         validation.geocodingConfidence = 'low'
       }
-      
+
       return validation
     })
 
     const scores = validations.map(v => v.qualityScore || 0)
     const geocodingIssues = validations.filter(v => v.geocodingConfidence === 'low').length
-    
+
     return {
       highQuality: validations.filter(v => (v.qualityScore || 0) >= 80).length,
       mediumQuality: validations.filter(v => (v.qualityScore || 0) >= 60 && (v.qualityScore || 0) < 80).length,
@@ -540,19 +571,19 @@ export class AddressValidationService {
   }): string[] {
     const suggestions: string[] = []
     const stats = this.getRouteQualityStats(route)
-    
+
     if (stats.lowQuality > route.orders.length * 0.3) {
       suggestions.push('Много адресов низкого качества - улучшите формат адресов')
     }
-    
+
     if (stats.geocodingIssues > 0) {
       suggestions.push('Есть проблемы с геокодированием - проверьте корректность адресов')
     }
-    
+
     if (stats.averageScore < 70) {
       suggestions.push('Общее качество адресов низкое - добавьте номера домов и улицы')
     }
-    
+
     return suggestions
   }
 }

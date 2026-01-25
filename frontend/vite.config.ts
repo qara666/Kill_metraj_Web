@@ -23,7 +23,7 @@ export default defineConfig({
     },
   },
   build: {
-    chunkSizeWarningLimit: 2000, // Увеличиваем лимит до 2000 кБ (2 МБ)
+    chunkSizeWarningLimit: 2000, //  лимит до 2000 кБ 
     rollupOptions: {
       output: {
         manualChunks: {
