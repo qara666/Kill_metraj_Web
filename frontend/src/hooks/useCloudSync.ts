@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { API_URL } from '../config/apiConfig'
 import { cloudSyncService } from '../services/cloudSync'
 
 export const useCloudSync = () => {
@@ -11,7 +12,7 @@ export const useCloudSync = () => {
 
   const checkConnection = async () => {
     try {
-      const response = await fetch('http://localhost:5001/health')
+      const response = await fetch(`${API_URL}/health`)
       setIsConnected(response.ok)
     } catch (error) {
       setIsConnected(false)

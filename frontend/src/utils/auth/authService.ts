@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { API_URL } from '../../config/apiConfig'
 import type {
     User,
     LoginCredentials,
@@ -8,19 +9,6 @@ import type {
     UserPreset,
     AuditLog
 } from '../../types/auth'
-
-const getBaseUrl = () => {
-    if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
-    if (import.meta.env.VITE_BACKEND_URL) return import.meta.env.VITE_BACKEND_URL
-
-    if (typeof window !== 'undefined' && window.location.hostname.includes('onrender.com')) {
-        return 'https://yapiko-auto-km-backend.onrender.com'
-    }
-
-    return 'http://localhost:5001'
-}
-
-const API_URL = getBaseUrl()
 
 // Токены
 const TOKEN_KEY = 'km_access_token'
