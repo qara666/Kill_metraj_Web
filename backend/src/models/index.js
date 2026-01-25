@@ -46,10 +46,10 @@ AuditLog.belongsTo(User, {
 // Sync database (only in development)
 async function syncDatabase() {
     try {
-        if (process.env.NODE_ENV === 'development') {
-            await sequelize.sync({ alter: true });
-            console.log('✅ Database synced successfully');
-        }
+        const isDev = process.env.NODE_ENV === 'development';
+        // Run sync in production for initial setup
+        await sequelize.sync({ alter: isDev });
+        console.log('✅ Database synced successfully');
     } catch (error) {
         console.error('❌ Database sync error:', error);
     }
