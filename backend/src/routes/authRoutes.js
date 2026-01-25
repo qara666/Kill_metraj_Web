@@ -26,6 +26,7 @@ router.post('/login', async (req, res) => {
         // Find user (Sequelize)
         const user = await User.findOne({ where: { username } });
         if (!user) {
+            console.log(`[Auth] Login failed: User not found: ${username}`);
             return res.status(401).json({
                 success: false,
                 error: 'InvalidCredentials',
@@ -45,6 +46,7 @@ router.post('/login', async (req, res) => {
         // Verify password
         const isPasswordValid = await user.comparePassword(password);
         if (!isPasswordValid) {
+            console.log(`[Auth] Login failed: Invalid password for user: ${username}`);
             return res.status(401).json({
                 success: false,
                 error: 'InvalidCredentials',

@@ -267,20 +267,24 @@ async function startServer() {
     // Синхронизация моделей с БД
     await syncDatabase();
 
-    // Создание начального администратора если БД пуста
+    // Создание начального администратора
     const { User } = require('./src/models');
-    const adminCount = await User.count();
-    if (adminCount === 0) {
-      logger.info('🌱 Database is empty. Creating default admin user...');
-      await User.create({
-        username: 'admin',
+    logger.info('🔍 Checking for admin user...');
+    const [admin, created] = await User.findOrCreate({
+      where: { username: 'admin' },
+      defaults: {
         passwordHash: 'adminpassword123',
         role: 'admin',
         isActive: true,
         canModifySettings: true,
         divisionId: '100000000'
-      });
-      logger.info('✅ Default admin user created: admin / adminpassword123');
+      }
+    });
+
+    if (created) {
+      logger.info('✅ Default admin user created successfully.');
+    } else {
+      logger.info('ℹ️ Admin user already exists. To reset password, use the scripts/create-admin.js tool.');
     }
 
     // Запуск сервера
