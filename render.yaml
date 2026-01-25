@@ -35,6 +35,11 @@ services:
           type: web
           name: yapiko-auto-km-backend
           property: host
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: yapiko-auto-km-backend
+          property: host
 
 databases:
   - name: yapiko-auto-km-db
