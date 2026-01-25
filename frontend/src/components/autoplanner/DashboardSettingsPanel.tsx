@@ -44,27 +44,40 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
         triggerApiManualSync
     } = useAutoPlannerStore();
 
-    // Sync from Global Presets on mount
+    // --- Synchronization Logic ---
     React.useEffect(() => {
         const settings = localStorageUtils.getAllSettings();
-        if (settings.fastopertorApiKey) {
+
+        // 1. Sync API Key from Presets (source of truth for Admin settings)
+        if (settings.fastopertorApiKey && settings.fastopertorApiKey !== apiKey) {
             setApiKey(settings.fastopertorApiKey);
         }
-        if (settings.fastopertorDepartmentId) {
-            const parsed = parseInt(settings.fastopertorDepartmentId, 10);
-            if (!isNaN(parsed)) {
-                setApiDepartmentId(parsed);
-            }
+
+        // 2. Sync Department ID
+        const profileDeptId = user?.divisionId ? parseInt(user.divisionId, 10) : null;
+        const storedDeptId = settings.fastopertorDepartmentId ? parseInt(settings.fastopertorDepartmentId, 10) : null;
+
+        // SOURCE OF TRUTH: 
+        // For regular users: Profile divisionId > Local Stored > Current Store
+        // For admins: Local Stored > Profile divisionId > Current Store
+
+        let targetDeptId = apiDepartmentId;
+
+        if (!isAdmin && profileDeptId !== null) {
+            // Regular users MUST follow the profile set by Admin
+            targetDeptId = profileDeptId;
+        } else if (isAdmin) {
+            // Admins can use what's in settings, but fallback to profile if empty
+            targetDeptId = storedDeptId ?? profileDeptId ?? apiDepartmentId;
+        } else if (profileDeptId !== null) {
+            // Fallback for any other cases
+            targetDeptId = profileDeptId;
         }
 
-        // Sync Division ID from User Profile ONLY if not already set in store/settings
-        if (user?.divisionId && !apiDepartmentId && !settings.fastopertorDepartmentId) {
-            const parsedId = parseInt(user.divisionId, 10);
-            if (!isNaN(parsedId)) {
-                setApiDepartmentId(parsedId);
-            }
+        if (targetDeptId !== null && targetDeptId !== apiDepartmentId) {
+            setApiDepartmentId(targetDeptId);
         }
-    }, [setApiKey, setApiDepartmentId, user?.divisionId, apiDepartmentId]);
+    }, [isAdmin, user?.divisionId, apiKey, apiDepartmentId, setApiKey, setApiDepartmentId]);
 
     const [localApiKey, setLocalApiKey] = useState(apiKey || '');
 
