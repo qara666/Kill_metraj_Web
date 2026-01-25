@@ -183,3 +183,45 @@ export const mergeExcelData = (newData: any, existingData: any): ProcessedExcelD
         }
     };
 };
+/**
+ * Синхронизирует данные из Dashboard API (Заменяет старые заказы новыми, сохраняя локальное состояние)
+ */
+export const syncDashboardData = (newData: any, existingData: any): ProcessedExcelData => {
+    if (!newData) return existingData;
+    if (!existingData) return newData;
+
+    const newOrders = Array.isArray(newData.orders) ? newData.orders : [];
+    const existingRoutes = Array.isArray(existingData.routes) ? existingData.routes : [];
+
+    // В отличие от mergeExcelData, здесь мы ПРИНИМАЕМ новый список заказов как основу
+    // Мы не добавляем к старому списку, а ЗАМЕНЯЕМ его.
+
+    // Но мы должны восстановить UI состояние для тех заказов, которые остались в списке
+    const existingOrdersMap = new Map();
+    (existingData.orders || []).forEach((o: any) => existingOrdersMap.set(o.orderNumber, o));
+
+    const syncedOrders = newOrders.map((newOrder: any) => {
+        const existing = existingOrdersMap.get(newOrder.orderNumber);
+        if (existing) {
+            return {
+                ...existing,
+                ...newOrder,
+                id: existing.id,
+                isSelected: existing.isSelected,
+                isInRoute: existing.isInRoute,
+                // Сохраняем координаты чтобы не мигало
+                coords: (existing.address === newOrder.address && existing.coords) ? existing.coords : newOrder.coords
+            };
+        }
+        return newOrder;
+    });
+
+    console.log(`[syncDashboardData] Synced: ${syncedOrders.length} orders (Replaced previous ${existingData.orders?.length || 0})`);
+
+    return {
+        ...newData,
+        orders: syncedOrders,
+        routes: existingRoutes, // Сохраняем маршруты
+        couriers: newData.couriers || [], // Обновляем список курьеров полностью
+    };
+};
