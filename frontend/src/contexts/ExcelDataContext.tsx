@@ -85,7 +85,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   }, [])
 
   // Debounce ref for saving
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const saveTimeoutRef = useRef<any>(null);
 
   const saveDataToServer = async (data: ExcelData) => {
     const token = localStorage.getItem('token');

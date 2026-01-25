@@ -641,8 +641,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [selectedOrdersOrder, setSelectedOrdersOrder] = useState<string[]>([])
 
   // --- Виртуализация с динамической высотой ---
-  const availableListRef = useRef<List>(null as any)
-  const inRouteListRef = useRef<List>(null as any)
+  const availableListRef = useRef<any>(null)
+  const inRouteListRef = useRef<any>(null)
   const availableSizeMap = useRef<Record<string, number>>({})
   const inRouteSizeMap = useRef<Record<string, number>>({})
   const ROW_GAP = 8 // расстояние между элементами
@@ -2007,7 +2007,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                 width={'100%'}
                                 className="scrollbar-hide"
                               >
-                                {({ index, style }) => {
+                                {({ index, style }: { index: number; style: React.CSSProperties }) => {
                                   const order = availableOrders[index]
                                   const selectionOrder = selectedOrdersOrder.indexOf(order.id) + 1
                                   return (
@@ -2048,7 +2048,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                 itemSize={getInRouteSize}
                                 width={'100%'}
                               >
-                                {({ index, style }) => {
+                                {({ index, style }: { index: number; style: React.CSSProperties }) => {
                                   const order = ordersInRoutes[index]
                                   return (
                                     <MeasuredRow
