@@ -25,7 +25,7 @@ export const RouteResultsView: React.FC<RouteResultsViewProps> = React.memo(({
     enableNotifications,
     onExpandRoute
 }) => {
-    const listRef = useRef<List>(null);
+    const listRef = useRef<any>(null);
     const routeEfficiencyMetrics = useMemo(() => calculateRouteEfficiencyMetrics(plannedRoutes), [plannedRoutes]);
     const efficiencySuggestions = useMemo(() => suggestRouteImprovements(routeEfficiencyMetrics), [routeEfficiencyMetrics]);
 
