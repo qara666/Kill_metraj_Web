@@ -80,7 +80,6 @@ export const useDashboardAutoRefresh = ({
             dateTimeDeliveryBeg: start,
             dateTimeDeliveryEnd: end,
             apiDateShift: dateShiftVal,
-            apiDateShiftFilterEnabled: dateShiftEnabled,
             apiTimeFilterEnabled: timeFilterEnabled,
             onDataLoaded: callback
         } = latestValuesRef.current;
