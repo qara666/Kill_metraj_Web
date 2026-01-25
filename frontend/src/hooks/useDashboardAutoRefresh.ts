@@ -95,19 +95,6 @@ export const useDashboardAutoRefresh = ({
         setApiSyncError(null);
 
         try {
-            // Парсинг datetime из input
-            const deliveryStart = parseDateTimeFromInput(start);
-            const deliveryEnd = parseDateTimeFromInput(end);
-
-            // Получение dateShift: если задана явно И включена - используем её
-            let dateShift = '';
-            if (dateShiftEnabled && dateShiftVal && dateShiftVal.trim()) {
-                // Если формат YYYY-MM-DD, преобразуем в dd.mm.yyyy
-                const [y, m, d] = dateShiftVal.split('-').map(Number);
-                const shiftDate = new Date(y, m - 1, d);
-                dateShift = formatDateForApi(shiftDate);
-            }
-            // Если dateShift не указана, оставляем пустой - API будет искать только по времени
 
             const params: any = {
                 apiKey: apiKey.trim(),
@@ -115,14 +102,23 @@ export const useDashboardAutoRefresh = ({
                 top: 1000,
             };
 
-            // Add time filters only if enabled
-            if (timeFilterEnabled) {
-                params.timeDeliveryBeg = formatDateTimeForApi(deliveryStart);
-                params.timeDeliveryEnd = formatDateTimeForApi(deliveryEnd);
+            // Добавляем dateShift только если фильтр включен
+            if (dateShiftEnabled && dateShiftVal && dateShiftVal.trim()) {
+                // Если формат YYYY-MM-DD, преобразуем в dd.mm.yyyy
+                const [y, m, d] = dateShiftVal.split('-').map(Number);
+                const shiftDate = new Date(y, m - 1, d);
+                params.dateShift = formatDateForApi(shiftDate);
             }
 
-            // Добавляем dateShift (всегда отправляем для производительности)
-            params.dateShift = dateShift || formatDateTimeForApi(new Date()).split(' ')[0];
+            // Добавляем фильтры времени
+            if (timeFilterEnabled) {
+                if (start) {
+                    params.timeDeliveryBeg = formatDateTimeForApi(parseDateTimeFromInput(start));
+                }
+                if (end) {
+                    params.timeDeliveryEnd = formatDateTimeForApi(parseDateTimeFromInput(end));
+                }
+            }
 
             logger.info('🔄 Dashboard API auto-refresh: Starting sync...', params);
 

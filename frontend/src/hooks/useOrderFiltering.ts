@@ -74,6 +74,15 @@ export const useOrderFiltering = (excelData: ProcessedExcelData | null) => {
         }
     }, [excelData])
 
+    const [debouncedFilters, setDebouncedFilters] = useState(orderFilters);
+
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedFilters(orderFilters);
+        }, 300);
+        return () => clearTimeout(handler);
+    }, [orderFilters]);
+
     const filteredOrders = useMemo(() => {
         if (!excelData?.orders) return []
 
@@ -83,43 +92,43 @@ export const useOrderFiltering = (excelData: ProcessedExcelData | null) => {
             return !courier || courier === 'Не назначен' || courier === 'Не назначено';
         });
 
-        if (!orderFilters.enabled) {
+        if (!debouncedFilters.enabled) {
             return baseOrders;
         }
 
         return baseOrders.filter((order: any) => {
-            if (orderFilters.paymentMethods.length > 0) {
+            if (debouncedFilters.paymentMethods.length > 0) {
                 const p = String(order.paymentMethod || '').trim().toLowerCase()
-                if (!orderFilters.paymentMethods.some(pm => p.includes(pm.toLowerCase()))) return false
+                if (!debouncedFilters.paymentMethods.some(pm => p.includes(pm.toLowerCase()))) return false
             }
-            if (orderFilters.deliveryZones.length > 0) {
+            if (debouncedFilters.deliveryZones.length > 0) {
                 const z = String(order.deliveryZone || '').trim().toLowerCase()
-                if (!orderFilters.deliveryZones.some(zone => z.includes(zone.toLowerCase()))) return false
+                if (!debouncedFilters.deliveryZones.some(zone => z.includes(zone.toLowerCase()))) return false
             }
-            if (orderFilters.statuses.length > 0) {
+            if (debouncedFilters.statuses.length > 0) {
                 const s = String(order.status || '').trim().toLowerCase()
-                if (!orderFilters.statuses.some(status => s.includes(status.toLowerCase()))) return false
+                if (!debouncedFilters.statuses.some(status => s.includes(status.toLowerCase()))) return false
             }
-            if (orderFilters.orderTypes.length > 0) {
+            if (debouncedFilters.orderTypes.length > 0) {
                 const t = String(order.orderType || '').trim().toLowerCase()
-                if (!orderFilters.orderTypes.some(ot => t.includes(ot.toLowerCase()))) return false
+                if (!debouncedFilters.orderTypes.some(ot => t.includes(ot.toLowerCase()))) return false
             }
-            if (orderFilters.excludeCompleted) {
+            if (debouncedFilters.excludeCompleted) {
                 const status = String(order.status || '').toLowerCase()
                 if (status.includes('исполнен') || status.includes('доставлен') || status.includes('выполнен') || status === 'completed') {
                     return false
                 }
             }
-            if (orderFilters.timeRange.start || orderFilters.timeRange.end) {
+            if (debouncedFilters.timeRange.start || debouncedFilters.timeRange.end) {
                 const deliveryTime = String(order.deliveryTime || order.timeDelivery || '').trim()
                 if (deliveryTime) {
-                    if (orderFilters.timeRange.start && deliveryTime < orderFilters.timeRange.start) return false
-                    if (orderFilters.timeRange.end && deliveryTime > orderFilters.timeRange.end) return false
+                    if (debouncedFilters.timeRange.start && deliveryTime < debouncedFilters.timeRange.start) return false
+                    if (debouncedFilters.timeRange.end && deliveryTime > debouncedFilters.timeRange.end) return false
                 }
             }
             return true
         })
-    }, [excelData, orderFilters])
+    }, [excelData, debouncedFilters])
 
     return {
         orderFilters, setOrderFilters,

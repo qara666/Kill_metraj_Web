@@ -16,7 +16,7 @@ interface ImportSectionProps {
     ordersCount: number;
 }
 
-export const ImportSection: React.FC<ImportSectionProps> = ({
+export const ImportSection: React.FC<ImportSectionProps> = React.memo(({
     isDark,
     setExcelData,
     setCourierSchedules,
@@ -98,4 +98,4 @@ export const ImportSection: React.FC<ImportSectionProps> = ({
             )}
         </div>
     );
-};
+});
