@@ -45,7 +45,7 @@ import { ExcelDataPreview } from '../components/excel/ExcelDataPreview'
 import { useExcelImporter } from '../hooks/useExcelImporter'
 import { useAutoPlannerStore } from '../stores/useAutoPlannerStore'
 import { useDashboardAutoRefresh } from '../hooks/useDashboardAutoRefresh'
-import { mergeExcelData } from '../utils/data/dataMerging'
+import { syncDashboardData } from '../utils/data/dataMerging';
 
 // Lazy loaded components
 import type { TourStep } from '../components/features/HelpTour'
@@ -158,13 +158,13 @@ export const AutoPlanner: React.FC = () => {
   // State to control Data Preview modal
   const [showDataPreview, setShowDataPreview] = useState(false);
 
-  // Обработчик загрузки данных из Dashboard API (перемещен из ImportSection)
+  // Обработчик загрузки данных из Dashboard API
   const handleDashboardDataLoaded = useCallback(async (data: ProcessedExcelData) => {
-    // Используем updateExcelData для безопасного объединения данных и сохранения маршрутов
+    // Используем syncDashboardData для ЗАМЕНЫ данных (чтобы заказы с других подразделений не накапливались)
     updateExcelData((prevData: any) => {
-      const merged = mergeExcelData(data, prevData);
-      logger.info(`✅ Данные обновлены (AutoPlanner): ${merged.orders.length} заказов, ${merged.routes.length} сохраненных маршрутов`);
-      return merged;
+      const synced = syncDashboardData(data, prevData);
+      logger.info(`✅ Данные синхронизированы (AutoPlanner): ${synced.orders.length} заказов, ${synced.routes.length} маршрутов`);
+      return synced;
     });
 
     // setExcelData(data); // Заменено на updateExcelData

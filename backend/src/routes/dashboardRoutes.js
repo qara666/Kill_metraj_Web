@@ -49,7 +49,7 @@ router.get('/dashboard', async (req, res) => {
         }
 
         // Используем любую комбинацию departmentId/divisionId и отправляем ВСЕ варианты во внешний API
-        const rawDeptId = departmentId || divisionId || req.query.department_id || req.query.division_id;
+        const rawDeptId = departmentId || divisionId || req.query.department_id || req.query.division_id || req.query.branchId || req.query.branch_id || req.query.subdivisionId || req.query.subdivision_id;
         const finalDeptId = String(rawDeptId || '').trim();
 
         if (finalDeptId && finalDeptId !== 'undefined' && finalDeptId !== 'null' && finalDeptId !== '') {
@@ -58,6 +58,10 @@ router.get('/dashboard', async (req, res) => {
             params.divisionId = deptIdValue;
             params.department_id = deptIdValue;
             params.division_id = deptIdValue;
+            params.branchId = deptIdValue;
+            params.branch_id = deptIdValue;
+            params.subdivisionId = deptIdValue;
+            params.subdivision_id = deptIdValue;
         }
 
         // Удаляем из query параметров самого запроса лишнее, если нужно, 
