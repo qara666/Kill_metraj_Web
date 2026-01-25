@@ -5,10 +5,9 @@ const getBaseUrl = () => {
   // If we're on a .onrender.com domain and no URL is set, 
   // assume the backend is on the same root but with -backend suffix or similar
   // However, most common is that it's just the current origin if proxied
-  if (typeof window !== 'undefined' && window.location.hostname.includes('onrender.com')) {
-    // Attempt same origin
-    return window.location.origin
-  }
+  // If we're on Render, explicitly point to the backend service
+  return 'https://yapiko-auto-km-backend.onrender.com'
+
 
   return 'http://localhost:5001'
 }

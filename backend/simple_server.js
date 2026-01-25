@@ -267,6 +267,22 @@ async function startServer() {
     // Синхронизация моделей с БД
     await syncDatabase();
 
+    // Создание начального администратора если БД пуста
+    const { User } = require('./src/models');
+    const adminCount = await User.count();
+    if (adminCount === 0) {
+      logger.info('🌱 Database is empty. Creating default admin user...');
+      await User.create({
+        username: 'admin',
+        password: 'adminpassword123',
+        role: 'admin',
+        isActive: true,
+        canModifySettings: true,
+        departmentId: '100000000'
+      });
+      logger.info('✅ Default admin user created: admin / adminpassword123');
+    }
+
     // Запуск сервера
     app.listen(PORT, '0.0.0.0', () => {
       logger.info(`🚀 Сервер запущен на 0.0.0.0:${PORT}`, {
