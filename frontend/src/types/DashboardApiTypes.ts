@@ -30,7 +30,10 @@ export interface DashboardApiParams {
     dateShift?: string;            // Дата смены в формате dd.mm.yyyy (теперь опционально)
     timeDeliveryBeg?: string;      // Начало окна доставки (формат "dd.mm.yyyy HH:MM:SS")
     timeDeliveryEnd?: string;      // Конец окна доставки (формат "dd.mm.yyyy HH:MM:SS")
-    departmentId?: number;         // ID подразделения
+    departmentId?: number;         // ID подразделения (departmentId)
+    divisionId?: number;           // ID подразделения (divisionId)
+    department_id?: number;        // ID подразделения (department_id)
+    division_id?: number;          // ID подразделения (division_id)
     apiKey: string;                // API ключ (передается в заголовке x-api-key)
 }
 
