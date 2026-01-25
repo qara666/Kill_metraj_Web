@@ -196,13 +196,13 @@ export const formatDateForApi = (date: Date): string => {
 };
 
 /**
- * Форматирование даты и времени для Dashboard API (dd.mm.yyyy HH:MM)
+ * Форматирование даты и времени для Dashboard API (dd.mm.yyyy HH:MM:SS)
  */
 export const formatDateTimeForApi = (date: Date): string => {
     const dateStr = formatDateForApi(date);
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${dateStr} ${hours}:${minutes}`;
+    return `${dateStr} ${hours}:${minutes}:00`;
 };
 
 /**

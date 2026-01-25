@@ -47,24 +47,14 @@ router.get('/dashboard', async (req, res) => {
             params.timeDeliveryEnd = timeDeliveryEnd;
         }
 
-        // Используем любую комбинацию departmentId/divisionId и отправляем ВСЕ варианты во внешний API
-        const rawDeptId = departmentId || divisionId || req.query.department_id || req.query.division_id || req.query.branchId || req.query.branch_id || req.query.subdivisionId || req.query.subdivision_id;
+        // Department/Division ID resolution
+        const rawDeptId = departmentId || divisionId || req.query.department_id || req.query.division_id || req.query.branchId || req.query.subdivisionId;
         const finalDeptId = String(rawDeptId || '').trim();
 
         if (finalDeptId && finalDeptId !== 'undefined' && finalDeptId !== 'null' && finalDeptId !== '') {
             const deptIdValue = parseInt(finalDeptId, 10);
             params.departmentId = deptIdValue;
-            params.divisionId = deptIdValue;
-            params.department_id = deptIdValue;
-            params.division_id = deptIdValue;
-            params.branchId = deptIdValue;
-            params.branch_id = deptIdValue;
-            params.branch_Id = deptIdValue;
-            params.subdivisionId = deptIdValue;
-            params.subdivision_id = deptIdValue;
-            params.deptId = deptIdValue;
-            params.dept_id = deptIdValue;
-            params.id = deptIdValue;
+            params.divisionId = deptIdValue; // Core variants for external API
         }
 
         // Удаляем из query параметров самого запроса лишнее, если нужно, 
