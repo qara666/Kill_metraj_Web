@@ -99,18 +99,21 @@ export const useDashboardAutoRefresh = ({
             const params: any = {
                 apiKey: apiKey.trim(),
                 departmentId: deptId || undefined,
+                divisionId: deptId || undefined, // Duo for proxy
                 top: 1000,
             };
 
-            // Добавляем dateShift только если фильтр включен
-            if (dateShiftEnabled && dateShiftVal && dateShiftVal.trim()) {
-                // Если формат YYYY-MM-DD, преобразуем в dd.mm.yyyy
+            // 1. DATE SHIFT (Anchor)
+            // Even if the UI toggle is OFF, we should ALWAYS send dateShift if we have a value.
+            // This acts as a primary filter to prevent "1000 orders" across all dates.
+            if (dateShiftVal && dateShiftVal.trim()) {
                 const [y, m, d] = dateShiftVal.split('-').map(Number);
                 const shiftDate = new Date(y, m - 1, d);
                 params.dateShift = formatDateForApi(shiftDate);
             }
 
-            // Добавляем фильтры времени
+            // 2. TIME PERFORMANCE FILTERS
+            // These narrowing filters are only added if explicitly enabled by the user.
             if (timeFilterEnabled) {
                 if (start) {
                     params.timeDeliveryBeg = formatDateTimeForApi(parseDateTimeFromInput(start));
