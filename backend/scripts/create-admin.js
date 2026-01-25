@@ -24,11 +24,11 @@ async function createAdmin() {
             console.log(`Creating new admin user: ${username}...`);
             await User.create({
                 username,
-                password, // Model hooks will hash this
+                passwordHash: password, // Model hooks will hash this
                 role: 'admin',
                 isActive: true,
                 canModifySettings: true,
-                departmentId
+                divisionId: departmentId
             });
             console.log('Admin user created successfully!');
         }

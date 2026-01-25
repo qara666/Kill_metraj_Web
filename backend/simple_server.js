@@ -274,11 +274,11 @@ async function startServer() {
       logger.info('🌱 Database is empty. Creating default admin user...');
       await User.create({
         username: 'admin',
-        password: 'adminpassword123',
+        passwordHash: 'adminpassword123',
         role: 'admin',
         isActive: true,
         canModifySettings: true,
-        departmentId: '100000000'
+        divisionId: '100000000'
       });
       logger.info('✅ Default admin user created: admin / adminpassword123');
     }
