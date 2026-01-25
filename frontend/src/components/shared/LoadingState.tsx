@@ -1,5 +1,6 @@
 import React from 'react'
 import { clsx } from 'clsx'
+import { useTheme } from '../../contexts/ThemeContext'
 import { LoadingSpinner } from './LoadingSpinner'
 import { ProgressBar } from './ProgressBar'
 
@@ -26,6 +27,7 @@ export const LoadingState: React.FC<LoadingStateProps> = ({
   className,
   children
 }) => {
+  const { isDark } = useTheme()
   if (!isLoading) {
     return <>{children}</>
   }
@@ -43,7 +45,10 @@ export const LoadingState: React.FC<LoadingStateProps> = ({
   const content = (
     <div className={clsx('flex flex-col items-center justify-center gap-4 p-6', className)}>
       {variant === 'spinner' && (
-        <LoadingSpinner size={size} text={message} />
+        <>
+          <LoadingSpinner size={size} />
+          {message && <p className={clsx('text-sm font-medium', isDark ? 'text-gray-300' : 'text-gray-600')}>{message}</p>}
+        </>
       )}
       {variant === 'progress' && (
         <>
