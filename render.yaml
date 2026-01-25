@@ -20,9 +20,8 @@ services:
           property: connectionString
 
   # Frontend Service (Static Site)
-  - type: web
+  - type: static
     name: kill-metraj-frontend
-    env: static
     plan: free
     region: frankfurt
     buildCommand: cd frontend && npm install && npm run build
