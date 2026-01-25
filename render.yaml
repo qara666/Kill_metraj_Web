@@ -4,7 +4,7 @@ services:
     name: kill-metraj-backend
     env: node
     plan: free # or starter
-    region: frankfurt # update if needed
+    region: frankfurt
     buildCommand: cd backend && npm install
     startCommand: cd backend && node simple_server.js
     envVars:
@@ -19,20 +19,24 @@ services:
           name: kill-metraj-db
           property: connectionString
 
-  # Frontend Service (Static Site)
-  - type: static_site
+  # Frontend Service (Now defined as Web Service for robustness)
+  - type: web
     name: kill-metraj-frontend
+    env: node
     plan: free
     region: frankfurt
     buildCommand: cd frontend && npm install && npm run build
-    publishPath: frontend/dist
+    startCommand: cd frontend && node server.js
     envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
       - key: VITE_BACKEND_URL
         fromService:
           type: web
           name: kill-metraj-backend
           property: host
-        # Note: Render provides https://[host].onrender.com automatically
 
 databases:
   - name: kill-metraj-db
