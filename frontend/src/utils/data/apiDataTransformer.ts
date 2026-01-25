@@ -9,6 +9,7 @@ export const transformDashboardData = (
     baseDate: string,
     fallbackDate?: string // format dd.mm.yyyy or YYYY-MM-DD HH:mm:ss
 ): ProcessedExcelData => {
+    console.log(`[transformDashboardData] Incoming raw orders: ${apiData.orders?.length || 0}`);
     // Truncate function to get only dd.mm.yyyy
     const getOnlyDate = (s: string) => s.split(' ')[0].split('T')[0];
 
@@ -53,7 +54,9 @@ export const transformDashboardData = (
             // 1. Date check
             if (effectiveDate && swaggerOrder.creationDate) {
                 // creationDate is "dd.mm.yyyy HH:MM"
-                if (!swaggerOrder.creationDate.startsWith(effectiveDate)) {
+                // effectiveDate is "dd.mm.yyyy"
+                if (!swaggerOrder.creationDate.includes(effectiveDate)) {
+                    // console.log(`[dashboardTransformer] Skipping order ${swaggerOrder.orderNumber}: Date mismatch (${swaggerOrder.creationDate} vs ${effectiveDate})`);
                     return; // Skip wrong date
                 }
             }
@@ -193,14 +196,13 @@ export const formatDateForApi = (date: Date): string => {
 };
 
 /**
- * Форматирование даты и времени для Dashboard API (dd.mm.yyyy HH:MM:SS)
+ * Форматирование даты и времени для Dashboard API (dd.mm.yyyy HH:MM)
  */
 export const formatDateTimeForApi = (date: Date): string => {
     const dateStr = formatDateForApi(date);
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
-    const seconds = String(date.getSeconds()).padStart(2, '0');
-    return `${dateStr} ${hours}:${minutes}:${seconds}`;
+    return `${dateStr} ${hours}:${minutes}`;
 };
 
 /**

@@ -114,12 +114,15 @@ export const useDashboardAutoRefresh = ({
             // 2. TIME PERFORMANCE FILTERS
             // These narrowing filters are only added if explicitly enabled by the user.
             if (timeFilterEnabled) {
+                console.log('[useDashboardAutoRefresh] Applying Time Filters...', { start, end });
                 if (start) {
                     params.timeDeliveryBeg = formatDateTimeForApi(parseDateTimeFromInput(start));
                 }
                 if (end) {
                     params.timeDeliveryEnd = formatDateTimeForApi(parseDateTimeFromInput(end));
                 }
+            } else {
+                console.log('[useDashboardAutoRefresh] Time Filters are DISABLED');
             }
 
             logger.info('🔄 Dashboard API auto-refresh: Starting sync...', params);

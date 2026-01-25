@@ -35,17 +35,8 @@ router.get('/dashboard', async (req, res) => {
             top: parseInt(top, 10),
         };
 
-        // Добавляем параметры только если они предоставлены и валидны
-        // Carpet bombing for Date/Shift parameters
         if (dateShift && dateShift !== 'undefined' && dateShift !== 'null' && dateShift.trim()) {
             params.dateShift = dateShift;
-            params.date = dateShift;
-            params.shiftDate = dateShift;
-            params.shift_date = dateShift;
-            params.date_shift = dateShift;
-            params.date_from = dateShift;
-            params.date_to = dateShift;
-            params.d = dateShift;
         }
 
         if (timeDeliveryBeg && timeDeliveryBeg !== 'undefined' && timeDeliveryBeg !== 'null' && timeDeliveryBeg.trim()) {
