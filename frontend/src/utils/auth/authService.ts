@@ -14,7 +14,7 @@ const getBaseUrl = () => {
     if (import.meta.env.VITE_BACKEND_URL) return import.meta.env.VITE_BACKEND_URL
 
     if (typeof window !== 'undefined' && window.location.hostname.includes('onrender.com')) {
-        return window.location.origin
+        return 'https://yapiko-auto-km-backend.onrender.com'
     }
 
     return 'http://localhost:5001'
