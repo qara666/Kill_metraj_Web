@@ -39,6 +39,8 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
         setApiTimeDeliveryBeg,
         setApiTimeDeliveryEnd,
         setApiDateShift,
+        apiDateShiftFilterEnabled,
+        setApiDateShiftFilterEnabled,
         apiTimeFilterEnabled,
         setApiTimeFilterEnabled,
         triggerApiManualSync
