@@ -134,7 +134,6 @@ export const AutoPlanner: React.FC = () => {
     trafficPreset,
     trafficAdvisory,
     sectorCityName,
-    sectorPathState,
     mapboxTokenState,
     syncSectorSettings
   } = trafficState
@@ -200,7 +199,7 @@ export const AutoPlanner: React.FC = () => {
   useEffect(() => {
     const handleSettingsUpdated = () => syncSectorSettings()
     const handleStorage = (event: StorageEvent) => {
-      if (event.key && ['km_settings', 'km_city_sectors', 'km_mapbox_token', 'km_city_bias'].includes(event.key)) {
+      if (event.key && ['km_settings', 'km_mapbox_token', 'km_city_bias'].includes(event.key)) {
         syncSectorSettings()
       }
     }
@@ -492,11 +491,6 @@ export const AutoPlanner: React.FC = () => {
                   ⚠️ Mapbox токен не задан в настройках. Укажите свой токен в разделе Настройки, иначе карта не загрузится.
                 </div>
               )}
-              {!sectorPathState || sectorPathState.length === 0 ? (
-                <div className={clsx('mb-3 text-xs px-3 py-2 rounded-lg', isDark ? 'bg-blue-900/30 text-blue-200' : 'bg-blue-50 text-blue-700')}>
-                  ℹ️ Сектор не задан. Тепловая карта будет показывать общую информацию о трафике. Для более точных данных задайте сектор в настройках.
-                </div>
-              ) : null}
               <Suspense
                 fallback={
                   <div className={clsx('text-sm text-center py-8', isDark ? 'text-gray-400' : 'text-gray-600')}>
@@ -505,7 +499,6 @@ export const AutoPlanner: React.FC = () => {
                 }
               >
                 <TrafficHeatmap
-                  sectorPath={sectorPathState || undefined}
                   sectorName={sectorCityName || 'Сектор'}
                   mapboxToken={mapboxTokenState || ''}
                 />
@@ -550,7 +543,6 @@ export const AutoPlanner: React.FC = () => {
                 <Suspense fallback={<div className={clsx('text-sm text-center py-8', isDark ? 'text-gray-400' : 'text-gray-600')}>Загрузка карты загруженности...</div>}>
                   <WorkloadHeatmap
                     orders={workloadHeatmapData}
-                    sectorPath={sectorPathState || undefined}
                     onHeatmapDataLoad={(data) => {
                       setWorkloadHeatmapData(data as any)
                     }}

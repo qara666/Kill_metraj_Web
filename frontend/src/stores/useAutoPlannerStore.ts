@@ -40,6 +40,7 @@ interface AutoPlannerUIState {
     apiTimeDeliveryEnd: string; // datetime-local format
     apiDateShift: string; // YYYY-MM-DD
     apiDateShiftFilterEnabled: boolean; // Toggle for dateShift
+    apiTimeFilterEnabled: boolean; // Toggle for timeDeliveryBeg/End
     apiManualSyncTrigger: number | null;
 
     // UI Actions
@@ -67,6 +68,7 @@ interface AutoPlannerUIState {
     setApiTimeDeliveryEnd: (time: string) => void;
     setApiDateShift: (date: string) => void;
     setApiDateShiftFilterEnabled: (enabled: boolean) => void;
+    setApiTimeFilterEnabled: (enabled: boolean) => void;
     triggerApiManualSync: () => void;
 }
 
@@ -101,6 +103,7 @@ export const useAutoPlannerStore = create<AutoPlannerUIState>()(
                 return `${year}-${month}-${day}`;
             })(),
             apiDateShiftFilterEnabled: true,
+            apiTimeFilterEnabled: false,
             apiManualSyncTrigger: null,
 
             // Collapsed states defaults
@@ -133,6 +136,7 @@ export const useAutoPlannerStore = create<AutoPlannerUIState>()(
             setApiTimeDeliveryEnd: (time) => set({ apiTimeDeliveryEnd: time }),
             setApiDateShift: (date) => set({ apiDateShift: date }),
             setApiDateShiftFilterEnabled: (enabled) => set({ apiDateShiftFilterEnabled: enabled }),
+            setApiTimeFilterEnabled: (enabled) => set({ apiTimeFilterEnabled: enabled }),
             triggerApiManualSync: () => set({ apiManualSyncTrigger: Date.now() }),
         }),
         {

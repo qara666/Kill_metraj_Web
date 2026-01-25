@@ -10,10 +10,8 @@ import {
 // Modular Hooks
 import { useTrafficData, TrafficSegmentWithHistory } from '../../hooks/useTrafficData'
 import { useMapboxLayers } from '../../hooks/useMapboxLayers'
-import { generateTrafficProbes } from '../../utils/maps/trafficProbeGenerator'
 
 interface TrafficHeatmapProps {
-  sectorPath?: Array<{ lat: number; lng: number }>
   sectorName?: string
   mapboxToken?: string
 }
@@ -32,7 +30,7 @@ const LIGHT_STYLE = 'mapbox://styles/mapbox/light-v11'
 const DARK_STYLE = 'mapbox://styles/mapbox/dark-v11'
 
 
-export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({ sectorPath, sectorName, mapboxToken }) => {
+export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({ sectorName, mapboxToken }) => {
   const { isDark } = useTheme()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null)
@@ -58,7 +56,7 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({ sectorPath, sect
 
 
   // Hooks integration
-  const { updateSectorLayer, updateTrafficLayers, updateSegmentLayer, toggleOfficialTraffic } = useMapboxLayers(heatmapBoost)
+  const { updateTrafficLayers, updateSegmentLayer, toggleOfficialTraffic } = useMapboxLayers(heatmapBoost)
 
   const onDataUpdate = useCallback((allSegments: TrafficSegmentWithHistory[], timestamp: number) => {
     setLastUpdated(timestamp)
@@ -85,12 +83,10 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({ sectorPath, sect
   }, [updateSegmentLayer, updateTrafficLayers, filterSeverity, displayMode])
 
   const waypoints = useMemo(() => {
-    if (!sectorPath) return []
-    return generateTrafficProbes(sectorPath, {
-      gridDensity: featureFlags.denseSampling ? 14 : 10,
-      maxPoints: 120
-    })
-  }, [sectorPath, featureFlags.denseSampling])
+    // Note: No waypoint generation without sectorPath for now.
+    // In the future, this should be adapted to use selected KML Hubs.
+    return []
+  }, [])
 
   const { loading, error, loadingProgress, fetchTraffic } = useTrafficData(
     waypoints,
@@ -102,7 +98,7 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({ sectorPath, sect
   )
 
   useEffect(() => {
-    if (!containerRef.current || !resolvedToken || !sectorPath) return
+    if (!containerRef.current || !resolvedToken) return
     let mounted = true
 
     const initMap = async () => {
@@ -119,16 +115,6 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({ sectorPath, sect
       mapRef.current = map
 
       map.on('load', () => {
-        if (sectorPath && sectorPath.length > 0) {
-          const geojson = {
-            type: 'Feature',
-            geometry: {
-              type: 'Polygon',
-              coordinates: [[...sectorPath.map(p => [p.lng, p.lat]), [sectorPath[0].lng, sectorPath[0].lat]]]
-            }
-          }
-          updateSectorLayer(map, geojson)
-        }
         toggleOfficialTraffic(map, showOfficialTraffic)
         fetchTraffic()
       })
@@ -136,15 +122,8 @@ export const TrafficHeatmap: React.FC<TrafficHeatmapProps> = ({ sectorPath, sect
 
     initMap()
     return () => { mounted = false; mapRef.current?.remove() }
-  }, [isDark, resolvedToken, sectorPath, fetchTraffic])
+  }, [isDark, resolvedToken, fetchTraffic])
 
-  if (!sectorPath || sectorPath.length < 3) {
-    return (
-      <div className={clsx('p-4 rounded-lg border', isDark ? 'border-gray-700 bg-gray-800/40 text-gray-100' : 'border-gray-200 bg-gray-50 text-gray-800')}>
-        Не задан периметр сектора
-      </div>
-    )
-  }
 
   return (
     <div className="space-y-4" onClick={(e) => e.stopPropagation()}>

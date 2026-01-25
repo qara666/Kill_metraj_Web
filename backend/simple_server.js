@@ -4,8 +4,14 @@ const dashboardRoutes = require('./src/routes/dashboardRoutes');
 const ExcelService = require('./src/services/ExcelService_v3');
 const telegramRoutes = require('./src/routes/telegramRoutes');
 const fastopertorRoutes = require('./src/routes/fastopertorRoutes');
+const authRoutes = require('./src/routes/authRoutes');
+const userRoutes = require('./src/routes/userRoutes');
+const presetRoutes = require('./src/routes/presetRoutes');
+const logRoutes = require('./src/routes/logRoutes');
 const logger = require('./src/utils/logger');
 const { generalLimiter, uploadLimiter, telegramLimiter } = require('./src/middleware/rateLimiter');
+const { sequelize, testConnection } = require('./src/config/database');
+const { syncDatabase } = require('./src/models');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -187,6 +193,18 @@ app.use('/api/fastopertor', fastopertorRoutes);
 // Dashboard API routes (mirrors real API v1)
 app.use('/api/v1', dashboardRoutes);
 
+// Authentication routes
+app.use('/api/auth', authRoutes);
+
+// User management routes (admin only)
+app.use('/api/users', userRoutes);
+
+// Preset management routes
+app.use('/api/presets', presetRoutes);
+
+// Audit log routes (admin only)
+app.use('/api/logs', logRoutes);
+
 app.get('/debug/logs', (req, res) => {
   res.json({
     logs: logs,
@@ -237,21 +255,36 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Запуск
-app.listen(PORT, '0.0.0.0', () => {
-  logger.info(`🚀 Сервер запущен на 0.0.0.0:${PORT}`, {
-    port: PORT,
-    env: process.env.NODE_ENV || 'development'
-  });
-});
 
 
+// Запуск с инициализацией БД
+async function startServer() {
+  try {
+    // Подключение к PostgreSQL
+    await testConnection();
+    logger.info('✅ PostgreSQL connected');
 
+    // Синхронизация моделей с БД
+    await syncDatabase();
 
+    // Запуск сервера
+    app.listen(PORT, '0.0.0.0', () => {
+      logger.info(`🚀 Сервер запущен на 0.0.0.0:${PORT}`, {
+        port: PORT,
+        env: process.env.NODE_ENV || 'development'
+      });
+      console.log(`\n✅ Сервер работает на http://localhost:${PORT}`);
+      console.log(`📊 Dashboard API: http://localhost:${PORT}/api/v1`);
+      console.log(`🔐 Auth API: http://localhost:${PORT}/api/auth`);
+      console.log(`👥 Users API: http://localhost:${PORT}/api/users`);
+      console.log(`📡 Telegram API: http://localhost:${PORT}/api/telegram`);
+      console.log(`🔧 Debug logs: http://localhost:${PORT}/debug/logs\n`);
+    });
+  } catch (error) {
+    logger.error('❌ Failed to start server:', error);
+    console.error('❌ Server startup failed:', error.message);
+    process.exit(1);
+  }
+}
 
-
-
-
-
-
-
+startServer();

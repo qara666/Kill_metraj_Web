@@ -82,7 +82,6 @@ export const useTrafficManagement = (maxStops: number, maxDuration: number, maxD
     const [trafficModeOverride, setTrafficModeOverride] = useState<'auto' | TrafficPresetMode>('auto')
 
     const [sectorCityName, setSectorCityName] = useState<string>('')
-    const [sectorPathState, setSectorPathState] = useState<Array<{ lat: number; lng: number }> | null>(null)
     const [mapboxTokenState, setMapboxTokenState] = useState<string | undefined>(undefined)
 
     const sectorStorageKey = useMemo(() => sectorCityName?.toLowerCase().replace(/\s+/g, '_') || 'default', [sectorCityName])
@@ -106,11 +105,6 @@ export const useTrafficManagement = (maxStops: number, maxDuration: number, maxD
         const city = settings.cityBias as string || ''
         setSectorCityName(city)
 
-        if (city && settings.citySectors?.[city]?.length > 0) {
-            setSectorPathState(settings.citySectors[city])
-        } else {
-            setSectorPathState(null)
-        }
 
         const savedMapboxToken = localStorage.getItem('km_mapbox_token')
         if (savedMapboxToken?.trim()) {
@@ -182,8 +176,6 @@ export const useTrafficManagement = (maxStops: number, maxDuration: number, maxD
         trafficPreset,
         trafficAdvisory,
         sectorCityName,
-        sectorPathState,
-        setSectorPathState,
         mapboxTokenState,
         syncSectorSettings
     }

@@ -37,7 +37,8 @@ export const useDashboardAutoRefresh = ({
         setApiSyncError,
         apiManualSyncTrigger,
         apiDateShift,
-        apiDateShiftFilterEnabled
+        apiDateShiftFilterEnabled,
+        apiTimeFilterEnabled
     } = useAutoPlannerStore();
 
     const intervalRef = useRef<any>(null);
@@ -52,6 +53,7 @@ export const useDashboardAutoRefresh = ({
         dateTimeDeliveryEnd,
         apiDateShift,
         apiDateShiftFilterEnabled,
+        apiTimeFilterEnabled,
         apiAutoRefreshEnabled,
         onDataLoaded // Store callback in ref
     });
@@ -65,10 +67,11 @@ export const useDashboardAutoRefresh = ({
             dateTimeDeliveryEnd,
             apiDateShift,
             apiDateShiftFilterEnabled,
+            apiTimeFilterEnabled,
             apiAutoRefreshEnabled,
             onDataLoaded
         };
-    }, [apiKey, apiDepartmentId, dateTimeDeliveryBeg, dateTimeDeliveryEnd, apiDateShift, apiDateShiftFilterEnabled, apiAutoRefreshEnabled, onDataLoaded]);
+    }, [apiKey, apiDepartmentId, dateTimeDeliveryBeg, dateTimeDeliveryEnd, apiDateShift, apiDateShiftFilterEnabled, apiTimeFilterEnabled, apiAutoRefreshEnabled, onDataLoaded]);
 
     const performSync = useCallback(async () => {
         const {
@@ -78,6 +81,7 @@ export const useDashboardAutoRefresh = ({
             dateTimeDeliveryEnd: end,
             apiDateShift: dateShiftVal,
             apiDateShiftFilterEnabled: dateShiftEnabled,
+            apiTimeFilterEnabled: timeFilterEnabled,
             onDataLoaded: callback
         } = latestValuesRef.current;
 
@@ -107,16 +111,18 @@ export const useDashboardAutoRefresh = ({
 
             const params: any = {
                 apiKey: apiKey.trim(),
-                timeDeliveryBeg: formatDateTimeForApi(deliveryStart),
-                timeDeliveryEnd: formatDateTimeForApi(deliveryEnd),
                 departmentId: deptId || undefined,
                 top: 1000,
             };
 
-            // Добавляем dateShift только если она указана
-            if (dateShift) {
-                params.dateShift = dateShift;
+            // Add time filters only if enabled
+            if (timeFilterEnabled) {
+                params.timeDeliveryBeg = formatDateTimeForApi(deliveryStart);
+                params.timeDeliveryEnd = formatDateTimeForApi(deliveryEnd);
             }
+
+            // Добавляем dateShift (всегда отправляем для производительности)
+            params.dateShift = dateShift || formatDateTimeForApi(new Date()).split(' ')[0];
 
             logger.info('🔄 Dashboard API auto-refresh: Starting sync...', params);
 

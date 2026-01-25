@@ -2,57 +2,39 @@ import React from 'react'
 import { clsx } from 'clsx'
 
 interface LoadingSpinnerProps {
-  size?: 'sm' | 'md' | 'lg' | 'xl'
+  size?: 'sm' | 'md' | 'lg'
   className?: string
-  variant?: 'default' | 'primary' | 'success' | 'warning' | 'error'
-  text?: string
-  fullScreen?: boolean
 }
 
-export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({ 
-  size = 'md', 
-  className = '',
-  variant = 'default',
-  text,
-  fullScreen = false
-}) => {
+export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({ size = 'md', className }) => {
   const sizeClasses = {
-    sm: 'h-4 w-4 border-2',
-    md: 'h-8 w-8 border-2',
-    lg: 'h-12 w-12 border-3',
-    xl: 'h-16 w-16 border-4'
+    sm: 'w-4 h-4',
+    md: 'w-8 h-8',
+    lg: 'w-12 h-12'
   }
 
-  const variantClasses = {
-    default: 'border-blue-600 border-t-transparent',
-    primary: 'border-blue-600 border-t-transparent',
-    success: 'border-green-600 border-t-transparent',
-    warning: 'border-yellow-600 border-t-transparent',
-    error: 'border-red-600 border-t-transparent'
-  }
-
-  const spinner = (
-    <div className={clsx('flex flex-col items-center justify-center gap-3', className)}>
-      <div className={clsx(
-        'animate-spin rounded-full',
-        sizeClasses[size],
-        variantClasses[variant]
-      )} />
-      {text && (
-        <p className="text-sm text-gray-600 dark:text-gray-400 animate-pulse">
-          {text}
-        </p>
-      )}
+  return (
+    <div className={clsx('flex items-center justify-center', className)}>
+      <svg
+        className={clsx('animate-spin', sizeClasses[size])}
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+      >
+        <circle
+          className="opacity-25"
+          cx="12"
+          cy="12"
+          r="10"
+          stroke="currentColor"
+          strokeWidth="4"
+        ></circle>
+        <path
+          className="opacity-75"
+          fill="currentColor"
+          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+        ></path>
+      </svg>
     </div>
   )
-
-  if (fullScreen) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm">
-        {spinner}
-      </div>
-    )
-  }
-
-  return spinner
 }

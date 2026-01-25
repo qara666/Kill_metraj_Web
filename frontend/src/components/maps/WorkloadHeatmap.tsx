@@ -10,13 +10,11 @@ import type { WorkloadHeatmapData } from '../../utils/processing/coverageAnalysi
 
 export interface WorkloadHeatmapProps {
   orders: Array<{ coords?: { lat: number; lng: number } }>
-  sectorPath?: Array<{ lat: number; lng: number }>
   onHeatmapDataLoad?: (data: WorkloadHeatmapData[]) => void
 }
 
 export const WorkloadHeatmap = React.memo<WorkloadHeatmapProps>(({
   orders,
-  sectorPath,
   onHeatmapDataLoad
 }) => {
   const { isDark } = useTheme()
@@ -37,12 +35,7 @@ export const WorkloadHeatmap = React.memo<WorkloadHeatmapProps>(({
         // Создаем карту
         const map = new gmaps.Map(mapRef.current!, {
           zoom: 12,
-          center: sectorPath && sectorPath.length > 0
-            ? {
-              lat: sectorPath.reduce((sum, p) => sum + p.lat, 0) / sectorPath.length,
-              lng: sectorPath.reduce((sum, p) => sum + p.lng, 0) / sectorPath.length
-            }
-            : { lat: 50.4501, lng: 30.5234 },
+          center: { lat: 50.4501, lng: 30.5234 },
           mapTypeControl: true,
           streetViewControl: false,
           fullscreenControl: true
@@ -112,18 +105,6 @@ export const WorkloadHeatmap = React.memo<WorkloadHeatmapProps>(({
           markersRef.current.push(marker)
         })
 
-        // Рисуем границы сектора, если есть
-        if (sectorPath && sectorPath.length > 0) {
-          new gmaps.Polygon({
-            paths: sectorPath.map(p => new gmaps.LatLng(p.lat, p.lng)),
-            strokeColor: '#0000FF',
-            strokeOpacity: 0.8,
-            strokeWeight: 2,
-            fillColor: '#0000FF',
-            fillOpacity: 0.1,
-            map: map
-          })
-        }
 
         console.log(`✅ Добавлено ${criticalZones.length} маркеров критических зон загруженности`)
       } catch (error) {
@@ -141,7 +122,7 @@ export const WorkloadHeatmap = React.memo<WorkloadHeatmapProps>(({
       }
       mapInstanceRef.current = null
     }
-  }, [orders, sectorPath, onHeatmapDataLoad, isDark])
+  }, [orders, onHeatmapDataLoad, isDark])
 
   return (
     <div className="mt-4" onClick={(e) => e.stopPropagation()}>

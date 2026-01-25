@@ -3,28 +3,39 @@ services:
   - type: web
     name: kill-metraj-backend
     env: node
-    plan: free
+    plan: free # or starter
+    region: frankfurt # update if needed
     buildCommand: cd backend && npm install
-    startCommand: cd backend && npm start
+    startCommand: cd backend && node simple_server.js
     envVars:
       - key: NODE_ENV
         value: production
-    autoDeploy: true
+      - key: PORT
+        value: 5001
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: kill-metraj-db
+          property: connectionString
 
-  # Frontend Service (Static Site with SPA Rewrite)
-  - type: static
+  # Frontend Service (Static Site)
+  - type: web
     name: kill-metraj-frontend
+    env: static
+    plan: free
+    region: frankfurt
     buildCommand: cd frontend && npm install && npm run build
-    staticPublishPath: frontend/dist
-    routes:
-      # Fix for "Not Found" on refresh (SPA Fallback)
-      - type: rewrite
-        source: /*
-        destination: /index.html
+    publishPath: frontend/dist
     envVars:
-      - key: VITE_API_URL
+      - key: VITE_BACKEND_URL
         fromService:
           type: web
           name: kill-metraj-backend
-          property: url
-    autoDeploy: true
+          property: host
+        # Note: Render provides https://[host].onrender.com automatically
+
+databases:
+  - name: kill-metraj-db
+    plan: free
+    region: frankfurt
