@@ -48,11 +48,20 @@ router.get('/dashboard', async (req, res) => {
             params.timeDeliveryEnd = timeDeliveryEnd;
         }
 
-        // Используем либо departmentId либо divisionId
-        const finalDeptId = String(departmentId || divisionId || '').trim();
-        if (finalDeptId && finalDeptId !== 'undefined' && finalDeptId !== 'null') {
-            params.departmentId = parseInt(finalDeptId, 10);
+        // Используем любую комбинацию departmentId/divisionId и отправляем ВСЕ варианты во внешний API
+        const rawDeptId = departmentId || divisionId || req.query.department_id || req.query.division_id;
+        const finalDeptId = String(rawDeptId || '').trim();
+
+        if (finalDeptId && finalDeptId !== 'undefined' && finalDeptId !== 'null' && finalDeptId !== '') {
+            const deptIdValue = parseInt(finalDeptId, 10);
+            params.departmentId = deptIdValue;
+            params.divisionId = deptIdValue;
+            params.department_id = deptIdValue;
+            params.division_id = deptIdValue;
         }
+
+        // Удаляем из query параметров самого запроса лишнее, если нужно, 
+        // но axios.get(url, { params }) добавит их правильно.
         console.log('📡 Proxy Request to Dashboard API:', {
             url: `${DASHBOARD_API_BASE_URL}/api/v1/dashboard`,
             params,
