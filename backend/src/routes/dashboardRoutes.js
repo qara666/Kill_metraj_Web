@@ -36,8 +36,16 @@ router.get('/dashboard', async (req, res) => {
         };
 
         // Добавляем параметры только если они предоставлены и валидны
+        // Carpet bombing for Date/Shift parameters
         if (dateShift && dateShift !== 'undefined' && dateShift !== 'null' && dateShift.trim()) {
             params.dateShift = dateShift;
+            params.date = dateShift;
+            params.shiftDate = dateShift;
+            params.shift_date = dateShift;
+            params.date_shift = dateShift;
+            params.date_from = dateShift;
+            params.date_to = dateShift;
+            params.d = dateShift;
         }
 
         if (timeDeliveryBeg && timeDeliveryBeg !== 'undefined' && timeDeliveryBeg !== 'null' && timeDeliveryBeg.trim()) {
@@ -60,8 +68,12 @@ router.get('/dashboard', async (req, res) => {
             params.division_id = deptIdValue;
             params.branchId = deptIdValue;
             params.branch_id = deptIdValue;
+            params.branch_Id = deptIdValue;
             params.subdivisionId = deptIdValue;
             params.subdivision_id = deptIdValue;
+            params.deptId = deptIdValue;
+            params.dept_id = deptIdValue;
+            params.id = deptIdValue;
         }
 
         // Удаляем из query параметров самого запроса лишнее, если нужно, 

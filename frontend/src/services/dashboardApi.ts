@@ -142,14 +142,16 @@ class DashboardApiService {
     const deliveryEnd = new Date(today)
     deliveryEnd.setHours(23, 0, 0, 0)
 
-    return {
+    const res = {
       top: 1000,
       dateShift,
       timeDeliveryBeg: formatDateTimeForApi(deliveryStart),
       timeDeliveryEnd: formatDateTimeForApi(deliveryEnd),
       departmentId,
       apiKey,
-    }
+    };
+    console.log('[DashboardAPI] Default params:', res);
+    return res;
   }
 }
 

@@ -33,6 +33,8 @@ export const transformDashboardData = (
         // Пропускаем "ID:0", так как это техническое обозначение неназначенного заказа в API
         if (swaggerCourier.name === 'ID:0') return;
 
+        // Если в будущем API добавит дату курьеру, мы сможем фильтровать здесь
+
         couriers.push({
             name: swaggerCourier.name,
             isActive: swaggerCourier.isActive,
@@ -47,9 +49,15 @@ export const transformDashboardData = (
     // Преобразование заказов
     apiData.orders.forEach((swaggerOrder, index) => {
         try {
-            if (index < 3) {
-                console.log(`[dashboardTransformer] Raw order ${index}:`, swaggerOrder);
+            // CLIENT-SIDE FAIL-SAFE: Verify date and department if possible
+            // 1. Date check
+            if (effectiveDate && swaggerOrder.creationDate) {
+                // creationDate is "dd.mm.yyyy HH:MM"
+                if (!swaggerOrder.creationDate.startsWith(effectiveDate)) {
+                    return; // Skip wrong date
+                }
             }
+
             const order = transformDashboardOrder(swaggerOrder, effectiveDate, index);
             orders.push(order);
         } catch (error) {
