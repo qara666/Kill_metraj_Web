@@ -20,7 +20,7 @@ services:
           property: connectionString
 
   # Frontend Service (Static Site)
-  - type: static
+  - type: static_site
     name: kill-metraj-frontend
     plan: free
     region: frankfurt
