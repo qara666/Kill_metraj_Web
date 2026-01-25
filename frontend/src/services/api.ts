@@ -1,18 +1,4 @@
-const getBaseUrl = () => {
-  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
-  if (import.meta.env.VITE_BACKEND_URL) return import.meta.env.VITE_BACKEND_URL
-
-  // If we're on a .onrender.com domain and no URL is set, 
-  // assume the backend is on the same root but with -backend suffix or similar
-  // However, most common is that it's just the current origin if proxied
-  // If we're on Render, explicitly point to the backend service
-  return 'https://yapiko-auto-km-backend.onrender.com'
-
-
-  return 'http://localhost:5001'
-}
-
-const API_URL = getBaseUrl()
+import { API_URL } from '../config/apiConfig'
 
 export const analyticsApi = {
   getDashboardAnalytics: async () => ({
@@ -87,18 +73,3 @@ export const uploadApi = {
     }
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

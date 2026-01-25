@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { API_URL } from '../config/apiConfig';
 import { dashboardApi } from '../services/dashboardApi';
 import { DashboardApiParams } from '../types/DashboardApiTypes';
 import { ProcessedExcelData } from '../types';
@@ -42,7 +43,7 @@ export const useDashboardHealth = () => {
     return useQuery(
         dashboardQueryKeys.health(),
         async () => {
-            const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/v1/health`);
+            const response = await fetch(`${API_URL}/api/v1/health`);
             if (!response.ok) {
                 throw new Error('Dashboard API unavailable');
             }

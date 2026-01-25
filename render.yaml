@@ -30,16 +30,10 @@ services:
         value: production
       - key: PORT
         value: 10000
-      - key: VITE_BACKEND_URL
-        fromService:
-          type: web
-          name: yapiko-auto-km-backend
-          property: host
       - key: VITE_API_URL
-        fromService:
-          type: web
-          name: yapiko-auto-km-backend
-          property: host
+        value: https://yapiko-auto-km-backend.onrender.com
+      - key: VITE_BACKEND_URL
+        value: https://yapiko-auto-km-backend.onrender.com
 
 databases:
   - name: yapiko-auto-km-db

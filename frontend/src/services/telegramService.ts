@@ -3,7 +3,7 @@
  * Парсинг сообщений из групп и чатов
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+import { API_URL as API_BASE_URL } from '../config/apiConfig'
 
 
 export interface TelegramChat {
@@ -69,7 +69,7 @@ class TelegramService {
     try {
       // Проверяем доступность API перед запросом
       try {
-        const healthCheck = await fetch(`${API_BASE_URL}/api/health`, { 
+        const healthCheck = await fetch(`${API_BASE_URL}/api/health`, {
           method: 'GET',
           signal: AbortSignal.timeout(3000) // 3 секунды таймаут
         });
@@ -87,7 +87,7 @@ class TelegramService {
       }
 
       const sessionId = this.getSessionId();
-      
+
       const response = await fetch(`${API_BASE_URL}/api/telegram/initialize`, {
         method: 'POST',
         headers: {
@@ -116,16 +116,16 @@ class TelegramService {
         } catch (e) {
           errorText = `HTTP ${response.status}: ${response.statusText}`;
         }
-        
+
         console.error('Ошибка HTTP:', response.status, errorText);
-        
+
         if (response.status === 404) {
           return {
             success: false,
             error: `Роут /api/telegram/initialize не найден (404). Проверьте, что backend сервер запущен и роуты подключены правильно. URL: ${API_BASE_URL}`
           };
         }
-        
+
         return {
           success: false,
           error: `Ошибка сервера (${response.status}): ${errorText}`
@@ -150,14 +150,14 @@ class TelegramService {
           error: `Ошибка парсинга ответа: ${parseError.message || 'Неверный формат ответа от сервера. Убедитесь, что сервер возвращает JSON.'}`
         };
       }
-      
+
       if (result.success) {
         this.isConnected = true;
       } else if (result.needsAuth) {
         // Требуется авторизация, но это не ошибка
         return result;
       }
-      
+
       return result;
     } catch (error: any) {
       console.error('Ошибка инициализации Telegram:', error);
@@ -174,7 +174,7 @@ class TelegramService {
   async completeAuth(apiId: string, apiHash: string, phoneNumber: string, phoneCode: string, phoneCodeHash: string): Promise<{ success: boolean; message?: string; error?: string }> {
     try {
       const sessionId = this.getSessionId();
-      
+
       const response = await fetch(`${API_BASE_URL}/api/telegram/complete-auth`, {
         method: 'POST',
         headers: {
@@ -191,11 +191,11 @@ class TelegramService {
       });
 
       const result = await response.json();
-      
+
       if (result.success) {
         this.isConnected = true;
       }
-      
+
       return result;
     } catch (error: any) {
       console.error('Ошибка завершения авторизации:', error);
@@ -214,7 +214,7 @@ class TelegramService {
       const sessionId = this.getSessionId();
       const response = await fetch(`${API_BASE_URL}/api/telegram/status/${sessionId}`);
       const result = await response.json();
-      
+
       this.isConnected = result.success && result.connected;
       return this.isConnected;
     } catch (error) {
@@ -239,7 +239,7 @@ class TelegramService {
       const sessionId = this.getSessionId();
       const response = await fetch(`${API_BASE_URL}/api/telegram/chats/${sessionId}`);
       const result = await response.json();
-      
+
       if (result.success && result.chats) {
         return result.chats;
       } else {
@@ -258,7 +258,7 @@ class TelegramService {
     try {
       const sessionId = this.getSessionId();
       const { query, chatIds, dateFrom, dateTo, limit } = options;
-      
+
       const response = await fetch(`${API_BASE_URL}/api/telegram/search/${sessionId}`, {
         method: 'POST',
         headers: {
@@ -274,7 +274,7 @@ class TelegramService {
       });
 
       const result = await response.json();
-      
+
       if (result.success && result.messages) {
         return result.messages.map((msg: any) => {
           let date: Date;
@@ -290,7 +290,7 @@ class TelegramService {
             date = new Date();
           }
           return {
-          ...msg,
+            ...msg,
             date
           };
         });
@@ -347,7 +347,7 @@ class TelegramService {
     if (!fullNumber || fullNumber.length !== 7) {
       return [fullNumber]
     }
-    
+
     const variants = [fullNumber] // Полный номер
     // Последние 6 цифр
     if (fullNumber.length >= 6) {
@@ -361,7 +361,7 @@ class TelegramService {
     if (fullNumber.length >= 4) {
       variants.push(fullNumber.slice(3))
     }
-    
+
     return [...new Set(variants)] // Убираем дубликаты
   }
 
@@ -370,10 +370,10 @@ class TelegramService {
    */
   containsNumberOrPart(text: string, fullNumber: string): boolean {
     if (!text || !fullNumber) return false
-    
+
     // Проверяем полный номер
     if (text.includes(fullNumber)) return true
-    
+
     // Проверяем части номера (последние 4-6 цифр)
     const variants = this.generateSearchVariants(fullNumber)
     for (const variant of variants) {
@@ -381,7 +381,7 @@ class TelegramService {
         return true
       }
     }
-    
+
     return false
   }
 
@@ -418,7 +418,7 @@ class TelegramService {
       await fetch(`${API_BASE_URL}/api/telegram/disconnect/${sessionId}`, {
         method: 'POST'
       });
-      
+
       this.isConnected = false;
       this.sessionId = null;
       localStorage.removeItem('telegram_session_id');

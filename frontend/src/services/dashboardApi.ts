@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001'
+import { API_URL } from '../config/apiConfig'
 
 // Dashboard API imports
 import { DashboardApiParams, DashboardApiResponse } from '../types/DashboardApiTypes'
