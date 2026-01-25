@@ -108,8 +108,10 @@ export async function runRoutePlanningAlgorithm(
         let routeChain = [seed];
         let routeReasons: string[] = [];
 
-        // Seed reason... (simplified for this extraction, real one is more complex)
         routeReasons.push(`Заказ #${seed.orderNumber} выбран как семя маршрута`);
+
+        // Yield to UI thread
+        await new Promise(r => setTimeout(r, 0));
 
         // Candidate search
         while (routeChain.length < runtimeMaxStopsPerRoute) {
@@ -149,6 +151,9 @@ export async function runRoutePlanningAlgorithm(
                 routeChain.push(best.candidate);
                 usedOrderIds.add(getOrderId(best.candidate));
                 routeReasons.push(`Заказ #${best.candidate.orderNumber} добавлен (оценка: ${best.score.toFixed(1)})`);
+
+                // Yield periodically in nested loops
+                if (routeChain.length % 3 === 0) await new Promise(r => setTimeout(r, 0));
             } else {
                 break;
             }

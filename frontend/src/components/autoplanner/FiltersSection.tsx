@@ -18,7 +18,7 @@ interface FiltersSectionProps {
     };
 }
 
-export const FiltersSection: React.FC<FiltersSectionProps> = ({
+export const FiltersSection: React.FC<FiltersSectionProps> = React.memo(({
     isDark,
     ordersCount,
     filteredOrdersCount,
@@ -205,4 +205,4 @@ export const FiltersSection: React.FC<FiltersSectionProps> = ({
             )}
         </div>
     );
-};
+});

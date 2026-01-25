@@ -147,8 +147,10 @@ export const AutoPlanner: React.FC = () => {
     showScheduleModal, setShowScheduleModal,
     editingSchedule, setEditingSchedule,
     availableFilters,
-    filteredOrders
+    filteredOrders: rawFilteredOrders
   } = filterState
+
+  const filteredOrders = React.useDeferredValue(rawFilteredOrders);
 
   // --- Excel Importer Hook ---
   const { handleScheduleOnlyUpload } = useExcelImporter(setExcelData, setCourierSchedules)

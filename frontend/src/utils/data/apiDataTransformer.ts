@@ -144,9 +144,18 @@ const parseTimeToTimestamp = (baseDate: string, timeString: string): number | nu
     if (!timeString || !baseDate) return null;
 
     try {
-        // Убеждаемся, что берем только дату (dd.mm.yyyy), даже если пришла строка с временем
+        // Убеждаемся, что берем только дату, даже если пришла строка с временем
         const datePart = baseDate.split(' ')[0].split('T')[0];
-        const [day, month, year] = datePart.split('.').map(Number);
+
+        let day, month, year;
+
+        if (datePart.includes('.')) {
+            [day, month, year] = datePart.split('.').map(Number);
+        } else if (datePart.includes('-')) {
+            [year, month, day] = datePart.split('-').map(Number);
+        } else {
+            return null;
+        }
 
         // Парсинг времени (HH:MM)
         const [hours, minutes] = timeString.split(':').map(Number);

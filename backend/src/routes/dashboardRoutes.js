@@ -35,15 +35,24 @@ router.get('/dashboard', async (req, res) => {
             top: parseInt(top, 10),
         };
 
-        // Добавляем параметры только если они предоставлены
-        if (dateShift && dateShift !== 'undefined' && dateShift !== 'null') params.dateShift = dateShift;
-        if (timeDeliveryBeg) params.timeDeliveryBeg = timeDeliveryBeg;
-        if (timeDeliveryEnd) params.timeDeliveryEnd = timeDeliveryEnd;
+        // Добавляем параметры только если они предоставлены и валидны
+        if (dateShift && dateShift !== 'undefined' && dateShift !== 'null' && dateShift.trim()) {
+            params.dateShift = dateShift;
+        }
+
+        if (timeDeliveryBeg && timeDeliveryBeg !== 'undefined' && timeDeliveryBeg !== 'null' && timeDeliveryBeg.trim()) {
+            params.timeDeliveryBeg = timeDeliveryBeg;
+        }
+
+        if (timeDeliveryEnd && timeDeliveryEnd !== 'undefined' && timeDeliveryEnd !== 'null' && timeDeliveryEnd.trim()) {
+            params.timeDeliveryEnd = timeDeliveryEnd;
+        }
 
         // Используем либо departmentId либо divisionId
-        const finalDeptId = departmentId || divisionId;
-        if (finalDeptId) params.departmentId = parseInt(finalDeptId, 10);
-
+        const finalDeptId = String(departmentId || divisionId || '').trim();
+        if (finalDeptId && finalDeptId !== 'undefined' && finalDeptId !== 'null') {
+            params.departmentId = parseInt(finalDeptId, 10);
+        }
         console.log('📡 Proxy Request to Dashboard API:', {
             url: `${DASHBOARD_API_BASE_URL}/api/v1/dashboard`,
             params,

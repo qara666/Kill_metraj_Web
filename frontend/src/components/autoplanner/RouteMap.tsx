@@ -135,58 +135,71 @@ export const RouteMap: React.FC<RouteMapProps> = React.memo(({ route, onMarkerCl
                                 optimizeWaypoints: false,
                                 unitSystem: gmaps.UnitSystem.METRIC,
                             },
-                            (result: any, status: any) => {
+                            async (result: any, status: any) => {
                                 if (status === 'OK' && result) {
                                     directionsRenderer.setDirections(result);
                                     const routeData = result.routes[0];
                                     const legs = routeData.legs || [];
 
-                                    for (let idx = 0; idx < routeChainFull.length && idx < legs.length; idx++) {
-                                        const leg = legs[idx];
-                                        const endLocation = leg.end_location;
-                                        const fullOrder = routeChainFull[idx];
-                                        const orderAddress = orderAddresses[idx] || '';
+                                    // Batch create markers to avoid freezing UI
+                                    const batchSize = 5;
+                                    for (let i = 0; i < routeChainFull.length; i += batchSize) {
+                                        const endIdx = Math.min(i + batchSize, routeChainFull.length);
 
-                                        const orderNum = fullOrder?.orderNumber || route.orderNumbers?.[idx] || String(idx + 1);
-                                        const markerLabel = String(idx + 1);
+                                        for (let idx = i; idx < endIdx; idx++) {
+                                            const leg = legs[idx];
+                                            if (!leg) continue;
 
-                                        const marker = new gmaps.Marker({
-                                            position: endLocation,
-                                            map,
-                                            label: {
-                                                text: markerLabel,
-                                                color: '#ffffff',
-                                                fontSize: '14px',
-                                                fontWeight: 'bold',
-                                            },
-                                            icon: {
-                                                path: gmaps.SymbolPath.CIRCLE,
-                                                scale: 12,
-                                                fillColor: '#3b82f6',
-                                                fillOpacity: 1,
-                                                strokeColor: '#ffffff',
-                                                strokeWeight: 3,
-                                                labelOrigin: new gmaps.Point(0, 0),
-                                            },
-                                            title: `Заказ ${orderNum}: ${orderAddress}`,
-                                            zIndex: gmaps.Marker.MAX_ZINDEX + idx,
-                                        });
+                                            const endLocation = leg.end_location;
+                                            const fullOrder = routeChainFull[idx];
+                                            const orderAddress = orderAddresses[idx] || '';
 
-                                        if (onMarkerClick && fullOrder) {
-                                            marker.addListener('click', () => {
-                                                const orderData = {
-                                                    ...fullOrder,
-                                                    raw: fullOrder.raw || fullOrder,
-                                                    readyAt: fullOrder.readyAt,
-                                                    deadlineAt: fullOrder.deadlineAt,
-                                                    readyAtSource: fullOrder.readyAtSource,
-                                                    deadlineAtSource: fullOrder.deadlineAtSource,
-                                                    coords: fullOrder.coords,
-                                                };
-                                                onMarkerClick(orderData);
+                                            const orderNum = fullOrder?.orderNumber || route.orderNumbers?.[idx] || String(idx + 1);
+                                            const markerLabel = String(idx + 1);
+
+                                            // USE OPTIMIZED SYMBOLS INSTEAD OF COMPLEX ICONS
+                                            const marker = new gmaps.Marker({
+                                                position: endLocation,
+                                                map,
+                                                label: {
+                                                    text: markerLabel,
+                                                    color: '#ffffff',
+                                                    fontSize: '11px', // Smaller font
+                                                    fontWeight: 'bold',
+                                                },
+                                                icon: {
+                                                    path: gmaps.SymbolPath.CIRCLE,
+                                                    scale: 10, // Slightly smaller
+                                                    fillColor: '#3b82f6',
+                                                    fillOpacity: 1,
+                                                    strokeColor: '#ffffff',
+                                                    strokeWeight: 2,
+                                                    labelOrigin: new gmaps.Point(0, 0),
+                                                },
+                                                title: `Заказ ${orderNum}: ${orderAddress}`,
+                                                zIndex: gmaps.Marker.MAX_ZINDEX + idx,
+                                                optimized: true, // EXTREME PERFORMANCE FLAG
                                             });
+
+                                            if (onMarkerClick && fullOrder) {
+                                                marker.addListener('click', () => {
+                                                    const orderData = {
+                                                        ...fullOrder,
+                                                        raw: fullOrder.raw || fullOrder,
+                                                        readyAt: fullOrder.readyAt,
+                                                        deadlineAt: fullOrder.deadlineAt,
+                                                        readyAtSource: fullOrder.readyAtSource,
+                                                        deadlineAtSource: fullOrder.deadlineAtSource,
+                                                        coords: fullOrder.coords,
+                                                    };
+                                                    onMarkerClick(orderData);
+                                                });
+                                            }
+                                            markersRef.current.push(marker);
                                         }
-                                        markersRef.current.push(marker);
+
+                                        // Yield between batches
+                                        await new Promise(r => setTimeout(r, 10));
                                     }
 
                                     if (!isMapReady) {
@@ -224,7 +237,7 @@ export const RouteMap: React.FC<RouteMapProps> = React.memo(({ route, onMarkerCl
                 directionsRendererRef.current.setMap(null);
             }
         };
-    }, [route, onMarkerClick, isMapReady]);
+    }, [route, onMarkerClick]);
 
     return (
         <div className="mt-4" onClick={(e) => e.stopPropagation()}>
