@@ -202,6 +202,10 @@ app.use('/api/users', userRoutes);
 // Preset management routes
 app.use('/api/presets', presetRoutes);
 
+// KML Proxy
+const proxyRoutes = require('./src/routes/proxyRoutes');
+app.use('/api/proxy', proxyRoutes);
+
 // Audit log routes (admin only)
 app.use('/api/logs', logRoutes);
 

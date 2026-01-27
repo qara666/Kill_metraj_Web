@@ -98,7 +98,7 @@ export const useDashboardAutoRefresh = ({
             const params: any = {
                 apiKey: apiKey.trim(),
                 departmentId: deptId || undefined,
-                divisionId: deptId || undefined, // Duo for proxy
+                // divisionId explicitly removed as it causes 500 error in external API
                 top: 1000,
             };
 
@@ -108,6 +108,7 @@ export const useDashboardAutoRefresh = ({
             if (dateShiftVal && dateShiftVal.trim()) {
                 const [y, m, d] = dateShiftVal.split('-').map(Number);
                 const shiftDate = new Date(y, m - 1, d);
+                // Strict compliance with OpenAPI: dd.mm.yyyy
                 params.dateShift = formatDateForApi(shiftDate);
             }
 

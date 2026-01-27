@@ -4,9 +4,12 @@ export const getBaseUrl = (): string => {
     if (import.meta.env.VITE_BACKEND_URL) return import.meta.env.VITE_BACKEND_URL;
 
     // 2. Check if running on Render environment at runtime
-    if (typeof window !== 'undefined' && window.location.hostname.includes('onrender.com')) {
+    if (typeof window !== 'undefined' && (
+        window.location.hostname.includes('onrender.com') ||
+        window.location.hostname === 'kill-metraj.onrender.com'
+    )) {
         // Explicitly point to the backend service domain
-        return 'https://yapiko-auto-km-backend.onrender.com';
+        return 'https://kill-metraj-backend.onrender.com';
     }
 
     // 3. Local fallback

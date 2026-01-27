@@ -8,6 +8,7 @@ import {
     CheckCircleIcon,
     ExclamationCircleIcon,
 } from '@heroicons/react/24/outline';
+import toast from 'react-hot-toast';
 import { useAutoPlannerStore } from '../../stores/useAutoPlannerStore';
 
 import { useAuth } from '../../contexts/AuthContext';
@@ -16,109 +17,181 @@ import { localStorageUtils } from '../../utils/ui/localStorage';
 interface DashboardSettingsPanelProps {
     isDark: boolean;
     onManualSync?: () => void;
+    // New props for Controlled Mode (Admin Presets)
+    initialSettings?: Record<string, any>;
+    onSettingsChange?: (newSettings: Record<string, any>) => void;
 }
 
 export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
     isDark,
-    onManualSync
+    onManualSync,
+    initialSettings,
+    onSettingsChange
 }) => {
     const { isAdmin, user } = useAuth();
-    const {
-        apiKey,
-        apiDepartmentId,
-        apiAutoRefreshEnabled,
-        apiLastSyncTime,
-        apiNextSyncTime,
-        apiSyncStatus,
-        apiTimeDeliveryBeg,
-        apiTimeDeliveryEnd,
-        apiDateShift,
-        setApiKey,
-        setApiDepartmentId,
-        setApiAutoRefreshEnabled,
-        setApiTimeDeliveryBeg,
-        setApiTimeDeliveryEnd,
-        setApiDateShift,
-        apiDateShiftFilterEnabled,
-        setApiDateShiftFilterEnabled,
-        apiTimeFilterEnabled,
-        setApiTimeFilterEnabled,
-        triggerApiManualSync
-    } = useAutoPlannerStore();
+    const globalStore = useAutoPlannerStore();
 
-    // --- Synchronization Logic ---
+    // --- State Logic: Controlled vs Uncontrolled ---
+    const isControlled = !!onSettingsChange;
+
+    // Local state for controlled mode
+    const [localState, setLocalState] = useState({
+        apiKey: initialSettings?.fastopertorApiKey || '',
+        departmentId: initialSettings?.fastopertorDepartmentId ? String(initialSettings.fastopertorDepartmentId) : '',
+        autoRefresh: initialSettings?.apiAutoRefreshEnabled || false,
+        dateShift: initialSettings?.apiDateShift || '',
+        dateShiftEnabled: initialSettings?.apiDateShiftFilterEnabled !== false, // Default true
+        timeDeliveryBeg: initialSettings?.apiTimeDeliveryBeg || (() => {
+            const now = new Date();
+            now.setHours(11, 0, 0, 0);
+            return formatDateTimeForInput(now);
+        })(),
+        timeDeliveryEnd: initialSettings?.apiTimeDeliveryEnd || (() => {
+            const now = new Date();
+            now.setHours(23, 0, 0, 0);
+            return formatDateTimeForInput(now);
+        })(),
+        timeFilterEnabled: initialSettings?.apiTimeFilterEnabled || false
+    });
+
+    // Helper to format date for input
+    function formatDateTimeForInput(date: Date): string {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${year}-${month}-${day}T${hours}:${minutes}`;
+    }
+
+    // Effect to update local state when initialSettings change (in controlled mode)
     React.useEffect(() => {
-        const settings = localStorageUtils.getAllSettings();
-
-        // 1. Sync API Key from Presets (source of truth for Admin settings)
-        if (settings.fastopertorApiKey && settings.fastopertorApiKey !== apiKey) {
-            setApiKey(settings.fastopertorApiKey);
+        if (isControlled && initialSettings) {
+            setLocalState({
+                apiKey: initialSettings.fastopertorApiKey || '',
+                departmentId: initialSettings.fastopertorDepartmentId ? String(initialSettings.fastopertorDepartmentId) : '',
+                autoRefresh: initialSettings.apiAutoRefreshEnabled || false,
+                dateShift: initialSettings.apiDateShift || '',
+                dateShiftEnabled: initialSettings.apiDateShiftFilterEnabled !== false,
+                timeDeliveryBeg: initialSettings.apiTimeDeliveryBeg || localState.timeDeliveryBeg,
+                timeDeliveryEnd: initialSettings.apiTimeDeliveryEnd || localState.timeDeliveryEnd,
+                timeFilterEnabled: initialSettings.apiTimeFilterEnabled || false
+            });
         }
+    }, [initialSettings, isControlled]);
 
-        // 2. Sync Department ID
-        const profileDeptId = user?.divisionId ? parseInt(user.divisionId, 10) : null;
-        const storedDeptId = settings.fastopertorDepartmentId ? parseInt(settings.fastopertorDepartmentId, 10) : null;
 
-        // SOURCE OF TRUTH: 
-        // For regular users: Profile divisionId > Local Stored > Current Store
-        // For admins: Local Stored > Profile divisionId > Current Store
+    // Accessors based on mode
+    const apiKey = isControlled ? localState.apiKey : globalStore.apiKey;
+    const apiDepartmentId = isControlled ? (localState.departmentId ? parseInt(localState.departmentId) : null) : globalStore.apiDepartmentId;
+    const apiAutoRefreshEnabled = isControlled ? localState.autoRefresh : globalStore.apiAutoRefreshEnabled;
+    const apiDateShift = isControlled ? localState.dateShift : globalStore.apiDateShift;
+    const apiDateShiftFilterEnabled = isControlled ? localState.dateShiftEnabled : globalStore.apiDateShiftFilterEnabled;
+    const apiTimeDeliveryBeg = isControlled ? localState.timeDeliveryBeg : globalStore.apiTimeDeliveryBeg;
+    const apiTimeDeliveryEnd = isControlled ? localState.timeDeliveryEnd : globalStore.apiTimeDeliveryEnd;
+    const apiTimeFilterEnabled = isControlled ? localState.timeFilterEnabled : globalStore.apiTimeFilterEnabled;
+    const apiSyncStatus = isControlled ? 'idle' : globalStore.apiSyncStatus; // Admin mode doesn't sync real status
+    const apiLastSyncTime = isControlled ? null : globalStore.apiLastSyncTime;
+    const apiNextSyncTime = isControlled ? null : globalStore.apiNextSyncTime;
 
-        let targetDeptId = apiDepartmentId;
 
-        if (!isAdmin && profileDeptId !== null) {
-            // Regular users MUST follow the profile set by Admin
-            targetDeptId = profileDeptId;
-        } else if (isAdmin) {
-            // Admins can use what's in settings, but fallback to profile if empty
-            targetDeptId = storedDeptId ?? profileDeptId ?? apiDepartmentId;
-        } else if (profileDeptId !== null) {
-            // Fallback for any other cases
-            targetDeptId = profileDeptId;
-        }
+    // --- Local editing state (for inputs) ---
+    const [editApiKey, setEditApiKey] = useState(apiKey || '');
+    const [editDepartmentId, setEditDepartmentId] = useState<string>(apiDepartmentId?.toString() || '');
 
-        if (targetDeptId !== null && targetDeptId !== apiDepartmentId) {
-            setApiDepartmentId(targetDeptId);
-        }
-    }, [isAdmin, user?.divisionId, apiKey, apiDepartmentId, setApiKey, setApiDepartmentId]);
-
-    const [localApiKey, setLocalApiKey] = useState(apiKey || '');
-
-    // Update local state when store changes (e.g. after sync)
+    // Sync edit state when actual values change
     React.useEffect(() => {
-        setLocalApiKey(apiKey || '');
+        setEditApiKey(apiKey || '');
     }, [apiKey]);
 
-    const [localDepartmentId, setLocalDepartmentId] = useState<string>(apiDepartmentId?.toString() || '');
-
-    // Sync local Department ID state when store changes (e.g. from user profile sync)
     React.useEffect(() => {
-        if (apiDepartmentId) {
-            setLocalDepartmentId(apiDepartmentId.toString());
-        }
+        setEditDepartmentId(apiDepartmentId?.toString() || '');
     }, [apiDepartmentId]);
 
+
+    // Handlers
     const handleSaveSettings = useCallback(() => {
-        // Only allow saving API Key if admin, or strictly if it's the one from presets? 
-        // Actually, if we disable the input, the user can't change 'localApiKey'.
-        // But if they click save, 'localApiKey' is saved to the store.
-        // If 'localApiKey' was synced from store, it's fine.
-        setApiKey(localApiKey.trim());
-        setApiDepartmentId(localDepartmentId ? parseInt(localDepartmentId, 10) : null);
-    }, [localApiKey, localDepartmentId, setApiKey, setApiDepartmentId]);
+        const newDepartmentId = editDepartmentId ? parseInt(editDepartmentId, 10) : null;
+
+        if (isControlled && onSettingsChange) {
+            // Propagate changes to parent
+            onSettingsChange({
+                ...initialSettings,
+                fastopertorApiKey: editApiKey.trim(),
+                fastopertorDepartmentId: newDepartmentId,
+                // Also save these inferred settings if they changed via other handlers, but for now just saving keys
+            });
+            // Note: For controlled mode, other fields update immediately via their specific handlers below
+        } else {
+            // Global store update
+            globalStore.setApiKey(editApiKey.trim());
+            globalStore.setApiDepartmentId(newDepartmentId);
+        }
+    }, [editApiKey, editDepartmentId, isControlled, onSettingsChange, initialSettings, globalStore]);
 
     const handleToggleAutoRefresh = useCallback(() => {
-        if (!apiAutoRefreshEnabled && localApiKey.trim()) {
-            handleSaveSettings();
+        const newValue = !apiAutoRefreshEnabled;
+        if (isControlled && onSettingsChange) {
+            onSettingsChange({ ...initialSettings, apiAutoRefreshEnabled: newValue });
+            setLocalState(prev => ({ ...prev, autoRefresh: newValue }));
+        } else {
+            if (!newValue && editApiKey.trim()) {
+                handleSaveSettings();
+            }
+            globalStore.setApiAutoRefreshEnabled(newValue);
         }
-        setApiAutoRefreshEnabled(!apiAutoRefreshEnabled);
-    }, [apiAutoRefreshEnabled, localApiKey, handleSaveSettings, setApiAutoRefreshEnabled]);
+    }, [apiAutoRefreshEnabled, isControlled, onSettingsChange, initialSettings, globalStore, editApiKey, handleSaveSettings]);
 
-    // Sync Time inputs with Date Shift
+    const handleDateShiftChange = (value: string) => {
+        if (isControlled && onSettingsChange) {
+            onSettingsChange({ ...initialSettings, apiDateShift: value });
+            setLocalState(prev => ({ ...prev, dateShift: value }));
+        } else {
+            globalStore.setApiDateShift(value);
+        }
+    };
+
+    const handleDateShiftFilterToggle = (checked: boolean) => {
+        if (isControlled && onSettingsChange) {
+            onSettingsChange({ ...initialSettings, apiDateShiftFilterEnabled: checked });
+            setLocalState(prev => ({ ...prev, dateShiftEnabled: checked }));
+        } else {
+            globalStore.setApiDateShiftFilterEnabled(checked);
+        }
+    };
+
+    const handleTimeFilterToggle = (checked: boolean) => {
+        if (isControlled && onSettingsChange) {
+            onSettingsChange({ ...initialSettings, apiTimeFilterEnabled: checked });
+            setLocalState(prev => ({ ...prev, timeFilterEnabled: checked }));
+        } else {
+            globalStore.setApiTimeFilterEnabled(checked);
+        }
+    };
+
+    const handleTimeBegChange = (value: string) => {
+        if (isControlled && onSettingsChange) {
+            onSettingsChange({ ...initialSettings, apiTimeDeliveryBeg: value });
+            setLocalState(prev => ({ ...prev, timeDeliveryBeg: value }));
+        } else {
+            globalStore.setApiTimeDeliveryBeg(value);
+        }
+    };
+
+    const handleTimeEndChange = (value: string) => {
+        if (isControlled && onSettingsChange) {
+            onSettingsChange({ ...initialSettings, apiTimeDeliveryEnd: value });
+            setLocalState(prev => ({ ...prev, timeDeliveryEnd: value }));
+        } else {
+            globalStore.setApiTimeDeliveryEnd(value);
+        }
+    };
+
+
+    // Sync Time inputs with Date Shift (Effect logic copied but adapted)
     React.useEffect(() => {
         if (apiDateShift && apiTimeDeliveryBeg && apiTimeDeliveryEnd) {
             const datePart = apiDateShift; // YYYY-MM-DD
-
-            // Helper to replace date part of datetime-local string
             const replaceDate = (datetime: string, newDate: string) => {
                 if (!datetime) return '';
                 const parts = datetime.split('T');
@@ -129,17 +202,74 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
             const newStart = replaceDate(apiTimeDeliveryBeg, datePart);
             const newEnd = replaceDate(apiTimeDeliveryEnd, datePart);
 
-            // Only update if actually different to avoid loops
-            if (newStart !== apiTimeDeliveryBeg) setApiTimeDeliveryBeg(newStart);
-            if (newEnd !== apiTimeDeliveryEnd) setApiTimeDeliveryEnd(newEnd);
+            if (newStart !== apiTimeDeliveryBeg) {
+                if (isControlled && onSettingsChange) {
+                    // Avoid infinite loop by checking equality, mostly handled by parent or local state
+                    // For controlled, we update local state immediately
+                    setLocalState(prev => ({ ...prev, timeDeliveryBeg: newStart }));
+                    // We should probably debounce this or just set it
+                    onSettingsChange({ ...initialSettings, apiTimeDeliveryBeg: newStart });
+                } else {
+                    globalStore.setApiTimeDeliveryBeg(newStart);
+                }
+            }
+            if (newEnd !== apiTimeDeliveryEnd) {
+                if (isControlled && onSettingsChange) {
+                    setLocalState(prev => ({ ...prev, timeDeliveryEnd: newEnd }));
+                    onSettingsChange({ ...initialSettings, apiTimeDeliveryEnd: newEnd });
+                } else {
+                    globalStore.setApiTimeDeliveryEnd(newEnd);
+                }
+            }
         }
-    }, [apiDateShift, apiTimeDeliveryBeg, apiTimeDeliveryEnd, setApiTimeDeliveryBeg, setApiTimeDeliveryEnd]);
+    }, [apiDateShift, apiTimeDeliveryBeg, apiTimeDeliveryEnd, isControlled, onSettingsChange, initialSettings, globalStore]);
+
+
+    // Validation Logic remains similar but uses accessors
+    // Uncontrolled logic regarding user profile sync is SKIPPED in controlled mode
+    // because Admin sets explicit values.
+
+    React.useEffect(() => {
+        if (isControlled) return; // Skip for admin mode
+
+        const settings = localStorageUtils.getAllSettings();
+        // ... (Original logic for uncontrolled sync from localStorage/Profile)
+        // Keeping it simple: if not controlled, the original useEffect logic applies
+        // But since we can't easily conditionally call hooks, we can just run it but guard inside.
+
+        // 1. Sync API Key from Presets
+        if (settings.fastopertorApiKey && settings.fastopertorApiKey !== globalStore.apiKey) {
+            globalStore.setApiKey(settings.fastopertorApiKey);
+        }
+
+        // 2. Sync Department ID
+        const profileDeptId = user?.divisionId ? parseInt(user.divisionId, 10) : null;
+        const storedDeptId = settings.fastopertorDepartmentId ? parseInt(settings.fastopertorDepartmentId, 10) : null;
+        let targetDeptId = globalStore.apiDepartmentId;
+
+        if (!isAdmin && profileDeptId !== null) {
+            targetDeptId = profileDeptId;
+        } else if (isAdmin) {
+            targetDeptId = storedDeptId ?? profileDeptId ?? globalStore.apiDepartmentId;
+        } else if (profileDeptId !== null) {
+            targetDeptId = profileDeptId;
+        }
+
+        if (targetDeptId !== null && targetDeptId !== globalStore.apiDepartmentId) {
+            globalStore.setApiDepartmentId(targetDeptId);
+        }
+    }, [isControlled, isAdmin, user?.divisionId, globalStore]); // Dependencies adjusted
+
 
     const handleManualSync = useCallback(() => {
-        handleSaveSettings(); // Ensure settings are saved before sync
-        triggerApiManualSync();
+        handleSaveSettings();
+        if (!isControlled) {
+            globalStore.triggerApiManualSync();
+        } else {
+            toast.success('Настройки сохранены (режим администратора)');
+        }
         if (onManualSync) onManualSync();
-    }, [handleSaveSettings, triggerApiManualSync, onManualSync]);
+    }, [handleSaveSettings, isControlled, globalStore, onManualSync]);
 
     const formatTimeAgo = (timestamp: number | null) => {
         if (!timestamp) return 'Никогда';
@@ -217,25 +347,27 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                 </label>
             </div>
 
-            {/* Status Bar */}
-            <div className={clsx(
-                'flex items-center justify-between p-2 rounded-lg text-xs border',
-                isDark ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50 border-gray-100'
-            )}>
-                <div className="flex items-center gap-2">
-                    {getStatusIcon()}
-                    <span className={clsx(isDark ? 'text-gray-300' : 'text-gray-700')}>
-                        {apiSyncStatus === 'syncing' && 'Синхронизация...'}
-                        {apiSyncStatus === 'error' && 'Ошибка синхронизации'}
-                        {apiSyncStatus === 'idle' && `Последняя: ${formatTimeAgo(apiLastSyncTime)}`}
-                    </span>
+            {/* Status Bar - Hide in Admin Presets Mode if no sync status available */}
+            {!isControlled && (
+                <div className={clsx(
+                    'flex items-center justify-between p-2 rounded-lg text-xs border',
+                    isDark ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50 border-gray-100'
+                )}>
+                    <div className="flex items-center gap-2">
+                        {getStatusIcon()}
+                        <span className={clsx(isDark ? 'text-gray-300' : 'text-gray-700')}>
+                            {apiSyncStatus === 'syncing' && 'Синхронизация...'}
+                            {apiSyncStatus === 'error' && 'Ошибка синхронизации'}
+                            {apiSyncStatus === 'idle' && `Последняя: ${formatTimeAgo(apiLastSyncTime)}`}
+                        </span>
+                    </div>
+                    {apiAutoRefreshEnabled && (
+                        <span className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-600')}>
+                            Следующая: {formatTimeUntil(apiNextSyncTime)}
+                        </span>
+                    )}
                 </div>
-                {apiAutoRefreshEnabled && (
-                    <span className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-600')}>
-                        Следующая: {formatTimeUntil(apiNextSyncTime)}
-                    </span>
-                )}
-            </div>
+            )}
 
             {/* Expanded Settings */}
             <div className="space-y-3 pt-2">
@@ -247,8 +379,8 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                     </label>
                     <input
                         type="password"
-                        value={localApiKey}
-                        onChange={(e) => isAdmin && setLocalApiKey(e.target.value)}
+                        value={editApiKey}
+                        onChange={(e) => isAdmin && setEditApiKey(e.target.value)}
                         disabled={!isAdmin}
                         placeholder={!isAdmin ? "Ключ задается администратором" : "Введите API ключ"}
                         className={clsx(
@@ -274,7 +406,7 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                                 <input
                                     type="checkbox"
                                     checked={apiDateShiftFilterEnabled}
-                                    onChange={(e) => setApiDateShiftFilterEnabled(e.target.checked)}
+                                    onChange={(e) => handleDateShiftFilterToggle(e.target.checked)}
                                     className="sr-only peer"
                                 />
                                 <div className="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
@@ -285,7 +417,7 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                         type="date"
                         value={apiDateShift}
                         disabled={!apiDateShiftFilterEnabled}
-                        onChange={(e) => setApiDateShift(e.target.value)}
+                        onChange={(e) => handleDateShiftChange(e.target.value)}
                         placeholder="Оставьте пустым для автоопределения"
                         className={clsx(
                             'w-full px-3 py-1.5 rounded-lg text-xs border transition-colors',
@@ -312,7 +444,7 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                                 <input
                                     type="checkbox"
                                     checked={apiTimeFilterEnabled}
-                                    onChange={(e) => setApiTimeFilterEnabled(e.target.checked)}
+                                    onChange={(e) => handleTimeFilterToggle(e.target.checked)}
                                     className="sr-only peer"
                                 />
                                 <div className="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
@@ -329,7 +461,7 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                                 type="datetime-local"
                                 value={apiTimeDeliveryBeg}
                                 disabled={!apiTimeFilterEnabled}
-                                onChange={(e) => setApiTimeDeliveryBeg(e.target.value)}
+                                onChange={(e) => handleTimeBegChange(e.target.value)}
                                 className={clsx(
                                     'w-full px-2 py-1.5 rounded-lg text-xs border transition-colors',
                                     !apiTimeFilterEnabled && 'opacity-50 cursor-not-allowed',
@@ -348,7 +480,7 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                                 type="datetime-local"
                                 value={apiTimeDeliveryEnd}
                                 disabled={!apiTimeFilterEnabled}
-                                onChange={(e) => setApiTimeDeliveryEnd(e.target.value)}
+                                onChange={(e) => handleTimeEndChange(e.target.value)}
                                 className={clsx(
                                     'w-full px-2 py-1.5 rounded-lg text-xs border transition-colors',
                                     !apiTimeFilterEnabled && 'opacity-50 cursor-not-allowed',
@@ -369,8 +501,8 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                     </label>
                     <input
                         type="number"
-                        value={localDepartmentId}
-                        onChange={(e) => isAdmin && setLocalDepartmentId(e.target.value)}
+                        value={editDepartmentId}
+                        onChange={(e) => isAdmin && setEditDepartmentId(e.target.value)}
                         disabled={!isAdmin}
                         placeholder={!isAdmin ? "ID задается администратором" : "100000052"}
                         className={clsx(
@@ -394,14 +526,14 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                                 : 'bg-blue-500 hover:bg-blue-600 text-white'
                         )}
                     >
-                        Сохранить настройки API
+                        {isControlled ? 'Сохранить параметры' : 'Сохранить настройки API'}
                     </button>
                     <button
                         onClick={handleManualSync}
-                        disabled={apiSyncStatus === 'syncing' || !localApiKey.trim()}
+                        disabled={apiSyncStatus === 'syncing' || !editApiKey.trim()}
                         className={clsx(
                             'flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1',
-                            apiSyncStatus === 'syncing' || !localApiKey.trim()
+                            apiSyncStatus === 'syncing' || !editApiKey.trim()
                                 ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
                                 : isDark
                                     ? 'bg-green-600 hover:bg-green-700 text-white'
@@ -409,7 +541,7 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                         )}
                     >
                         <ArrowPathIcon className={clsx('w-3 h-3', apiSyncStatus === 'syncing' && 'animate-spin')} />
-                        Синхронизировать сейчас
+                        {isControlled ? 'Проверить синхронизацию' : 'Синхронизировать сейчас'}
                     </button>
                 </div>
             </div>

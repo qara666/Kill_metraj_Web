@@ -22,20 +22,20 @@ import {
 import { clsx } from 'clsx'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useAuth } from '../../contexts/AuthContext'
-import { SyncStatus } from '../features/SyncStatus'
+
 
 interface LayoutProps {
   children: ReactNode
 }
 
 const navigation = [
-  { name: 'Панель управления', href: '/', icon: HomeIcon },
-  { name: 'Маршруты', href: '/routes', icon: MapIcon },
-  { name: 'Курьеры', href: '/couriers', icon: UserGroupIcon },
-  { name: 'Автоматическая оптимизация маршрутов по зонам доставки', href: '/autoplanner', icon: SparklesIcon },
-  { name: 'Аналитика', href: '/analytics', icon: ChartBarIcon },
-  { name: 'Парсинг выгрузки в телеграм и реестре', href: '/telegram-parsing', icon: PaperClipIcon },
-  { name: 'Настройки', href: '/settings', icon: CogIcon },
+  { name: 'Панель управления', href: '/', icon: HomeIcon, restricted: false },
+  { name: 'Маршруты', href: '/routes', icon: MapIcon, restricted: false },
+  { name: 'Курьеры', href: '/couriers', icon: UserGroupIcon, restricted: false },
+  { name: 'Автоматическая оптимизация маршрутов по зонам доставки', href: '/autoplanner', icon: SparklesIcon, restricted: true },
+  { name: 'Аналитика', href: '/analytics', icon: ChartBarIcon, restricted: true },
+  { name: 'Парсинг выгрузки в телеграм и реестре', href: '/telegram-parsing', icon: PaperClipIcon, restricted: true },
+  { name: 'Настройки', href: '/settings', icon: CogIcon, restricted: false },
 ]
 
 const adminNavigation = [
@@ -88,108 +88,110 @@ export function Layout({ children }: LayoutProps) {
                 <h1 className={clsx(
                   'text-lg font-semibold',
                   isDark ? 'text-white' : 'text-gray-900'
-                )}>Kill_metraj</h1>
+                )}>Авто рассчет км для курьеров</h1>
               </div>
             </div>
-            <button
-              type="button"
-              className={clsx(
-                'transition-colors',
-                isDark ? 'text-blue-300 hover:text-white' : 'text-gray-600 hover:text-gray-900'
-              )}
-              onClick={() => setSidebarOpen(false)}
-            >
-              <XMarkIcon className="h-6 w-6" />
-            </button>
           </div>
-          <nav className="flex-1 px-4 py-4 space-y-2">
-            {/* Admin section - Top priority for admins */}
-            {isAdmin && (
-              <>
-                <div className={clsx(
-                  'px-3 py-2 mt-4 mb-2 text-xs font-semibold uppercase tracking-wider',
-                  isDark ? 'text-blue-400' : 'text-gray-600'
-                )}>
-                  <div className="flex items-center gap-2">
-                    <ShieldCheckIcon className="w-4 h-4" />
-                    Администрирование
-                  </div>
-                </div>
-                {adminNavigation.map((item) => {
-                  const isActive = location.pathname === item.href
-                  return (
-                    <Link
-                      key={item.name}
-                      to={item.href}
-                      className={clsx(
-                        'group flex items-center px-3 py-3 text-sm font-medium rounded-xl transition-all duration-200',
-                        isActive
-                          ? 'bg-gradient-to-r from-purple-600 to-pink-500 text-white shadow-lg'
-                          : isDark
-                            ? 'text-blue-200 hover:bg-purple-800/50 hover:text-white'
-                            : 'text-gray-700 hover:bg-purple-200/50 hover:text-gray-900'
-                      )}
-                      onClick={() => setSidebarOpen(false)}
-                    >
-                      <item.icon
-                        className={clsx(
-                          'mr-3 h-5 w-5 flex-shrink-0 transition-colors',
-                          isActive
-                            ? 'text-white'
-                            : isDark
-                              ? 'text-purple-300 group-hover:text-white'
-                              : 'text-gray-500 group-hover:text-gray-700'
-                        )}
-                      />
-                      {item.name}
-                    </Link>
-                  )
-                })}
-                <div className="h-px bg-white/10 my-4" />
-              </>
+          <button
+            type="button"
+            className={clsx(
+              'transition-colors',
+              isDark ? 'text-blue-300 hover:text-white' : 'text-gray-600 hover:text-gray-900'
             )}
-
-            {/* Standard navigation */}
-            <div className={clsx(
-              'px-3 py-2 mb-2 text-xs font-semibold uppercase tracking-wider',
-              isDark ? 'text-blue-400' : 'text-gray-600'
-            )}>
-              Основной функционал
-            </div>
-
-            {navigation.map((item) => {
-              const isActive = location.pathname === item.href
-              return (
-                <Link
-                  key={item.name}
-                  to={item.href}
-                  className={clsx(
-                    'group flex items-center px-3 py-3 text-sm font-medium rounded-xl transition-all duration-200',
-                    isActive
-                      ? 'bg-gradient-to-r from-blue-600 to-pink-500 text-white shadow-lg'
-                      : isDark
-                        ? 'text-blue-200 hover:bg-blue-800/50 hover:text-white'
-                        : 'text-gray-700 hover:bg-gray-200/50 hover:text-gray-900'
-                  )}
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  <item.icon
-                    className={clsx(
-                      'mr-3 h-5 w-5 flex-shrink-0 transition-colors',
-                      isActive
-                        ? 'text-white'
-                        : isDark
-                          ? 'text-blue-300 group-hover:text-white'
-                          : 'text-gray-500 group-hover:text-gray-700'
-                    )}
-                  />
-                  {item.name}
-                </Link>
-              )
-            })}
-          </nav>
+            onClick={() => setSidebarOpen(false)}
+          >
+            <XMarkIcon className="h-6 w-6" />
+          </button>
         </div>
+        <nav className="flex-1 px-4 py-4 space-y-2">
+          {/* Admin section - Top priority for admins */}
+          {isAdmin && (
+            <>
+              <div className={clsx(
+                'px-3 py-2 mt-4 mb-2 text-xs font-semibold uppercase tracking-wider',
+                isDark ? 'text-blue-400' : 'text-gray-600'
+              )}>
+                <div className="flex items-center gap-2">
+                  <ShieldCheckIcon className="w-4 h-4" />
+                  Администрирование
+                </div>
+              </div>
+              {adminNavigation.map((item) => {
+                const isActive = location.pathname === item.href
+                return (
+                  <Link
+                    key={item.name}
+                    to={item.href}
+                    className={clsx(
+                      'group flex items-center px-3 py-3 text-sm font-medium rounded-xl transition-all duration-200',
+                      isActive
+                        ? 'bg-gradient-to-r from-purple-600 to-pink-500 text-white shadow-lg'
+                        : isDark
+                          ? 'text-blue-200 hover:bg-purple-800/50 hover:text-white'
+                          : 'text-gray-700 hover:bg-purple-200/50 hover:text-gray-900'
+                    )}
+                    onClick={() => setSidebarOpen(false)}
+                  >
+                    <item.icon
+                      className={clsx(
+                        'mr-3 h-5 w-5 flex-shrink-0 transition-colors',
+                        isActive
+                          ? 'text-white'
+                          : isDark
+                            ? 'text-purple-300 group-hover:text-white'
+                            : 'text-gray-500 group-hover:text-gray-700'
+                      )}
+                    />
+                    {item.name}
+                  </Link>
+                )
+              })}
+              <div className="h-px bg-white/10 my-4" />
+            </>
+          )}
+
+          {/* Standard navigation */}
+          <div className={clsx(
+            'px-3 py-2 mb-2 text-xs font-semibold uppercase tracking-wider',
+            isDark ? 'text-blue-400' : 'text-gray-600'
+          )}>
+            Основной функционал
+          </div>
+
+          {navigation.map((item) => {
+            if (item.restricted && !isAdmin) return null;
+            const isActive = location.pathname === item.href
+            return (
+              <Link
+                key={item.name}
+                to={item.href}
+                className={clsx(
+                  'group flex items-center px-3 py-3 text-sm font-medium rounded-xl transition-all duration-200',
+                  isActive
+                    ? 'bg-gradient-to-r from-blue-600 to-pink-500 text-white shadow-lg'
+                    : isDark
+                      ? 'text-blue-200 hover:bg-blue-800/50 hover:text-white'
+                      : 'text-gray-700 hover:bg-gray-200/50 hover:text-gray-900'
+                )}
+                onClick={() => setSidebarOpen(false)}
+              >
+                <item.icon
+                  className={clsx(
+                    'mr-3 h-5 w-5 flex-shrink-0 transition-colors',
+                    isActive
+                      ? 'text-white'
+                      : isDark
+                        ? 'text-blue-300 group-hover:text-white'
+                        : 'text-gray-500 group-hover:text-gray-700'
+                  )}
+                />
+                {item.name}
+              </Link>
+            )
+          })}
+        </nav>
       </div>
+
 
       {/* Desktop sidebar */}
       <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
@@ -213,14 +215,11 @@ export function Layout({ children }: LayoutProps) {
                 <h1 className={clsx(
                   'text-lg font-semibold',
                   isDark ? 'text-white' : 'text-gray-900'
-                )}>Kill_metraj</h1>
-                <p className={clsx(
-                  'text-xs leading-relaxed',
-                  isDark ? 'text-blue-300' : 'text-gray-600'
-                )}>Створюй маршрути (майже автоматизовано усе), бо руками то влом</p>
+                )}>Авто рассчет км для курьеров</h1>
               </div>
             </div>
           </div>
+
           <nav className="flex-1 px-4 py-4 space-y-2">
             {/* Admin section - Top priority for admins */}
             {isAdmin && (
@@ -276,6 +275,7 @@ export function Layout({ children }: LayoutProps) {
             </div>
 
             {navigation.map((item) => {
+              if (item.restricted && !isAdmin) return null;
               const isActive = location.pathname === item.href
               return (
                 <Link
@@ -311,12 +311,14 @@ export function Layout({ children }: LayoutProps) {
       {/* Main content */}
       <div className="lg:pl-64">
         {/* Top bar */}
-        <div className={clsx(
-          'sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8 backdrop-blur-md',
-          isDark
-            ? 'border-gray-700 bg-gradient-to-r from-gray-800/90 via-blue-900/80 to-pink-900/70'
-            : 'border-gray-200 bg-gradient-to-r from-white/90 via-blue-50/80 to-pink-50/70'
-        )}>
+        <div className={
+          clsx(
+            'sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8 backdrop-blur-md',
+            isDark
+              ? 'border-gray-700 bg-gradient-to-r from-gray-800/90 via-blue-900/80 to-pink-900/70'
+              : 'border-gray-200 bg-gradient-to-r from-white/90 via-blue-50/80 to-pink-50/70'
+          )
+        } >
           <button
             type="button"
             className={clsx(
@@ -331,8 +333,7 @@ export function Layout({ children }: LayoutProps) {
           <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
             <div className="flex flex-1" />
             <div className="flex items-center gap-x-4 lg:gap-x-6">
-              {/* Sync Status */}
-              <SyncStatus />
+
 
               {/* Theme toggle */}
               <button
