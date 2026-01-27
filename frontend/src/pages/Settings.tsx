@@ -244,10 +244,10 @@ export const Settings: React.FC = () => {
 
     setIsSyncingKml(true)
     try {
-      // Экстракция mid из URL
-      const midMatch = url.match(/mid=([a-zA-Z0-9_-]+)/)
+      // Экстракция mid из URL - более гибкий паттерн
+      const midMatch = url.match(/mid=([^&\s]+)/)
       if (!midMatch) {
-        throw new Error('Не удалось найти ID карты (mid) в ссылке. Убедитесь, что это ссылка на Google My Maps.')
+        throw new Error(`Не удалось найти ID карты (mid) в ссылке. Убедитесь, что это ссылка на Google My Maps.\n\nПример: https://www.google.com/maps/d/viewer?mid=ABC123\n\nВаша ссылка: ${url}`)
       }
 
       const mid = midMatch[1]

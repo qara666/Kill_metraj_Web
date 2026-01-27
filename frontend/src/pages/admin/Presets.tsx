@@ -59,9 +59,9 @@ export const AdminPresets: React.FC = () => {
                 selectedZones: parsed.polygons.map((p: any) => `${p.folderName}:${p.name}`)
             }))
             toast.success(`Синхронизировано: ${parsed.polygons.length} зон`)
-        } catch (error) {
+        } catch (error: any) {
             console.error('KML Sync error:', error)
-            toast.error('Ошибка синхронизации KML')
+            toast.error(`Ошибка синхронизации: ${error.message || 'Неизвестная ошибка'}`)
         } finally {
             setIsSyncingKml(false)
         }
