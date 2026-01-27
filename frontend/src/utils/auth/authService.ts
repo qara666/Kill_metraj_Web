@@ -253,6 +253,12 @@ axios.interceptors.response.use(
 
         // Если 401 и это не повторный запрос
         if (error.response?.status === 401 && !originalRequest._retry) {
+            // Skip retry for login/logout/refresh endpoints to prevent recursion
+            const url = originalRequest.url || ''
+            if (url.includes('/auth/login') || url.includes('/auth/logout') || url.includes('/auth/refresh')) {
+                return Promise.reject(error)
+            }
+
             originalRequest._retry = true
 
             const refreshed = await authService.refreshToken()
