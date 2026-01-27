@@ -14,15 +14,27 @@ router.get('/kml', async (req, res) => {
     logger.info(`Fetching KML from: ${url}`);
 
     try {
+        logger.info(`📥 Fetching KML from: ${url}`);
+
         const response = await axios.get(url, {
             responseType: 'text',
             timeout: 10000 // 10s timeout
         });
 
-        res.header('Content-Type', 'application/vnd.google-earth.kml+xml');
-        res.send(response.data);
+        logger.info(`✅ KML fetched successfully, size: ${response.data.length} bytes`);
+
+        // Frontend expects JSON with 'contents' field
+        res.json({
+            success: true,
+            contents: response.data
+        });
     } catch (error) {
-        logger.error('Error fetching KML:', error.message);
+        logger.error('❌ Error fetching KML:', {
+            url: url,
+            error: error.message,
+            code: error.code,
+            status: error.response?.status
+        });
         res.status(500).json({
             success: false,
             error: 'Failed to fetch KML',
