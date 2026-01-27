@@ -63,8 +63,21 @@ router.get('/dashboard', async (req, res) => {
         console.log('📡 Proxy Request to Dashboard API (Strict):', {
             url: TARGET_URL,
             params: params,
-            hasApiKey: !!apiKey
+            hasApiKey: !!apiKey,
+            paramTypes: {
+                top: typeof params.top,
+                dateShift: typeof params.dateShift,
+                timeDeliveryBeg: typeof params.timeDeliveryBeg,
+                timeDeliveryEnd: typeof params.timeDeliveryEnd,
+                departmentId: typeof params.departmentId
+            }
         });
+
+        // Log the exact URL that will be called
+        const queryString = new URLSearchParams(
+            Object.entries(params).filter(([_, v]) => v !== undefined)
+        ).toString();
+        console.log('🔗 Full Request URL:', `${TARGET_URL}?${queryString}`);
 
         // 3. Выполняем запрос
         const response = await axios.get(TARGET_URL, {
@@ -73,8 +86,24 @@ router.get('/dashboard', async (req, res) => {
                 'x-api-key': apiKey,
                 'Accept': 'application/json'
             },
-            timeout: 60000 // 60 секунд для надежности
+            timeout: 60000, // 60 секунд для надежности
+            validateStatus: (status) => status < 500 // Don't throw on 4xx errors
         });
+
+        // Check if we got a 4xx error
+        if (response.status >= 400 && response.status < 500) {
+            console.error('❌ Dashboard API returned client error:', {
+                status: response.status,
+                statusText: response.statusText,
+                data: response.data
+            });
+            return res.status(response.status).json({
+                success: false,
+                error: response.data?.detail || 'Ошибка валидации параметров',
+                details: response.data,
+                statusCode: response.status
+            });
+        }
 
         console.log('✅ Dashboard API Success:', {
             ordersCount: response.data.orders?.length || 0,
