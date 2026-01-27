@@ -19,7 +19,7 @@ export const Analytics: React.FC = () => {
       )}>
         <div className="text-center">
           <LoadingSpinner />
-          <p className="mt-4">Загрузите Excel файл для просмотра аналитики</p>
+          <p className="mt-4">Загрузите любые данные для просмотра аналитики</p>
         </div>
       </div>
     )

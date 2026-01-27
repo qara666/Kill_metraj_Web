@@ -11,7 +11,8 @@ const logRoutes = require('./src/routes/logRoutes');
 const logger = require('./src/utils/logger');
 const { generalLimiter, uploadLimiter, telegramLimiter } = require('./src/middleware/rateLimiter');
 const { sequelize, testConnection } = require('./src/config/database');
-const { syncDatabase } = require('./src/models');
+const { syncDatabase, AuditLog } = require('./src/models');
+const { authenticateToken } = require('./src/middleware/auth');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -77,7 +78,13 @@ app.get('/api/telegram/test', (req, res) => {
   });
 });
 
-app.post('/api/upload/excel', uploadLimiter, upload.single('file'), async (req, res) => {
+// Add imports at top
+const { authenticateToken } = require('./src/middleware/auth');
+const { AuditLog } = require('./src/models');
+
+// ... (existing code)
+
+app.post('/api/upload/excel', authenticateToken, uploadLimiter, upload.single('file'), async (req, res) => {
   try {
     addLog('Начало обработки Excel файла');
 
@@ -87,6 +94,30 @@ app.post('/api/upload/excel', uploadLimiter, upload.single('file'), async (req, 
         success: false,
         error: 'Файл не предоставлен'
       });
+    }
+
+    // Log to AuditLog (Database)
+    if (req.user) {
+      // Skip logging for admins if requested
+      if (req.user.role !== 'admin') {
+        try {
+          await AuditLog.create({
+            userId: req.user.id,
+            username: req.user.username,
+            action: 'upload_excel',
+            details: {
+              fileName: req.file.originalname,
+              fileSize: req.file.size,
+              mimeType: req.file.mimetype
+            },
+            ipAddress: req.ip || req.connection.remoteAddress,
+            userAgent: req.get('user-agent') || '',
+            timestamp: new Date()
+          });
+        } catch (logError) {
+          console.error('Failed to create audit log for upload:', logError);
+        }
+      }
     }
 
     addLog(`Получен файл: ${req.file.originalname}, размер: ${req.file.size} байт`);
@@ -148,23 +179,12 @@ app.post('/api/upload/excel', uploadLimiter, upload.single('file'), async (req, 
 app.get('/api/health', (req, res) => res.json({ ok: true }))
 
 // Couriers
-app.get('/api/couriers', (_req, res) => res.json({ success: true, data: [] }))
-app.get('/api/couriers/:id', (_req, res) => res.json({ success: true, data: { id: _req.params.id } }))
-app.get('/api/couriers/:id/statistics', (_req, res) => res.json({ success: true, data: { id: _req.params.id, stats: {} } }))
-app.post('/api/couriers', (_req, res) => res.json({ success: true, data: { ..._req.body, id: 'new' } }))
-app.put('/api/couriers/:id', (_req, res) => res.json({ success: true, data: { id: _req.params.id, ..._req.body } }))
-app.delete('/api/couriers/:id', (_req, res) => res.json({ success: true }))
+const courierRoutes = require('./src/routes/courierRoutes');
+app.use('/api/couriers', courierRoutes);
 
 // Routes
-app.get('/api/routes', (_req, res) => res.json({ success: true, data: [] }))
-app.get('/api/routes/:id', (_req, res) => res.json({ success: true, data: { id: _req.params.id } }))
-app.get('/api/routes/statistics', (_req, res) => res.json({ success: true, data: {} }))
-app.post('/api/routes', (_req, res) => res.json({ success: true, data: { ..._req.body, id: 'route_new' } }))
-app.post('/api/routes/from-waypoints', (_req, res) => res.json({ success: true, data: { id: 'route_from_waypoints', input: _req.body } }))
-app.put('/api/routes/:id', (_req, res) => res.json({ success: true, data: { id: _req.params.id, ..._req.body } }))
-app.put('/api/routes/:id/complete', (_req, res) => res.json({ success: true, data: { id: _req.params.id, status: 'completed' } }))
-app.put('/api/routes/:id/archive', (_req, res) => res.json({ success: true, data: { id: _req.params.id, archived: true } }))
-app.delete('/api/routes/:id', (_req, res) => res.json({ success: true }))
+const routeRoutes = require('./src/routes/routeRoutes');
+app.use('/api/routes', routeRoutes);
 
 // Upload
 app.post('/api/upload/create-routes', (_req, res) => res.json({ success: true, data: { created: true, input: _req.body } }))

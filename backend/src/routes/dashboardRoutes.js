@@ -1,4 +1,11 @@
-const express = require('express');
+const { authenticateToken, auditLog } = require('../middleware/auth');
+
+// Create a wrapper function that integrates with the existing structure
+// Note: dashboardRoutes is already mounted at /api/v1
+// We need to apply auditing. Since it's a GET request, we usually don't audit, but user requested 'what user is doing'.
+// So we will audit the dashboard access.
+
+// ... existing imports ...
 const axios = require('axios');
 const router = express.Router();
 const logger = require('../utils/logger');

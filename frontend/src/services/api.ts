@@ -23,8 +23,15 @@ export const uploadApi = {
       const formData = new FormData()
       formData.append('file', file)
 
+      const headers: HeadersInit = {}
+      const token = localStorage.getItem('km_access_token')
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+
       const response = await fetch(`${API_URL}/api/upload/excel`, {
         method: 'POST',
+        headers,
         body: formData
       })
 
