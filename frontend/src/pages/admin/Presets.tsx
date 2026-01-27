@@ -156,15 +156,15 @@ export const AdminPresets: React.FC = () => {
                                 'text-3xl font-black tracking-tight',
                                 isDark ? 'text-white' : 'text-gray-900'
                             )}>
-                                Центр Управления Пресетами
+                                Управление юзерами
                             </h1>
                         </div>
                         <p className={clsx(
                             'text-sm font-medium max-w-2xl leading-relaxed',
                             isDark ? 'text-gray-400' : 'text-gray-600'
                         )}>
-                            Глобальное управление конфигурациями пользователей. Устанавливайте ограничения,
-                            API ключи и стратегии планирования для каждого подразделения и курьера.
+
+                            API ключи и настройка пользователя.
                         </p>
                     </div>
                 </div>
@@ -284,7 +284,7 @@ export const AdminPresets: React.FC = () => {
                                 "text-sm max-w-xs",
                                 isDark ? "text-gray-400" : "text-gray-500"
                             )}>
-                                Выберите оператора из списка слева для управления его индивидуальными настройками.
+                                Выбор учетки слева
                             </p>
                         </div>
                     ) : loading ? (
@@ -385,7 +385,7 @@ export const AdminPresets: React.FC = () => {
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <div>
                                                 <label className={clsx('block text-xs font-bold mb-1.5 uppercase tracking-wide', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                                                    Mapbox Token
+                                                    Mapbox Token для загруженности дорог
                                                 </label>
                                                 <input
                                                     type="password"
@@ -402,7 +402,7 @@ export const AdminPresets: React.FC = () => {
                                             </div>
                                             <div>
                                                 <label className={clsx('block text-xs font-bold mb-1.5 uppercase tracking-wide', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                                                    FastOperator Key
+                                                    FastOperator ключ
                                                 </label>
                                                 <input
                                                     type="password"
@@ -421,7 +421,7 @@ export const AdminPresets: React.FC = () => {
                                     </div>
                                 </CollapsibleSection>
 
-                                {/* SECTION: Route Calculation Zones (KML) */}
+                                {/* (KML) */}
                                 <CollapsibleSection
                                     isDark={isDark}
                                     icon={<MapIcon className="h-5 w-5" />}
@@ -433,7 +433,7 @@ export const AdminPresets: React.FC = () => {
                                             isDark ? 'bg-blue-500/10 border-blue-500 text-blue-200' : 'bg-blue-50 border-blue-500 text-blue-800'
                                         )}>
                                             <p className="text-xs leading-relaxed opacity-90">
-                                                Настройка географических зон. Загрузите KML файл из Google My Maps для определения границ секторов и расположения хабов.
+                                                Настройка зон.
                                             </p>
                                         </div>
 
@@ -557,7 +557,7 @@ export const AdminPresets: React.FC = () => {
                                                 {/* Hub Selection */}
                                                 <div className="space-y-3">
                                                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">
-                                                        Активные локации (ХАБЫ)
+                                                        Активные локации
                                                     </label>
                                                     <div className="flex flex-wrap gap-2">
                                                         {Array.from(new Set(settings.kmlData.polygons.map((p: any) => p.folderName)))
@@ -692,6 +692,8 @@ export const AdminPresets: React.FC = () => {
                                 >
                                     <DashboardSettingsPanel
                                         isDark={isDark}
+                                        initialSettings={settings}
+                                        onSettingsChange={(newSettings) => setSettings(prev => ({ ...prev, ...newSettings }))}
                                         onManualSync={() => {
                                             toast.success('Запущен процесс синхронизации Dashboard API...')
                                         }}
@@ -815,7 +817,7 @@ export const AdminPresets: React.FC = () => {
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <div>
                                                 <label className={clsx('block text-xs font-bold mb-1.5 uppercase tracking-wide', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                                                    Адрес начала (База)
+                                                    Адрес начала маршрута
                                                 </label>
                                                 <input
                                                     type="text"
@@ -827,7 +829,7 @@ export const AdminPresets: React.FC = () => {
                                             </div>
                                             <div>
                                                 <label className={clsx('block text-xs font-bold mb-1.5 uppercase tracking-wide', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                                                    Адрес окончания (Депо)
+                                                    Адрес окончания маршрута
                                                 </label>
                                                 <input
                                                     type="text"
@@ -839,31 +841,7 @@ export const AdminPresets: React.FC = () => {
                                             </div>
                                         </div>
 
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className={clsx('block text-xs font-bold mb-1.5 uppercase tracking-wide', isDark ? 'text-gray-400' : 'text-gray-500')}>Тема по умолчанию</label>
-                                                <select
-                                                    value={settings.theme || 'dark'}
-                                                    onChange={(e) => setSettings({ ...settings, theme: e.target.value })}
-                                                    className={clsx('w-full px-3 py-2 rounded-lg border text-sm', isDark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300')}
-                                                >
-                                                    <option value="light">Светлая</option>
-                                                    <option value="dark">Темная</option>
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <label className={clsx('block text-xs font-bold mb-1.5 uppercase tracking-wide', isDark ? 'text-gray-400' : 'text-gray-500')}>Транспорт</label>
-                                                <select
-                                                    value={settings.courierTransportType || 'car'}
-                                                    onChange={(e) => setSettings({ ...settings, courierTransportType: e.target.value })}
-                                                    className={clsx('w-full px-3 py-2 rounded-lg border text-sm', isDark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300')}
-                                                >
-                                                    <option value="car">Автомобиль</option>
-                                                    <option value="bike">Велосипед</option>
-                                                    <option value="walk">Пеший</option>
-                                                </select>
-                                            </div>
-                                        </div>
+
                                     </div>
                                 </CollapsibleSection>
 

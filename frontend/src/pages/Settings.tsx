@@ -251,12 +251,12 @@ export const Settings: React.FC = () => {
       }
 
       const mid = midMatch[1]
-      // Используем прокси для обхода CORS. 
-      // В реальном проекте лучше использовать свой бэкенд-прокси.
+      // Используем наш бэкенд прокси
       const exportUrl = `https://www.google.com/maps/d/u/0/kml?mid=${mid}&forcekml=1`
 
-      // Попробуем сначала через AllOrigins для обхода CORS
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(exportUrl)}`
+      // Используем API_URL из конфига
+      const { API_URL } = await import('../config/apiConfig')
+      const proxyUrl = `${API_URL}/api/proxy/kml?url=${encodeURIComponent(exportUrl)}`
 
       const response = await fetch(proxyUrl)
       if (!response.ok) throw new Error('Ошибка сети при загрузке карты')
@@ -343,7 +343,7 @@ export const Settings: React.FC = () => {
                 isDark ? 'bg-blue-500/10 border-blue-500 text-blue-200' : 'bg-blue-50 border-blue-500 text-blue-800'
               )}>
                 <p className="text-sm">
-                  Здесь вы можете загрузить KML файл из Google My Maps для определения зон обслуживания и местоположения баз.
+                  Рассчет киллометража через выбранные секторы локации по зонам
                 </p>
               </div>
               {/* Ссылка для синхронизации */}
@@ -630,40 +630,43 @@ export const Settings: React.FC = () => {
           </CollapsibleSection>
 
           {/* Фильтр аномалий маршрута (collapsible) */}
-          <CollapsibleSection
-            isDark={isDark}
-            icon={<CogIcon className="h-4 w-4" />}
-            title="Фильтр аномалий (расстояние)"
-          >
-            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <label className="inline-flex items-center space-x-2">
-                <input type="checkbox" className="checkbox" {...register('anomalyFilterEnabled')} disabled={!canModify} />
-                <span className={clsx(isDark ? 'text-gray-200' : 'text-gray-800', !canModify && 'opacity-50')}>Включить фильтр аномалий</span>
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 col-span-1 md:col-span-2">
-                <div>
-                  <div className={clsx('text-xs mb-1', isDark ? 'text-gray-400' : 'text-gray-500')}>Макс. среднее на заказ (км)</div>
-                  <input type="number" step="1" min="1" className="input" {...register('anomalyMaxAvgPerOrderKm', { valueAsNumber: true })} disabled={!canModify} />
+          {isAdmin && (
+            <CollapsibleSection
+              isDark={isDark}
+              icon={<CogIcon className="h-4 w-4" />}
+              title="Фильтр аномалий (расстояние)"
+            >
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label className="inline-flex items-center space-x-2">
+                  <input type="checkbox" className="checkbox" {...register('anomalyFilterEnabled')} disabled={!canModify} />
+                  <span className={clsx(isDark ? 'text-gray-200' : 'text-gray-800', !canModify && 'opacity-50')}>Включить фильтр аномалий</span>
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 col-span-1 md:col-span-2">
+                  <div>
+                    <div className={clsx('text-xs mb-1', isDark ? 'text-gray-400' : 'text-gray-500')}>Макс. среднее на заказ (км)</div>
+                    <input type="number" step="1" min="1" className="input" {...register('anomalyMaxAvgPerOrderKm', { valueAsNumber: true })} disabled={!canModify} />
+                  </div>
                 </div>
               </div>
-            </div>
-            {/* Расширенная фильтрация (перенесено сюда) */}
-            <div className="mt-4 space-y-3">
-              <div className="flex items-center">
-                <input type="checkbox" className="checkbox" {...register('enableCoordinateValidation')} disabled={!canModify} />
-                <span className={clsx("ml-2 text-sm", !canModify && "opacity-50")}>Проверять координаты на разумность</span>
+              {/* Расширенная фильтрация (перенесено сюда) */}
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center">
+                  <input type="checkbox" className="checkbox" {...register('enableCoordinateValidation')} disabled={!canModify} />
+                  <span className={clsx("ml-2 text-sm", !canModify && "opacity-50")}>Проверять координаты на разумность</span>
+                </div>
+                <div className="flex items-center">
+                  <input type="checkbox" className="checkbox" {...register('enableAdaptiveThresholds')} disabled={!canModify} />
+                  <span className={clsx("ml-2 text-sm", !canModify && "opacity-50")}>Использовать адаптивные пороги</span>
+                </div>
+                <div>
+                  <div className={clsx('text-xs mb-1', isDark ? 'text-gray-400' : 'text-gray-500')}>Минимальный порог качества адреса (0-100)</div>
+                  <input type="number" step="5" min="0" max="100" className="input" {...register('addressQualityThreshold', { valueAsNumber: true })} disabled={!canModify} />
+                  <div className={clsx('text-xs mt-1', isDark ? 'text-gray-400' : 'text-gray-500')}>Адреса с оценкой ниже этого порога будут помечены как подозрительные</div>
+                </div>
               </div>
-              <div className="flex items-center">
-                <input type="checkbox" className="checkbox" {...register('enableAdaptiveThresholds')} disabled={!canModify} />
-                <span className={clsx("ml-2 text-sm", !canModify && "opacity-50")}>Использовать адаптивные пороги</span>
-              </div>
-              <div>
-                <div className={clsx('text-xs mb-1', isDark ? 'text-gray-400' : 'text-gray-500')}>Минимальный порог качества адреса (0-100)</div>
-                <input type="number" step="5" min="0" max="100" className="input" {...register('addressQualityThreshold', { valueAsNumber: true })} disabled={!canModify} />
-                <div className={clsx('text-xs mt-1', isDark ? 'text-gray-400' : 'text-gray-500')}>Адреса с оценкой ниже этого порога будут помечены как подозрительные</div>
-              </div>
-            </div>
-          </CollapsibleSection>
+            </CollapsibleSection>
+          )}
+
           {/* API Settings Spoiler */}
           {
             isAdmin && (
@@ -754,7 +757,7 @@ export const Settings: React.FC = () => {
             )
           }
 
-          {/* Default Addresses */}
+          {/* дефф точка старта */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="label">
@@ -793,21 +796,23 @@ export const Settings: React.FC = () => {
 
 
           {/* Критический лимит для маршрута (collapsible) */}
-          <CollapsibleSection
-            isDark={isDark}
-            icon={<ShieldCheckIcon className="h-4 w-4" />}
-            title="Критический лимит для маршрута"
-          >
-            <div className="mt-2">
-              <div className={clsx('text-xs mb-1', isDark ? 'text-gray-400' : 'text-gray-500')}>Крит. максимальное расстояние маршрута (км)</div>
-              <input type="number" step="1" min="1" className="input" {...register('maxCriticalRouteDistanceKm', { valueAsNumber: true })} />
-              <div className={clsx('text-xs mt-1', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                Если маршрут превышает это значение — будет показан критический warning, маршрут НЕ будет пересчитан
+          {isAdmin && (
+            <CollapsibleSection
+              isDark={isDark}
+              icon={<ShieldCheckIcon className="h-4 w-4" />}
+              title="Критический лимит для маршрута"
+            >
+              <div className="mt-2">
+                <div className={clsx('text-xs mb-1', isDark ? 'text-gray-400' : 'text-gray-500')}>Крит. максимальное расстояние маршрута (км)</div>
+                <input type="number" step="1" min="1" className="input" {...register('maxCriticalRouteDistanceKm', { valueAsNumber: true })} />
+                <div className={clsx('text-xs mt-1', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                  Если маршрут превышает это значение — будет показан критический warning, маршрут НЕ будет пересчитан
+                </div>
               </div>
-            </div>
-          </CollapsibleSection>
+            </CollapsibleSection>
+          )}
 
-          {/* Action Buttons */}
+          {/* Кннопки */}
           <div className="flex justify-between gap-4">
             <button
               type="button"

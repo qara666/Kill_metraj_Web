@@ -16,7 +16,12 @@ const createRateLimiter = (windowMs, max, message) => {
       });
     },
     skip: (req) => {
-      return process.env.NODE_ENV === 'development' && req.ip === '::1';
+      // Skip rate limiting in development for localhost (both IPv4 and IPv6)
+      if (process.env.NODE_ENV === 'development') {
+        const ip = req.ip;
+        return ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1';
+      }
+      return false;
     }
   });
 };

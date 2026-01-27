@@ -53,21 +53,22 @@ router.get('/dashboard', async (req, res) => {
 
         if (finalDeptId && finalDeptId !== 'undefined' && finalDeptId !== 'null' && finalDeptId !== '') {
             const deptIdValue = parseInt(finalDeptId, 10);
-            params.departmentId = deptIdValue;
-            params.divisionId = deptIdValue; // Core variants for external API
+            if (!isNaN(deptIdValue)) {
+                params.departmentId = deptIdValue;
+            }
         }
 
-        // Удаляем из query параметров самого запроса лишнее, если нужно, 
-        // но axios.get(url, { params }) добавит их правильно.
-        console.log('📡 Proxy Request to Dashboard API:', {
-            url: `${DASHBOARD_API_BASE_URL}/api/v1/dashboard`,
-            params,
+        const TARGET_URL = `${DASHBOARD_API_BASE_URL}/api/v1/dashboard`;
+
+        console.log('📡 Proxy Request to Dashboard API (Strict):', {
+            url: TARGET_URL,
+            params: params,
             hasApiKey: !!apiKey
         });
 
-        // Запрос к Dashboard API
-        const response = await axios.get(`${DASHBOARD_API_BASE_URL}/api/v1/dashboard`, {
-            params,
+        // 3. Выполняем запрос
+        const response = await axios.get(TARGET_URL, {
+            params: params,
             headers: {
                 'x-api-key': apiKey,
                 'Accept': 'application/json'
@@ -87,20 +88,31 @@ router.get('/dashboard', async (req, res) => {
         console.error('❌ Dashboard API Proxy Error:', error.message);
 
         if (error.response) {
-            // Ошибка от внешнего API
+            // Ошибка от внешнего API - логируем полные детали
+            console.error('📋 External API Error Details:', {
+                status: error.response.status,
+                statusText: error.response.statusText,
+                data: error.response.data,
+                headers: error.response.headers
+            });
+
             return res.status(error.response.status).json({
                 success: false,
                 error: error.response.data?.detail || error.response.data?.message || 'Ошибка внешнего API',
-                details: error.response.data
+                details: error.response.data,
+                statusCode: error.response.status
             });
         } else if (error.request) {
             // Таймаут или отсутствие связи
+            console.error('📋 Request Error (no response):', error.request);
             return res.status(503).json({
                 success: false,
                 error: 'Внешний API недоступен или превышено время ожидания',
                 details: error.message
             });
         } else {
+            // Внутренняя ошибка
+            console.error('📋 Internal Error:', error);
             return res.status(500).json({
                 success: false,
                 error: 'Внутренняя ошибка прокси-сервера',

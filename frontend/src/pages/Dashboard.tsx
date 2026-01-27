@@ -4,9 +4,11 @@ import { toast } from 'react-hot-toast'
 import { LoadingSpinner } from '../components/shared/LoadingSpinner'
 import { ApiKeyNotification } from '../components/modals/ApiKeyNotification'
 import { ExcelUploadSection } from '../components/excel/ExcelUploadSection'
+import { DashboardApiSection } from '../components/autoplanner/DashboardApiSection'
 import { ExcelResultsDisplay } from '../components/excel/ExcelResultsDisplay'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
+
 import { clsx } from 'clsx'
 import * as api from '../services/api'
 import { mergeExcelData } from '../utils/data/dataMerging'
@@ -16,6 +18,7 @@ const ExcelDataPreview = lazy(() => import('../components/excel/ExcelDataPreview
 export const Dashboard: React.FC = () => {
   const { excelData, setExcelData, clearExcelData } = useExcelData()
   const { isDark } = useTheme()
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [logs, setLogs] = useState<string[]>([])
   const [excelLogs, setExcelLogs] = useState<any[]>([])
@@ -299,16 +302,19 @@ export const Dashboard: React.FC = () => {
     )}>
       <ApiKeyNotification />
 
-      <ExcelUploadSection
-        onFileSelect={handleExcelFileSelect}
-        onProcessFile={handleExcelProcessFile}
-        selectedFile={selectedFile}
-        isProcessing={processFileMutation.isPending}
-        processedData={excelData}
-        onClearResults={handleClearExcelResults}
-        onHtmlDataLoad={handleHtmlDataLoad}
-      />
+      <div className="space-y-8">
+        <DashboardApiSection />
 
+        <ExcelUploadSection
+          onFileSelect={handleExcelFileSelect}
+          onProcessFile={handleExcelProcessFile}
+          selectedFile={selectedFile}
+          isProcessing={processFileMutation.isPending}
+          processedData={excelData}
+          onClearResults={handleClearExcelResults}
+          onHtmlDataLoad={handleHtmlDataLoad}
+        />
+      </div>
 
       {excelData && (
         <ExcelResultsDisplay

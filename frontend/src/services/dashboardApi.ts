@@ -87,11 +87,7 @@ class DashboardApiService {
       }
 
       if (params.departmentId) {
-        const idStr = String(params.departmentId);
-        queryParams.append('departmentId', idStr);
-        queryParams.append('divisionId', idStr);
-        queryParams.append('department_id', idStr);
-        queryParams.append('division_id', idStr);
+        queryParams.append('departmentId', String(params.departmentId));
       }
 
       // Отправка запроса к Dashboard API прокси
