@@ -120,6 +120,12 @@ function requireRole(role) {
 // Middleware to log actions
 function auditLog(action) {
     return async (req, res, next) => {
+        // Skip logging for admins as requested by user ("логи админа не вести")
+        // Also skip if no user (should rely on authenticateToken, but for safety)
+        if (req.user && req.user.role === 'admin') {
+            return next();
+        }
+
         // Store original send function
         const originalSend = res.send;
 

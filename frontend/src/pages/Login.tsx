@@ -77,7 +77,7 @@ export const Login: React.FC = () => {
                         'text-3xl font-bold mb-2',
                         localIsDark ? 'text-white' : 'text-gray-900'
                     )}>
-                        Вход в систему
+                        Вход в 
                     </h1>
                     <p className={clsx(
                         'text-sm',

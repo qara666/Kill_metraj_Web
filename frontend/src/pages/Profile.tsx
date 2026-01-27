@@ -204,14 +204,7 @@ export const Profile: React.FC = () => {
                                             <p className={isDark ? 'text-gray-300' : 'text-gray-700'}>{presets.settings.cityBias}</p>
                                         </div>
                                     )}
-                                    {presets.settings.theme && (
-                                        <div>
-                                            <p className={clsx('text-xs', isDark ? 'text-gray-500' : 'text-gray-400')}>Тема</p>
-                                            <p className={isDark ? 'text-gray-300' : 'text-gray-700'}>
-                                                {presets.settings.theme === 'dark' ? 'Темная' : 'Светлая'}
-                                            </p>
-                                        </div>
-                                    )}
+                                    
                                 </div>
                             </div>
                         )}
