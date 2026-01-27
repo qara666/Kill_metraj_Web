@@ -37,7 +37,16 @@ export const AdminPresets: React.FC = () => {
         setIsSyncingKml(true)
         try {
             const baseUrl = import.meta.env.VITE_API_URL || ''
-            const response = await fetch(`${baseUrl}/api/proxy/kml?url=${encodeURIComponent(url)}`)
+
+            // Extract MID from URL and construct proper export link (same logic as Settings.tsx)
+            const midMatch = url.match(/mid=([^&\s]+)/)
+            if (!midMatch) {
+                throw new Error('Не удалось найти ID карты (mid) в ссылке. Используйте ссылку формата https://www.google.com/maps/d/viewer?mid=...')
+            }
+            const mid = midMatch[1]
+            const exportUrl = `https://www.google.com/maps/d/u/0/kml?mid=${mid}&forcekml=1`
+
+            const response = await fetch(`${baseUrl}/api/proxy/kml?url=${encodeURIComponent(exportUrl)}`)
             if (!response.ok) throw new Error('Network response was not ok')
 
             const json = await response.json()
