@@ -39,8 +39,13 @@ export const AdminPresets: React.FC = () => {
             const baseUrl = import.meta.env.VITE_API_URL || ''
             const response = await fetch(`${baseUrl}/api/proxy/kml?url=${encodeURIComponent(url)}`)
             if (!response.ok) throw new Error('Network response was not ok')
-            const text = await response.text()
-            const parsed = parseKML(text)
+
+            const json = await response.json()
+            if (!json.success || !json.contents) {
+                throw new Error('Invalid response from proxy')
+            }
+
+            const parsed = parseKML(json.contents)
 
             const now = new Date().toLocaleString('ru-RU', {
                 day: '2-digit',
@@ -183,7 +188,7 @@ export const AdminPresets: React.FC = () => {
                             'text-lg font-black tracking-tight',
                             isDark ? 'text-white' : 'text-gray-900'
                         )}>
-                            Операторы
+                            Пользователи
                         </h2>
                         <span className={clsx(
                             "px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-widest",
