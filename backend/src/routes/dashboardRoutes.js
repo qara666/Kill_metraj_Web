@@ -7,6 +7,7 @@ const { authenticateToken, auditLog } = require('../middleware/auth');
 
 // ... existing imports ...
 const axios = require('axios');
+const express = require('express');
 const router = express.Router();
 const logger = require('../utils/logger');
 
