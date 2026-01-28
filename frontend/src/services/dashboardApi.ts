@@ -70,10 +70,6 @@ class DashboardApiService {
 
       queryParams.append('top', String(params.top || 1000));
 
-      if (params.apiKey) {
-        queryParams.append('apiKey', params.apiKey);
-      }
-
       if (params.dateShift && params.dateShift.trim() && params.dateShift !== 'undefined') {
         queryParams.append('dateShift', params.dateShift);
       }
@@ -93,6 +89,9 @@ class DashboardApiService {
       // Отправка запроса к Dashboard API прокси
       const response = await fetch(`${API_URL}/api/v1/dashboard?${queryParams.toString()}`, {
         method: 'GET',
+        headers: {
+          'x-api-key': params.apiKey || ''
+        }
       })
 
       if (!response.ok) {
