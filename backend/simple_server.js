@@ -1,5 +1,8 @@
 const express = require('express');
 const multer = require('multer');
+const http = require('http');
+const { Server } = require('socket.io');
+const { Client } = require('pg');
 const dashboardRoutes = require('./src/routes/dashboardRoutes');
 const ExcelService = require('./src/services/ExcelService_v3');
 const telegramRoutes = require('./src/routes/telegramRoutes');
@@ -15,7 +18,21 @@ const { syncDatabase, AuditLog } = require('./src/models');
 const { authenticateToken } = require('./src/middleware/auth');
 
 const app = express();
+const httpServer = http.createServer(app);
 const PORT = process.env.PORT || 5001;
+
+// Socket.io setup with CORS
+const io = new Server(httpServer, {
+  cors: {
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    methods: ['GET', 'POST'],
+    credentials: true
+  },
+  transports: ['websocket', 'polling']
+});
+
+// PostgreSQL LISTEN client (separate from Sequelize)
+let pgListenClient = null;
 
 // Manual Robust CORS Middleware (Wildcard Origin)
 app.use((req, res, next) => {
@@ -312,7 +329,7 @@ async function startServer() {
     }
 
     // Запуск сервера
-    app.listen(PORT, '0.0.0.0', () => {
+    httpServer.listen(PORT, '0.0.0.0', async () => {
       logger.info(`🚀 Сервер запущен на 0.0.0.0:${PORT}`, {
         port: PORT,
         env: process.env.NODE_ENV || 'development'
@@ -322,7 +339,11 @@ async function startServer() {
       console.log(`🔐 Auth API: http://localhost:${PORT}/api/auth`);
       console.log(`👥 Users API: http://localhost:${PORT}/api/users`);
       console.log(`📡 Telegram API: http://localhost:${PORT}/api/telegram`);
-      console.log(`🔧 Debug logs: http://localhost:${PORT}/debug/logs\n`);
+      console.log(`🔧 Debug logs: http://localhost:${PORT}/debug/logs`);
+      console.log(`🔌 WebSocket: ws://localhost:${PORT}\n`);
+
+      // Setup PostgreSQL LISTEN for dashboard updates
+      await setupDashboardListener();
     });
   } catch (error) {
     logger.error('❌ Failed to start server:', error);
@@ -330,5 +351,127 @@ async function startServer() {
     process.exit(1);
   }
 }
+
+/**
+ * Setup PostgreSQL LISTEN/NOTIFY for dashboard updates
+ */
+async function setupDashboardListener() {
+  try {
+    pgListenClient = new Client({
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT || '5432'),
+      database: process.env.DB_NAME || 'kill_metraj',
+      user: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD
+    });
+
+    await pgListenClient.connect();
+    await pgListenClient.query('LISTEN dashboard_update');
+
+    logger.info('✅ PostgreSQL LISTEN setup complete');
+    console.log('✅ Listening for dashboard updates via PostgreSQL NOTIFY');
+
+    // Handle notifications
+    pgListenClient.on('notification', async (msg) => {
+      if (msg.channel === 'dashboard_update') {
+        try {
+          const notification = JSON.parse(msg.payload);
+          logger.info('📡 Dashboard update notification received', { id: notification.id });
+
+          // Fetch full data from database
+          const [results] = await sequelize.query(
+            'SELECT * FROM api_dashboard_cache WHERE id = $1',
+            {
+              bind: [notification.id],
+              type: sequelize.QueryTypes.SELECT
+            }
+          );
+
+          if (results) {
+            // Broadcast to all connected WebSocket clients
+            io.emit('dashboard:update', {
+              data: results.payload,
+              timestamp: results.created_at,
+              status: results.status_code
+            });
+
+            logger.info('📤 Dashboard update broadcasted to clients');
+          }
+        } catch (error) {
+          logger.error('Error handling dashboard notification:', error);
+        }
+      }
+    });
+
+    // Handle connection errors
+    pgListenClient.on('error', (err) => {
+      logger.error('PostgreSQL LISTEN client error:', err);
+    });
+
+  } catch (error) {
+    logger.error('Failed to setup PostgreSQL LISTEN:', error);
+    console.error('⚠️  Dashboard real-time updates disabled');
+  }
+}
+
+/**
+ * Socket.io connection handling
+ */
+io.on('connection', (socket) => {
+  logger.info(`🔌 Client connected: ${socket.id}`);
+
+  // Send latest dashboard data on connection
+  sequelize.query(
+    'SELECT * FROM api_dashboard_cache WHERE status_code = 200 ORDER BY created_at DESC LIMIT 1',
+    { type: sequelize.QueryTypes.SELECT }
+  ).then(results => {
+    if (results.length > 0) {
+      socket.emit('dashboard:update', {
+        data: results[0].payload,
+        timestamp: results[0].created_at,
+        status: results[0].status_code
+      });
+      logger.info(`📤 Sent latest dashboard data to ${socket.id}`);
+    }
+  }).catch(error => {
+    logger.error('Error sending initial dashboard data:', error);
+  });
+
+  socket.on('disconnect', () => {
+    logger.info(`🔌 Client disconnected: ${socket.id}`);
+  });
+});
+
+/**
+ * REST endpoint for latest dashboard data
+ */
+app.get('/api/dashboard/latest', authenticateToken, async (req, res) => {
+  try {
+    const results = await sequelize.query(
+      'SELECT * FROM api_dashboard_cache WHERE status_code = 200 ORDER BY created_at DESC LIMIT 1',
+      { type: sequelize.QueryTypes.SELECT }
+    );
+
+    if (results.length === 0) {
+      return res.json({
+        success: false,
+        error: 'No dashboard data available yet'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: results[0].payload,
+      timestamp: results[0].created_at,
+      status: results[0].status_code
+    });
+  } catch (error) {
+    logger.error('Error fetching latest dashboard data:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch dashboard data'
+    });
+  }
+});
 
 startServer();

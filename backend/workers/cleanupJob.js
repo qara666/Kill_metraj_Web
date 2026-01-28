@@ -1,0 +1,134 @@
+/**
+ * Cleanup Job for Dashboard Cache
+ * 
+ * Runs daily to remove old dashboard data and prevent database bloat
+ * Uses node-cron for scheduling
+ */
+
+const cron = require('node-cron');
+const { Pool } = require('pg');
+require('dotenv').config();
+
+class CleanupJob {
+    constructor() {
+        this.pool = new Pool({
+            host: process.env.DB_HOST || 'localhost',
+            port: parseInt(process.env.DB_PORT || '5432'),
+            database: process.env.DB_NAME || 'kill_metraj',
+            user: process.env.DB_USER || 'postgres',
+            password: process.env.DB_PASSWORD,
+            max: 2
+        });
+
+        this.retentionDays = parseInt(process.env.DASHBOARD_DATA_RETENTION_DAYS || '7');
+        this.schedule = process.env.CLEANUP_SCHEDULE || '0 3 * * *'; // Daily at 3 AM
+    }
+
+    async runCleanup() {
+        const startTime = Date.now();
+        console.log(`[${new Date().toISOString()}] Running cleanup job...`);
+        console.log(`  Retention: ${this.retentionDays} days`);
+
+        try {
+            // Delete old records
+            const deleteResult = await this.pool.query(
+                `DELETE FROM api_dashboard_cache 
+         WHERE created_at < NOW() - $1::INTERVAL
+         RETURNING id`,
+                [`${this.retentionDays} days`]
+            );
+
+            const deletedCount = deleteResult.rowCount;
+
+            // Get table size before vacuum
+            const sizeBeforeResult = await this.pool.query(
+                `SELECT pg_size_pretty(pg_total_relation_size('api_dashboard_cache')) as size`
+            );
+            const sizeBefore = sizeBeforeResult.rows[0]?.size || 'unknown';
+
+            // Vacuum to reclaim space
+            await this.pool.query('VACUUM ANALYZE api_dashboard_cache');
+
+            // Get table size after vacuum
+            const sizeAfterResult = await this.pool.query(
+                `SELECT pg_size_pretty(pg_total_relation_size('api_dashboard_cache')) as size`
+            );
+            const sizeAfter = sizeAfterResult.rows[0]?.size || 'unknown';
+
+            // Get remaining record count
+            const countResult = await this.pool.query(
+                'SELECT COUNT(*) as count FROM api_dashboard_cache'
+            );
+            const remainingCount = parseInt(countResult.rows[0]?.count || '0');
+
+            const elapsed = Date.now() - startTime;
+
+            console.log(`  ✓ Cleanup completed (${elapsed}ms)`);
+            console.log(`    Deleted: ${deletedCount} records`);
+            console.log(`    Remaining: ${remainingCount} records`);
+            console.log(`    Size before: ${sizeBefore}`);
+            console.log(`    Size after: ${sizeAfter}`);
+
+            return {
+                success: true,
+                deletedCount,
+                remainingCount,
+                sizeBefore,
+                sizeAfter,
+                elapsed
+            };
+
+        } catch (error) {
+            console.error(`  ✗ Cleanup failed:`, error.message);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    start() {
+        console.log('='.repeat(60));
+        console.log('Dashboard Cache Cleanup Job');
+        console.log('='.repeat(60));
+        console.log(`Schedule: ${this.schedule}`);
+        console.log(`Retention: ${this.retentionDays} days`);
+        console.log('='.repeat(60));
+
+        // Schedule cleanup job
+        cron.schedule(this.schedule, async () => {
+            await this.runCleanup();
+        });
+
+        console.log('✓ Cleanup job scheduled');
+
+        // Run cleanup on startup
+        console.log('Running initial cleanup...');
+        this.runCleanup();
+    }
+
+    async stop() {
+        console.log('Cleanup job stopping...');
+        await this.pool.end();
+        console.log('✓ Cleanup job stopped');
+    }
+}
+
+// Create cleanup job instance
+const cleanupJob = new CleanupJob();
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+    await cleanupJob.stop();
+    process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+    await cleanupJob.stop();
+    process.exit(0);
+});
+
+// Start cleanup job
+cleanupJob.start();
+
+module.exports = CleanupJob;

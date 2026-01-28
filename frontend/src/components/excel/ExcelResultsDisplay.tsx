@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import {
   DocumentTextIcon,
   UserGroupIcon,
@@ -15,6 +15,9 @@ import {
 } from '@heroicons/react/24/outline'
 import { useTheme } from '../../contexts/ThemeContext'
 import { clsx } from 'clsx'
+import { Pagination } from '../shared/Pagination'
+import { usePagination } from '../../hooks/usePagination'
+import { useAdaptiveItemsPerPage } from '../../hooks/useDeviceCapabilities'
 
 interface ExcelResultsDisplayProps {
   data: any
@@ -50,6 +53,21 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
   })
   const [courierSortBy, setCourierSortBy] = useState<'name' | 'orders'>('orders')
   const [courierSortOrder, setCourierSortOrder] = useState<'asc' | 'desc'>('desc')
+
+  // Adaptive items per page based on device capabilities
+  const adaptiveItemsPerPage = useAdaptiveItemsPerPage(20)
+
+  // Pagination for orders
+  const ordersPagination = usePagination({
+    totalItems: data?.orders?.length || 0,
+    initialItemsPerPage: adaptiveItemsPerPage
+  })
+
+  // Pagination for couriers
+  const couriersPagination = usePagination({
+    totalItems: data?.couriers?.length || 0,
+    initialItemsPerPage: adaptiveItemsPerPage
+  })
 
   const toggleSection = (section: keyof typeof expandedSections) => {
     setExpandedSections(prev => ({
@@ -93,6 +111,12 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
 
   const { orders, couriers, routes, errors, warnings } = data
 
+  // Memoized paginated orders
+  const paginatedOrders = useMemo(() => {
+    if (!orders) return []
+    return orders.slice(ordersPagination.startIndex, ordersPagination.endIndex)
+  }, [orders, ordersPagination.startIndex, ordersPagination.endIndex])
+
   // Enrich couriers with stats
   const enrichedCouriers = (couriers || []).map((courier: any) => {
     const courierName = typeof courier === 'string' ? courier : courier.name;
@@ -129,6 +153,16 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
       efficiency: routesCount > 0 ? (count / routesCount).toFixed(1) : '—'
     };
   });
+
+  // Memoized sorted couriers
+  const sortedCouriers = useMemo(() => {
+    return sortCouriers(enrichedCouriers)
+  }, [enrichedCouriers, courierSortBy, courierSortOrder])
+
+  // Memoized paginated couriers
+  const paginatedCouriers = useMemo(() => {
+    return sortedCouriers.slice(couriersPagination.startIndex, couriersPagination.endIndex)
+  }, [sortedCouriers, couriersPagination.startIndex, couriersPagination.endIndex])
 
   const toggleCourierZones = (courierName: string) => {
     const next = new Set(expandedCourierZones);
@@ -168,82 +202,98 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
           </div>
 
           {expandedSections.orders && (
-            <div className="mt-4 space-y-3 max-h-96 overflow-y-auto">
-              {orders.map((order: any, index: number) => (
-                <div key={order.orderNumber || index} className={clsx(
-                  'p-4 rounded-lg border',
-                  isDark ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-50 border-gray-200'
-                )}>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3 mb-2">
-                        <span className={clsx(
-                          'font-medium',
-                          isDark ? 'text-gray-100' : 'text-gray-900'
-                        )}>
-                          #{order.orderNumber || `ORDER_${index + 1}`}
-                        </span>
-                        {order.amount && (
+            <>
+              <div className="mt-4 space-y-3">
+                {paginatedOrders.map((order: any, index: number) => (
+                  <div key={order.orderNumber || index} className={clsx(
+                    'p-4 rounded-lg border',
+                    isDark ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-50 border-gray-200'
+                  )}>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-3 mb-2">
                           <span className={clsx(
-                            'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium',
-                            isDark ? 'bg-green-900/30 text-green-300' : 'bg-green-100 text-green-800'
+                            'font-medium',
+                            isDark ? 'text-gray-100' : 'text-gray-900'
                           )}>
-                            <CurrencyDollarIcon className="h-3 w-3 mr-1" />
-                            {safeRender(order.amount)} грн
+                            #{order.orderNumber || `ORDER_${ordersPagination.startIndex + index + 1}`}
                           </span>
-                        )}
-                      </div>
-
-                      <div className={clsx(
-                        'space-y-1 text-sm',
-                        isDark ? 'text-gray-400' : 'text-gray-600'
-                      )}>
-                        <div className="flex items-center">
-                          <MapPinIcon className="h-4 w-4 mr-2 text-gray-400" />
-                          <span>{safeRender(order.address)}</span>
+                          {order.amount && (
+                            <span className={clsx(
+                              'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium',
+                              isDark ? 'bg-green-900/30 text-green-300' : 'bg-green-100 text-green-800'
+                            )}>
+                              <CurrencyDollarIcon className="h-3 w-3 mr-1" />
+                              {safeRender(order.amount)} грн
+                            </span>
+                          )}
                         </div>
 
-                        {order.courier && (
+                        <div className={clsx(
+                          'space-y-1 text-sm',
+                          isDark ? 'text-gray-400' : 'text-gray-600'
+                        )}>
                           <div className="flex items-center">
-                            <TruckIcon className="h-4 w-4 mr-2 text-gray-400" />
-                            <span>Курьер: {safeRender(order.courier)}</span>
+                            <MapPinIcon className="h-4 w-4 mr-2 text-gray-400" />
+                            <span>{safeRender(order.address)}</span>
                           </div>
-                        )}
 
-                        {order.paymentMethod && (
-                          <div className="flex items-center">
-                            <CreditCardIcon className="h-4 w-4 mr-2 text-gray-400" />
-                            <span>Оплата: {safeRender(order.paymentMethod)}</span>
-                          </div>
-                        )}
+                          {order.courier && (
+                            <div className="flex items-center">
+                              <TruckIcon className="h-4 w-4 mr-2 text-gray-400" />
+                              <span>Курьер: {safeRender(order.courier)}</span>
+                            </div>
+                          )}
 
-                        {order.customerName && (
-                          <div className="flex items-center">
-                            <UserIcon className="h-4 w-4 mr-2 text-gray-400" />
-                            <span>Клиент: {safeRender(order.customerName)}</span>
-                          </div>
-                        )}
+                          {order.paymentMethod && (
+                            <div className="flex items-center">
+                              <CreditCardIcon className="h-4 w-4 mr-2 text-gray-400" />
+                              <span>Оплата: {safeRender(order.paymentMethod)}</span>
+                            </div>
+                          )}
 
-                        {order.phone && (
-                          <div className="flex items-center">
-                            <PhoneIcon className="h-4 w-4 mr-2 text-gray-400" />
-                            <span>Телефон: {safeRender(order.phone)}</span>
-                          </div>
+                          {order.customerName && (
+                            <div className="flex items-center">
+                              <UserIcon className="h-4 w-4 mr-2 text-gray-400" />
+                              <span>Клиент: {safeRender(order.customerName)}</span>
+                            </div>
+                          )}
+
+                          {order.phone && (
+                            <div className="flex items-center">
+                              <PhoneIcon className="h-4 w-4 mr-2 text-gray-400" />
+                              <span>Телефон: {safeRender(order.phone)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="ml-4">
+                        {order.geocoded ? (
+                          <CheckCircleIcon className="h-5 w-5 text-green-500" />
+                        ) : (
+                          <ExclamationTriangleIcon className="h-5 w-5 text-yellow-500" />
                         )}
                       </div>
                     </div>
-
-                    <div className="ml-4">
-                      {order.geocoded ? (
-                        <CheckCircleIcon className="h-5 w-5 text-green-500" />
-                      ) : (
-                        <ExclamationTriangleIcon className="h-5 w-5 text-yellow-500" />
-                      )}
-                    </div>
                   </div>
+                ))}
+              </div>
+
+              {/* Orders Pagination */}
+              {orders && orders.length > 10 && (
+                <div className="mt-4">
+                  <Pagination
+                    currentPage={ordersPagination.currentPage}
+                    totalPages={ordersPagination.totalPages}
+                    onPageChange={ordersPagination.setCurrentPage}
+                    itemsPerPage={ordersPagination.itemsPerPage}
+                    onItemsPerPageChange={ordersPagination.setItemsPerPage}
+                    totalItems={orders.length}
+                  />
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -298,103 +348,119 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
           </div>
 
           {expandedSections.couriers && (
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {sortCouriers(enrichedCouriers).map((courier: any, index: number) => (
-                <div key={courier.name || index} className={clsx(
-                  'p-4 rounded-lg border',
-                  isDark ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-50 border-gray-200'
-                )}>
-                  <div className="flex items-center space-x-3 mb-2">
-                    <TruckIcon className="h-5 w-5 text-green-600" />
-                    <span className={clsx(
-                      'font-medium',
-                      isDark ? 'text-gray-100' : 'text-gray-900'
-                    )}>{courier.name}</span>
-                  </div>
-
-                  <div className={clsx(
-                    'space-y-1 text-sm',
-                    isDark ? 'text-gray-400' : 'text-gray-600'
+            <>
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {paginatedCouriers.map((courier: any, index: number) => (
+                  <div key={courier.name || index} className={clsx(
+                    'p-4 rounded-lg border',
+                    isDark ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-50 border-gray-200'
                   )}>
-                    <div className="flex justify-between">
-                      <span>Заказов:</span>
+                    <div className="flex items-center space-x-3 mb-2">
+                      <TruckIcon className="h-5 w-5 text-green-600" />
                       <span className={clsx(
                         'font-medium',
-                        isDark ? 'text-gray-200' : 'text-gray-900'
-                      )}>{courier.ordersCount}</span>
+                        isDark ? 'text-gray-100' : 'text-gray-900'
+                      )}>{courier.name}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Общая сумма:</span>
-                      <span className={clsx(
-                        'font-medium text-green-500'
-                      )}>{Math.round(courier.totalAmount)} грн</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Средний чек:</span>
-                      <span className={clsx(
-                        'font-medium',
-                        isDark ? 'text-gray-200' : 'text-gray-900'
-                      )}>{Math.round(courier.avgAmount)} грн</span>
-                    </div>
-                    {courier.vehicleType && (
+
+                    <div className={clsx(
+                      'space-y-1 text-sm',
+                      isDark ? 'text-gray-400' : 'text-gray-600'
+                    )}>
                       <div className="flex justify-between">
-                        <span>Транспорт:</span>
+                        <span>Заказов:</span>
                         <span className={clsx(
                           'font-medium',
                           isDark ? 'text-gray-200' : 'text-gray-900'
-                        )}>{courier.vehicleType === 'car' ? 'Авто' : 'Мото'}</span>
+                        )}>{courier.ordersCount}</span>
                       </div>
-                    )}
-                    <div className="flex justify-between">
-                      <span>Маршрутов:</span>
-                      <span className={clsx(
-                        'font-medium',
-                        isDark ? 'text-gray-200' : 'text-gray-900'
-                      )}>{courier.routesCount}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Загрузка (заказов/маршрут):</span>
-                      <span className={clsx(
-                        'font-medium',
-                        isDark ? 'text-blue-300' : 'text-blue-600'
-                      )}>{courier.efficiency}</span>
-                    </div>
-                    <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 flex flex-col items-center">
-                      <button
-                        onClick={() => toggleCourierZones(courier.name)}
-                        className={clsx(
-                          'text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer shadow-sm',
-                          courier.ordersCount >= 15
-                            ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-                            : courier.ordersCount >= 2
-                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
-                        )}
-                      >
-                        {courier.zoneLabel}
-                      </button>
-
-                      {expandedCourierZones.has(courier.name) && (
-                        <div className={clsx(
-                          'mt-3 w-full p-2 rounded-lg text-xs space-y-1 animate-in fade-in slide-in-from-top-2 duration-200',
-                          isDark ? 'bg-gray-800/80' : 'bg-white shadow-inner'
-                        )}>
-                          <div className="font-bold border-b border-gray-200 dark:border-gray-700 pb-1 mb-1 text-center">
-                            Распределение по зонам
-                          </div>
-                          {Object.entries(courier.zoneBreakdown).map(([zone, count]) => (
-                            <div key={zone} className="flex justify-between items-center px-1">
-                              <span className="truncate mr-2 max-w-[120px]">{zone}</span>
-                              <span className="font-bold">{count as number} зак.</span>
-                            </div>
-                          ))}
+                      <div className="flex justify-between">
+                        <span>Общая сумма:</span>
+                        <span className={clsx(
+                          'font-medium text-green-500'
+                        )}>{Math.round(courier.totalAmount)} грн</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Средний чек:</span>
+                        <span className={clsx(
+                          'font-medium',
+                          isDark ? 'text-gray-200' : 'text-gray-900'
+                        )}>{Math.round(courier.avgAmount)} грн</span>
+                      </div>
+                      {courier.vehicleType && (
+                        <div className="flex justify-between">
+                          <span>Транспорт:</span>
+                          <span className={clsx(
+                            'font-medium',
+                            isDark ? 'text-gray-200' : 'text-gray-900'
+                          )}>{courier.vehicleType === 'car' ? 'Авто' : 'Мото'}</span>
                         </div>
                       )}
+                      <div className="flex justify-between">
+                        <span>Маршрутов:</span>
+                        <span className={clsx(
+                          'font-medium',
+                          isDark ? 'text-gray-200' : 'text-gray-900'
+                        )}>{courier.routesCount}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Загрузка (заказов/маршрут):</span>
+                        <span className={clsx(
+                          'font-medium',
+                          isDark ? 'text-blue-300' : 'text-blue-600'
+                        )}>{courier.efficiency}</span>
+                      </div>
+                      <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 flex flex-col items-center">
+                        <button
+                          onClick={() => toggleCourierZones(courier.name)}
+                          className={clsx(
+                            'text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer shadow-sm',
+                            courier.ordersCount >= 15
+                              ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                              : courier.ordersCount >= 2
+                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                          )}
+                        >
+                          {courier.zoneLabel}
+                        </button>
+
+                        {expandedCourierZones.has(courier.name) && (
+                          <div className={clsx(
+                            'mt-3 w-full p-2 rounded-lg text-xs space-y-1 animate-in fade-in slide-in-from-top-2 duration-200',
+                            isDark ? 'bg-gray-800/80' : 'bg-white shadow-inner'
+                          )}>
+                            <div className="font-bold border-b border-gray-200 dark:border-gray-700 pb-1 mb-1 text-center">
+                              Распределение по зонам
+                            </div>
+                            {Object.entries(courier.zoneBreakdown).map(([zone, count]) => (
+                              <div key={zone} className="flex justify-between items-center px-1">
+                                <span className="truncate mr-2 max-w-[120px]">{zone}</span>
+                                <span className="font-bold">{count as number} зак.</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
+                ))}
+              </div>
+
+              {/* Couriers Pagination */}
+              {couriers && couriers.length > 10 && (
+                <div className="mt-4">
+                  <Pagination
+                    currentPage={couriersPagination.currentPage}
+                    totalPages={couriersPagination.totalPages}
+                    onPageChange={couriersPagination.setCurrentPage}
+                    itemsPerPage={couriersPagination.itemsPerPage}
+                    onItemsPerPageChange={couriersPagination.setItemsPerPage}
+                    totalItems={couriers.length}
+                  />
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </div>
       )}
