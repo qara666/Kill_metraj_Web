@@ -8,6 +8,7 @@ import { DashboardApiSection } from '../components/autoplanner/DashboardApiSecti
 import { ExcelResultsDisplay } from '../components/excel/ExcelResultsDisplay'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
+import { useAuth } from '../contexts/AuthContext'
 
 import { clsx } from 'clsx'
 import * as api from '../services/api'
@@ -18,6 +19,7 @@ const ExcelDataPreview = lazy(() => import('../components/excel/ExcelDataPreview
 export const Dashboard: React.FC = () => {
   const { excelData, setExcelData, clearExcelData } = useExcelData()
   const { isDark } = useTheme()
+  const { user } = useAuth()
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [logs, setLogs] = useState<string[]>([])
@@ -326,78 +328,79 @@ export const Dashboard: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-        <div className="lg:col-span-2">
-          <div className="card p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className={clsx(
-                'text-lg font-semibold',
-                isDark ? 'text-gray-100' : 'text-gray-900'
-              )}>Логи</h2>
-              <div className="space-x-2">
-                {excelLogs.length > 0 && (
+        {user?.role === 'admin' && (
+          <div className="lg:col-span-2">
+            <div className="card p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className={clsx(
+                  'text-lg font-semibold',
+                  isDark ? 'text-gray-100' : 'text-gray-900'
+                )}>Логи (только для админа)</h2>
+                <div className="space-x-2">
+                  {excelLogs.length > 0 && (
+                    <button
+                      onClick={() => setShowExcelLogs(true)}
+                      className="btn-primary text-sm"
+                      title="Показати детальні логи Excel обробки"
+                    >
+                      Excel логи ({excelLogs.length})
+                    </button>
+                  )}
                   <button
-                    onClick={() => setShowExcelLogs(true)}
-                    className="btn-primary text-sm"
-                    title="Показати детальні логи Excel обробки"
+                    onClick={() => setLogs([])}
+                    className="btn-outline"
+                    title="Очистить логи"
                   >
-                    Excel логи ({excelLogs.length})
+                    Очистить логи
                   </button>
-                )}
-                <button
-                  onClick={() => setLogs([])}
-                  className="btn-outline"
-                  title="Очистить логи"
-                >
-                  Очистить логи
-                </button>
-                {excelData && (
-                  <button
-                    onClick={() => {
-                      if (window.confirm('Вы уверены, что хотите полностью очистить все данные Excel? Это действие нельзя отменить.')) {
-                        clearExcelData()
-                        setPreviewData(null)
-                        setShowDataPreview(false)
-                        setExcelLogs([])
-                        try {
-                          localStorage.removeItem('km_dashboard_processed_data')
-                          localStorage.removeItem('km_dashboard_excel_logs')
-                          localStorage.removeItem('km_routes')
-                          localStorage.removeItem('km_excel_data')
-                        } catch { }
-                        log('Все данные Excel полностью очищены')
-                        toast.success('Все данные Excel очищены')
-                      }
-                    }}
-                    className="btn-outline text-red-600 border-red-300 hover:bg-red-50"
-                    title="Полностью очистить все данные Excel"
-                  >
-                    Очистить все данные
-                  </button>
-                )}
+                  {excelData && (
+                    <button
+                      onClick={() => {
+                        if (window.confirm('Вы уверены, что хотите полностью очистить все данные Excel? Это действие нельзя отменить.')) {
+                          clearExcelData()
+                          setPreviewData(null)
+                          setShowDataPreview(false)
+                          setExcelLogs([])
+                          try {
+                            localStorage.removeItem('km_dashboard_processed_data')
+                            localStorage.removeItem('km_dashboard_excel_logs')
+                            localStorage.removeItem('km_routes')
+                            localStorage.removeItem('km_excel_data')
+                          } catch { }
+                          log('Все данные Excel полностью очищены')
+                          toast.success('Все данные Excel очищены')
+                        }
+                      }}
+                      className="btn-outline text-red-600 border-red-300 hover:bg-red-50"
+                      title="Полностью очистить все данные Excel"
+                    >
+                      Очистить все данные
+                    </button>
+                  )}
+                </div>
               </div>
+              {logs.length === 0 ? (
+                <p className={clsx(
+                  'text-sm',
+                  isDark ? 'text-gray-400' : 'text-gray-500'
+                )}>Пока что нет логов</p>
+              ) : (
+                <div className="max-h-64 overflow-y-auto space-y-2">
+                  {logs.map((line, idx) => (
+                    <div key={idx} className={clsx(
+                      'text-xs font-mono border rounded p-2',
+                      isDark
+                        ? 'bg-gray-800 border-gray-700 text-gray-300'
+                        : 'bg-gray-50 border-gray-200 text-gray-800'
+                    )}>
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            {logs.length === 0 ? (
-              <p className={clsx(
-                'text-sm',
-                isDark ? 'text-gray-400' : 'text-gray-500'
-              )}>Пока что нет логов</p>
-            ) : (
-              <div className="max-h-64 overflow-y-auto space-y-2">
-                {logs.map((line, idx) => (
-                  <div key={idx} className={clsx(
-                    'text-xs font-mono border rounded p-2',
-                    isDark
-                      ? 'bg-gray-800 border-gray-700 text-gray-300'
-                      : 'bg-gray-50 border-gray-200 text-gray-800'
-                  )}>
-                    {line}
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
-        </div>
-
+        )}
 
         <div className="lg:col-span-2">
         </div>
