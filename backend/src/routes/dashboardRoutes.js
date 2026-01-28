@@ -41,7 +41,6 @@ router.get('/dashboard', async (req, res) => {
         // Формирование параметров запроса для внешнего API
         const params = {
             top: parseInt(top, 10),
-            apiKey: apiKey, // Pass API key in query params as upstream likely expects it
         };
 
         if (dateShift && dateShift !== 'undefined' && dateShift !== 'null' && dateShift.trim()) {
