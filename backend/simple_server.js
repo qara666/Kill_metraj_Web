@@ -79,7 +79,6 @@ app.get('/api/telegram/test', (req, res) => {
 });
 
 // Add imports at top
-const { authenticateToken } = require('./src/middleware/auth');
 const { AuditLog } = require('./src/models');
 
 // ... (existing code)
