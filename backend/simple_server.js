@@ -79,7 +79,7 @@ app.get('/api/telegram/test', (req, res) => {
 });
 
 // Add imports at top
-const { AuditLog } = require('./src/models');
+// ... (existing code)
 
 // ... (existing code)
 
