@@ -84,112 +84,113 @@ export function Layout({ children }: LayoutProps) {
                   <span className="text-white font-bold text-sm">KM</span>
                 </div>
               </div>
-              <div className="ml-6">
+              <div className="ml-3">
                 <h1 className={clsx(
-                  'text-lg font-semibold',
+                  'text-sm font-semibold',
                   isDark ? 'text-white' : 'text-gray-900'
-                )}>Авто рассчет км для курьеров</h1>
+                )}>Авто рассчет км</h1>
               </div>
             </div>
+            <button
+              type="button"
+              className={clsx(
+                'p-2 rounded-lg transition-colors',
+                isDark ? 'text-blue-300 hover:text-white hover:bg-blue-700/50' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50'
+              )}
+              onClick={() => setSidebarOpen(false)}
+            >
+              <XMarkIcon className="h-6 w-6" />
+            </button>
           </div>
-          <button
-            type="button"
-            className={clsx(
-              'transition-colors',
-              isDark ? 'text-blue-300 hover:text-white' : 'text-gray-600 hover:text-gray-900'
-            )}
-            onClick={() => setSidebarOpen(false)}
-          >
-            <XMarkIcon className="h-6 w-6" />
-          </button>
-        </div>
-        <nav className="flex-1 px-4 py-4 space-y-2">
-          {/* Admin section - Top priority for admins */}
-          {isAdmin && (
-            <>
-              <div className={clsx(
-                'px-3 py-2 mt-4 mb-2 text-xs font-semibold uppercase tracking-wider',
-                isDark ? 'text-blue-400' : 'text-gray-600'
-              )}>
-                <div className="flex items-center gap-2">
-                  <ShieldCheckIcon className="w-4 h-4" />
-                  Администрирование
+
+          <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
+            {/* Admin section - Top priority for admins */}
+            {isAdmin && (
+              <>
+                <div className={clsx(
+                  'px-3 py-2 mt-4 mb-2 text-xs font-semibold uppercase tracking-wider',
+                  isDark ? 'text-blue-400' : 'text-gray-600'
+                )}>
+                  <div className="flex items-center gap-2">
+                    <ShieldCheckIcon className="w-4 h-4" />
+                    Администрирование
+                  </div>
                 </div>
-              </div>
-              {adminNavigation.map((item) => {
-                const isActive = location.pathname === item.href
-                return (
-                  <Link
-                    key={item.name}
-                    to={item.href}
-                    className={clsx(
-                      'group flex items-center px-3 py-3 text-sm font-medium rounded-xl transition-all duration-200',
-                      isActive
-                        ? 'bg-gradient-to-r from-purple-600 to-pink-500 text-white shadow-lg'
-                        : isDark
-                          ? 'text-blue-200 hover:bg-purple-800/50 hover:text-white'
-                          : 'text-gray-700 hover:bg-purple-200/50 hover:text-gray-900'
-                    )}
-                    onClick={() => setSidebarOpen(false)}
-                  >
-                    <item.icon
+                {adminNavigation.map((item) => {
+                  const isActive = location.pathname === item.href
+                  return (
+                    <Link
+                      key={item.name}
+                      to={item.href}
                       className={clsx(
-                        'mr-3 h-5 w-5 flex-shrink-0 transition-colors',
+                        'group flex items-center px-3 py-3 text-sm font-medium rounded-xl transition-all duration-200',
                         isActive
-                          ? 'text-white'
+                          ? 'bg-gradient-to-r from-purple-600 to-pink-500 text-white shadow-lg'
                           : isDark
-                            ? 'text-purple-300 group-hover:text-white'
-                            : 'text-gray-500 group-hover:text-gray-700'
+                            ? 'text-blue-200 hover:bg-purple-800/50 hover:text-white'
+                            : 'text-gray-700 hover:bg-purple-200/50 hover:text-gray-900'
                       )}
-                    />
-                    {item.name}
-                  </Link>
-                )
-              })}
-              <div className="h-px bg-white/10 my-4" />
-            </>
-          )}
+                      onClick={() => setSidebarOpen(false)}
+                    >
+                      <item.icon
+                        className={clsx(
+                          'mr-3 h-5 w-5 flex-shrink-0 transition-colors',
+                          isActive
+                            ? 'text-white'
+                            : isDark
+                              ? 'text-purple-300 group-hover:text-white'
+                              : 'text-gray-500 group-hover:text-gray-700'
+                        )}
+                      />
+                      {item.name}
+                    </Link>
+                  )
+                })}
+                <div className="h-px bg-white/10 my-4" />
+              </>
+            )}
 
-          {/* Standard navigation */}
-          <div className={clsx(
-            'px-3 py-2 mb-2 text-xs font-semibold uppercase tracking-wider',
-            isDark ? 'text-blue-400' : 'text-gray-600'
-          )}>
-            Основной функционал
-          </div>
+            {/* Standard navigation */}
+            <div className={clsx(
+              'px-3 py-2 mb-2 text-xs font-semibold uppercase tracking-wider',
+              isDark ? 'text-blue-400' : 'text-gray-600'
+            )}>
+              Основной функционал
+            </div>
 
-          {navigation.map((item) => {
-            if (item.restricted && !isAdmin) return null;
-            const isActive = location.pathname === item.href
-            return (
-              <Link
-                key={item.name}
-                to={item.href}
-                className={clsx(
-                  'group flex items-center px-3 py-3 text-sm font-medium rounded-xl transition-all duration-200',
-                  isActive
-                    ? 'bg-gradient-to-r from-blue-600 to-pink-500 text-white shadow-lg'
-                    : isDark
-                      ? 'text-blue-200 hover:bg-blue-800/50 hover:text-white'
-                      : 'text-gray-700 hover:bg-gray-200/50 hover:text-gray-900'
-                )}
-                onClick={() => setSidebarOpen(false)}
-              >
-                <item.icon
+            {navigation.map((item) => {
+              if (item.restricted && !isAdmin) return null;
+              const isActive = location.pathname === item.href
+              return (
+                <Link
+                  key={item.name}
+                  to={item.href}
                   className={clsx(
-                    'mr-3 h-5 w-5 flex-shrink-0 transition-colors',
+                    'group flex items-center px-3 py-3 text-sm font-medium rounded-xl transition-all duration-200',
                     isActive
-                      ? 'text-white'
+                      ? 'bg-gradient-to-r from-blue-600 to-pink-500 text-white shadow-lg'
                       : isDark
-                        ? 'text-blue-300 group-hover:text-white'
-                        : 'text-gray-500 group-hover:text-gray-700'
+                        ? 'text-blue-200 hover:bg-blue-800/50 hover:text-white'
+                        : 'text-gray-700 hover:bg-gray-200/50 hover:text-gray-900'
                   )}
-                />
-                {item.name}
-              </Link>
-            )
-          })}
-        </nav>
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  <item.icon
+                    className={clsx(
+                      'mr-3 h-5 w-5 flex-shrink-0 transition-colors',
+                      isActive
+                        ? 'text-white'
+                        : isDark
+                          ? 'text-blue-300 group-hover:text-white'
+                          : 'text-gray-500 group-hover:text-gray-700'
+                    )}
+                  />
+                  {item.name}
+                </Link>
+              )
+            })}
+          </nav>
+        </div>
       </div>
 
 
