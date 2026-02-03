@@ -45,19 +45,18 @@ services:
       - key: KAFKA_BROKER
         sync: false # User provides if using external Kafka
 
-  # Frontend Service (Correct static site syntax for Blueprints)
-  - type: web
+  # Frontend Service (Static Site)
+  - type: static
     name: yapiko-auto-km-frontend-live
-    runtime: static
     buildCommand: cd frontend && npm install && npm run build
-    staticPublishPath: frontend/dist
+    publishPath: frontend/dist
     routes:
       - type: rewrite
         source: /*
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        sync: false # Set this to your backend URL (e.g., https://your-backend.onrender.com) after deployment
+        sync: false # Set manually in dashboard if needed, or use public var
 
   # Redis Service
   - type: redis
