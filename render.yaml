@@ -45,10 +45,9 @@ services:
       - key: KAFKA_BROKER
         sync: false # User provides if using external Kafka
 
-  # Frontend Service
-  - type: web
-    name: yapiko-auto-km-frontend
-    runtime: static
+  # Frontend Service (Static Site is free and optimized for Vite)
+  - type: static_site
+    name: yapiko-auto-km-frontend-static
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: frontend/dist
     routes:
