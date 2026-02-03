@@ -70,8 +70,8 @@ class DashboardFetcher {
 
             if (!hasLock) {
                 console.warn('!!! ВНИМАНИЕ: Другой экземпляр загрузчика уже запущен !!!');
-                console.warn('Этот процесс будет завершен для экономии ресурсов.');
-                process.exit(0);
+                console.warn('Этот процесс продолжит работу как клон (игнорируем интервал загрузки)');
+                // process.exit(0);
                 return;
             }
 
