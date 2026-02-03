@@ -86,11 +86,16 @@ class DashboardApiService {
         queryParams.append('departmentId', String(params.departmentId));
       }
 
+      // Retrieve auth token
+      const token = localStorage.getItem('km_access_token');
+
       // Отправка запроса к Dashboard API прокси
       const response = await fetch(`${API_URL}/api/v1/dashboard?${queryParams.toString()}`, {
         method: 'GET',
         headers: {
-          'x-api-key': params.apiKey || ''
+          'x-api-key': params.apiKey || '',
+          'Authorization': token ? `Bearer ${token}` : '',
+          'Content-Type': 'application/json'
         }
       })
 

@@ -64,7 +64,11 @@ class GetDashboardDataQuery {
                 status_code: results[0].status_code
             };
         } catch (error) {
-            logger.error('CQRS: Ошибка выполнения GetDashboardDataQuery:', error);
+            logger.error('CQRS: Ошибка выполнения GetDashboardDataQuery:', {
+                error: error.message,
+                stack: error.stack,
+                divisionId
+            });
             throw error;
         }
     }

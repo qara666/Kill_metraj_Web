@@ -330,6 +330,16 @@ async function startServer() {
       // Start gRPC server immediately
       grpcServer = startGrpcServer(process.env.GRPC_PORT || '50051');
 
+      // Запуск фонового загрузчика дашборда (DashboardFetcher)
+      try {
+        logger.info('Запуск фонового загрузчика дашборда...');
+        // require загружает и сразу запускает fetcher, так как в конце файла dashboardFetcher.js есть вызов fetcher.start()
+        require('./workers/dashboardFetcher');
+        logger.info('Фоновый загрузчик дашборда инициализирован');
+      } catch (fetcherError) {
+        logger.error('Ошибка при запуске фонового загрузчика:', fetcherError.message);
+      }
+
       // Запуск PostgreSQL LISTEN для обновлений дашборда
       await setupDashboardListener();
 
