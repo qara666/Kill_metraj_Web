@@ -55,10 +55,7 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        fromService:
-          type: web
-          name: kill-metraj-backend
-          property: url
+        sync: false # Set this to your backend URL (e.g., https://your-backend.onrender.com) after deployment
 
   # Redis Service
   - type: redis
