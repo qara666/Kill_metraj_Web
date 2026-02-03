@@ -95,7 +95,10 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // Handle PREFLIGHT for all routes
+// Handle PREFLIGHT for all routes explicitly to prevent 404s
+app.options('*', (req, res) => {
+  res.sendStatus(204);
+});
 
 // Middleware to log all requests early (for debugging Render routing)
 app.use((req, res, next) => {
