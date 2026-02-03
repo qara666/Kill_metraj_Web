@@ -30,7 +30,7 @@ services:
       - key: DASHBOARD_DEPARTMENT_ID
         value: "100000052"
       - key: DB_ALTER_SYNC
-        value: "true"
+        value: "false"
       - key: SETUP_SECRET
         generateValue: true
       - key: REDIS_URL

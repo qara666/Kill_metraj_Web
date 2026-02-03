@@ -9,8 +9,8 @@ const isProduction = process.env.NODE_ENV === 'production';
 const isWorker = process.argv[1]?.includes('worker') || process.argv[1]?.includes('fetcher');
 
 const poolConfig = {
-    max: isWorker ? 2 : 10,    // Increased for API (max 10) to handle more parallel requests
-    min: 2,                   // Keep some connections open for faster response
+    max: isWorker ? 2 : 10,
+    min: 0,                   // Back to 0 for Render safety
     acquire: 30000,
     idle: 10000,
     evict: 10000
@@ -71,18 +71,10 @@ sequelize.addHook('beforeQuery', async (options, query) => {
             options.connection._rlsContext = { ...context };
         }
 
-        // Multi-statement query to reduce network round trips
-        await sequelize.query(`
-            SET LOCAL app.user_id = '${context.userId}';
-            SET LOCAL app.division_id = '${context.divisionId || ''}';
-            SET LOCAL app.user_role = '${context.role}';
-        `, {
-            logging: false,
-            raw: true,
-            plain: true,
-            hooks: false,
-            transaction: options.transaction
-        });
+        // Back to separate queries to avoid driver/pooling issues with multi-statements
+        await sequelize.query(`SET LOCAL app.user_id = '${context.userId}';`, { logging: false, raw: true, hooks: false, transaction: options.transaction });
+        await sequelize.query(`SET LOCAL app.division_id = '${context.divisionId || ''}';`, { logging: false, raw: true, hooks: false, transaction: options.transaction });
+        await sequelize.query(`SET LOCAL app.user_role = '${context.role}';`, { logging: false, raw: true, hooks: false, transaction: options.transaction });
     } catch (err) {
         // Мягкая обработка ошибок RLS, чтобы не прерывать основной запрос
         logger.error('Ошибка установки контекста RLS:', { error: err.message });

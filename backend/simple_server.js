@@ -58,19 +58,25 @@ let pgListenClient = null;
 const dashboardConsumer = new DashboardConsumer(io);
 let grpcServer = null;
 
+// Global error handlers for better debugging on Render
+process.on('uncaughtException', (err) => {
+  logger.error('CRITICAL: Uncaught Exception', { error: err.message, stack: err.stack });
+  // Give some time for logs to flush before exiting
+  setTimeout(() => process.exit(1), 1000);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('CRITICAL: Unhandled Rejection', { reason: reason?.message || reason, stack: reason?.stack });
+});
+
 const cors = require('cors');
 
 // CORS configuration for Render and local development
 const corsOptions = {
-  origin: (origin, callback) => {
-    if (!origin || origin.startsWith('http://localhost') || origin === FRONTEND_URL || origin.endsWith('.onrender.com')) {
-      return callback(null, true);
-    }
-    callback(new Error('Not allowed by CORS'));
-  },
+  origin: true, // For debugging, allow all origins that browser sends
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'X-API-KEY', 'X-Requested-With', 'Accept', 'Origin'],
-  credentials: true,
   maxAge: 86400
 };
 
