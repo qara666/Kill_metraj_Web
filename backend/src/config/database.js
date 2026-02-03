@@ -9,11 +9,11 @@ const isProduction = process.env.NODE_ENV === 'production';
 const isWorker = process.argv[1]?.includes('worker') || process.argv[1]?.includes('fetcher');
 
 const poolConfig = {
-    max: isWorker ? 2 : 5,    // Уменьшаем лимиты, чтобы точно вписаться в 25 соединений на Render
-    min: 0,                   // Разрешаем пулу полностью закрывать соединения при простое
-    acquire: 30000,          // 30 секунд ожидания (стандарт)
-    idle: 5000,              // Быстрее освобождаем неиспользуемые соединения
-    evict: 5000              // Интервал выселения мертвых соединений
+    max: isWorker ? 2 : 10,    // Increased for API (max 10) to handle more parallel requests
+    min: 2,                   // Keep some connections open for faster response
+    acquire: 30000,
+    idle: 10000,
+    evict: 10000
 };
 
 const sequelize = process.env.DATABASE_URL
@@ -71,15 +71,16 @@ sequelize.addHook('beforeQuery', async (options, query) => {
             options.connection._rlsContext = { ...context };
         }
 
-        // Оптимизация: используем один запрос для установки всех переменных
+        // Multi-statement query to reduce network round trips
         await sequelize.query(`
             SET LOCAL app.user_id = '${context.userId}';
-            SET LOCAL app.division_id = '${context.divisionId}';
+            SET LOCAL app.division_id = '${context.divisionId || ''}';
             SET LOCAL app.user_role = '${context.role}';
         `, {
             logging: false,
             raw: true,
-            hooks: false, // Важно для предотвращения рекурсии
+            plain: true,
+            hooks: false,
             transaction: options.transaction
         });
     } catch (err) {
