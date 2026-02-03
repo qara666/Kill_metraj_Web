@@ -46,17 +46,18 @@ services:
         sync: false # User provides if using external Kafka
 
   # Frontend Service (Static Site)
-  - type: static
+  - type: web
     name: yapiko-auto-km-frontend-live
+    env: static
     buildCommand: cd frontend && npm install && npm run build
-    publishPath: frontend/dist
+    staticPublishPath: frontend/dist
     routes:
       - type: rewrite
         source: /*
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        sync: false # Set manually in dashboard if needed, or use public var
+        sync: false
 
   # Redis Service
   - type: redis

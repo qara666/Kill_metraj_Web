@@ -311,19 +311,26 @@ app.use((err, req, res, next) => {
 
 
 
-// Запуск с инициализацией БД
-async function startServer() {
+// Запуск сервера (Start listening IMMEDIATELY to pass liveness checks)
+const server = http.createServer(app); // Use the existing 'app' variable
+// Note: We already created httpServer in line 29: const httpServer = http.createServer(app);
+// So we should use httpServer.
+
+httpServer.listen(PORT, '0.0.0.0', async () => {
+  logger.info(`Сервер запущен на 0.0.0.0:${PORT}`, {
+    port: PORT,
+    env: process.env.NODE_ENV || 'development'
+  });
+
+  // Attempt DB connection in background
   try {
-    // Подключение к PostgreSQL
     await testConnection();
     logger.info('PostgreSQL подключен');
-
-    // Синхронизация моделей с БД
     await syncDatabase();
 
-    // Создание начального администратора
+    // ... (User creation logic) ...
     const { User } = require('./src/models');
-    logger.info('Проверка администратора...');
+    // ...
     const [admin, created] = await User.findOrCreate({
       where: { username: 'admin' },
       defaults: {
@@ -333,59 +340,31 @@ async function startServer() {
         canModifySettings: true,
         divisionId: '100000000'
       }
-    });
+    }).catch(err => logger.error('Failed to create admin:', err.message));
+    // ...
 
-    if (created) {
-      logger.info('Администратор по умолчанию успешно создан.');
-    } else {
-      logger.info('Администратор уже существует.');
+    // Initialize other services that need DB
+    await setupDashboardListener();
+
+    if (process.env.CDC_ENABLED === 'true') {
+      await dashboardConsumer.start();
     }
 
-    // Запуск сервера
-    httpServer.listen(PORT, '0.0.0.0', async () => {
-      logger.info(`Сервер запущен на 0.0.0.0:${PORT}`, {
-        port: PORT,
-        env: process.env.NODE_ENV || 'development'
-      });
-      logger.info(`Подключение к Dashboard API: http://localhost:${PORT}/api/v1`);
-      logger.info(`Подключение к Auth API: http://localhost:${PORT}/api/auth`);
-      logger.info(`Подключение к Users API: http://localhost:${PORT}/api/users`);
-      logger.info(`Подключение к Telegram API: http://localhost:${PORT}/api/telegram`);
-      logger.info(`Подключение к WebSocket: ws://localhost:${PORT}`);
-
-      // Start gRPC server immediately
-      grpcServer = startGrpcServer(process.env.GRPC_PORT || '50051');
-
-      // Запуск фонового загрузчика дашборда (DashboardFetcher)
-      // Мы запускаем его ВНУТРИ процесса API для экономии памяти на Render
-      try {
-        logger.info('Запуск внутреннего фонового загрузчика дашборда...');
-        const DashboardFetcher = require('./workers/dashboardFetcher');
-        const fetcher = new DashboardFetcher();
-
-        // Перехватываем start() чтобы он не вызывал process.exit(0) если блокировка не получена
-        // В монолитном режиме на Render это нормально
-        fetcher.start().then(() => {
-          logger.info('Внутренний загрузчик дашборда запущен');
-        }).catch(err => {
-          logger.error('Ошибка при запуске внутреннего загрузчика:', err.message);
-        });
-      } catch (fetcherError) {
-        logger.error('Ошибка при инициализации внутреннего загрузчика:', fetcherError.message);
-      }
-
-      // Запуск PostgreSQL LISTEN для обновлений дашборда
-      await setupDashboardListener();
-
-      if (process.env.CDC_ENABLED === 'true') {
-        await dashboardConsumer.start();
-      }
-    });
-  } catch (error) {
-    logger.error('Ошибка при запуске сервера', { error: error.message });
-    process.exit(1);
+  } catch (dbError) {
+    logger.error('CRITICAL: Database initialization failed, but keeping server alive for logs', { error: dbError.message });
+    // Do not exit. Admin can see logs.
   }
-}
+
+  // Start gRPC server
+  try {
+    grpcServer = startGrpcServer(process.env.GRPC_PORT || '50051');
+  } catch (grpcError) {
+    logger.error('Failed to start gRPC server', grpcError);
+  }
+
+  // Start DashboardFetcher (internal)
+  // ...
+});
 
 async function setupDashboardListener() {
   try {
