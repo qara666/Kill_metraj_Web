@@ -9,10 +9,10 @@ const { Op } = require('sequelize');
 router.use(authenticateToken);
 router.use(requireRole('admin'));
 
-// GET /api/users - Get all users
+// GET /api/users - Get all users with pagination
 router.get('/', auditLog('user_list'), async (req, res) => {
     try {
-        const { search, role, isActive } = req.query;
+        const { search, role, isActive, limit = 50, offset = 0 } = req.query;
 
         const where = {};
 
@@ -32,14 +32,22 @@ router.get('/', auditLog('user_list'), async (req, res) => {
             where.isActive = isActive === 'true';
         }
 
-        const users = await User.findAll({
+        const { count, rows } = await User.findAndCountAll({
             where,
-            order: [['createdAt', 'DESC']]
+            order: [['createdAt', 'DESC']],
+            limit: parseInt(limit),
+            offset: parseInt(offset),
+            attributes: { exclude: ['passwordHash'] } // Explicitly exclude sensitive data at DB level
         });
 
         res.json({
             success: true,
-            data: users.map(u => u.toJSON())
+            data: rows, // toJSON() is called automatically or via the model instance method if needed, but rows are instances
+            pagination: {
+                total: count,
+                limit: parseInt(limit),
+                offset: parseInt(offset)
+            }
         });
     } catch (error) {
         logger.error('Ошибка получения списка пользователей', { error: error.message });

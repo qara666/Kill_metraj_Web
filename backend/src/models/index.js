@@ -4,6 +4,7 @@ const User = require('./User');
 const UserPreset = require('./UserPreset');
 const AuditLog = require('./AuditLog');
 const DashboardState = require('./DashboardState');
+const DashboardCache = require('./DashboardCache');
 
 // Define associations
 User.hasOne(UserPreset, {
@@ -62,5 +63,6 @@ module.exports = {
     UserPreset,
     AuditLog,
     DashboardState,
+    DashboardCache,
     syncDatabase
 };

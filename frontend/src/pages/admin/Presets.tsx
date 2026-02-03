@@ -91,8 +91,9 @@ export const AdminPresets: React.FC = () => {
     }, [selectedUserId])
 
     const loadUsers = async () => {
-        const data = await authService.getUsers()
-        setUsers(data)
+        // Load only top 50 users for performance. Search should be added later for full access.
+        const { users } = await authService.getUsers({ limit: 50 })
+        setUsers(users)
     }
 
     const handleKmlUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -97,13 +97,19 @@ export const authService = {
     // УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ (ADMIN)
     // ============================================
 
-    async getUsers(filters?: { search?: string; role?: string; isActive?: boolean }): Promise<User[]> {
+    async getUsers(filters?: { search?: string; role?: string; isActive?: boolean; limit?: number; offset?: number }): Promise<{ users: User[]; total: number }> {
         try {
             const response = await axios.get(`${API_URL}/api/users`, { params: filters })
-            return response.data.success ? response.data.data : []
+            if (response.data.success) {
+                return {
+                    users: response.data.data,
+                    total: response.data.pagination ? response.data.pagination.total : response.data.data.length
+                }
+            }
+            return { users: [], total: 0 }
         } catch (error) {
             console.error('Get users error:', error)
-            return []
+            return { users: [], total: 0 }
         }
     },
 
