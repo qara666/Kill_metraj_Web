@@ -64,10 +64,8 @@ export const DashboardImportModal: React.FC<DashboardImportModalProps> = ({
     const [error, setError] = useState<string | null>(null);
 
     const handleImport = useCallback(async () => {
-        if (!localApiKey.trim()) {
-            setError('Введите API ключ');
-            return;
-        }
+        // API Key теперь опционален на фронтенде, так как сервер использует EXTERNAL_API_KEY из окружения
+        const effectiveApiKey = localApiKey.trim() || 'server_managed';
 
         setIsLoading(true);
         setError(null);
@@ -81,7 +79,7 @@ export const DashboardImportModal: React.FC<DashboardImportModalProps> = ({
             const dateShift = formatDateForApi(deliveryStart);
 
             const params: any = {
-                apiKey: localApiKey.trim(),
+                apiKey: effectiveApiKey,
                 dateShift,
                 departmentId: localDepartmentId ? parseInt(localDepartmentId, 10) : undefined,
                 top: 1000,
