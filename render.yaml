@@ -67,9 +67,8 @@ services:
     plan: free
     ipAllowList: [] # Only allow internal Render traffic
 
-  # Database Service (PostgreSQL)
-  - type: database
-    name: yapiko-auto-km-db
+databases:
+  - name: yapiko-auto-km-db
     plan: free
     databaseName: kill_metraj
     user: km_admin
