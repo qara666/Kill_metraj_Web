@@ -10,13 +10,23 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
  */
 class DashboardFetcher {
     constructor() {
-        this.pool = new Pool({
-            host: process.env.DB_HOST || 'localhost',
-            port: parseInt(process.env.DB_PORT || '5432'),
-            database: process.env.DB_NAME || 'kill_metraj',
-            user: process.env.DB_USER || 'postgres',
-            password: process.env.DB_PASSWORD,
-        });
+        const poolConfig = process.env.DATABASE_URL
+            ? {
+                connectionString: process.env.DATABASE_URL,
+                ssl: {
+                    require: true,
+                    rejectUnauthorized: false
+                }
+            }
+            : {
+                host: process.env.DB_HOST || 'localhost',
+                port: parseInt(process.env.DB_PORT || '5432'),
+                database: process.env.DB_NAME || 'kill_metraj',
+                user: process.env.DB_USER || 'postgres',
+                password: process.env.DB_PASSWORD,
+            };
+
+        this.pool = new Pool(poolConfig);
 
         // Конфигурация
         this.fetchInterval = 900000; // 15 минут
@@ -60,7 +70,9 @@ class DashboardFetcher {
             }
         } catch (error) {
             console.error('Ошибка подключения к базе данных:', error.message);
-            process.exit(1);
+            console.warn('Цикл загрузки будет перезапущен через 1 минуту...');
+            setTimeout(() => this.start(), 60000);
+            return;
         }
 
         console.log('Загрузчик дашборда запущен');
