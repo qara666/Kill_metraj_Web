@@ -42,17 +42,15 @@ export const authService = {
     },
 
     async logout(): Promise<void> {
+        // Очищаем токены немедленно, не дожидаясь ответа сервера
+        localStorage.removeItem(TOKEN_KEY)
+        localStorage.removeItem(REFRESH_TOKEN_KEY)
+        delete axios.defaults.headers.common['Authorization']
+
         try {
             await axios.post(`${API_URL}/api/auth/logout`)
         } catch (error) {
-            console.error('Logout error:', error)
-        } finally {
-            // Очищаем токены
-            localStorage.removeItem(TOKEN_KEY)
-            localStorage.removeItem(REFRESH_TOKEN_KEY)
-
-
-            delete axios.defaults.headers.common['Authorization']
+            console.error('Logout API error (ignored):', error)
         }
     },
 

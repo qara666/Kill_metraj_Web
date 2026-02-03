@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTheme } from '../../contexts/ThemeContext'
 import { authService } from '../../utils/auth/authService'
 import { clsx } from 'clsx'
@@ -15,7 +16,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { KmlPreviewMap } from '../../components/zone/KmlPreviewMap'
 import { parseKML } from '../../utils/maps/kmlParser'
-import type { User, UserPreset } from '../../types/auth'
+import type { UserPreset } from '../../types/auth'
 import { CityBiasSection } from '../../components/zone/CityBiasSection'
 import { LoadingSpinner } from '../../components/shared/LoadingSpinner'
 import { CollapsibleSection } from '../../components/shared/CollapsibleSection'
@@ -24,11 +25,8 @@ import { API_URL } from '../../config/apiConfig'
 
 export const AdminPresets: React.FC = () => {
     const { isDark } = useTheme()
-    const [users, setUsers] = useState<User[]>([])
     const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
-    const [presets, setPresets] = useState<UserPreset | null>(null)
     const [settings, setSettings] = useState<Record<string, any>>({})
-    const [loading, setLoading] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
     const [zoneSearchTerm, setZoneSearchTerm] = useState('')
     const [isSyncingKml, setIsSyncingKml] = useState(false)
@@ -80,20 +78,58 @@ export const AdminPresets: React.FC = () => {
         }
     }
 
-    useEffect(() => {
-        loadUsers()
-    }, [])
+    const queryClient = useQueryClient()
 
-    useEffect(() => {
-        if (selectedUserId) {
-            loadPresets(selectedUserId)
+    // Users Query
+    const { data: usersData } = useQuery({
+        queryKey: ['admin_users_list'],
+        queryFn: () => authService.getUsers({ limit: 50 }),
+        staleTime: 60000
+    })
+    const users = usersData?.users || []
+
+    // Presets Query
+    const { data: currentPreset, isLoading: isPresetsLoading } = useQuery<UserPreset | null>({
+        queryKey: ['user_presets', selectedUserId],
+        queryFn: () => selectedUserId ? authService.getUserPresets(selectedUserId) : Promise.resolve(null),
+        enabled: !!selectedUserId,
+        onSuccess: (data) => {
+            if (data?.settings) {
+                setSettings(data.settings)
+            }
         }
-    }, [selectedUserId])
+    })
 
-    const loadUsers = async () => {
-        // Load only top 50 users for performance. Search should be added later for full access.
-        const { users } = await authService.getUsers({ limit: 50 })
-        setUsers(users)
+    // Save Preset Mutation
+    const saveMutation = useMutation({
+        mutationFn: ({ userId, settings }: { userId: number; settings: any }) =>
+            authService.updateUserPresets(userId, settings),
+        onMutate: async ({ userId, settings }) => {
+            await queryClient.cancelQueries({ queryKey: ['user_presets', userId] })
+            const previousPresets = queryClient.getQueryData(['user_presets', userId])
+
+            queryClient.setQueryData(['user_presets', userId], (old: any) => ({
+                ...old,
+                settings: { ...old?.settings, ...settings }
+            }))
+
+            return { previousPresets }
+        },
+        onError: (_err, variables, context: any) => {
+            queryClient.setQueryData(['user_presets', variables.userId], context.previousPresets)
+            toast.error('Не удалось сохранить настройки')
+        },
+        onSettled: (_data, _err, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['user_presets', variables.userId] })
+        },
+        onSuccess: () => {
+            toast.success('Настройки сохранены')
+        }
+    })
+
+    const handleSave = async () => {
+        if (!selectedUserId) return
+        saveMutation.mutate({ userId: selectedUserId, settings })
     }
 
     const handleKmlUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -112,31 +148,6 @@ export const AdminPresets: React.FC = () => {
             toast.success('KML файл успешно загружен')
         } catch (error) {
             toast.error('Ошибка при разборе KML файла')
-        }
-    }
-
-    const loadPresets = async (userId: number) => {
-        setLoading(true)
-        try {
-            const data = await authService.getUserPresets(userId)
-            setPresets(data)
-            setSettings(data?.settings || {})
-        } catch (error) {
-            toast.error('Ошибка загрузки настроек')
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    const handleSave = async () => {
-        if (!selectedUserId) return
-
-        const result = await authService.updateUserPresets(selectedUserId, settings)
-        if (result.success) {
-            toast.success('Настройки обновлены')
-            loadPresets(selectedUserId)
-        } else {
-            toast.error(result.error || 'Ошибка сохранения')
         }
     }
 
@@ -301,7 +312,7 @@ export const AdminPresets: React.FC = () => {
                                 Выбор учетки слева
                             </p>
                         </div>
-                    ) : loading ? (
+                    ) : isPresetsLoading ? (
                         <div className="flex-1 flex items-center justify-center">
                             <LoadingSpinner />
                         </div>
@@ -877,12 +888,12 @@ export const AdminPresets: React.FC = () => {
                             </div>
 
                             {/* Информация об обновлении */}
-                            {presets?.updatedAt && (
+                            {currentPreset?.updatedAt && (
                                 <div className={clsx(
                                     'mt-4 p-3 rounded-lg text-sm',
                                     isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-50 text-gray-600'
                                 )}>
-                                    Последнее обновление: {new Date(presets.updatedAt).toLocaleString('ru-RU')}
+                                    Последнее обновление: {new Date(currentPreset.updatedAt).toLocaleString('ru-RU')}
                                 </div>
                             )}
                         </div>

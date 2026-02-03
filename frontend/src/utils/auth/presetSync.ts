@@ -40,7 +40,7 @@ export const syncPresetsToLocalStorage = async (userId: number): Promise<void> =
 
             console.log('Presets successfully synced to localStorage');
         } else {
-            console.warn('No presets found for user');
+            console.log('No specific presets found for user, using defaults.');
         }
     } catch (error) {
         console.error('Failed to sync presets to localStorage:', error);

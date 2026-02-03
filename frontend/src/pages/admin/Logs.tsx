@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
+import { useInfiniteQuery, useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { useTheme } from '../../contexts/ThemeContext'
 import { authService } from '../../utils/auth/authService'
 import { clsx } from 'clsx'
@@ -27,14 +28,6 @@ export const AdminLogs: React.FC = () => {
     const { isDark } = useTheme()
 
     // Data States
-    const [logs, setLogs] = useState<AuditLog[]>([])
-    const [users, setUsers] = useState<User[]>([])
-    const [total, setTotal] = useState(0)
-
-    // UI States
-    const [loading, setLoading] = useState(false)
-    const [hasMore, setHasMore] = useState(true)
-    const [offset, setOffset] = useState(0)
     const [autoRefresh, setAutoRefresh] = useState(false)
     const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null)
 
@@ -50,99 +43,98 @@ export const AdminLogs: React.FC = () => {
 
     const observerTarget = useRef<HTMLDivElement>(null)
 
+    const queryClient = useQueryClient()
+
     // Load Users for Dropdown
-    useEffect(() => {
-        const fetchUsers = async () => {
-            try {
-                // Dropdown limit to 100 for performance
-                const { users } = await authService.getUsers({ limit: 100 })
-                setUsers(users)
-            } catch (error) {
-                console.error('Failed to load users', error)
-            }
-        }
-        fetchUsers()
-    }, [])
+    const { data: usersData } = useQuery({
+        queryKey: ['admin_users_dropdown'],
+        queryFn: () => authService.getUsers({ limit: 100 }),
+        staleTime: 60000
+    })
+    const users = usersData?.users || []
 
-    const loadLogs = useCallback(async (reset = false) => {
-        if (loading && !reset) return
+    const queryKey = ['admin_audit_logs', filters, selectedUser?.id]
 
-        setLoading(true)
-        try {
-            const currentOffset = reset ? 0 : offset
-            const result = await authService.getLogs({
-                ...filters,
-                userId: selectedUser?.id,
-                limit: 50,
-                offset: currentOffset
-            })
+    // Infinite Query for Logs
+    const {
+        data: infiniteData,
+        fetchNextPage,
+        hasNextPage,
+        isFetchingNextPage,
+        isLoading: loading,
+        refetch
+    } = useInfiniteQuery({
+        queryKey,
+        queryFn: ({ pageParam = 0 }) => authService.getLogs({
+            ...filters,
+            userId: selectedUser?.id,
+            limit: 50,
+            offset: pageParam
+        }),
+        getNextPageParam: (lastPage, allPages) => {
+            const currentTotal = allPages.reduce((acc, page) => acc + page.logs.length, 0)
+            return lastPage.logs.length === 50 ? currentTotal : undefined
+        },
+        staleTime: 5000 // Cache for 5 seconds
+    })
 
-            if (reset) {
-                setLogs(result.logs)
-                setOffset(50)
-            } else {
-                setLogs(prev => [...prev, ...result.logs])
-                setOffset(prev => prev + 50)
-            }
+    const logs = useMemo(() => infiniteData?.pages.flatMap(page => page.logs) || [], [infiniteData])
+    const total = infiniteData?.pages[0]?.total || 0
 
-            setTotal(result.total)
-            setHasMore(result.logs.length === 50)
-        } catch (error) {
-            console.error('Failed to load logs:', error)
-        } finally {
-            setLoading(false)
-        }
-    }, [offset, filters, selectedUser, loading])
-
-    // Auto-refresh interval
+    // Auto-refresh using refetch
     useEffect(() => {
         let interval: NodeJS.Timeout
         if (autoRefresh) {
             interval = setInterval(() => {
-                loadLogs(true)
-            }, 5000) // Refresh every 5 seconds
+                refetch()
+            }, 5000)
         }
         return () => clearInterval(interval)
-    }, [autoRefresh, loadLogs])
+    }, [autoRefresh, refetch])
 
     // Infinite scroll
     useEffect(() => {
         const observer = new IntersectionObserver(
             entries => {
-                if (entries[0].isIntersecting && hasMore && !loading && !autoRefresh) {
-                    loadLogs()
+                if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage && !autoRefresh) {
+                    fetchNextPage()
                 }
             },
             { threshold: 0.1 }
         )
 
         const target = observerTarget.current
-        if (target) {
-            observer.observe(target)
-        }
+        if (target) observer.observe(target)
+        return () => { if (target) observer.unobserve(target) }
+    }, [hasNextPage, isFetchingNextPage, fetchNextPage, autoRefresh])
 
-        return () => {
-            if (target) {
-                observer.unobserve(target)
-            }
+    // Clear Logs Mutation
+    const clearMutation = useMutation({
+        mutationFn: () => authService.clearLogs(),
+        onMutate: async () => {
+            await queryClient.cancelQueries({ queryKey })
+            const previousData = queryClient.getQueryData(queryKey)
+            queryClient.setQueryData(queryKey, {
+                pages: [{ logs: [], total: 0 }],
+                pageParams: [0]
+            })
+            return { previousData }
+        },
+        onError: (err, variables, context: any) => {
+            queryClient.setQueryData(queryKey, context.previousData)
+            toast.error('Ошибка очистки логов')
+        },
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey })
+        },
+        onSuccess: () => {
+            toast.success('Логи очищены')
         }
-    }, [hasMore, loading, loadLogs, autoRefresh])
-
-    // Initial load and filter change
-    useEffect(() => {
-        loadLogs(true)
-    }, [filters, selectedUser, autoRefresh])
+    })
 
     const handleClearLogs = async () => {
         if (!confirm('Вы уверены, что хотите очистить ВСЕ логи? Это действие необратимо.')) return
-
-        const result = await authService.clearLogs()
-        if (result.success) {
-            toast.success('Логи очищены')
-            loadLogs(true)
-        } else {
-            toast.error(result.error || 'Ошибка очистки')
-        }
+        clearMutation.mutate()
     }
 
     const filteredLogs = logs.filter(log =>

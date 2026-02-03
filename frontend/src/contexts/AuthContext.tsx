@@ -84,8 +84,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }, [])
 
     const logout = useCallback(async () => {
-        await authService.logout()
+        // Оптимистичный выход: сначала очищаем состояние в UI
         setUser(null)
+
+        // Затем вызываем сервис в фоновом режиме, не блокируя UI
+        try {
+            await authService.logout()
+        } catch (error) {
+            console.error('Logout background error:', error)
+        }
     }, [])
 
     const refreshUser = useCallback(async () => {
