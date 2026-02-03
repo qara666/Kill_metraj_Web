@@ -1,4 +1,3 @@
-# GIT_TEST_MARKER_123
 services:
   # Backend Service
   - type: web
@@ -38,7 +37,9 @@ services:
       - key: FRONTEND_URL
         sync: false
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: yapiko-auto-km-db
+          property: connectionString
       - key: EXTERNAL_API_KEY
         value: "KMFh23298&23201)8172^&21Vs@gfgsd"
       - key: JWT_SECRET
@@ -65,5 +66,12 @@ services:
     name: yapiko-auto-km-redis
     plan: free
     ipAllowList: [] # Only allow internal Render traffic
+
+  # Database Service (PostgreSQL)
+  - type: database
+    name: yapiko-auto-km-db
+    plan: free
+    databaseName: kill_metraj
+    user: km_admin
 
 version: "1"
