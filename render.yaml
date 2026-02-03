@@ -44,7 +44,7 @@ services:
         sync: false # User provides if using external Kafka
 
   # Frontend Service
-  - type: static_site
+  - type: web
     name: kill-metraj-frontend
     env: static
     buildCommand: cd frontend && npm install && npm run build
