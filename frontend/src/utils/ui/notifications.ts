@@ -137,12 +137,12 @@ function calculateOrderETAs(route: RouteInfo): OrderInfo[] {
 
 function generateDeadlineRiskMessage(order: OrderInfo, timeToDeadline: number): string {
   const minutes = Math.round(timeToDeadline / (60 * 1000))
-  return `⚠️ ВНИМАНИЕ: Заказ #${order.orderNumber} должен быть доставлен через ${minutes} минут! Адрес: ${order.address}`
+  return `️ ВНИМАНИЕ: Заказ #${order.orderNumber} должен быть доставлен через ${minutes} минут! Адрес: ${order.address}`
 }
 
 function generateDelayWarningMessage(order: OrderInfo, delayMs: number): string {
   const minutes = Math.round(delayMs / (60 * 1000))
-  return `🚨 ОПОЗДАНИЕ: Заказ #${order.orderNumber} будет доставлен с опозданием на ${minutes} минут. Адрес: ${order.address}`
+  return ` ОПОЗДАНИЕ: Заказ #${order.orderNumber} будет доставлен с опозданием на ${minutes} минут. Адрес: ${order.address}`
 }
 
 /**
@@ -187,10 +187,10 @@ export function formatNotificationForDisplay(notification: Notification): {
   color: string
 } {
   const icons: Record<NotificationType, string> = {
-    route_delay_warning: '⚠️',
-    deadline_risk: '🚨',
-    traffic_warning: '🚦',
-    route_optimization_suggestion: '💡'
+    route_delay_warning: '️',
+    deadline_risk: '',
+    traffic_warning: '',
+    route_optimization_suggestion: ''
   }
 
   const colors: Record<'low' | 'medium' | 'high' | 'critical', string> = {

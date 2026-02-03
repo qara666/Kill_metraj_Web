@@ -11,7 +11,7 @@ export const GlobalDashboardFetcher: React.FC = () => {
     const { apiAutoRefreshEnabled } = useAutoPlannerStore();
 
     const handleDataLoaded = useCallback((data: ProcessedExcelData) => {
-        logger.info(`🌐 Global Fetcher: Loaded ${data.orders.length} orders from Dashboard API (WebSocket)`);
+        logger.info(` Global Fetcher: Loaded ${data.orders.length} orders from Dashboard API (WebSocket)`);
 
         // Use updateExcelData to merge with existing data
         updateExcelData((prevData) => {
@@ -28,7 +28,7 @@ export const GlobalDashboardFetcher: React.FC = () => {
     // Log connection status
     React.useEffect(() => {
         if (apiAutoRefreshEnabled) {
-            logger.info(`🔌 WebSocket connection status: ${isConnected ? 'Connected' : 'Disconnected'}`);
+            logger.info(` WebSocket connection status: ${isConnected ? 'Connected' : 'Disconnected'}`);
         }
     }, [isConnected, apiAutoRefreshEnabled]);
 

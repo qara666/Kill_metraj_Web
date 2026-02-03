@@ -39,7 +39,7 @@ export const FiltersSection: React.FC<FiltersSectionProps> = React.memo(({
             >
                 <div className={clsx('text-sm font-medium flex items-center gap-2', isDark ? 'text-gray-300' : 'text-gray-700')}>
                     <span>{isFiltersExpanded ? '▼' : '▶'}</span>
-                    <span>🔍 Фильтры заказов</span>
+                    <span> Фильтры заказов</span>
                     {orderFilters.enabled && (
                         <span className={clsx('text-xs px-2 py-1 rounded', isDark ? 'bg-blue-700 text-blue-200' : 'bg-blue-100 text-blue-700')}>
                             Активны

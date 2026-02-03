@@ -120,7 +120,7 @@ export const ExtraSettingsPanel: React.FC<ExtraSettingsPanelProps> = React.memo(
                 isDark ? 'border-gray-700 bg-gray-800/30' : 'border-gray-200 bg-gray-50'
             )}>
                 <div className="text-xs font-semibold flex items-center gap-2">
-                    <span>⚙️</span> Продвинутая оптимизация
+                    <span>️</span> Продвинутая оптимизация
                 </div>
 
                 <div className="space-y-3">

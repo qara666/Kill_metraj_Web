@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const logger = require('./utils/logger');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -41,7 +42,7 @@ app.post('/api/upload/excel', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'Файл не найден' });
     }
 
-    console.log('Получен файл:', req.file.originalname, 'размер:', req.file.size);
+    logger.info('Получен файл для обработки', { fileName: req.file.originalname, size: req.file.size });
 
     // Обрабатываем файл через ExcelService
     const result = await excelService.processExcelFile(req.file.buffer);
@@ -54,7 +55,7 @@ app.post('/api/upload/excel', upload.single('file'), async (req, res) => {
       });
     }
 
-    console.log('Файл обработан успешно:', {
+    logger.info('Файл обработан успешно', {
       orders: result.data.orders.length,
       couriers: result.data.couriers.length,
       paymentMethods: result.data.paymentMethods.length
@@ -67,7 +68,7 @@ app.post('/api/upload/excel', upload.single('file'), async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Ошибка обработки файла:', error);
+    logger.error('Ошибка обработки файла', { error: error.message });
     res.status(500).json({
       error: 'Ошибка обработки файла',
       details: error.message
@@ -94,5 +95,5 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
+  logger.info(`Сервер (legacy) запущен на порту ${PORT}`);
 });

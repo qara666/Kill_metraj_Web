@@ -1,18 +1,15 @@
-const { authenticateToken, auditLog } = require('../middleware/auth');
+const { authenticateToken, authorize, auditLog } = require('../middleware/auth');
 
-// Create a wrapper function that integrates with the existing structure
-// Note: dashboardRoutes is already mounted at /api/v1
-// We need to apply auditing. Since it's a GET request, we usually don't audit, but user requested 'what user is doing'.
-// So we will audit the dashboard access.
-
-// ... existing imports ...
 const axios = require('axios');
 const express = require('express');
 const router = express.Router();
 const logger = require('../utils/logger');
 
-// Базовый URL Dashboard API
-const DASHBOARD_API_BASE_URL = 'http://app.yaposhka.kh.ua:4999';
+const DASHBOARD_API_BASE_URL = process.env.DASHBOARD_API_URL || 'http://localhost:8000';
+
+// All routes require authentication and dashboard:read permission
+router.use(authenticateToken);
+router.use(authorize('dashboard:read'));
 
 /**
  * GET /api/v1/dashboard
@@ -29,63 +26,66 @@ router.get('/dashboard', async (req, res) => {
             divisionId
         } = req.query;
 
-        const apiKey = req.headers['x-api-key'] || req.query.apiKey;
+
+        // Use the server's EXTERNAL_API_KEY instead of client-provided key
+        // This is a proxy server, so we should use our own credentials
+        const apiKey = process.env.EXTERNAL_API_KEY;
 
         if (!apiKey) {
-            return res.status(400).json({
+            logger.error('EXTERNAL_API_KEY not configured in environment variables');
+            return res.status(500).json({
                 success: false,
-                error: 'API ключ не предоставлен'
+                error: 'Сервер не настроен для работы с внешним API'
             });
         }
 
-        // Формирование параметров запроса для внешнего API
-        const params = {
-            top: parseInt(top, 10),
+
+        // Helper to format Date to dd.mm.yyyy format
+        const formatDateForExternalApi = (date) => {
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            return `${day}.${month}.${year}`;
         };
 
-        if (dateShift && dateShift !== 'undefined' && dateShift !== 'null' && dateShift.trim()) {
-            params.dateShift = dateShift;
+        // Formating parameters for external API
+        let params = {
+            top: parseInt(top, 10) || 1000,
+        };
+
+        // Normalize dateShift (External API strictly requires dd.mm.yyyy)
+        let effectiveDate = formatDateForExternalApi(new Date());
+        if (dateShift && dateShift !== 'undefined' && dateShift !== 'null' && String(dateShift).trim()) {
+            const val = String(dateShift).trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+                // Convert yyyy-mm-dd to dd.mm.yyyy
+                const [y, m, d] = val.split('-').map(Number);
+                params.dateShift = effectiveDate;
+                logger.debug('Прокси: сконвертирована дата', { original: val, converted: params.dateShift });
+            } else {
+                params.dateShift = val;
+                effectiveDate = val;
+            }
         }
 
-        if (timeDeliveryBeg && timeDeliveryBeg !== 'undefined' && timeDeliveryBeg !== 'null' && timeDeliveryBeg.trim()) {
-            params.timeDeliveryBeg = timeDeliveryBeg;
-        }
+        // Set mandatory time parameters for current day/shift
+        params.timeDeliveryBeg = `${effectiveDate} 00:00:00`;
+        params.timeDeliveryEnd = `${effectiveDate} 23:59:59`;
 
-        if (timeDeliveryEnd && timeDeliveryEnd !== 'undefined' && timeDeliveryEnd !== 'null' && timeDeliveryEnd.trim()) {
-            params.timeDeliveryEnd = timeDeliveryEnd;
-        }
 
-        // Department/Division ID resolution
+
+        // Department ID strictly as integer
         const rawDeptId = departmentId || divisionId || req.query.department_id || req.query.division_id || req.query.branchId || req.query.subdivisionId;
-        const finalDeptId = String(rawDeptId || '').trim();
-
-        if (finalDeptId && finalDeptId !== 'undefined' && finalDeptId !== 'null' && finalDeptId !== '') {
-            const deptIdValue = parseInt(finalDeptId, 10);
+        if (rawDeptId && rawDeptId !== 'undefined' && rawDeptId !== 'null' && String(rawDeptId).trim() !== '') {
+            const deptIdValue = parseInt(String(rawDeptId).trim(), 10);
             if (!isNaN(deptIdValue)) {
                 params.departmentId = deptIdValue;
             }
         }
 
+
+
         const TARGET_URL = `${DASHBOARD_API_BASE_URL}/api/v1/dashboard`;
-
-        console.log('📡 Proxy Request to Dashboard API (Strict):', {
-            url: TARGET_URL,
-            params: params,
-            hasApiKey: !!apiKey,
-            paramTypes: {
-                top: typeof params.top,
-                dateShift: typeof params.dateShift,
-                timeDeliveryBeg: typeof params.timeDeliveryBeg,
-                timeDeliveryEnd: typeof params.timeDeliveryEnd,
-                departmentId: typeof params.departmentId
-            }
-        });
-
-        // Log the exact URL that will be called
-        const queryString = new URLSearchParams(
-            Object.entries(params).filter(([_, v]) => v !== undefined)
-        ).toString();
-        console.log('🔗 Full Request URL:', `${TARGET_URL}?${queryString}`);
 
         // 3. Выполняем запрос
         const response = await axios.get(TARGET_URL, {
@@ -94,13 +94,14 @@ router.get('/dashboard', async (req, res) => {
                 'x-api-key': apiKey,
                 'Accept': 'application/json'
             },
-            timeout: 60000, // 60 секунд для надежности
-            validateStatus: (status) => status < 500 // Don't throw on 4xx errors
+            timeout: 60000,
+            validateStatus: (status) => status < 500
         });
+
 
         // Check if we got a 4xx error
         if (response.status >= 400 && response.status < 500) {
-            console.error('❌ Dashboard API returned client error:', {
+            logger.warn('Dashboard API вернула клиентскую ошибку', {
                 status: response.status,
                 statusText: response.statusText,
                 data: response.data
@@ -113,7 +114,7 @@ router.get('/dashboard', async (req, res) => {
             });
         }
 
-        console.log('✅ Dashboard API Success:', {
+        logger.info('Запрос к Dashboard API выполнен успешно', {
             ordersCount: response.data.orders?.length || 0,
             couriersCount: response.data.couriers?.length || 0
         });
@@ -122,16 +123,24 @@ router.get('/dashboard', async (req, res) => {
         res.json(response.data);
 
     } catch (error) {
-        console.error('❌ Dashboard API Proxy Error:', error.message);
+        logger.error('Ошибка прокси-сервера Dashboard API', { error: error.message });
 
         if (error.response) {
             // Ошибка от внешнего API - логируем полные детали
-            console.error('📋 External API Error Details:', {
+            logger.error('Детали ошибки внешнего API', {
                 status: error.response.status,
                 statusText: error.response.statusText,
-                data: error.response.data,
-                headers: error.response.headers
+                data: error.response.data
             });
+
+            // Special handling for 500 errors
+            if (error.response.status === 500) {
+                logger.error('Критическая ошибка внешнего API (500)', {
+                    url: TARGET_URL,
+                    params: params,
+                    data: error.response.data
+                });
+            }
 
             return res.status(error.response.status).json({
                 success: false,
@@ -141,7 +150,7 @@ router.get('/dashboard', async (req, res) => {
             });
         } else if (error.request) {
             // Таймаут или отсутствие связи
-            console.error('📋 Request Error (no response):', error.request);
+            logger.error('Ошибка запроса (нет ответа)', { error: error.message });
             return res.status(503).json({
                 success: false,
                 error: 'Внешний API недоступен или превышено время ожидания',
@@ -149,7 +158,7 @@ router.get('/dashboard', async (req, res) => {
             });
         } else {
             // Внутренняя ошибка
-            console.error('📋 Internal Error:', error);
+            logger.error('Внутренняя ошибка', { error: error.message });
             return res.status(500).json({
                 success: false,
                 error: 'Внутренняя ошибка прокси-сервера',

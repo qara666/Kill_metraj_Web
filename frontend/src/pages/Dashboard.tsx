@@ -124,9 +124,9 @@ export const Dashboard: React.FC = () => {
           const saved = localStorage.getItem('km_dashboard_processed_data')
           if (saved) {
             const parsed = JSON.parse(saved)
-            log(`✅ Данные сохранены в localStorage: ${parsed?.orders?.length || 0} заказов, ${parsed?.couriers?.length || 0} курьеров`)
+            log(`Данные сохранены в localStorage: ${parsed?.orders?.length || 0} заказов, ${parsed?.couriers?.length || 0} курьеров`)
           } else {
-            log(`⚠️ Данные не сохранились в localStorage!`)
+            log(`Предупреждение: Данные не сохранились в localStorage!`)
           }
         } catch (e) {
         }
@@ -134,11 +134,11 @@ export const Dashboard: React.FC = () => {
         const newOrdersCount = (orders as any[]).length
         const finalOrdersCount = mergedData.orders.length
 
-        log(`Файл оброблено: замовлень=${newOrdersCount}, геокодовано=${newData.summary.successfulGeocoding}, помилок=${(newData.summary.errors as any[]).length}.`)
-        log(`Объединение: було=${existingOrdersCount}, нових=${newOrdersCount}, стало=${finalOrdersCount} заказов.`)
+        log(`Файл обработан: заказов=${newOrdersCount}, геокодировано=${newData.summary.successfulGeocoding}, ошибок=${(newData.summary.errors as any[]).length}.`)
+        log(`Объединение: было=${existingOrdersCount}, новых=${newOrdersCount}, стало=${finalOrdersCount} заказов.`)
 
         if (finalOrdersCount === existingOrdersCount && newOrdersCount > 0) {
-          log(`⚠️ ВНИМАНИЕ: Новые заказы не добавились! Возможно, все заказы считаются дубликатами.`)
+          log(`ВНИМАНИЕ: Новые заказы не добавились! Возможно, все заказы считаются дубликатами.`)
         }
 
       } catch (error) {
@@ -161,7 +161,7 @@ export const Dashboard: React.FC = () => {
       const responseData = resp as any;
       if (responseData?.data?.debug?.logs) {
         setExcelLogs(responseData.data.debug.logs);
-        log(`Excel логи отримано: ${responseData.data.debug.logs.length} записів`);
+        log(`Excel логи получены: ${responseData.data.debug.logs.length} записей`);
       }
 
       setPreviewData(data);
@@ -169,9 +169,9 @@ export const Dashboard: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['routes'] })
     },
     onError: (error: any) => {
-      const msg = error?.response?.data?.error || error?.message || 'Не вдалося обробити файл'
+      const msg = error?.response?.data?.error || error?.message || 'Не удалось обработать файл'
       toast.error(msg)
-      log(`Помилка обробки файлу: ${msg}`)
+      log(`Ошибка обработки файла: ${msg}`)
     },
   })
 
@@ -258,7 +258,7 @@ export const Dashboard: React.FC = () => {
         log(`Объединение: было=${existingOrdersCount}, новых=${newOrdersCount}, стало=${finalOrdersCount} заказов`)
 
         if (finalOrdersCount === existingOrdersCount && newOrdersCount > 0) {
-          log(`⚠️ ВНИМАНИЕ: Новые заказы не добавились! Возможно, все заказы считаются дубликатами.`)
+          log(`ВНИМАНИЕ: Новые заказы не добавились! Возможно, все заказы считаются дубликатами.`)
         }
 
         setPreviewData(data)
@@ -341,7 +341,7 @@ export const Dashboard: React.FC = () => {
                     <button
                       onClick={() => setShowExcelLogs(true)}
                       className="btn-primary text-sm"
-                      title="Показати детальні логи Excel обробки"
+                      title="Показать детальные логи Excel обработки"
                     >
                       Excel логи ({excelLogs.length})
                     </button>

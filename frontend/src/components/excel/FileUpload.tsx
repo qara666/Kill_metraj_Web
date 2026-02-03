@@ -21,11 +21,11 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     if (rejectedFiles.length > 0) {
       const error = rejectedFiles[0].errors[0]
       if (error.code === 'file-too-large') {
-        toast.error('File is too large. Please upload files under 10MB.')
+        toast.error('Файл слишком большой. Пожалуйста, загрузите файл размером до 10 МБ.')
       } else if (error.code === 'file-invalid-type') {
-        toast.error('Invalid file type. Please upload Excel or CSV files.')
+        toast.error('Неверный тип файла. Пожалуйста, загрузите Excel или CSV.')
       } else {
-        toast.error('Invalid file. Please try again.')
+        toast.error('Ошибка в файле. Пожалуйста, попробуйте еще раз.')
       }
       return
     }
@@ -34,7 +34,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     if (file) {
       setSelectedFile(file)
       onFileSelect(file)
-      toast.success(`File "${file.name}" selected successfully`)
+      toast.success(`Файл "${file.name}" успешно выбран`)
     }
   }, [onFileSelect])
 
@@ -75,31 +75,31 @@ export const FileUpload: React.FC<FileUploadProps> = ({
         )}
       >
         <input {...getInputProps()} />
-        
+
         {selectedFile ? (
           <CheckCircleIcon className="mx-auto h-12 w-12 text-success-500" />
         ) : (
           <DocumentArrowUpIcon className="mx-auto h-12 w-12 text-gray-400" />
         )}
-        
+
         <p className="mt-4 text-lg font-medium text-gray-900">
-          {selectedFile 
-            ? 'File selected successfully' 
-            : isDragActive 
-              ? 'Drop the file here' 
-              : 'Upload Excel or CSV file'
+          {selectedFile
+            ? 'Файл успешно выбран'
+            : isDragActive
+              ? 'Перетащите файл сюда'
+              : 'Загрузить файл Excel или CSV'
           }
         </p>
-        
+
         <p className="mt-2 text-sm text-gray-500">
-          {selectedFile 
-            ? 'Ready to process'
-            : 'Drag & drop your file here, or click to select'
+          {selectedFile
+            ? 'Готов к обработке'
+            : 'Перетащите файл сюда или нажмите для выбора'
           }
         </p>
-        
+
         <p className="mt-1 text-xs text-gray-400">
-          Supported formats: .xlsx, .xls, .csv (max 10MB)
+          Поддерживаемые форматы: .xlsx, .xls, .csv (макс. 10 МБ)
         </p>
       </div>
 
@@ -117,11 +117,11 @@ export const FileUpload: React.FC<FileUploadProps> = ({
                 </p>
               </div>
             </div>
-            
+
             <button
               onClick={removeFile}
               className="text-success-400 hover:text-success-600 transition-colors"
-              title="Remove file"
+              title="Удалить файл"
             >
               <XMarkIcon className="h-5 w-5" />
             </button>

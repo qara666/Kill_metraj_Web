@@ -67,14 +67,14 @@ class SocketService {
         if (!this.socket) return;
 
         this.socket.on('connect', () => {
-            console.log('[SocketService] ✅ Connected to WebSocket server');
+            console.log('[SocketService]  Connected to WebSocket server');
             this.reconnectAttempts = 0;
             this.isConnecting = false;
             this.emit('connected');
         });
 
         this.socket.on('disconnect', (reason) => {
-            console.log('[SocketService] ❌ Disconnected:', reason);
+            console.log('[SocketService]  Disconnected:', reason);
             this.isConnecting = false;
             this.emit('disconnected', reason);
         });
@@ -91,7 +91,7 @@ class SocketService {
         });
 
         this.socket.on('reconnect', (attemptNumber) => {
-            console.log(`[SocketService] ✅ Reconnected after ${attemptNumber} attempts`);
+            console.log(`[SocketService]  Reconnected after ${attemptNumber} attempts`);
             this.reconnectAttempts = 0;
             this.emit('reconnected', attemptNumber);
         });
@@ -141,7 +141,7 @@ class SocketService {
         }
 
         this.socket.on('dashboard:update', (data) => {
-            console.log('[SocketService] 📥 Dashboard update received:', {
+            console.log('[SocketService]  Dashboard update received:', {
                 timestamp: data.timestamp,
                 status: data.status
             });
@@ -234,7 +234,7 @@ class SocketService {
         // Clear callbacks
         this.callbacks.clear();
 
-        console.log('[SocketService] ✅ Disconnected');
+        console.log('[SocketService]  Disconnected');
     }
 
     /**

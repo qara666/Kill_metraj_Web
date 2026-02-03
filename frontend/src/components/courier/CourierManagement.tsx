@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { localStorageUtils } from '../../utils/ui/localStorage'
-import { 
-  PlusIcon, 
-  PencilIcon, 
+import {
+  PlusIcon,
+  PencilIcon,
   TrashIcon,
   UserIcon,
   TruckIcon,
@@ -96,7 +96,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
 
       courierRoutes.forEach((route: any) => {
         const ordersCount = route.orders?.length || 0
-        
+
         if (route.isOptimized && route.totalDistance) {
           // Для оптимизированных маршрутов используем рассчитанное расстояние + дополнительные 500м за каждый заказ
           totalDistance += route.totalDistance + (ordersCount * 0.5)
@@ -153,7 +153,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
           // Для неоптимизированных маршрутов считаем базовое расстояние
           baseDistance += 1.0 // 1км базовое расстояние за маршрут
         }
-        
+
         // Дополнительные 500м добавляются к каждому заказу независимо от типа маршрута
         additionalDistance += ordersCount * 0.5 // 500м за каждый заказ
       })
@@ -225,8 +225,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     if (!searchTerm.trim()) return true
     const searchLower = searchTerm.toLowerCase()
     return courier.name.toLowerCase().includes(searchLower) ||
-           courier.phone.includes(searchTerm) ||
-           courier.email.toLowerCase().includes(searchLower)
+      courier.phone.includes(searchTerm) ||
+      courier.email.toLowerCase().includes(searchLower)
   }
 
   const filteredCouriers = couriers
@@ -267,18 +267,16 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   }
 
   const toggleCourierStatus = (id: string) => {
-    setCouriers(prev => prev.map(courier => 
+    setCouriers(prev => prev.map(courier =>
       courier.id === id ? { ...courier, isActive: !courier.isActive } : courier
     ))
   }
 
   const toggleCourierVehicleType = (id: string) => {
-    console.log('Переключение типа курьера:', id)
     setCouriers(prev => {
       const updatedCouriers = prev.map(courier => {
         if (courier.id === id) {
           const newVehicleType = courier.vehicleType === 'car' ? 'motorcycle' : 'car'
-          console.log(`Курьер ${courier.name}: ${courier.vehicleType} -> ${newVehicleType}`)
           return {
             ...courier,
             vehicleType: newVehicleType as 'car' | 'motorcycle',
@@ -287,22 +285,9 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
         }
         return courier
       })
-      
+
       // Сохраняем изменения в контексте
-      if (contextData) {
-        const updatedContextCouriers = contextData.couriers.map((courier: any) => {
-          const localCourier = updatedCouriers.find(c => c.name === courier.name)
-          if (localCourier) {
-            return {
-              ...courier,
-              vehicleType: localCourier.vehicleType,
-              totalDistance: localCourier.totalDistance
-            }
-          }
-          return courier
-        })
-        console.log('Обновляем контекст:', updatedContextCouriers)
-      }
+      // Update log removed for production
 
       // Persist to persistent map immediately
       try {
@@ -312,8 +297,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
           const updatedMap = { ...existingMap, [changed.name]: changed.vehicleType }
           localStorageUtils.setCourierVehicleMap(updatedMap)
         }
-      } catch {}
-      
+      } catch { }
+
       return updatedCouriers
     })
   }
@@ -333,24 +318,18 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   const handleSaveAddress = (newAddress: string) => {
     if (!editingOrder) return
 
-    console.log('Редактирование адреса:', {
-      orderId: editingOrder.id,
-      oldAddress: editingOrder.address,
-      newAddress: newAddress
-    })
-
     const updatedOrder = { ...editingOrder, address: newAddress }
-    
+
     if (contextData?.routes) {
       const updatedRoutes = contextData.routes.map((route: any) => {
         // Проверяем, есть ли этот заказ в данном маршруте
         const orderIndex = route.orders.findIndex((order: any) => order.id === editingOrder.id)
-        
+
         if (orderIndex !== -1) {
           // Обновляем только маршрут, содержащий измененный заказ
           const updatedRouteOrders = [...route.orders]
           updatedRouteOrders[orderIndex] = updatedOrder
-          
+
           return {
             ...route,
             orders: updatedRouteOrders,
@@ -359,20 +338,13 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
             totalDuration: 0
           }
         }
-        
+
         // Возвращаем маршрут без изменений
         return route
       })
-      
+
       updateRouteData(updatedRoutes)
-      
-      console.log('Маршруты после обновления адреса:', updatedRoutes.map(r => ({
-        id: r.id,
-        courier: r.courier,
-        ordersCount: r.orders?.length || 0,
-        isOptimized: r.isOptimized
-      })))
-      
+
       // Сохраняем в localStorage
       try {
         const savedData = JSON.parse(localStorage.getItem('km_dashboard_processed_data') || '{}')
@@ -391,7 +363,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
 
   const handleRecalculateRoute = async (route: any) => {
     const anomalyCheck = AddressValidationService.checkRouteAnomalies(route)
-    
+
     if (anomalyCheck.hasAnomalies && anomalyCheck.errors.length > 0) {
       // Ошибки блокируют пересчет
       console.error('Route errors:', anomalyCheck.errors)
@@ -412,7 +384,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   // Функция для открытия маршрута в Google Maps
   const openRouteInGoogleMaps = (route: any) => {
     if (!route || !route.orders || route.orders.length === 0) {
-      alert('Маршрут пустой')
+      toast.error('Маршрут пустой')
       return
     }
     const meta = route.geoMeta || {}
@@ -420,7 +392,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     const waypointsMeta: any[] = Array.isArray(meta.waypoints) ? meta.waypoints : []
     const missing = !hasCoords(meta.origin) || !hasCoords(meta.destination) || waypointsMeta.length !== route.orders.length || waypointsMeta.some(w => !hasCoords(w))
     if (missing) {
-      alert('Чтобы открыть корректный маршрут в Google Maps, пересчитайте маршрут (получим координаты точек).')
+      toast.error('Чтобы открыть корректный маршрут в Google Maps, сначала пересчитайте его.')
       return
     }
     const parts: string[] = []
@@ -443,31 +415,29 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
   // Функции для подтверждения/отмены удаления маршрута
   const confirmDeleteRoute = () => {
     if (routeToDelete && contextData?.routes) {
-      console.log('Deleting route:', routeToDelete.id, 'from courier:', routeToDelete.courier)
       const updatedRoutes = contextData.routes.filter((route: any) => route.id !== routeToDelete.id)
-      
+
       // Обновляем данные в контексте, включая маршруты
       if (contextData) {
         const updatedData = { ...contextData, routes: updatedRoutes }
-        
+
         // Сохраняем в localStorage
         try {
           localStorage.setItem('km_excel_data', JSON.stringify(updatedData))
           localStorage.setItem('km_routes', JSON.stringify(updatedRoutes))
-          console.log('Routes updated in localStorage:', updatedRoutes.length)
         } catch (error) {
           console.error('Ошибка сохранения данных:', error)
         }
-        
+
         // Обновляем контекст с новыми маршрутами
         updateRouteData(updatedRoutes)
       }
-      
+
       setShowDeleteModal(false)
       setRouteToDelete(null)
-      
+
       // Показываем уведомление об успешном удалении
-      alert(`Маршрут курьера ${routeToDelete.courier} успешно удален`)
+      toast.success(`Маршрут курьера ${routeToDelete.courier} успешно удален`)
     }
   }
 
@@ -500,7 +470,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
 
       if (anomalyCheck.hasAnomalies && anomalyCheck.errors.length > 0) {
         const errorMessage = `Обнаружены ошибки в маршруте:\n${anomalyCheck.errors.join('\n')}\n\nПересчет невозможен. Исправьте ошибки в адресах.`
-        alert(errorMessage)
+        toast.error(errorMessage)
         return
       }
 
@@ -514,104 +484,85 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
         try {
           await googleMapsLoader.load()
         } catch (error) {
-          alert('Ошибка загрузки Google Maps API. Проверьте настройки API ключа.')
+          toast.error('Ошибка загрузки Google Maps API. Проверьте настройки API ключа.')
           return
         }
       }
 
-    // Используем прямые адреса без геокодирования
-    const waypoints = route.orders.map((order: any) => ({
-      location: order.address,
-      stopover: true
-    }))
+      // Используем прямые адреса без геокодирования
+      const waypoints = route.orders.map((order: any) => ({
+        location: order.address,
+        stopover: true
+      }))
 
-    const request = {
-      origin: route.startAddress,
-      destination: route.endAddress,
-      waypoints: waypoints,
-      travelMode: window.google.maps.TravelMode.DRIVING,
-      optimizeWaypoints: false, // Сохраняем порядок точек
-      unitSystem: window.google.maps.UnitSystem.METRIC,
-      avoidHighways: false,
-      avoidTolls: false,
-      avoidFerries: false,
-      drivingOptions: {
-        departureTime: new Date(),
-        trafficModel: window.google.maps.TrafficModel.BEST_GUESS
+      const request = {
+        origin: route.startAddress,
+        destination: route.endAddress,
+        waypoints: waypoints,
+        travelMode: window.google.maps.TravelMode.DRIVING,
+        optimizeWaypoints: false, // Сохраняем порядок точек
+        unitSystem: window.google.maps.UnitSystem.METRIC,
+        avoidHighways: false,
+        avoidTolls: false,
+        avoidFerries: false,
+        drivingOptions: {
+          departureTime: new Date(),
+          trafficModel: window.google.maps.TrafficModel.BEST_GUESS
+        }
       }
-    }
 
-    const result = await googleApiCache.getDirections(request)
-    if (!result) {
-      console.error('Ошибка расчета маршрута')
-      toast.error('Ошибка при пересчете маршрута')
-      return
-    }
-
-    if (!result) return
-
-    // Логируем legs для отладки
-    if (result.routes[0]?.legs) {
-      console.log('legs:', result.routes[0].legs.map((leg: any) => ({
-        start_address: leg.start_address,
-        end_address: leg.end_address,
-        distance: leg.distance,
-        duration: leg.duration,
-      })))
-    }
-
-    const totalDistanceMeters = result.routes[0].legs.reduce((sum: number, leg: any) => {
-      // ТОЛЬКО value (int, метры)
-      if (leg.distance && typeof leg.distance.value === 'number') return sum + leg.distance.value;
-      return sum;
-    }, 0);
-    const totalDurationSec = result.routes[0].legs.reduce((sum: number, leg: any) => {
-      if (leg.duration && typeof leg.duration.value === 'number') return sum + leg.duration.value;
-      return sum;
-    }, 0);
-
-    // Обновляем маршрут с новыми данными
-    const updatedRoute = {
-      ...route,
-      totalDistance: Math.round(totalDistanceMeters / 1000 * 10) / 10, // в км
-      totalDuration: Math.round(totalDurationSec / 60), // в минутах
-      isOptimized: true,
-      lastCalculated: new Date().toISOString()
-    }
-
-    console.log('Обновляемый маршрут:', {
-      id: updatedRoute.id,
-      courier: updatedRoute.courier,
-      ordersCount: updatedRoute.orders?.length || 0,
-      totalDistance: updatedRoute.totalDistance,
-      totalDuration: updatedRoute.totalDuration
-    })
-
-    // Обновляем маршрут через контекст
-    if (contextData?.routes) {
-      const updatedRoutes = contextData.routes.map((r: any) => r.id === route.id ? updatedRoute : r)
-      updateRouteData(updatedRoutes)
-      
-      console.log('Маршруты после обновления:', updatedRoutes.map(r => ({
-        id: r.id,
-        courier: r.courier,
-        ordersCount: r.orders?.length || 0
-      })))
-    }
-
-    // Сохраняем в localStorage
-    try {
-      const savedData = JSON.parse(localStorage.getItem('km_dashboard_processed_data') || '{}')
-      if (savedData.routes) {
-        const updatedRoutes = savedData.routes.map((r: any) => r.id === route.id ? updatedRoute : r)
-        savedData.routes = updatedRoutes
-        localStorage.setItem('km_dashboard_processed_data', JSON.stringify(savedData))
+      const result = await googleApiCache.getDirections(request)
+      if (!result) {
+        console.error('Ошибка расчета маршрута')
+        toast.error('Ошибка при пересчете маршрута')
+        return
       }
-    } catch (error) {
-      console.error('Ошибка сохранения маршрута:', error)
-    }
 
-    toast.success(`Маршрут для курьера ${route.courier} пересчитан: ${updatedRoute.totalDistance}км, ${updatedRoute.totalDuration}мин`)
+      if (!result) return
+
+      // Логируем legs для отладки
+      // Legs check for production
+
+      const totalDistanceMeters = result.routes[0].legs.reduce((sum: number, leg: any) => {
+        // ТОЛЬКО value (int, метры)
+        if (leg.distance && typeof leg.distance.value === 'number') return sum + leg.distance.value;
+        return sum;
+      }, 0);
+      const totalDurationSec = result.routes[0].legs.reduce((sum: number, leg: any) => {
+        if (leg.duration && typeof leg.duration.value === 'number') return sum + leg.duration.value;
+        return sum;
+      }, 0);
+
+      // Обновляем маршрут с новыми данными
+      const updatedRoute = {
+        ...route,
+        totalDistance: Math.round(totalDistanceMeters / 1000 * 10) / 10, // в км
+        totalDuration: Math.round(totalDurationSec / 60), // в минутах
+        isOptimized: true,
+        lastCalculated: new Date().toISOString()
+      }
+
+      // Route updated for production
+
+      // Обновляем маршрут через контекст
+      if (contextData?.routes) {
+        const updatedRoutes = contextData.routes.map((r: any) => r.id === route.id ? updatedRoute : r)
+        updateRouteData(updatedRoutes)
+      }
+
+      // Сохраняем в localStorage
+      try {
+        const savedData = JSON.parse(localStorage.getItem('km_dashboard_processed_data') || '{}')
+        if (savedData.routes) {
+          const updatedRoutes = savedData.routes.map((r: any) => r.id === route.id ? updatedRoute : r)
+          savedData.routes = updatedRoutes
+          localStorage.setItem('km_dashboard_processed_data', JSON.stringify(savedData))
+        }
+      } catch (error) {
+        console.error('Ошибка сохранения маршрута:', error)
+      }
+
+      toast.success(`Маршрут для курьера ${route.courier} пересчитан: ${updatedRoute.totalDistance}км, ${updatedRoute.totalDuration}мин`)
 
     } catch (error) {
       console.error('Ошибка пересчета маршрута:', error)
@@ -628,8 +579,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
       {/* Header */}
       <div className={clsx(
         'rounded-3xl p-8 shadow-2xl border-2 overflow-hidden relative',
-        isDark 
-          ? 'bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 border-gray-700' 
+        isDark
+          ? 'bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 border-gray-700'
           : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-blue-200'
       )}>
         <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10 opacity-50"></div>
@@ -638,8 +589,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
             <div className="flex items-center gap-4">
               <div className={clsx(
                 'p-4 rounded-2xl shadow-lg',
-                isDark 
-                  ? 'bg-gradient-to-br from-blue-600 to-purple-600' 
+                isDark
+                  ? 'bg-gradient-to-br from-blue-600 to-purple-600'
                   : 'bg-gradient-to-br from-blue-500 to-indigo-600'
               )}>
                 <UserIcon className="w-8 h-8 text-white" />
@@ -647,8 +598,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
               <div>
                 <h1 className={clsx(
                   'text-3xl font-bold mb-1 bg-gradient-to-r bg-clip-text text-transparent',
-                  isDark 
-                    ? 'from-blue-400 to-purple-400' 
+                  isDark
+                    ? 'from-blue-400 to-purple-400'
                     : 'from-blue-600 to-indigo-600'
                 )}>
                   Управление курьерами
@@ -699,8 +650,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                   }}
                   className={clsx(
                     'p-3 rounded-xl transition-all hover:scale-105',
-                    isDark 
-                      ? 'bg-gray-700 hover:bg-gray-600 text-blue-400' 
+                    isDark
+                      ? 'bg-gray-700 hover:bg-gray-600 text-blue-400'
                       : 'bg-white hover:bg-blue-50 text-blue-600 shadow-lg'
                   )}
                 >
@@ -735,9 +686,9 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
               onClick={() => setFilter('all')}
               className={clsx(
                 'px-6 py-3 rounded-xl text-sm font-medium transition-all duration-200 transform hover:scale-105 shadow-md',
-                filter === 'all' 
-                  ? isDark 
-                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg' 
+                filter === 'all'
+                  ? isDark
+                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg'
                     : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg'
                   : isDark
                     ? 'bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white'
@@ -759,7 +710,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
               onClick={() => setFilter('car')}
               className={clsx(
                 'px-6 py-3 rounded-xl text-sm font-medium transition-all duration-200 transform hover:scale-105 shadow-md flex items-center space-x-2',
-                filter === 'car' 
+                filter === 'car'
                   ? isDark
                     ? 'bg-gradient-to-r from-green-600 to-green-700 text-white shadow-lg'
                     : 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-lg'
@@ -781,7 +732,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
               onClick={() => setFilter('motorcycle')}
               className={clsx(
                 'px-6 py-3 rounded-xl text-sm font-medium transition-all duration-200 transform hover:scale-105 shadow-md flex items-center space-x-2',
-                filter === 'motorcycle' 
+                filter === 'motorcycle'
                   ? isDark
                     ? 'bg-gradient-to-r from-orange-600 to-orange-700 text-white shadow-lg'
                     : 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg'
@@ -800,7 +751,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
               </span>
             </button>
           </div>
-          
+
           {/* Search Field */}
           <div className="flex-1 max-w-md" data-tour="search">
             <div className="relative">
@@ -811,8 +762,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className={clsx(
                   'w-full px-4 py-3 pl-12 rounded-xl border text-sm transition-all duration-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent',
-                  isDark 
-                    ? 'bg-gray-700 border-gray-600 text-gray-200 placeholder-gray-400 focus:bg-gray-600' 
+                  isDark
+                    ? 'bg-gray-700 border-gray-600 text-gray-200 placeholder-gray-400 focus:bg-gray-600'
                     : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500 focus:bg-white shadow-md'
                 )}
               />
@@ -838,8 +789,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
       {filteredCouriers.length === 0 ? (
         <div className={clsx(
           'rounded-xl shadow-lg border p-16 text-center relative overflow-hidden',
-          isDark 
-            ? 'bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700' 
+          isDark
+            ? 'bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700'
             : 'bg-gradient-to-br from-white to-gray-50 border-gray-200'
         )}>
           {/* Background decoration */}
@@ -849,7 +800,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
               isDark ? 'bg-blue-500' : 'bg-blue-400'
             )}></div>
           </div>
-          
+
           <div className="relative z-10">
             <div className={clsx(
               'mx-auto w-20 h-20 rounded-full flex items-center justify-center mb-6',
@@ -870,7 +821,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
               'text-base mb-6 max-w-md mx-auto',
               isDark ? 'text-gray-400' : 'text-gray-500'
             )}>
-              {filter === 'all' 
+              {filter === 'all'
                 ? 'Добавьте курьеров или загрузите Excel файл с данными для начала работы'
                 : `В данный момент нет курьеров с типом транспорта "${filter === 'car' ? 'автомобиль' : 'мотоцикл'}"`
               }
@@ -895,240 +846,239 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
           {/* Сетка курьеров */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredCouriers.map((courier) => {
-            return (
-              <div 
-              key={courier.id}
-              data-tour="courier-card"
-              className={clsx(
-                'group rounded-xl shadow-lg border p-6 transition-all duration-300 transform hover:scale-105 hover:shadow-xl',
-                isDark 
-                  ? 'bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700 hover:from-gray-700 hover:to-gray-800' 
-                  : 'bg-gradient-to-br from-white to-gray-50 border-gray-200 hover:from-gray-50 hover:to-white',
-                !courier.isActive && isDark ? 'opacity-60' : '',
-                !courier.isActive && !isDark ? 'opacity-60' : ''
-              )}
-            >
-              {/* Header with avatar and actions */}
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center space-x-4">
-                  <div className="relative">
-                    <button
-                      data-tour="vehicle-type"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        toggleCourierVehicleType(courier.id)
-                      }}
-                      className={clsx(
-                        'h-16 w-16 rounded-2xl flex items-center justify-center transition-all duration-200 hover:scale-110 shadow-lg',
-                        courier.vehicleType === 'car' 
-                          ? isDark 
-                            ? 'bg-gradient-to-br from-green-600 to-green-700 hover:from-green-700 hover:to-green-800' 
-                            : 'bg-gradient-to-br from-green-500 to-green-600 hover:from-green-600 hover:to-green-700'
-                          : isDark
-                            ? 'bg-gradient-to-br from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800'
-                            : 'bg-gradient-to-br from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700'
-                      )}
-                      title={`Переключить на ${courier.vehicleType === 'car' ? 'мотоцикл' : 'автомобиль'}`}
-                    >
-                      {courier.vehicleType === 'car' ? (
-                        <TruckIcon className="h-8 w-8 text-white" />
-                      ) : (
-                        <TruckIcon className="h-8 w-8 text-white" />
-                      )}
-                    </button>
-                    {/* Status indicator */}
-                    <div className={clsx(
-                      'absolute -top-1 -right-1 w-4 h-4 rounded-full border-2',
-                      courier.isActive 
-                        ? 'bg-green-500 border-white' 
-                        : 'bg-red-500 border-white'
-                    )}></div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className={clsx(
-                      'text-xl font-bold truncate',
-                      isDark ? 'text-gray-100' : 'text-gray-900'
-                    )}>
-                      {courier.name}
-                    </h3>
-                    <p className={clsx(
-                      'text-sm flex items-center mt-1',
-                      isDark ? 'text-gray-400' : 'text-gray-500'
-                    )}>
-                      <MapPinIcon className="h-4 w-4 mr-2" />
-                      {courier.location}
-                    </p>
-                    <div className="flex items-center space-x-2 mt-2">
-                      <span className={clsx(
-                        'inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold',
-                        courier.isActive 
-                          ? isDark
-                            ? 'bg-green-900/50 text-green-300 border border-green-700'
-                            : 'bg-green-100 text-green-800 border border-green-200'
-                          : isDark
-                            ? 'bg-red-900/50 text-red-300 border border-red-700'
-                            : 'bg-red-100 text-red-800 border border-red-200'
-                      )}>
-                        {courier.isActive ? 'Активен' : 'Неактивен'}
-                      </span>
-                      <span className={clsx(
-                        'inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold',
-                        courier.vehicleType === 'car' 
-                          ? isDark
-                            ? 'bg-blue-900/50 text-blue-300 border border-blue-700'
-                            : 'bg-blue-100 text-blue-800 border border-blue-200'
-                          : isDark
-                            ? 'bg-orange-900/50 text-orange-300 border border-orange-700'
-                            : 'bg-orange-100 text-orange-800 border border-orange-200'
-                      )}>
-                        {courier.vehicleType === 'car' ? 'Авто' : 'Мото'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => setEditingCourier(courier)}
-                    className={clsx(
-                      'p-2 rounded-lg transition-all duration-200 hover:scale-110',
-                      isDark 
-                        ? 'text-gray-400 hover:text-blue-400 hover:bg-blue-900/20' 
-                        : 'text-gray-400 hover:text-blue-600 hover:bg-blue-100'
-                    )}
-                    title="Редактировать курьера"
-                  >
-                    <PencilIcon className="h-5 w-5" />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteCourier(courier.id)}
-                    className={clsx(
-                      'p-2 rounded-lg transition-all duration-200 hover:scale-110',
-                      isDark 
-                        ? 'text-gray-400 hover:text-red-400 hover:bg-red-900/20' 
-                        : 'text-gray-400 hover:text-red-600 hover:bg-red-100'
-                    )}
-                    title="Удалить курьера"
-                  >
-                    <TrashIcon className="h-5 w-5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Statistics Grid */}
-              <div className="grid grid-cols-2 gap-4 mt-6">
-                {/* Заказы */}
-                <div className={clsx(
-                  'rounded-xl p-4 text-center transition-all duration-200 hover:scale-105',
-                  isDark 
-                    ? 'bg-gradient-to-br from-blue-900/30 to-blue-800/20 border border-blue-700/50' 
-                    : 'bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200'
-                )}>
-                  <div className="flex items-center justify-center space-x-2 mb-2">
-                    <div className={clsx(
-                      'p-2 rounded-lg',
-                      isDark ? 'bg-blue-800/50' : 'bg-blue-200'
-                    )}>
-                      <TruckIcon className={clsx(
-                        'h-5 w-5',
-                        isDark ? 'text-blue-300' : 'text-blue-600'
-                      )} />
-                    </div>
-                    <span className={clsx(
-                      'text-sm font-semibold',
-                      isDark ? 'text-blue-200' : 'text-blue-800'
-                    )}>Заказы</span>
-                  </div>
-                  <div className="text-center">
-                    <p className={clsx(
-                      'text-xs mb-1',
-                      isDark ? 'text-blue-300/70' : 'text-blue-600/70'
-                    )}>В маршрутах</p>
-                    <p className={clsx(
-                      'text-2xl font-bold',
-                      isDark ? 'text-blue-300' : 'text-blue-700'
-                    )}>
-                      {calculateCourierOrdersInRoutes(courier.name)}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Километры */}
-                <button
-                  data-tour="routes"
-                  onClick={() => handleDistanceClick(courier)}
+              return (
+                <div
+                  key={courier.id}
+                  data-tour="courier-card"
                   className={clsx(
-                    'rounded-xl p-4 text-center transition-all duration-200 hover:scale-105 cursor-pointer',
-                    isDark 
-                      ? 'bg-gradient-to-br from-green-900/30 to-green-800/20 border border-green-700/50 hover:from-green-800/40 hover:to-green-700/30' 
-                      : 'bg-gradient-to-br from-green-50 to-green-100 border border-green-200 hover:from-green-100 hover:to-green-200'
+                    'group rounded-xl shadow-lg border p-6 transition-all duration-300 transform hover:scale-105 hover:shadow-xl',
+                    isDark
+                      ? 'bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700 hover:from-gray-700 hover:to-gray-800'
+                      : 'bg-gradient-to-br from-white to-gray-50 border-gray-200 hover:from-gray-50 hover:to-white',
+                    !courier.isActive && isDark ? 'opacity-60' : '',
+                    !courier.isActive && !isDark ? 'opacity-60' : ''
                   )}
                 >
-                  <div className="flex items-center justify-center space-x-2 mb-2">
-                    <div className={clsx(
-                      'p-2 rounded-lg',
-                      isDark ? 'bg-green-800/50' : 'bg-green-200'
-                    )}>
-                      <MapPinIcon className={clsx(
-                        'h-5 w-5',
-                        isDark ? 'text-green-300' : 'text-green-600'
-                      )} />
+                  {/* Header with avatar and actions */}
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center space-x-4">
+                      <div className="relative">
+                        <button
+                          data-tour="vehicle-type"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleCourierVehicleType(courier.id)
+                          }}
+                          className={clsx(
+                            'h-16 w-16 rounded-2xl flex items-center justify-center transition-all duration-200 hover:scale-110 shadow-lg',
+                            courier.vehicleType === 'car'
+                              ? isDark
+                                ? 'bg-gradient-to-br from-green-600 to-green-700 hover:from-green-700 hover:to-green-800'
+                                : 'bg-gradient-to-br from-green-500 to-green-600 hover:from-green-600 hover:to-green-700'
+                              : isDark
+                                ? 'bg-gradient-to-br from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800'
+                                : 'bg-gradient-to-br from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700'
+                          )}
+                          title={`Переключить на ${courier.vehicleType === 'car' ? 'мотоцикл' : 'автомобиль'}`}
+                        >
+                          {courier.vehicleType === 'car' ? (
+                            <TruckIcon className="h-8 w-8 text-white" />
+                          ) : (
+                            <TruckIcon className="h-8 w-8 text-white" />
+                          )}
+                        </button>
+                        {/* Status indicator */}
+                        <div className={clsx(
+                          'absolute -top-1 -right-1 w-4 h-4 rounded-full border-2',
+                          courier.isActive
+                            ? 'bg-green-500 border-white'
+                            : 'bg-red-500 border-white'
+                        )}></div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className={clsx(
+                          'text-xl font-bold truncate',
+                          isDark ? 'text-gray-100' : 'text-gray-900'
+                        )}>
+                          {courier.name}
+                        </h3>
+                        <p className={clsx(
+                          'text-sm flex items-center mt-1',
+                          isDark ? 'text-gray-400' : 'text-gray-500'
+                        )}>
+                          <MapPinIcon className="h-4 w-4 mr-2" />
+                          {courier.location}
+                        </p>
+                        <div className="flex items-center space-x-2 mt-2">
+                          <span className={clsx(
+                            'inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold',
+                            courier.isActive
+                              ? isDark
+                                ? 'bg-green-900/50 text-green-300 border border-green-700'
+                                : 'bg-green-100 text-green-800 border border-green-200'
+                              : isDark
+                                ? 'bg-red-900/50 text-red-300 border border-red-700'
+                                : 'bg-red-100 text-red-800 border border-red-200'
+                          )}>
+                            {courier.isActive ? 'Активен' : 'Неактивен'}
+                          </span>
+                          <span className={clsx(
+                            'inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold',
+                            courier.vehicleType === 'car'
+                              ? isDark
+                                ? 'bg-blue-900/50 text-blue-300 border border-blue-700'
+                                : 'bg-blue-100 text-blue-800 border border-blue-200'
+                              : isDark
+                                ? 'bg-orange-900/50 text-orange-300 border border-orange-700'
+                                : 'bg-orange-100 text-orange-800 border border-orange-200'
+                          )}>
+                            {courier.vehicleType === 'car' ? 'Авто' : 'Мото'}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <span className={clsx(
-                      'text-sm font-semibold',
-                      isDark ? 'text-green-200' : 'text-green-800'
-                    )}>Пробег</span>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => setEditingCourier(courier)}
+                        className={clsx(
+                          'p-2 rounded-lg transition-all duration-200 hover:scale-110',
+                          isDark
+                            ? 'text-gray-400 hover:text-blue-400 hover:bg-blue-900/20'
+                            : 'text-gray-400 hover:text-blue-600 hover:bg-blue-100'
+                        )}
+                        title="Редактировать курьера"
+                      >
+                        <PencilIcon className="h-5 w-5" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteCourier(courier.id)}
+                        className={clsx(
+                          'p-2 rounded-lg transition-all duration-200 hover:scale-110',
+                          isDark
+                            ? 'text-gray-400 hover:text-red-400 hover:bg-red-900/20'
+                            : 'text-gray-400 hover:text-red-600 hover:bg-red-100'
+                        )}
+                        title="Удалить курьера"
+                      >
+                        <TrashIcon className="h-5 w-5" />
+                      </button>
+                    </div>
                   </div>
-                  {(() => {
-                    const distanceDetails = calculateCourierDistanceDetails(courier.name)
-                    return (
+
+                  {/* Statistics Grid */}
+                  <div className="grid grid-cols-2 gap-4 mt-6">
+                    {/* Заказы */}
+                    <div className={clsx(
+                      'rounded-xl p-4 text-center transition-all duration-200 hover:scale-105',
+                      isDark
+                        ? 'bg-gradient-to-br from-blue-900/30 to-blue-800/20 border border-blue-700/50'
+                        : 'bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200'
+                    )}>
+                      <div className="flex items-center justify-center space-x-2 mb-2">
+                        <div className={clsx(
+                          'p-2 rounded-lg',
+                          isDark ? 'bg-blue-800/50' : 'bg-blue-200'
+                        )}>
+                          <TruckIcon className={clsx(
+                            'h-5 w-5',
+                            isDark ? 'text-blue-300' : 'text-blue-600'
+                          )} />
+                        </div>
+                        <span className={clsx(
+                          'text-sm font-semibold',
+                          isDark ? 'text-blue-200' : 'text-blue-800'
+                        )}>Заказы</span>
+                      </div>
                       <div className="text-center">
                         <p className={clsx(
                           'text-xs mb-1',
-                          isDark ? 'text-green-300/70' : 'text-green-600/70'
-                        )}>Общий пробег</p>
+                          isDark ? 'text-blue-300/70' : 'text-blue-600/70'
+                        )}>В маршрутах</p>
                         <p className={clsx(
                           'text-2xl font-bold',
-                          isDark ? 'text-green-300' : 'text-green-700'
+                          isDark ? 'text-blue-300' : 'text-blue-700'
                         )}>
-                          {distanceDetails.totalDistance.toFixed(1)} км
+                          {calculateCourierOrdersInRoutes(courier.name)}
                         </p>
-                        {distanceDetails.additionalDistance > 0 && (
-                          <p className={clsx(
-                            'text-xs mt-1',
-                            isDark ? 'text-green-300/60' : 'text-green-600/60'
-                          )}>
-                            +{distanceDetails.additionalDistance.toFixed(1)} км дополнительное расстояние
-                          </p>
-                        )}
                       </div>
-                    )
-                  })()}
-                </button>
-              </div>
+                    </div>
 
-              <div className="mt-4 space-y-2">
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => toggleCourierStatus(courier.id)}
-                    className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg ${
-                      courier.isActive
-                        ? 'bg-red-100 text-red-800 hover:bg-red-200'
-                        : 'bg-green-100 text-green-800 hover:bg-green-200'
-                    }`}
-                  >
-                    {courier.isActive ? 'Деактивировать' : 'Активировать'}
-                  </button>
-                  <button
-                    onClick={() => setEditingCourier(courier)}
-                    className="flex-1 px-3 py-2 text-sm font-medium text-blue-800 bg-blue-100 hover:bg-blue-200 rounded-lg"
-                  >
-                    Редактировать
-                  </button>
+                    {/* Километры */}
+                    <button
+                      data-tour="routes"
+                      onClick={() => handleDistanceClick(courier)}
+                      className={clsx(
+                        'rounded-xl p-4 text-center transition-all duration-200 hover:scale-105 cursor-pointer',
+                        isDark
+                          ? 'bg-gradient-to-br from-green-900/30 to-green-800/20 border border-green-700/50 hover:from-green-800/40 hover:to-green-700/30'
+                          : 'bg-gradient-to-br from-green-50 to-green-100 border border-green-200 hover:from-green-100 hover:to-green-200'
+                      )}
+                    >
+                      <div className="flex items-center justify-center space-x-2 mb-2">
+                        <div className={clsx(
+                          'p-2 rounded-lg',
+                          isDark ? 'bg-green-800/50' : 'bg-green-200'
+                        )}>
+                          <MapPinIcon className={clsx(
+                            'h-5 w-5',
+                            isDark ? 'text-green-300' : 'text-green-600'
+                          )} />
+                        </div>
+                        <span className={clsx(
+                          'text-sm font-semibold',
+                          isDark ? 'text-green-200' : 'text-green-800'
+                        )}>Пробег</span>
+                      </div>
+                      {(() => {
+                        const distanceDetails = calculateCourierDistanceDetails(courier.name)
+                        return (
+                          <div className="text-center">
+                            <p className={clsx(
+                              'text-xs mb-1',
+                              isDark ? 'text-green-300/70' : 'text-green-600/70'
+                            )}>Общий пробег</p>
+                            <p className={clsx(
+                              'text-2xl font-bold',
+                              isDark ? 'text-green-300' : 'text-green-700'
+                            )}>
+                              {distanceDetails.totalDistance.toFixed(1)} км
+                            </p>
+                            {distanceDetails.additionalDistance > 0 && (
+                              <p className={clsx(
+                                'text-xs mt-1',
+                                isDark ? 'text-green-300/60' : 'text-green-600/60'
+                              )}>
+                                +{distanceDetails.additionalDistance.toFixed(1)} км дополнительное расстояние
+                              </p>
+                            )}
+                          </div>
+                        )
+                      })()}
+                    </button>
+                  </div>
+
+                  <div className="mt-4 space-y-2">
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => toggleCourierStatus(courier.id)}
+                        className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg ${courier.isActive
+                          ? 'bg-red-100 text-red-800 hover:bg-red-200'
+                          : 'bg-green-100 text-green-800 hover:bg-green-200'
+                          }`}
+                      >
+                        {courier.isActive ? 'Деактивировать' : 'Активировать'}
+                      </button>
+                      <button
+                        onClick={() => setEditingCourier(courier)}
+                        className="flex-1 px-3 py-2 text-sm font-medium text-blue-800 bg-blue-100 hover:bg-blue-200 rounded-lg"
+                      >
+                        Редактировать
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-            )
-          })}
+              )
+            })}
           </div>
         </div>
       )}
@@ -1152,7 +1102,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 </p>
               </div>
             </div>
-            
+
             <div className="mb-6">
               <p className="text-sm text-gray-600">
                 Вы уверены, что хотите удалить маршрут курьера <strong>{routeToDelete.courier}</strong>?
@@ -1163,7 +1113,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 </p>
               )}
             </div>
-            
+
             <div className="flex space-x-3">
               <button
                 onClick={cancelDeleteRoute}
@@ -1199,12 +1149,12 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 </button>
               </div>
             </div>
-            
+
             <div className="px-6 py-4">
               {(() => {
                 const distanceDetails = calculateCourierDistanceDetails(selectedCourierForDistance.name)
                 const courierRoutes = getCourierRoutes(selectedCourierForDistance.name)
-                
+
                 return (
                   <div className="space-y-6">
                     {/* Общая статистика */}
@@ -1238,19 +1188,18 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                         <div className="space-y-3">
                           {courierRoutes.map((route: any, index: number) => {
                             const ordersCount = route.orders?.length || 0
-                            const routeBaseDistance = route.isOptimized && route.totalDistance 
-                              ? route.totalDistance 
+                            const routeBaseDistance = route.isOptimized && route.totalDistance
+                              ? route.totalDistance
                               : 1.0
                             const routeAdditionalDistance = ordersCount * 0.5
                             const routeTotalDistance = routeBaseDistance + routeAdditionalDistance
-                            
+
                             return (
                               <div key={route.id || index} className="border border-gray-200 rounded-lg p-4">
                                 <div className="flex items-start justify-between mb-3">
                                   <div className="flex items-center space-x-2">
-                                    <TruckIcon className={`h-5 w-5 ${
-                                      selectedCourierForDistance.vehicleType === 'car' ? 'text-green-600' : 'text-orange-600'
-                                    }`} />
+                                    <TruckIcon className={`h-5 w-5 ${selectedCourierForDistance.vehicleType === 'car' ? 'text-green-600' : 'text-orange-600'
+                                      }`} />
                                     <div>
                                       <h5 className="font-medium text-gray-900">
                                         Маршрут #{index + 1}
@@ -1259,11 +1208,10 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                                         {ordersCount} заказов
                                       </span>
                                     </div>
-                                    <span className={`text-xs px-2 py-1 rounded-full ${
-                                      selectedCourierForDistance.vehicleType === 'car' 
-                                        ? 'bg-green-100 text-green-800' 
-                                        : 'bg-orange-100 text-orange-800'
-                                    }`}>
+                                    <span className={`text-xs px-2 py-1 rounded-full ${selectedCourierForDistance.vehicleType === 'car'
+                                      ? 'bg-green-100 text-green-800'
+                                      : 'bg-orange-100 text-orange-800'
+                                      }`}>
                                       {selectedCourierForDistance.vehicleType === 'car' ? 'Авто' : 'Мото'}
                                     </span>
                                   </div>
@@ -1273,8 +1221,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                                       disabled={!route.isOptimized}
                                       className={clsx(
                                         'p-2 rounded-lg transition-all duration-200',
-                                        route.isOptimized 
-                                          ? 'text-blue-600 hover:text-blue-800 hover:bg-blue-50' 
+                                        route.isOptimized
+                                          ? 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
                                           : 'text-gray-400 cursor-not-allowed'
                                       )}
                                       title={route.isOptimized ? "Открыть маршрут в Google Maps" : "Маршрут не рассчитан"}
@@ -1306,7 +1254,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                                     </button>
                                   </div>
                                 </div>
-                                
+
                                 <div className="grid grid-cols-3 gap-3 text-sm">
                                   <div className="text-center">
                                     <div className="font-semibold text-gray-900">
@@ -1329,7 +1277,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                                     <div className="text-gray-500"></div>
                                   </div>
                                 </div>
-                                
+
                                 {/* Заказы в маршруте */}
                                 {route.orders && route.orders.length > 0 && (
                                   <div className="mt-4">
@@ -1366,7 +1314,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                                     </div>
                                   </div>
                                 )}
-                                
+
                                 {route.isOptimized && (
                                   <div className="mt-3 pt-3 border-t border-gray-200">
                                     <div className="flex items-center justify-center space-x-4 text-sm">
@@ -1392,7 +1340,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                                       if (!anomalyCheck || (!anomalyCheck.hasAnomalies && anomalyCheck.warnings.length === 0)) {
                                         return null
                                       }
-                                      
+
                                       return (
                                         <div className="mt-2 space-y-1">
                                           {anomalyCheck.errors.length > 0 && (
@@ -1408,7 +1356,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                                               </ul>
                                             </div>
                                           )}
-                                          
+
                                           {anomalyCheck.warnings.length > 0 && (
                                             <div className="text-xs p-2 rounded bg-yellow-50 text-yellow-700 border border-yellow-200">
                                               <div className="flex items-center space-x-1">
@@ -1443,7 +1391,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 )
               })()}
             </div>
-            
+
             <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
               <button
                 onClick={() => setShowDistanceModal(false)}
@@ -1465,13 +1413,13 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                 {editingCourier ? 'Редактировать курьера' : 'Добавить курьера'}
               </h3>
             </div>
-            
+
             <div className="px-6 py-4">
               <p className="text-gray-500 text-center py-8">
                 Модальное окно для добавления/редактирования курьера будет добавлено позже
               </p>
             </div>
-            
+
             <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
               <button
                 onClick={() => {
@@ -1537,86 +1485,86 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
               setHasSeenHelp(true)
             }}
             steps={[
-          {
-            id: 'filters',
-            title: '🔍 Фильтрация курьеров',
-            content: `📋 Используйте фильтры для просмотра курьеров по типу транспорта
+              {
+                id: 'filters',
+                title: ' Фильтрация курьеров',
+                content: ` Используйте фильтры для просмотра курьеров по типу транспорта
 
-🎯 Доступные фильтры:
+ Доступные фильтры:
 • Все курьеры - показывает всех курьеров независимо от типа транспорта
 • Авто курьеры - только курьеры на автомобилях
 • Мото курьеры - только курьеры на мотоциклах
 
-💡 Совет: Фильтры помогают быстро найти нужного курьера или просмотреть статистику по типам транспорта`,
-            target: '[data-tour="filters"]',
-            position: 'bottom'
-          },
-          {
-            id: 'search',
-            title: '🔎 Поиск курьеров',
-            content: `📋 Используйте поле поиска для быстрого нахождения курьера
+ Совет: Фильтры помогают быстро найти нужного курьера или просмотреть статистику по типам транспорта`,
+                target: '[data-tour="filters"]',
+                position: 'bottom'
+              },
+              {
+                id: 'search',
+                title: ' Поиск курьеров',
+                content: ` Используйте поле поиска для быстрого нахождения курьера
 
-🔍 Поиск работает по:
+ Поиск работает по:
 • Имени курьера
 • Номеру телефона
 
-💡 Совет: Поиск работает в реальном времени - просто начните вводить текст`,
-            target: '[data-tour="search"]',
-            position: 'bottom'
-          },
-          {
-            id: 'courier-card',
-            title: '👤 Информация о курьере',
-            content: `📊 Карточка курьера содержит всю важную информацию
+ Совет: Поиск работает в реальном времени - просто начните вводить текст`,
+                target: '[data-tour="search"]',
+                position: 'bottom'
+              },
+              {
+                id: 'courier-card',
+                title: ' Информация о курьере',
+                content: ` Карточка курьера содержит всю важную информацию
 
-📈 Отображаемые данные:
+ Отображаемые данные:
 • Имя и статус курьера (активен/неактивен)
 • Тип транспорта (автомобиль/мотоцикл)
 • Количество заказов в маршрутах
 • Общий пробег курьера
 
-🖱️ Действия:
+️ Действия:
 • Кликните на пробег → откроется детальная информация о маршрутах
 • Редактировать → изменить данные курьера
 • Удалить → удалить курьера из системы
 
-💡 Совет: Кликните на иконку транспорта, чтобы быстро изменить тип транспорта`,
-            target: '[data-tour="courier-card"]',
-            position: 'top'
-          },
-          {
-            id: 'vehicle-type',
-            title: '🚗 Изменение типа транспорта',
-            content: `🔄 Кликните на иконку транспорта, чтобы изменить тип транспорта курьера
+ Совет: Кликните на иконку транспорта, чтобы быстро изменить тип транспорта`,
+                target: '[data-tour="courier-card"]',
+                position: 'top'
+              },
+              {
+                id: 'vehicle-type',
+                title: ' Изменение типа транспорта',
+                content: ` Кликните на иконку транспорта, чтобы изменить тип транспорта курьера
 
-📊 Что происходит:
+ Что происходит:
 • Тип транспорта переключается между "Авто" и "Мото"
 • Автоматически пересчитывается пробег курьера
 • Изменения сохраняются автоматически`,
-            target: '[data-tour="vehicle-type"]',
-            position: 'left'
-          },
-          {
-            id: 'routes',
-            title: '🗺️ Маршруты курьера',
-            content: `📋 Кликните на блок "Пробег", чтобы увидеть детальную информацию о маршрутах курьера
+                target: '[data-tour="vehicle-type"]',
+                position: 'left'
+              },
+              {
+                id: 'routes',
+                title: '️ Маршруты курьера',
+                content: ` Кликните на блок "Пробег", чтобы увидеть детальную информацию о маршрутах курьера
 
-📊 В детальном просмотре вы увидите:
+ В детальном просмотре вы увидите:
 • Общий пробег курьера
 • Базовое расстояние маршрутов
 • Дополнительное расстояние
 • Список всех маршрутов курьера
 
-🖱️ Действия с маршрутом:
-• 🗺️ Открыть в Google Maps - просмотр маршрута в навигации
-• 🔄 Пересчитать - обновить расстояние и время маршрута
-• 🗑️ Удалить - удалить маршрут из системы
+️ Действия с маршрутом:
+• ️ Открыть в Google Maps - просмотр маршрута в навигации
+•  Пересчитать - обновить расстояние и время маршрута
+• ️ Удалить - удалить маршрут из системы
 
-💡 Совет: Пересчитайте маршрут после изменения адресов для получения актуальных данных`,
-            target: '[data-tour="routes"]',
-            position: 'top'
-          }
-        ] as TourStep[]}
+ Совет: Пересчитайте маршрут после изменения адресов для получения актуальных данных`,
+                target: '[data-tour="routes"]',
+                position: 'top'
+              }
+            ] as TourStep[]}
           />
         </Suspense>
       )}

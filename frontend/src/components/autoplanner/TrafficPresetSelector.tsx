@@ -81,7 +81,7 @@ export const TrafficPresetSelector: React.FC<TrafficPresetSelectorProps> = ({
                         'p-2.5 rounded-xl mt-1 shrink-0',
                         isDark ? 'bg-blue-600/20' : 'bg-blue-100'
                     )}>
-                        <div className={clsx('text-xl', isDark ? 'text-blue-400' : 'text-blue-600')}>🚦</div>
+                        <div className={clsx('text-xl', isDark ? 'text-blue-400' : 'text-blue-600')}></div>
                     </div>
 
                     <div className="space-y-1.5">

@@ -26,7 +26,6 @@ export const useDashboardWebSocket = ({
     enabled = false
 }: DashboardWebSocketParams) => {
     const {
-        apiKey,
         setApiLastSyncTime,
         setApiSyncStatus,
         setApiSyncError,
@@ -41,19 +40,19 @@ export const useDashboardWebSocket = ({
      * Fetch latest data from REST API (fallback or manual trigger)
      */
     const fetchLatestData = useCallback(async () => {
-        if (!apiKey || !apiKey.trim()) {
-            logger.warn('Dashboard WebSocket: API key not configured');
-            setApiSyncError('API ключ не настроен');
-            return;
-        }
-
         setApiSyncStatus('syncing');
         setApiSyncError(null);
 
         try {
-            logger.info('🔄 Fetching latest dashboard data from REST API...');
+            logger.info(' Fetching latest dashboard data from REST API...');
 
             const token = localStorage.getItem('km_access_token');
+            if (!token) {
+                logger.warn('Dashboard WebSocket: No auth token found');
+                setApiSyncError('Требуется авторизация');
+                return;
+            }
+
             const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/dashboard/latest`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -64,7 +63,7 @@ export const useDashboardWebSocket = ({
             const result = await response.json();
 
             if (result.success && result.data) {
-                logger.info(`✅ Loaded dashboard data from REST API`);
+                logger.info(` Loaded dashboard data from REST API`);
 
                 setApiLastSyncTime(Date.now());
                 setApiSyncStatus('idle');
@@ -78,12 +77,12 @@ export const useDashboardWebSocket = ({
             }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
-            logger.error('❌ Failed to fetch latest dashboard data:', error);
+            logger.error(' Failed to fetch latest dashboard data:', error);
 
             setApiSyncStatus('error');
             setApiSyncError(errorMessage);
         }
-    }, [apiKey, onDataLoaded, setApiLastSyncTime, setApiSyncStatus, setApiSyncError]);
+    }, [onDataLoaded, setApiLastSyncTime, setApiSyncStatus, setApiSyncError]);
 
     /**
      * Handle WebSocket dashboard updates
@@ -93,7 +92,7 @@ export const useDashboardWebSocket = ({
         timestamp: string;
         status: number;
     }) => {
-        logger.info('📥 Received dashboard update via WebSocket', {
+        logger.info(' Received dashboard update via WebSocket', {
             timestamp: update.timestamp,
             status: update.status
         });
@@ -122,7 +121,7 @@ export const useDashboardWebSocket = ({
             return;
         }
 
-        logger.info('🔌 Connecting to WebSocket server...');
+        logger.info(' Connecting to WebSocket server...');
 
         socketService.connect(token);
 
@@ -131,28 +130,28 @@ export const useDashboardWebSocket = ({
 
         // Listen for connection events
         socketService.on('connected', () => {
-            logger.info('✅ WebSocket connected successfully');
+            logger.info(' WebSocket connected successfully');
             isConnectedRef.current = true;
             setApiSyncStatus('idle');
             setApiSyncError(null);
         });
 
         socketService.on('disconnected', (reason: string) => {
-            logger.warn('❌ WebSocket disconnected:', reason);
+            logger.warn(' WebSocket disconnected:', reason);
             isConnectedRef.current = false;
             setApiSyncStatus('error');
             setApiSyncError(`WebSocket отключен: ${reason}`);
         });
 
         socketService.on('reconnected', (attemptNumber: number) => {
-            logger.info(`✅ WebSocket reconnected after ${attemptNumber} attempts`);
+            logger.info(` WebSocket reconnected after ${attemptNumber} attempts`);
             isConnectedRef.current = true;
             setApiSyncStatus('idle');
             setApiSyncError(null);
         });
 
         socketService.on('max_reconnect_attempts', () => {
-            logger.error('❌ Max WebSocket reconnection attempts reached');
+            logger.error(' Max WebSocket reconnection attempts reached');
             setApiSyncStatus('error');
             setApiSyncError('Не удалось подключиться к серверу');
         });
@@ -167,7 +166,7 @@ export const useDashboardWebSocket = ({
             return;
         }
 
-        logger.info('🔌 Disconnecting from WebSocket server...');
+        logger.info(' Disconnecting from WebSocket server...');
         socketService.disconnect();
         isConnectedRef.current = false;
     }, []);
@@ -176,7 +175,7 @@ export const useDashboardWebSocket = ({
     useEffect(() => {
         if (apiManualSyncTrigger && apiManualSyncTrigger !== lastProcessedTriggerRef.current) {
             lastProcessedTriggerRef.current = apiManualSyncTrigger;
-            logger.info('🔄 Manual sync trigger detected, fetching latest data...');
+            logger.info(' Manual sync trigger detected, fetching latest data...');
             fetchLatestData();
         }
     }, [apiManualSyncTrigger, fetchLatestData]);

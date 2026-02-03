@@ -5,23 +5,23 @@ async function createAdmin() {
     try {
         // Ensure connection
         await sequelize.authenticate();
-        console.log('Connected to database successfully.');
+        logger.info('Подключение к базе данных успешно установлено');
 
         // Get info from command line or defaults
         const username = process.argv[2] || 'admin';
         const password = process.argv[3] || 'admin123';
         const departmentId = process.argv[4] || '100000000';
 
-        console.log(`Checking for user: ${username}...`);
+        logger.info('Проверка существования пользователя', { username });
 
         const existingUser = await User.findOne({ where: { username } });
         if (existingUser) {
-            console.log(`User ${username} already exists! Updating password...`);
+            logger.info('Пользователь уже существует, обновление пароля', { username });
             existingUser.password = await bcrypt.hash(password, 10);
             await existingUser.save();
-            console.log('Password updated successfully.');
+            logger.info('Пароль успешно обновлен');
         } else {
-            console.log(`Creating new admin user: ${username}...`);
+            logger.info('Создание нового администратора', { username });
             await User.create({
                 username,
                 passwordHash: password, // Model hooks will hash this
@@ -30,17 +30,17 @@ async function createAdmin() {
                 canModifySettings: true,
                 divisionId: departmentId
             });
-            console.log('Admin user created successfully!');
+            logger.info('Администратор успешно создан');
         }
 
         console.log('\n-----------------------------------');
-        console.log(`Username: ${username}`);
-        console.log(`Password: ${password}`);
-        console.log(`Role: admin`);
+        console.log(`Имя пользователя: ${username}`);
+        console.log(`Пароль: ${password}`);
+        console.log(`Роль: admin`);
         console.log('-----------------------------------\n');
 
     } catch (error) {
-        console.error('Error creating admin user:', error);
+        logger.error('Ошибка при создании администратора', { error: error.message });
     } finally {
         await sequelize.close();
         process.exit();

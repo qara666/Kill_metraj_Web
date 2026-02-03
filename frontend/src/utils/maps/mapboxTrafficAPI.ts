@@ -102,7 +102,7 @@ export async function getMapboxTraffic(
       })
     }
     
-    console.log(`✅ Mapbox Traffic: получено ${trafficData.length} сегментов с данными о трафике`)
+    console.log(` Mapbox Traffic: получено ${trafficData.length} сегментов с данными о трафике`)
     return trafficData
   } catch (error) {
     console.error('Mapbox Traffic API error:', error)

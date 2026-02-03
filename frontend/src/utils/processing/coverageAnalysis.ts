@@ -252,24 +252,24 @@ function generateRecommendations(
   const recommendations: string[] = []
 
   if (coveragePercentage < 50) {
-    recommendations.push('⚠️ Низкое покрытие зоны доставки. Рассмотрите расширение зоны или изменение стратегии.')
+    recommendations.push('️ Низкое покрытие зоны доставки. Рассмотрите расширение зоны или изменение стратегии.')
   } else if (coveragePercentage < 80) {
-    recommendations.push('⚠️ Покрытие зоны может быть улучшено.')
+    recommendations.push('️ Покрытие зоны может быть улучшено.')
   } else if (coveragePercentage >= 95) {
-    recommendations.push('✅ Отличное покрытие зоны доставки!')
+    recommendations.push(' Отличное покрытие зоны доставки!')
   }
 
   if (gaps.length > 0) {
     const highSeverityGaps = gaps.filter(g => g.severity === 'high')
     if (highSeverityGaps.length > 0) {
-      recommendations.push(`🔴 Обнаружено ${highSeverityGaps.length} критических пробелов в покрытии с ${highSeverityGaps.reduce((sum, g) => sum + g.orderCount, 0)} заказами.`)
+      recommendations.push(` Обнаружено ${highSeverityGaps.length} критических пробелов в покрытии с ${highSeverityGaps.reduce((sum, g) => sum + g.orderCount, 0)} заказами.`)
     }
 
-    recommendations.push(`📍 Рекомендуется проверить ${gaps.length} район${gaps.length > 1 ? 'ов' : ''} с непокрытыми заказами.`)
+    recommendations.push(` Рекомендуется проверить ${gaps.length} район${gaps.length > 1 ? 'ов' : ''} с непокрытыми заказами.`)
   }
 
   if (uncoveredCount > 0) {
-    recommendations.push(`💡 ${uncoveredCount} заказ${uncoveredCount > 1 ? 'ов' : ''} находятся вне зоны доставки. Рассмотрите возможность расширения зоны или перераспределения заказов.`)
+    recommendations.push(` ${uncoveredCount} заказ${uncoveredCount > 1 ? 'ов' : ''} находятся вне зоны доставки. Рассмотрите возможность расширения зоны или перераспределения заказов.`)
   }
 
   return recommendations
@@ -400,8 +400,8 @@ export function generateCoverageReport(
   const summary = `Покрытие зоны доставки: ${analysis.coveragePercentage.toFixed(1)}% (${analysis.coveredOrders} из ${analysis.totalOrders} заказов покрыто)`
 
   const details = [
-    `✅ Покрыто: ${analysis.coveredOrders} заказов`,
-    `❌ Не покрыто: ${analysis.uncoveredOrders} заказов`,
+    ` Покрыто: ${analysis.coveredOrders} заказов`,
+    ` Не покрыто: ${analysis.uncoveredOrders} заказов`,
     ...analysis.recommendations
   ]
 

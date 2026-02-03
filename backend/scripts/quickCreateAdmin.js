@@ -9,7 +9,7 @@ async function createAdmin() {
         // Check if admin exists
         const existing = await User.findOne({ where: { role: 'admin' } });
         if (existing) {
-            console.log('✅ Admin already exists:', existing.username);
+            console.log('Администратор уже существует:', existing.username);
             process.exit(0);
         }
 
@@ -32,15 +32,15 @@ async function createAdmin() {
             updatedBy: admin.id
         });
 
-        console.log('✅ Admin created successfully!');
-        console.log('   Username: admin');
+        console.log('Администратор успешно создан!');
+        console.log('   Имя пользователя: admin');
         console.log('   Email: admin@yapiko.com');
-        console.log('   Password: admin123');
+        console.log('   Пароль: admin123');
         console.log('   ID:', admin.id);
 
         process.exit(0);
     } catch (error) {
-        console.error('❌ Error:', error.message);
+        console.error('Ошибка:', error.message);
         process.exit(1);
     }
 }

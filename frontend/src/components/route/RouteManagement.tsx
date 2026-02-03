@@ -371,7 +371,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     // Но так как у нас есть доступ к updateExcelData, мы можем сделать так:
     updateExcelData((prevData: any) => {
       const merged = mergeExcelData(data, prevData);
-      logger.info(`✅ Данные обновлены (RouteManagement): ${merged.orders.length} заказов, ${merged.routes.length} сохраненных маршрутов`);
+      logger.info(` Данные обновлены (RouteManagement): ${merged.orders.length} заказов, ${merged.routes.length} сохраненных маршрутов`);
       return merged;
     });
   }, [updateExcelData]);
@@ -439,7 +439,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         const addr = baseMarker.name
         setStartAddress(addr)
         setEndAddress(addr)
-        toast.success(`Установлена база локации: ${addr}`, { icon: '📍', duration: 3000 })
+        toast.success(`Установлена база локации: ${addr}`, { icon: '', duration: 3000 })
       }
     }
   }, [selectedHubs])
@@ -806,7 +806,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       const settings = localStorageUtils.getAllSettings()
       const cityBias = settings.cityBias || ''
       if (!cityBias) {
-        alert('Выберите город во вкладке Настройки (Город для маршрутов). Без выбранного города создание маршрута запрещено.')
+        toast.error('Выберите город во вкладке Настройки (Город для маршрутов).')
         return
       }
     }
@@ -829,13 +829,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     }
 
     if (selectedOrdersList.length === 0) {
-      alert('Выберите заказы для создания маршрута')
+      toast.error('Выберите заказы для создания маршрута')
       return
     }
 
     // Проверяем на дубликаты
     if (isRouteDuplicate(courier, ordersToDuplicateCheck)) {
-      alert('Маршрут с такими же заказами для этого курьера уже существует')
+      toast.error('Маршрут с такими же заказами для этого курьера уже существует')
       return
     }
 
@@ -843,7 +843,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     if (!googleMapsReady) {
       // Проверяем, есть ли API ключ в настройках
       if (!localStorageUtils.hasApiKey()) {
-        alert('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ в настройках.')
+        toast.error('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ.')
         return
       }
 
@@ -851,7 +851,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         await googleMapsLoader.load()
         setGoogleMapsReady(true)
       } catch (error) {
-        alert('Ошибка загрузки Google Maps API. Проверьте настройки API ключа.')
+        toast.error('Ошибка загрузки Google Maps API. Проверьте настройки API ключа.')
         return
       }
     }
@@ -923,7 +923,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     if (!googleMapsReady) {
       // Проверяем, есть ли API ключ в настройках
       if (!localStorageUtils.hasApiKey()) {
-        alert('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ в настройках.')
+        toast.error('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ.')
         return
       }
 
@@ -932,7 +932,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         await googleMapsLoader.load()
         setGoogleMapsReady(true)
       } catch (error) {
-        alert('Ошибка загрузки Google Maps API. Проверьте настройки API ключа.')
+        toast.error('Ошибка загрузки Google Maps API. Проверьте настройки API ключа.')
         return
       }
     }
@@ -943,7 +943,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
     if (anomalyCheck.hasAnomalies && anomalyCheck.errors.length > 0) {
       const errorMessage = `Обнаружены ошибки в маршруте:\n${anomalyCheck.errors.join('\n')}\n\nРасчет невозможен. Исправьте ошибки в адресах.`
-      alert(errorMessage)
+      toast.error(errorMessage)
       return
     }
 
@@ -1277,7 +1277,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       waypointResList.forEach((r, idx) => { if (!r) unresolved.push(`точка #${idx + 1}`) })
       if (!destinationRes) unresolved.push('финишный адрес')
       if (unresolved.length > 0) {
-        alert(`Не удалось однозначно определить: ${unresolved.join(', ')}. Уточните адреса или границы сектора.`)
+        toast.error(`Не удалось однозначно определить: ${unresolved.join(', ')}. Уточните адреса или границы сектора.`)
         setIsCalculating(false)
         return
       }
@@ -1317,7 +1317,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           const allPoints2 = [originRes!.geometry.location, ...waypointResList.map(r => r!.geometry.location), destinationRes!.geometry.location]
           const stillOutside = allPoints2.some((pt: any) => !isInsideSector(pt))
           if (stillOutside) {
-            alert('Некоторые точки маршрута находятся вне выбранного хаба или сектора города. Проверьте адреса.')
+            toast.error('Некоторые точки маршрута находятся вне выбранного хаба или сектора города. Проверьте адреса.')
             setIsCalculating(false)
             return
           }
@@ -1367,8 +1367,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             }
             const outside = points.some((pt: any) => !checkInside(pt))
             if (outside) {
-              console.warn('Некоторые точки вне разрешенной зоны — маршрут помечен как ложный, расчет отклонен')
-              alert('Точки маршрута находятся вне выбранного хаба или сектора города. Проверьте адреса.')
+              toast.error('Точки маршрута находятся вне выбранного хаба или сектора города. Проверьте адреса.')
               setIsCalculating(false)
               return
             }
@@ -1394,16 +1393,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             const totalDistance2 = result2.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
             const totalDuration2 = result2.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
             const distanceKm2 = totalDistance2 / 1000
-            console.log('Retry Distance Calculation (forced city/country):', {
-              distanceKm2,
-              legs: result2.routes[0].legs.map((leg: any, i: number) => ({
-                i,
-                startAddress: leg.start_address,
-                endAddress: leg.end_address,
-                distance: leg.distance,
-                duration: leg.duration
-              }))
-            })
+            // Retry log removed for production
             updateExcelData((prev: any) => ({
               ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
               routes: (prev?.routes || []).map((r: Route) =>
@@ -1431,20 +1421,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         }
 
         // Логируем для отладки и сравнения с Google Maps UI
-        console.log('Google Maps API Distance Calculation:', {
-          totalDistanceMeters: totalDistance,
-          distanceKm: distanceKm,
-          distanceKmRounded: Math.round(distanceKm * 10) / 10, // Округление как в Google Maps UI
-          legs: result.routes[0].legs.map((leg: any, index: number) => ({
-            legIndex: index,
-            distance: leg.distance,
-            duration: leg.duration,
-            startAddress: leg.start_address,
-            endAddress: leg.end_address
-          })),
-          routeSummary: result.routes[0].summary,
-          warnings: result.routes[0].warnings || []
-        })
+        // Distance calculation log removed for production
 
         updateExcelData((prev: any) => ({
           ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
@@ -1466,8 +1443,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
       setIsCalculating(false)
     } catch (error: any) {
-      console.error('Ошибка при расчете маршрута:', error)
-      alert(`Ошибка при расчете маршрута: ${error.message || 'Неизвестная ошибка'}`)
+      toast.error(`Ошибка при расчете маршрута: ${error.message || 'Неизвестная ошибка'}`)
       setIsCalculating(false)
     }
   }
@@ -1498,7 +1474,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       availableListRef.current.scrollToItem(index, 'start')
       // Визуальная подсветка или тост (опционально)
       toast.success(`Переход к группе: ${group.windowLabel}`, {
-        icon: '🎯',
+        icon: '',
         duration: 2000
       })
     }
@@ -1544,7 +1520,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       };
     });
 
-    toast.success(`Заказ перемещен в ${targetGroup.windowLabel}`, { icon: '🚚' });
+    toast.success(`Заказ перемещен в ${targetGroup.windowLabel}`, { icon: '' });
   }
 
   // Функция для сохранения измененного адреса
@@ -1586,7 +1562,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
     if (anomalyCheck.hasAnomalies && anomalyCheck.errors.length > 0) {
       const errorMessage = `Обнаружены ошибки в маршруте:\n${anomalyCheck.errors.join('\n')}\n\nПересчет невозможен. Исправьте ошибки в адресах.`
-      alert(errorMessage)
+      toast.error(errorMessage)
       return
     }
 
@@ -1601,14 +1577,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
 
   const clearAllRoutes = () => {
-    console.log('Clear all routes clicked, current routes count:', (excelData?.routes?.length ?? 0))
     if (window.confirm('Вы уверены, что хотите удалить все маршруты?')) {
-      console.log('User confirmed, clearing all routes')
       updateExcelData({ ...(excelData || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }), routes: [] })
       // Также очищаем из localStorage
       try {
         localStorage.removeItem('km_routes')
-        console.log('Routes cleared from localStorage')
       } catch (error) {
         console.error('Error clearing routes from localStorage:', error)
       }
@@ -1617,7 +1590,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
   const openRouteInGoogleMaps = async (route: Route) => {
     if (route.orders.length === 0) {
-      alert('Нет точек для маршрута')
+      toast.error('Нет точек для маршрута')
       return
     }
 
@@ -1629,7 +1602,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       const waypointsMeta: any[] = (meta.waypoints && Array.isArray(meta.waypoints)) ? meta.waypoints : []
       const missingCoords = !hasFullCoords(meta.origin) || !hasFullCoords(meta.destination) || waypointsMeta.some((w: any) => !hasFullCoords(w)) || waypointsMeta.length !== route.orders.length
       if (missingCoords) {
-        alert('Чтобы открыть маршрут в Google Maps без искажений, сначала пересчитайте маршрут (получим координаты точек).')
+        toast.error('Чтобы открыть маршрут в Google Maps без искажений, сначала пересчитайте маршрут.')
         return
       }
       const originStr = `${meta.origin.lat},${meta.origin.lng}`
@@ -1645,8 +1618,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       const url = `${base}&${parts.join('&')}`
       window.open(url, '_blank')
     } catch (err) {
-      console.error('Ошибка открытия маршрута в Google Maps:', err)
-      alert('Не удалось открыть маршрут в Google Maps')
+      toast.error('Не удалось открыть маршрут в Google Maps')
     }
   }
 
@@ -2252,7 +2224,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                     ? (isDark ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-blue-50 text-blue-700 border-blue-200')
                                     : (isDark ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-red-50 text-red-700 border-red-200')
                                 )}>
-                                  {meta.streetNumberMatched ? '✓ Найден номер дома' : '✗ Не нашел номера дома'}
+                                  {meta.streetNumberMatched ? ' Найден номер дома' : ' Не нашел номера дома'}
                                 </span>
                               )}
                               {meta.zoneName && (
@@ -2603,33 +2575,33 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
               steps={[
                 {
                   id: 'courier-select',
-                  title: '👤 Выбор курьера',
-                  content: `📋 Начните с выбора курьера из списка слева.
-🎯 Что делать:
+                  title: ' Выбор курьера',
+                  content: ` Начните с выбора курьера из списка слева.
+ Что делать:
 1. Найдите нужного курьера в списке
 2. Кликните на карточку курьера
 3. После выбора вы увидите доступные заказы справа
-💡 Подсказка: Используйте фильтры "Все", "Авто" или "Мото" для быстрого поиска нужного типа курьера.`,
+ Подсказка: Используйте фильтры "Все", "Авто" или "Мото" для быстрого поиска нужного типа курьера.`,
                   target: '[data-tour="courier-select"]',
                   position: 'right'
                 },
                 {
                   id: 'order-select',
-                  title: '📦 Выбор заказов',
-                  content: `🖱️ Кликните на заказы, чтобы добавить их в маршрут.
-📊 Как это работает:
+                  title: ' Выбор заказов',
+                  content: `️ Кликните на заказы, чтобы добавить их в маршрут.
+ Как это работает:
 • Порядок выбора = порядок доставки
 • Выбранные заказы подсвечиваются синим
 • Используйте кнопки ↑ и ↓ для изменения порядка
-⚠️ Заказы, уже находящиеся в других маршрутах, нельзя выбрать.`,
+️ Заказы, уже находящиеся в других маршрутах, нельзя выбрать.`,
                   target: '[data-tour="order-select"]',
                   position: 'left'
                 },
                 {
                   id: 'create-route',
-                  title: '🚀 Создание маршрута',
-                  content: `🚀 После выбора заказов нажмите кнопку "Создать маршрут".
-⚙️ Что происходит:
+                  title: ' Создание маршрута',
+                  content: ` После выбора заказов нажмите кнопку "Создать маршрут".
+️ Что происходит:
 1. Система создает новый маршрут
 2. Автоматически рассчитывает расстояние
 3. Маршрут появляется в списке внизу`,
@@ -2638,12 +2610,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 },
                 {
                   id: 'route-list',
-                  title: '🗺️ Список маршрутов',
-                  content: `📋 Здесь отображаются все созданные маршруты.
-🎯 Доступные действия:
-🗺️ Открыть в Google Maps - просмотр маршрута
-🔄 Пересчитать - обновить расстояние и время
-🗑️ Удалить - удалить маршрут`,
+                  title: '️ Список маршрутов',
+                  content: ` Здесь отображаются все созданные маршруты.
+ Доступные действия:
+️ Открыть в Google Maps - просмотр маршрута
+ Пересчитать - обновить расстояние и время
+️ Удалить - удалить маршрут`,
                   target: '[data-tour="route-list"]',
                   position: 'top'
                 }

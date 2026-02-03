@@ -51,7 +51,7 @@ export const HelpModalRoutes: React.FC<HelpModalRoutesProps> = ({
           </p>
           <div className={clsx('p-4 rounded-lg', isDark ? 'bg-blue-900/20 border border-blue-800' : 'bg-blue-50 border border-blue-200')}>
             <h4 className={clsx('font-semibold mb-2', isDark ? 'text-blue-300' : 'text-blue-800')}>
-              🚀 Быстрый старт
+               Быстрый старт
             </h4>
             <ol className={clsx('list-decimal list-inside space-y-1 text-sm', isDark ? 'text-blue-200' : 'text-blue-700')}>
               <li>Выберите курьера из списка</li>
@@ -73,7 +73,7 @@ export const HelpModalRoutes: React.FC<HelpModalRoutesProps> = ({
           </p>
           <div className={clsx('p-4 rounded-lg', isDark ? 'bg-gray-800/50' : 'bg-gray-50')}>
             <h4 className={clsx('font-semibold mb-2', isDark ? 'text-white' : 'text-gray-900')}>
-              📋 Фильтрация курьеров:
+               Фильтрация курьеров:
             </h4>
             <ul className={clsx('space-y-1 text-sm', isDark ? 'text-gray-300' : 'text-gray-700')}>
               <li>• Все курьеры</li>
@@ -95,7 +95,7 @@ export const HelpModalRoutes: React.FC<HelpModalRoutesProps> = ({
           </p>
           <div className={clsx('p-4 rounded-lg', isDark ? 'bg-green-900/20 border border-green-800' : 'bg-green-50 border border-green-200')}>
             <h4 className={clsx('font-semibold mb-2', isDark ? 'text-green-300' : 'text-green-800')}>
-              ✅ Изменение порядка:
+               Изменение порядка:
             </h4>
             <ul className={clsx('space-y-1 text-sm', isDark ? 'text-green-200' : 'text-green-700')}>
               <li>• Используйте кнопки ↑ и ↓ для изменения порядка заказов</li>
@@ -105,7 +105,7 @@ export const HelpModalRoutes: React.FC<HelpModalRoutesProps> = ({
           </div>
           <div className={clsx('p-4 rounded-lg', isDark ? 'bg-gray-800/50' : 'bg-gray-50')}>
             <h4 className={clsx('font-semibold mb-2', isDark ? 'text-white' : 'text-gray-900')}>
-              🔍 Поиск заказов:
+               Поиск заказов:
             </h4>
             <p className={clsx('text-sm', isDark ? 'text-gray-300' : 'text-gray-700')}>
               Используйте поле поиска для быстрого нахождения нужных заказов по номеру, адресу или имени клиента.
@@ -126,7 +126,7 @@ export const HelpModalRoutes: React.FC<HelpModalRoutesProps> = ({
           </p>
           <div className={clsx('p-4 rounded-lg', isDark ? 'bg-blue-900/20 border border-blue-800' : 'bg-blue-50 border border-blue-200')}>
             <h4 className={clsx('font-semibold mb-2', isDark ? 'text-blue-300' : 'text-blue-800')}>
-              ⚙️ Настройки маршрута:
+              ️ Настройки маршрута:
             </h4>
             <ul className={clsx('space-y-1 text-sm', isDark ? 'text-blue-200' : 'text-blue-700')}>
               <li>• Адрес начала маршрута (по умолчанию из настроек)</li>
@@ -149,7 +149,7 @@ export const HelpModalRoutes: React.FC<HelpModalRoutesProps> = ({
           </p>
           <div className={clsx('p-4 rounded-lg', isDark ? 'bg-purple-900/20 border border-purple-800' : 'bg-purple-50 border border-purple-200')}>
             <h4 className={clsx('font-semibold mb-2', isDark ? 'text-purple-300' : 'text-purple-800')}>
-              📊 Что пересчитывается:
+               Что пересчитывается:
             </h4>
             <ul className={clsx('space-y-1 text-sm', isDark ? 'text-purple-200' : 'text-purple-700')}>
               <li>• Общее расстояние маршрута</li>
@@ -172,7 +172,7 @@ export const HelpModalRoutes: React.FC<HelpModalRoutesProps> = ({
           </p>
           <div className={clsx('p-4 rounded-lg', isDark ? 'bg-amber-900/20 border border-amber-800' : 'bg-amber-50 border border-amber-200')}>
             <h4 className={clsx('font-semibold mb-2', isDark ? 'text-amber-300' : 'text-amber-800')}>
-              🗺️ Действия с маршрутами:
+              ️ Действия с маршрутами:
             </h4>
             <ul className={clsx('space-y-1 text-sm', isDark ? 'text-amber-200' : 'text-amber-700')}>
               <li>• <strong>Открыть в Google Maps</strong> - просмотр маршрута в Google Maps</li>

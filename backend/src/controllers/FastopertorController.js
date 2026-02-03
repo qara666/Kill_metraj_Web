@@ -45,7 +45,7 @@ class FastopertorController {
             if (useCache && cache.has(cacheKey)) {
                 const cached = cache.get(cacheKey);
                 if (Date.now() - cached.timestamp < CACHE_TTL) {
-                    logger.info(`🎯 FastopertorController: Возврат данных из кэша для ${fullUrl}`);
+                    logger.info('FastopertorController: Возврат данных из кэша', { url: fullUrl });
                     return res.json({
                         success: true,
                         data: cached.data,
@@ -55,7 +55,7 @@ class FastopertorController {
                 }
             }
 
-            logger.info(`🔄 FastopertorController: Выполнение запроса к ${fullUrl}`);
+            logger.info('FastopertorController: Выполнение запроса к API', { url: fullUrl });
 
             // 3. Выполнение запроса
             const response = await axios.get(fullUrl, {
@@ -69,7 +69,7 @@ class FastopertorController {
             const duration = Date.now() - startTime;
             const dataSize = JSON.stringify(response.data).length;
 
-            logger.info(`✅ FastopertorController: Ответ получен за ${duration}ms, размер: ${dataSize} байт`);
+            logger.info('FastopertorController: Ответ получен', { duration, size: dataSize });
 
             // 4. Трансформация данных
             const transformedData = transformFastopertorData(response.data);
@@ -109,7 +109,7 @@ class FastopertorController {
             const { apiUrl, apiKey } = value;
             const testUrl = formatApiUrl(apiUrl, '/health');
 
-            logger.info(`🔍 FastopertorController: Валидация API по адресу ${testUrl}`);
+            logger.info('FastopertorController: Валидация API', { testUrl });
 
             try {
                 const response = await axios.get(testUrl, {

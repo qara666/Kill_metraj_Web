@@ -18,20 +18,20 @@ async function runMigration(migrationFile) {
     });
 
     try {
-        console.log('Connecting to database...');
+        console.log('Подключение к базе данных...');
         await client.connect();
-        console.log('✅ Connected to database');
+        console.log('Подключено к базе данных');
 
-        console.log(`\nReading migration file: ${migrationFile}`);
+        console.log(`\nЧтение файла миграции: ${migrationFile}`);
         // Use process.cwd() to resolve relative to where command is run
         const sqlPath = path.resolve(process.cwd(), migrationFile);
         const sql = fs.readFileSync(sqlPath, 'utf8');
 
-        console.log('Executing migration...\n');
+        console.log('Выполнение миграции...\n');
         await client.query(sql);
 
-        console.log('✅ Migration executed successfully!');
-        console.log('\nVerifying migration...');
+        console.log('Миграция выполнена успешно!');
+        console.log('\nПроверка миграции...');
 
         // Verify table exists
         const tableCheck = await client.query(`
@@ -42,9 +42,9 @@ async function runMigration(migrationFile) {
         `);
 
         if (tableCheck.rows[0].exists) {
-            console.log('✅ Table api_dashboard_cache created');
+            console.log('Таблица api_dashboard_cache создана');
         } else {
-            console.error('❌ Table api_dashboard_cache not found');
+            console.error('Таблица api_dashboard_cache не найдена');
         }
 
         // Verify trigger exists
@@ -55,9 +55,9 @@ async function runMigration(migrationFile) {
         `);
 
         if (triggerCheck.rows.length > 0) {
-            console.log('✅ Trigger dashboard_update_trigger created');
+            console.log('Триггер dashboard_update_trigger создан');
         } else {
-            console.error('❌ Trigger dashboard_update_trigger not found');
+            console.error('Триггер dashboard_update_trigger не найден');
         }
 
         // Verify functions exist
@@ -67,23 +67,23 @@ async function runMigration(migrationFile) {
             WHERE proname IN ('notify_dashboard_update', 'get_latest_dashboard_data', 'cleanup_old_dashboard_data');
         `);
 
-        console.log(`✅ ${functionsCheck.rows.length}/3 functions created`);
+        console.log(`${functionsCheck.rows.length}/3 функций создано`);
         functionsCheck.rows.forEach(row => {
             console.log(`   - ${row.proname}`);
         });
 
-        console.log('\n✅ Migration completed successfully!');
+        console.log('\nМиграция завершена успешно!');
 
     } catch (error) {
-        console.error('\n❌ Migration failed:');
+        console.error('\nМиграция не удалась:');
         console.error(error.message);
         if (error.detail) {
-            console.error('Detail:', error.detail);
+            console.error('Детали:', error.detail);
         }
         process.exit(1);
     } finally {
         await client.end();
-        console.log('\n✅ Database connection closed');
+        console.log('\nПодключение к базе данных закрыто');
     }
 }
 

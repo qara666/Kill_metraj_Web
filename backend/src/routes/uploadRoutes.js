@@ -1,7 +1,8 @@
 const express = require('express');
+const router = express.Router();
+const logger = require('../utils/logger');
 const { UploadController } = require('../controllers/UploadController');
 
-const router = express.Router();
 const uploadController = new UploadController();
 
 // Configure multer

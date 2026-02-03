@@ -92,7 +92,7 @@ export const Settings: React.FC = () => {
       const validationResult = validateGoogleMapsApiKey(apiKey)
       if (validationResult) {
         setApiKeyStatus('valid')
-        setApiKeyDetails('OK')
+        setApiKeyDetails('Ключ активен')
       } else {
         setApiKeyStatus('invalid')
         setApiKeyDetails('Неизвестная ошибка')
@@ -151,9 +151,9 @@ export const Settings: React.FC = () => {
       const validationResult = validateGoogleMapsApiKey(googleMapsApiKey)
       if (validationResult) {
         setApiKeyStatus('valid')
-        setApiKeyDetails('OK')
+        setApiKeyDetails('Ключ активен')
         localStorageUtils.setApiKey(googleMapsApiKey)
-        toast.success('✓ API ключ действителен и сохранен!')
+        toast.success(' API ключ действителен и сохранен!')
       } else {
         setApiKeyStatus('invalid')
         setApiKeyDetails('Неизвестная ошибка')
@@ -726,7 +726,7 @@ export const Settings: React.FC = () => {
                     </div>
                     {apiKeyStatus === 'valid' && (
                       <div className="mt-1">
-                        <p className="text-sm text-green-500 font-medium">✓ API ключ действителен</p>
+                        <p className="text-sm text-green-500 font-medium"> API ключ действителен</p>
                         {apiKeyDetails && (
                           <p className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>Статус: {apiKeyDetails}</p>
                         )}
@@ -734,7 +734,7 @@ export const Settings: React.FC = () => {
                     )}
                     {apiKeyStatus === 'invalid' && (
                       <div className="mt-1">
-                        <p className="text-sm text-red-500 font-medium">✗ API ключ недействителен</p>
+                        <p className="text-sm text-red-500 font-medium"> API ключ недействителен</p>
                         {apiKeyDetails && (
                           <p className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>Ошибка: {apiKeyDetails}</p>
                         )}

@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const logger = require('../utils/logger');
 const { AuditLog } = require('../models');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 const { Op } = require('sequelize');
@@ -11,11 +12,11 @@ router.use(requireRole('admin'));
 // DELETE /api/logs/clear - Clear all logs
 router.delete('/clear', async (req, res) => {
     try {
-        console.log('Admin clearing all logs...');
+        logger.info('Администратор очистил все логи аудита');
         await AuditLog.destroy({ where: {}, truncate: false });
         res.json({ success: true, message: 'Все логи очищены' });
     } catch (error) {
-        console.error('Clear logs error:', error);
+        logger.error('Ошибка очистки логов', { error: error.message });
         res.status(500).json({ success: false, error: 'Ошибка при очистке логов' });
     }
 });
@@ -60,11 +61,11 @@ router.get('/', async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Get logs error:', error);
+        logger.error('Ошибка получения логов', { error: error.message });
         res.status(500).json({
             success: false,
-            error: 'InternalServerError',
-            message: 'Failed to fetch logs'
+            error: 'ВнутренняяОшибкаСервера',
+            message: 'Не удалось получить логи'
         });
     }
 });
@@ -90,11 +91,11 @@ router.get('/user/:userId', async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Get user logs error:', error);
+        logger.error('Ошибка получения логов пользователя', { error: error.message, userId: req.params.userId });
         res.status(500).json({
             success: false,
-            error: 'InternalServerError',
-            message: 'Failed to fetch user logs'
+            error: 'ВнутренняяОшибкаСервера',
+            message: 'Не удалось получить логи пользователя'
         });
     }
 });

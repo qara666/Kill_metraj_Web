@@ -1,4 +1,5 @@
 const XLSX = require('xlsx');
+const logger = require('../utils/logger');
 
 class ExcelService {
   constructor() {
@@ -6,16 +7,10 @@ class ExcelService {
   }
 
   addDebugLog(message, data = null) {
-    const logEntry = {
-      timestamp: new Date().toISOString(),
-      message,
-      data: data ? JSON.stringify(data, null, 2) : null
-    };
-    this.debugLogs.push(logEntry);
-    console.log(`[DEBUG] ${message}`, data || '');
-
-    if (global.addDebugLog) {
-      global.addDebugLog(message, data);
+    if (data) {
+      logger.debug(message, data);
+    } else {
+      logger.debug(message);
     }
   }
 
@@ -213,13 +208,13 @@ class ExcelService {
         rowStr.includes('оплат') || rowStr.includes('payment')) {
         headerRowIndex = i;
         headers = row;
-        this.addDebugLog(`✅ Найдена строка заголовков в строке ${i + 1}!`);
+        this.addDebugLog(`Найдена строка заголовков в строке ${i + 1}!`);
         break;
       }
     }
 
     if (headers.length === 0) {
-      this.addDebugLog(`⚠️ Заголовки не найдены автоматически, используем первую строку`);
+      this.addDebugLog(`Заголовки не найдены автоматически, используем первую строку`);
       headers = jsonData[0];
       headerRowIndex = 0;
     }
@@ -641,16 +636,6 @@ class ExcelService {
 }
 
 module.exports = ExcelService;
-
-
-
-
-
-
-
-
-
-
 
 
 
