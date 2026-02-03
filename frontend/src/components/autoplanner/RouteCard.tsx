@@ -97,7 +97,7 @@ export const RouteCard: React.FC<RouteCardProps> = React.memo(({
                             </div>
                             {route.hasCriticalTraffic && (
                                 <div className={clsx('inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium', isDark ? 'bg-red-900/50 text-red-300' : 'bg-red-100 text-red-700')}>
-                                    <span>⚠️</span>
+                                    <span>️</span>
                                     <span>Критические пробки</span>
                                 </div>
                             )}
@@ -150,8 +150,8 @@ export const RouteCard: React.FC<RouteCardProps> = React.memo(({
                         <ArrowsPointingOutIcon className="w-5 h-5" />
                     </button>
                     <button onClick={(e) => { e.stopPropagation(); exportToGoogleMaps(route); }} className="p-2 rounded-xl hover:bg-blue-500/10 text-blue-400" title="Google Maps"><PlayIcon className="w-5 h-5" /></button>
-                    <button onClick={(e) => { e.stopPropagation(); exportToWaze(route); }} className="p-2 rounded-xl hover:bg-blue-500/10 text-blue-400" title="Waze">🚗</button>
-                    <button onClick={(e) => { e.stopPropagation(); exportToPDF(route); }} className="p-2 rounded-xl hover:bg-blue-500/10 text-blue-400" title="PDF">📄</button>
+                    <button onClick={(e) => { e.stopPropagation(); exportToWaze(route); }} className="p-2 rounded-xl hover:bg-blue-500/10 text-blue-400" title="Waze"></button>
+                    <button onClick={(e) => { e.stopPropagation(); exportToPDF(route); }} className="p-2 rounded-xl hover:bg-blue-500/10 text-blue-400" title="PDF"></button>
                 </div>
             </div>
 

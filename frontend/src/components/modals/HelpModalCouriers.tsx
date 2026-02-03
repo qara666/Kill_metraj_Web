@@ -50,7 +50,7 @@ export const HelpModalCouriers: React.FC<HelpModalCouriersProps> = ({
           </p>
           <div className={clsx('p-4 rounded-lg', isDark ? 'bg-blue-900/20 border border-blue-800' : 'bg-blue-50 border border-blue-200')}>
             <h4 className={clsx('font-semibold mb-2', isDark ? 'text-blue-300' : 'text-blue-800')}>
-              🚀 Основные функции
+               Основные функции
             </h4>
             <ul className={clsx('space-y-1 text-sm', isDark ? 'text-blue-200' : 'text-blue-700')}>
               <li>• Просмотр списка всех курьеров</li>
@@ -74,7 +74,7 @@ export const HelpModalCouriers: React.FC<HelpModalCouriersProps> = ({
           </p>
           <div className={clsx('p-4 rounded-lg', isDark ? 'bg-green-900/20 border border-green-800' : 'bg-green-50 border border-green-200')}>
             <h4 className={clsx('font-semibold mb-2', isDark ? 'text-green-300' : 'text-green-800')}>
-              🔍 Фильтры:
+               Фильтры:
             </h4>
             <ul className={clsx('space-y-1 text-sm', isDark ? 'text-green-200' : 'text-green-700')}>
               <li>• <strong>Все курьеры</strong> - показать всех курьеров</li>
@@ -84,7 +84,7 @@ export const HelpModalCouriers: React.FC<HelpModalCouriersProps> = ({
           </div>
           <div className={clsx('p-4 rounded-lg', isDark ? 'bg-gray-800/50' : 'bg-gray-50')}>
             <h4 className={clsx('font-semibold mb-2', isDark ? 'text-white' : 'text-gray-900')}>
-              🔎 Поиск:
+               Поиск:
             </h4>
             <p className={clsx('text-sm', isDark ? 'text-gray-300' : 'text-gray-700')}>
               Поиск работает по имени курьера, телефону или email. Просто введите текст в поле поиска.
@@ -104,7 +104,7 @@ export const HelpModalCouriers: React.FC<HelpModalCouriersProps> = ({
           </p>
           <div className={clsx('p-4 rounded-lg', isDark ? 'bg-purple-900/20 border border-purple-800' : 'bg-purple-50 border border-purple-200')}>
             <h4 className={clsx('font-semibold mb-2', isDark ? 'text-purple-300' : 'text-purple-800')}>
-              📊 Отображаемая информация:
+               Отображаемая информация:
             </h4>
             <ul className={clsx('space-y-1 text-sm', isDark ? 'text-purple-200' : 'text-purple-700')}>
               <li>• Имя курьера</li>
@@ -129,7 +129,7 @@ export const HelpModalCouriers: React.FC<HelpModalCouriersProps> = ({
           </p>
           <div className={clsx('p-4 rounded-lg', isDark ? 'bg-amber-900/20 border border-amber-800' : 'bg-amber-50 border border-amber-200')}>
             <h4 className={clsx('font-semibold mb-2', isDark ? 'text-amber-300' : 'text-amber-800')}>
-              🚗 Типы транспорта:
+               Типы транспорта:
             </h4>
             <ul className={clsx('space-y-1 text-sm', isDark ? 'text-amber-200' : 'text-amber-700')}>
               <li>• <strong>Автомобиль</strong> - для курьеров на машинах</li>
@@ -153,7 +153,7 @@ export const HelpModalCouriers: React.FC<HelpModalCouriersProps> = ({
           </p>
           <div className={clsx('p-4 rounded-lg', isDark ? 'bg-blue-900/20 border border-blue-800' : 'bg-blue-50 border border-blue-200')}>
             <h4 className={clsx('font-semibold mb-2', isDark ? 'text-blue-300' : 'text-blue-800')}>
-              🗺️ Действия с маршрутами:
+              ️ Действия с маршрутами:
             </h4>
             <ul className={clsx('space-y-1 text-sm', isDark ? 'text-blue-200' : 'text-blue-700')}>
               <li>• <strong>Открыть в Google Maps</strong> - просмотр маршрута в Google Maps</li>
@@ -176,7 +176,7 @@ export const HelpModalCouriers: React.FC<HelpModalCouriersProps> = ({
           </p>
           <div className={clsx('p-4 rounded-lg', isDark ? 'bg-teal-900/20 border border-teal-800' : 'bg-teal-50 border border-teal-200')}>
             <h4 className={clsx('font-semibold mb-2', isDark ? 'text-teal-300' : 'text-teal-800')}>
-              📏 Расчет пробега:
+               Расчет пробега:
             </h4>
             <ul className={clsx('space-y-1 text-sm', isDark ? 'text-teal-200' : 'text-teal-700')}>
               <li>• Базовое расстояние маршрута (из Google Maps)</li>

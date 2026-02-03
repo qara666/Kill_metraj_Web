@@ -19,7 +19,7 @@ export const CoverageAnalysisView: React.FC<CoverageAnalysisViewProps> = ({
             isDark ? 'border-gray-700 bg-gray-800/30' : 'border-gray-200 bg-gray-50'
         )}>
             <div className={clsx('text-sm font-semibold mb-3 flex items-center gap-2', isDark ? 'text-white' : 'text-gray-900')}>
-                <span>📊</span>
+                <span></span>
                 <span>Анализ покрытия зоны доставки</span>
             </div>
 
@@ -57,7 +57,7 @@ export const CoverageAnalysisView: React.FC<CoverageAnalysisViewProps> = ({
                         </div>
                         {analysis.coverageGaps.filter(g => g.severity === 'high').length > 0 && (
                             <div className="text-[10px] text-red-500 font-bold uppercase">
-                                ⚠️ Внимание: {analysis.coverageGaps.filter(g => g.severity === 'high').length} критических пробелов
+                                ️ Внимание: {analysis.coverageGaps.filter(g => g.severity === 'high').length} критических пробелов
                             </div>
                         )}
                     </div>

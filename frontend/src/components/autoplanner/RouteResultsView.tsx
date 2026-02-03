@@ -102,7 +102,7 @@ export const RouteResultsView: React.FC<RouteResultsViewProps> = React.memo(({
             {routeEfficiencyMetrics && (
                 <div className={clsx('mb-8 p-6 rounded-2xl border-2 shrink-0', isDark ? 'border-teal-700/50 bg-teal-900/20' : 'border-teal-200 bg-teal-50/50')}>
                     <div className={clsx('text-lg font-semibold mb-4 flex items-center gap-2', isDark ? 'text-teal-300' : 'text-teal-700')}>
-                        ⚡ Эффективность распределения
+                         Эффективность распределения
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6">
                         <MetricSummary label="Баланс нагрузки" value={`${((routeEfficiencyMetrics.balanceScore || 0) * 100).toFixed(0)}%`} isDark={isDark} />
@@ -112,7 +112,7 @@ export const RouteResultsView: React.FC<RouteResultsViewProps> = React.memo(({
                     </div>
                     {efficiencySuggestions.length > 0 && (
                         <div className={clsx('p-4 rounded-xl', isDark ? 'bg-yellow-900/30 border border-yellow-700/50' : 'bg-yellow-50 border border-yellow-200')}>
-                            <div className={clsx('text-sm font-semibold mb-2', isDark ? 'text-yellow-300' : 'text-yellow-700')}>💡 Предложения по улучшению:</div>
+                            <div className={clsx('text-sm font-semibold mb-2', isDark ? 'text-yellow-300' : 'text-yellow-700')}> Предложения по улучшению:</div>
                             <ul className="space-y-1.5">
                                 {efficiencySuggestions.map((suggestion: string, idx: number) => (
                                     <li key={idx} className={clsx('text-sm', isDark ? 'text-yellow-200' : 'text-yellow-800')}>

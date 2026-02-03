@@ -12,7 +12,7 @@ class UploadController {
   }
 
   /**
-   * Configure multer for file uploads
+   * Настройка multer для загрузки файлов
    */
   configureMulter() {
     const storage = multer.memoryStorage();
@@ -23,7 +23,7 @@ class UploadController {
         file.mimetype === 'text/csv') {
         cb(null, true);
       } else {
-        cb(new Error('Дозволені тільки Excel та CSV файли'), false);
+        cb(new Error('Разрешены только файлы Excel и CSV'), false);
       }
     };
 
@@ -31,34 +31,34 @@ class UploadController {
       storage,
       fileFilter,
       limits: {
-        fileSize: 10 * 1024 * 1024 // 10MB limit
+        fileSize: 10 * 1024 * 1024 // лимит 10MB
       }
     });
   }
 
   /**
-   * Завантажити та обробити Excel файл
+   * Загрузить и обработать Excel файл
    */
   async uploadExcel(req, res) {
     try {
-      logger.info('🚀 UploadController: Начало обработки Excel файла');
+      logger.info('UploadController: Начало обработки Excel файла');
 
       if (!req.file) {
-        logger.warn('❌ UploadController: Файл не загружен');
+        logger.warn('UploadController: Файл не загружен');
         return res.status(400).json({
           success: false,
-          error: 'Файл не завантажено'
+          error: 'Файл не загружен'
         });
       }
 
-      logger.info(`📁 UploadController: Файл получен - ${req.file.originalname}, размер: ${req.file.size} байт`);
+      logger.info(`UploadController: Файл получен - ${req.file.originalname}, размер: ${req.file.size} байт`);
 
-      // Обробляємо Excel файл
-      logger.info('🔄 UploadController: Вызываем ExcelService.processExcelFile');
+      // Обработка Excel файла
+      logger.info('UploadController: Вызываем ExcelService.processExcelFile');
 
       const result = await this.excelService.processExcelFile(req.file.buffer, req.file.originalname);
 
-      logger.info('✅ UploadController: ExcelService вернул результат:', { success: result.success });
+      logger.info('UploadController: ExcelService вернул результат:', { success: result.success });
 
       if (!result.success) {
         return res.status(400).json({
@@ -67,10 +67,10 @@ class UploadController {
         });
       }
 
-      // Зберігаємо дані в базу даних
+      // Сохранение данных в базу данных
       const savedData = await this.saveProcessedData(result.data);
 
-      // Генеруємо звіт
+      // Генерация отчета
       const report = this.excelService.generateReport({
         success: true,
         data: savedData,
@@ -89,20 +89,20 @@ class UploadController {
           warnings: savedData.warnings ? savedData.warnings.length : 0
         },
         report: report,
-        message: `Файл успішно оброблено! Замовлень: ${savedData.orders.length}, Курєрів: ${savedData.couriers.length}, Спосібів оплати: ${savedData.paymentMethods.length}`
+        message: `Файл успешно обработан! Заказов: ${savedData.orders.length}, Курьеров: ${savedData.couriers.length}, Способов оплаты: ${savedData.paymentMethods.length}`
       });
     } catch (error) {
-      logger.error('Помилка обробки Excel файлу:', error);
+      logger.error('Ошибка обработки Excel файла:', error);
       res.status(500).json({
         success: false,
-        error: 'Не вдалося обробити Excel файл',
+        error: 'Не удалось обработать Excel файл',
         details: error.message
       });
     }
   }
 
   /**
-   * Зберегти оброблені дані в базу даних
+   * Сохранить обработанные данные в базу данных
    */
   async saveProcessedData(data) {
     const results = {
@@ -114,7 +114,7 @@ class UploadController {
     };
 
     try {
-      // Зберігаємо курєрів
+      // Сохранение курьеров
       for (const courierData of data.couriers) {
         try {
           let courier = await Courier.findOne({ name: courierData.name });
@@ -124,11 +124,11 @@ class UploadController {
           }
           results.couriers.push(courier);
         } catch (error) {
-          results.errors.push(`Кур'єр ${courierData.name}: ${error.message}`);
+          results.errors.push(`Курьер ${courierData.name}: ${error.message}`);
         }
       }
 
-      // Зберігаємо способи оплати
+      // Сохранение способов оплаты
       for (const paymentData of data.paymentMethods) {
         try {
           let paymentMethod = await PaymentMethod.findOne({ name: paymentData.name });
@@ -138,20 +138,20 @@ class UploadController {
           }
           results.paymentMethods.push(paymentMethod);
         } catch (error) {
-          results.errors.push(`Спосіб оплати ${paymentData.name}: ${error.message}`);
+          results.errors.push(`Способ оплаты ${paymentData.name}: ${error.message}`);
         }
       }
 
-      // Зберігаємо замовлення
+      // Сохранение заказов
       for (const orderData of data.orders) {
         try {
-          // Знаходимо курєра за імям
+          // Поиск курьера по имени
           let courier = null;
           if (orderData.courier) {
             courier = await Courier.findOne({ name: orderData.courier });
           }
 
-          // Знаходимо спосіб оплати за назвою
+          // Поиск способа оплаты по названию
           let paymentMethod = null;
           if (orderData.paymentMethod) {
             paymentMethod = await PaymentMethod.findOne({ name: orderData.paymentMethod });
@@ -166,29 +166,29 @@ class UploadController {
           await order.save();
           results.orders.push(order);
         } catch (error) {
-          results.errors.push(`Замовлення ${orderData.orderNumber}: ${error.message}`);
+          results.errors.push(`Заказ ${orderData.orderNumber}: ${error.message}`);
         }
       }
 
-      // Створюємо маршрути на основі замовлень
+      // Создание маршрутов на основе заказов
       const routeData = await this.createRoutesFromOrders(results.orders, results.couriers);
       results.routes = routeData;
 
     } catch (error) {
-      results.errors.push(`Помилка збереження даних: ${error.message}`);
+      results.errors.push(`Ошибка сохранения данных: ${error.message}`);
     }
 
     return results;
   }
 
   /**
-   * Створити маршрути на основі замовлень
+   * Создать маршруты на основе заказов
    */
   async createRoutesFromOrders(orders, couriers) {
     const routes = [];
 
     try {
-      // Групуємо замовлення за курєрами
+      // Группировка заказов по курьерам
       const ordersByCourier = {};
 
       for (const order of orders) {
@@ -201,7 +201,7 @@ class UploadController {
         }
       }
 
-      // Створюємо маршрут для кожного курєра
+      // Создание маршрута для каждого курьера
       for (const [courierId, courierOrders] of Object.entries(ordersByCourier)) {
         try {
           const courier = couriers.find(c => c._id.toString() === courierId);
@@ -209,12 +209,12 @@ class UploadController {
 
           const waypoints = [];
 
-          // Створюємо waypoints з замовлень
+          // Создание точек маршрута из заказов
           for (const order of courierOrders) {
             const waypoint = {
               scannedText: order.address,
               formattedAddress: order.address,
-              latitude: 50.4501, // Заглушка - в реальному проекті потрібно геокодування
+              latitude: 50.4501, // Заглушка - в реальном проекте требуется геокодирование
               longitude: 30.5234,
               isWaypoint: true,
               orderNumber: order.orderNumber,
@@ -225,10 +225,10 @@ class UploadController {
 
           if (waypoints.length === 0) continue;
 
-          // Створюємо стартову та кінцеву точки
+          // Создание стартовой и конечной точек
           const startPoint = {
-            scannedText: 'Стартова точка',
-            formattedAddress: 'Київ, Україна',
+            scannedText: 'Стартовая точка',
+            formattedAddress: 'Киев, Украина',
             latitude: 50.4501,
             longitude: 30.5234,
             isDestination: false,
@@ -237,8 +237,8 @@ class UploadController {
           };
 
           const endPoint = {
-            scannedText: 'Кінцева точка',
-            formattedAddress: 'Київ, Україна',
+            scannedText: 'Конечная точка',
+            formattedAddress: 'Киев, Украина',
             latitude: 50.4501,
             longitude: 30.5234,
             isDestination: true,
@@ -246,36 +246,36 @@ class UploadController {
             orderIndex: waypoints.length
           };
 
-          // Створюємо маршрут
+          // Создание маршрута
           const route = new Route({
             startPoint,
             endPoint,
             waypoints,
             totalDistance: '0 км', // Заглушка
-            totalDuration: '0 хв', // Заглушка
+            totalDuration: '0 мин', // Заглушка
             polyline: '',
             transportationMode: 'driving',
             courier: courierId,
             isActive: true,
             priority: 'normal',
-            notes: `Маршрут для курєра ${courier.name}. Замовлень: ${waypoints.length}`
+            notes: `Маршрут для курьера ${courier.name}. Заказов: ${waypoints.length}`
           });
 
           await route.save();
           routes.push(route);
 
-          // Оновлюємо статистику курєра
+          // Обновление статистики курьера
           if (courier.updateStatistics) {
             await courier.updateStatistics();
           }
 
         } catch (error) {
-          logger.error(`Помилка створення маршруту для курєра ${courierId}:`, error);
+          logger.error(`Ошибка создания маршрута для курьера ${courierId}:`, error);
         }
       }
 
     } catch (error) {
-      logger.error('Помилка створення маршрутів:', error);
+      logger.error('Ошибка создания маршрутов:', error);
     }
 
     return routes;

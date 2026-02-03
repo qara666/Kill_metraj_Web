@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const logger = require('../utils/logger');
 const { User, AuditLog } = require('../models');
 const {
     generateAccessToken,
@@ -18,19 +19,19 @@ router.post('/login', async (req, res) => {
         if (!username || !password) {
             return res.status(400).json({
                 success: false,
-                error: 'ValidationError',
-                message: 'Username and password are required'
+                error: 'ОшибкаВалидации',
+                message: 'Имя пользователя и пароль обязательны'
             });
         }
 
         // Find user (Sequelize)
         const user = await User.findOne({ where: { username } });
         if (!user) {
-            console.log(`[Auth] Login failed: User not found: ${username}`);
+            logger.warn('Ошибка входа: Пользователь не найден', { username });
             return res.status(401).json({
                 success: false,
-                error: 'InvalidCredentials',
-                message: 'Invalid username or password'
+                error: 'НеверныеУчетныеДанные',
+                message: 'Неверное имя пользователя или пароль'
             });
         }
 
@@ -38,19 +39,19 @@ router.post('/login', async (req, res) => {
         if (!user.isActive) {
             return res.status(403).json({
                 success: false,
-                error: 'AccountDeactivated',
-                message: 'Your account has been deactivated'
+                error: 'АккаунтДеактивирован',
+                message: 'Ваш аккаунт деактивирован'
             });
         }
 
         // Verify password
         const isPasswordValid = await user.comparePassword(password);
         if (!isPasswordValid) {
-            console.log(`[Auth] Login failed: Invalid password for user: ${username}`);
+            logger.warn('Ошибка входа: Неверный пароль', { username });
             return res.status(401).json({
                 success: false,
-                error: 'InvalidCredentials',
-                message: 'Invalid username or password'
+                error: 'НеверныеУчетныеДанные',
+                message: 'Неверное имя пользователя или пароль'
             });
         }
 
@@ -83,11 +84,11 @@ router.post('/login', async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Login error:', error);
+        logger.error('Ошибка входа', { error: error.message });
         res.status(500).json({
             success: false,
-            error: 'InternalServerError',
-            message: 'An error occurred during login'
+            error: 'ВнутренняяОшибкаСервера',
+            message: 'Произошла ошибка при входе'
         });
     }
 });
@@ -108,14 +109,14 @@ router.post('/logout', authenticateToken, async (req, res) => {
 
         res.json({
             success: true,
-            message: 'Logged out successfully'
+            message: 'Успешный выход из системы'
         });
     } catch (error) {
-        console.error('Logout error:', error);
+        logger.error('Ошибка выхода', { error: error.message });
         res.status(500).json({
             success: false,
-            error: 'InternalServerError',
-            message: 'An error occurred during logout'
+            error: 'ВнутренняяОшибкаСервера',
+            message: 'Произошла ошибка при выходе'
         });
     }
 });
@@ -128,11 +129,11 @@ router.get('/me', authenticateToken, async (req, res) => {
             data: req.user.toJSON()
         });
     } catch (error) {
-        console.error('Get current user error:', error);
+        logger.error('Ошибка получения текущего пользователя', { error: error.message });
         res.status(500).json({
             success: false,
-            error: 'InternalServerError',
-            message: 'An error occurred'
+            error: 'ВнутренняяОшибкаСервера',
+            message: 'Произошла ошибка'
         });
     }
 });
@@ -145,8 +146,8 @@ router.post('/refresh', async (req, res) => {
         if (!refreshToken) {
             return res.status(400).json({
                 success: false,
-                error: 'ValidationError',
-                message: 'Refresh token is required'
+                error: 'ОшибкаВалидации',
+                message: 'Токен обновления обязателен'
             });
         }
 
@@ -156,8 +157,8 @@ router.post('/refresh', async (req, res) => {
         if (decoded.type !== 'refresh') {
             return res.status(401).json({
                 success: false,
-                error: 'InvalidToken',
-                message: 'Invalid token type'
+                error: 'НеверныйТокен',
+                message: 'Неверный тип токена'
             });
         }
 
@@ -166,8 +167,8 @@ router.post('/refresh', async (req, res) => {
         if (!user || !user.isActive) {
             return res.status(401).json({
                 success: false,
-                error: 'Unauthorized',
-                message: 'User not found or inactive'
+                error: 'ОшибкаАутентификации',
+                message: 'Пользователь не найден или неактивен'
             });
         }
 
@@ -184,16 +185,16 @@ router.post('/refresh', async (req, res) => {
         if (error.name === 'TokenExpiredError') {
             return res.status(401).json({
                 success: false,
-                error: 'TokenExpired',
-                message: 'Refresh token expired'
+                error: 'ТокенИстек',
+                message: 'Токен обновления истек'
             });
         }
 
-        console.error('Refresh token error:', error);
+        logger.error('Ошибка обновления токена', { error: error.message });
         res.status(403).json({
             success: false,
-            error: 'Forbidden',
-            message: 'Invalid refresh token'
+            error: 'ДоступЗапрещен',
+            message: 'Неверный токен обновления'
         });
     }
 });

@@ -225,7 +225,7 @@ export async function runRoutePlanningAlgorithm(
                     directionsLegs: check.legs,
                     reasons: [
                         ...(((optR as any)._originalRoute?.reasons) || []),
-                        `🔍 Глобальная оптимизация: Маршрут был улучшен для минимизации общего пробега.`
+                        ` Глобальная оптимизация: Маршрут был улучшен для минимизации общего пробега.`
                     ]
                 });
             }

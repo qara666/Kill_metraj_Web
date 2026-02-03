@@ -88,13 +88,13 @@ export const localStorageUtils = {
 
       // Предупреждение если данные слишком большие (>2MB)
       if (size > 2 * 1024 * 1024) {
-        console.warn(`⚠️ Данные для ключа "${key}" слишком большие: ${(size / 1024 / 1024).toFixed(2)}MB`)
+        console.warn(`️ Данные для ключа "${key}" слишком большие: ${(size / 1024 / 1024).toFixed(2)}MB`)
       }
 
       localStorage.setItem(key, serialized)
     } catch (error: any) {
       if (error.name === 'QuotaExceededError' || error.message?.includes('quota')) {
-        console.warn(`⚠️ localStorage переполнен для ключа "${key}". Попытка очистки...`)
+        console.warn(`️ localStorage переполнен для ключа "${key}". Попытка очистки...`)
         // Пробуем очистить старые данные
         try {
           // Удаляем старые данные (кроме критически важных)
@@ -110,7 +110,7 @@ export const localStorageUtils = {
           // Пробуем сохранить снова
           localStorage.setItem(key, JSON.stringify(data))
         } catch (retryError) {
-          console.error(`❌ Не удалось сохранить данные для ключа "${key}":`, retryError)
+          console.error(` Не удалось сохранить данные для ключа "${key}":`, retryError)
         }
       } else {
         console.error('Error writing to localStorage:', error)

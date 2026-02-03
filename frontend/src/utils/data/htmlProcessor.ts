@@ -40,7 +40,7 @@ const parseHtmlTableToJson = (htmlText: string): any[][] => {
   const charsetMatch = processedHtml.match(/<meta[^>]+charset=["']?([^"'\s>]+)/i)
   const detectedCharset = charsetMatch ? charsetMatch[1].toLowerCase() : 'utf-8'
   
-  console.log(`📋 [HTML Processor] Обнаруженная кодировка из мета-тегов: ${detectedCharset}`)
+  console.log(` [HTML Processor] Обнаруженная кодировка из мета-тегов: ${detectedCharset}`)
   
   // Если кодировка не UTF-8, пытаемся конвертировать (но это сложно в браузере)
   // В большинстве случаев современные браузеры автоматически декодируют правильно
@@ -50,7 +50,7 @@ const parseHtmlTableToJson = (htmlText: string): any[][] => {
   // Проверяем на ошибки парсинга
   const parserError = doc.querySelector('parsererror')
   if (parserError) {
-    console.warn('⚠️ [HTML Processor] Ошибка парсинга HTML, но продолжаем:', parserError.textContent)
+    console.warn('️ [HTML Processor] Ошибка парсинга HTML, но продолжаем:', parserError.textContent)
   }
 
   // Ищем таблицы в HTML
@@ -122,9 +122,9 @@ const parseHtmlTableToJson = (htmlText: string): any[][] => {
   }
 
   // Логируем первые строки для диагностики
-  console.log(`📋 [HTML Processor] Извлечено ${jsonData.length} строк из таблицы`)
+  console.log(` [HTML Processor] Извлечено ${jsonData.length} строк из таблицы`)
   if (jsonData.length > 0) {
-    console.log(`📋 [HTML Processor] Первая строка (заголовки, первые 15):`, jsonData[0].slice(0, 15).map((v, i) => {
+    console.log(` [HTML Processor] Первая строка (заголовки, первые 15):`, jsonData[0].slice(0, 15).map((v, i) => {
       const val = String(v).substring(0, 50)
       const hasCyrillic = /[а-яА-ЯёЁіІїЇєЄ]/.test(val)
       const charCodes = val.split('').slice(0, 10).map(c => c.charCodeAt(0).toString(16)).join(' ')
@@ -132,7 +132,7 @@ const parseHtmlTableToJson = (htmlText: string): any[][] => {
     }))
   }
   if (jsonData.length > 1) {
-    console.log(`📋 [HTML Processor] Вторая строка (данные, первые 15):`, jsonData[1].slice(0, 15).map((v, i) => {
+    console.log(` [HTML Processor] Вторая строка (данные, первые 15):`, jsonData[1].slice(0, 15).map((v, i) => {
       const val = String(v).substring(0, 50)
       return `${i}: "${val}"`
     }))
@@ -172,7 +172,7 @@ export const processHtmlUrl = async (url: string): Promise<ProcessedExcelData> =
     const htmlText = await response.text()
     const jsonData = parseHtmlTableToJson(htmlText)
 
-    console.log(`✅ [HTML Processor] Извлечено ${jsonData.length} строк из HTML таблицы`)
+    console.log(` [HTML Processor] Извлечено ${jsonData.length} строк из HTML таблицы`)
 
     // Используем тот же процессор, что и для Excel
     return processJsonData(jsonData)
@@ -222,7 +222,7 @@ const decodeHtmlWithCharset = async (arrayBuffer: ArrayBuffer): Promise<string> 
   
   // Сначала пробуем определить кодировку из мета-тегов
   let detectedCharset = detectCharsetFromHtml(bytes)
-  console.log(`📋 [HTML Processor] Обнаруженная кодировка из мета-тегов: ${detectedCharset}`)
+  console.log(` [HTML Processor] Обнаруженная кодировка из мета-тегов: ${detectedCharset}`)
   
   // Список кодировок для попытки декодирования
   const charsetsToTry = [
@@ -254,18 +254,18 @@ const decodeHtmlWithCharset = async (arrayBuffer: ArrayBuffer): Promise<string> 
       
       // Если есть кириллица или нормальные символы, и мало подозрительных символов
       if ((hasCyrillic || hasNormalChars) && suspiciousRatio < 0.3) {
-        console.log(`✅ [HTML Processor] Успешно декодировано с кодировкой: ${charset} (кириллица: ${hasCyrillic}, подозрительных: ${(suspiciousRatio * 100).toFixed(1)}%)`)
+        console.log(` [HTML Processor] Успешно декодировано с кодировкой: ${charset} (кириллица: ${hasCyrillic}, подозрительных: ${(suspiciousRatio * 100).toFixed(1)}%)`)
         return decoded
       }
     } catch (e) {
       // Пробуем следующую кодировку
-      console.log(`⚠️ [HTML Processor] Не удалось декодировать с ${charset}, пробуем следующую...`)
+      console.log(`️ [HTML Processor] Не удалось декодировать с ${charset}, пробуем следующую...`)
       continue
     }
   }
   
   // Если ничего не помогло, пробуем UTF-8 с игнорированием ошибок
-  console.warn(`⚠️ [HTML Processor] Не удалось определить кодировку, используем UTF-8 с игнорированием ошибок`)
+  console.warn(`️ [HTML Processor] Не удалось определить кодировку, используем UTF-8 с игнорированием ошибок`)
   const decoder = new TextDecoder('utf-8', { fatal: false })
   return decoder.decode(arrayBuffer)
 }
@@ -285,15 +285,15 @@ export const processHtmlFile = async (file: File): Promise<ProcessedExcelData> =
     // Логируем первые символы для диагностики
     if (text.length > 0) {
       const firstChars = text.substring(0, 200)
-      console.log(`📋 [HTML Processor] Первые 200 символов декодированного файла:`, firstChars)
+      console.log(` [HTML Processor] Первые 200 символов декодированного файла:`, firstChars)
       
       // Проверяем наличие кириллицы
       const hasCyrillic = /[а-яА-ЯёЁіІїЇєЄ]/.test(text)
-      console.log(`📋 [HTML Processor] Найдена кириллица: ${hasCyrillic}`)
+      console.log(` [HTML Processor] Найдена кириллица: ${hasCyrillic}`)
     }
     
     const jsonData = parseHtmlTableToJson(text)
-    console.log(`✅ [HTML Processor] Извлечено ${jsonData.length} строк из локального HTML`)
+    console.log(` [HTML Processor] Извлечено ${jsonData.length} строк из локального HTML`)
 
     // Используем тот же процессор, что и для Excel - processJsonData
     return processJsonData(jsonData)

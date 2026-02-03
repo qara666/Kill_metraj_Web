@@ -44,8 +44,8 @@ export interface DashboardApiResponse {
 
 export interface DashboardApiError {
     success: false;
-    error: string;
-    details?: any;
+    error: string; // Сообщение об ошибке
+    details?: any; // Дополнительные детали ошибки
 }
 
 export type DashboardApiResult =

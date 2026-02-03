@@ -77,7 +77,7 @@ export const WorkloadHeatmap = React.memo<WorkloadHeatmapProps>(({
 
           heatmapLayerRef.current = heatmap
 
-          console.log(`✅ Тепловая карта загруженности создана с ${heatmapData.length} точками`)
+          console.log(` Тепловая карта загруженности создана с ${heatmapData.length} точками`)
         }
 
         // Добавляем маркеры для критических зон
@@ -106,7 +106,7 @@ export const WorkloadHeatmap = React.memo<WorkloadHeatmapProps>(({
         })
 
 
-        console.log(`✅ Добавлено ${criticalZones.length} маркеров критических зон загруженности`)
+        console.log(` Добавлено ${criticalZones.length} маркеров критических зон загруженности`)
       } catch (error) {
         console.error('Ошибка инициализации тепловой карты загруженности:', error)
       }

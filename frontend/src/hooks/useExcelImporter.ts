@@ -12,22 +12,22 @@ export const useExcelImporter = (
     const [importError, setImportError] = useState<string | null>(null);
 
     const handleExcelUpload = useCallback(async (file: File) => {
-        console.log('🔵 [useExcelImporter] handleExcelUpload started with file:', file.name, 'size:', file.size);
+        console.log(' [useExcelImporter] handleExcelUpload started with file:', file.name, 'size:', file.size);
         setIsImporting(true);
         setImportError(null);
         try {
-            console.log('🔵 [useExcelImporter] Calling processExcelFile...');
+            console.log(' [useExcelImporter] Calling processExcelFile...');
             const data = await processExcelFile(file);
-            console.log('🔵 [useExcelImporter] processExcelFile returned:', {
+            console.log(' [useExcelImporter] processExcelFile returned:', {
                 orders: data.orders.length,
                 couriers: data.couriers.length,
                 paymentMethods: data.paymentMethods.length,
                 errors: data.errors.length
             });
-            console.log('🔵 [useExcelImporter] Full data:', data);
+            console.log(' [useExcelImporter] Full data:', data);
 
             setExcelData(data);
-            logger.info(`✅ Успешно загружено ${data.orders.length} заказов из ${file.name}`);
+            logger.info(` Успешно загружено ${data.orders.length} заказов из ${file.name}`);
 
             // Также пытаемся найти графики курьеров в том же файле
             try {
@@ -49,19 +49,19 @@ export const useExcelImporter = (
                 }
 
                 if (totalSchedules > 0) {
-                    logger.info(`✅ Автоматически загружено ${totalSchedules} графиков курьеров`);
+                    logger.info(` Автоматически загружено ${totalSchedules} графиков курьеров`);
                 }
             } catch (err) {
                 console.warn('Silent skip: courier schedule not found in same file or parse error', err);
             }
         } catch (error: any) {
-            console.error('🔴 [useExcelImporter] Error in handleExcelUpload:', error);
+            console.error(' [useExcelImporter] Error in handleExcelUpload:', error);
             const msg = error.message || 'Ошибка при разборе Excel файла';
             setImportError(msg);
             logger.error('Excel Import Error:', error);
         } finally {
             setIsImporting(false);
-            console.log('🔵 [useExcelImporter] handleExcelUpload finished');
+            console.log(' [useExcelImporter] handleExcelUpload finished');
         }
     }, [setExcelData, setCourierSchedules]);
 
@@ -81,7 +81,7 @@ export const useExcelImporter = (
 
                 if (parsedSchedules.length > 0) {
                     setCourierSchedules(parsedSchedules);
-                    logger.info(`✅ Загружено ${parsedSchedules.length} графиков из листа "${sheetName}"`);
+                    logger.info(` Загружено ${parsedSchedules.length} графиков из листа "${sheetName}"`);
                     found = true;
                     break;
                 }

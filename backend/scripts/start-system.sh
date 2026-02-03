@@ -4,12 +4,12 @@
 # Starts the backend and background workers using PM2
 
 echo "============================================================"
-echo "Starting Kill Metraj System"
+echo "Запуск системы Kill Metraj"
 echo "============================================================"
 
 # Check if PM2 is installed
 if ! command -v pm2 &> /dev/null; then
-    echo "📦 PM2 not found. Installing global dependency..."
+    echo "PM2 не найден. Установка глобальной зависимости..."
     npm install -g pm2
 fi
 
@@ -18,24 +18,24 @@ cd "$(dirname "$0")/.."
 
 # Check if .env has API key
 if grep -q "EXTERNAL_API_KEY=your_api_key_here" .env; then
-    echo "⚠️  WARNING: EXTERNAL_API_KEY is not set in backend/.env"
-    echo "   Background worker will fail to fetch data."
-    echo "   Please update .env with the correct API key."
+    echo "[!] ПРЕДУПРЕЖДЕНИЕ: EXTERNAL_API_KEY не установлен в backend/.env"
+    echo "    Фоновый воркер не сможет получать данные."
+    echo "    Пожалуйста, обновите .env правильным API ключом."
     echo ""
-    read -p "Continue anyway? (y/N) " -n 1 -r
+    read -p "Продолжить в любом случае? (y/N) " -n 1 -r
     echo ""
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         exit 1
     fi
 fi
 
-echo "🚀 Starting processes with PM2..."
+echo "Запуск процессов через PM2..."
 pm2 start ecosystem.config.js
 
 echo ""
-echo "✅ System started!"
+echo "Система запущена!"
 echo "------------------------------------------------------------"
-echo "📊 Monitoring:    pm2 monit"
-echo "📝 Logs:          pm2 logs"
-echo "🛑 Stop:          pm2 stop all"
+echo "Мониторинг:       pm2 monit"
+echo "Логи:             pm2 logs"
+echo "Остановка:        pm2 stop all"
 echo "------------------------------------------------------------"

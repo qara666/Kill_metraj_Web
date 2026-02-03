@@ -54,7 +54,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                 const json = await response.json();
                 if (json.success && json.data) {
                   const mapped = applyCourierVehicleMap(json.data);
-                  console.log('✅ Данные загружены с сервера');
+                  console.log(' Данные загружены с сервера');
                   setExcelDataState(mapped);
                   return;
                 }
@@ -71,7 +71,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             if (parsed && typeof parsed === 'object') {
               const mapped = applyCourierVehicleMap(parsed)
               setExcelDataState(mapped)
-              console.log('⚠️ Данные загружены из localStorage (legacy)');
+              console.log('️ Данные загружены из localStorage (legacy)');
             }
           }
         } catch (error) {
@@ -102,9 +102,9 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       });
 
       if (!response.ok) {
-        throw new Error('Server error');
+        throw new Error('Ошибка сервера');
       }
-      // console.log('✅ Данные сохранены на сервере');
+      // console.log(' Данные сохранены на сервере');
     } catch (error) {
       console.error('Ошибка сохранения на сервер:', error);
       toast.error('Ошибка сохранения на сервер', { id: 'save-error' });

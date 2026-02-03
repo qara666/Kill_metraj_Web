@@ -93,7 +93,7 @@ export const routeHistory = {
 
       // Проверяем размер перед сохранением
       if (!checkStorageSize(dataToSave)) {
-        console.warn('⚠️ Данные слишком большие, удаляем старые записи...')
+        console.warn('️ Данные слишком большие, удаляем старые записи...')
         // Удаляем половину старых записей
         const halfSize = Math.floor(history.length / 2)
         history.splice(halfSize)
@@ -110,7 +110,7 @@ export const routeHistory = {
     } catch (error: any) {
       // Обработка QuotaExceededError
       if (error.name === 'QuotaExceededError' || error.message?.includes('quota')) {
-        console.warn('⚠️ localStorage переполнен, очищаем старые записи...')
+        console.warn('️ localStorage переполнен, очищаем старые записи...')
 
         try {
           const history = routeHistory.getAll()
@@ -133,10 +133,10 @@ export const routeHistory = {
           reducedHistory.splice(5) // Оставляем максимум 5
 
           localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(reducedHistory))
-          console.log('✅ История сохранена после очистки')
+          console.log(' История сохранена после очистки')
           return entry.id
         } catch (retryError) {
-          console.error('❌ Не удалось сохранить историю даже после очистки:', retryError)
+          console.error(' Не удалось сохранить историю даже после очистки:', retryError)
           // Очищаем всю историю и пробуем сохранить только текущую запись
           try {
             localStorage.removeItem(HISTORY_STORAGE_KEY)
@@ -153,13 +153,13 @@ export const routeHistory = {
             localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify([entry]))
             return entry.id
           } catch (finalError) {
-            console.error('❌ Критическая ошибка сохранения истории:', finalError)
+            console.error(' Критическая ошибка сохранения истории:', finalError)
             // Возвращаем ID, но не сохраняем (чтобы не ломать приложение)
             return `history_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
           }
         }
       } else {
-        console.error('❌ Ошибка сохранения истории:', error)
+        console.error(' Ошибка сохранения истории:', error)
         throw error
       }
     }

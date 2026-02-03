@@ -8,20 +8,18 @@ router.get('/kml', async (req, res) => {
     const { url } = req.query;
 
     if (!url) {
-        return res.status(400).json({ success: false, error: 'URL is required' });
+        return res.status(400).json({ success: false, error: 'URL обязателен' });
     }
 
-    logger.info(`Fetching KML from: ${url}`);
-
     try {
-        logger.info(`📥 Fetching KML from: ${url}`);
+        logger.info('Получение KML по адресу', { url });
 
         const response = await axios.get(url, {
             responseType: 'text',
             timeout: 10000 // 10s timeout
         });
 
-        logger.info(`✅ KML fetched successfully, size: ${response.data.length} bytes`);
+        logger.info('KML успешно получен', { size: response.data.length });
 
         // Frontend expects JSON with 'contents' field
         res.json({
@@ -29,7 +27,7 @@ router.get('/kml', async (req, res) => {
             contents: response.data
         });
     } catch (error) {
-        logger.error('❌ Error fetching KML:', {
+        logger.error('Ошибка получения KML', {
             url: url,
             error: error.message,
             code: error.code,
@@ -37,7 +35,7 @@ router.get('/kml', async (req, res) => {
         });
         res.status(500).json({
             success: false,
-            error: 'Failed to fetch KML',
+            error: 'Не удалось получить KML',
             details: error.message
         });
     }

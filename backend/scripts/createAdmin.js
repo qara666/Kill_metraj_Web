@@ -20,47 +20,47 @@ function question(query) {
 async function createAdmin() {
     try {
         // Connect to PostgreSQL
-        console.log('подключение к PostgreSQL');
+        console.log('Подключение к PostgreSQL...');
         await sequelize.authenticate();
-        console.log('коннектед к PostgreSQL\n');
+        console.log('Соединение с PostgreSQL установлено\n');
 
         // Sync database (create tables if not exist)
-        console.log('синк к бд...');
+        console.log('Синхронизация базы данных...');
         await syncDatabase();
-        console.log('Бд синхрон\n');
+        console.log('База данных синхронизирована\n');
 
         // Check if admin already exists
         const existingAdmin = await User.findOne({ where: { role: 'admin' } });
         if (existingAdmin) {
-            console.log('⚠️  Admin user already exists:');
-            console.log(`   Username: ${existingAdmin.username}`);
-            
+            console.log('Администратор уже существует:');
+            console.log(`   Имя пользователя: ${existingAdmin.username}`);
 
-            const confirm = await question('Do you want to create another admin? (yes/no): ');
+
+            const confirm = await question('Создать еще одного администратора? (yes/no): ');
             if (confirm.toLowerCase() !== 'yes') {
-                console.log('Cancelled.');
+                console.log('Отменено.');
                 process.exit(0);
             }
         }
 
         // Get admin details
-        console.log('\n📝 Create Admin User\n');
+        console.log('\n📝 Создание администратора\n');
 
-        const username = await question('Username: ');
+        const username = await question('Имя пользователя: ');
         if (!username || username.length < 3) {
-            console.error('❌ Username must be at least 3 characters');
+            console.error('Ошибка: Имя пользователя должно содержать минимум 3 символа');
             process.exit(1);
         }
 
         const email = await question('Email: ');
         if (!email || !email.includes('@')) {
-            console.error('❌ Invalid email address');
+            console.error('Ошибка: Некорректный email адрес');
             process.exit(1);
         }
 
-        const password = await question('Password (min 6 characters): ');
+        const password = await question('Пароль (минимум 6 символов): ');
         if (!password || password.length < 6) {
-            console.error('❌ Password must be at least 6 characters');
+            console.error('Ошибка: Пароль должен содержать минимум 6 символов');
             process.exit(1);
         }
 
@@ -72,12 +72,12 @@ async function createAdmin() {
         });
 
         if (existingUser) {
-            console.error('❌ User with this username or email already exists');
+            console.error('Ошибка: Пользователь с таким именем или email уже существует');
             process.exit(1);
         }
 
         // Create admin user
-        console.log('\nCreating admin user...');
+        console.log('\nСоздание пользователя...');
         const admin = await User.create({
             username,
             email,
@@ -96,19 +96,19 @@ async function createAdmin() {
             updatedBy: admin.id
         });
 
-        console.log('\n✅ Admin user created successfully!\n');
-        console.log('Details:');
-        console.log(`   Username: ${admin.username}`);
+        console.log('\nАдминистратор успешно создан!\n');
+        console.log('Детали:');
+        console.log(`   Имя пользователя: ${admin.username}`);
         console.log(`   Email: ${admin.email}`);
-        console.log(`   Role: ${admin.role}`);
+        console.log(`   Роль: ${admin.role}`);
         console.log(`   ID: ${admin.id}\n`);
-        console.log('You can now login with these credentials.\n');
+        console.log('Теперь вы можете войти, используя эти данные.\n');
 
     } catch (error) {
-        console.error('❌ Error creating admin:', error.message);
+        console.error('Ошибка при создании администратора:', error.message);
         if (error.name === 'SequelizeConnectionError') {
-            console.error('\n💡 Make sure PostgreSQL is running and credentials are correct.');
-            console.error('   Check your .env file or environment variables:');
+            console.error('\nУбедитесь, что PostgreSQL запущен и учетные данные верны.');
+            console.error('Проверьте файл .env или переменные окружения:');
             console.error('   - DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD');
         }
         process.exit(1);

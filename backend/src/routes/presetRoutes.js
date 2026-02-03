@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const logger = require('../utils/logger');
 const { UserPreset } = require('../models');
 const { authenticateToken, requireRole, auditLog } = require('../middleware/auth');
 
@@ -15,8 +16,8 @@ router.get('/:userId', async (req, res) => {
         if (req.user.role !== 'admin' && req.user.id !== parseInt(userId)) {
             return res.status(403).json({
                 success: false,
-                error: 'Forbidden',
-                message: 'You can only view your own presets'
+                error: 'ДоступЗапрещен',
+                message: 'Вы можете просматривать только свои пресеты'
             });
         }
 
@@ -42,11 +43,11 @@ router.get('/:userId', async (req, res) => {
             data: preset
         });
     } catch (error) {
-        console.error('Get presets error:', error);
+        logger.error('Ошибка получения пресетов', { error: error.message, userId: req.params.userId });
         res.status(500).json({
             success: false,
-            error: 'InternalServerError',
-            message: 'Failed to fetch presets'
+            error: 'ВнутренняяОшибкаСервера',
+            message: 'Не удалось получить пресеты'
         });
     }
 });
@@ -60,8 +61,8 @@ router.put('/:userId', authenticateToken, auditLog('preset_update'), async (req,
         if (!settings) {
             return res.status(400).json({
                 success: false,
-                error: 'ValidationError',
-                message: 'Settings are required'
+                error: 'ОшибкаВалидации',
+                message: 'Настройки обязательны'
             });
         }
 
@@ -72,8 +73,8 @@ router.put('/:userId', authenticateToken, auditLog('preset_update'), async (req,
         if (!isOwnPreset && !isAdmin) {
             return res.status(403).json({
                 success: false,
-                error: 'Forbidden',
-                message: 'You can only update your own presets'
+                error: 'ДоступЗапрещен',
+                message: 'Вы можете обновлять только свои пресеты'
             });
         }
 
@@ -96,8 +97,8 @@ router.put('/:userId', authenticateToken, auditLog('preset_update'), async (req,
                 } else {
                     return res.status(403).json({
                         success: false,
-                        error: 'Forbidden',
-                        message: 'You are not allowed to modify your settings'
+                        error: 'ДоступЗапрещен',
+                        message: 'Вам не разрешено изменять свои настройки'
                     });
                 }
             }
@@ -128,11 +129,11 @@ router.put('/:userId', authenticateToken, auditLog('preset_update'), async (req,
             data: preset
         });
     } catch (error) {
-        console.error('Update presets error:', error);
+        logger.error('Ошибка обновления пресетов', { error: error.message, userId: req.params.userId });
         res.status(500).json({
             success: false,
-            error: 'InternalServerError',
-            message: 'Failed to update presets'
+            error: 'ВнутренняяОшибкаСервера',
+            message: 'Не удалось обновить пресеты'
         });
     }
 });
@@ -145,23 +146,23 @@ router.post('/template', requireRole('admin'), auditLog('preset_template_create'
         if (!settings) {
             return res.status(400).json({
                 success: false,
-                error: 'ValidationError',
-                message: 'Settings are required'
+                error: 'ОшибкаВалидации',
+                message: 'Настройки обязательны'
             });
         }
 
         // This is a placeholder for template functionality
         res.json({
             success: true,
-            message: 'Template created successfully',
+            message: 'Шаблон успешно создан',
             data: { settings }
         });
     } catch (error) {
-        console.error('Create template error:', error);
+        logger.error('Ошибка создания шаблона', { error: error.message });
         res.status(500).json({
             success: false,
-            error: 'InternalServerError',
-            message: 'Failed to create template'
+            error: 'ВнутренняяОшибкаСервера',
+            message: 'Не удалось создать шаблон'
         });
     }
 });

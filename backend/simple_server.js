@@ -12,10 +12,16 @@ const userRoutes = require('./src/routes/userRoutes');
 const presetRoutes = require('./src/routes/presetRoutes');
 const logRoutes = require('./src/routes/logRoutes');
 const logger = require('./src/utils/logger');
+// Константы и настройки загрузки файлов
 const { generalLimiter, uploadLimiter, telegramLimiter } = require('./src/middleware/rateLimiter');
 const { sequelize, testConnection } = require('./src/config/database');
 const { syncDatabase, AuditLog } = require('./src/models');
 const { authenticateToken } = require('./src/middleware/auth');
+const { register: metricsRegister, metricsMiddleware, trackWebSocketConnection } = require('./src/middleware/metrics');
+const { livenessProbe, readinessProbe, startupProbe } = require('./src/health/healthChecks');
+const cacheService = require('./src/services/CacheService');
+const DashboardConsumer = require('./src/consumers/DashboardConsumer');
+const { startGrpcServer } = require('./src/grpc/server');
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -31,8 +37,10 @@ const io = new Server(httpServer, {
   transports: ['websocket', 'polling']
 });
 
-// PostgreSQL LISTEN client (separate from Sequelize)
+// Клиент PostgreSQL LISTEN (отдельно от Sequelize)
 let pgListenClient = null;
+const dashboardConsumer = new DashboardConsumer(io);
+let grpcServer = null;
 
 // Manual Robust CORS Middleware (Wildcard Origin)
 app.use((req, res, next) => {
@@ -50,6 +58,9 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Metrics middleware (before logging to track all requests)
+app.use(metricsMiddleware);
+
 // Request logging middleware
 app.use((req, res, next) => {
   logger.info(`${req.method} ${req.path}`, {
@@ -66,16 +77,8 @@ app.use('/api/', generalLimiter);
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-// ExcelService
+// Службы
 const excelService = new ExcelService();
-
-// Legacy logs array for backward compatibility
-const logs = [];
-const addLog = (message) => {
-  const timestamp = new Date().toISOString();
-  logs.push(`[${timestamp}] ${message}`);
-  logger.info(message);
-};
 
 // Маршруты
 app.get('/', (req, res) => {
@@ -90,7 +93,7 @@ app.get('/api/health', (req, res) => {
 app.get('/api/telegram/test', (req, res) => {
   res.json({
     success: true,
-    message: 'Telegram routes are working',
+    message: 'Маршруты Telegram работают',
     timestamp: new Date().toISOString()
   });
 });
@@ -102,10 +105,10 @@ app.get('/api/telegram/test', (req, res) => {
 
 app.post('/api/upload/excel', authenticateToken, uploadLimiter, upload.single('file'), async (req, res) => {
   try {
-    addLog('Начало обработки Excel файла');
+    logger.info('Начало обработки Excel файла');
 
     if (!req.file) {
-      addLog('Ошибка: файл не предоставлен');
+      logger.error('Ошибка: файл не предоставлен');
       return res.status(400).json({
         success: false,
         error: 'Файл не предоставлен'
@@ -131,16 +134,16 @@ app.post('/api/upload/excel', authenticateToken, uploadLimiter, upload.single('f
             timestamp: new Date()
           });
         } catch (logError) {
-          console.error('Failed to create audit log for upload:', logError);
+          logger.error('Не удалось создать запись аудита для загрузки', { error: logError.message });
         }
       }
     }
 
-    addLog(`Получен файл: ${req.file.originalname}, размер: ${req.file.size} байт`);
+    logger.info(`Получен файл: ${req.file.originalname}, размер: ${req.file.size} байт`);
 
     const result = await excelService.processExcelFile(req.file.buffer);
 
-    addLog(`Результат: успех=${result.success}, заказов=${result.data?.orders?.length || 0}`);
+    logger.info(`Результат: успех=${result.success}, заказов=${result.data?.orders?.length || 0}`);
 
     if (result.success) {
       // Добавляем дополнительную информацию для предпросмотра
@@ -172,7 +175,7 @@ app.post('/api/upload/excel', authenticateToken, uploadLimiter, upload.single('f
         message: 'Файл успешно обработан и готов к предпросмотру'
       });
     } else {
-      addLog(`Ошибка: ${result.error}`);
+      logger.error(`Ошибка: ${result.error}`);
       res.status(400).json({
         success: false,
         error: result.error
@@ -191,67 +194,51 @@ app.post('/api/upload/excel', authenticateToken, uploadLimiter, upload.single('f
   }
 });
 
-// Minimal placeholder routes for frontend api.ts expectations
+// Заглушки для обратной совместимости (будут удалены в будущем)
 app.get('/api/health', (req, res) => res.json({ ok: true }))
 
-// Couriers
+// Курьеры
 const courierRoutes = require('./src/routes/courierRoutes');
 app.use('/api/couriers', courierRoutes);
 
-// Routes
+// Маршруты
 const routeRoutes = require('./src/routes/routeRoutes');
 app.use('/api/routes', routeRoutes);
 
-// Upload
-app.post('/api/upload/create-routes', (_req, res) => res.json({ success: true, data: { created: true, input: _req.body } }))
-app.get('/api/upload/sample-template', (_req, res) => {
-  const sample = 'orderNumber,address,plannedTime,amount,courier\n123,Улица Пушкина 1,10:30,500,Иванов';
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', 'attachment; filename="sample-template.csv"');
-  res.send(sample);
-})
-app.post('/api/upload/batch-geocode', (_req, res) => {
-  const addresses = Array.isArray(_req.body?.addresses) ? _req.body.addresses : [];
-  const results = addresses.map((addr, idx) => ({ address: addr, lat: 59.9 + idx * 0.001, lng: 30.3 + idx * 0.001 }));
-  res.json({ success: true, data: { results } });
-})
-
-// Analytics
-app.get('/api/analytics/dashboard', (_req, res) => res.json({ success: true, data: {} }))
-app.get('/api/analytics/courier-performance', (_req, res) => res.json({ success: true, data: [] }))
-app.get('/api/analytics/route-analytics', (_req, res) => res.json({ success: true, data: {} }))
-
-// Telegram routes with rate limiting
+// Telegram маршруты
 app.use('/api/telegram', telegramLimiter, telegramRoutes);
 
-// Fastopertor API routes
+// Маршруты Fastopertor API
 app.use('/api/fastopertor', fastopertorRoutes);
 
-// Dashboard API routes (mirrors real API v1)
+// Маршруты Dashboard API
 app.use('/api/v1', dashboardRoutes);
 
-// Authentication routes
+// Маршруты авторизации
 app.use('/api/auth', authRoutes);
 
-// User management routes (admin only)
+// Управление пользователями (только для админов)
 app.use('/api/users', userRoutes);
 
-// Preset management routes
+// Управление пресетами
 app.use('/api/presets', presetRoutes);
 
-// KML Proxy
+// KML Прокси
 const proxyRoutes = require('./src/routes/proxyRoutes');
 app.use('/api/proxy', proxyRoutes);
 
-// Audit log routes (admin only)
+// Аудит логов (только для админов)
 app.use('/api/logs', logRoutes);
 
-app.get('/debug/logs', (req, res) => {
-  res.json({
-    logs: logs,
-    count: logs.length,
-    timestamp: new Date().toISOString()
-  });
+// Эндпоинты Health check
+app.get('/health/liveness', livenessProbe);
+app.get('/health/readiness', readinessProbe(sequelize));
+app.get('/health/startup', startupProbe(sequelize));
+
+// Эндпоинт для метрик Prometheus
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', metricsRegister.contentType);
+  res.end(await metricsRegister.metrics());
 });
 
 app.post('/api/upload/test-api-key', (req, res) => {
@@ -265,7 +252,7 @@ app.post('/api/upload/test-api-key', (req, res) => {
   });
 });
 
-// Error handling middleware
+// Middleware обработки ошибок
 app.use((err, req, res, next) => {
   const { ApiError } = require('./src/utils/errors');
 
@@ -283,7 +270,7 @@ app.use((err, req, res, next) => {
     });
   }
 
-  logger.error('Unhandled error', {
+  logger.error('Необработанная ошибка', {
     error: err.message,
     stack: err.stack,
     path: req.path,
@@ -303,14 +290,14 @@ async function startServer() {
   try {
     // Подключение к PostgreSQL
     await testConnection();
-    logger.info('✅ PostgreSQL connected');
+    logger.info('PostgreSQL подключен');
 
     // Синхронизация моделей с БД
     await syncDatabase();
 
     // Создание начального администратора
     const { User } = require('./src/models');
-    logger.info('🔍 Checking for admin user...');
+    logger.info('Проверка администратора...');
     const [admin, created] = await User.findOrCreate({
       where: { username: 'admin' },
       defaults: {
@@ -323,60 +310,69 @@ async function startServer() {
     });
 
     if (created) {
-      logger.info('✅ Default admin user created successfully.');
+      logger.info('Администратор по умолчанию успешно создан.');
     } else {
-      logger.info('ℹ️ Admin user already exists. To reset password, use the scripts/create-admin.js tool.');
+      logger.info('Администратор уже существует.');
     }
 
     // Запуск сервера
     httpServer.listen(PORT, '0.0.0.0', async () => {
-      logger.info(`🚀 Сервер запущен на 0.0.0.0:${PORT}`, {
+      logger.info(`Сервер запущен на 0.0.0.0:${PORT}`, {
         port: PORT,
         env: process.env.NODE_ENV || 'development'
       });
-      console.log(`\n✅ Сервер работает на http://localhost:${PORT}`);
-      console.log(`📊 Dashboard API: http://localhost:${PORT}/api/v1`);
-      console.log(`🔐 Auth API: http://localhost:${PORT}/api/auth`);
-      console.log(`👥 Users API: http://localhost:${PORT}/api/users`);
-      console.log(`📡 Telegram API: http://localhost:${PORT}/api/telegram`);
-      console.log(`🔧 Debug logs: http://localhost:${PORT}/debug/logs`);
-      console.log(`🔌 WebSocket: ws://localhost:${PORT}\n`);
+      logger.info(`Подключение к Dashboard API: http://localhost:${PORT}/api/v1`);
+      logger.info(`Подключение к Auth API: http://localhost:${PORT}/api/auth`);
+      logger.info(`Подключение к Users API: http://localhost:${PORT}/api/users`);
+      logger.info(`Подключение к Telegram API: http://localhost:${PORT}/api/telegram`);
+      logger.info(`Подключение к WebSocket: ws://localhost:${PORT}`);
 
-      // Setup PostgreSQL LISTEN for dashboard updates
+      // Start gRPC server immediately
+      grpcServer = startGrpcServer(process.env.GRPC_PORT || '50051');
+
+      // Запуск PostgreSQL LISTEN для обновлений дашборда
       await setupDashboardListener();
+
+      if (process.env.CDC_ENABLED === 'true') {
+        await dashboardConsumer.start();
+      }
     });
   } catch (error) {
-    logger.error('❌ Failed to start server:', error);
-    console.error('❌ Server startup failed:', error.message);
+    logger.error('Ошибка при запуске сервера', { error: error.message });
     process.exit(1);
   }
 }
 
-/**
- * Setup PostgreSQL LISTEN/NOTIFY for dashboard updates
- */
 async function setupDashboardListener() {
   try {
+    const dbName = process.env.DB_NAME || 'kill_metraj';
+    logger.info(`Настройка PostgreSQL LISTEN для базы данных: ${dbName}`);
+
     pgListenClient = new Client({
       host: process.env.DB_HOST || 'localhost',
       port: parseInt(process.env.DB_PORT || '5432'),
-      database: process.env.DB_NAME || 'kill_metraj',
+      database: dbName,
       user: process.env.DB_USER || 'postgres',
       password: process.env.DB_PASSWORD
     });
 
     await pgListenClient.connect();
+    logger.info('Клиент PostgreSQL LISTEN успешно подключен');
     await pgListenClient.query('LISTEN dashboard_update');
 
-    logger.info('✅ PostgreSQL LISTEN setup complete');
-    console.log('✅ Listening for dashboard updates via PostgreSQL NOTIFY');
+    logger.info('Настройка PostgreSQL LISTEN завершена, ожидание событий "dashboard_update"');
+    logger.info(`Ожидание обновлений дашборда в базе ${dbName} через PostgreSQL NOTIFY`);
 
     // Handle notifications
     pgListenClient.on('notification', async (msg) => {
       if (msg.channel === 'dashboard_update') {
         try {
           const notification = JSON.parse(msg.payload);
-          logger.info('📡 Dashboard update notification received', { id: notification.id });
+          logger.info('Получено уведомление об обновлении дашборда', { id: notification.id });
+
+          // Сброс кэша при обновлении данных
+          await cacheService.invalidateAll();
+          logger.debug('Кэш сброшен из-за обновления данных');
 
           // Fetch full data from database
           const [results] = await sequelize.query(
@@ -388,14 +384,33 @@ async function setupDashboardListener() {
           );
 
           if (results) {
-            // Broadcast to all connected WebSocket clients
-            io.emit('dashboard:update', {
-              data: results.payload,
-              timestamp: results.created_at,
-              status: results.status_code
-            });
+            // Broadcast to all connected WebSocket clients with filtering
+            const sockets = await io.fetchSockets();
 
-            logger.info('📤 Dashboard update broadcasted to clients');
+            for (const socketInstance of sockets) {
+              const socket = io.sockets.sockets.get(socketInstance.id);
+              if (!socket || !socket.user) continue;
+
+              const user = socket.user;
+              let payload = results.payload;
+
+              // Filter by divisionId
+              if (user.role !== 'admin' && user.divisionId) {
+                payload = {
+                  ...payload,
+                  orders: (payload.orders || []).filter(o => String(o.departmentId) === String(user.divisionId)),
+                  couriers: (payload.couriers || []).filter(c => String(c.departmentId) === String(user.divisionId))
+                };
+              }
+
+              socket.emit('dashboard:update', {
+                data: payload,
+                timestamp: results.created_at,
+                status: results.status_code
+              });
+            }
+
+            logger.info(`Обновление дашборда разослано ${sockets.length} клиентам с фильтрацией`);
           }
         } catch (error) {
           logger.error('Error handling dashboard notification:', error);
@@ -403,22 +418,54 @@ async function setupDashboardListener() {
       }
     });
 
-    // Handle connection errors
+    // Обработка ошибок подключения
     pgListenClient.on('error', (err) => {
-      logger.error('PostgreSQL LISTEN client error:', err);
+      logger.error('Ошибка клиента PostgreSQL LISTEN:', err);
     });
 
   } catch (error) {
-    logger.error('Failed to setup PostgreSQL LISTEN:', error);
-    console.error('⚠️  Dashboard real-time updates disabled');
+    logger.error('Ошибка при настройке PostgreSQL LISTEN', { error: error.message });
+    logger.warn('Обновления дашборда в реальном времени отключены');
   }
 }
 
 /**
- * Socket.io connection handling
+ * Middleware авторизации Socket.io
+ */
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth.token || socket.handshake.query.token;
+    if (!token) {
+      return next(new Error('Ошибка аутентификации: Токен обязателен'));
+    }
+
+    const { JWT_SECRET } = require('./src/middleware/auth');
+    const jwt = require('jsonwebtoken');
+    const { User } = require('./src/models');
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await User.findByPk(decoded.userId);
+
+    if (!user || !user.isActive) {
+      return next(new Error('Ошибка аутентификации: Пользователь не найден или деактивирован'));
+    }
+
+    socket.user = user;
+    next();
+  } catch (err) {
+    next(new Error('Ошибка аутентификации: Неверный токен'));
+  }
+});
+
+/**
+ * Обработка подключений Socket.io
  */
 io.on('connection', (socket) => {
-  logger.info(`🔌 Client connected: ${socket.id}`);
+  const user = socket.user;
+  logger.info(`Клиент подключен: ${socket.id} (Пользователь: ${user.username}, Подразделение: ${user.divisionId || 'ВСЕ'})`);
+
+  // Отслеживание подключения WebSocket в метриках
+  trackWebSocketConnection('connect', user.divisionId, user.role);
 
   // Send latest dashboard data on connection
   sequelize.query(
@@ -426,52 +473,86 @@ io.on('connection', (socket) => {
     { type: sequelize.QueryTypes.SELECT }
   ).then(results => {
     if (results.length > 0) {
+      let payload = results[0].payload;
+
+      // Filter orders by divisionId if user is not admin and has divisionId
+      if (user.role !== 'admin' && user.divisionId) {
+        payload = {
+          ...payload,
+          orders: (payload.orders || []).filter(o => String(o.departmentId) === String(user.divisionId)),
+          couriers: (payload.couriers || []).filter(c => String(c.departmentId) === String(user.divisionId))
+        };
+      }
+
       socket.emit('dashboard:update', {
-        data: results[0].payload,
+        data: payload,
         timestamp: results[0].created_at,
         status: results[0].status_code
       });
-      logger.info(`📤 Sent latest dashboard data to ${socket.id}`);
+      logger.info(`Отправлены отфильтрованные данные дашборда клиенту ${socket.id} (заказов: ${payload.orders?.length || 0})`);
     }
   }).catch(error => {
-    logger.error('Error sending initial dashboard data:', error);
+    logger.error('Ошибка при отправке начальных данных дашборда:', error);
   });
 
   socket.on('disconnect', () => {
-    logger.info(`🔌 Client disconnected: ${socket.id}`);
+    logger.info(`Клиент отключен: ${socket.id}`);
+    trackWebSocketConnection('disconnect', user.divisionId, user.role);
   });
 });
 
 /**
- * REST endpoint for latest dashboard data
+ * REST эндпоинт для получения последних данных дашборда
  */
+const GetDashboardDataQuery = require('./src/queries/GetDashboardDataQuery');
+
 app.get('/api/dashboard/latest', authenticateToken, async (req, res) => {
   try {
-    const results = await sequelize.query(
-      'SELECT * FROM api_dashboard_cache WHERE status_code = 200 ORDER BY created_at DESC LIMIT 1',
-      { type: sequelize.QueryTypes.SELECT }
-    );
+    const user = req.user;
+    const divisionId = user.role === 'admin' ? 'all' : user.divisionId;
 
-    if (results.length === 0) {
+    const result = await GetDashboardDataQuery.execute({ divisionId, user });
+
+    if (!result) {
       return res.json({
         success: false,
-        error: 'No dashboard data available yet'
+        error: 'Данные дашборда пока недоступны'
       });
     }
 
     res.json({
       success: true,
-      data: results[0].payload,
-      timestamp: results[0].created_at,
-      status: results[0].status_code
+      data: result.payload,
+      timestamp: result.created_at,
+      status: result.status_code || 200,
+      cached: result.cached
     });
   } catch (error) {
-    logger.error('Error fetching latest dashboard data:', error);
+    logger.error('Ошибка при получении данных дашборда:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch dashboard data'
+      error: 'Не удалось получить данные дашборда'
     });
   }
 });
 
 startServer();
+
+/**
+ * Завершение работы сервера
+ */
+const shutdown = async () => {
+  logger.info('Завершение работы сервера...');
+  await dashboardConsumer.stop();
+  if (grpcServer) {
+    grpcServer.forceShutdown();
+    logger.info('gRPC сервер остановлен');
+  }
+  if (pgListenClient) {
+    await pgListenClient.end();
+  }
+  process.exit(0);
+};
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

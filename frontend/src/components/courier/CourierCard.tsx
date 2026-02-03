@@ -33,7 +33,7 @@ export const CourierCard: React.FC<CourierCardProps> = ({
   }
 
   const getVehicleIcon = (vehicleType: string) => {
-    return vehicleType === 'car' ? '🚗' : '🏍️'
+    return vehicleType === 'car' ? '' : '️'
   }
 
   const getStatusColor = (isActive: boolean) => {

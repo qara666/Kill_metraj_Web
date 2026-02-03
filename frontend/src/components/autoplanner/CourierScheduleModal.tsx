@@ -104,8 +104,8 @@ export const CourierScheduleModal: React.FC<CourierScheduleModalProps> = React.m
                                                         {schedule.courierName}
                                                     </div>
                                                     <div className={clsx('text-xs mt-1', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                                                        {schedule.vehicleType === 'car' ? '🚗 Авто' : '🏍️ Мото'} •
-                                                        {schedule.isActive ? ' ✅ Активен' : ' ❌ Неактивен'}
+                                                        {schedule.vehicleType === 'car' ? ' Авто' : '️ Мото'} •
+                                                        {schedule.isActive ? '  Активен' : '  Неактивен'}
                                                     </div>
                                                 </div>
                                                 <div className="flex gap-2">
@@ -191,8 +191,8 @@ export const CourierScheduleModal: React.FC<CourierScheduleModalProps> = React.m
                                     })}
                                     className={clsx('w-full px-3 py-2 rounded-lg border', isDark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900')}
                                 >
-                                    <option value="car">🚗 Автомобиль (все зоны)</option>
-                                    <option value="motorcycle">🏍️ Мотоцикл (до {VEHICLE_LIMITS.motorcycle.maxDistanceKm} км)</option>
+                                    <option value="car"> Автомобиль (все зоны)</option>
+                                    <option value="motorcycle">️ Мотоцикл (до {VEHICLE_LIMITS.motorcycle.maxDistanceKm} км)</option>
                                 </select>
                             </div>
 

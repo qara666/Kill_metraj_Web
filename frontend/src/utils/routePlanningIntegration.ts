@@ -78,15 +78,15 @@ export async function planEnhancedRoutes(
     deliveryZone
   } = options
 
-  console.log(`🚀 Начало расширенного планирования с профилем: ${profile.name}`)
-  console.log(`📊 Заказов для планирования: ${orders.length}`)
+  (/* debug */ console.log)(` Начало расширенного планирования с профилем: ${profile.name}`)
+  (/* debug */ console.log)(` Заказов для планирования: ${orders.length}`)
 
   // 1. Батчинг заказов (если включен)
   let batches: OrderBatch[] | undefined
   if (enableBatching && orders.length > 0) {
-    console.log('📦 Создаю батчи заказов...')
+    (/* debug */ console.log)(' Создаю батчи заказов...')
     batches = batchOrdersByTime(orders, profile.batchingOptions)
-    console.log(`✅ Создано ${batches.length} батчей`)
+    (/* debug */ console.log)(` Создано ${batches.length} батчей`)
   }
 
   // 2. Оптимизация маршрутов для каждого батча или всех заказов
@@ -97,7 +97,7 @@ export async function planEnhancedRoutes(
     for (const batch of batches) {
       if (batch.orders.length === 0) continue
 
-      console.log(`🔍 Оптимизация маршрута для батча ${batch.batchNumber} (${batch.orders.length} заказов)...`)
+      (/* debug */ console.log)(` Оптимизация маршрута для батча ${batch.batchNumber} (${batch.orders.length} заказов)...`)
 
       // Применяем многоалгоритмную оптимизацию
       const optimizedRoute = await optimizeWithTraffic(
@@ -132,11 +132,11 @@ export async function planEnhancedRoutes(
         }
       })
 
-      console.log(`✅ Батч ${batch.batchNumber} оптимизирован: ${optimizedRoute.algorithm}, расстояние: ${optimizedRoute.totalDistance.toFixed(1)} км`)
+      (/* debug */ console.log)(` Батч ${batch.batchNumber} оптимизирован: ${optimizedRoute.algorithm}, расстояние: ${optimizedRoute.totalDistance.toFixed(1)} км`)
     }
   } else {
     // Если батчинг не используется, оптимизируем все заказы вместе
-    console.log('🔍 Оптимизация единого маршрута...')
+    (/* debug */ console.log)(' Оптимизация единого маршрута...')
 
     const optimizedRoute = await optimizeWithTraffic(
       orders,
@@ -170,13 +170,13 @@ export async function planEnhancedRoutes(
       }
     })
 
-    console.log(`✅ Маршрут оптимизирован: ${optimizedRoute.algorithm}, расстояние: ${optimizedRoute.totalDistance.toFixed(1)} км`)
+    (/* debug */ console.log)(` Маршрут оптимизирован: ${optimizedRoute.algorithm}, расстояние: ${optimizedRoute.totalDistance.toFixed(1)} км`)
   }
 
   // 3. Анализ покрытия зоны доставки
   let coverageAnalysis: CoverageAnalysis | undefined
   if (enableCoverageAnalysis && deliveryZone) {
-    console.log('📊 Анализ покрытия зоны доставки...')
+    (/* debug */ console.log)(' Анализ покрытия зоны доставки...')
     
     const { analyzeCoverage } = await import('./processing/coverageAnalysis')
     
@@ -201,16 +201,16 @@ export async function planEnhancedRoutes(
     }
 
     if (coverageAnalysis) {
-      console.log(`✅ Покрытие зоны: ${coverageAnalysis.coveragePercentage.toFixed(1)}%`)
-      console.log(`   Покрыто: ${coverageAnalysis.coveredOrders}, Не покрыто: ${coverageAnalysis.uncoveredOrders}`)
-      console.log(`   Пробелов: ${coverageAnalysis.coverageGaps.length}`)
+      (/* debug */ console.log)(` Покрытие зоны: ${coverageAnalysis.coveragePercentage.toFixed(1)}%`)
+      (/* debug */ console.log)(`   Покрыто: ${coverageAnalysis.coveredOrders}, Не покрыто: ${coverageAnalysis.uncoveredOrders}`)
+      (/* debug */ console.log)(`   Пробелов: ${coverageAnalysis.coverageGaps.length}`)
     }
   }
 
   // 4. Тепловая карта загруженности
   let workloadHeatmap: EnhancedRoutePlan['workloadHeatmap'] | undefined
   if (enableWorkloadHeatmap && orders.length > 0) {
-    console.log('🔥 Создание тепловой карты загруженности...')
+    (/* debug */ console.log)(' Создание тепловой карты загруженности...')
     
     const heatmapData = createWorkloadHeatmap(orders, 20)
     workloadHeatmap = heatmapData.map(d => ({
@@ -222,8 +222,8 @@ export async function planEnhancedRoutes(
     const criticalZones = workloadHeatmap.filter(z => z.workload === 'critical').length
     const highZones = workloadHeatmap.filter(z => z.workload === 'high').length
 
-    console.log(`✅ Тепловая карта создана: ${heatmapData.length} точек`)
-    console.log(`   Критических зон: ${criticalZones}, Высокой загрузки: ${highZones}`)
+    (/* debug */ console.log)(` Тепловая карта создана: ${heatmapData.length} точек`)
+    (/* debug */ console.log)(`   Критических зон: ${criticalZones}, Высокой загрузки: ${highZones}`)
   }
 
   // 5. Статистика
@@ -240,12 +240,12 @@ export async function planEnhancedRoutes(
     totalDuration: routes.reduce((sum, r) => sum + r.totalDuration, 0)
   }
 
-  console.log('📊 Статистика планирования:')
-  console.log(`   Всего маршрутов: ${statistics.totalRoutes}`)
-  console.log(`   Среднее расстояние: ${statistics.averageRouteDistance.toFixed(1)} км`)
-  console.log(`   Среднее время: ${statistics.averageRouteDuration.toFixed(0)} мин`)
-  console.log(`   Общее расстояние: ${statistics.totalDistance.toFixed(1)} км`)
-  console.log(`   Общее время: ${statistics.totalDuration.toFixed(0)} мин`)
+  (/* debug */ console.log)(' Статистика планирования:')
+  (/* debug */ console.log)(`   Всего маршрутов: ${statistics.totalRoutes}`)
+  (/* debug */ console.log)(`   Среднее расстояние: ${statistics.averageRouteDistance.toFixed(1)} км`)
+  (/* debug */ console.log)(`   Среднее время: ${statistics.averageRouteDuration.toFixed(0)} мин`)
+  (/* debug */ console.log)(`   Общее расстояние: ${statistics.totalDistance.toFixed(1)} км`)
+  (/* debug */ console.log)(`   Общее время: ${statistics.totalDuration.toFixed(0)} мин`)
 
   return {
     routes,

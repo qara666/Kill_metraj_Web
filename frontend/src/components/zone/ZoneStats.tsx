@@ -176,7 +176,7 @@ export const ZoneStats: React.FC<ZoneStatsProps> = ({ zones }) => {
             'font-semibold mb-3',
             isDark ? 'text-gray-100' : 'text-gray-900'
           )}>
-            🏆 Топ зона
+             Топ зона
           </h4>
           <div className="space-y-2">
             <div className={clsx(
@@ -203,7 +203,7 @@ export const ZoneStats: React.FC<ZoneStatsProps> = ({ zones }) => {
             'font-semibold mb-3',
             isDark ? 'text-gray-100' : 'text-gray-900'
           )}>
-            🚀 Топ курьер
+             Топ курьер
           </h4>
           <div className="space-y-2">
             <div className={clsx(

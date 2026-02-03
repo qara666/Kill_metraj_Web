@@ -1,9 +1,10 @@
 const jwt = require('jsonwebtoken');
 const { User, AuditLog } = require('../models');
+const { rlsContextStore } = require('../utils/context');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-const JWT_EXPIRES_IN = '16h'; // Доступ к тоекену 
-const REFRESH_TOKEN_EXPIRES_IN = '7d'; //  Обновить ток неделя
+const JWT_EXPIRES_IN = '16h'; // Срок действия токена доступа
+const REFRESH_TOKEN_EXPIRES_IN = '7d'; // Срок действия токена обновления (1 неделя)
 
 // Generate access token
 function generateAccessToken(user) {
@@ -30,7 +31,11 @@ function generateRefreshToken(user) {
     );
 }
 
-// Middleware to authenticate token
+// Простая кэш-память для пользователей (предотвращает избыточные запросы к БД)
+const userCache = new Map();
+const CACHE_TTL = 300000; // 5 минут в миллисекундах
+
+// Middleware для аутентификации токена
 async function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
@@ -38,78 +43,102 @@ async function authenticateToken(req, res, next) {
     if (!token) {
         return res.status(401).json({
             success: false,
-            error: 'Unauthorized',
-            message: 'Access token required'
+            error: 'ОшибкаАутентификации',
+            message: 'Требуется токен доступа'
         });
     }
 
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
 
-        // Check if it's a refresh token (not allowed for regular requests)
+        // Проверка типа токена (обновление через refresh-токен запрещено для обычных запросов)
         if (decoded.type === 'refresh') {
             return res.status(401).json({
                 success: false,
-                error: 'Unauthorized',
-                message: 'Invalid token type'
+                error: 'ОшибкаАутентификации',
+                message: 'Неверный тип токена'
             });
         }
 
-        // Fetch user from database (Sequelize)
-        const user = await User.findByPk(decoded.userId);
+        // 1. Пробуем получить пользователя из кэша
+        const cachedUser = userCache.get(decoded.userId);
+        let user;
+
+        if (cachedUser && (Date.now() - cachedUser.timestamp < CACHE_TTL)) {
+            user = cachedUser.data;
+        } else {
+            // 2. Если нет в кэше или истек TTL - получаем из базы данных
+            user = await User.findByPk(decoded.userId);
+
+            if (user) {
+                // Сохраняем в кэш
+                userCache.set(decoded.userId, {
+                    data: user,
+                    timestamp: Date.now()
+                });
+            }
+        }
 
         if (!user) {
             return res.status(401).json({
                 success: false,
-                error: 'Unauthorized',
-                message: 'User not found'
+                error: 'ОшибкаАутентификации',
+                message: 'Пользователь не найден'
             });
         }
 
         if (!user.isActive) {
             return res.status(403).json({
                 success: false,
-                error: 'Forbidden',
-                message: 'Account is deactivated'
+                error: 'ДоступЗапрещен',
+                message: 'Аккаунт деактивирован'
             });
         }
 
-        // Attach user to request
+        // Прикрепление пользователя к запросу
         req.user = user;
-        next();
+
+        // Распространение контекста для PostgreSQL RLS через AsyncLocalStorage
+        return rlsContextStore.run({
+            userId: user.id,
+            divisionId: user.divisionId || '',
+            role: user.role
+        }, () => {
+            next();
+        });
     } catch (error) {
         if (error.name === 'TokenExpiredError') {
             return res.status(401).json({
                 success: false,
-                error: 'TokenExpired',
-                message: 'Access token expired'
+                error: 'ТокенИстек',
+                message: 'Срок действия токена истек'
             });
         }
 
         return res.status(403).json({
             success: false,
-            error: 'Forbidden',
-            message: 'Invalid token'
+            error: 'ДоступЗапрещен',
+            message: 'Неверный токен'
         });
     }
 }
 
-// Middleware to require specific role
+// Middleware для проверки роли
 function requireRole(role) {
     return (req, res, next) => {
         if (!req.user) {
             return res.status(401).json({
                 success: false,
                 error: 'Unauthorized',
-                message: 'Authentication required'
+                message: 'Требуется аутентификация'
             });
         }
 
         if (req.user.role !== role) {
             return res.status(403).json({
                 success: false,
-                error: 'Forbidden',
-                message: `${role} role required`
+                error: 'ДоступЗапрещен',
+                message: `Требуется роль ${role}`
             });
         }
 
@@ -117,23 +146,20 @@ function requireRole(role) {
     };
 }
 
-// Middleware to log actions
+// Middleware для логирования действий
 function auditLog(action) {
     return async (req, res, next) => {
-        // Skip logging for admins as requested by user ("логи админа не вести")
-        // Also skip if no user (should rely on authenticateToken, but for safety)
+        // Пропускаем логирование для админов по запросу пользователя
         if (req.user && req.user.role === 'admin') {
             return next();
         }
 
-        // Store original send function
+        // Перехват функции отправки ответа
         const originalSend = res.send;
 
-        // Override send function to log after response
         res.send = function (data) {
-            // Only log successful requests (2xx status codes)
+            // Логируем только успешные запросы
             if (res.statusCode >= 200 && res.statusCode < 300) {
-                // Log asynchronously (don't wait)
                 setImmediate(async () => {
                     try {
                         if (req.user) {
@@ -154,12 +180,11 @@ function auditLog(action) {
                             });
                         }
                     } catch (error) {
-                        console.error('Audit log error:', error);
+                        logger.error('Ошибка логирования аудита:', error);
                     }
                 });
             }
 
-            // Call original send
             originalSend.call(this, data);
         };
 
@@ -167,11 +192,14 @@ function auditLog(action) {
     };
 }
 
+const { authorize } = require('./rbac');
+
 module.exports = {
     generateAccessToken,
     generateRefreshToken,
     authenticateToken,
     requireRole,
+    authorize,
     auditLog,
     JWT_SECRET
 };

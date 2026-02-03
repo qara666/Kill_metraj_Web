@@ -48,15 +48,15 @@ export const AutoPlannerControls: React.FC<AutoPlannerControlsProps> = React.mem
                 )}>
                     {trafficPreset.mode !== 'free' && (
                         <div className="flex items-center gap-2 mb-2 font-bold">
-                            {trafficPreset.mode === 'gridlock' && <span>🛑</span>}
-                            {trafficPreset.mode === 'busy' && <span>⚠️</span>}
+                            {trafficPreset.mode === 'gridlock' && <span></span>}
+                            {trafficPreset.mode === 'busy' && <span>️</span>}
                             <span>
                                 {trafficPreset.mode === 'gridlock' ? 'КРИТИЧЕСКИЙ ТРАФИК' : 'ПЛОТНЫЙ ТРАФИК'}
                             </span>
                         </div>
                     )}
                     <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                        <span>Режим: {trafficPreset.mode === 'gridlock' ? '⚠️ Критический' : trafficPreset.mode === 'busy' ? '⛔ Плотный' : '✅ Умеренный'}</span>
+                        <span>Режим: {trafficPreset.mode === 'gridlock' ? '️ Критический' : trafficPreset.mode === 'busy' ? ' Плотный' : ' Умеренный'}</span>
                         <span>Макс. стопов: {trafficPreset.recommendedMaxStops}</span>
                         <span>Лимит дистанции: {trafficPreset.maxDistanceCap} км</span>
                         <span>Буфер: +{trafficPreset.bufferMinutes} мин</span>

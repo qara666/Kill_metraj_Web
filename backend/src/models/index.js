@@ -1,4 +1,5 @@
 const { sequelize } = require('../config/database');
+const logger = require('../utils/logger');
 const User = require('./User');
 const UserPreset = require('./UserPreset');
 const AuditLog = require('./AuditLog');
@@ -49,9 +50,9 @@ async function syncDatabase() {
         const isDev = process.env.NODE_ENV === 'development';
         // Run sync in production for initial setup
         await sequelize.sync({ alter: isDev });
-        console.log('✅ Database synced successfully');
+        logger.info('Синхронизация базы данных выполнена успешно');
     } catch (error) {
-        console.error('❌ Database sync error:', error);
+        logger.error('Ошибка синхронизации базы данных', { error: error.message });
     }
 }
 

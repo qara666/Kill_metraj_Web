@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const logger = require('../utils/logger');
 const { User, UserPreset } = require('../models');
 const { authenticateToken, requireRole, auditLog } = require('../middleware/auth');
 const { Op } = require('sequelize');
@@ -41,11 +42,11 @@ router.get('/', auditLog('user_list'), async (req, res) => {
             data: users.map(u => u.toJSON())
         });
     } catch (error) {
-        console.error('Get users error:', error);
+        logger.error('Ошибка получения списка пользователей', { error: error.message });
         res.status(500).json({
             success: false,
-            error: 'InternalServerError',
-            message: 'Failed to fetch users'
+            error: 'ВнутренняяОшибкаСервера',
+            message: 'Не удалось получить список пользователей'
         });
     }
 });
@@ -59,8 +60,8 @@ router.post('/', auditLog('user_create'), async (req, res) => {
         if (!username || !password) {
             return res.status(400).json({
                 success: false,
-                error: 'ValidationError',
-                message: 'Username and password are required'
+                error: 'ОшибкаВалидации',
+                message: 'Имя пользователя и пароль обязательны'
             });
         }
 
@@ -68,8 +69,8 @@ router.post('/', auditLog('user_create'), async (req, res) => {
         if (password.length < 4) {
             return res.status(400).json({
                 success: false,
-                error: 'ValidationError',
-                message: 'Password must be at least 4 characters'
+                error: 'ОшибкаВалидации',
+                message: 'Пароль должен содержать минимум 4 символа'
             });
         }
 
@@ -88,8 +89,8 @@ router.post('/', auditLog('user_create'), async (req, res) => {
         if (existingUser) {
             return res.status(400).json({
                 success: false,
-                error: 'UserExists',
-                message: 'User with this username or email already exists'
+                error: 'ПользовательСуществует',
+                message: 'Пользователь с таким именем или email уже существует'
             });
         }
 
@@ -114,11 +115,11 @@ router.post('/', auditLog('user_create'), async (req, res) => {
             data: user.toJSON()
         });
     } catch (error) {
-        console.error('Create user error:', error);
+        logger.error('Ошибка создания пользователя', { error: error.message });
         res.status(500).json({
             success: false,
-            error: 'InternalServerError',
-            message: 'Failed to create user'
+            error: 'ВнутренняяОшибкаСервера',
+            message: 'Не удалось создать пользователя'
         });
     }
 });
@@ -131,8 +132,8 @@ router.get('/:id', auditLog('user_view'), async (req, res) => {
         if (!user) {
             return res.status(404).json({
                 success: false,
-                error: 'NotFound',
-                message: 'User not found'
+                error: 'НеНайдено',
+                message: 'Пользователь не найден'
             });
         }
 
@@ -141,11 +142,11 @@ router.get('/:id', auditLog('user_view'), async (req, res) => {
             data: user.toJSON()
         });
     } catch (error) {
-        console.error('Get user error:', error);
+        logger.error('Ошибка получения пользователя', { error: error.message });
         res.status(500).json({
             success: false,
-            error: 'InternalServerError',
-            message: 'Failed to fetch user'
+            error: 'ВнутренняяОшибкаСервера',
+            message: 'Не удалось получить данные пользователя'
         });
     }
 });
@@ -160,8 +161,8 @@ router.put('/:id', auditLog('user_update'), async (req, res) => {
         if (!user) {
             return res.status(404).json({
                 success: false,
-                error: 'NotFound',
-                message: 'User not found'
+                error: 'НеНайдено',
+                message: 'Пользователь не найден'
             });
         }
 
@@ -179,11 +180,11 @@ router.put('/:id', auditLog('user_update'), async (req, res) => {
             data: user.toJSON()
         });
     } catch (error) {
-        console.error('Update user error:', error);
+        logger.error('Ошибка обновления пользователя', { error: error.message });
         res.status(500).json({
             success: false,
-            error: 'InternalServerError',
-            message: 'Failed to update user'
+            error: 'ВнутренняяОшибкаСервера',
+            message: 'Не удалось обновить пользователя'
         });
     }
 });
@@ -196,8 +197,8 @@ router.delete('/:id', auditLog('user_delete'), async (req, res) => {
         if (!user) {
             return res.status(404).json({
                 success: false,
-                error: 'NotFound',
-                message: 'User not found'
+                error: 'НеНайдено',
+                message: 'Пользователь не найден'
             });
         }
 
@@ -205,8 +206,8 @@ router.delete('/:id', auditLog('user_delete'), async (req, res) => {
         if (user.id === req.user.id) {
             return res.status(400).json({
                 success: false,
-                error: 'ValidationError',
-                message: 'Cannot delete your own account'
+                error: 'ОшибкаВалидации',
+                message: 'Нельзя удалить собственный аккаунт'
             });
         }
 
@@ -214,14 +215,14 @@ router.delete('/:id', auditLog('user_delete'), async (req, res) => {
 
         res.json({
             success: true,
-            message: 'User deleted successfully'
+            message: 'Пользователь успешно удален'
         });
     } catch (error) {
-        console.error('Delete user error:', error);
+        logger.error('Ошибка удаления пользователя', { error: error.message });
         res.status(500).json({
             success: false,
-            error: 'InternalServerError',
-            message: 'Failed to delete user',
+            error: 'ВнутренняяОшибкаСервера',
+            message: 'Не удалось удалить пользователя',
             details: error.parent ? error.parent.message : error.message
         });
     }
@@ -235,8 +236,8 @@ router.put('/:id/toggle-active', auditLog('user_toggle_active'), async (req, res
         if (!user) {
             return res.status(404).json({
                 success: false,
-                error: 'NotFound',
-                message: 'User not found'
+                error: 'НеНайдено',
+                message: 'Пользователь не найден'
             });
         }
 
@@ -244,8 +245,8 @@ router.put('/:id/toggle-active', auditLog('user_toggle_active'), async (req, res
         if (user.id === req.user.id) {
             return res.status(400).json({
                 success: false,
-                error: 'ValidationError',
-                message: 'Cannot deactivate your own account'
+                error: 'ОшибкаВалидации',
+                message: 'Нельзя деактивировать собственный аккаунт'
             });
         }
 
@@ -257,11 +258,11 @@ router.put('/:id/toggle-active', auditLog('user_toggle_active'), async (req, res
             data: user.toJSON()
         });
     } catch (error) {
-        console.error('Toggle active error:', error);
+        logger.error('Ошибка переключения статуса пользователя', { error: error.message });
         res.status(500).json({
             success: false,
-            error: 'InternalServerError',
-            message: 'Failed to toggle user status'
+            error: 'ВнутренняяОшибкаСервера',
+            message: 'Не удалось изменить статус пользователя'
         });
     }
 });
@@ -274,8 +275,8 @@ router.put('/:id/change-password', auditLog('user_password_change'), async (req,
         if (!newPassword || newPassword.length < 4) {
             return res.status(400).json({
                 success: false,
-                error: 'ValidationError',
-                message: 'Password must be at least 4 characters'
+                error: 'ОшибкаВалидации',
+                message: 'Пароль должен содержать минимум 4 символа'
             });
         }
 
@@ -284,8 +285,8 @@ router.put('/:id/change-password', auditLog('user_password_change'), async (req,
         if (!user) {
             return res.status(404).json({
                 success: false,
-                error: 'NotFound',
-                message: 'User not found'
+                error: 'НеНайдено',
+                message: 'Пользователь не найден'
             });
         }
 
@@ -294,14 +295,14 @@ router.put('/:id/change-password', auditLog('user_password_change'), async (req,
 
         res.json({
             success: true,
-            message: 'Password changed successfully'
+            message: 'Пароль успешно изменен'
         });
     } catch (error) {
-        console.error('Change password error:', error);
+        logger.error('Ошибка смены пароля', { error: error.message });
         res.status(500).json({
             success: false,
-            error: 'InternalServerError',
-            message: 'Failed to change password'
+            error: 'ВнутренняяОшибкаСервера',
+            message: 'Не удалось сменить пароль'
         });
     }
 });

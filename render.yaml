@@ -11,21 +11,37 @@ services:
         value: production
       - key: PORT
         value: 5001
+      - key: GRPC_PORT
+        value: 50051
       - key: DASHBOARD_FETCH_INTERVAL
-        value: 120000  # 2 minutes for production
+        value: 300000  # 5 minutes for production
       - key: DASHBOARD_DATA_RETENTION_DAYS
         value: 7
-      - key: FRONTEND_URL
+      - key: REDIS_ENABLED
+        value: "true"
+      - key: CDC_ENABLED
+        value: "false" # Default to false on Render unless user sets up Kafka
+      - key: DASHBOARD_MOCK_MODE
+        value: "false"
+      - key: EXTERNAL_API_URL
+        value: "http://app.yaposhka.kh.ua:4999/api/v1/dashboard"
+      - key: DASHBOARD_DEPARTMENT_ID
+        value: "100000052"
+      - key: REDIS_URL
         fromService:
-          type: static
-          name: kill-metraj-frontend
-          property: url
-      - key: DATABASE_URL
-        fromDatabase:
-          name: kill-metraj-db
+          type: redis
+          name: kill-metraj-redis
           property: connectionString
+      - key: FRONTEND_URL
+        sync: false
+      - key: DATABASE_URL
+        sync: false
       - key: EXTERNAL_API_KEY
-        sync: false  # User must provide this in dashboard
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true # Render will generate a random secret
+      - key: KAFKA_BROKER
+        sync: false # User provides if using external Kafka
 
   # Frontend Service
   - type: static
@@ -44,10 +60,10 @@ services:
           name: kill-metraj-backend
           property: url
 
-databases:
-  - name: kill-metraj-db
+  # Redis Service
+  - type: redis
+    name: kill-metraj-redis
     plan: free
-    databaseName: kill_metraj
-    user: kill_metraj_user
+    ipAllowList: [] # Only allow internal Render traffic
 
 version: "1"

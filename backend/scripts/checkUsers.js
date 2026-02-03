@@ -3,17 +3,17 @@ const { sequelize, User } = require('../src/models');
 async function checkUsers() {
     try {
         await sequelize.authenticate();
-        console.log('коннект к PostgreSQL');
+        console.log('Соединение с PostgreSQL установлено');
 
         const users = await User.findAll();
 
-        console.log('Found ' + users.length + ' users:');
+        console.log('Найдено ' + users.length + ' пользователей:');
         users.forEach(u => {
-            console.log(`- ID: ${u.id}, Username: ${u.username}, Email: ${u.email}, Role: ${u.role}, Active: ${u.isActive}`);
+            console.log(`- ID: ${u.id}, Имя: ${u.username}, Email: ${u.email}, Роль: ${u.role}, Активен: ${u.isActive}`);
         });
 
     } catch (error) {
-        console.error('Error:', error);
+        console.error('Ошибка:', error);
     } finally {
         await sequelize.close();
     }

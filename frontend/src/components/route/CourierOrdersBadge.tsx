@@ -163,7 +163,7 @@ export function CourierOrdersBadge({
                             : 'bg-yellow-50 text-yellow-700 border border-yellow-200'
                     )}
                 >
-                    ⚠️ Требуется пересчет маршрута
+                    ️ Требуется пересчет маршрута
                 </div>
             )}
         </div>

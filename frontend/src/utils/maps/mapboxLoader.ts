@@ -55,7 +55,7 @@ export async function loadMapboxGL(): Promise<MapboxModule> {
         return mapboxgl as MapboxModule
       })
       .catch(error => {
-        console.warn('⚠️ Не удалось загрузить mapbox-gl через bundler, пробую CDN...', error)
+        console.warn('️ Не удалось загрузить mapbox-gl через bundler, пробую CDN...', error)
         return loadViaCdn()
       })
   }

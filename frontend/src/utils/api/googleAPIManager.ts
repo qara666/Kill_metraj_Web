@@ -431,13 +431,13 @@ class GoogleAPIBatchQueue {
 
         if (!isRetryable || i === maxRetries - 1) {
           if (i > 0) {
-            console.error(`❌ GoogleAPIManager: Все попытки (${i + 1}) провалены. Ошибка: ${errorMessage}`);
+            console.error(` GoogleAPIManager: Все попытки (${i + 1}) провалены. Ошибка: ${errorMessage}`);
           }
           break;
         }
 
         const delayMs = baseDelay * Math.pow(2, i) + (Math.random() * 300);
-        console.warn(`⚠️ GoogleAPIManager: Попытка ${i + 1} провалена (${errorMessage}). Повтор через ${Math.round(delayMs)}ms...`);
+        console.warn(`️ GoogleAPIManager: Попытка ${i + 1} провалена (${errorMessage}). Повтор через ${Math.round(delayMs)}ms...`);
         await this.delay(delayMs);
       }
     }

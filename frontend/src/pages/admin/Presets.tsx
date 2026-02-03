@@ -47,11 +47,11 @@ export const AdminPresets: React.FC = () => {
             const exportUrl = `https://www.google.com/maps/d/u/0/kml?mid=${mid}&forcekml=1`
 
             const response = await fetch(`${baseUrl}/api/proxy/kml?url=${encodeURIComponent(exportUrl)}`)
-            if (!response.ok) throw new Error('Network response was not ok')
+            if (!response.ok) throw new Error('Ошибка сети при запросе к прокси')
 
             const json = await response.json()
             if (!json.success || !json.contents) {
-                throw new Error('Invalid response from proxy')
+                throw new Error('Некорректный ответ от прокси сервера')
             }
 
             const parsed = parseKML(json.contents)

@@ -77,7 +77,7 @@ export const ImportSection: React.FC<ImportSectionProps> = React.memo(({
             >
                 <div className={clsx('text-sm font-medium flex items-center gap-2', actualIsDark ? 'text-gray-300' : 'text-gray-700')}>
                     <span>{isImportExpanded ? '▼' : '▶'}</span>
-                    <span>📥 Загрузка данных</span>
+                    <span> Загрузка данных</span>
                 </div>
             </button>
 
