@@ -27,19 +27,17 @@ export const useDashboardAutoRefresh = ({
     onDataLoaded,
     enabled = false,
 }: DashboardAutoRefreshParams) => {
-    const {
-        apiKey,
-        apiDepartmentId,
-        apiAutoRefreshEnabled,
-        setApiLastSyncTime,
-        setApiNextSyncTime,
-        setApiSyncStatus,
-        setApiSyncError,
-        apiManualSyncTrigger,
-        apiDateShift,
-        apiDateShiftFilterEnabled,
-        apiTimeFilterEnabled
-    } = useAutoPlannerStore();
+    const apiKey = useAutoPlannerStore(s => s.apiKey);
+    const apiDepartmentId = useAutoPlannerStore(s => s.apiDepartmentId);
+    const apiAutoRefreshEnabled = useAutoPlannerStore(s => s.apiAutoRefreshEnabled);
+    const setApiLastSyncTime = useAutoPlannerStore(s => s.setApiLastSyncTime);
+    const setApiNextSyncTime = useAutoPlannerStore(s => s.setApiNextSyncTime);
+    const setApiSyncStatus = useAutoPlannerStore(s => s.setApiSyncStatus);
+    const setApiSyncError = useAutoPlannerStore(s => s.setApiSyncError);
+    const apiManualSyncTrigger = useAutoPlannerStore(s => s.apiManualSyncTrigger);
+    const apiDateShift = useAutoPlannerStore(s => s.apiDateShift);
+    const apiDateShiftFilterEnabled = useAutoPlannerStore(s => s.apiDateShiftFilterEnabled);
+    const apiTimeFilterEnabled = useAutoPlannerStore(s => s.apiTimeFilterEnabled);
 
     const intervalRef = useRef<any>(null);
     const retryCountRef = useRef(0);
