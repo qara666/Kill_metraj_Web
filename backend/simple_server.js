@@ -30,9 +30,20 @@ const httpServer = http.createServer(app);
 const PORT = process.env.PORT || 5001;
 
 // Socket.io setup with CORS
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: (origin, callback) => {
+      // Allow local development
+      if (!origin || origin.startsWith('http://localhost') || origin === FRONTEND_URL) {
+        return callback(null, true);
+      }
+      // Allow Render subdomains
+      if (origin.endsWith('.onrender.com')) {
+        return callback(null, true);
+      }
+      callback(new Error('Not allowed by CORS'));
+    },
     methods: ['GET', 'POST'],
     credentials: true
   },
@@ -47,11 +58,21 @@ let pgListenClient = null;
 const dashboardConsumer = new DashboardConsumer(io);
 let grpcServer = null;
 
-// Manual Robust CORS Middleware (Wildcard Origin)
+// Manual Robust CORS Middleware (Dynamic)
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin;
+  const isAllowedOrigin = !origin ||
+    origin.startsWith('http://localhost') ||
+    origin === FRONTEND_URL ||
+    origin.endsWith('.onrender.com');
+
+  if (isAllowedOrigin) {
+    res.header('Access-Control-Allow-Origin', origin || '*');
+  }
+
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-API-KEY, X-Requested-With, Accept, Origin');
+  res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Max-Age', '86400'); // 24 hours
 
   // Handle preflight
@@ -335,16 +356,23 @@ async function startServer() {
       // Start gRPC server immediately
       grpcServer = startGrpcServer(process.env.GRPC_PORT || '50051');
 
-      /* 
       // Запуск фонового загрузчика дашборда (DashboardFetcher)
+      // Мы запускаем его ВНУТРИ процесса API для экономии памяти на Render
       try {
-        logger.info('Запуск фонового загрузчика дашборда...');
-        require('./workers/dashboardFetcher');
-        logger.info('Фоновый загрузчик дашборда инициализирован');
+        logger.info('Запуск внутреннего фонового загрузчика дашборда...');
+        const DashboardFetcher = require('./workers/dashboardFetcher');
+        const fetcher = new DashboardFetcher();
+
+        // Перехватываем start() чтобы он не вызывал process.exit(0) если блокировка не получена
+        // В монолитном режиме на Render это нормально
+        fetcher.start().then(() => {
+          logger.info('Внутренний загрузчик дашборда запущен');
+        }).catch(err => {
+          logger.error('Ошибка при запуске внутреннего загрузчика:', err.message);
+        });
       } catch (fetcherError) {
-        logger.error('Ошибка при запуске фонового загрузчика:', fetcherError.message);
+        logger.error('Ошибка при инициализации внутреннего загрузчика:', fetcherError.message);
       }
-      */
 
       // Запуск PostgreSQL LISTEN для обновлений дашборда
       await setupDashboardListener();

@@ -5,7 +5,7 @@ services:
     env: node
     plan: free
     buildCommand: cd backend && npm install
-    startCommand: cd backend && npx pm2-runtime start ecosystem.config.js
+    startCommand: cd backend && node simple_server.js
     envVars:
       - key: NODE_ENV
         value: production
