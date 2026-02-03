@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react'
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback, useMemo } from 'react'
 import { localStorageUtils } from '../utils/ui/localStorage'
 import { toast } from 'react-hot-toast'
 
@@ -178,14 +178,16 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     })
   }, [])
 
+  const contextValue = useMemo(() => ({
+    excelData,
+    setExcelData,
+    updateExcelData,
+    clearExcelData,
+    updateRouteData
+  }), [excelData, setExcelData, updateExcelData, clearExcelData, updateRouteData]);
+
   return (
-    <ExcelDataContext.Provider value={{
-      excelData,
-      setExcelData,
-      updateExcelData,
-      clearExcelData,
-      updateRouteData
-    }}>
+    <ExcelDataContext.Provider value={contextValue}>
       {children}
     </ExcelDataContext.Provider>
   )

@@ -26,13 +26,12 @@ export const useDashboardWebSocket = ({
     onDataLoaded,
     enabled = false
 }: DashboardWebSocketParams) => {
-    const {
-        setApiLastSyncTime,
-        setApiSyncStatus,
-        setApiSyncError,
-        apiManualSyncTrigger,
-        apiAutoRefreshEnabled
-    } = useAutoPlannerStore();
+    // Use stable selectors for Zustand
+    const setApiLastSyncTime = useAutoPlannerStore(s => s.setApiLastSyncTime);
+    const setApiSyncStatus = useAutoPlannerStore(s => s.setApiSyncStatus);
+    const setApiSyncError = useAutoPlannerStore(s => s.setApiSyncError);
+    const apiManualSyncTrigger = useAutoPlannerStore(s => s.apiManualSyncTrigger);
+    const apiAutoRefreshEnabled = useAutoPlannerStore(s => s.apiAutoRefreshEnabled);
 
     const isConnectedRef = useRef(false);
     const lastProcessedTriggerRef = useRef<number | null>(null);
@@ -191,14 +190,14 @@ export const useDashboardWebSocket = ({
         // Connect to WebSocket
         connectWebSocket();
 
-        // Fetch initial data
-        fetchLatestData();
+        // Note: No fetchLatestData() here anymore! 
+        // Initial fetch is handled by GlobalDashboardFetcher/AutoRefresh interval
 
         // Cleanup on unmount
         return () => {
             disconnectWebSocket();
         };
-    }, [enabled, apiAutoRefreshEnabled, connectWebSocket, disconnectWebSocket, fetchLatestData]);
+    }, [enabled, apiAutoRefreshEnabled, connectWebSocket, disconnectWebSocket]);
 
     return {
         fetchLatestData,

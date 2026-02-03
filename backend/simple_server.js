@@ -262,6 +262,41 @@ app.get('/metrics', async (req, res) => {
   res.end(await metricsRegister.metrics());
 });
 
+app.post('/api/admin/setup', async (req, res) => {
+  const { secret } = req.body;
+  const SETUP_SECRET = process.env.SETUP_SECRET || 'setup-secret-123';
+
+  if (secret !== SETUP_SECRET) {
+    return res.status(403).json({ success: false, error: 'Forbidden' });
+  }
+
+  try {
+    logger.info('[SETUP] Running manual DB sync and admin check...');
+    await syncDatabase();
+
+    const { User } = require('./src/models');
+    const [admin, created] = await User.findOrCreate({
+      where: { username: 'admin' },
+      defaults: {
+        passwordHash: 'adminpassword123',
+        role: 'admin',
+        isActive: true,
+        canModifySettings: true,
+        divisionId: 'all'
+      }
+    });
+
+    res.json({
+      success: true,
+      message: created ? 'Administrator created' : 'Administrator already exists',
+      adminId: admin.id
+    });
+  } catch (error) {
+    logger.error('[SETUP] Failed:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.post('/api/upload/test-api-key', (req, res) => {
   const { apiKey } = req.body;
   res.json({
@@ -321,27 +356,30 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
 
     logger.info('STARTING ADMIN CHECK/CREATION...');
     const { User } = require('./src/models');
-    const [admin, created] = await User.findOrCreate({
-      where: { username: 'admin' },
-      defaults: {
-        passwordHash: 'adminpassword123',
-        role: 'admin',
-        isActive: true,
-        canModifySettings: true,
-        divisionId: 'all' // Changed to 'all' to ensure full access
-      }
-    });
+    try {
+      const [admin, created] = await User.findOrCreate({
+        where: { username: 'admin' },
+        defaults: {
+          passwordHash: 'adminpassword123', // Will be hashed via hook
+          role: 'admin',
+          isActive: true,
+          canModifySettings: true,
+          divisionId: 'all'
+        }
+      });
 
-    if (created) {
-      logger.info('SUCCESS: Administrator account created automatically.');
-    } else {
-      logger.info('INFO: Administrator account already exists.');
-      // Optionally update divisionId if it was wrong
-      if (admin.divisionId !== 'all') {
-        admin.divisionId = 'all';
-        await admin.save();
-        logger.info('INFO: Administrator division updated to "all".');
+      if (created) {
+        logger.info('SUCCESS: Administrator account created automatically.');
+      } else {
+        logger.info('INFO: Administrator account already exists.');
+        if (admin.divisionId !== 'all') {
+          admin.divisionId = 'all';
+          await admin.save();
+          logger.info('INFO: Administrator division updated to "all".');
+        }
       }
+    } catch (createErr) {
+      logger.error('CRITICAL: Failed to check/create administrator', { error: createErr.message });
     }
 
     await setupDashboardListener();

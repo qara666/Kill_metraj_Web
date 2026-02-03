@@ -49,8 +49,13 @@ AuditLog.belongsTo(User, {
 async function syncDatabase() {
     try {
         const isDev = process.env.NODE_ENV === 'development';
-        // Run sync in production for initial setup
-        await sequelize.sync({ alter: isDev });
+        const forceAlter = process.env.DB_ALTER_SYNC === 'true';
+
+        // Run sync in production for initial setup or if explicitly requested
+        const syncOptions = { alter: isDev || forceAlter };
+
+        logger.info(`Синхронизация базы данных (alter: ${syncOptions.alter})...`);
+        await sequelize.sync(syncOptions);
         logger.info('Синхронизация базы данных выполнена успешно');
     } catch (error) {
         logger.error('Ошибка синхронизации базы данных', { error: error.message });

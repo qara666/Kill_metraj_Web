@@ -29,7 +29,10 @@ services:
         value: "http://app.yaposhka.kh.ua:4999"
       - key: DASHBOARD_DEPARTMENT_ID
         value: "100000052"
-      - key: REDIS_URL
+      - key: DB_ALTER_SYNC
+        value: "true"
+      - key: SETUP_SECRET
+        generateValue: true
         fromService:
           type: redis
           name: yapiko-auto-km-redis

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react'
+import React, { useState, useEffect, Suspense, lazy, useCallback } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
 import { LoadingSpinner } from '../components/shared/LoadingSpinner'
@@ -29,10 +29,10 @@ export const Dashboard: React.FC = () => {
   const [previewData, setPreviewData] = useState<any>(null)
   const queryClient = useQueryClient()
 
-  const log = (message: string) => {
+  const log = useCallback((message: string) => {
     const entry = `${new Date().toLocaleTimeString()} — ${message}`
     setLogs(prev => [entry, ...prev].slice(0, 200))
-  }
+  }, [])
 
 
 
@@ -178,19 +178,19 @@ export const Dashboard: React.FC = () => {
 
 
 
-  const handleExcelFileSelect = (file: File) => {
+  const handleExcelFileSelect = useCallback((file: File) => {
     setSelectedFile(file)
     log(`Выбран Excel файл: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`)
-  }
+  }, [log])
 
-  const handleExcelProcessFile = () => {
+  const handleExcelProcessFile = useCallback(() => {
     if (selectedFile) {
       log(`Начинаем обработку файла: ${selectedFile.name}`)
       processFileMutation.mutate(selectedFile)
     }
-  }
+  }, [selectedFile, processFileMutation, log])
 
-  const handleClearExcelResults = () => {
+  const handleClearExcelResults = useCallback(() => {
     clearExcelData()
     setSelectedFile(null)
     setPreviewData(null)
@@ -203,9 +203,9 @@ export const Dashboard: React.FC = () => {
     }
 
     log('Результаты Excel обработки очищены (можно загрузить новые файлы)')
-  }
+  }, [clearExcelData, log])
 
-  const handleHtmlDataLoad = (data: any) => {
+  const handleHtmlDataLoad = useCallback((data: any) => {
     try {
       const orders = Array.isArray(data.orders) ? data.orders : []
       const couriers = Array.isArray(data.couriers) ? data.couriers : []
@@ -289,13 +289,13 @@ export const Dashboard: React.FC = () => {
       toast.error(`Ошибка обработки HTML данных: ${error.message || 'Неизвестная ошибка'}`)
       log(`Ошибка обработки HTML данных: ${error.message || 'Неизвестная ошибка'}`)
     }
-  }
+  }, [excelData, setExcelData, queryClient, log])
 
-  const handleConfirmPreview = () => {
+  const handleConfirmPreview = useCallback(() => {
     setShowDataPreview(false)
     toast.success('Данные успешно сохранены!')
     log('Пользователь подтвердил сохранение данных из Excel')
-  }
+  }, [log])
 
   return (
     <div className={clsx(
