@@ -58,29 +58,24 @@ let pgListenClient = null;
 const dashboardConsumer = new DashboardConsumer(io);
 let grpcServer = null;
 
-// Manual Robust CORS Middleware (Dynamic)
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  const isAllowedOrigin = !origin ||
-    origin.startsWith('http://localhost') ||
-    origin === FRONTEND_URL ||
-    origin.endsWith('.onrender.com');
+const cors = require('cors');
 
-  if (isAllowedOrigin) {
-    res.header('Access-Control-Allow-Origin', origin || '*');
-  }
+// CORS configuration for Render and local development
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || origin.startsWith('http://localhost') || origin === FRONTEND_URL || origin.endsWith('.onrender.com')) {
+      return callback(null, true);
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'X-API-KEY', 'X-Requested-With', 'Accept', 'Origin'],
+  credentials: true,
+  maxAge: 86400
+};
 
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-API-KEY, X-Requested-With, Accept, Origin');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Max-Age', '86400'); // 24 hours
-
-  // Handle preflight
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
-  }
-  next();
-});
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Handle PREFLIGHT for all routes
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -324,6 +319,7 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
     logger.info('PostgreSQL подключен');
     await syncDatabase();
 
+    logger.info('STARTING ADMIN CHECK/CREATION...');
     const { User } = require('./src/models');
     const [admin, created] = await User.findOrCreate({
       where: { username: 'admin' },
@@ -332,9 +328,21 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
         role: 'admin',
         isActive: true,
         canModifySettings: true,
-        divisionId: '100000000'
+        divisionId: 'all' // Changed to 'all' to ensure full access
       }
-    }).catch(err => logger.error('Failed to create admin:', err.message));
+    });
+
+    if (created) {
+      logger.info('SUCCESS: Administrator account created automatically.');
+    } else {
+      logger.info('INFO: Administrator account already exists.');
+      // Optionally update divisionId if it was wrong
+      if (admin.divisionId !== 'all') {
+        admin.divisionId = 'all';
+        await admin.save();
+        logger.info('INFO: Administrator division updated to "all".');
+      }
+    }
 
     await setupDashboardListener();
 

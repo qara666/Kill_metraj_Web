@@ -59,7 +59,7 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        sync: false
+        value: https://yapiko-auto-km-backend.onrender.com
 
   # Redis Service
   - type: redis
