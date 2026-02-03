@@ -31,13 +31,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null)
     const [loading, setLoading] = useState(true)
 
+    const isSyncingRef = React.useRef(false)
+
     // Загрузка текущего пользователя при монтировании
     useEffect(() => {
         const loadUser = async () => {
+            if (isSyncingRef.current) return
             try {
                 const currentUser = await authService.getCurrentUser()
                 setUser(currentUser)
                 if (currentUser) {
+                    isSyncingRef.current = true
                     await syncPresetsToLocalStorage(currentUser.id)
                 }
             } catch (error) {
@@ -45,6 +49,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 setUser(null)
             } finally {
                 setLoading(false)
+                isSyncingRef.current = false
             }
         }
 
@@ -56,8 +61,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             const response = await authService.login({ username, password })
 
             if (response.success && response.data) {
-                setUser(response.data.user)
-                await syncPresetsToLocalStorage(response.data.user.id)
+                const loggedInUser = response.data.user
+                setUser(loggedInUser)
+                // Запускаем синхронизацию в фоновом режиме, чтобы ускорить вход
+                syncPresetsToLocalStorage(loggedInUser.id).catch(err =>
+                    console.error('Background preset sync failed:', err)
+                )
                 return { success: true }
             }
 
@@ -83,7 +92,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             const currentUser = await authService.getCurrentUser()
             setUser(currentUser)
             if (currentUser) {
-                await syncPresetsToLocalStorage(currentUser.id)
+                // Синхронизация в фоне
+                syncPresetsToLocalStorage(currentUser.id).catch(err =>
+                    console.error('Background preset sync failed:', err)
+                )
             }
         } catch (error) {
             console.error('Failed to refresh user:', error)

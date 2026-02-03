@@ -64,15 +64,21 @@ router.post('/login', async (req, res) => {
         const accessToken = generateAccessToken(user);
         const refreshToken = generateRefreshToken(user);
 
-        // Log login
-        await AuditLog.create({
-            userId: user.id,
-            username: user.username,
-            action: 'login',
-            details: { method: 'password' },
-            ipAddress: req.ip || req.connection.remoteAddress,
-            userAgent: req.get('user-agent') || '',
-            timestamp: new Date()
+        // Log login (non-blocking)
+        setImmediate(async () => {
+            try {
+                await AuditLog.create({
+                    userId: user.id,
+                    username: user.username,
+                    action: 'login',
+                    details: { method: 'password' },
+                    ipAddress: req.ip || req.connection.remoteAddress,
+                    userAgent: req.get('user-agent') || '',
+                    timestamp: new Date()
+                });
+            } catch (err) {
+                logger.error('Ошибка логирования при входе:', err);
+            }
         });
 
         res.json({
@@ -96,15 +102,21 @@ router.post('/login', async (req, res) => {
 // POST /api/auth/logout - User logout
 router.post('/logout', authenticateToken, async (req, res) => {
     try {
-        // Log logout
-        await AuditLog.create({
-            userId: req.user.id,
-            username: req.user.username,
-            action: 'logout',
-            details: {},
-            ipAddress: req.ip || req.connection.remoteAddress,
-            userAgent: req.get('user-agent') || '',
-            timestamp: new Date()
+        // Log logout (non-blocking)
+        setImmediate(async () => {
+            try {
+                await AuditLog.create({
+                    userId: req.user.id,
+                    username: req.user.username,
+                    action: 'logout',
+                    details: {},
+                    ipAddress: req.ip || req.connection.remoteAddress,
+                    userAgent: req.get('user-agent') || '',
+                    timestamp: new Date()
+                });
+            } catch (err) {
+                logger.error('Ошибка логирования при выходе:', err);
+            }
         });
 
         res.json({

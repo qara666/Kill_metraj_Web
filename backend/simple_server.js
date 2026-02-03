@@ -519,9 +519,10 @@ const GetDashboardDataQuery = require('./src/queries/GetDashboardDataQuery');
 app.get('/api/dashboard/latest', authenticateToken, async (req, res) => {
   try {
     const user = req.user;
+    const { date } = req.query;
     const divisionId = user.role === 'admin' ? 'all' : user.divisionId;
 
-    const result = await GetDashboardDataQuery.execute({ divisionId, user });
+    const result = await GetDashboardDataQuery.execute({ divisionId, user, date });
 
     if (!result) {
       return res.json({
