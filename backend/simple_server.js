@@ -38,17 +38,19 @@ const io = new Server(httpServer, {
       if (!origin || origin.startsWith('http://localhost') || origin === FRONTEND_URL) {
         return callback(null, true);
       }
-      // Allow Render subdomains
+      // Allow any Render subdomain
       if (origin.endsWith('.onrender.com')) {
         return callback(null, true);
       }
+      // Log disallowed origins to help debugging
+      logger.warn('[CORS] Origin disallowed by Socket.io:', { origin });
       callback(new Error('Not allowed by CORS'));
     },
     methods: ['GET', 'POST'],
     credentials: true
   },
-  transports: ['websocket', 'polling'],
-  // Оптимизация для Render: предотвращаем частые разрывы "transport close"
+  // Prioritize polling on Render to ensure initial connection works
+  transports: ['polling', 'websocket'],
   pingTimeout: 60000,
   pingInterval: 25000
 });
@@ -73,7 +75,19 @@ const cors = require('cors');
 
 // CORS configuration for Render and local development
 const corsOptions = {
-  origin: true, // For debugging, allow all origins that browser sends
+  origin: (origin, callback) => {
+    // Allow local development
+    if (!origin || origin.startsWith('http://localhost') || origin === FRONTEND_URL) {
+      return callback(null, true);
+    }
+    // Allow any Render subdomain
+    if (origin.endsWith('.onrender.com')) {
+      return callback(null, true);
+    }
+    // Log disallowed origins to help debugging
+    logger.warn('[CORS] Origin disallowed by Express:', { origin });
+    callback(null, false); // Don't throw error, just don't allow
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'X-API-KEY', 'X-Requested-With', 'Accept', 'Origin'],

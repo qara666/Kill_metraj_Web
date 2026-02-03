@@ -1,32 +1,28 @@
 export const getBaseUrl = (): string => {
-    // 1. Check environment variable (baked in at build time by Vite)
-    if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
-    if (import.meta.env.VITE_BACKEND_URL) return import.meta.env.VITE_BACKEND_URL;
-
-    // 2. Check if running on Render environment at runtime
+    // 1. Check if running on Render environment at runtime (HIGHEST PRIORITY to ensure correctness)
     if (typeof window !== 'undefined' && window.location.hostname.includes('onrender.com')) {
-        // Automatically infer backend URL: replace '-frontend' with '-backend' or '-ui' with '-api'
-        // This makes the code portable across different Render service names
         const hostname = window.location.hostname;
 
-        // If the current hostname contains '-frontend', try to replace it with '-backend'
-        if (hostname.includes('-frontend')) {
-            return `https://${hostname.replace('-frontend', '-backend')}`;
+        // Smart inference: map frontend to backend
+        // This handles cases like:
+        // - yapiko-auto-km-frontend-live -> yapiko-auto-km-backend-live
+        // - yapiko-auto-km-frontend -> yapiko-auto-km-backend
+        let inferredBackend = hostname.replace('-frontend', '-backend');
+
+        // Special case for some common naming patterns if replace didn't do anything
+        if (inferredBackend === hostname) {
+            if (hostname.includes('frontend')) inferredBackend = hostname.replace('frontend', 'backend');
+            else if (hostname.includes('ui')) inferredBackend = hostname.replace('ui', 'api');
         }
 
-        // If it's a specific live URL mentioned in logs
-        if (hostname === 'yapiko-auto-km-frontend-live.onrender.com') {
-            return 'https://yapiko-auto-km-backend-live.onrender.com';
-        }
-
-        // Fallback for the known legacy domain
-        if (hostname === 'kill-metraj.onrender.com' || hostname.includes('kill-metraj-frontend')) {
-            return 'https://kill-metraj-backend.onrender.com';
-        }
-
-        // Final fallback: try to guess based on standard naming or just use relative if proxy is set up
-        // But on Render, frontend and backend are usually separate services with separate domains.
+        const url = `https://${inferredBackend}`;
+        console.log(`[Config] Render.com detected. Smart-inferred backend: ${url}`);
+        return url;
     }
+
+    // 2. Fallback to environment variables
+    if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+    if (import.meta.env.VITE_BACKEND_URL) return import.meta.env.VITE_BACKEND_URL;
 
     // 3. Local fallback
     return 'http://localhost:5001';
