@@ -94,19 +94,15 @@ export const useDashboardAutoRefresh = ({
             onDataLoaded: callback
         } = latestValuesRef.current;
 
-        if (!apiKey || !apiKey.trim()) {
-            logger.warn('Dashboard API auto-refresh: API key not configured');
-            setApiSyncError('API ключ не настроен');
-            return;
-        }
+        const effectiveApiKey = apiKey?.trim() || 'server_managed';
 
         setApiSyncStatus('syncing');
         setApiSyncError(null);
 
         try {
             const params: any = {
-                apiKey: apiKey.trim(),
-                departmentId: deptId || undefined, // divisionId explicitly removed as it causes 500 error in external API
+                apiKey: effectiveApiKey,
+                departmentId: deptId || undefined,
                 top: 1000,
             };
 

@@ -10,6 +10,7 @@
  */
 
 import { io, Socket } from 'socket.io-client';
+import { API_URL } from '../config/apiConfig';
 
 type DashboardUpdateCallback = (data: {
     data: any;
@@ -40,7 +41,7 @@ class SocketService {
 
         this.isConnecting = true;
 
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+        const apiUrl = API_URL;
 
         console.log('[SocketService] Connecting to:', apiUrl);
 

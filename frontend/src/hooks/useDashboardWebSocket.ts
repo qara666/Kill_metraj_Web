@@ -15,6 +15,7 @@ import { useAutoPlannerStore } from '../stores/useAutoPlannerStore';
 import { socketService } from '../services/socketService';
 import { ProcessedExcelData } from '../types';
 import { logger } from '../utils/ui/logger';
+import { API_URL } from '../config/apiConfig';
 
 interface DashboardWebSocketParams {
     onDataLoaded: (data: ProcessedExcelData) => void;
@@ -53,7 +54,7 @@ export const useDashboardWebSocket = ({
                 return;
             }
 
-            const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/dashboard/latest`, {
+            const response = await fetch(`${API_URL}/api/dashboard/latest`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'

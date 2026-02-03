@@ -20,6 +20,7 @@ import { CityBiasSection } from '../../components/zone/CityBiasSection'
 import { LoadingSpinner } from '../../components/shared/LoadingSpinner'
 import { CollapsibleSection } from '../../components/shared/CollapsibleSection'
 import { DashboardSettingsPanel } from '../../components/autoplanner/DashboardSettingsPanel'
+import { API_URL } from '../../config/apiConfig'
 
 export const AdminPresets: React.FC = () => {
     const { isDark } = useTheme()
@@ -36,8 +37,6 @@ export const AdminPresets: React.FC = () => {
         if (!url) return
         setIsSyncingKml(true)
         try {
-            const baseUrl = import.meta.env.VITE_API_URL || ''
-
             // Extract MID from URL and construct proper export link (same logic as Settings.tsx)
             const midMatch = url.match(/mid=([^&\s]+)/)
             if (!midMatch) {
@@ -46,7 +45,7 @@ export const AdminPresets: React.FC = () => {
             const mid = midMatch[1]
             const exportUrl = `https://www.google.com/maps/d/u/0/kml?mid=${mid}&forcekml=1`
 
-            const response = await fetch(`${baseUrl}/api/proxy/kml?url=${encodeURIComponent(exportUrl)}`)
+            const response = await fetch(`${API_URL}/api/proxy/kml?url=${encodeURIComponent(exportUrl)}`)
             if (!response.ok) throw new Error('Ошибка сети при запросе к прокси')
 
             const json = await response.json()

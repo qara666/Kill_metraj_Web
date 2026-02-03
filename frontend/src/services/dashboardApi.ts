@@ -89,11 +89,11 @@ class DashboardApiService {
       // Retrieve auth token
       const token = localStorage.getItem('km_access_token');
 
-      // Отправка запроса к Dashboard API прокси
-      const response = await fetch(`${API_URL}/api/v1/dashboard?${queryParams.toString()}`, {
+      // Переключаемся на новый оптимизированный эндпоинт /api/dashboard/latest
+      // Он использует кэширование и не требует EXTERNAL_API_KEY на каждый запрос
+      const response = await fetch(`${API_URL}/api/dashboard/latest?${queryParams.toString()}`, {
         method: 'GET',
         headers: {
-          'x-api-key': params.apiKey || '',
           'Authorization': token ? `Bearer ${token}` : '',
           'Content-Type': 'application/json'
         }
@@ -104,7 +104,10 @@ class DashboardApiService {
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
       }
 
-      const apiData: DashboardApiResponse = await response.json()
+      const responseData = await response.json()
+
+      // /api/dashboard/latest возвращает { success, data, ... }, где data - это полезная нагрузка
+      const apiData: DashboardApiResponse = responseData.success ? responseData.data : responseData;
 
       // Преобразование данных API в формат ProcessedExcelData
       const processedData = transformDashboardData(
