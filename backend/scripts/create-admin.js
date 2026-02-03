@@ -1,48 +1,52 @@
-const { User, sequelize } = require('../src/models');
-const bcrypt = require('bcryptjs');
+const { User } = require('../src/models');
+const { sequelize } = require('../src/config/database');
+const logger = require('../src/utils/logger');
 
 async function createAdmin() {
     try {
+        console.log('--- ADMIN CREATION SCRIPT START ---');
+
         // Ensure connection
         await sequelize.authenticate();
-        logger.info('Подключение к базе данных успешно установлено');
+        console.log('Database connected successfully.');
 
-        // Get info from command line or defaults
-        const username = process.argv[2] || 'admin';
-        const password = process.argv[3] || 'admin123';
-        const departmentId = process.argv[4] || '100000000';
+        const adminData = {
+            username: 'admin',
+            passwordHash: 'adminpassword123', // Will be hashed by hooks in User model
+            role: 'admin',
+            isActive: true,
+            canModifySettings: true,
+            divisionId: 'all'
+        };
 
-        logger.info('Проверка существования пользователя', { username });
+        const [user, created] = await User.findOrCreate({
+            where: { username: adminData.username },
+            defaults: adminData
+        });
 
-        const existingUser = await User.findOne({ where: { username } });
-        if (existingUser) {
-            logger.info('Пользователь уже существует, обновление пароля', { username });
-            existingUser.password = await bcrypt.hash(password, 10);
-            await existingUser.save();
-            logger.info('Пароль успешно обновлен');
+        if (created) {
+            console.log('SUCCESS: Admin user created.');
         } else {
-            logger.info('Создание нового администратора', { username });
-            await User.create({
-                username,
-                passwordHash: password, // Model hooks will hash this
-                role: 'admin',
-                isActive: true,
-                canModifySettings: true,
-                divisionId: departmentId
-            });
-            logger.info('Администратор успешно создан');
+            console.log('INFO: Admin user already exists. Updating credentials...');
+            user.passwordHash = adminData.passwordHash;
+            user.role = adminData.role;
+            user.isActive = true;
+            await user.save();
+            console.log('SUCCESS: Admin credentials updated.');
         }
 
-        console.log('\n-----------------------------------');
-        console.log(`Имя пользователя: ${username}`);
-        console.log(`Пароль: ${password}`);
-        console.log(`Роль: admin`);
-        console.log('-----------------------------------\n');
+        console.log('Final Admin Info:', {
+            id: user.id,
+            username: user.username,
+            role: user.role,
+            isActive: user.isActive
+        });
 
     } catch (error) {
-        logger.error('Ошибка при создании администратора', { error: error.message });
+        console.error('CRITICAL ERROR during admin creation:', error);
     } finally {
         await sequelize.close();
+        console.log('--- SCRIPT FINISHED ---');
         process.exit();
     }
 }
