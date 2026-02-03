@@ -120,7 +120,7 @@ export const AdminLogs: React.FC = () => {
             })
             return { previousData }
         },
-        onError: (err, variables, context: any) => {
+        onError: (_err, _variables, context: any) => {
             queryClient.setQueryData(queryKey, context.previousData)
             toast.error('Ошибка очистки логов')
         },
