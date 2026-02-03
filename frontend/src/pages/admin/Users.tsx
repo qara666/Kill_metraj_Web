@@ -21,15 +21,26 @@ export const AdminUsers: React.FC = () => {
     const [showEditModal, setShowEditModal] = useState(false)
     const [selectedUser, setSelectedUser] = useState<User | null>(null)
 
+    // Pagination State
+    const [page, setPage] = useState(1)
+    const [limit] = useState(20)
+    const [total, setTotal] = useState(0)
+
     useEffect(() => {
         loadUsers()
-    }, [])
+    }, [page, searchTerm, roleFilter])
 
     const loadUsers = async () => {
         setLoading(true)
         try {
-            const data = await authService.getUsers()
-            setUsers(data)
+            const { users, total } = await authService.getUsers({
+                search: searchTerm,
+                role: roleFilter !== 'all' ? roleFilter : undefined,
+                limit,
+                offset: (page - 1) * limit
+            })
+            setUsers(users)
+            setTotal(total)
         } catch (error) {
             toast.error('Ошибка загрузки пользователей')
         } finally {
@@ -51,14 +62,7 @@ export const AdminUsers: React.FC = () => {
         }
     }
 
-    const filteredUsers = users.filter(user => {
-        const username = user.username?.toLowerCase() || ''
-        const email = user.email?.toLowerCase() || ''
-        const search = searchTerm.toLowerCase()
-        const matchesSearch = username.includes(search) || email.includes(search)
-        const matchesRole = roleFilter === 'all' || user.role === roleFilter
-        return matchesSearch && matchesRole
-    })
+    const filteredUsers = users // Users are already filtered by backend
 
     return (
         <div className="p-6 space-y-6">
@@ -267,6 +271,38 @@ export const AdminUsers: React.FC = () => {
                         </tbody>
                     </table>
                 )}
+            </div>
+
+            {/* Pagination */}
+            <div className="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 pt-4">
+                <div className={clsx("text-sm", isDark ? "text-gray-400" : "text-gray-600")}>
+                    Показано {users.length} из {total} пользователей
+                </div>
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                        disabled={page === 1}
+                        className={clsx(
+                            "px-3 py-1 rounded-lg border text-sm",
+                            isDark ? "border-gray-600 hover:bg-gray-700 disabled:opacity-50" : "border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                        )}
+                    >
+                        Назад
+                    </button>
+                    <span className={clsx("px-3 py-1 text-sm", isDark ? "text-white" : "text-gray-900")}>
+                        Страница {page}
+                    </span>
+                    <button
+                        onClick={() => setPage(p => p + 1)}
+                        disabled={page * limit >= total}
+                        className={clsx(
+                            "px-3 py-1 rounded-lg border text-sm",
+                            isDark ? "border-gray-600 hover:bg-gray-700 disabled:opacity-50" : "border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                        )}
+                    >
+                        Вперед
+                    </button>
+                </div>
             </div>
 
             {/* Модальные окна будут добавлены отдельно */}

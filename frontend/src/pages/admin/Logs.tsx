@@ -43,8 +43,8 @@ export const AdminLogs: React.FC = () => {
     const [userQuery, setUserQuery] = useState('')
     const [filters, setFilters] = useState({
         action: '',
-        startDate: '',
-        endDate: ''
+        startDate: new Date(Date.now() - 86400000).toISOString().split('T')[0], // Default last 24h
+        endDate: new Date().toISOString().split('T')[0]
     })
     const [searchTerm] = useState('')
 
@@ -54,8 +54,9 @@ export const AdminLogs: React.FC = () => {
     useEffect(() => {
         const fetchUsers = async () => {
             try {
-                const data = await authService.getUsers()
-                setUsers(data)
+                // Dropdown limit to 100 for performance
+                const { users } = await authService.getUsers({ limit: 100 })
+                setUsers(users)
             } catch (error) {
                 console.error('Failed to load users', error)
             }
