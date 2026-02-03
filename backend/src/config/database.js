@@ -9,10 +9,11 @@ const isProduction = process.env.NODE_ENV === 'production';
 const isWorker = process.argv[1]?.includes('worker') || process.argv[1]?.includes('fetcher');
 
 const poolConfig = {
-    max: isWorker ? 5 : 10,  // Основное приложение получает больше соединений
-    min: isWorker ? 1 : 2,
-    acquire: 60000,          // Увеличиваем время ожидания до 60с для стабильности
-    idle: 10000
+    max: isWorker ? 2 : 5,    // Уменьшаем лимиты, чтобы точно вписаться в 25 соединений на Render
+    min: 0,                   // Разрешаем пулу полностью закрывать соединения при простое
+    acquire: 30000,          // 30 секунд ожидания (стандарт)
+    idle: 5000,              // Быстрее освобождаем неиспользуемые соединения
+    evict: 5000              // Интервал выселения мертвых соединений
 };
 
 const sequelize = process.env.DATABASE_URL
@@ -57,6 +58,19 @@ sequelize.addHook('beforeQuery', async (options, query) => {
     if (!context) return;
 
     try {
+        // Оптимизация: проверяем, не установлен ли уже этот контекст для текущего соединения
+        // Мы используем объект options.connection для хранения состояния текущей сессии
+        if (options.connection) {
+            const currentCtx = options.connection._rlsContext;
+            if (currentCtx &&
+                currentCtx.userId === context.userId &&
+                currentCtx.divisionId === context.divisionId &&
+                currentCtx.role === context.role) {
+                return; // Контекст уже установлен, пропускаем SET LOCAL
+            }
+            options.connection._rlsContext = { ...context };
+        }
+
         // Оптимизация: используем один запрос для установки всех переменных
         await sequelize.query(`
             SET LOCAL app.user_id = '${context.userId}';

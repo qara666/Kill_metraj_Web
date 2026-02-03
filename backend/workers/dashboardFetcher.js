@@ -58,10 +58,24 @@ class DashboardFetcher {
         console.log(`Базовая задержка: ${this.baseBackoff}мс`);
         console.log('============================================================');
 
-        // Проверка подключения к базе данных
+        // Проверка подключения к базе данных и установка блокировки
         try {
             await this.pool.query('SELECT NOW()');
             console.log('База данных подключена');
+
+            // Singleton check: используем PostgreSQL Advisory Lock
+            // 777777 - произвольный ID для блокировки загрузчика
+            const lockResult = await this.pool.query('SELECT pg_try_advisory_lock(777777)');
+            const hasLock = lockResult.rows[0].pg_try_advisory_lock;
+
+            if (!hasLock) {
+                console.warn('!!! ВНИМАНИЕ: Другой экземпляр загрузчика уже запущен !!!');
+                console.warn('Этот процесс будет завершен для экономии ресурсов.');
+                process.exit(0);
+                return;
+            }
+
+            console.log('Блокировка получена. Этот процесс является активным загрузчиком.');
 
             // Загрузка последнего хеша для обнаружения изменений после перезапуска
             this.lastHash = await this.getLastHash();
@@ -69,7 +83,7 @@ class DashboardFetcher {
                 console.log(`Загружен хеш последних данных: ${this.lastHash.substring(0, 8)}...`);
             }
         } catch (error) {
-            console.error('Ошибка подключения к базе данных:', error.message);
+            console.error('Ошибка инициализации загрузчика:', error.message);
             console.warn('Цикл загрузки будет перезапущен через 1 минуту...');
             setTimeout(() => this.start(), 60000);
             return;

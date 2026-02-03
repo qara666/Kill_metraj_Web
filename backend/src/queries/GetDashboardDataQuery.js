@@ -16,15 +16,54 @@ class GetDashboardDataQuery {
      * @param {string} [params.date] - Optional target date (YYYY-MM-DD)
      * @returns {Promise<Object>} Dashboard data
      */
+    /**
+     * Helper to retry DB queries on connection failures
+     */
+    async withRetry(queryFn, maxRetries = 2) {
+        let lastError;
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                return await queryFn();
+            } catch (error) {
+                lastError = error;
+                const isConnectionError = error.name === 'SequelizeConnectionError' ||
+                    error.name === 'SequelizeConnectionAcquireTimeoutError' ||
+                    error.message.includes('Connection terminated') ||
+                    error.message.includes('terminating connection');
+
+                if (isConnectionError && attempt < maxRetries) {
+                    const delay = 1000 * (attempt + 1);
+                    logger.warn(`CQRS: Сбой подключения, попытка ${attempt + 1}/${maxRetries} через ${delay}мс...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    continue;
+                }
+                throw error;
+            }
+        }
+        throw lastError;
+    }
+
     async execute({ divisionId, user, date }) {
         try {
-            // Use provided date or default to today's date in local time
             const targetDate = date || new Date().toISOString().split('T')[0];
+            logger.info(`CQRS Execute: divisionId=${divisionId}, date=${targetDate}, user=${user?.username}`);
 
-            logger.debug(`CQRS: Получение данных за ${targetDate} для подразделения ${divisionId}`);
+            // 1. Пытка получить из кэша
+            if (!date) {
+                try {
+                    const cached = await cacheService.getDashboardData(divisionId);
+                    if (cached) {
+                        logger.info(`CQRS: Каш-хит для ${divisionId}`);
+                        return { ...cached, cached: true };
+                    }
+                } catch (cacheErr) {
+                    logger.error('CQRS: Ошибка при чтении кэша', { error: cacheErr.message });
+                }
+            }
 
-            // 1. Fetch from database with target_date filter
-            const results = await sequelize.query(
+            // 2. Запрос в БД с ретраями
+            logger.debug(`CQRS: Запрос к БД за ${targetDate}`);
+            const results = await this.withRetry(() => sequelize.query(
                 `SELECT * FROM api_dashboard_cache 
                  WHERE status_code = 200 AND target_date = :targetDate
                  ORDER BY created_at DESC LIMIT 1`,
@@ -32,16 +71,20 @@ class GetDashboardDataQuery {
                     replacements: { targetDate },
                     type: sequelize.QueryTypes.SELECT
                 }
-            );
+            ));
 
             if (results.length === 0) {
-                // If no record for specific date, fall back to any latest record if no date was specified
                 if (!date) {
-                    const fallbackResults = await sequelize.query(
+                    logger.debug('CQRS: Записей за дату нет, ищем последнюю доступную');
+                    const fallbackResults = await this.withRetry(() => sequelize.query(
                         'SELECT * FROM api_dashboard_cache WHERE status_code = 200 ORDER BY created_at DESC LIMIT 1',
                         { type: sequelize.QueryTypes.SELECT }
-                    );
-                    if (fallbackResults.length === 0) return null;
+                    ));
+
+                    if (fallbackResults.length === 0) {
+                        logger.warn('CQRS: В БД нет никаких данных дашборда');
+                        return null;
+                    }
                     return await this.processPayload(fallbackResults[0], user, divisionId);
                 }
                 return null;
@@ -49,10 +92,11 @@ class GetDashboardDataQuery {
 
             return await this.processPayload(results[0], user, divisionId);
         } catch (error) {
-            logger.error('CQRS: Ошибка выполнения GetDashboardDataQuery:', {
-                error: error.message,
+            logger.error('CQRS CRITICAL ERROR:', {
+                message: error.message,
                 stack: error.stack,
-                divisionId
+                divisionId,
+                date
             });
             throw error;
         }

@@ -12,10 +12,13 @@ class CacheService {
         this.isEnabled = process.env.REDIS_ENABLED === 'true';
         this.defaultTTL = parseInt(process.env.REDIS_TTL || '300'); // 5 минут по умолчанию
 
+        // Внутреннее хранилище для случая, если Redis отключен
+        this.memoryCache = new Map();
+
         if (this.isEnabled) {
             this.connect();
         } else {
-            logger.info('Кэш Redis отключен. Установите REDIS_ENABLED=true для включения.');
+            logger.info('Кэш Redis отключен. Используется In-Memory кэш.');
         }
     }
 
@@ -66,53 +69,76 @@ class CacheService {
      * Получение данных дашборда из кэша
      */
     async getDashboardData(divisionId = 'all') {
-        if (!this.isEnabled || !this.redis) {
-            trackCacheOperation('get', 'disabled');
-            return null;
-        }
+        const key = `dashboard:${divisionId}`;
 
-        try {
-            const key = `dashboard:${divisionId}`;
-            const cached = await this.redis.get(key);
-
-            if (cached) {
-                trackCacheOperation('get', 'hit');
-                logger.debug(`Попадание в кэш для ${key}`);
-                return JSON.parse(cached);
+        // Try Redis first if enabled
+        if (this.isEnabled && this.redis) {
+            try {
+                const cached = await this.redis.get(key);
+                if (cached) {
+                    trackCacheOperation('get', 'hit');
+                    return JSON.parse(cached);
+                }
+            } catch (error) {
+                logger.error('Ошибка получения из Redis:', error);
             }
-
-            trackCacheOperation('get', 'miss');
-            logger.debug(`Промах кэша для ${key}`);
-            return null;
-        } catch (error) {
-            logger.error('Ошибка получения из кэша:', error);
-            trackCacheOperation('get', 'error');
-            return null;
         }
+
+        // Fallback to Memory Cache
+        const cached = this.memoryCache.get(key);
+        if (cached && (Date.now() - cached.timestamp < (cached.ttl || this.defaultTTL) * 1000)) {
+            trackCacheOperation('get', 'hit');
+            return cached.data;
+        }
+
+        trackCacheOperation('get', 'miss');
+        return null;
     }
 
     /**
      * Запись данных дашборда в кэш
      */
     async setDashboardData(divisionId = 'all', data, ttl = null) {
-        if (!this.isEnabled || !this.redis) {
-            return false;
+        const key = `dashboard:${divisionId}`;
+        const expiry = ttl || this.defaultTTL;
+
+        // Save to Redis if enabled
+        if (this.isEnabled && this.redis) {
+            try {
+                await this.redis.setex(key, expiry, JSON.stringify(data));
+                trackCacheOperation('set', 'success');
+            } catch (error) {
+                logger.error('Ошибка записи в Redis:', error);
+            }
         }
 
+        // Save to Memory Cache (L1 cache) with safety checks
         try {
-            const key = `dashboard:${divisionId}`;
-            const value = JSON.stringify(data);
-            const expiry = ttl || this.defaultTTL;
+            const dataStr = JSON.stringify(data);
+            const sizeMB = dataStr.length / (1024 * 1024);
 
-            await this.redis.setex(key, expiry, value);
-            trackCacheOperation('set', 'success');
-            logger.debug(`Данные записаны в кэш для ${key} (TTL: ${expiry}с)`);
-            return true;
-        } catch (error) {
-            logger.error('Ошибка записи в кэш:', error);
-            trackCacheOperation('set', 'error');
-            return false;
+            // Если данные больше 2МБ, не кэшируем в памяти для предотвращения OOM на Render
+            if (sizeMB > 2) {
+                logger.debug(`Cache: Пропуск In-Memory для ${key} (Размер: ${sizeMB.toFixed(2)} MB слишком велик)`);
+                return true;
+            }
+
+            // Ограничиваем количество элементов в памяти (простая реализация FIFO)
+            if (this.memoryCache.size >= 10) {
+                const firstKey = this.memoryCache.keys().next().value;
+                this.memoryCache.delete(firstKey);
+            }
+
+            this.memoryCache.set(key, {
+                data,
+                timestamp: Date.now(),
+                ttl: expiry
+            });
+        } catch (err) {
+            logger.error('Cache: Ошибка при записи в In-Memory кэш', { error: err.message });
         }
+
+        return true;
     }
 
     /**

@@ -41,15 +41,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 const currentUser = await authService.getCurrentUser()
                 setUser(currentUser)
                 if (currentUser) {
-                    isSyncingRef.current = true
-                    await syncPresetsToLocalStorage(currentUser.id)
+                    // Загружаем пресеты в фоновом режиме, чтобы не блокировать вход
+                    syncPresetsToLocalStorage(currentUser.id).catch(err =>
+                        console.error('Background preset sync failed:', err)
+                    )
                 }
             } catch (error) {
                 console.error('Failed to load user:', error)
                 setUser(null)
             } finally {
                 setLoading(false)
-                isSyncingRef.current = false
             }
         }
 

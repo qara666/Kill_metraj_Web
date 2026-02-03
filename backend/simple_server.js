@@ -23,7 +23,9 @@ const cacheService = require('./src/services/CacheService');
 const DashboardConsumer = require('./src/consumers/DashboardConsumer');
 const { startGrpcServer } = require('./src/grpc/server');
 
+const compression = require('compression');
 const app = express();
+app.use(compression()); // Сжимаем ответы для ускорения передачи и экономии памяти
 const httpServer = http.createServer(app);
 const PORT = process.env.PORT || 5001;
 
@@ -34,7 +36,10 @@ const io = new Server(httpServer, {
     methods: ['GET', 'POST'],
     credentials: true
   },
-  transports: ['websocket', 'polling']
+  transports: ['websocket', 'polling'],
+  // Оптимизация для Render: предотвращаем частые разрывы "transport close"
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 
 // Клиент PostgreSQL LISTEN (отдельно от Sequelize)
@@ -330,15 +335,16 @@ async function startServer() {
       // Start gRPC server immediately
       grpcServer = startGrpcServer(process.env.GRPC_PORT || '50051');
 
+      /* 
       // Запуск фонового загрузчика дашборда (DashboardFetcher)
       try {
         logger.info('Запуск фонового загрузчика дашборда...');
-        // require загружает и сразу запускает fetcher, так как в конце файла dashboardFetcher.js есть вызов fetcher.start()
         require('./workers/dashboardFetcher');
         logger.info('Фоновый загрузчик дашборда инициализирован');
       } catch (fetcherError) {
         logger.error('Ошибка при запуске фонового загрузчика:', fetcherError.message);
       }
+      */
 
       // Запуск PostgreSQL LISTEN для обновлений дашборда
       await setupDashboardListener();
