@@ -71,7 +71,9 @@ router.get('/dashboard', async (req, res) => {
             if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
                 // Convert yyyy-mm-dd to dd.mm.yyyy
                 const [y, m, d] = val.split('-').map(Number);
-                params.dateShift = effectiveDate;
+                const convertedDate = `${String(d).padStart(2, '0')}.${String(m).padStart(2, '0')}.${y}`;
+                params.dateShift = convertedDate;
+                effectiveDate = convertedDate;
                 logger.debug('Прокси: сконвертирована дата', { original: val, converted: params.dateShift });
             } else {
                 params.dateShift = val;
@@ -79,9 +81,33 @@ router.get('/dashboard', async (req, res) => {
             }
         }
 
-        // Set mandatory time parameters for current day/shift
-        params.timeDeliveryBeg = `${effectiveDate} 00:00:00`;
-        params.timeDeliveryEnd = `${effectiveDate} 23:59:59`;
+        // Helper to normalize datetime-local (YYYY-MM-DDTHH:mm) to External API format (dd.mm.yyyy HH:mm:ss)
+        const normalizeDateTime = (dateTimeStr, defaultTime) => {
+            if (!dateTimeStr || dateTimeStr === 'undefined') return defaultTime;
+
+            // If it's already in dd.mm.yyyy format, keep it
+            if (/^\d{2}\.\d{2}\.\d{4}/.test(dateTimeStr)) return dateTimeStr;
+
+            // If it's YYYY-MM-DDTHH:mm (datetime-local)
+            const match = dateTimeStr.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+            if (match) {
+                const [_, y, m, d, hh, mm] = match;
+                return `${d}.${m}.${y} ${hh}:${mm}:00`;
+            }
+
+            // If it's just YYYY-MM-DD
+            const dateMatch = dateTimeStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (dateMatch) {
+                const [_, y, m, d] = dateMatch;
+                return `${d}.${m}.${y} ${defaultTime.split(' ')[1] || '00:00:00'}`;
+            }
+
+            return dateTimeStr;
+        };
+
+        // Normalize parameters for external API
+        params.timeDeliveryBeg = normalizeDateTime(timeDeliveryBeg, `${effectiveDate} 00:00:00`);
+        params.timeDeliveryEnd = normalizeDateTime(timeDeliveryEnd, `${effectiveDate} 23:59:59`);
 
 
 

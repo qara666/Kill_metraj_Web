@@ -4,6 +4,17 @@ const logger = require('../utils/logger');
 
 const isProduction = process.env.NODE_ENV === 'production';
 
+// Определяем тип процесса для оптимизации пула
+// Это предотвращает исчерпание соединений на Render (лимит 25)
+const isWorker = process.argv[1]?.includes('worker') || process.argv[1]?.includes('fetcher');
+
+const poolConfig = {
+    max: isWorker ? 5 : 10,  // Основное приложение получает больше соединений
+    min: isWorker ? 1 : 2,
+    acquire: 60000,          // Увеличиваем время ожидания до 60с для стабильности
+    idle: 10000
+};
+
 const sequelize = process.env.DATABASE_URL
     ? new Sequelize(process.env.DATABASE_URL, {
         dialect: 'postgres',
@@ -11,15 +22,10 @@ const sequelize = process.env.DATABASE_URL
         dialectOptions: {
             ssl: {
                 require: true,
-                rejectUnauthorized: false // Required for Render and other managed DBs
+                rejectUnauthorized: false // Требуется для Render и других облачных БД
             }
         },
-        pool: {
-            max: 20,
-            min: 5,
-            acquire: 30000,
-            idle: 10000
-        }
+        pool: poolConfig
     })
     : new Sequelize({
         host: process.env.DB_HOST || 'localhost',
@@ -29,12 +35,7 @@ const sequelize = process.env.DATABASE_URL
         password: process.env.DB_PASSWORD || '',
         dialect: 'postgres',
         logging: false,
-        pool: {
-            max: 20,
-            min: 5,
-            acquire: 30000,
-            idle: 10000
-        }
+        pool: poolConfig
     });
 
 const { rlsContextStore } = require('../utils/context');
@@ -43,7 +44,7 @@ const { rlsContextStore } = require('../utils/context');
 async function testConnection() {
     try {
         await sequelize.authenticate();
-        logger.info('PostgreSQL подключен (Пул: 20)');
+        logger.info(`PostgreSQL подключен (Пул: ${poolConfig.max}, Тип: ${isWorker ? 'Воркер' : 'API'})`);
     } catch (error) {
         logger.error('Нет подключения к PostgreSQL:', error);
     }
@@ -64,7 +65,7 @@ sequelize.addHook('beforeQuery', async (options, query) => {
         `, {
             logging: false,
             raw: true,
-            hooks: false,
+            hooks: false, // Важно для предотвращения рекурсии
             transaction: options.transaction
         });
     } catch (err) {

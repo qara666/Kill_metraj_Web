@@ -28,7 +28,7 @@ services:
       - key: DASHBOARD_API_URL
         value: "http://app.yaposhka.kh.ua:4999"
       - key: DASHBOARD_DEPARTMENT_ID
-        value: "1"
+        value: "100000052"
       - key: REDIS_URL
         fromService:
           type: redis

@@ -116,35 +116,60 @@ class DashboardFetcher {
     }
 
     /**
+     * Получение списка активных подразделений из таблицы пользователей
+     */
+    async getActiveDepartments() {
+        try {
+            const result = await this.pool.query('SELECT DISTINCT "divisionId" FROM users WHERE "divisionId" IS NOT NULL');
+            const depts = result.rows.map(r => r.divisionId);
+
+            // Если указан дефолтный ID в окружении, добавляем его
+            if (process.env.DASHBOARD_DEPARTMENT_ID && !depts.includes(process.env.DASHBOARD_DEPARTMENT_ID)) {
+                depts.push(process.env.DASHBOARD_DEPARTMENT_ID);
+            }
+
+            return depts.length > 0 ? depts : ['100000052'];
+        } catch (error) {
+            console.error('Ошибка при получении списка подразделений:', error.message);
+            return ['100000052'];
+        }
+    }
+
+    /**
      * Основная логика загрузки и сохранения
      */
     async fetchAndStore() {
+        const departments = await this.getActiveDepartments();
+        console.log(`[${new Date().toISOString()}] Запуск цикла обновления для ${departments.length} подразделений (Сегодня и Вчера)...`);
+
+        for (const deptId of departments) {
+            // Загружаем данные за сегодня (0) и за вчера (-1)
+            await this.fetchForDepartment(deptId, 0);
+            await this.fetchForDepartment(deptId, -1);
+        }
+    }
+
+    /**
+     * Загрузка данных для конкретного подразделения
+     */
+    async fetchForDepartment(deptId, dateShiftDays = 0) {
         const startTime = Date.now();
         this.totalFetches++;
 
+        const targetDate = new Date();
+        targetDate.setDate(targetDate.getDate() + dateShiftDays);
+        const targetDateStr = targetDate.toISOString().split('T')[0];
+
         try {
-            console.log(`[${new Date().toISOString()}] Загрузка данных дашборда... (Попытка ${this.retryCount + 1})`);
+            console.log(`  [Dept: ${deptId}, Date: ${targetDateStr}] Загрузка данных... (Попытка ${this.retryCount + 1})`);
 
             // Подготовка параметров запроса
             const params = {
                 top: this.topCount,
-                timeDeliveryBeg: this.formatDate(new Date(), '00:00:00'),
-                timeDeliveryEnd: this.formatDate(new Date(), '23:59:59')
+                timeDeliveryBeg: this.formatDate(targetDate, '00:00:00'),
+                timeDeliveryEnd: this.formatDate(targetDate, '23:59:59'),
+                departmentId: parseInt(deptId, 10)
             };
-
-            // Добавление ID подразделения, если указано
-            if (process.env.DASHBOARD_DEPARTMENT_ID) {
-                const deptId = parseInt(process.env.DASHBOARD_DEPARTMENT_ID, 10);
-                if (!isNaN(deptId)) {
-                    params.departmentId = deptId;
-                }
-            }
-
-            // Загрузка данных из внешнего API
-            let responseData;
-
-            console.log('  Параметры запроса:', JSON.stringify(params, null, 2));
-            console.log('  Наличие API ключа:', !!this.apiKey);
 
             const response = await axios.get(this.apiUrl, {
                 headers: {
@@ -152,38 +177,37 @@ class DashboardFetcher {
                     'Accept': 'application/json'
                 },
                 params: params,
-                timeout: 10000 // 10 секунд таймаут
+                timeout: 30000 // Увеличиваем таймаут до 30с
             });
-            responseData = response.data;
+            const responseData = response.data;
 
-            // 1. Получение предыдущих заказов для сравнения
-            const prevPayload = await this.getLastPayload();
+            // 1. Получение предыдущих заказов для сравнения (из этой же дивизии и за эту же дату)
+            const prevResult = await this.pool.query(
+                'SELECT payload FROM api_dashboard_cache WHERE status_code = 200 AND division_id = $1 AND target_date = $2 ORDER BY created_at DESC LIMIT 1',
+                [String(deptId), targetDateStr]
+            );
+            const prevPayload = prevResult.rows.length > 0 ? prevResult.rows[0].payload : null;
             const prevOrders = prevPayload?.orders || [];
             const ordersMap = new Map(prevOrders.map(o => [o.orderNumber, o]));
 
-            // 2. Отслеживание изменений статуса и обогащение данных
+            // 2. Отслеживание изменений статуса
             if (responseData.orders && Array.isArray(responseData.orders)) {
                 for (const order of responseData.orders) {
                     const prevOrder = ordersMap.get(order.orderNumber);
                     const oldStatus = prevOrder?.status || null;
                     const newStatus = order.status;
 
-                    // Восстановление времени статусов из предыдущих данных
                     order.statusTimings = {
                         ...(prevOrder?.statusTimings || {}),
                         ...(order.statusTimings || {})
                     };
 
                     if (oldStatus !== newStatus) {
-                        console.log(`  Изменение статуса заказа #${order.orderNumber}: ${oldStatus} -> ${newStatus}`);
-
-                        // Сохранение в историю статусов
                         await this.pool.query(
                             'INSERT INTO api_dashboard_status_history (order_number, old_status, new_status) VALUES ($1, $2, $3)',
                             [order.orderNumber, oldStatus, newStatus]
-                        );
+                        ).catch(e => console.error('  Ошибка записи истории:', e.message));
 
-                        // Запись конкретных меток времени, если они еще не установлены
                         const nowTimestamp = new Date().toISOString();
                         const normalizedStatus = newStatus.toLowerCase();
 
@@ -196,51 +220,44 @@ class DashboardFetcher {
                 }
             }
 
-            // Расчет хеша для исключения дубликатов
+            // Расчет хеша и проверка изменений
             const dataHash = this.calculateHash(responseData);
 
-            // Проверка на наличие изменений
-            if (this.lastHash === dataHash) {
-                console.log('  Данные не изменились, пропуск записи');
+            // Получаем последний хеш именно для этого подразделения и даты
+            const lastHashResult = await this.pool.query(
+                'SELECT data_hash FROM api_dashboard_cache WHERE division_id = $1 AND target_date = $2 ORDER BY created_at DESC LIMIT 1',
+                [String(deptId), targetDateStr]
+            );
+            const lastHash = lastHashResult.rows.length > 0 ? lastHashResult.rows[0].data_hash : null;
+
+            if (lastHash === dataHash) {
+                console.log(`  [Dept: ${deptId}] Данные не изменились`);
                 this.successfulFetches++;
                 this.retryCount = 0;
-                this.consecutiveErrors = 0;
                 return;
             }
 
-            // Вставка новых данных в базу
-            const deptId = params.departmentId || 'all';
+            // Вставка новых данных в базу с указанием целевой даты
             await this.pool.query(
-                `INSERT INTO api_dashboard_cache (payload, data_hash, status_code, division_id)
-         VALUES ($1, $2, $3, $4)`,
-                [responseData, dataHash, 200, String(deptId)]
+                `INSERT INTO api_dashboard_cache (payload, data_hash, status_code, division_id, target_date)
+                 VALUES ($1, $2, $3, $4, $5)`,
+                [responseData, dataHash, 200, String(deptId), targetDateStr]
             );
 
-            this.lastHash = dataHash;
             this.successfulFetches++;
             this.retryCount = 0;
-            this.consecutiveErrors = 0;
 
             const elapsed = Date.now() - startTime;
-            console.log(`  Данные успешно сохранены (${elapsed}мс) - Успешность: ${(this.successfulFetches / this.totalFetches * 100).toFixed(1)}%`);
+            console.log(`  [Dept: ${deptId}] Сохранено ${responseData.orders?.length || 0} заказов (${elapsed}мс)`);
 
         } catch (error) {
-            this.consecutiveErrors++;
-            console.error(`  Загрузка не удалась: ${error.message}`);
-
-            if (error.response) {
-                console.error(`    Статус: ${error.response.status}`);
-                console.error(`    Данные: ${JSON.stringify(error.response.data)}`);
-            }
-
-            // Экспоненциальная задержка для повторов
+            console.error(`  [Dept: ${deptId}] Ошибка: ${error.message}`);
             if (this.retryCount < this.maxRetries) {
                 this.retryCount++;
                 const delay = this.baseBackoff * Math.pow(2, this.retryCount - 1);
                 console.log(`    Повтор через ${delay}мс...`);
-                setTimeout(() => this.fetchAndStore(), delay);
+                setTimeout(() => this.fetchForDepartment(deptId), delay);
             } else {
-                console.error('    Достигнуто максимальное количество попыток для этого цикла.');
                 this.retryCount = 0;
             }
         }

@@ -51,14 +51,24 @@ async function diagnose() {
 
         if (latestSuccess.rows.length > 0) {
             const row = latestSuccess.rows[0];
+            const payload = typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload;
+            const ordersCount = payload?.orders?.length || 0;
+            const couriersCount = payload?.couriers?.length || 0;
+
             console.log('3. Latest successful sync:');
             console.log(`   ID: ${row.id}`);
             console.log(`   Status: ${row.status_code}`);
             console.log(`   Time: ${row.created_at}`);
             console.log(`   Division: ${row.division_id}`);
-            // Sample order is too much for logs, just check if payload exists
+            console.log(`   Orders in payload: ${ordersCount}`);
+            console.log(`   Couriers in payload: ${couriersCount}`);
+
+            if (ordersCount === 0) {
+                console.warn('   WARNING: Latest cache record contains 0 orders!');
+            }
+
             const payloadCheck = await pool.query('SELECT payload IS NOT NULL as has_payload FROM api_dashboard_cache WHERE id = $1', [row.id]);
-            console.log(`   Has Payload: ${payloadCheck.rows[0].has_payload}`);
+            console.log(`   Has Raw Payload: ${payloadCheck.rows[0].has_payload}`);
         } else {
             console.warn('3. No successful sync records found in cache.');
         }
