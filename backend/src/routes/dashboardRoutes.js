@@ -5,7 +5,18 @@ const express = require('express');
 const router = express.Router();
 const logger = require('../utils/logger');
 
-const DASHBOARD_API_BASE_URL = process.env.DASHBOARD_API_URL || 'http://localhost:8000';
+// Use DASHBOARD_API_URL (base) or extract from EXTERNAL_API_URL (full)
+let DASHBOARD_API_BASE_URL = process.env.DASHBOARD_API_URL;
+if (!DASHBOARD_API_BASE_URL && process.env.EXTERNAL_API_URL) {
+    try {
+        const url = new URL(process.env.EXTERNAL_API_URL);
+        DASHBOARD_API_BASE_URL = `${url.protocol}//${url.host}`;
+        logger.info(`DASHBOARD_API_BASE_URL extracted from EXTERNAL_API_URL: ${DASHBOARD_API_BASE_URL}`);
+    } catch (e) {
+        DASHBOARD_API_BASE_URL = 'http://localhost:8000';
+    }
+}
+DASHBOARD_API_BASE_URL = DASHBOARD_API_BASE_URL || 'http://localhost:8000';
 
 // All routes require authentication and dashboard:read permission
 router.use(authenticateToken);
