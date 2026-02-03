@@ -33,6 +33,7 @@ services:
         value: "true"
       - key: SETUP_SECRET
         generateValue: true
+      - key: REDIS_URL
         fromService:
           type: redis
           name: yapiko-auto-km-redis
