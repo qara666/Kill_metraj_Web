@@ -53,6 +53,7 @@ async function authenticateToken(req, res, next) {
 
         // Проверка типа токена (обновление через refresh-токен запрещено для обычных запросов)
         if (decoded.type === 'refresh') {
+            logger.warn('Auth: Попытка использовать refresh token для обычного запроса', { userId: decoded.userId });
             return res.status(401).json({
                 success: false,
                 error: 'ОшибкаАутентификации',
@@ -80,6 +81,7 @@ async function authenticateToken(req, res, next) {
         }
 
         if (!user) {
+            logger.warn('Auth: Пользователь не найден в БД', { userId: decoded.userId });
             return res.status(401).json({
                 success: false,
                 error: 'ОшибкаАутентификации',
@@ -88,6 +90,7 @@ async function authenticateToken(req, res, next) {
         }
 
         if (!user.isActive) {
+            logger.warn('Auth: Аккаунт пользователя деактивирован', { userId: user.id });
             return res.status(403).json({
                 success: false,
                 error: 'ДоступЗапрещен',
@@ -108,12 +111,19 @@ async function authenticateToken(req, res, next) {
         });
     } catch (error) {
         if (error.name === 'TokenExpiredError') {
+            logger.debug('Auth: Срок действия токена истек', { userId: jwt.decode(token)?.userId });
             return res.status(401).json({
                 success: false,
                 error: 'ТокенИстек',
                 message: 'Срок действия токена истек'
             });
         }
+
+        logger.error('Auth: Ошибка проверки токена', {
+            name: error.name,
+            message: error.message,
+            tokenPrefix: token.substring(0, 10) + '...'
+        });
 
         return res.status(403).json({
             success: false,

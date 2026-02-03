@@ -169,37 +169,40 @@ export const Settings: React.FC = () => {
 
 
   const onSubmit = async (data: SettingsForm) => {
-    // Нормализуем и сохраняем. Если Mapbox пустой — удаляем ключ, чтобы поле по умолчанию было пустым.
+    // Нормализуем и сохраняем локально немедленно (Optimistic UI)
     const normalizedToken = (data.mapboxToken || '').trim()
     const normalizedData = { ...data, mapboxToken: normalizedToken }
 
     // Save locally
     localStorageUtils.setAllSettings(normalizedData)
-
     if (normalizedToken) {
       localStorage.setItem('km_mapbox_token', normalizedToken)
     } else {
       localStorage.removeItem('km_mapbox_token')
     }
 
-    // Save to backend if user is logged in
+    // Сообщаем об успехе немедленно для лучшего UX
+    toast.success('Настройки сохранены локально и синхронизируются...')
+
+    // Save to backend if user is logged in (Background)
     if (user?.id) {
-      try {
-        const result = await authService.updateUserPresets(user.id, normalizedData)
-        if (!result.success) {
-          console.warn('Failed to save settings to backend:', result.error)
-        }
-      } catch (error) {
-        console.error('Error saving settings to backend:', error)
-      }
+      authService.updateUserPresets(user.id, normalizedData)
+        .then(result => {
+          if (!result.success) {
+            console.warn('Failed to save settings to backend:', result.error)
+            toast.error('Не удалось синхронизировать настройки с сервером')
+          }
+        })
+        .catch(error => {
+          console.error('Error saving settings to backend:', error)
+          toast.error('Ошибка синхронизации данных')
+        })
     }
 
     // Check API key status after saving
     if (data.googleMapsApiKey.trim()) {
       checkApiKeyStatus(data.googleMapsApiKey)
     }
-
-    toast.success('Настройки успешно сохранены!')
   }
 
 
