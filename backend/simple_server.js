@@ -312,25 +312,19 @@ app.use((err, req, res, next) => {
 
 
 // Запуск сервера (Start listening IMMEDIATELY to pass liveness checks)
-const server = http.createServer(app); // Use the existing 'app' variable
-// Note: We already created httpServer in line 29: const httpServer = http.createServer(app);
-// So we should use httpServer.
-
 httpServer.listen(PORT, '0.0.0.0', async () => {
   logger.info(`Сервер запущен на 0.0.0.0:${PORT}`, {
     port: PORT,
     env: process.env.NODE_ENV || 'development'
   });
 
-  // Attempt DB connection in background
+  // Background Initialization
   try {
     await testConnection();
     logger.info('PostgreSQL подключен');
     await syncDatabase();
 
-    // ... (User creation logic) ...
     const { User } = require('./src/models');
-    // ...
     const [admin, created] = await User.findOrCreate({
       where: { username: 'admin' },
       defaults: {
@@ -341,29 +335,21 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
         divisionId: '100000000'
       }
     }).catch(err => logger.error('Failed to create admin:', err.message));
-    // ...
 
-    // Initialize other services that need DB
     await setupDashboardListener();
 
     if (process.env.CDC_ENABLED === 'true') {
       await dashboardConsumer.start();
     }
-
   } catch (dbError) {
     logger.error('CRITICAL: Database initialization failed, but keeping server alive for logs', { error: dbError.message });
-    // Do not exit. Admin can see logs.
   }
 
-  // Start gRPC server
   try {
     grpcServer = startGrpcServer(process.env.GRPC_PORT || '50051');
   } catch (grpcError) {
     logger.error('Failed to start gRPC server', grpcError);
   }
-
-  // Start DashboardFetcher (internal)
-  // ...
 });
 
 async function setupDashboardListener() {
@@ -560,7 +546,8 @@ app.get('/api/dashboard/latest', authenticateToken, async (req, res) => {
   }
 });
 
-startServer();
+
+// ... gRPC and Fetcher start already inside httpServer.listen
 
 /**
  * Завершение работы сервера
