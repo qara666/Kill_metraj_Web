@@ -46,9 +46,9 @@ services:
   # Frontend Service
   - type: web
     name: kill-metraj-frontend
-    env: static
+    runtime: static
     buildCommand: cd frontend && npm install && npm run build
-    publishDir: frontend/dist
+    staticPublishPath: frontend/dist
     routes:
       - type: rewrite
         source: /*
