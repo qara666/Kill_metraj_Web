@@ -61,11 +61,12 @@ router.get('/', auditLog('user_list'), async (req, res) => {
 
 // POST /api/users - Create new user
 router.post('/', auditLog('user_create'), async (req, res) => {
+    const t = await sequelize.transaction();
     try {
-        const { username, email, password, role, divisionId } = req.body;
+        const { username, email, password, role, divisionId, canModifySettings } = req.body;
 
-        // Validate input
         if (!username || !password) {
+            await t.rollback();
             return res.status(400).json({
                 success: false,
                 error: 'ОшибкаВалидации',
@@ -73,28 +74,18 @@ router.post('/', auditLog('user_create'), async (req, res) => {
             });
         }
 
-        // Password length validation (min 4 chars)
-        if (password.length < 4) {
-            return res.status(400).json({
-                success: false,
-                error: 'ОшибкаВалидации',
-                message: 'Пароль должен содержать минимум 4 символа'
-            });
-        }
-
-        // Check if user already exists
-        const orConditions = [{ username }];
-        if (email) {
-            orConditions.push({ email });
-        }
-
         const existingUser = await User.findOne({
             where: {
-                [Op.or]: orConditions
-            }
+                [Op.or]: [
+                    { username },
+                    ...(email ? [{ email }] : [])
+                ]
+            },
+            transaction: t
         });
 
         if (existingUser) {
+            await t.rollback();
             return res.status(400).json({
                 success: false,
                 error: 'ПользовательСуществует',
@@ -102,32 +93,36 @@ router.post('/', auditLog('user_create'), async (req, res) => {
             });
         }
 
-        // Create user
+        // Create user and preset in ONE TRANSACTION to reduce latency
         const user = await User.create({
             username,
-            email: email || null, // Ensure empty string becomes null
-            passwordHash: password, // Will be hashed by beforeCreate hook
+            email: email || null,
+            passwordHash: password,
             role: role || 'user',
-            divisionId: divisionId || null
+            divisionId: divisionId || null,
+            canModifySettings: canModifySettings !== undefined ? canModifySettings : true,
+            preset: {
+                settings: {}, // Uses model defaults
+                updatedBy: req.user.id
+            }
+        }, {
+            include: [{ model: UserPreset, as: 'preset' }],
+            transaction: t
         });
 
-        // Create default preset (uses model defaultValues)
-        await UserPreset.create({
-            userId: user.id,
-            settings: {}, // Let Sequelize apply defaults from model
-            updatedBy: req.user.id
-        });
+        await t.commit();
 
         res.status(201).json({
             success: true,
             data: user.toJSON()
         });
     } catch (error) {
+        if (t) await t.rollback();
         logger.error('Ошибка создания пользователя', { error: error.message });
         res.status(500).json({
             success: false,
             error: 'ВнутренняяОшибкаСервера',
-            message: 'Не удалось создать пользователя'
+            message: 'Не удалось создать пользователя: ' + error.message
         });
     }
 });
