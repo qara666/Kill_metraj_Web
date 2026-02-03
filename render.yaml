@@ -25,8 +25,10 @@ services:
         value: "false"
       - key: EXTERNAL_API_URL
         value: "http://app.yaposhka.kh.ua:4999/api/v1/dashboard"
+      - key: DASHBOARD_API_URL
+        value: "http://app.yaposhka.kh.ua:4999"
       - key: DASHBOARD_DEPARTMENT_ID
-        value: "100000052"
+        value: "1"
       - key: REDIS_URL
         fromService:
           type: redis
@@ -37,7 +39,7 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: EXTERNAL_API_KEY
-        sync: false
+        value: "KMFh23298&23201)8172^&21Vs@gfgsd"
       - key: JWT_SECRET
         generateValue: true # Render will generate a random secret
       - key: KAFKA_BROKER
