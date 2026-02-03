@@ -6,8 +6,6 @@ import {
     FunnelIcon,
     ChatBubbleLeftRightIcon,
     DocumentTextIcon,
-    CheckCircleIcon,
-    XCircleIcon,
     ArrowPathIcon,
     LinkIcon,
     XMarkIcon
@@ -79,7 +77,7 @@ export const TelegramParsing: React.FC = () => {
     const [selectedChats, setSelectedChats] = useState<Set<string>>(new Set())
     const [availableChats, setAvailableChats] = useState<TelegramChat[]>([])
     const [showChatFilter, setShowChatFilter] = useState(false)
-    const [chatFilterType, setChatFilterType] = useState<'all' | 'group' | 'channel' | 'private' | 'favorites'>('all')
+    const [chatFilterType, _setChatFilterType] = useState<'all' | 'group' | 'channel' | 'private' | 'favorites'>('all')
     const [chatSearchTerm, setChatSearchTerm] = useState('')
     const [favoriteChats, setFavoriteChats] = useState<Set<string>>(new Set())
 
@@ -108,7 +106,8 @@ export const TelegramParsing: React.FC = () => {
     }, [isConnected])
 
     // Валидация данных подключения (номер телефона опционален)
-    const validateConnectionData = useCallback((data: TelegramConnection): string | null => {
+    /*
+    const _validateConnectionData = useCallback((data: TelegramConnection): string | null => {
         // Валидация API ID
         if (!data.apiId || data.apiId.trim().length === 0) {
             return 'API ID не может быть пустым'
@@ -157,6 +156,7 @@ export const TelegramParsing: React.FC = () => {
         }
         return null
     }, [])
+    */
 
     // Подключение к Telegram
     const handleConnect = useCallback(async () => {
@@ -384,7 +384,8 @@ export const TelegramParsing: React.FC = () => {
     }, [availableChats, chatFilterType, chatSearchTerm, favoriteChats])
 
     // Переключение избранного
-    const toggleFavorite = useCallback((chatId: string) => {
+    /*
+    const _toggleFavorite = useCallback((chatId: string) => {
         setFavoriteChats(prev => {
             const next = new Set(prev)
             if (next.has(chatId)) {
@@ -396,6 +397,7 @@ export const TelegramParsing: React.FC = () => {
             return next
         })
     }, [])
+    */
 
     // Загрузка избранных чатов
     useEffect(() => {
@@ -423,13 +425,15 @@ export const TelegramParsing: React.FC = () => {
     }, [])
 
     // Выбор всех/отмена всех
-    const toggleAllChats = useCallback((select: boolean) => {
+    /*
+    const _toggleAllChats = useCallback((select: boolean) => {
         if (select) {
             setSelectedChats(new Set(filteredChats.map(c => c.id)))
         } else {
             setSelectedChats(new Set())
         }
     }, [filteredChats])
+    */
 
     // Проверка статуса подключения при загрузке
     useEffect(() => {

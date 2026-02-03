@@ -24,7 +24,7 @@ import { CourierScheduleModal } from '../components/autoplanner/CourierScheduleM
 import { OrderDetailsModal } from '../components/autoplanner/OrderDetailsModal'
 import { AnalyticsModal } from '../components/autoplanner/AnalyticsModal'
 import { HistoryModal } from '../components/autoplanner/HistoryModal'
-import { RouteCardSkeleton, MapSkeleton } from '../components/common/Skeleton'
+import { MapSkeleton } from '../components/common/Skeleton'
 
 // Hooks
 import { useAutoPlannerSettings } from '../hooks/useAutoPlannerSettings'

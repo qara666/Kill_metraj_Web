@@ -292,7 +292,7 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
         }
     }
 
-    const getFieldByKeywords = (keywords: string[], fieldName: string): string => {
+    const getFieldByKeywords = (keywords: string[], _fieldName: string): string => {
         for (const key in rowData) {
             const lowerKey = key.toLowerCase().trim();
             for (const keyword of keywords) {
