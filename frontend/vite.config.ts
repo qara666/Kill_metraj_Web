@@ -28,8 +28,10 @@ export default defineConfig({
       output: {
         manualChunks: {
           // Разделяем vendor библиотеки на отдельные чанки
-          vendor: ['react', 'react-dom'],
-          utils: ['clsx', 'axios'],
+          vendor: ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query'],
+          utils: ['clsx', 'axios', 'react-hot-toast'],
+          // Группируем иконки в один чанк, чтобы избежать сотен мелких предзагрузок
+          icons: ['@heroicons/react'],
         },
       },
     },

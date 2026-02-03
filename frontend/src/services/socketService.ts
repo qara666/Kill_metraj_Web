@@ -49,10 +49,13 @@ class SocketService {
             auth: { token },
             reconnection: true,
             reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000,
+            reconnectionDelayMax: 10000, // Increased for stability
             reconnectionAttempts: this.maxReconnectAttempts,
-            transports: ['websocket', 'polling'],
-            timeout: 10000
+            // Prioritize polling on Render to ensure initial connection works, 
+            // then upgrade to websocket if possible.
+            transports: ['polling', 'websocket'],
+            timeout: 20000, // Increased timeout for slow mobile networks
+            autoConnect: true
         });
 
         this.setupEventHandlers();

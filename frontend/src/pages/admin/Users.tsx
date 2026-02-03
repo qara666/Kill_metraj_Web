@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { useTheme } from '../../contexts/ThemeContext'
 import { authService } from '../../utils/auth/authService'
 import { clsx } from 'clsx'
@@ -10,59 +10,82 @@ import {
     MagnifyingGlassIcon
 } from '@heroicons/react/24/outline'
 import type { User, CreateUserData, UpdateUserData } from '../../types/auth'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 export const AdminUsers: React.FC = () => {
     const { isDark } = useTheme()
-    const [users, setUsers] = useState<User[]>([])
-    const [loading, setLoading] = useState(true)
+    const queryClient = useQueryClient()
+
+    // Search & Filter State
     const [searchTerm, setSearchTerm] = useState('')
     const [roleFilter, setRoleFilter] = useState<'all' | 'user' | 'admin'>('all')
+    const [page, setPage] = useState(1)
+    const [limit] = useState(20)
+
+    // UI State
     const [showCreateModal, setShowCreateModal] = useState(false)
     const [showEditModal, setShowEditModal] = useState(false)
     const [selectedUser, setSelectedUser] = useState<User | null>(null)
 
-    // Pagination State
-    const [page, setPage] = useState(1)
-    const [limit] = useState(20)
-    const [total, setTotal] = useState(0)
+    // Data Fetching with Query
+    const { data: usersData, isLoading: loading } = useQuery({
+        queryKey: ['admin_users', page, searchTerm, roleFilter],
+        queryFn: () => authService.getUsers({
+            search: searchTerm,
+            role: roleFilter !== 'all' ? roleFilter : undefined,
+            limit,
+            offset: (page - 1) * limit
+        }),
+        staleTime: 30000,
+        keepPreviousData: true
+    })
 
-    useEffect(() => {
-        loadUsers()
-    }, [page, searchTerm, roleFilter])
+    const users = usersData?.users || []
+    const total = usersData?.total || 0
 
-    const loadUsers = async () => {
-        setLoading(true)
-        try {
-            const { users, total } = await authService.getUsers({
-                search: searchTerm,
-                role: roleFilter !== 'all' ? roleFilter : undefined,
-                limit,
-                offset: (page - 1) * limit
+    // Optimistic Deletion
+    const deleteMutation = useMutation({
+        mutationFn: (userId: number) => authService.deleteUser(userId),
+        onMutate: async (userId) => {
+            // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
+            await queryClient.cancelQueries({ queryKey: ['admin_users'] })
+
+            // Snapshot the previous value
+            const previousData = queryClient.getQueryData(['admin_users', page, searchTerm, roleFilter])
+
+            // Optimistically update to the new value
+            queryClient.setQueryData(['admin_users', page, searchTerm, roleFilter], (old: any) => {
+                if (!old) return old
+                return {
+                    ...old,
+                    users: old.users.filter((u: User) => u.id !== userId),
+                    total: old.total - 1
+                }
             })
-            setUsers(users)
-            setTotal(total)
-        } catch (error) {
-            toast.error('Ошибка загрузки пользователей')
-        } finally {
-            setLoading(false)
+
+            return { previousData }
+        },
+        onError: (err, userId, context: any) => {
+            // If the mutation fails, use the context returned from onMutate to roll back
+            queryClient.setQueryData(['admin_users', page, searchTerm, roleFilter], context.previousData)
+            toast.error('Не удалось удалить пользователя')
+            console.error('Delete error:', err, userId)
+        },
+        onSettled: () => {
+            // Always refetch after error or success to ensure we are in sync with the server
+            queryClient.invalidateQueries({ queryKey: ['admin_users'] })
+        },
+        onSuccess: () => {
+            toast.success('Пользователь удален')
         }
-    }
-
-
+    })
 
     const handleDelete = async (user: User) => {
         if (!confirm(`Удалить пользователя ${user.username}?`)) return
-
-        const result = await authService.deleteUser(user.id)
-        if (result.success) {
-            toast.success('Пользователь удален')
-            loadUsers()
-        } else {
-            toast.error(result.error || 'Ошибка удаления')
-        }
+        deleteMutation.mutate(user.id)
     }
 
-    const filteredUsers = users // Users are already filtered by backend
+    const filteredUsers = users
 
     return (
         <div className="p-6 space-y-6">
@@ -309,7 +332,6 @@ export const AdminUsers: React.FC = () => {
             {showCreateModal && (
                 <CreateUserModal
                     onClose={() => setShowCreateModal(false)}
-                    onSuccess={loadUsers}
                 />
             )}
 
@@ -320,7 +342,6 @@ export const AdminUsers: React.FC = () => {
                         setShowEditModal(false)
                         setSelectedUser(null)
                     }}
-                    onSuccess={loadUsers}
                 />
             )}
         </div>
@@ -328,8 +349,9 @@ export const AdminUsers: React.FC = () => {
 }
 
 // Модальное окно создания пользователя (упрощенная версия)
-const CreateUserModal: React.FC<{ onClose: () => void; onSuccess: () => void }> = ({ onClose, onSuccess }) => {
+const CreateUserModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const { isDark } = useTheme()
+    const queryClient = useQueryClient()
     const [formData, setFormData] = useState<CreateUserData>({
         username: '',
         email: '',
@@ -344,8 +366,8 @@ const CreateUserModal: React.FC<{ onClose: () => void; onSuccess: () => void }> 
         const result = await authService.createUser(formData)
         if (result.success) {
             toast.success('Пользователь создан')
-            onSuccess()
             onClose()
+            queryClient.invalidateQueries({ queryKey: ['admin_users'] })
         } else {
             toast.error(result.error || 'Ошибка создания')
         }
@@ -451,8 +473,9 @@ const CreateUserModal: React.FC<{ onClose: () => void; onSuccess: () => void }> 
 }
 
 // Модальное окно редактирования (упрощенная версия)
-const EditUserModal: React.FC<{ user: User; onClose: () => void; onSuccess: () => void }> = ({ user, onClose, onSuccess }) => {
+const EditUserModal: React.FC<{ user: User; onClose: () => void }> = ({ user, onClose }) => {
     const { isDark } = useTheme()
+    const queryClient = useQueryClient()
     const [formData, setFormData] = useState<UpdateUserData>({
         email: user.email || '',
         role: user.role,
@@ -467,8 +490,8 @@ const EditUserModal: React.FC<{ user: User; onClose: () => void; onSuccess: () =
         const result = await authService.updateUser(user.id, formData)
         if (result.success) {
             toast.success('Пользователь обновлен')
-            onSuccess()
             onClose()
+            queryClient.invalidateQueries({ queryKey: ['admin_users'] })
         } else {
             toast.error(result.error || 'Ошибка обновления')
         }
