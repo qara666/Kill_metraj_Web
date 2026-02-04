@@ -94,11 +94,30 @@ const corsOptions = {
   maxAge: 86400
 };
 
-app.use(cors(corsOptions));
-// Handle PREFLIGHT for all routes explicitly to prevent 404s
-app.options('*', (req, res) => {
-  res.sendStatus(204);
+// Custom Middleware to handle CORS Preflight explicitly
+// This runs BEFORE the main CORS middleware to guarantee 204 response
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    const origin = req.headers.origin;
+    const isAllowed =
+      !origin ||
+      origin.startsWith('http://localhost') ||
+      origin === FRONTEND_URL ||
+      origin.endsWith('.onrender.com');
+
+    if (isAllowed) {
+      res.header('Access-Control-Allow-Origin', origin || '*');
+      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-API-KEY, X-Requested-With, Accept, Origin');
+      res.header('Access-Control-Allow-Credentials', 'true');
+      res.header('Access-Control-Max-Age', '86400');
+      return res.sendStatus(204);
+    }
+  }
+  next();
 });
+
+app.use(cors(corsOptions));
 
 // Middleware to log all requests early (for debugging Render routing)
 app.use((req, res, next) => {
