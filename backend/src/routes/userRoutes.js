@@ -10,7 +10,7 @@ router.use(authenticateToken);
 router.use(requireRole('admin'));
 
 // GET /api/users - Get all users with pagination
-router.get('/', auditLog('user_list'), async (req, res) => {
+router.get('/', async (req, res) => {
     try {
         const { search, role, isActive, limit = 50, offset = 0 } = req.query;
 
