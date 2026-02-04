@@ -5,7 +5,7 @@ export const getBaseUrl = (): string => {
 
         // EXPLICIT MAPPING FOR LIVE (Failsafe)
         if (hostname === 'yapiko-auto-km-frontend-live.onrender.com') {
-            const url = 'https://yapiko-auto-km-backend-live.onrender.com';
+            const url = 'https://yapiko-auto-km-backend.onrender.com';
             console.log(`[Config] Live environment detected. Forcing backend: ${url}`);
             return url;
         }
