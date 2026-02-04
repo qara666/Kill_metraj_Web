@@ -51,9 +51,8 @@ class SocketService {
             reconnectionDelay: 1000,
             reconnectionDelayMax: 10000, // Increased for stability
             reconnectionAttempts: this.maxReconnectAttempts,
-            // Prioritize polling on Render to ensure initial connection works, 
-            // then upgrade to websocket if possible.
-            transports: ['polling', 'websocket'],
+            // Prioritize websocket to bypass Render sticky session issues with polling
+            transports: ['websocket', 'polling'],
             timeout: 20000, // Increased timeout for slow mobile networks
             autoConnect: true
         });
