@@ -73,6 +73,14 @@ process.on('unhandledRejection', (reason, promise) => {
 
 const cors = require('cors');
 
+// CRITICAL: Trust proxy for Render/Cloudflare load balancer
+// This fixes: "ValidationError: The 'X-Forwarded-For' header is set but the Express 'trust proxy' setting is false"
+// Render's load balancer adds X-Forwarded-For headers, and we need to trust them for:
+// - express-rate-limit to correctly identify client IPs
+// - req.ip to return the real client IP instead of the proxy IP
+// - Security and logging purposes
+app.set('trust proxy', 1);
+
 // CORS configuration for Render and local development
 const corsOptions = {
   origin: (origin, callback) => {

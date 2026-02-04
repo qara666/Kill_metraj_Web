@@ -12,6 +12,7 @@ const jwt = require('jsonwebtoken');
 
 // POST /api/auth/login - User login
 router.post('/login', async (req, res) => {
+    const startTime = Date.now();
     try {
         const { username, password } = req.body;
 
@@ -80,6 +81,9 @@ router.post('/login', async (req, res) => {
                 logger.error('Ошибка логирования при входе:', err);
             }
         });
+
+        const responseTime = Date.now() - startTime;
+        logger.info('Login successful', { username, responseTime });
 
         res.json({
             success: true,
