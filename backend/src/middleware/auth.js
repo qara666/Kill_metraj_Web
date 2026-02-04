@@ -69,7 +69,29 @@ async function authenticateToken(req, res, next) {
             user = cachedUser.data;
         } else {
             // 2. Если нет в кэше или истек TTL - получаем из базы данных
-            user = await User.findByPk(decoded.userId);
+            const dbStartTime = Date.now();
+            try {
+                user = await Promise.race([
+                    User.findByPk(decoded.userId),
+                    new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error('DB query timeout')), 5000)
+                    )
+                ]);
+                const dbTime = Date.now() - dbStartTime;
+                if (dbTime > 1000) {
+                    logger.warn('Slow User.findByPk query', { userId: decoded.userId, dbTime });
+                }
+            } catch (error) {
+                if (error.message === 'DB query timeout') {
+                    logger.error('User.findByPk timeout after 5s', { userId: decoded.userId });
+                    return res.status(500).json({
+                        success: false,
+                        error: 'DatabaseTimeout',
+                        message: 'Database query timeout'
+                    });
+                }
+                throw error;
+            }
 
             if (user) {
                 // Сохраняем в кэш
