@@ -142,12 +142,42 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
         }
     }, [apiAutoRefreshEnabled, isControlled, onSettingsChange, initialSettings, globalStore, editApiKey, handleSaveSettings]);
 
+    // Updated handler to sync times immediately when Date Shift changes
     const handleDateShiftChange = (value: string) => {
+        let updates: any = { apiDateShift: value };
+        let newLocalState: any = { dateShift: value };
+
+        // Logic to sync times with new date
+        if (value && apiTimeDeliveryBeg && apiTimeDeliveryEnd) {
+            const replaceDate = (datetime: string, newDate: string) => {
+                if (!datetime) return '';
+                const parts = datetime.split('T');
+                if (parts.length < 2) return datetime;
+                return `${newDate}T${parts[1]}`;
+            };
+
+            const newStart = replaceDate(apiTimeDeliveryBeg, value);
+            const newEnd = replaceDate(apiTimeDeliveryEnd, value);
+
+            if (newStart !== apiTimeDeliveryBeg) {
+                updates.apiTimeDeliveryBeg = newStart;
+                newLocalState.timeDeliveryBeg = newStart;
+            }
+            if (newEnd !== apiTimeDeliveryEnd) {
+                updates.apiTimeDeliveryEnd = newEnd;
+                newLocalState.timeDeliveryEnd = newEnd;
+            }
+        }
+
         if (isControlled && onSettingsChange) {
-            onSettingsChange({ ...initialSettings, apiDateShift: value });
-            setLocalState(prev => ({ ...prev, dateShift: value }));
+            onSettingsChange({ ...initialSettings, ...updates });
+            setLocalState(prev => ({ ...prev, ...newLocalState }));
         } else {
             globalStore.setApiDateShift(value);
+            // Note: Global store additional syncs might be needed if we want same behavior,
+            // but for now focusing on fixing the Admin Presets loop.
+            if (updates.apiTimeDeliveryBeg) globalStore.setApiTimeDeliveryBeg(updates.apiTimeDeliveryBeg);
+            if (updates.apiTimeDeliveryEnd) globalStore.setApiTimeDeliveryEnd(updates.apiTimeDeliveryEnd);
         }
     };
 
@@ -186,43 +216,6 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
             globalStore.setApiTimeDeliveryEnd(value);
         }
     };
-
-
-    // Sync Time inputs with Date Shift (Effect logic copied but adapted)
-    React.useEffect(() => {
-        if (apiDateShift && apiTimeDeliveryBeg && apiTimeDeliveryEnd) {
-            const datePart = apiDateShift; // YYYY-MM-DD
-            const replaceDate = (datetime: string, newDate: string) => {
-                if (!datetime) return '';
-                const parts = datetime.split('T');
-                if (parts.length < 2) return datetime;
-                return `${newDate}T${parts[1]}`;
-            };
-
-            const newStart = replaceDate(apiTimeDeliveryBeg, datePart);
-            const newEnd = replaceDate(apiTimeDeliveryEnd, datePart);
-
-            if (newStart !== apiTimeDeliveryBeg) {
-                if (isControlled && onSettingsChange) {
-                    // Avoid infinite loop by checking equality, mostly handled by parent or local state
-                    // For controlled, we update local state immediately
-                    setLocalState(prev => ({ ...prev, timeDeliveryBeg: newStart }));
-                    // We should probably debounce this or just set it
-                    onSettingsChange({ ...initialSettings, apiTimeDeliveryBeg: newStart });
-                } else {
-                    globalStore.setApiTimeDeliveryBeg(newStart);
-                }
-            }
-            if (newEnd !== apiTimeDeliveryEnd) {
-                if (isControlled && onSettingsChange) {
-                    setLocalState(prev => ({ ...prev, timeDeliveryEnd: newEnd }));
-                    onSettingsChange({ ...initialSettings, apiTimeDeliveryEnd: newEnd });
-                } else {
-                    globalStore.setApiTimeDeliveryEnd(newEnd);
-                }
-            }
-        }
-    }, [apiDateShift, apiTimeDeliveryBeg, apiTimeDeliveryEnd, isControlled, onSettingsChange, initialSettings, globalStore]);
 
 
     // Validation Logic remains similar but uses accessors
