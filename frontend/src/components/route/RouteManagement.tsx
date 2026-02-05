@@ -29,11 +29,6 @@ import { toast } from 'react-hot-toast'
 import { Tooltip } from '../shared/Tooltip'
 import { googleApiCache } from '../../services/googleApiCache'
 import { lazy, Suspense } from 'react'
-import { useDashboardAutoRefresh } from '../../hooks/useDashboardAutoRefresh'
-import { useAutoPlannerStore } from '../../stores/useAutoPlannerStore'
-import { mergeExcelData } from '../../utils/data/dataMerging'
-import { logger } from '../../utils/ui/logger'
-import { ProcessedExcelData } from '../../types'
 import { CourierTimeWindows } from './CourierTimeWindows'
 import { type TimeWindowGroup } from '../../utils/route/routeCalculationHelpers'
 
@@ -357,33 +352,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     return false
   })
 
-  // --- Auto Refresh Logic ---
-  // Get time window from store
-  const { apiTimeDeliveryBeg, apiTimeDeliveryEnd } = useAutoPlannerStore();
-
-  // Обработчик загрузки данных из Dashboard API с использованием mergeExcelData
-  const handleDashboardDataLoaded = useCallback(async (data: ProcessedExcelData) => {
-    // ВАЖНО: Используем updateExcelData с функцией обратного вызова или mergeExcelData напрямую с текущим состоянием,
-    // но так как updateExcelData уже имеет доступ к prev state, лучше использовать функциональное обновление.
-    // Однако, excelData доступен в замыкании.
-    // Используем безопасное объединение, чтобы не потерять маршруты.
-
-    // Но так как у нас есть доступ к updateExcelData, мы можем сделать так:
-    updateExcelData((prevData: any) => {
-      const merged = mergeExcelData(data, prevData);
-      logger.info(` Данные обновлены (RouteManagement): ${merged.orders.length} заказов, ${merged.routes.length} сохраненных маршрутов`);
-      return merged;
-    });
-  }, [updateExcelData]);
-
-  // Auto-refresh hook - automatically syncs data every 5 minutes
-  // Включаем на этой странице тоже, чтобы данные не устаревали
-  useDashboardAutoRefresh({
-    dateTimeDeliveryBeg: apiTimeDeliveryBeg,
-    dateTimeDeliveryEnd: apiTimeDeliveryEnd,
-    onDataLoaded: handleDashboardDataLoaded,
-    enabled: true,
-  });
 
 
   // Показываем помощь новым пользователям через 2 секунды после загрузки
