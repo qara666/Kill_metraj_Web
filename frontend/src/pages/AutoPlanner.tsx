@@ -7,8 +7,6 @@ import { routeHistory } from '../utils/routes/routeHistory'
 import { Tooltip } from '../components/shared/Tooltip'
 import { VEHICLE_LIMITS } from '../utils/routes/courierSchedule'
 import type { CoverageAnalysis } from '../utils/processing/coverageAnalysis'
-import { ProcessedExcelData } from '../types'
-import { logger } from '../utils/ui/logger'
 
 // Custom Components
 import { AutoPlannerStats } from '../components/autoplanner/AutoPlannerStats'
@@ -38,8 +36,6 @@ import { CoverageAnalysisView } from '../components/autoplanner/CoverageAnalysis
 import { ExcelDataPreview } from '../components/excel/ExcelDataPreview'
 import { useExcelImporter } from '../hooks/useExcelImporter'
 import { useAutoPlannerStore } from '../stores/useAutoPlannerStore'
-import { useDashboardAutoRefresh } from '../hooks/useDashboardAutoRefresh'
-import { syncDashboardData } from '../utils/data/dataMerging'
 import { localStorageUtils } from '../utils/ui/localStorage'
 
 // Lazy loaded components
@@ -97,7 +93,6 @@ export const AutoPlanner: React.FC = () => {
     const {
         excelData,
         setExcelData,
-        updateExcelData,
         selectedOrder,
         setSelectedOrder,
         plannedRoutes,
@@ -171,30 +166,14 @@ export const AutoPlanner: React.FC = () => {
     // State to control Data Preview modal
     const [showDataPreview, setShowDataPreview] = useState(false)
 
-    // Обработчик загрузки данных из Dashboard API
-    const handleDashboardDataLoaded = useCallback(async (data: ProcessedExcelData) => {
-        updateExcelData((prevData: any) => {
-            const synced = syncDashboardData(data, prevData)
-            logger.info(`Данные синхронизированы (AutoPlanner): ${synced.orders.length} заказов, ${synced.routes.length} маршрутов`)
-            return synced
-        })
-        logger.info(`Загружено ${data.orders.length} заказов из Dashboard API`)
-        if (data.couriers && data.couriers.length > 0) {
-            setCourierSchedules(data.couriers)
-            logger.info(`Автоматически добавлено ${data.couriers.length} курьеров`)
+
+
+    // Sync courier schedules when excelData changes (if data comes from Dashboard API)
+    useEffect(() => {
+        if (excelData?.couriers && excelData.couriers.length > 0) {
+            setCourierSchedules(excelData.couriers);
         }
-    }, [updateExcelData, setCourierSchedules])
-
-    // Get time window from store
-    const { apiTimeDeliveryBeg, apiTimeDeliveryEnd } = useAutoPlannerStore()
-
-    // Auto-refresh hook
-    useDashboardAutoRefresh({
-        dateTimeDeliveryBeg: apiTimeDeliveryBeg,
-        dateTimeDeliveryEnd: apiTimeDeliveryEnd,
-        onDataLoaded: handleDashboardDataLoaded,
-        enabled: true,
-    })
+    }, [excelData?.couriers, setCourierSchedules]);
 
     const { enableOrderCombining, combineMaxDistanceMeters, combineMaxTimeWindowMinutes } = routePlanningSettings
 

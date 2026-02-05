@@ -68,7 +68,7 @@ class DashboardApiService {
       // Формирование URL с query параметрами
       const queryParams = new URLSearchParams();
 
-      queryParams.append('top', String(params.top || 1000));
+      queryParams.append('top', String(params.top || 300));
 
       if (params.dateShift && params.dateShift.trim() && params.dateShift !== 'undefined') {
         queryParams.append('dateShift', params.dateShift);
@@ -146,7 +146,7 @@ class DashboardApiService {
     deliveryEnd.setHours(23, 0, 0, 0)
 
     const res = {
-      top: 1000,
+      top: 300,
       dateShift,
       timeDeliveryBeg: formatDateTimeForApi(deliveryStart),
       timeDeliveryEnd: formatDateTimeForApi(deliveryEnd),

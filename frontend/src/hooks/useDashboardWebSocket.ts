@@ -16,11 +16,14 @@ import { socketService } from '../services/socketService';
 import { ProcessedExcelData } from '../types';
 import { logger } from '../utils/ui/logger';
 import { API_URL } from '../config/apiConfig';
+import { formatDateForApi, formatDateTimeForApi } from '../utils/data/apiDataTransformer';
 
 interface DashboardWebSocketParams {
     onDataLoaded: (data: ProcessedExcelData) => void;
     enabled?: boolean;
 }
+
+const REFRESH_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 
 export const useDashboardWebSocket = ({
     onDataLoaded,
@@ -28,13 +31,22 @@ export const useDashboardWebSocket = ({
 }: DashboardWebSocketParams) => {
     // Use stable selectors for Zustand
     const setApiLastSyncTime = useAutoPlannerStore(s => s.setApiLastSyncTime);
+    const setApiNextSyncTime = useAutoPlannerStore(s => s.setApiNextSyncTime);
     const setApiSyncStatus = useAutoPlannerStore(s => s.setApiSyncStatus);
     const setApiSyncError = useAutoPlannerStore(s => s.setApiSyncError);
     const apiManualSyncTrigger = useAutoPlannerStore(s => s.apiManualSyncTrigger);
     const apiAutoRefreshEnabled = useAutoPlannerStore(s => s.apiAutoRefreshEnabled);
 
+    // Filters and settings
+    const apiDateShift = useAutoPlannerStore(s => s.apiDateShift);
+    const apiTimeDeliveryBeg = useAutoPlannerStore(s => s.apiTimeDeliveryBeg);
+    const apiTimeDeliveryEnd = useAutoPlannerStore(s => s.apiTimeDeliveryEnd);
+    const apiTimeFilterEnabled = useAutoPlannerStore(s => s.apiTimeFilterEnabled);
+    const apiDepartmentId = useAutoPlannerStore(s => s.apiDepartmentId);
+
     const isConnectedRef = useRef(false);
     const lastProcessedTriggerRef = useRef<number | null>(null);
+    const intervalRef = useRef<any>(null);
 
     /**
      * Fetch latest data from REST API (fallback or manual trigger)
@@ -53,7 +65,30 @@ export const useDashboardWebSocket = ({
                 return;
             }
 
-            const response = await fetch(`${API_URL}/api/dashboard/latest`, {
+            // Build query parameters
+            const queryParams = new URLSearchParams();
+            queryParams.append('top', '300'); // As requested
+
+            if (apiDateShift) {
+                const [y, m, d] = apiDateShift.split('-').map(Number);
+                const shiftDate = new Date(y, m - 1, d);
+                queryParams.append('dateShift', formatDateForApi(shiftDate));
+            }
+
+            if (apiTimeFilterEnabled) {
+                if (apiTimeDeliveryBeg) {
+                    queryParams.append('timeDeliveryBeg', formatDateTimeForApi(new Date(apiTimeDeliveryBeg)));
+                }
+                if (apiTimeDeliveryEnd) {
+                    queryParams.append('timeDeliveryEnd', formatDateTimeForApi(new Date(apiTimeDeliveryEnd)));
+                }
+            }
+
+            if (apiDepartmentId) {
+                queryParams.append('departmentId', String(apiDepartmentId));
+            }
+
+            const response = await fetch(`${API_URL}/api/dashboard/latest?${queryParams.toString()}`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
@@ -63,9 +98,10 @@ export const useDashboardWebSocket = ({
             const result = await response.json();
 
             if (result.success && result.data) {
-                logger.info(` Loaded dashboard data from REST API`);
+                logger.info(` Loaded dashboard data from REST API (${result.data.orders?.length || 0} orders)`);
 
                 setApiLastSyncTime(Date.now());
+                setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);
                 setApiSyncStatus('idle');
                 setApiSyncError(null);
 
@@ -82,7 +118,18 @@ export const useDashboardWebSocket = ({
             setApiSyncStatus('error');
             setApiSyncError(errorMessage);
         }
-    }, [onDataLoaded, setApiLastSyncTime, setApiSyncStatus, setApiSyncError]);
+    }, [
+        onDataLoaded,
+        setApiLastSyncTime,
+        setApiNextSyncTime,
+        setApiSyncStatus,
+        setApiSyncError,
+        apiDateShift,
+        apiTimeDeliveryBeg,
+        apiTimeDeliveryEnd,
+        apiTimeFilterEnabled,
+        apiDepartmentId
+    ]);
 
     /**
      * Handle WebSocket dashboard updates
@@ -98,13 +145,14 @@ export const useDashboardWebSocket = ({
         });
 
         setApiLastSyncTime(Date.now());
+        setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);
         setApiSyncStatus('idle');
         setApiSyncError(null);
 
         if (onDataLoaded && update.data) {
             onDataLoaded(update.data);
         }
-    }, [onDataLoaded, setApiLastSyncTime, setApiSyncStatus, setApiSyncError]);
+    }, [onDataLoaded, setApiLastSyncTime, setApiNextSyncTime, setApiSyncStatus, setApiSyncError]);
 
     /**
      * Connect to WebSocket server
@@ -180,24 +228,39 @@ export const useDashboardWebSocket = ({
         }
     }, [apiManualSyncTrigger, fetchLatestData]);
 
-    // Connect/disconnect based on enabled state
+    // Connect/disconnect based on enabled state and handle periodic refresh
     useEffect(() => {
         if (!enabled || !apiAutoRefreshEnabled) {
             disconnectWebSocket();
+            if (intervalRef.current) {
+                clearInterval(intervalRef.current);
+                intervalRef.current = null;
+            }
             return;
         }
 
         // Connect to WebSocket
         connectWebSocket();
 
-        // Note: No fetchLatestData() here anymore! 
-        // Initial fetch is handled by GlobalDashboardFetcher/AutoRefresh interval
+        // Perform initial fetch
+        fetchLatestData();
+
+        // Setup periodic refresh as a fallback
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        intervalRef.current = setInterval(() => {
+            logger.info(' Periodic background refresh triggered (10 min)');
+            fetchLatestData();
+        }, REFRESH_INTERVAL_MS);
 
         // Cleanup on unmount
         return () => {
             disconnectWebSocket();
+            if (intervalRef.current) {
+                clearInterval(intervalRef.current);
+                intervalRef.current = null;
+            }
         };
-    }, [enabled, apiAutoRefreshEnabled, connectWebSocket, disconnectWebSocket]);
+    }, [enabled, apiAutoRefreshEnabled, connectWebSocket, disconnectWebSocket, fetchLatestData]);
 
     return {
         fetchLatestData,
