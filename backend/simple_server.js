@@ -173,6 +173,29 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
+// Diagnostic route for raw database testing
+app.get('/api/health/db-test', async (req, res) => {
+  const startTime = Date.now();
+  try {
+    const [results] = await sequelize.query('SELECT 1 as connected', { type: sequelize.QueryTypes.SELECT });
+    const duration = Date.now() - startTime;
+    res.json({
+      success: true,
+      data: results,
+      duration_ms: duration,
+      pool: sequelize.connectionManager.pool?.size || 'unknown'
+    });
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      duration_ms: duration,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
 // Тестовый эндпоинт для проверки Telegram роутов
 app.get('/api/telegram/test', (req, res) => {
   res.json({
