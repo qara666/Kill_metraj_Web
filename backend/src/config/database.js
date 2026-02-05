@@ -51,36 +51,45 @@ async function testConnection() {
     }
 }
 
-/*
 // Хук контекста RLS
 // Устанавливает переменные сессии для Row-Level Security
 sequelize.addHook('beforeQuery', async (options, query) => {
     const context = rlsContextStore.getStore();
     if (!context) return;
 
+    // Предотвращаем рекурсию (sequelize.query в этом хуке снова вызовет этот хук)
+    if (options._isRlsSetting) return;
+
     try {
         // Оптимизация: проверяем, не установлен ли уже этот контекст для текущего соединения
-        // Мы используем объект options.connection для хранения состояния текущей сессии
         if (options.connection) {
             const currentCtx = options.connection._rlsContext;
             if (currentCtx &&
                 currentCtx.userId === context.userId &&
                 currentCtx.divisionId === context.divisionId &&
                 currentCtx.role === context.role) {
-                return; // Контекст уже установлен, пропускаем SET LOCAL
+                return;
             }
             options.connection._rlsContext = { ...context };
         }
 
-        // Back to separate queries to avoid driver/pooling issues with multi-statements
-        await sequelize.query(`SET LOCAL app.user_id = '${context.userId}';`, { logging: false, raw: true, hooks: false, transaction: options.transaction });
-        await sequelize.query(`SET LOCAL app.division_id = '${context.divisionId || ''}';`, { logging: false, raw: true, hooks: false, transaction: options.transaction });
-        await sequelize.query(`SET LOCAL app.user_role = '${context.role}';`, { logging: false, raw: true, hooks: false, transaction: options.transaction });
+        // Оптимизированная установка контекста через один запрос
+        // Используем set_config для безопасной и атомарной установки переменных сессии
+        await sequelize.query(`
+            SELECT 
+                set_config('app.user_id', ${sequelize.escape(String(context.userId))}, true),
+                set_config('app.division_id', ${sequelize.escape(String(context.divisionId || ''))}, true),
+                set_config('app.user_role', ${sequelize.escape(String(context.role))}, true);
+        `, {
+            logging: false,
+            raw: true,
+            hooks: false,
+            transaction: options.transaction,
+            _isRlsSetting: true // Помечаем запрос как технический, чтобы избежать рекурсии
+        });
     } catch (err) {
-        // Мягкая обработка ошибок RLS, чтобы не прерывать основной запрос
         logger.error('Ошибка установки контекста RLS:', { error: err.message });
     }
 });
-*/
 
 module.exports = { sequelize, testConnection };

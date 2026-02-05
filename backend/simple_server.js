@@ -128,48 +128,12 @@ app.use((req, res, next) => {
 
 app.use(cors(corsOptions));
 
-// Middleware to log all requests early (for debugging Render routing)
-app.use((req, res, next) => {
-  if (!req.url.startsWith('/api/health')) { // Skip health checks to keep logs clean
-    logger.info(`[DEBUGLOG] ${req.method} ${req.url}`, {
-      origin: req.headers.origin,
-      ip: req.ip
-    });
-  }
-  next();
+next();
 });
 
-// === HEALTH & DIAGSTICS (TOP PRIORITY) ===
+// Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'healthy', uptime: process.uptime() });
-});
-
-app.get('/api/health/db-test', async (req, res) => {
-  const startTime = Date.now();
-  try {
-    const results = await sequelize.query('SELECT id, username FROM users LIMIT 5', { type: sequelize.QueryTypes.SELECT });
-    res.json({ success: true, data: results, duration: Date.now() - startTime });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/api/health/db-users-test', async (req, res) => {
-  try {
-    const { User } = require('./src/models');
-    const count = await User.count();
-    res.json({ success: true, count });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/api/health/env-check', (req, res) => {
-  res.json({
-    env: process.env.NODE_ENV,
-    db: !!process.env.DATABASE_URL,
-    port: process.env.PORT
-  });
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
 app.use(express.json({ limit: '50mb' }));
