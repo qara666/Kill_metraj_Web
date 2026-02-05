@@ -51,6 +51,7 @@ async function testConnection() {
     }
 }
 
+/*
 // Хук контекста RLS
 // Устанавливает переменные сессии для Row-Level Security
 sequelize.addHook('beforeQuery', async (options, query) => {
@@ -80,5 +81,6 @@ sequelize.addHook('beforeQuery', async (options, query) => {
         logger.error('Ошибка установки контекста RLS:', { error: err.message });
     }
 });
+*/
 
 module.exports = { sequelize, testConnection };
