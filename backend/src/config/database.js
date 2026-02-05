@@ -51,7 +51,6 @@ async function testConnection() {
     }
 }
 
-/*
 // Хук контекста RLS
 // Устанавливает переменные сессии для Row-Level Security
 sequelize.addHook('beforeQuery', async (options, query) => {
@@ -78,9 +77,9 @@ sequelize.addHook('beforeQuery', async (options, query) => {
         // Используем set_config для безопасной и атомарной установки переменных сессии
         await sequelize.query(`
             SELECT 
-                set_config('app.user_id', ${sequelize.escape(String(context.userId))}, true),
+                set_config('app.user_id', ${sequelize.escape(String(context.userId || ''))}, true),
                 set_config('app.division_id', ${sequelize.escape(String(context.divisionId || ''))}, true),
-                set_config('app.user_role', ${sequelize.escape(String(context.role))}, true);
+                set_config('app.user_role', ${sequelize.escape(String(context.role || ''))}, true);
         `, {
             logging: false,
             raw: true,
@@ -92,6 +91,5 @@ sequelize.addHook('beforeQuery', async (options, query) => {
         logger.error('Ошибка установки контекста RLS:', { error: err.message });
     }
 });
-*/
 
 module.exports = { sequelize, testConnection };

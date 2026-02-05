@@ -65,19 +65,19 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/users - Create new user
-router.post('/', async (req, res) => {
-    const startTime = Date.now();
-    let t;
+router.post('/', auditLog('user_create'), async (req, res) => {
+    const t = await sequelize.transaction();
     try {
         const { username, email, password, role, divisionId, canModifySettings } = req.body;
-        logger.info('User Creation: Starting process...', { username, role });
 
         if (!username || !password) {
-            return res.status(400).json({ success: false, message: 'Имя пользователя и пароль обязательны' });
+            await t.rollback();
+            return res.status(400).json({
+                success: false,
+                error: 'ОшибкаВалидации',
+                message: 'Имя пользователя и пароль обязательны'
+            });
         }
-
-        t = await sequelize.transaction();
-        logger.info('User Creation: Transaction started');
 
         const existingUser = await User.findOne({
             where: {
@@ -91,9 +91,14 @@ router.post('/', async (req, res) => {
 
         if (existingUser) {
             await t.rollback();
-            return res.status(400).json({ success: false, message: 'Пользователь с таким именем или email уже существует' });
+            return res.status(400).json({
+                success: false,
+                error: 'ПользовательСуществует',
+                message: 'Пользователь с таким именем или email уже существует'
+            });
         }
 
+        // Create user and preset in ONE TRANSACTION to reduce latency
         const user = await User.create({
             username,
             email: email || null,
@@ -102,7 +107,7 @@ router.post('/', async (req, res) => {
             divisionId: divisionId || null,
             canModifySettings: canModifySettings !== undefined ? canModifySettings : true,
             preset: {
-                settings: {},
+                settings: {}, // Uses model defaults
                 updatedBy: req.user.id
             }
         }, {
@@ -111,8 +116,6 @@ router.post('/', async (req, res) => {
         });
 
         await t.commit();
-        const duration = Date.now() - startTime;
-        logger.info('User Creation: SUCCESS', { username, userId: user.id, duration });
 
         res.status(201).json({
             success: true,
@@ -120,10 +123,11 @@ router.post('/', async (req, res) => {
         });
     } catch (error) {
         if (t) await t.rollback();
-        logger.error('User Creation ERROR:', { error: error.message, duration: Date.now() - startTime });
+        logger.error('Ошибка создания пользователя', { error: error.message });
         res.status(500).json({
             success: false,
-            message: 'Internal Error: ' + error.message
+            error: 'ВнутренняяОшибкаСервера',
+            message: 'Не удалось создать пользователя: ' + error.message
         });
     }
 });
