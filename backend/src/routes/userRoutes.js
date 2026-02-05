@@ -65,12 +65,14 @@ router.get('/', async (req, res) => {
 
 // POST /api/users - Create new user
 router.post('/', auditLog('user_create'), async (req, res) => {
-    const t = await sequelize.transaction();
+    const startTime = Date.now();
+    let t;
     try {
         const { username, email, password, role, divisionId, canModifySettings } = req.body;
+        logger.info('User Creation: Starting process...', { username, role });
 
         if (!username || !password) {
-            await t.rollback();
+            logger.warn('User Creation: Missing required fields');
             return res.status(400).json({
                 success: false,
                 error: 'ОшибкаВалидации',
@@ -78,17 +80,26 @@ router.post('/', auditLog('user_create'), async (req, res) => {
             });
         }
 
-        const existingUser = await User.findOne({
-            where: {
-                [Op.or]: [
-                    { username },
-                    ...(email ? [{ email }] : [])
-                ]
-            },
-            transaction: t
-        });
+        logger.info('User Creation: Starting transaction...');
+        t = await sequelize.transaction();
+        logger.info('User Creation: Transaction started');
+
+        logger.info('User Creation: Checking for existing user...');
+        const existingUser = await Promise.race([
+            User.findOne({
+                where: {
+                    [Op.or]: [
+                        { username },
+                        ...(email ? [{ email }] : [])
+                    ]
+                },
+                transaction: t
+            }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('User existence check timeout')), 10000))
+        ]);
 
         if (existingUser) {
+            logger.warn('User Creation: User already exists', { username });
             await t.rollback();
             return res.status(400).json({
                 success: false,
@@ -97,32 +108,45 @@ router.post('/', auditLog('user_create'), async (req, res) => {
             });
         }
 
-        // Create user and preset in ONE TRANSACTION to reduce latency
-        const user = await User.create({
-            username,
-            email: email || null,
-            passwordHash: password,
-            role: role || 'user',
-            divisionId: divisionId || null,
-            canModifySettings: canModifySettings !== undefined ? canModifySettings : true,
-            preset: {
-                settings: {}, // Uses model defaults
-                updatedBy: req.user.id
-            }
-        }, {
-            include: [{ model: UserPreset, as: 'preset' }],
-            transaction: t
-        });
+        logger.info('User Creation: Creating user and preset record...');
+        const user = await Promise.race([
+            User.create({
+                username,
+                email: email || null,
+                passwordHash: password,
+                role: role || 'user',
+                divisionId: divisionId || null,
+                canModifySettings: canModifySettings !== undefined ? canModifySettings : true,
+                preset: {
+                    settings: {},
+                    updatedBy: req.user.id
+                }
+            }, {
+                include: [{ model: UserPreset, as: 'preset' }],
+                transaction: t
+            }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('User/Preset creation timeout')), 15000))
+        ]);
 
+        logger.info('User Creation: Committing transaction...');
         await t.commit();
+        const duration = Date.now() - startTime;
+        logger.info('User Creation: SUCCESS', { username, userId: user.id, duration });
 
         res.status(201).json({
             success: true,
             data: user.toJSON()
         });
     } catch (error) {
-        if (t) await t.rollback();
-        logger.error('Ошибка создания пользователя', { error: error.message });
+        const duration = Date.now() - startTime;
+        logger.error('User Creation ERROR:', { message: error.message, stack: error.stack, duration });
+        if (t) {
+            try {
+                await t.rollback();
+            } catch (rollbackError) {
+                logger.error('User Creation: Rollback failed', { error: rollbackError.message });
+            }
+        }
         res.status(500).json({
             success: false,
             error: 'ВнутренняяОшибкаСервера',
