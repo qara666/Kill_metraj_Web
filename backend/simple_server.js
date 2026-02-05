@@ -446,6 +446,9 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
     if (process.env.CDC_ENABLED === 'true') {
       await dashboardConsumer.start();
     }
+    // Start manual migration check
+    await ensureDivisionIdColumn();
+
   } catch (dbError) {
     logger.error('CRITICAL: Database initialization failed, but keeping server alive for logs', { error: dbError.message });
   }
@@ -456,6 +459,33 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
     logger.error('Failed to start gRPC server', grpcError);
   }
 });
+
+/**
+ * Manual migration to ensure division_id column exists
+ * This runs after sequelize.sync() as an extra safety measure for Render
+ */
+async function ensureDivisionIdColumn() {
+  try {
+    logger.info('DB Check: Ensuring division_id column exists...');
+    await sequelize.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                       WHERE table_name='api_dashboard_cache' AND column_name='division_id') THEN
+          ALTER TABLE api_dashboard_cache ADD COLUMN division_id TEXT;
+          RAISE NOTICE 'Added division_id column to api_dashboard_cache';
+        END IF;
+      END
+      $$;
+    `);
+    logger.info('DB Check: division_id column verified/added successfully');
+  } catch (err) {
+    logger.error('DB Check: Error adding division_id column', {
+      error: err.message,
+      stack: err.stack
+    });
+  }
+}
 
 async function setupDashboardListener() {
   try {
@@ -646,8 +676,68 @@ app.get('/api/dashboard/latest', authenticateToken, async (req, res) => {
     logger.error('Ошибка при получении данных дашборда:', error);
     res.status(500).json({
       success: false,
-      error: 'Не удалось получить данные дашборда'
+      error: 'Не удалось получить данные дашборда',
+      details: process.env.NODE_ENV === 'production' ? null : error.message,
+      db_error: error.message.includes('column') ? 'Database schema mismatch' : null
     });
+  }
+});
+
+/**
+ * Debug endpoint to check fetcher status
+ */
+app.get('/api/debug/fetcher', authenticateToken, async (req, res) => {
+  try {
+    const stats = {};
+
+    // 1. Check database schema
+    const columns = await sequelize.query(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'api_dashboard_cache'",
+      { type: sequelize.QueryTypes.SELECT }
+    );
+    stats.schema = {
+      table_exists: columns.length > 0,
+      columns: columns.map(c => c.column_name),
+      has_division_id: columns.some(c => c.column_name === 'division_id')
+    };
+
+    // 2. Check latest data
+    const results = await sequelize.query(
+      'SELECT id, division_id, target_date, created_at, status_code FROM api_dashboard_cache ORDER BY created_at DESC LIMIT 5',
+      { type: sequelize.QueryTypes.SELECT }
+    );
+    stats.latest_records = results;
+    stats.fetcher_status = results.length > 0 ? 'running' : 'no_data';
+
+    // 3. Test external API connectivity (Ping)
+    if (process.env.EXTERNAL_API_URL) {
+      try {
+        const axios = require('axios');
+        const start = Date.now();
+        // Use a short timeout for the connectivity test
+        await axios.head(process.env.EXTERNAL_API_URL, { timeout: 3000 });
+        stats.external_api = {
+          status: 'reachable',
+          latency: `${Date.now() - start}ms`,
+          url: process.env.EXTERNAL_API_URL.split('?')[0]
+        };
+      } catch (err) {
+        stats.external_api = {
+          status: 'unreachable',
+          error: err.message,
+          url: process.env.EXTERNAL_API_URL?.split('?')[0]
+        };
+      }
+    }
+
+    res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      stats
+    });
+  } catch (error) {
+    logger.error('Debug endpoint failed:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
