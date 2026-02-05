@@ -128,9 +128,6 @@ app.use((req, res, next) => {
 
 app.use(cors(corsOptions));
 
-next();
-});
-
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
