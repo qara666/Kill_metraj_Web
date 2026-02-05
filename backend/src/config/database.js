@@ -9,10 +9,10 @@ const isProduction = process.env.NODE_ENV === 'production';
 const isWorker = process.argv[1]?.includes('worker') || process.argv[1]?.includes('fetcher');
 
 const poolConfig = {
-    max: isWorker ? 2 : 5,    // Reduced from 10 to 5 to prevent exhaustion on Render
+    max: isWorker ? 2 : 10,   // Sufficient headroom for API concurrent requests
     min: 0,
-    acquire: 10000,           // Reduced from 30s to 10s for faster failure
-    idle: 5000,              // Reduced from 10s to 5s
+    acquire: 20000,          // 20s to give more time for slow connection establishment
+    idle: 5000,              // Keep short idle to release connections fast
     evict: 5000
 };
 
