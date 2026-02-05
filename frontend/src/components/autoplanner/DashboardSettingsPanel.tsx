@@ -29,7 +29,30 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
     onSettingsChange
 }) => {
     const { isAdmin, user } = useAuth();
-    const globalStore = useAutoPlannerStore();
+
+    // --- Stable Store Selectors ---
+    const storeApiKey = useAutoPlannerStore(s => s.apiKey);
+    const storeApiDepartmentId = useAutoPlannerStore(s => s.apiDepartmentId);
+    const storeApiAutoRefreshEnabled = useAutoPlannerStore(s => s.apiAutoRefreshEnabled);
+    const storeApiDateShift = useAutoPlannerStore(s => s.apiDateShift);
+    const storeApiDateShiftFilterEnabled = useAutoPlannerStore(s => s.apiDateShiftFilterEnabled);
+    const storeApiTimeDeliveryBeg = useAutoPlannerStore(s => s.apiTimeDeliveryBeg);
+    const storeApiTimeDeliveryEnd = useAutoPlannerStore(s => s.apiTimeDeliveryEnd);
+    const storeApiTimeFilterEnabled = useAutoPlannerStore(s => s.apiTimeFilterEnabled);
+    const storeApiSyncStatus = useAutoPlannerStore(s => s.apiSyncStatus);
+    const storeApiLastSyncTime = useAutoPlannerStore(s => s.apiLastSyncTime);
+    const storeApiNextSyncTime = useAutoPlannerStore(s => s.apiNextSyncTime);
+
+    // Actions
+    const setApiKey = useAutoPlannerStore(s => s.setApiKey);
+    const setApiDepartmentId = useAutoPlannerStore(s => s.setApiDepartmentId);
+    const setApiAutoRefreshEnabled = useAutoPlannerStore(s => s.setApiAutoRefreshEnabled);
+    const setApiDateShift = useAutoPlannerStore(s => s.setApiDateShift);
+    const setApiDateShiftFilterEnabled = useAutoPlannerStore(s => s.setApiDateShiftFilterEnabled);
+    const setApiTimeDeliveryBeg = useAutoPlannerStore(s => s.setApiTimeDeliveryBeg);
+    const setApiTimeDeliveryEnd = useAutoPlannerStore(s => s.setApiTimeDeliveryEnd);
+    const setApiTimeFilterEnabled = useAutoPlannerStore(s => s.setApiTimeFilterEnabled);
+    const triggerApiManualSync = useAutoPlannerStore(s => s.triggerApiManualSync);
 
     // --- State Logic: Controlled vs Uncontrolled ---
     const isControlled = !!onSettingsChange;
@@ -82,17 +105,17 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
 
 
     // Accessors based on mode
-    const apiKey = isControlled ? localState.apiKey : globalStore.apiKey;
-    const apiDepartmentId = isControlled ? (localState.departmentId ? parseInt(localState.departmentId) : null) : globalStore.apiDepartmentId;
-    const apiAutoRefreshEnabled = isControlled ? localState.autoRefresh : globalStore.apiAutoRefreshEnabled;
-    const apiDateShift = isControlled ? localState.dateShift : globalStore.apiDateShift;
-    const apiDateShiftFilterEnabled = isControlled ? localState.dateShiftEnabled : globalStore.apiDateShiftFilterEnabled;
-    const apiTimeDeliveryBeg = isControlled ? localState.timeDeliveryBeg : globalStore.apiTimeDeliveryBeg;
-    const apiTimeDeliveryEnd = isControlled ? localState.timeDeliveryEnd : globalStore.apiTimeDeliveryEnd;
-    const apiTimeFilterEnabled = isControlled ? localState.timeFilterEnabled : globalStore.apiTimeFilterEnabled;
-    const apiSyncStatus = isControlled ? 'idle' : globalStore.apiSyncStatus; // Admin mode doesn't sync real status
-    const apiLastSyncTime = isControlled ? null : globalStore.apiLastSyncTime;
-    const apiNextSyncTime = isControlled ? null : globalStore.apiNextSyncTime;
+    const apiKey = isControlled ? localState.apiKey : storeApiKey;
+    const apiDepartmentId = isControlled ? (localState.departmentId ? parseInt(localState.departmentId) : null) : storeApiDepartmentId;
+    const apiAutoRefreshEnabled = isControlled ? localState.autoRefresh : storeApiAutoRefreshEnabled;
+    const apiDateShift = isControlled ? localState.dateShift : storeApiDateShift;
+    const apiDateShiftFilterEnabled = isControlled ? localState.dateShiftEnabled : storeApiDateShiftFilterEnabled;
+    const apiTimeDeliveryBeg = isControlled ? localState.timeDeliveryBeg : storeApiTimeDeliveryBeg;
+    const apiTimeDeliveryEnd = isControlled ? localState.timeDeliveryEnd : storeApiTimeDeliveryEnd;
+    const apiTimeFilterEnabled = isControlled ? localState.timeFilterEnabled : storeApiTimeFilterEnabled;
+    const apiSyncStatus = isControlled ? 'idle' : storeApiSyncStatus; // Admin mode doesn't sync real status
+    const apiLastSyncTime = isControlled ? null : storeApiLastSyncTime;
+    const apiNextSyncTime = isControlled ? null : storeApiNextSyncTime;
 
 
     // --- Local editing state (for inputs) ---
@@ -124,10 +147,10 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
             // Note: For controlled mode, other fields update immediately via their specific handlers below
         } else {
             // Global store update
-            globalStore.setApiKey(editApiKey.trim());
-            globalStore.setApiDepartmentId(newDepartmentId);
+            setApiKey(editApiKey.trim());
+            setApiDepartmentId(newDepartmentId);
         }
-    }, [editApiKey, editDepartmentId, isControlled, onSettingsChange, initialSettings, globalStore]);
+    }, [editApiKey, editDepartmentId, isControlled, onSettingsChange, initialSettings, setApiKey, setApiDepartmentId]);
 
     const handleToggleAutoRefresh = useCallback(() => {
         const newValue = !apiAutoRefreshEnabled;
@@ -138,9 +161,9 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
             if (!newValue && editApiKey.trim()) {
                 handleSaveSettings();
             }
-            globalStore.setApiAutoRefreshEnabled(newValue);
+            setApiAutoRefreshEnabled(newValue);
         }
-    }, [apiAutoRefreshEnabled, isControlled, onSettingsChange, initialSettings, globalStore, editApiKey, handleSaveSettings]);
+    }, [apiAutoRefreshEnabled, isControlled, onSettingsChange, initialSettings, setApiAutoRefreshEnabled, editApiKey, handleSaveSettings]);
 
     // Updated handler to sync times immediately when Date Shift changes
     const handleDateShiftChange = (value: string) => {
@@ -173,11 +196,11 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
             onSettingsChange({ ...initialSettings, ...updates });
             setLocalState(prev => ({ ...prev, ...newLocalState }));
         } else {
-            globalStore.setApiDateShift(value);
+            setApiDateShift(value);
             // Note: Global store additional syncs might be needed if we want same behavior,
             // but for now focusing on fixing the Admin Presets loop.
-            if (updates.apiTimeDeliveryBeg) globalStore.setApiTimeDeliveryBeg(updates.apiTimeDeliveryBeg);
-            if (updates.apiTimeDeliveryEnd) globalStore.setApiTimeDeliveryEnd(updates.apiTimeDeliveryEnd);
+            if (updates.apiTimeDeliveryBeg) setApiTimeDeliveryBeg(updates.apiTimeDeliveryBeg);
+            if (updates.apiTimeDeliveryEnd) setApiTimeDeliveryEnd(updates.apiTimeDeliveryEnd);
         }
     };
 
@@ -186,7 +209,7 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
             onSettingsChange({ ...initialSettings, apiDateShiftFilterEnabled: checked });
             setLocalState(prev => ({ ...prev, dateShiftEnabled: checked }));
         } else {
-            globalStore.setApiDateShiftFilterEnabled(checked);
+            setApiDateShiftFilterEnabled(checked);
         }
     };
 
@@ -195,7 +218,7 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
             onSettingsChange({ ...initialSettings, apiTimeFilterEnabled: checked });
             setLocalState(prev => ({ ...prev, timeFilterEnabled: checked }));
         } else {
-            globalStore.setApiTimeFilterEnabled(checked);
+            setApiTimeFilterEnabled(checked);
         }
     };
 
@@ -204,7 +227,7 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
             onSettingsChange({ ...initialSettings, apiTimeDeliveryBeg: value });
             setLocalState(prev => ({ ...prev, timeDeliveryBeg: value }));
         } else {
-            globalStore.setApiTimeDeliveryBeg(value);
+            setApiTimeDeliveryBeg(value);
         }
     };
 
@@ -213,7 +236,7 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
             onSettingsChange({ ...initialSettings, apiTimeDeliveryEnd: value });
             setLocalState(prev => ({ ...prev, timeDeliveryEnd: value }));
         } else {
-            globalStore.setApiTimeDeliveryEnd(value);
+            setApiTimeDeliveryEnd(value);
         }
     };
 
@@ -226,43 +249,40 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
         if (isControlled) return; // Skip for admin mode
 
         const settings = localStorageUtils.getAllSettings();
-        // ... (Original logic for uncontrolled sync from localStorage/Profile)
-        // Keeping it simple: if not controlled, the original useEffect logic applies
-        // But since we can't easily conditionally call hooks, we can just run it but guard inside.
 
         // 1. Sync API Key from Presets
-        if (settings.fastopertorApiKey && settings.fastopertorApiKey !== globalStore.apiKey) {
-            globalStore.setApiKey(settings.fastopertorApiKey);
+        if (settings.fastopertorApiKey && settings.fastopertorApiKey !== storeApiKey) {
+            setApiKey(settings.fastopertorApiKey);
         }
 
         // 2. Sync Department ID
         const profileDeptId = user?.divisionId ? parseInt(user.divisionId, 10) : null;
         const storedDeptId = settings.fastopertorDepartmentId ? parseInt(settings.fastopertorDepartmentId, 10) : null;
-        let targetDeptId = globalStore.apiDepartmentId;
+        let targetDeptId = storeApiDepartmentId;
 
         if (!isAdmin && profileDeptId !== null) {
             targetDeptId = profileDeptId;
         } else if (isAdmin) {
-            targetDeptId = storedDeptId ?? profileDeptId ?? globalStore.apiDepartmentId;
+            targetDeptId = storedDeptId ?? profileDeptId ?? storeApiDepartmentId;
         } else if (profileDeptId !== null) {
             targetDeptId = profileDeptId;
         }
 
-        if (targetDeptId !== null && targetDeptId !== globalStore.apiDepartmentId) {
-            globalStore.setApiDepartmentId(targetDeptId);
+        if (targetDeptId !== null && targetDeptId !== storeApiDepartmentId) {
+            setApiDepartmentId(targetDeptId);
         }
-    }, [isControlled, isAdmin, user?.divisionId, globalStore]); // Dependencies adjusted
+    }, [isControlled, isAdmin, user?.divisionId, storeApiKey, storeApiDepartmentId, setApiKey, setApiDepartmentId]);
 
 
     const handleManualSync = useCallback(() => {
         handleSaveSettings();
         if (!isControlled) {
-            globalStore.triggerApiManualSync();
+            triggerApiManualSync();
         } else {
             toast.success('Настройки сохранены (режим администратора)');
         }
         if (onManualSync) onManualSync();
-    }, [handleSaveSettings, isControlled, globalStore, onManualSync]);
+    }, [handleSaveSettings, isControlled, triggerApiManualSync, onManualSync]);
 
     const formatTimeAgo = (timestamp: number | null) => {
         if (!timestamp) return 'Никогда';
