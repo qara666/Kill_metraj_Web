@@ -11,9 +11,9 @@ router.use(requireRole('admin'));
 
 // GET /api/users - Get all users with pagination
 router.get('/', async (req, res) => {
+    const startTime = Date.now();
     try {
         const { search, role, isActive, limit = 50, offset = 0 } = req.query;
-
         const where = {};
 
         if (search) {
@@ -32,29 +32,45 @@ router.get('/', async (req, res) => {
             where.isActive = isActive === 'true';
         }
 
-        const { count, rows } = await User.findAndCountAll({
-            where,
-            order: [['createdAt', 'DESC']],
-            limit: parseInt(limit),
-            offset: parseInt(offset),
-            attributes: { exclude: ['passwordHash'] } // Explicitly exclude sensitive data at DB level
-        });
+        logger.info('Users Route: Querying database...', { where, limit, offset });
 
+        const { count, rows } = await Promise.race([
+            User.findAndCountAll({
+                where,
+                order: [['createdAt', 'DESC']],
+                limit: parseInt(limit),
+                offset: parseInt(offset),
+                attributes: { exclude: ['passwordHash'] }
+            }),
+            new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Users list DB timeout')), 10000)
+            )
+        ]);
+
+        const dbTime = Date.now() - startTime;
+        logger.info('Users Route: Query successful', { count, duration: dbTime });
+
+        logger.info('Users Route: Serializing response...');
         res.json({
             success: true,
-            data: rows, // toJSON() is called automatically or via the model instance method if needed, but rows are instances
+            data: rows,
             pagination: {
                 total: count,
                 limit: parseInt(limit),
-                offset: parseInt(offset)
+                offset: parseInt(offset),
+                pages: Math.ceil(count / parseInt(limit))
             }
         });
+        logger.info('Users Route: Response sent successfully');
     } catch (error) {
-        logger.error('Ошибка получения списка пользователей', { error: error.message });
+        logger.error('Users Route ERROR:', {
+            message: error.message,
+            duration: Date.now() - startTime
+        });
         res.status(500).json({
             success: false,
             error: 'ВнутренняяОшибкаСервера',
-            message: 'Не удалось получить список пользователей'
+            message: 'Не удалось получить список пользователей: ' + error.message
         });
     }
 });
