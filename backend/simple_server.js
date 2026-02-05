@@ -156,7 +156,12 @@ app.get('/api/health/db-test', async (req, res) => {
       pool: sequelize.connectionManager.pool?.size || 0
     });
   } catch (error) {
-  });
+    const duration = Date.now() - startTime;
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      duration_ms: duration
+    });
   }
 });
 
