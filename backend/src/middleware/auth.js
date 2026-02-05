@@ -12,7 +12,8 @@ function generateAccessToken(user) {
         {
             userId: user.id,
             username: user.username,
-            role: user.role
+            role: user.role,
+            divisionId: user.divisionId || ''
         },
         JWT_SECRET,
         { expiresIn: JWT_EXPIRES_IN }
@@ -36,6 +37,7 @@ const userCache = new Map();
 const CACHE_TTL = 300000; // 5 минут в миллисекундах
 
 // Middleware для аутентификации токена
+// OPTIMIZED: No database queries - relies solely on JWT verification
 async function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
@@ -49,6 +51,7 @@ async function authenticateToken(req, res, next) {
     }
 
     try {
+        // Verify JWT token only - NO database query
         const decoded = jwt.verify(token, JWT_SECRET);
 
         // Проверка типа токена (обновление через refresh-токен запрещено для обычных запросов)
@@ -61,73 +64,21 @@ async function authenticateToken(req, res, next) {
             });
         }
 
-        // 1. Пробуем получить пользователя из кэша
-        const cachedUser = userCache.get(decoded.userId);
-        let user;
+        // Attach user info from JWT payload (no DB lookup needed)
+        req.user = {
+            id: decoded.userId,
+            userId: decoded.userId,
+            username: decoded.username,
+            role: decoded.role,
+            divisionId: decoded.divisionId || '',
+            isActive: true  // Assume active - validate in critical routes if needed
+        };
 
-        if (cachedUser && (Date.now() - cachedUser.timestamp < CACHE_TTL)) {
-            user = cachedUser.data;
-        } else {
-            // 2. Если нет в кэше или истек TTL - получаем из базы данных
-            const dbStartTime = Date.now();
-            try {
-                user = await Promise.race([
-                    User.findByPk(decoded.userId),
-                    new Promise((_, reject) =>
-                        setTimeout(() => reject(new Error('DB query timeout')), 5000)
-                    )
-                ]);
-                const dbTime = Date.now() - dbStartTime;
-                if (dbTime > 1000) {
-                    logger.warn('Slow User.findByPk query', { userId: decoded.userId, dbTime });
-                }
-            } catch (error) {
-                if (error.message === 'DB query timeout') {
-                    logger.error('User.findByPk timeout after 5s', { userId: decoded.userId });
-                    return res.status(500).json({
-                        success: false,
-                        error: 'DatabaseTimeout',
-                        message: 'Database query timeout'
-                    });
-                }
-                throw error;
-            }
-
-            if (user) {
-                // Сохраняем в кэш
-                userCache.set(decoded.userId, {
-                    data: user,
-                    timestamp: Date.now()
-                });
-            }
-        }
-
-        if (!user) {
-            logger.warn('Auth: Пользователь не найден в БД', { userId: decoded.userId });
-            return res.status(401).json({
-                success: false,
-                error: 'ОшибкаАутентификации',
-                message: 'Пользователь не найден'
-            });
-        }
-
-        if (!user.isActive) {
-            logger.warn('Auth: Аккаунт пользователя деактивирован', { userId: user.id });
-            return res.status(403).json({
-                success: false,
-                error: 'ДоступЗапрещен',
-                message: 'Аккаунт деактивирован'
-            });
-        }
-
-        // Прикрепление пользователя к запросу
-        req.user = user;
-
-        // Распространение контекста для PostgreSQL RLS через AsyncLocalStorage
+        // Propagate RLS context for PostgreSQL
         return rlsContextStore.run({
-            userId: user.id,
-            divisionId: user.divisionId || '',
-            role: user.role
+            userId: decoded.userId,
+            divisionId: decoded.divisionId || '',
+            role: decoded.role
         }, () => {
             next();
         });
@@ -143,8 +94,7 @@ async function authenticateToken(req, res, next) {
 
         logger.error('Auth: Ошибка проверки токена', {
             name: error.name,
-            message: error.message,
-            tokenPrefix: token.substring(0, 10) + '...'
+            message: error.message
         });
 
         return res.status(403).json({

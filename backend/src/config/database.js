@@ -9,11 +9,11 @@ const isProduction = process.env.NODE_ENV === 'production';
 const isWorker = process.argv[1]?.includes('worker') || process.argv[1]?.includes('fetcher');
 
 const poolConfig = {
-    max: isWorker ? 2 : 10,
-    min: 0,                   // Back to 0 for Render safety
-    acquire: 30000,
-    idle: 10000,
-    evict: 10000
+    max: isWorker ? 2 : 5,    // Reduced from 10 to 5 to prevent exhaustion on Render
+    min: 0,
+    acquire: 10000,           // Reduced from 30s to 10s for faster failure
+    idle: 5000,              // Reduced from 10s to 5s
+    evict: 5000
 };
 
 const sequelize = process.env.DATABASE_URL
