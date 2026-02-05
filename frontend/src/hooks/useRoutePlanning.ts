@@ -2,11 +2,9 @@ import { useState, useCallback, useMemo } from 'react'
 import {
     type RoutePlanningSettings,
     type TrafficSnapshot,
-    type RouteAnalytics,
-    type NotificationPreferences,
     type TrafficPresetInfo,
-    type TrafficPlanImpact,
-    type TrafficPresetMode
+    type TrafficPresetMode,
+    type Order
 } from '../types'
 
 export type { TrafficPresetMode }
@@ -31,27 +29,28 @@ export interface OptimizationProgress {
 // --- Hook ---
 
 export const useRoutePlanning = (
-    excelData: any[] | null,
-    routePlanningSettings: RoutePlanningSettings,
+    orders: Order[] | null,
+    settings: RoutePlanningSettings,
     trafficSnapshotRef: React.MutableRefObject<TrafficSnapshot | null>,
-    filteredOrders: any[],
-    notificationPreferences: NotificationPreferences,
-    trafficModeOverride: string | null,
-    maxStopsPerRoute: number,
-    maxRouteDurationMin: number,
-    maxRouteDistanceKm: number,
-    settingsMaxStopsPerRoute: number,
-    // State setters
+    filteredOrders: Order[],
+    notificationPreferences: any,
+    trafficModeOverride: 'auto' | 'moderate' | 'heavy' | null = null,
+    maxStopsPerRoute: number = 20,
+    maxRouteDurationMin: number = 480,
+    maxRouteDistanceKm: number = 100,
+    maxOrdersPerCourier: number = 50,
+    defaultStartAddress: string = 'г. Киев, ул. Большая Васильковская, 100', // Default fallback
+    defaultEndAddress: string = 'г. Киев, ул. Большая Васильковская, 100',   // Default fallback
     setPlannedRoutes: (routes: any[]) => void,
     setErrorMsg: (msg: string | null) => void,
-    setPlanTrafficImpact: (impact: TrafficPlanImpact | null) => void,
-    setLastPlanPreset: (preset: TrafficPresetInfo | null) => void,
-    setRouteAnalytics: (analytics: RouteAnalytics | null) => void
+    setPlanTrafficImpact: (impact: any) => void,
+    setLastPlanPreset: (preset: any) => void,
+    setRouteAnalytics: (analytics: any) => void
 ) => {
     const [isPlanning, setIsPlanning] = useState(false)
     const [optimizationProgress, setOptimizationProgress] = useState<OptimizationProgress | null>(null)
 
-    const runtimeMaxStopsPerRoute = useMemo(() => Math.max(maxStopsPerRoute, settingsMaxStopsPerRoute), [maxStopsPerRoute, settingsMaxStopsPerRoute])
+    const runtimeMaxStopsPerRoute = useMemo(() => Math.max(maxStopsPerRoute, maxOrdersPerCourier), [maxStopsPerRoute, maxOrdersPerCourier])
     const runtimeMaxRouteDurationMin = maxRouteDurationMin
     const runtimeMaxRouteDistanceKm = maxRouteDistanceKm
 
@@ -83,13 +82,12 @@ export const useRoutePlanning = (
     }, [runtimeMaxStopsPerRoute, runtimeMaxRouteDurationMin, runtimeMaxRouteDistanceKm])
 
     const planRoutes = useCallback(async () => {
-        if (!excelData || excelData.length === 0) {
+        if (!orders || orders.length === 0) {
             setErrorMsg('Загрузите файл с заказами')
             return
         }
 
-        const orders = (filteredOrders && filteredOrders.length > 0) ? filteredOrders : []
-        const validOrders = orders.filter(o => {
+        const validOrders = ((filteredOrders && filteredOrders.length > 0) ? filteredOrders : []).filter(o => {
             const addr = o.address || o.raw?.address || '';
             return isValidAddress(addr);
         });
@@ -107,20 +105,20 @@ export const useRoutePlanning = (
             await googleMapsLoader.load()
 
             const optimizedSettings = Object.freeze({
-                ...routePlanningSettings,
-                minRouteEfficiency: routePlanningSettings.minRouteEfficiency || 0.5,
-                maxReadyTimeDifferenceMinutes: routePlanningSettings.maxReadyTimeDifferenceMinutes || 60,
-                maxDistanceBetweenOrdersKm: routePlanningSettings.maxDistanceBetweenOrdersKm || 15
+                ...settings,
+                minRouteEfficiency: settings.minRouteEfficiency || 0.5,
+                maxReadyTimeDifferenceMinutes: settings.maxReadyTimeDifferenceMinutes || 60,
+                maxDistanceBetweenOrdersKm: settings.maxDistanceBetweenOrdersKm || 15
             })
 
-            const defaultStartAddress = 'г. Киев, ул. Большая Васильковская, 100'
-            const defaultEndAddress = 'г. Киев, ул. Большая Васильковская, 100'
+            const startAddr = defaultStartAddress.trim() || 'г. Киев, ул. Большая Васильковская, 100'
+            const endAddr = defaultEndAddress.trim() || 'г. Киев, ул. Большая Васильковская, 100'
 
             const checkChainFeasible = async (chain: any[], includeStartEnd: boolean = true) => {
                 const gmaps = window.google.maps
                 const directionsService = new gmaps.DirectionsService()
-                const origin = includeStartEnd ? defaultStartAddress : chain[0].address
-                const destination = includeStartEnd ? defaultEndAddress : chain[chain.length - 1].address
+                const origin = includeStartEnd ? startAddr : chain[0].address
+                const destination = includeStartEnd ? endAddr : chain[chain.length - 1].address
                 const waypoints = includeStartEnd
                     ? chain.map(n => ({ location: n.address, stopover: true }))
                     : chain.slice(1, -1).map(n => ({ location: n.address, stopover: true }))
@@ -131,7 +129,7 @@ export const useRoutePlanning = (
                         travelMode: gmaps.TravelMode.DRIVING,
                         drivingOptions: {
                             departureTime: new Date(),
-                            trafficModel: gmaps.TrafficModel.PESSIMISTIC
+                            trafficModel: gmaps.TravelModel.PESSIMISTIC
                         }
                     }, (r: any, status: any) => {
                         if (status === 'OK' && r?.routes[0]) {
@@ -153,8 +151,8 @@ export const useRoutePlanning = (
 
             const apiManager = new GoogleAPIManager({
                 checkChainFeasible,
-                defaultStartAddress,
-                defaultEndAddress,
+                defaultStartAddress: startAddr,
+                defaultEndAddress: endAddr,
                 maxDistanceKm: optimizedSettings.maxDistanceBetweenOrdersKm,
                 maxReadyTimeDiffMinutes: optimizedSettings.maxReadyTimeDifferenceMinutes
             })
@@ -184,12 +182,12 @@ export const useRoutePlanning = (
                 }
             }
 
-            const depotCoords = routeOptimizationCache.getCoordinates(defaultStartAddress)
+            const depotCoords = routeOptimizationCache.getCoordinates(startAddr)
             const mode = getPresetMode()
             const preset = getPreset(mode)
             setLastPlanPreset(preset)
 
-            const routes = await runRoutePlanningAlgorithm(validOrders, {
+            const finalRoutes = await runRoutePlanningAlgorithm(validOrders, {
                 apiManager,
                 runtimeMaxStopsPerRoute,
                 runtimeMaxRouteDurationMin,
@@ -197,41 +195,41 @@ export const useRoutePlanning = (
                 optimizedSettings,
                 trafficSnapshot: trafficSnapshotRef.current,
                 depotCoords,
-                defaultStartAddress,
-                defaultEndAddress,
+                defaultStartAddress: startAddr,
+                defaultEndAddress: endAddr,
                 setOptimizationProgress
             });
 
-            setPlannedRoutes(routes)
+            setPlannedRoutes(finalRoutes)
 
-            if (routes.length > 0) {
-                const analytics = calculateRouteAnalytics(routes)
+            if (finalRoutes.length > 0) {
+                const analytics = calculateRouteAnalytics(finalRoutes)
                 setRouteAnalytics(analytics)
 
-                routeHistory.save(routes, {
+                routeHistory.save(finalRoutes, {
                     maxRouteDurationMin: runtimeMaxRouteDurationMin,
                     maxRouteDistanceKm: runtimeMaxRouteDistanceKm,
                     maxStopsPerRoute: runtimeMaxStopsPerRoute,
                     trafficMode: mode,
-                    ...routePlanningSettings
+                    ...settings
                 }, {
-                    totalRoutes: routes.length,
-                    totalOrders: routes.reduce((s: number, r: any) => s + r.stopsCount, 0),
-                    totalDistance: routes.reduce((s: number, r: any) => s + (r.totalDistance || 0), 0) / 1000,
-                    totalDuration: routes.reduce((s: number, r: any) => s + (r.totalDuration || 0), 0) / 60,
+                    totalRoutes: finalRoutes.length,
+                    totalOrders: finalRoutes.reduce((s: number, r: any) => s + r.stopsCount, 0),
+                    totalDistance: finalRoutes.reduce((s: number, r: any) => s + (r.totalDistance || 0), 0) / 1000,
+                    totalDuration: finalRoutes.reduce((s: number, r: any) => s + (r.totalDuration || 0), 0) / 60,
                     avgEfficiency: 0
                 })
 
                 setPlanTrafficImpact({
-                    totalDelay: routes.reduce((s: number, r: any) => s + (r.totalTrafficDelay || 0), 0),
-                    criticalRoutes: routes.filter((r: any) => r.hasCriticalTraffic).length,
+                    totalDelay: finalRoutes.reduce((s: number, r: any) => s + (r.totalTrafficDelay || 0), 0),
+                    criticalRoutes: finalRoutes.filter((r: any) => r.hasCriticalTraffic).length,
                     avgSegmentSpeed: trafficSnapshotRef.current?.stats.avgSpeed || 0,
                     presetMode: mode,
                     bufferMinutes: preset.bufferMinutes
                 })
 
                 // Notifications
-                for (const route of routes) {
+                for (const route of finalRoutes) {
                     try {
                         generateRouteNotifications(route, notificationPreferences)
                     } catch (err) { console.error('Notification error', err) }
@@ -249,10 +247,11 @@ export const useRoutePlanning = (
             setOptimizationProgress(null)
         }
     }, [
-        excelData, filteredOrders, routePlanningSettings, runtimeMaxStopsPerRoute, runtimeMaxRouteDurationMin,
+        orders, filteredOrders, settings, runtimeMaxStopsPerRoute, runtimeMaxRouteDurationMin,
         runtimeMaxRouteDistanceKm, trafficModeOverride, trafficSnapshotRef, notificationPreferences,
+        defaultStartAddress, defaultEndAddress,
         setPlannedRoutes, setRouteAnalytics, setPlanTrafficImpact, setErrorMsg, setIsPlanning, setOptimizationProgress,
-        setLastPlanPreset
+        setLastPlanPreset, getPreset, getPresetMode
     ])
 
     return { isPlanning, optimizationProgress, planRoutes }
