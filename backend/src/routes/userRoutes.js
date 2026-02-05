@@ -3,6 +3,7 @@ const router = express.Router();
 const logger = require('../utils/logger');
 const { User, UserPreset } = require('../models');
 const { authenticateToken, requireRole, auditLog } = require('../middleware/auth');
+const { sequelize } = require('../config/database');
 const { Op } = require('sequelize');
 
 // All routes require authentication and admin role
