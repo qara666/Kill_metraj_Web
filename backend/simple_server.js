@@ -49,8 +49,8 @@ const io = new Server(httpServer, {
     methods: ['GET', 'POST'],
     credentials: true
   },
-  // Prioritize websocket on Render for faster, more stable connections
-  transports: ['websocket', 'polling'],
+  // Start with polling and upgrade to websocket for better compatibility with Render/Load Balancers
+  transports: ['polling', 'websocket'],
   allowEIO3: true,
   pingTimeout: 60000,
   pingInterval: 25000

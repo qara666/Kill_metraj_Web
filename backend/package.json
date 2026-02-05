@@ -5,8 +5,7 @@
   "main": "src/server_no_db.js",
   "scripts": {
     "dev": "PORT=5001 node simple_server.js",
-    "build": "echo 'No build step needed for JavaScript'",
-    "start": "node simple_server.js",
+    "start": "npx pm2-runtime start ecosystem.config.js",
     "test": "jest"
   },
   "dependencies": {
