@@ -26,7 +26,12 @@ router.post('/login', async (req, res) => {
         }
 
         // Find user (Sequelize)
-        const user = await User.findOne({ where: { username } });
+        logger.info('Login: Searching for user...', { username });
+        const user = await Promise.race([
+            User.findOne({ where: { username } }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Login DB timeout')), 10000))
+        ]);
+
         if (!user) {
             logger.warn('Ошибка входа: Пользователь не найден', { username });
             return res.status(401).json({
@@ -35,6 +40,8 @@ router.post('/login', async (req, res) => {
                 message: 'Неверное имя пользователя или пароль'
             });
         }
+
+        logger.info('Login: User found, checking active status...', { username, userId: user.id });
 
         // Check if account is active
         if (!user.isActive) {
@@ -45,8 +52,10 @@ router.post('/login', async (req, res) => {
             });
         }
 
+        logger.info('Login: Comparing password...', { username });
         // Verify password
         const isPasswordValid = await user.comparePassword(password);
+        logger.info('Login: Password comparison result', { username, isPasswordValid });
         if (!isPasswordValid) {
             logger.warn('Ошибка входа: Неверный пароль', { username });
             return res.status(401).json({
