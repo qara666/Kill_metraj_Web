@@ -139,59 +139,36 @@ app.use((req, res, next) => {
   next();
 });
 
-// === HEALTH & DIAGNOSTICS (TOP PRIORITY) ===
+// === HEALTH & DIAGSTICS (TOP PRIORITY) ===
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'healthy', timestamp: new Date().toISOString(), uptime: process.uptime() });
+  res.json({ status: 'healthy', uptime: process.uptime() });
 });
 
 app.get('/api/health/db-test', async (req, res) => {
   const startTime = Date.now();
   try {
     const results = await sequelize.query('SELECT 1 as connected', { type: sequelize.QueryTypes.SELECT });
-    const duration = Date.now() - startTime;
-    res.json({
-      success: true,
-      data: results,
-      duration_ms: duration,
-      pool: sequelize.connectionManager.pool?.size || 0
-    });
+    res.json({ success: true, data: results, duration: Date.now() - startTime });
   } catch (error) {
-    const duration = Date.now() - startTime;
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      duration_ms: duration
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
 app.get('/api/health/db-users-test', async (req, res) => {
-  const startTime = Date.now();
   try {
     const { User } = require('./src/models');
     const count = await User.count();
-    const duration = Date.now() - startTime;
-    res.json({
-      success: true,
-      count,
-      duration_ms: duration
-    });
+    res.json({ success: true, count });
   } catch (error) {
-    const duration = Date.now() - startTime;
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      duration_ms: duration
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-app.get('/api/health/env-test', (req, res) => {
+app.get('/api/health/env-check', (req, res) => {
   res.json({
-    NODE_ENV: process.env.NODE_ENV,
-    HAS_DB_URL: !!process.env.DATABASE_URL,
-    PORT: process.env.PORT,
-    DB_POOL_MAX: process.env.DB_POOL_MAX || 'default'
+    env: process.env.NODE_ENV,
+    db: !!process.env.DATABASE_URL,
+    port: process.env.PORT
   });
 });
 
