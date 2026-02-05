@@ -34,7 +34,17 @@ else
 fi
 
 echo ""
-echo "4. Testing /api/users without auth (should return 401)..."
+echo "4. Testing /api/dashboard/latest..."
+curl -s -w "\nHTTP Status: %{http_code}\n" "$BACKEND_URL/api/dashboard/latest" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" | head -10
+
+echo ""
+echo "5. Testing /api/debug/fetcher (Diagnostics)..."
+curl -s -w "\nHTTP Status: %{http_code}\n" "$BACKEND_URL/api/debug/fetcher" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" | head -20
+
+echo ""
+echo "6. Testing /api/users without auth (should return 401)..."
 curl -s -w "\nHTTP Status: %{http_code}\n" "$BACKEND_URL/api/users" | head -5
 
 echo ""
