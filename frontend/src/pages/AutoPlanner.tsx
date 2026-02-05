@@ -40,6 +40,7 @@ import { useExcelImporter } from '../hooks/useExcelImporter'
 import { useAutoPlannerStore } from '../stores/useAutoPlannerStore'
 import { useDashboardAutoRefresh } from '../hooks/useDashboardAutoRefresh'
 import { syncDashboardData } from '../utils/data/dataMerging'
+import { localStorageUtils } from '../utils/ui/localStorage'
 
 // Lazy loaded components
 import type { TourStep } from '../components/features/HelpTour'
@@ -227,6 +228,8 @@ export const AutoPlanner: React.FC = () => {
     }, [handleScheduleOnlyUpload])
 
     // --- Route Planning Hook ---
+    const { defaultStartAddress, defaultEndAddress } = useMemo(() => localStorageUtils.getAllSettings(), [])
+
     const { isPlanning, optimizationProgress, planRoutes } = useRoutePlanning(
         excelData?.orders || null,
         routePlanningSettings,
@@ -238,6 +241,8 @@ export const AutoPlanner: React.FC = () => {
         maxRouteDurationMin,
         maxRouteDistanceKm,
         routePlanningSettings.maxOrdersPerCourier || 50,
+        defaultStartAddress,
+        defaultEndAddress,
         setPlannedRoutes,
         setErrorMsg,
         setPlanTrafficImpact,
