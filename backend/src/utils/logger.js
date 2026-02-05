@@ -55,11 +55,13 @@ const logger = winston.createLogger({
   ]
 });
 
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(new winston.transports.Console({
-    format: consoleFormat
-  }));
-}
+// Always add console logger for cloud environments (Render/Docker)
+logger.add(new winston.transports.Console({
+  format: winston.format.combine(
+    winston.format.colorize(),
+    consoleFormat
+  )
+}));
 
 module.exports = logger;
 

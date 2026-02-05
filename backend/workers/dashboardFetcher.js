@@ -2,6 +2,7 @@ const axios = require('axios');
 const { Pool } = require('pg');
 const crypto = require('crypto');
 const path = require('path');
+const logger = require('../src/utils/logger');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 /**
@@ -49,19 +50,19 @@ class DashboardFetcher {
      * Запуск цикла загрузки
      */
     async start() {
-        console.log('============================================================');
-        console.log('Фоновый загрузчик дашборда');
-        console.log('============================================================');
-        console.log(`API URL: ${this.apiUrl}`);
-        console.log(`Интервал загрузки: ${this.fetchInterval}мс`);
-        console.log(`Макс. попыток: ${this.maxRetries}`);
-        console.log(`Базовая задержка: ${this.baseBackoff}мс`);
-        console.log('============================================================');
+        logger.info('============================================================');
+        logger.info('Фоновый загрузчик дашборда');
+        logger.info('============================================================');
+        logger.info(`API URL: ${this.apiUrl}`);
+        logger.info(`Интервал загрузки: ${this.fetchInterval}мс`);
+        logger.info(`Макс. попыток: ${this.maxRetries}`);
+        logger.info(`Базовая задержка: ${this.baseBackoff}мс`);
+        logger.info('============================================================');
 
         // Проверка подключения к базе данных и установка блокировки
         try {
             await this.pool.query('SELECT NOW()');
-            console.log('База данных подключена');
+            logger.info('База данных подключена');
 
             // Singleton check: используем PostgreSQL Advisory Lock
             // 777777 - произвольный ID для блокировки загрузчика
@@ -69,28 +70,28 @@ class DashboardFetcher {
             const hasLock = lockResult.rows[0].pg_try_advisory_lock;
 
             if (!hasLock) {
-                console.warn('!!! ВНИМАНИЕ: Другой экземпляр загрузчика уже запущен !!!');
-                console.warn('Этот процесс продолжит работу как клон (игнорируем интервал загрузки)');
+                logger.warn('!!! ВНИМАНИЕ: Другой экземпляр загрузчика уже запущен !!!');
+                logger.warn('Этот процесс продолжит работу как клон (игнорируем интервал загрузки)');
                 // process.exit(0);
                 return;
             }
 
-            console.log('Блокировка получена. Этот процесс является активным загрузчиком.');
+            logger.info('Блокировка получена. Этот процесс является активным загрузчиком.');
 
             // Загрузка последнего хеша для обнаружения изменений после перезапуска
             this.lastHash = await this.getLastHash();
             if (this.lastHash) {
-                console.log(`Загружен хеш последних данных: ${this.lastHash.substring(0, 8)}...`);
+                logger.info(`Загружен хеш последних данных: ${this.lastHash.substring(0, 8)}...`);
             }
         } catch (error) {
-            console.error('Ошибка инициализации загрузчика:', error.message);
-            console.warn('Цикл загрузки будет перезапущен через 1 минуту...');
+            logger.error('Ошибка инициализации загрузчика:', error.message);
+            logger.warn('Цикл загрузки будет перезапущен через 1 минуту...');
             setTimeout(() => this.start(), 60000);
             return;
         }
 
-        console.log('Загрузчик дашборда запущен');
-        console.log('============================================================');
+        logger.info('Загрузчик дашборда запущен');
+        logger.info('============================================================');
 
         // Начальная загрузка
         await this.fetchAndStore();
@@ -109,7 +110,7 @@ class DashboardFetcher {
             );
             return result.rows.length > 0 ? result.rows[0].data_hash : null;
         } catch (error) {
-            console.error('Ошибка при получении последнего хеша:', error.message);
+            logger.info(`    Повтор через ${delay}мс...`);
             return null;
         }
     }
@@ -124,7 +125,7 @@ class DashboardFetcher {
             );
             return result.rows.length > 0 ? result.rows[0].payload : null;
         } catch (error) {
-            console.error('Ошибка при получении последних данных:', error.message);
+            logger.error('Ошибка при получении последних данных:', error.message);
             return null;
         }
     }
@@ -144,7 +145,7 @@ class DashboardFetcher {
 
             return depts.length > 0 ? depts : ['100000052'];
         } catch (error) {
-            console.error('Ошибка при получении списка подразделений:', error.message);
+            logger.info(`    Повтор через ${delay}мс...`);
             return ['100000052'];
         }
     }
@@ -154,7 +155,7 @@ class DashboardFetcher {
      */
     async fetchAndStore() {
         const departments = await this.getActiveDepartments();
-        console.log(`[${new Date().toISOString()}] Запуск цикла обновления для ${departments.length} подразделений (Сегодня и Вчера)...`);
+        logger.info(`  [Dept: ${deptId}] Данные не изменились`);
 
         for (const deptId of departments) {
             // Загружаем данные за сегодня (0) и за вчера (-1)
@@ -175,7 +176,7 @@ class DashboardFetcher {
         const targetDateStr = targetDate.toISOString().split('T')[0];
 
         try {
-            console.log(`  [Dept: ${deptId}, Date: ${targetDateStr}] Загрузка данных... (Попытка ${this.retryCount + 1})`);
+            logger.info(`  [Dept: ${deptId}, Date: ${targetDateStr}] Загрузка данных... (Попытка ${this.retryCount + 1})`);
 
             // Подготовка параметров запроса
             const params = {
@@ -220,7 +221,7 @@ class DashboardFetcher {
                         await this.pool.query(
                             'INSERT INTO api_dashboard_status_history (order_number, old_status, new_status) VALUES ($1, $2, $3)',
                             [order.orderNumber, oldStatus, newStatus]
-                        ).catch(e => console.error('  Ошибка записи истории:', e.message));
+                        ).catch(e => logger.error('  Ошибка записи истории:', e.message));
 
                         const nowTimestamp = new Date().toISOString();
                         const normalizedStatus = newStatus.toLowerCase();
@@ -245,7 +246,7 @@ class DashboardFetcher {
             const lastHash = lastHashResult.rows.length > 0 ? lastHashResult.rows[0].data_hash : null;
 
             if (lastHash === dataHash) {
-                console.log(`  [Dept: ${deptId}] Данные не изменились`);
+                logger.info(`  [Dept: ${deptId}] Данные не изменились`);
                 this.successfulFetches++;
                 this.retryCount = 0;
                 return;
@@ -262,7 +263,7 @@ class DashboardFetcher {
             this.retryCount = 0;
 
             const elapsed = Date.now() - startTime;
-            console.log(`  [Dept: ${deptId}] Сохранено ${responseData.orders?.length || 0} заказов (${elapsed}мс)`);
+            logger.info(`  [Dept: ${deptId}] Сохранено ${responseData.orders?.length || 0} заказов (${elapsed}мс)`);
 
         } catch (error) {
             let errorDetail = error.message;
@@ -272,12 +273,12 @@ class DashboardFetcher {
                 errorDetail = `No response from API: ${error.message}`;
             }
 
-            console.error(`  [Dept: ${deptId}] Ошибка: ${errorDetail}`);
+            logger.error(`  [Dept: ${deptId}] Ошибка: ${errorDetail}`);
 
             if (this.retryCount < this.maxRetries) {
                 this.retryCount++;
                 const delay = this.baseBackoff * Math.pow(2, this.retryCount - 1);
-                console.log(`    Повтор через ${delay}мс...`);
+                logger.info(`    Повтор через ${delay}мс...`);
                 setTimeout(() => this.fetchForDepartment(deptId, dateShiftDays), delay);
             } else {
                 this.retryCount = 0;
@@ -306,16 +307,12 @@ class DashboardFetcher {
 
 // Глобальные обработчики ошибок процесса
 process.on('uncaughtException', (err) => {
-    console.error('КРИТИЧЕСКАЯ ОШИБКА: Неперехваченное исключение в загрузчике:', err);
+    logger.error('КРИТИЧЕСКАЯ ОШИБКА: Неперехваченное исключение в загрузчике:', err);
     process.exit(1);
 });
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('КРИТИЧЕСКАЯ ОШИБКА: Необработанное отклонение промиса в загрузчике:', promise, 'причина:', reason);
+    logger.error('КРИТИЧЕСКАЯ ОШИБКА: Необработанное отклонение промиса в загрузчике:', promise, 'причина:', reason);
     process.exit(1);
 });
-
-// Запуск загрузчика
-const fetcher = new DashboardFetcher();
-fetcher.start();
 
 module.exports = DashboardFetcher;

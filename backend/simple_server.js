@@ -443,11 +443,27 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
 
     await setupDashboardListener();
 
-    if (process.env.CDC_ENABLED === 'true') {
-      await dashboardConsumer.start();
-    }
     // Start manual migration check
     await ensureDivisionIdColumn();
+
+    // Start Kafka CDC Consumer if enabled
+    if (process.env.CDC_ENABLED === 'true') {
+      try {
+        await dashboardConsumer.start();
+      } catch (cdcError) {
+        logger.error('Failed to start Dashboard CDC Consumer', cdcError);
+      }
+    }
+
+    // Start Dashboard Fetcher worker within the main process
+    try {
+      const DashboardFetcher = require('./workers/dashboardFetcher');
+      const fetcher = new DashboardFetcher();
+      fetcher.start();
+      logger.info('Dashboard Fetcher started within main process');
+    } catch (fetcherError) {
+      logger.error('Failed to start Dashboard Fetcher', fetcherError);
+    }
 
   } catch (dbError) {
     logger.error('CRITICAL: Database initialization failed, but keeping server alive for logs', { error: dbError.message });
