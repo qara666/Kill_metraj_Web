@@ -130,13 +130,39 @@ app.use(cors(corsOptions));
 
 // Middleware to log all requests early (for debugging Render routing)
 app.use((req, res, next) => {
-  if (req.url !== '/api/health') { // Skip health checks to keep logs clean
-    logger.info(`[Request] ${req.method} ${req.url}`, {
+  if (!req.url.startsWith('/api/health')) { // Skip health checks to keep logs clean
+    logger.info(`[DEBUGLOG] ${req.method} ${req.url}`, {
       origin: req.headers.origin,
       ip: req.ip
     });
   }
   next();
+});
+
+// === HEALTH & DIAGNOSTICS (TOP PRIORITY) ===
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'healthy', timestamp: new Date().toISOString(), uptime: process.uptime() });
+});
+
+app.get('/api/health/db-test', async (req, res) => {
+  const startTime = Date.now();
+  try {
+    const results = await sequelize.query('SELECT 1 as connected', { type: sequelize.QueryTypes.SELECT });
+    const duration = Date.now() - startTime;
+    res.json({
+      success: true,
+      data: results,
+      duration_ms: duration,
+      pool: sequelize.connectionManager.pool?.size || 0
+    });
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      duration_ms: duration
+    });
+  }
 });
 
 app.use(express.json({ limit: '50mb' }));
@@ -167,33 +193,6 @@ const excelService = new ExcelService();
 // Маршруты
 app.get('/', (req, res) => {
   res.json({ message: 'Simple Excel Server', status: 'running' });
-});
-
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
-});
-
-// Diagnostic route for raw database testing
-app.get('/api/health/db-test', async (req, res) => {
-  const startTime = Date.now();
-  try {
-    const [results] = await sequelize.query('SELECT 1 as connected', { type: sequelize.QueryTypes.SELECT });
-    const duration = Date.now() - startTime;
-    res.json({
-      success: true,
-      data: results,
-      duration_ms: duration,
-      pool: sequelize.connectionManager.pool?.size || 'unknown'
-    });
-  } catch (error) {
-    const duration = Date.now() - startTime;
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      duration_ms: duration,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
-  }
 });
 
 // Тестовый эндпоинт для проверки Telegram роутов
