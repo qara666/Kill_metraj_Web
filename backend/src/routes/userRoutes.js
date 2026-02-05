@@ -51,9 +51,11 @@ router.get('/', async (req, res) => {
         logger.info('Users Route: Query successful', { count, duration: dbTime });
 
         logger.info('Users Route: Serializing response...');
+        const plainRows = rows.map(row => row.get({ plain: true }));
+
         res.json({
             success: true,
-            data: rows,
+            data: plainRows,
             pagination: {
                 total: count,
                 limit: parseInt(limit),
