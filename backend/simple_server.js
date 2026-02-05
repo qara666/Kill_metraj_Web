@@ -156,6 +156,22 @@ app.get('/api/health/db-test', async (req, res) => {
       pool: sequelize.connectionManager.pool?.size || 0
     });
   } catch (error) {
+  });
+  }
+});
+
+app.get('/api/health/db-users-test', async (req, res) => {
+  const startTime = Date.now();
+  try {
+    const { User } = require('./src/models');
+    const count = await User.count();
+    const duration = Date.now() - startTime;
+    res.json({
+      success: true,
+      count,
+      duration_ms: duration
+    });
+  } catch (error) {
     const duration = Date.now() - startTime;
     res.status(500).json({
       success: false,
@@ -163,6 +179,15 @@ app.get('/api/health/db-test', async (req, res) => {
       duration_ms: duration
     });
   }
+});
+
+app.get('/api/health/env-test', (req, res) => {
+  res.json({
+    NODE_ENV: process.env.NODE_ENV,
+    HAS_DB_URL: !!process.env.DATABASE_URL,
+    PORT: process.env.PORT,
+    DB_POOL_MAX: process.env.DB_POOL_MAX || 'default'
+  });
 });
 
 app.use(express.json({ limit: '50mb' }));
