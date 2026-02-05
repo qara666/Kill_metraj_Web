@@ -49,8 +49,9 @@ const io = new Server(httpServer, {
     methods: ['GET', 'POST'],
     credentials: true
   },
-  // Prioritize polling on Render to ensure initial connection works
-  transports: ['polling', 'websocket'],
+  // Prioritize websocket on Render for faster, more stable connections
+  transports: ['websocket', 'polling'],
+  allowEIO3: true,
   pingTimeout: 60000,
   pingInterval: 25000
 });
@@ -414,7 +415,13 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
   try {
     await testConnection();
     logger.info('PostgreSQL подключен');
-    await syncDatabase();
+
+    // Skip sync in production unless explicitly requested via DB_ALTER_SYNC
+    if (process.env.NODE_ENV !== 'production' || process.env.DB_ALTER_SYNC === 'true') {
+      await syncDatabase();
+    } else {
+      logger.info('SUCCESS: Database sync skipped (production mode)');
+    }
 
     logger.info('STARTING ADMIN CHECK/CREATION...');
     const { User } = require('./src/models');
