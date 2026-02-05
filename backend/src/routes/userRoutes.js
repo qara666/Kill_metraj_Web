@@ -64,49 +64,63 @@ router.get('/', async (req, res) => {
     }
 });
 
-// POST /api/users - Create new user (STRIPPED VERSION FOR DEBUGGING)
+// POST /api/users - Create new user
 router.post('/', async (req, res) => {
     const startTime = Date.now();
+    let t;
     try {
         const { username, email, password, role, divisionId, canModifySettings } = req.body;
-        logger.info('DEBUG User Creation: Start', { username });
+        logger.info('User Creation: Starting process...', { username, role });
 
         if (!username || !password) {
-            return res.status(400).json({ success: false, message: 'Missing username/password' });
+            return res.status(400).json({ success: false, message: 'Имя пользователя и пароль обязательны' });
         }
 
-        // Direct check without transaction
-        logger.info('DEBUG User Creation: Checking existing');
-        const existingUser = await User.findOne({ where: { username } });
+        t = await sequelize.transaction();
+        logger.info('User Creation: Transaction started');
+
+        const existingUser = await User.findOne({
+            where: {
+                [Op.or]: [
+                    { username },
+                    ...(email ? [{ email }] : [])
+                ]
+            },
+            transaction: t
+        });
+
         if (existingUser) {
-            logger.info('DEBUG User Creation: Duplicate detected');
-            return res.status(400).json({ success: false, message: 'User exists' });
+            await t.rollback();
+            return res.status(400).json({ success: false, message: 'Пользователь с таким именем или email уже существует' });
         }
 
-        logger.info('DEBUG User Creation: Executing User.create...');
-        // Basic create without association or transaction
         const user = await User.create({
             username,
             email: email || null,
-            passwordHash: password, // Will be hashed by model hook
+            passwordHash: password,
             role: role || 'user',
             divisionId: divisionId || null,
-            canModifySettings: canModifySettings !== undefined ? canModifySettings : true
+            canModifySettings: canModifySettings !== undefined ? canModifySettings : true,
+            preset: {
+                settings: {},
+                updatedBy: req.user.id
+            }
+        }, {
+            include: [{ model: UserPreset, as: 'preset' }],
+            transaction: t
         });
 
+        await t.commit();
         const duration = Date.now() - startTime;
-        logger.info('DEBUG User Creation: SUCCESS', { username, userId: user.id, duration });
+        logger.info('User Creation: SUCCESS', { username, userId: user.id, duration });
 
         res.status(201).json({
             success: true,
             data: user.toJSON()
         });
     } catch (error) {
-        logger.error('DEBUG User Creation: CRASH', {
-            error: error.message,
-            stack: error.stack,
-            duration: Date.now() - startTime
-        });
+        if (t) await t.rollback();
+        logger.error('User Creation ERROR:', { error: error.message, duration: Date.now() - startTime });
         res.status(500).json({
             success: false,
             message: 'Internal Error: ' + error.message
