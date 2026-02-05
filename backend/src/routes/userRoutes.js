@@ -63,94 +63,52 @@ router.get('/', async (req, res) => {
     }
 });
 
-// POST /api/users - Create new user
-router.post('/', auditLog('user_create'), async (req, res) => {
+// POST /api/users - Create new user (STRIPPED VERSION FOR DEBUGGING)
+router.post('/', async (req, res) => {
     const startTime = Date.now();
-    let t;
     try {
         const { username, email, password, role, divisionId, canModifySettings } = req.body;
-        logger.info('User Creation: Starting process...', { username, role });
+        logger.info('DEBUG User Creation: Start', { username });
 
         if (!username || !password) {
-            logger.warn('User Creation: Missing required fields');
-            return res.status(400).json({
-                success: false,
-                error: 'ОшибкаВалидации',
-                message: 'Имя пользователя и пароль обязательны'
-            });
+            return res.status(400).json({ success: false, message: 'Missing username/password' });
         }
 
-        logger.info('User Creation: Starting transaction...');
-        t = await sequelize.transaction();
-        logger.info('User Creation: Transaction started');
-
-        logger.info('User Creation: Checking for existing user...');
-        const existingUser = await Promise.race([
-            User.findOne({
-                where: {
-                    [Op.or]: [
-                        { username },
-                        ...(email ? [{ email }] : [])
-                    ]
-                },
-                transaction: t
-            }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('User existence check timeout')), 10000))
-        ]);
-
+        // Direct check without transaction
+        logger.info('DEBUG User Creation: Checking existing');
+        const existingUser = await User.findOne({ where: { username } });
         if (existingUser) {
-            logger.warn('User Creation: User already exists', { username });
-            await t.rollback();
-            return res.status(400).json({
-                success: false,
-                error: 'ПользовательСуществует',
-                message: 'Пользователь с таким именем или email уже существует'
-            });
+            logger.info('DEBUG User Creation: Duplicate detected');
+            return res.status(400).json({ success: false, message: 'User exists' });
         }
 
-        logger.info('User Creation: Creating user and preset record...');
-        const user = await Promise.race([
-            User.create({
-                username,
-                email: email || null,
-                passwordHash: password,
-                role: role || 'user',
-                divisionId: divisionId || null,
-                canModifySettings: canModifySettings !== undefined ? canModifySettings : true,
-                preset: {
-                    settings: {},
-                    updatedBy: req.user.id
-                }
-            }, {
-                include: [{ model: UserPreset, as: 'preset' }],
-                transaction: t
-            }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('User/Preset creation timeout')), 15000))
-        ]);
+        logger.info('DEBUG User Creation: Executing User.create...');
+        // Basic create without association or transaction
+        const user = await User.create({
+            username,
+            email: email || null,
+            passwordHash: password, // Will be hashed by model hook
+            role: role || 'user',
+            divisionId: divisionId || null,
+            canModifySettings: canModifySettings !== undefined ? canModifySettings : true
+        });
 
-        logger.info('User Creation: Committing transaction...');
-        await t.commit();
         const duration = Date.now() - startTime;
-        logger.info('User Creation: SUCCESS', { username, userId: user.id, duration });
+        logger.info('DEBUG User Creation: SUCCESS', { username, userId: user.id, duration });
 
         res.status(201).json({
             success: true,
             data: user.toJSON()
         });
     } catch (error) {
-        const duration = Date.now() - startTime;
-        logger.error('User Creation ERROR:', { message: error.message, stack: error.stack, duration });
-        if (t) {
-            try {
-                await t.rollback();
-            } catch (rollbackError) {
-                logger.error('User Creation: Rollback failed', { error: rollbackError.message });
-            }
-        }
+        logger.error('DEBUG User Creation: CRASH', {
+            error: error.message,
+            stack: error.stack,
+            duration: Date.now() - startTime
+        });
         res.status(500).json({
             success: false,
-            error: 'ВнутренняяОшибкаСервера',
-            message: 'Не удалось создать пользователя: ' + error.message
+            message: 'Internal Error: ' + error.message
         });
     }
 });
