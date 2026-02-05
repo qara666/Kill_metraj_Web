@@ -265,12 +265,20 @@ class DashboardFetcher {
             console.log(`  [Dept: ${deptId}] Сохранено ${responseData.orders?.length || 0} заказов (${elapsed}мс)`);
 
         } catch (error) {
-            console.error(`  [Dept: ${deptId}] Ошибка: ${error.message}`);
+            let errorDetail = error.message;
+            if (error.response) {
+                errorDetail = `API Error ${error.response.status}: ${JSON.stringify(error.response.data).substring(0, 200)}`;
+            } else if (error.request) {
+                errorDetail = `No response from API: ${error.message}`;
+            }
+
+            console.error(`  [Dept: ${deptId}] Ошибка: ${errorDetail}`);
+
             if (this.retryCount < this.maxRetries) {
                 this.retryCount++;
                 const delay = this.baseBackoff * Math.pow(2, this.retryCount - 1);
                 console.log(`    Повтор через ${delay}мс...`);
-                setTimeout(() => this.fetchForDepartment(deptId), delay);
+                setTimeout(() => this.fetchForDepartment(deptId, dateShiftDays), delay);
             } else {
                 this.retryCount = 0;
             }
