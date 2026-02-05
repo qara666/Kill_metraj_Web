@@ -147,7 +147,7 @@ app.get('/api/health', (req, res) => {
 app.get('/api/health/db-test', async (req, res) => {
   const startTime = Date.now();
   try {
-    const results = await sequelize.query('SELECT 1 as connected', { type: sequelize.QueryTypes.SELECT });
+    const results = await sequelize.query('SELECT id, username FROM users LIMIT 5', { type: sequelize.QueryTypes.SELECT });
     res.json({ success: true, data: results, duration: Date.now() - startTime });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
