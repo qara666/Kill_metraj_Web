@@ -444,6 +444,7 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
     await setupDashboardListener();
 
     // Start manual migration check
+    await ensureStatusHistoryTable();
     await ensureDivisionIdColumn();
 
     // Start Kafka CDC Consumer if enabled
@@ -475,6 +476,30 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
     logger.error('Failed to start gRPC server', grpcError);
   }
 });
+
+/**
+ * Manual migration to ensure table exists
+ */
+async function ensureStatusHistoryTable() {
+  try {
+    logger.info('DB Check: Ensuring api_dashboard_status_history table exists...');
+    await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS api_dashboard_status_history (
+        id SERIAL PRIMARY KEY,
+        order_number TEXT NOT NULL,
+        old_status TEXT,
+        new_status TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+    logger.info('DB Check: api_dashboard_status_history table verified/created successfully');
+  } catch (err) {
+    logger.error('DB Check: Error creating api_dashboard_status_history table', {
+      error: err.message,
+      stack: err.stack
+    });
+  }
+}
 
 /**
  * Manual migration to ensure division_id column exists
