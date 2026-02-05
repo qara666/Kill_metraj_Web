@@ -145,7 +145,7 @@ class DashboardFetcher {
 
             return depts.length > 0 ? depts : ['100000052'];
         } catch (error) {
-            logger.info(`    Повтор через ${delay}мс...`);
+            logger.error('Ошибка при получении списка подразделений:', error.message);
             return ['100000052'];
         }
     }
@@ -155,7 +155,7 @@ class DashboardFetcher {
      */
     async fetchAndStore() {
         const departments = await this.getActiveDepartments();
-        logger.info(`  [Dept: ${deptId}] Данные не изменились`);
+        logger.info(`[${new Date().toISOString()}] Запуск цикла обновления для ${departments.length} подразделений (Сегодня и Вчера)...`);
 
         for (const deptId of departments) {
             // Загружаем данные за сегодня (0) и за вчера (-1)
