@@ -143,7 +143,7 @@ router.get('/me', authenticateToken, async (req, res) => {
     try {
         res.json({
             success: true,
-            data: req.user.toJSON()
+            data: req.user
         });
     } catch (error) {
         logger.error('Ошибка получения текущего пользователя', { error: error.message });
