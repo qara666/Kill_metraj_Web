@@ -23,6 +23,10 @@ const DashboardCache = sequelize.define('DashboardCache', {
         type: DataTypes.TEXT,
         allowNull: true
     },
+    division_id: {
+        type: DataTypes.TEXT,
+        allowNull: true
+    },
     created_at: {
         type: DataTypes.DATE,
         defaultValue: DataTypes.NOW,

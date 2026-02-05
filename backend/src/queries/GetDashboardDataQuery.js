@@ -65,10 +65,12 @@ class GetDashboardDataQuery {
             logger.debug(`CQRS: Запрос к БД за ${targetDate}`);
             const results = await this.withRetry(() => sequelize.query(
                 `SELECT * FROM api_dashboard_cache 
-                 WHERE status_code = 200 AND target_date = :targetDate
+                 WHERE status_code = 200 
+                 AND target_date = :targetDate 
+                 AND (division_id = :divisionId OR :divisionId = 'all')
                  ORDER BY created_at DESC LIMIT 1`,
                 {
-                    replacements: { targetDate },
+                    replacements: { targetDate, divisionId: String(divisionId) },
                     type: sequelize.QueryTypes.SELECT
                 }
             ));
