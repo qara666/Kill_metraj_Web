@@ -34,7 +34,7 @@ export const useRoutePlanning = (
     trafficSnapshotRef: React.MutableRefObject<TrafficSnapshot | null>,
     filteredOrders: Order[],
     notificationPreferences: any,
-    trafficModeOverride: 'auto' | 'moderate' | 'heavy' | null = null,
+    trafficModeOverride: 'auto' | TrafficPresetMode | null = null,
     maxStopsPerRoute: number = 20,
     maxRouteDurationMin: number = 480,
     maxRouteDistanceKm: number = 100,
@@ -56,7 +56,7 @@ export const useRoutePlanning = (
 
     const getPresetMode = useCallback((): TrafficPresetMode => {
         const snapshot = trafficSnapshotRef.current;
-        if (trafficModeOverride && trafficModeOverride !== 'auto') return trafficModeOverride as TrafficPresetMode;
+        if (trafficModeOverride && trafficModeOverride !== 'auto') return trafficModeOverride;
         if (!snapshot) return 'free';
         const avgSpeed = snapshot.stats.avgSpeed;
         const slowShare = snapshot.stats.slowSharePercent ?? 0;
