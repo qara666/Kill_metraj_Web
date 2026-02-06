@@ -171,7 +171,7 @@ export function assignRouteToCourier(
     .map(o => o.deadlineAt)
     .filter((d): d is number => d !== undefined && d !== null && typeof d === 'number')
     .sort((a, b) => a - b)
-  
+
   const earliestDeadline = deadlines.length > 0 ? deadlines[0] : null
 
   // Определяем минимальное время отправки (готовность первого заказа или сейчас)
@@ -195,7 +195,7 @@ export function assignRouteToCourier(
 
     // Проверяем количество доступных курьеров в плановое время (дедлайн)
     const availableAtDeadline = countAvailableCouriers(activeSchedules, earliestDeadline)
-    
+
     // Если курьеров мало (меньше 2), приоритизируем раннее начало маршрута
     if (availableAtDeadline < 2) {
       console.log(`️ В плановое время заказа (${new Date(earliestDeadline).toLocaleString()}) доступно только ${availableAtDeadline} курьеров. Начинаем маршрут раньше.`)
@@ -291,11 +291,11 @@ export function assignRouteToCourier(
       }
     }
 
-    suitableCouriers.push({ 
-      schedule, 
-      startTime: courierStartTime, 
+    suitableCouriers.push({
+      schedule,
+      startTime: courierStartTime,
       actualStartTime,
-      score 
+      score
     })
   }
 
@@ -303,7 +303,7 @@ export function assignRouteToCourier(
     return {
       routeId: '',
       courierId: '',
-      courierName: 'Не назначен',
+      courierName: 'Не назначено',
       vehicleType: 'car',
       dispatchTime: estimatedStartTime,
       estimatedStartTime,
@@ -311,7 +311,7 @@ export function assignRouteToCourier(
       orders: route.orders,
       totalDistanceKm: route.totalDistanceKm,
       isFeasible: false,
-      reason: earliestDeadline 
+      reason: earliestDeadline
         ? `Нет доступных курьеров для доставки до дедлайна ${new Date(earliestDeadline).toLocaleString()}`
         : 'Нет доступных курьеров для данного маршрута',
     }
@@ -389,7 +389,7 @@ export function createDefaultSchedule(
   isActive: boolean = true
 ): CourierSchedule {
   const workDays: WorkDay[] = []
-  
+
   // Понедельник - Пятница (1-5)
   for (let day = 1; day <= 5; day++) {
     workDays.push({
@@ -417,21 +417,21 @@ export function createDefaultSchedule(
  */
 function parseTimeFromExcel(value: any): string | null {
   if (!value && value !== 0) return null
-  
+
   const str = String(value).trim().replace(/\s/g, '').toLowerCase()
   if (!str || str === '' || str === '-') return null
-  
+
   // Специальные значения
   if (str.includes('вечер') || str.includes('evening')) {
     return null // Обрабатывается отдельно
   }
-  
+
   // Формат "13" или "13,3" или "13.3" или "13,15"
   const match = str.match(/^(\d+)[,.](\d+)$/)
   if (match) {
     const hours = parseInt(match[1], 10)
     const minutesStr = match[2]
-    
+
     // Если minutesStr содержит одну цифру (например, "3"), это означает 30 минут
     // Если две цифры (например, "15"), это означает 15 минут
     let minutes = 0
@@ -442,12 +442,12 @@ function parseTimeFromExcel(value: any): string | null {
     } else {
       minutes = parseInt(minutesStr.substring(0, 2), 10) // Берем первые 2 цифры
     }
-    
+
     if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes < 60) {
       return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
     }
   }
-  
+
   // Формат только часы "13"
   const hoursOnlyMatch = str.match(/^(\d+)$/)
   if (hoursOnlyMatch) {
@@ -456,7 +456,7 @@ function parseTimeFromExcel(value: any): string | null {
       return `${String(hours).padStart(2, '0')}:00`
     }
   }
-  
+
   return null
 }
 
@@ -470,12 +470,12 @@ export function parseCourierScheduleFromExcel(
   excelData: any[][]
 ): CourierSchedule[] {
   const schedules: CourierSchedule[] = []
-  
+
   if (!excelData || excelData.length < 2) {
     console.warn('️ [parseCourierScheduleFromExcel] Недостаточно данных для парсинга графика')
     return schedules
   }
-  
+
   // Определяем тип транспорта из заголовка таблицы (первая строка, первая ячейка)
   let defaultVehicleType: 'car' | 'motorcycle' = 'car'
   if (excelData.length > 0 && excelData[0] && excelData[0][0]) {
@@ -488,7 +488,7 @@ export function parseCourierScheduleFromExcel(
       console.log(` [parseCourierScheduleFromExcel] Определен тип транспорта из заголовка: Авто`)
     }
   }
-  
+
   // Ищем строку с днями недели (ПН, ВТ, СР, ЧТ, ПТ, СБ, НД)
   let headerRowIndex = -1
   const dayNamesMap: { [key: string]: number } = {
@@ -500,12 +500,12 @@ export function parseCourierScheduleFromExcel(
     'сб': 6, 'суббота': 6, 'sat': 6, 'saturday': 6,
     'нд': 0, 'воскресенье': 0, 'sun': 0, 'sunday': 0,
   }
-  
+
   // Ищем строку с заголовками дней
   for (let i = 0; i < Math.min(5, excelData.length); i++) {
     const row = excelData[i] as any[]
     const rowStr = row.map(c => String(c || '').toLowerCase().trim()).join('|')
-    
+
     // Проверяем наличие дней недели
     const hasDays = Object.keys(dayNamesMap).some(day => rowStr.includes(day))
     if (hasDays) {
@@ -514,20 +514,20 @@ export function parseCourierScheduleFromExcel(
       break
     }
   }
-  
+
   if (headerRowIndex === -1) {
     console.warn('️ [parseCourierScheduleFromExcel] Не найдена строка с днями недели')
     return schedules
   }
-  
+
   const headerRow = excelData[headerRowIndex] as any[]
-  
+
   // Определяем индексы столбцов для каждого дня недели
   const dayColumnIndices: { dayOfWeek: number; columnIndex: number }[] = []
-  
+
   for (let col = 0; col < headerRow.length; col++) {
     const cellValue = String(headerRow[col] || '').toLowerCase().trim()
-    
+
     // Проверяем все варианты названий дней
     for (const [dayName, dayOfWeek] of Object.entries(dayNamesMap)) {
       if (cellValue.includes(dayName)) {
@@ -537,65 +537,65 @@ export function parseCourierScheduleFromExcel(
       }
     }
   }
-  
+
   if (dayColumnIndices.length === 0) {
     console.warn('️ [parseCourierScheduleFromExcel] Не найдены столбцы с днями недели')
     return schedules
   }
-  
+
   // Парсим строки с курьерами (начинаем со строки после заголовка)
   for (let rowIndex = headerRowIndex + 1; rowIndex < excelData.length; rowIndex++) {
     const row = excelData[rowIndex] as any[]
     if (!row || row.length === 0) continue
-    
+
     // Первая ячейка содержит имя курьера (может быть с дополнительной информацией)
     const firstCell = String(row[0] || '').trim()
     if (!firstCell || firstCell.toLowerCase() === 'итого' || firstCell.toLowerCase() === 'total') {
       continue // Пропускаем строки с итогами
     }
-    
+
     // Извлекаем имя курьера (до первого "/" или до конца, если "/" нет)
     const courierName = firstCell.split('/')[0].trim()
     if (!courierName) continue
-    
+
     // Определяем тип транспорта (используем значение из заголовка таблицы по умолчанию)
     let vehicleType: 'car' | 'motorcycle' = defaultVehicleType
     const firstCellLower = firstCell.toLowerCase()
-    
+
     // Также проверяем в самой ячейке курьера (может быть переопределение)
     if (firstCellLower.includes('мото') || firstCellLower.includes('motorcycle')) {
       vehicleType = 'motorcycle'
     } else if (firstCellLower.includes('авто') || firstCellLower.includes('auto') || firstCellLower.includes('car')) {
       vehicleType = 'car'
     }
-    
+
     // Парсим рабочие дни
     const workDays: WorkDay[] = []
-    
+
     for (const { dayOfWeek, columnIndex } of dayColumnIndices) {
       const timeValue = row[columnIndex]
       const timeStr = String(timeValue || '').trim().toLowerCase()
-      
+
       // Проверяем специальные значения
       let startTime: string | null = null
-      
+
       if (timeStr.includes('вечер') || timeStr.includes('evening')) {
         // Вечерняя смена: обычно с 18:00
         startTime = '18:00'
       } else {
         startTime = parseTimeFromExcel(timeValue)
       }
-      
+
       if (startTime) {
         workDays.push({
           dayOfWeek,
           startTime,
         })
-        
+
         console.log(` [parseCourierScheduleFromExcel] ${courierName}: ${dayOfWeek} (${['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'][dayOfWeek]}) - начало работы: ${startTime}`)
       }
     }
-    
+
     // Создаем график только если есть хотя бы один рабочий день
     if (workDays.length > 0) {
       const schedule: CourierSchedule = {
@@ -606,12 +606,12 @@ export function parseCourierScheduleFromExcel(
         maxDistanceKm: vehicleType === 'motorcycle' ? VEHICLE_LIMITS.motorcycle.maxDistanceKm : undefined,
         isActive: true,
       }
-      
+
       schedules.push(schedule)
       console.log(` [parseCourierScheduleFromExcel] Создан график для ${courierName}: ${workDays.length} рабочих дней`)
     }
   }
-  
+
   console.log(` [parseCourierScheduleFromExcel] Всего создано графиков: ${schedules.length}`)
   return schedules
 }

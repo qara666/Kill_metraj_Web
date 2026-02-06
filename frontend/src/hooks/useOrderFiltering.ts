@@ -89,7 +89,7 @@ export const useOrderFiltering = (excelData: ProcessedExcelData | null) => {
         // Base restriction: AutoPlanner only takes unassigned orders
         const baseOrders = excelData.orders.filter((order: any) => {
             const courier = (order.courier || '').trim();
-            return !courier || courier === 'Не назначен' || courier === 'Не назначено';
+            return !courier || courier === 'Не назначено';
         });
 
         if (!debouncedFilters.enabled) {

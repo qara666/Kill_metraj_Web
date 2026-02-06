@@ -34,7 +34,7 @@ export const RouteCard: React.FC<RouteCardProps> = React.memo(({
     enableNotifications,
     onExpand
 }) => {
-    const isUnassigned = route.name === 'Не назначен';
+    const isUnassigned = route.name === 'Не назначено';
     const efficiencyMetrics = useMemo(() => calculateRouteEfficiencyMetrics([route]), [route]);
 
     const notifications = useMemo(() => {

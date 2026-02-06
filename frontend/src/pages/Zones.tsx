@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useTheme } from '../contexts/ThemeContext'
 import clsx from 'clsx'
-import { 
-  MapPinIcon, 
+import {
+  MapPinIcon,
   TruckIcon,
   AdjustmentsHorizontalIcon,
   DocumentArrowUpIcon,
@@ -78,34 +78,34 @@ export const Zones: React.FC = () => {
   const processExcelFile = async (file: File): Promise<ZoneExcelData> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
-      
+
       reader.onload = (e) => {
         try {
           const data = e.target?.result
           if (!data) {
             throw new Error('No data received from file')
           }
-          
+
           console.log('Reading Excel file:', file.name, file.size, 'bytes')
-          addLog(`Файл прочитан: ${file.name} (${file.size} байт)`) 
-          
+          addLog(`Файл прочитан: ${file.name} (${file.size} байт)`)
+
           const workbook = XLSX.read(data, { type: 'binary' })
           const sheetName = workbook.SheetNames[0]
-          
+
           if (!sheetName) {
             throw new Error('No sheets found in Excel file')
           }
-          
+
           const worksheet = workbook.Sheets[sheetName]
           const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
-          
+
           console.log('Excel data converted to JSON:', jsonData.length, 'rows')
-          addLog(`Конвертация Excel → JSON: ${jsonData.length} строк`) 
-          
+          addLog(`Конвертация Excel → JSON: ${jsonData.length} строк`)
+
           if (!Array.isArray(jsonData) || jsonData.length < 2) {
             throw new Error('Invalid Excel file format or empty data')
           }
-          
+
           // Обрабатываем данные (аналогично основной системе, но изолированно)
           const processedData = processZoneExcelData(jsonData)
           resolve(processedData)
@@ -115,13 +115,13 @@ export const Zones: React.FC = () => {
           reject(error)
         }
       }
-      
+
       reader.onerror = () => {
         console.error('FileReader error')
         addLog('Ошибка чтения файла (FileReader)')
         reject(new Error('Failed to read file'))
       }
-      
+
       reader.readAsBinaryString(file)
     })
   }
@@ -130,7 +130,7 @@ export const Zones: React.FC = () => {
   const processZoneExcelData = (rawData: any[]): ZoneExcelData => {
     const orders: ZoneOrder[] = []
     const couriers: string[] = []
-    
+
     console.log('Processing Excel data:', rawData.length, 'rows')
     addLog(`Старт обработки Excel: ${rawData.length} строк`)
 
@@ -164,7 +164,7 @@ export const Zones: React.FC = () => {
     }
 
     let emptyAddressCount = 0
-    
+
     // Пропускаем заголовок и обрабатываем данные
     for (let i = 1; i < rawData.length; i++) {
       const row = rawData[i]
@@ -173,12 +173,12 @@ export const Zones: React.FC = () => {
         addLog(`Строка ${i} пропущена: неверный формат`)
         continue
       }
-      
+
       try {
         // Безопасное извлечение данных с проверками
         const orderNumber = String(row[0] || '').trim()
         const address = extractAddress(row)
-        const courier = String(row[15] || 'Не назначен').trim()
+        const courier = String(row[15] || 'Не назначено').trim()
         const amount = parseFloat(String(row[13] || '0')) || 0
         const paymentMethod = String(row[14] || 'Неизвестно').trim()
         const phone = String(row[3] || '').trim()
@@ -186,7 +186,7 @@ export const Zones: React.FC = () => {
         const kitchenTimeStr = String(row[9] || '0').replace(/[^\d]/g, '')
         const kitchenTime = parseInt(kitchenTimeStr) || 0
         const deliveryTime = String(row[10] || '').trim()
-        
+
         // Пропускаем заказы без адреса
         if (!address) {
           console.warn(`Skipping order ${orderNumber}: no address`)
@@ -194,7 +194,7 @@ export const Zones: React.FC = () => {
           emptyAddressCount++
           continue
         }
-        
+
         const order: ZoneOrder = {
           id: `zone_order_${i}`,
           orderNumber,
@@ -210,10 +210,10 @@ export const Zones: React.FC = () => {
           deliveryTime,
           courierType: determineCourierType(address, amount)
         }
-        
+
         orders.push(order)
-        
-        if (courier && courier !== 'Не назначен' && !couriers.includes(courier)) {
+
+        if (courier && courier !== 'Не назначено' && !couriers.includes(courier)) {
           couriers.push(courier)
         }
       } catch (error) {
@@ -221,10 +221,10 @@ export const Zones: React.FC = () => {
         addLog(`Ошибка строки ${i}: ${(error as Error).message}`)
       }
     }
-    
+
     console.log(`Processed ${orders.length} orders, ${couriers.length} couriers`)
     addLog(`Итог: заказов ${orders.length}, курьеров ${couriers.length}, без адреса: ${emptyAddressCount}`)
-    
+
     return {
       orders,
       couriers,
@@ -240,22 +240,22 @@ export const Zones: React.FC = () => {
   // Определение типа курьера на основе адреса и суммы заказа
   const determineCourierType = (address: string, amount: number): 'car' | 'motorcycle' => {
     const addressLower = address.toLowerCase()
-    
+
     // Если сумма заказа большая (>1000 грн) - автомобиль
     if (amount > 1000) return 'car'
-    
+
     // Если адрес содержит ключевые слова для автомобиля
-    if (addressLower.includes('центр') || addressLower.includes('хрещатик') || 
-        addressLower.includes('майдан') || addressLower.includes('печерськ')) {
+    if (addressLower.includes('центр') || addressLower.includes('хрещатик') ||
+      addressLower.includes('майдан') || addressLower.includes('печерськ')) {
       return 'car'
     }
-    
+
     // Если адрес содержит ключевые слова для мотоцикла
     if (addressLower.includes('героїв полку') || addressLower.includes('дубровицька') ||
-        addressLower.includes('новокостянтинівська') || addressLower.includes('кирилівська')) {
+      addressLower.includes('новокостянтинівська') || addressLower.includes('кирилівська')) {
       return 'motorcycle'
     }
-    
+
     // По умолчанию - мотоцикл для небольших заказов
     return 'motorcycle'
   }
@@ -293,10 +293,10 @@ export const Zones: React.FC = () => {
 
       const orders = zoneExcelData.orders.filter((order: ZoneOrder) => {
         try {
-          return order && 
-            typeof order === 'object' && 
-            order.address && 
-            typeof order.address === 'string' && 
+          return order &&
+            typeof order === 'object' &&
+            order.address &&
+            typeof order.address === 'string' &&
             order.address.trim() !== ''
         } catch (error) {
           console.warn('Error filtering order:', error, order)
@@ -309,160 +309,160 @@ export const Zones: React.FC = () => {
 
       // Группируем заказы по районам/зонам
       const zoneGroups: { [key: string]: ZoneOrder[] } = {}
-    
-    orders.forEach((order: any) => {
-      try {
-        // Улучшенное определение зоны по ключевым словам в адресе
-        const address = order.address.toLowerCase()
-        let zoneKey = 'Другое'
-        let confidence = 0
-        
-        // Зона Азов - Героїв полку "АЗОВ", Маршала Малиновського
-        if (address.includes('героїв полку') || address.includes('малиновського') || 
+
+      orders.forEach((order: any) => {
+        try {
+          // Улучшенное определение зоны по ключевым словам в адресе
+          const address = order.address.toLowerCase()
+          let zoneKey = 'Другое'
+          let confidence = 0
+
+          // Зона Азов - Героїв полку "АЗОВ", Маршала Малиновського
+          if (address.includes('героїв полку') || address.includes('малиновського') ||
             address.includes('азов') || address.includes('малиновського')) {
-          zoneKey = 'Зона Азов'
-          confidence = 0.9
+            zoneKey = 'Зона Азов'
+            confidence = 0.9
+          }
+          // Зона Дубровицкая - Дубровицька, Дубровицкая
+          else if (address.includes('дубровицька') || address.includes('дубровицкая') ||
+            address.includes('дубровиц') || address.includes('дубров')) {
+            zoneKey = 'Зона Дубровицкая'
+            confidence = 0.9
+          }
+          // Зона Новокостянтиновская - Новокостянтинівська
+          else if (address.includes('новокостянтинівська') || address.includes('новокостянтинов') ||
+            address.includes('новокостянтин')) {
+            zoneKey = 'Зона Новокостянтиновская'
+            confidence = 0.9
+          }
+          // Зона Кириловская - Кирилівська, Фрунзе
+          else if (address.includes('кирилівська') || address.includes('фрунзе') ||
+            address.includes('кирил') || address.includes('фрунз')) {
+            zoneKey = 'Зона Кириловская'
+            confidence = 0.9
+          }
+          // Зона Центр - центр, хрещатик, майдан
+          else if (address.includes('центр') || address.includes('khreshchatyk') ||
+            address.includes('хрещатик') || address.includes('майдан') ||
+            address.includes('центральна') || address.includes('центральная')) {
+            zoneKey = 'Зона Центр'
+            confidence = 0.8
+          }
+          // Дополнительные проверки для более точного определения
+          else if (address.includes('печерськ') || address.includes('печерск')) {
+            zoneKey = 'Зона Печерск'
+            confidence = 0.7
+          }
+          else if (address.includes('подільськ') || address.includes('подольск')) {
+            zoneKey = 'Зона Подольск'
+            confidence = 0.7
+          }
+          else if (address.includes('оболонь') || address.includes('оболон')) {
+            zoneKey = 'Зона Оболонь'
+            confidence = 0.7
+          }
+          else {
+            // Попытка определить зону по району или улице
+            if (address.includes('вул.') || address.includes('улица')) {
+              zoneKey = 'Зона Другое'
+              confidence = 0.3
+            }
+          }
+
+          if (!zoneGroups[zoneKey]) {
+            zoneGroups[zoneKey] = []
+          }
+
+          // Безопасное создание объекта заказа
+          const safeOrder: ZoneOrder = {
+            id: order?.id || `order_${order?.orderNumber || 'unknown'}`,
+            orderNumber: order?.orderNumber || 'N/A',
+            address: order?.address || '',
+            plannedTime: order?.plannedTime,
+            courier: order?.courier || 'Не назначено',
+            amount: typeof order?.amount === 'number' ? order.amount : 0,
+            paymentMethod: order?.paymentMethod || 'Неизвестно',
+            phone: order?.phone || '',
+            customerName: order?.customerName || '',
+            priority: Math.random() * 100, // Временный приоритет
+            confidence: confidence, // Уровень уверенности в определении зоны
+            kitchenTime: order?.kitchenTime,
+            deliveryTime: order?.deliveryTime,
+            courierType: order?.courierType,
+            routeId: order?.routeId
+          }
+
+          zoneGroups[zoneKey].push(safeOrder)
+        } catch (error) {
+          console.warn('Error processing order for zones:', error, order)
         }
-        // Зона Дубровицкая - Дубровицька, Дубровицкая
-        else if (address.includes('дубровицька') || address.includes('дубровицкая') ||
-                 address.includes('дубровиц') || address.includes('дубров')) {
-          zoneKey = 'Зона Дубровицкая'
-          confidence = 0.9
-        }
-        // Зона Новокостянтиновская - Новокостянтинівська
-        else if (address.includes('новокостянтинівська') || address.includes('новокостянтинов') ||
-                 address.includes('новокостянтин')) {
-          zoneKey = 'Зона Новокостянтиновская'
-          confidence = 0.9
-        }
-        // Зона Кириловская - Кирилівська, Фрунзе
-        else if (address.includes('кирилівська') || address.includes('фрунзе') ||
-                 address.includes('кирил') || address.includes('фрунз')) {
-          zoneKey = 'Зона Кириловская'
-          confidence = 0.9
-        }
-        // Зона Центр - центр, хрещатик, майдан
-        else if (address.includes('центр') || address.includes('khreshchatyk') ||
-                 address.includes('хрещатик') || address.includes('майдан') ||
-                 address.includes('центральна') || address.includes('центральная')) {
-          zoneKey = 'Зона Центр'
-          confidence = 0.8
-        }
-        // Дополнительные проверки для более точного определения
-        else if (address.includes('печерськ') || address.includes('печерск')) {
-          zoneKey = 'Зона Печерск'
-          confidence = 0.7
-        }
-        else if (address.includes('подільськ') || address.includes('подольск')) {
-          zoneKey = 'Зона Подольск'
-          confidence = 0.7
-        }
-        else if (address.includes('оболонь') || address.includes('оболон')) {
-          zoneKey = 'Зона Оболонь'
-          confidence = 0.7
-        }
-        else {
-          // Попытка определить зону по району или улице
-          if (address.includes('вул.') || address.includes('улица')) {
-            zoneKey = 'Зона Другое'
-            confidence = 0.3
+      })
+
+      // Создаем объекты зон с дополнительной защитой
+      let zonesList: Zone[] = Object.entries(zoneGroups).map(([name, orders], index) => {
+        try {
+          // Безопасное извлечение курьеров
+          const couriers = [...new Set(orders
+            .map(o => o?.courier)
+            .filter(c => c && c !== 'Не назначено')
+            .filter(Boolean)
+          )]
+
+          // Безопасный расчет суммы
+          const totalAmount = orders.reduce((sum, o) => {
+            const amount = typeof o?.amount === 'number' ? o.amount : 0
+            return sum + amount
+          }, 0)
+
+          // Анализируем качество определения зоны
+          const validOrders = orders.filter(o => o && typeof o === 'object')
+          const avgConfidence = validOrders.length > 0
+            ? validOrders.reduce((sum, o) => sum + (o.confidence || 0), 0) / validOrders.length
+            : 0
+          const highConfidenceOrders = validOrders.filter(o => (o.confidence || 0) > 0.7).length
+          const lowConfidenceOrders = validOrders.filter(o => (o.confidence || 0) < 0.5).length
+
+          console.log(`Zone ${name}: ${validOrders.length} orders, avg confidence: ${avgConfidence.toFixed(2)}, high: ${highConfidenceOrders}, low: ${lowConfidenceOrders}`)
+
+          return {
+            id: `zone_${index}`,
+            name,
+            center: getZoneCenter(name),
+            radius: 2, // км
+            orders: validOrders.sort((a, b) => (b.priority || 0) - (a.priority || 0)),
+            couriers,
+            totalAmount,
+            averageTime: validOrders.length * 15 // Примерное время в минутах
+          }
+        } catch (error) {
+          console.warn(`Error creating zone ${name}:`, error)
+          return {
+            id: `zone_${index}`,
+            name,
+            center: getZoneCenter(name),
+            radius: 2,
+            orders: [],
+            couriers: [],
+            totalAmount: 0,
+            averageTime: 0
           }
         }
-
-        if (!zoneGroups[zoneKey]) {
-          zoneGroups[zoneKey] = []
-        }
-
-        // Безопасное создание объекта заказа
-        const safeOrder: ZoneOrder = {
-          id: order?.id || `order_${order?.orderNumber || 'unknown'}`,
-          orderNumber: order?.orderNumber || 'N/A',
-          address: order?.address || '',
-          plannedTime: order?.plannedTime,
-          courier: order?.courier || 'Не назначен',
-          amount: typeof order?.amount === 'number' ? order.amount : 0,
-          paymentMethod: order?.paymentMethod || 'Неизвестно',
-          phone: order?.phone || '',
-          customerName: order?.customerName || '',
-          priority: Math.random() * 100, // Временный приоритет
-          confidence: confidence, // Уровень уверенности в определении зоны
-          kitchenTime: order?.kitchenTime,
-          deliveryTime: order?.deliveryTime,
-          courierType: order?.courierType,
-          routeId: order?.routeId
-        }
-
-        zoneGroups[zoneKey].push(safeOrder)
-      } catch (error) {
-        console.warn('Error processing order for zones:', error, order)
-      }
-    })
-
-    // Создаем объекты зон с дополнительной защитой
-    let zonesList: Zone[] = Object.entries(zoneGroups).map(([name, orders], index) => {
-      try {
-        // Безопасное извлечение курьеров
-        const couriers = [...new Set(orders
-          .map(o => o?.courier)
-          .filter(c => c && c !== 'Не назначен')
-          .filter(Boolean)
-        )]
-        
-        // Безопасный расчет суммы
-        const totalAmount = orders.reduce((sum, o) => {
-          const amount = typeof o?.amount === 'number' ? o.amount : 0
-          return sum + amount
-        }, 0)
-        
-        // Анализируем качество определения зоны
-        const validOrders = orders.filter(o => o && typeof o === 'object')
-        const avgConfidence = validOrders.length > 0 
-          ? validOrders.reduce((sum, o) => sum + (o.confidence || 0), 0) / validOrders.length 
-          : 0
-        const highConfidenceOrders = validOrders.filter(o => (o.confidence || 0) > 0.7).length
-        const lowConfidenceOrders = validOrders.filter(o => (o.confidence || 0) < 0.5).length
-        
-        console.log(`Zone ${name}: ${validOrders.length} orders, avg confidence: ${avgConfidence.toFixed(2)}, high: ${highConfidenceOrders}, low: ${lowConfidenceOrders}`)
-        
-        return {
-          id: `zone_${index}`,
-          name,
-          center: getZoneCenter(name),
-          radius: 2, // км
-          orders: validOrders.sort((a, b) => (b.priority || 0) - (a.priority || 0)),
-          couriers,
-          totalAmount,
-          averageTime: validOrders.length * 15 // Примерное время в минутах
-        }
-      } catch (error) {
-        console.warn(`Error creating zone ${name}:`, error)
-        return {
-          id: `zone_${index}`,
-          name,
-          center: getZoneCenter(name),
+      })
+      if (zonesList.length === 0 && orders.length > 0) {
+        // Фолбэк: если не распознали зоны, показываем все заказы одной зоной
+        zonesList = [{
+          id: 'zone_fallback_all',
+          name: 'Все заказы',
+          center: getZoneCenter('Другое'),
           radius: 2,
-          orders: [],
-          couriers: [],
-          totalAmount: 0,
-          averageTime: 0
-        }
+          orders: orders,
+          couriers: [...new Set(orders.map(o => o.courier).filter(c => c && c !== 'Не назначено'))],
+          totalAmount: orders.reduce((sum, o) => sum + (typeof o.amount === 'number' ? o.amount : 0), 0),
+          averageTime: orders.length * 15
+        }]
       }
-    })
-    if (zonesList.length === 0 && orders.length > 0) {
-      // Фолбэк: если не распознали зоны, показываем все заказы одной зоной
-      zonesList = [{
-        id: 'zone_fallback_all',
-        name: 'Все заказы',
-        center: getZoneCenter('Другое'),
-        radius: 2,
-        orders: orders,
-        couriers: [...new Set(orders.map(o => o.courier).filter(c => c && c !== 'Не назначен'))],
-        totalAmount: orders.reduce((sum, o) => sum + (typeof o.amount === 'number' ? o.amount : 0), 0),
-        averageTime: orders.length * 15
-      }]
-    }
-    addLog(`Определено зон: ${zonesList.length}. Детали: ` + (zonesList.length ? zonesList.map(z => `${z.name}=${z.orders.length}`).join(', ') : 'нет'))
-    return zonesList
+      addLog(`Определено зон: ${zonesList.length}. Детали: ` + (zonesList.length ? zonesList.map(z => `${z.name}=${z.orders.length}`).join(', ') : 'нет'))
+      return zonesList
     } catch (error) {
       console.error('Error processing zones:', error)
       return []
@@ -498,44 +498,44 @@ export const Zones: React.FC = () => {
         efficiency: number
       }> = []
 
-    let zonesEligible = 0
-    let courierGroupsEligible = 0
-    zones.forEach(zone => {
-      if (zone.orders.length < minOrdersPerRoute) return
-      zonesEligible++
+      let zonesEligible = 0
+      let courierGroupsEligible = 0
+      zones.forEach(zone => {
+        if (zone.orders.length < minOrdersPerRoute) return
+        zonesEligible++
 
-      // Группируем заказы по курьерам
-      const courierGroups: { [key: string]: ZoneOrder[] } = {}
-      
-      zone.orders.forEach(order => {
-        const courier = order.courier === 'Не назначен' ? 'Автоматический' : order.courier
-        if (!courierGroups[courier]) {
-          courierGroups[courier] = []
-        }
-        courierGroups[courier].push(order)
+        // Группируем заказы по курьерам
+        const courierGroups: { [key: string]: ZoneOrder[] } = {}
+
+        zone.orders.forEach(order => {
+          const courier = order.courier === 'Не назначено' ? 'Автоматический' : order.courier
+          if (!courierGroups[courier]) {
+            courierGroups[courier] = []
+          }
+          courierGroups[courier].push(order)
+        })
+
+        // Создаем маршруты для каждого курьера
+        Object.entries(courierGroups).forEach(([courier, orders]) => {
+          if (orders.length >= minOrdersPerRoute) {
+            courierGroupsEligible++
+            const totalAmount = orders.reduce((sum, o) => sum + o.amount, 0)
+            const estimatedTime = orders.length * 15 + orders.length * 5 // 15 мин на заказ + 5 мин на дорогу
+            const efficiency = totalAmount / estimatedTime // Гривны в минуту
+
+            routes.push({
+              id: `route_${zone.id}_${courier}`,
+              courier,
+              zone: zone.name,
+              orders: orders.slice(0, 8), // Максимум 8 заказов на маршрут
+              totalDistance: orders.length * 2, // Примерное расстояние
+              totalAmount,
+              estimatedTime,
+              efficiency
+            })
+          }
+        })
       })
-
-      // Создаем маршруты для каждого курьера
-      Object.entries(courierGroups).forEach(([courier, orders]) => {
-        if (orders.length >= minOrdersPerRoute) {
-          courierGroupsEligible++
-          const totalAmount = orders.reduce((sum, o) => sum + o.amount, 0)
-          const estimatedTime = orders.length * 15 + orders.length * 5 // 15 мин на заказ + 5 мин на дорогу
-          const efficiency = totalAmount / estimatedTime // Гривны в минуту
-
-          routes.push({
-            id: `route_${zone.id}_${courier}`,
-            courier,
-            zone: zone.name,
-            orders: orders.slice(0, 8), // Максимум 8 заказов на маршрут
-            totalDistance: orders.length * 2, // Примерное расстояние
-            totalAmount,
-            estimatedTime,
-            efficiency
-          })
-        }
-      })
-    })
 
       const result = routes.sort((a, b) => b.efficiency - a.efficiency)
       if (result.length === 0) {
@@ -561,7 +561,7 @@ export const Zones: React.FC = () => {
         zonesEligible++
         const groups: { [k: string]: number } = {}
         zone.orders.forEach(o => {
-          const c = o.courier === 'Не назначен' ? 'Автоматический' : o.courier || 'Автоматический'
+          const c = o.courier === 'Не назначено' ? 'Автоматический' : o.courier || 'Автоматический'
           groups[c] = (groups[c] || 0) + 1
         })
         Object.values(groups).forEach(count => { if (count >= minOrdersPerRoute) courierGroupsEligible++ })
@@ -574,7 +574,7 @@ export const Zones: React.FC = () => {
 
   const handleCreateRoute = (orders: ZoneOrder[], courier: string) => {
     console.log('Creating route:', { orders, courier })
-    
+
     // Создаем маршрут с учетом времени на кухне и планового времени
     const route = {
       id: `route_${Date.now()}`,
@@ -590,25 +590,25 @@ export const Zones: React.FC = () => {
       createdAt: new Date().toISOString(),
       status: 'created'
     }
-    
+
     // Добавляем маршрут в локальное состояние (изолированно)
     setRoutes(prev => [...prev, route])
-    
+
     // Обновляем заказы, помечая их как в маршруте
     setZoneExcelData(prev => {
       if (!prev) return prev
-      
+
       const updatedOrders = prev.orders.map(order => {
         const routeOrder = orders.find(o => o.id === order.id)
         return routeOrder ? { ...order, routeId: route.id } : order
       })
-      
+
       return {
         ...prev,
         orders: updatedOrders
       }
     })
-    
+
     toast.success(`Создан маршрут для ${courier} с ${orders.length} заказами`)
   }
 
@@ -689,7 +689,7 @@ export const Zones: React.FC = () => {
             )}>
               Система автоматически проанализирует заказы и распределит их по зонам доставки на основе адресов
             </p>
-            
+
             {/* Custom File Upload */}
             <div className="max-w-md mx-auto">
               <input
@@ -786,7 +786,7 @@ export const Zones: React.FC = () => {
             Настройки оптимизации
           </h3>
         </div>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className={clsx(
@@ -802,8 +802,8 @@ export const Zones: React.FC = () => {
                 onChange={(e) => setTimeRange(prev => ({ ...prev, start: e.target.value }))}
                 className={clsx(
                   'px-3 py-2 border rounded-lg text-sm',
-                  isDark 
-                    ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                  isDark
+                    ? 'bg-gray-700 border-gray-600 text-gray-100'
                     : 'bg-white border-gray-300 text-gray-900'
                 )}
               />
@@ -813,14 +813,14 @@ export const Zones: React.FC = () => {
                 onChange={(e) => setTimeRange(prev => ({ ...prev, end: e.target.value }))}
                 className={clsx(
                   'px-3 py-2 border rounded-lg text-sm',
-                  isDark 
-                    ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                  isDark
+                    ? 'bg-gray-700 border-gray-600 text-gray-100'
                     : 'bg-white border-gray-300 text-gray-900'
                 )}
               />
             </div>
           </div>
-          
+
           <div>
             <label className={clsx(
               'block text-sm font-medium mb-2',
@@ -838,7 +838,7 @@ export const Zones: React.FC = () => {
             />
             <div className="text-sm text-gray-500 mt-1">{maxDistance} км</div>
           </div>
-          
+
           <div>
             <label className={clsx(
               'block text-sm font-medium mb-2',
@@ -854,8 +854,8 @@ export const Zones: React.FC = () => {
               onChange={(e) => setMinOrdersPerRoute(Number(e.target.value))}
               className={clsx(
                 'w-full px-3 py-2 border rounded-lg text-sm',
-                isDark 
-                  ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                isDark
+                  ? 'bg-gray-700 border-gray-600 text-gray-100'
                   : 'bg-white border-gray-300 text-gray-900'
               )}
             />
@@ -915,7 +915,7 @@ export const Zones: React.FC = () => {
             className={clsx(
               'mt-4 inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors',
               showOptimized ? 'bg-blue-600 text-white hover:bg-blue-700' :
-              isDark ? 'bg-gray-700 text-gray-100 hover:bg-gray-600' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                isDark ? 'bg-gray-700 text-gray-100 hover:bg-gray-600' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
             )}
           >
             {showOptimized ? 'Скрыть оптимизированные маршруты' : 'Показать оптимизированные маршруты'}
@@ -932,14 +932,14 @@ export const Zones: React.FC = () => {
           )}>
             Зоны доставки ({zones.length})
           </h3>
-          
+
           <div className="space-y-3">
             {zones && Array.isArray(zones) ? zones.map((zone) => {
               if (!zone || typeof zone !== 'object') {
                 console.warn('Invalid zone object:', zone)
                 return null
               }
-              
+
               return (
                 <div
                   key={zone.id || `zone_${Math.random()}`}
@@ -948,46 +948,46 @@ export const Zones: React.FC = () => {
                     'card p-4 cursor-pointer transition-all duration-200 hover:shadow-lg',
                     selectedZone === zone.id
                       ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                      : isDark 
-                        ? 'bg-gray-800 border-gray-700 hover:bg-gray-700' 
+                      : isDark
+                        ? 'bg-gray-800 border-gray-700 hover:bg-gray-700'
                         : 'bg-white border-gray-200 hover:bg-gray-50'
                   )}
                 >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <MapPinIcon className="h-5 w-5 text-blue-500" />
-                    <div>
-                      <h4 className={clsx(
-                        'font-semibold',
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <MapPinIcon className="h-5 w-5 text-blue-500" />
+                      <div>
+                        <h4 className={clsx(
+                          'font-semibold',
+                          isDark ? 'text-gray-100' : 'text-gray-900'
+                        )}>
+                          {zone.name}
+                        </h4>
+                        <p className={clsx(
+                          'text-sm',
+                          isDark ? 'text-gray-400' : 'text-gray-600'
+                        )}>
+                          {zone.orders.length} заказов • {zone.couriers.length} курьеров
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <div className={clsx(
+                        'text-sm font-semibold',
                         isDark ? 'text-gray-100' : 'text-gray-900'
                       )}>
-                        {zone.name}
-                      </h4>
-                      <p className={clsx(
-                        'text-sm',
-                        isDark ? 'text-gray-400' : 'text-gray-600'
+                        {zone.totalAmount.toLocaleString()} ₴
+                      </div>
+                      <div className={clsx(
+                        'text-xs',
+                        isDark ? 'text-gray-400' : 'text-gray-500'
                       )}>
-                        {zone.orders.length} заказов • {zone.couriers.length} курьеров
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="text-right">
-                    <div className={clsx(
-                      'text-sm font-semibold',
-                      isDark ? 'text-gray-100' : 'text-gray-900'
-                    )}>
-                      {zone.totalAmount.toLocaleString()} ₴
-                    </div>
-                    <div className={clsx(
-                      'text-xs',
-                      isDark ? 'text-gray-400' : 'text-gray-500'
-                    )}>
-                      ~{zone.averageTime} мин
+                        ~{zone.averageTime} мин
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
               )
             }) : (
               <div className={clsx(
@@ -1008,7 +1008,7 @@ export const Zones: React.FC = () => {
           )}>
             Карта зон
           </h3>
-          
+
           <div className="card p-0 overflow-hidden">
             <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 dark:border-gray-700">
               <span className={clsx('text-sm', isDark ? 'text-gray-300' : 'text-gray-700')}>Google карта зон</span>
@@ -1089,7 +1089,7 @@ export const Zones: React.FC = () => {
                     {route.efficiency.toFixed(1)} ₴/мин
                   </div>
                 </div>
-                
+
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className={clsx(isDark ? 'text-gray-400' : 'text-gray-600')}>
@@ -1099,7 +1099,7 @@ export const Zones: React.FC = () => {
                       {route.zone}
                     </span>
                   </div>
-                  
+
                   <div className="flex justify-between text-sm">
                     <span className={clsx(isDark ? 'text-gray-400' : 'text-gray-600')}>
                       Заказов:
@@ -1108,7 +1108,7 @@ export const Zones: React.FC = () => {
                       {route.orders.length}
                     </span>
                   </div>
-                  
+
                   <div className="flex justify-between text-sm">
                     <span className={clsx(isDark ? 'text-gray-400' : 'text-gray-600')}>
                       Сумма:
@@ -1117,7 +1117,7 @@ export const Zones: React.FC = () => {
                       {route.totalAmount.toLocaleString()} ₴
                     </span>
                   </div>
-                  
+
                   <div className="flex justify-between text-sm">
                     <span className={clsx(isDark ? 'text-gray-400' : 'text-gray-600')}>
                       Время:
@@ -1127,7 +1127,7 @@ export const Zones: React.FC = () => {
                     </span>
                   </div>
                 </div>
-                
+
                 <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
                   <button className={clsx(
                     'w-full px-3 py-2 text-sm font-medium rounded-lg transition-colors',
