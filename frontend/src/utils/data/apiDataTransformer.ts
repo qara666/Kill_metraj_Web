@@ -32,7 +32,7 @@ export const transformDashboardData = (
     // Преобразование курьеров
     apiData.couriers.forEach((swaggerCourier) => {
         // Пропускаем "ID:0", так как это техническое обозначение неназначенного заказа в API
-        if (swaggerCourier.name === 'ID:0' || swaggerCourier.name === 'ID: 0') return;
+        if (swaggerCourier.name === 'ID:0' || swaggerCourier.name.startsWith('ID:0')) return;
 
         // Если в будущем API добавит дату курьеру, мы сможем фильтровать здесь
 
@@ -128,7 +128,7 @@ const transformDashboardOrder = (swaggerOrder: DashboardOrderResponse, baseDate:
         deadlineAt,
         plannedTime: deadlineStr || 'Без времени',
         deliveryZone: swaggerOrder.deliveryZone,
-        courier: (swaggerOrder.courier === 'ID:0' || swaggerOrder.courier === 'ID: 0') ? 'Не назначено' : swaggerOrder.courier,
+        courier: (swaggerOrder.courier && (swaggerOrder.courier === 'ID:0' || swaggerOrder.courier.startsWith('ID:0'))) ? 'Не назначено' : swaggerOrder.courier,
         amount: swaggerOrder.amount,
         paymentMethod: swaggerOrder.paymentMethod,
         status: swaggerOrder.status,

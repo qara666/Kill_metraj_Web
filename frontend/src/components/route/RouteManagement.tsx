@@ -236,7 +236,7 @@ const CourierListItem = memo(({
   availableOrdersCount: number
   isDark: boolean
 }) => {
-  const isUnassigned = courierName === 'Не назначено'
+  const isUnassigned = courierName === 'Не назначено' || courierName === 'ID:0' || courierName.startsWith('ID:0')
 
   return (
     <button
@@ -282,7 +282,7 @@ const CourierListItem = memo(({
                   ? isDark ? 'text-white' : 'text-gray-900'
                   : isDark ? 'text-gray-400' : 'text-gray-600'
               )}>
-                {courierName}
+                {courierName === 'ID:0' ? 'Не назначено' : courierName}
               </span>
               {!isUnassigned && (
                 <span className={clsx(
@@ -460,7 +460,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
     excelData.orders.forEach((order: any) => {
       if (order.courier && order.address) {
-        const courierName = order.courier
+        let courierName = order.courier
+        // Force rename if it slipped through
+        if (courierName === 'ID:0' || courierName.startsWith('ID:0')) {
+          courierName = 'Не назначено'
+        }
+
         if (!grouped[courierName]) {
           grouped[courierName] = []
         }
@@ -526,8 +531,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     })
     .sort((a, b) => {
       // Сортировка: "Не назначен" всегда сверху
-      if (a === 'Не назначено') return -1;
-      if (b === 'Не назначено') return 1;
+      if (a === 'Не назначено' || a === 'ID:0') return -1;
+      if (b === 'Не назначено' || b === 'ID:0') return 1;
       return a.localeCompare(b, 'ru');
     })
 
@@ -1818,7 +1823,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                     <div>
                       <div className="flex items-center gap-3 mb-1">
                         <h2 className={clsx('text-3xl font-black tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>
-                          {selectedCourier}
+                          {(selectedCourier === 'ID:0' || selectedCourier?.startsWith('ID:0')) ? 'Не назначено' : selectedCourier}
                         </h2>
                         <div className={clsx(
                           "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1",
@@ -1860,7 +1865,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
                   <CourierTimeWindows
                     courierId={selectedCourier || ''}
-                    courierName={selectedCourier || ''}
+                    courierName={(selectedCourier === 'ID:0' || selectedCourier?.startsWith('ID:0')) ? 'Не назначено' : (selectedCourier || '')}
                     orders={availableOrders}
                     isDark={isDark}
                     onJumpToGroup={handleJumpToGroup}
