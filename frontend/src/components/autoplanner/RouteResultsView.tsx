@@ -32,8 +32,8 @@ export const RouteResultsView: React.FC<RouteResultsViewProps> = React.memo(({
     // Sort routes: "Не назначен" first, then others
     const sortedRoutes = useMemo(() => {
         return [...plannedRoutes].sort((a, b) => {
-            if (a.name === 'Не назначен') return -1;
-            if (b.name === 'Не назначен') return 1;
+            if (a.name === 'Не назначено') return -1;
+            if (b.name === 'Не назначено') return 1;
             return 0; // Keep original order for others
         });
     }, [plannedRoutes]);
@@ -102,7 +102,7 @@ export const RouteResultsView: React.FC<RouteResultsViewProps> = React.memo(({
             {routeEfficiencyMetrics && (
                 <div className={clsx('mb-8 p-6 rounded-2xl border-2 shrink-0', isDark ? 'border-teal-700/50 bg-teal-900/20' : 'border-teal-200 bg-teal-50/50')}>
                     <div className={clsx('text-lg font-semibold mb-4 flex items-center gap-2', isDark ? 'text-teal-300' : 'text-teal-700')}>
-                         Эффективность распределения
+                        Эффективность распределения
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6">
                         <MetricSummary label="Баланс нагрузки" value={`${((routeEfficiencyMetrics.balanceScore || 0) * 100).toFixed(0)}%`} isDark={isDark} />

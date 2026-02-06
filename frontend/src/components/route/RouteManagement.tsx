@@ -236,7 +236,7 @@ const CourierListItem = memo(({
   availableOrdersCount: number
   isDark: boolean
 }) => {
-  const isUnassigned = courierName === 'Не назначен'
+  const isUnassigned = courierName === 'Не назначено'
 
   return (
     <button
@@ -526,8 +526,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     })
     .sort((a, b) => {
       // Сортировка: "Не назначен" всегда сверху
-      if (a === 'Не назначен') return -1;
-      if (b === 'Не назначен') return 1;
+      if (a === 'Не назначено') return -1;
+      if (b === 'Не назначено') return 1;
       return a.localeCompare(b, 'ru');
     })
 
@@ -767,7 +767,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     const actualOrders = isEvent ? undefined : (ordersOverride as Order[]);
 
     const courier = courierOverride || selectedCourier;
-    if (!courier || courier === 'Не назначен') return
+    if (!courier || courier === 'Не назначено') return
 
     // Требуем выбранный город в настройках
     {
