@@ -72,6 +72,19 @@ export const transformDashboardData = (
         }
     });
 
+    // Sync couriers with orders: Ensure all couriers mentioned in orders exist in the couriers list
+    const existingCourierNames = new Set(couriers.map(c => c.name));
+    orders.forEach(order => {
+        if (order.courier && order.courier !== 'Не назначено' && !existingCourierNames.has(order.courier)) {
+            couriers.push({
+                name: order.courier,
+                isActive: true, // Assume active if they have orders
+                vehicleType: 'car' // Default to car if unknown
+            });
+            existingCourierNames.add(order.courier);
+        }
+    });
+
     return {
         orders,
         couriers,
