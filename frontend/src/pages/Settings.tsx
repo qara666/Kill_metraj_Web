@@ -207,18 +207,34 @@ export const Settings: React.FC = () => {
 
 
 
-  const handleClearAllData = () => {
+  const handleClearAllData = async () => {
     if (window.confirm('Вы уверены, что хотите очистить все динамические данные (маршруты, логи, историю)? Настройки и API ключи будут сохранены.')) {
       try {
         // 1. Сохраняем все текущие настройки во временную переменную
         const settingsBackup = localStorageUtils.getAllSettings()
 
-        // 2. Очищаем динамические данные
+        // 2. Очищаем динамические данные локально
         localStorageUtils.clearDynamicData()
 
-        // 3. Дополнительно очищаем состояние стора, если нужно
-        // Но persist.clearStorage() удалит ВООБЩЕ все ключи km_ из localStorage,
-        // если конфиг стора настроен так. Поэтому лучше просто очистить динамические ключи.
+        // 3. Очищаем данные на сервере (если пользователь админ)
+        if (isAdmin) {
+          try {
+            const token = localStorage.getItem('token');
+            if (token) {
+              await fetch('/api/maintenance/cleanup', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                }
+              });
+              toast.success('Серверные данные очищены');
+            }
+          } catch (serverError) {
+            console.error('Ошибка очистки на сервере:', serverError);
+            toast.error('Не удалось очистить данные на сервере');
+          }
+        }
 
         // 4. Восстанавливаем настройки обратно
         if (settingsBackup) {
