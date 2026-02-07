@@ -136,7 +136,9 @@ class DashboardFetcher {
     async getActiveDepartments() {
         try {
             const result = await this.pool.query('SELECT DISTINCT "divisionId" FROM users WHERE "divisionId" IS NOT NULL');
-            const depts = result.rows.map(r => r.divisionId);
+            const depts = result.rows
+                .map(r => r.divisionId)
+                .filter(id => id && id !== 'all' && !isNaN(parseInt(id, 10)));
 
             // Если указан дефолтный ID в окружении, добавляем его
             if (process.env.DASHBOARD_DEPARTMENT_ID && !depts.includes(process.env.DASHBOARD_DEPARTMENT_ID)) {
