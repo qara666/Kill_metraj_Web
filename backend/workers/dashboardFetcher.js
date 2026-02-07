@@ -167,34 +167,54 @@ class DashboardFetcher {
     }
 
     /**
+     * Получение текущей даты в часовом поясе Киева
+     */
+    getKyivDate() {
+        // Create a date object from the current UTC time
+        const now = new Date();
+        // Convert to Kyiv time string
+        const kyivTimeStr = now.toLocaleString("en-US", {
+            timeZone: "Europe/Kiev"
+        });
+        return new Date(kyivTimeStr);
+    }
+
+    /**
      * Загрузка данных для конкретного подразделения
      */
     async fetchForDepartment(deptId, dateShiftDays = 0) {
         const startTime = Date.now();
         this.totalFetches++;
 
-        const targetDate = new Date();
+        // Use Kyiv time strictly
+        const targetDate = this.getKyivDate();
         targetDate.setDate(targetDate.getDate() + dateShiftDays);
-        const targetDateStr = targetDate.toISOString().split('T')[0];
+
+        const targetDateStr = this.formatDate(targetDate, '').trim(); // "dd.mm.yyyy"
+
+        logger.info(`[FETCHER V2] Starting fetch for Dept: ${deptId}, Date: ${targetDateStr} (Shift: ${dateShiftDays})`);
 
         try {
-            logger.info(`  [Dept: ${deptId}, Date: ${targetDateStr}] Загрузка данных... (Попытка ${this.retryCount + 1})`);
+            const timeBeg = this.formatDate(targetDate, '00:00:00');
+            const timeEnd = this.formatDate(targetDate, '23:59:59');
+
+            logger.debug(`  Requesting API: ${timeBeg} - ${timeEnd}`);
 
             // Подготовка параметров запроса
             const params = {
-                top: this.topCount,
-                timeDeliveryBeg: this.formatDate(targetDate, '00:00:00'),
-                timeDeliveryEnd: this.formatDate(targetDate, '23:59:59'),
-                departmentId: parseInt(deptId, 10)
+                top: '2000',
+                timeDeliveryBeg: timeBeg,
+                timeDeliveryEnd: timeEnd,
+                departmentId: deptId
             };
 
             const response = await axios.get(this.apiUrl, {
                 headers: {
-                    'x-api-key': this.apiKey,
+                    'x-api-key': process.env.EXTERNAL_API_KEY || 'killmetraj_secret_key_2024', // Add API key here just in case axios instance misses it
                     'Accept': 'application/json'
                 },
                 params: params,
-                timeout: 30000 // Увеличиваем таймаут до 30с
+                timeout: 10000
             });
             const responseData = response.data;
 
@@ -216,6 +236,8 @@ class DashboardFetcher {
             if (prevOrders && Array.isArray(prevOrders)) {
                 prevOrders.forEach(o => mergedOrdersMap.set(o.orderNumber, o));
             }
+
+            logger.debug(`  [FETCHER V2] Merging: Prev=${prevOrders.length}, New=${responseData.orders.length}`);
 
             if (responseData.orders && Array.isArray(responseData.orders)) {
                 for (const order of responseData.orders) {
@@ -258,6 +280,8 @@ class DashboardFetcher {
                 ...responseData,
                 orders: Array.from(mergedOrdersMap.values())
             };
+
+            logger.info(`  [FETCHER V2] Merge Result: ${mergedPayload.orders.length} orders (accumulated)`);
 
 
             // Расчет хеша и проверка изменений
