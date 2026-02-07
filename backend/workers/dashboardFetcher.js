@@ -36,7 +36,7 @@ class DashboardFetcher {
         this.apiUrl = process.env.EXTERNAL_API_URL || 'http://app.yaposhka.kh.ua:4999/api/v1/dashboard';
         this.apiKey = process.env.EXTERNAL_API_KEY;
         this.departmentId = process.env.DASHBOARD_DEPARTMENT_ID || '100000052';
-        this.topCount = process.env.DASHBOARD_TOP || '50';
+        this.topCount = process.env.DASHBOARD_TOP || '2000';
 
         // Диагностика
         this.totalFetches = 0;
