@@ -6,10 +6,11 @@ const logger = require('../src/utils/logger');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 /**
- * Фоновый загрузчик дашборда (Optimized V3)
+ * Фоновый загрузчик дашборда (Optimized V4 - Safe Mode)
  * Периодически запрашивает данные из внешнего API Fastopertor и сохраняет их в кэш PostgreSQL.
  * Особенности:
- * - Параллельная загрузка подразделений
+ * - Параллельная загрузка с ограничением (Batch Processing)
+ * - Лимит подключений к БД
  * - Транзакционная целостность
  * - Пакетная запись истории
  */
@@ -21,7 +22,8 @@ class DashboardFetcher {
                 ssl: {
                     require: true,
                     rejectUnauthorized: false
-                }
+                },
+                max: 4 // Limit pool size for background worker
             }
             : {
                 host: process.env.DB_HOST || 'localhost',
@@ -29,6 +31,7 @@ class DashboardFetcher {
                 database: process.env.DB_NAME || 'kill_metraj',
                 user: process.env.DB_USER || 'postgres',
                 password: process.env.DB_PASSWORD,
+                max: 4 // Limit pool size for background worker
             };
 
         this.pool = new Pool(poolConfig);
@@ -41,6 +44,7 @@ class DashboardFetcher {
         this.apiKey = process.env.EXTERNAL_API_KEY;
         this.departmentId = process.env.DASHBOARD_DEPARTMENT_ID || '100000052';
         this.topCount = process.env.DASHBOARD_TOP || '2000';
+        this.concurrencyLimit = 2; // Process max 2 requests in parallel to save DB CPU
 
         // Диагностика
         this.totalFetches = 0;
@@ -55,11 +59,12 @@ class DashboardFetcher {
      */
     async start() {
         logger.info('============================================================');
-        logger.info('Фоновый загрузчик дашборда [OPTIMIZED V3]');
+        logger.info('Фоновый загрузчик дашборда [OPTIMIZED V4 - SAFE MODE]');
         logger.info('============================================================');
         logger.info(`API URL: ${this.apiUrl}`);
         logger.info(`Интервал загрузки: ${this.fetchInterval}мс`);
         logger.info(`Макс. попыток: ${this.maxRetries}`);
+        logger.info(`Лимит потоков: ${this.concurrencyLimit}`);
         logger.info('============================================================');
 
         // Проверка подключения к базе данных и установка блокировки
@@ -136,25 +141,39 @@ class DashboardFetcher {
     }
 
     /**
-     * Основная логика загрузки и сохранения (Параллельная версия)
+     * Основная логика загрузки и сохранения (Batch/Parallel safe version)
      */
     async fetchAndStore() {
         const departments = await this.getActiveDepartments();
-        logger.info(`[FETCHER OPTIMIZED] Starting parallel update for ${departments.length} departments...`);
+        logger.info(`[FETCHER V4] Starting updates for ${departments.length} departments (Concurrency: ${this.concurrencyLimit})...`);
 
-        const tasks = [];
+        const allTasks = [];
         for (const deptId of departments) {
-            // Запускаем задачи параллельно для Сегодня (0) и Вчера (-1)
-            tasks.push(this.processDepartmentSafe(deptId, 0));
-            tasks.push(this.processDepartmentSafe(deptId, -1));
+            // Создаем задачи но не запускаем
+            allTasks.push(() => this.processDepartmentSafe(deptId, 0));
+            allTasks.push(() => this.processDepartmentSafe(deptId, -1));
         }
 
-        const results = await Promise.allSettled(tasks);
+        // Execute in batches
+        let successCount = 0;
+        let failCount = 0;
 
-        const successCount = results.filter(r => r.status === 'fulfilled' && r.value === true).length;
-        const failCount = results.filter(r => r.status === 'rejected' || r.value === false).length;
+        for (let i = 0; i < allTasks.length; i += this.concurrencyLimit) {
+            const batch = allTasks.slice(i, i + this.concurrencyLimit).map(task => task());
+            const results = await Promise.allSettled(batch);
 
-        logger.info(`[FETCHER OPTIMIZED] Cycle finished. Success: ${successCount}, Failed: ${failCount}. Total: ${tasks.length}`);
+            results.forEach(r => {
+                if (r.status === 'fulfilled' && r.value === true) successCount++;
+                else failCount++;
+            });
+
+            // Small breather for DB
+            if (i + this.concurrencyLimit < allTasks.length) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+        }
+
+        logger.info(`[FETCHER V4] Cycle finished. Success: ${successCount}, Failed: ${failCount}. Total: ${allTasks.length}`);
     }
 
     /**
@@ -326,6 +345,7 @@ class DashboardFetcher {
 
             logger.error(`  [Dept: ${deptId}] Error: ${errorDetail}`);
 
+            // Retry logic
             if (this.retryCount < this.maxRetries) {
                 this.retryCount++;
             }

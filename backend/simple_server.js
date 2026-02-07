@@ -450,6 +450,7 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
     // Start manual migration check
     await ensureStatusHistoryTable();
     await ensureDivisionIdColumn();
+    await ensureIndexes();
 
     // Start Kafka CDC Consumer if enabled
     if (process.env.CDC_ENABLED === 'true') {
@@ -526,6 +527,40 @@ async function ensureDivisionIdColumn() {
     logger.info('DB Check: division_id column verified/added successfully');
   } catch (err) {
     logger.error('DB Check: Error adding division_id column', {
+      error: err.message,
+      stack: err.stack
+    });
+  }
+}
+
+/**
+ * Ensure database indexes exist for performance
+ */
+async function ensureIndexes() {
+  try {
+    logger.info('DB Check: Ensuring performance indexes...');
+
+    // Index for history lookups
+    await sequelize.query(`
+      CREATE INDEX IF NOT EXISTS idx_status_history_order 
+      ON api_dashboard_status_history (order_number);
+    `);
+
+    // Index for fetcher lookups (division + date)
+    await sequelize.query(`
+      CREATE INDEX IF NOT EXISTS idx_dashboard_cache_lookup 
+      ON api_dashboard_cache (division_id, target_date);
+    `);
+
+    // Index for deduplication hash
+    await sequelize.query(`
+      CREATE INDEX IF NOT EXISTS idx_dashboard_cache_hash 
+      ON api_dashboard_cache (data_hash);
+    `);
+
+    logger.info('DB Check: Indexes verified/created successfully');
+  } catch (err) {
+    logger.error('DB Check: Error creating indexes', {
       error: err.message,
       stack: err.stack
     });
