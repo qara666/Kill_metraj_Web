@@ -207,23 +207,36 @@ class DashboardFetcher {
             const prevOrders = prevPayload?.orders || [];
             const ordersMap = new Map(prevOrders.map(o => [o.orderNumber, o]));
 
-            // 2. Отслеживание изменений статуса
+            // 2. Отслеживание изменений статуса и слияние данных
+            // Мы должны объединить новые данные с предыдущими, чтобы сохранить завершенные заказы,
+            // которые могут исчезнуть из ответа API (если API возвращает только активные).
+            const mergedOrdersMap = new Map();
+
+            // Сначала добавляем старые заказы
+            if (prevOrders && Array.isArray(prevOrders)) {
+                prevOrders.forEach(o => mergedOrdersMap.set(o.orderNumber, o));
+            }
+
             if (responseData.orders && Array.isArray(responseData.orders)) {
                 for (const order of responseData.orders) {
-                    const prevOrder = ordersMap.get(order.orderNumber);
+                    const prevOrder = mergedOrdersMap.get(order.orderNumber); // Get from map to reuse existing data if needed
                     const oldStatus = prevOrder?.status || null;
                     const newStatus = order.status;
 
+                    // Preserve status timings from previous version or init new
                     order.statusTimings = {
                         ...(prevOrder?.statusTimings || {}),
                         ...(order.statusTimings || {})
                     };
 
                     if (oldStatus !== newStatus) {
-                        await this.pool.query(
-                            'INSERT INTO api_dashboard_status_history (order_number, old_status, new_status) VALUES ($1, $2, $3)',
-                            [order.orderNumber, oldStatus, newStatus]
-                        ).catch(e => logger.error('  Ошибка записи истории:', e.message));
+                        // Только если есть реальное изменение
+                        if (prevOrder) {
+                            await this.pool.query(
+                                'INSERT INTO api_dashboard_status_history (order_number, old_status, new_status) VALUES ($1, $2, $3)',
+                                [order.orderNumber, oldStatus, newStatus]
+                            ).catch(e => logger.error('  Ошибка записи истории:', e.message));
+                        }
 
                         const nowTimestamp = new Date().toISOString();
                         const normalizedStatus = newStatus.toLowerCase();
@@ -234,11 +247,27 @@ class DashboardFetcher {
                             order.statusTimings.deliveringAt = nowTimestamp;
                         }
                     }
+
+                    // Add/Update in map
+                    mergedOrdersMap.set(order.orderNumber, order);
                 }
             }
 
+            // Создаем итоговый payload с объединенными заказами
+            const mergedPayload = {
+                ...responseData,
+                orders: Array.from(mergedOrdersMap.values())
+            };
+
+
             // Расчет хеша и проверка изменений
-            const dataHash = this.calculateHash(responseData);
+            // Считаем хеш от mergedPayload, так как именно его мы будем сохранять
+            // Важно: нужно убедиться, что порядок ключей/массива стабилен для корректного хеша,
+            // но для простоты пока полагаемся на то, что если данные меняются, хеш изменится.
+            // JSON.stringify не гарантирует порядок ключей, но для массивов порядок важен.
+            // Лучше хешировать сами данные или просто сохранять, если есть changes.
+            // Но мы используем хеш для дедупликации записей в БД.
+            const dataHash = this.calculateHash(mergedPayload);
 
             // Получаем последний хеш именно для этого подразделения и даты
             const lastHashResult = await this.pool.query(
@@ -248,7 +277,7 @@ class DashboardFetcher {
             const lastHash = lastHashResult.rows.length > 0 ? lastHashResult.rows[0].data_hash : null;
 
             if (lastHash === dataHash) {
-                logger.info(`  [Dept: ${deptId}] Данные не изменились`);
+                logger.debug(`  [Dept: ${deptId}] Данные не изменились (после слияния)`);
                 this.successfulFetches++;
                 this.retryCount = 0;
                 return;
@@ -258,14 +287,15 @@ class DashboardFetcher {
             await this.pool.query(
                 `INSERT INTO api_dashboard_cache (payload, data_hash, status_code, division_id, target_date)
                  VALUES ($1, $2, $3, $4, $5)`,
-                [responseData, dataHash, 200, String(deptId), targetDateStr]
+                [mergedPayload, dataHash, 200, String(deptId), targetDateStr]
             );
 
             this.successfulFetches++;
             this.retryCount = 0;
 
+
             const elapsed = Date.now() - startTime;
-            logger.info(`  [Dept: ${deptId}] Сохранено ${responseData.orders?.length || 0} заказов (${elapsed}мс)`);
+            logger.info(`  [Dept: ${deptId}] Сохранено ${mergedPayload.orders?.length || 0} заказов (${elapsed}мс)`);
 
         } catch (error) {
             let errorDetail = error.message;
