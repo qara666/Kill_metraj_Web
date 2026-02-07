@@ -301,6 +301,10 @@ app.use('/api/presets', presetRoutes);
 const proxyRoutes = require('./src/routes/proxyRoutes');
 app.use('/api/proxy', proxyRoutes);
 
+// Техническое обслуживание (очистка БД)
+const maintenanceRoutes = require('./src/routes/maintenanceRoutes');
+app.use('/api/maintenance', maintenanceRoutes);
+
 // Аудит логов (только для админов)
 app.use('/api/logs', logRoutes);
 

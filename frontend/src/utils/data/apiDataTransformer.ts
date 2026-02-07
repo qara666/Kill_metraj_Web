@@ -73,13 +73,22 @@ export const transformDashboardData = (
     });
 
     // Sync couriers with orders: Ensure all couriers mentioned in orders exist in the couriers list
+    // Sync couriers with orders: Ensure all couriers mentioned in orders exist in the couriers list
     const existingCourierNames = new Set(couriers.map(c => c.name));
     orders.forEach(order => {
-        if (order.courier && order.courier !== 'Не назначено' && !existingCourierNames.has(order.courier)) {
+        // Only add if it's a REAL courier name (not 'Не назначено', not 'ID:0')
+        // The order.courier field has already been transformed in transformDashboardOrder
+        // where 'ID:0' becomes 'Не назначено'.
+        // So we just need to check if it's valid and not already in the list.
+        if (order.courier &&
+            order.courier !== 'Не назначено' &&
+            order.courier !== 'ID:0' && // Just in case
+            !existingCourierNames.has(order.courier)) {
+
             couriers.push({
                 name: order.courier,
-                isActive: true, // Assume active if they have orders
-                vehicleType: 'car' // Default to car if unknown
+                isActive: true,
+                vehicleType: 'car'
             });
             existingCourierNames.add(order.courier);
         }
