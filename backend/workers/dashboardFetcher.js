@@ -6,8 +6,12 @@ const logger = require('../src/utils/logger');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 /**
- * Фоновый загрузчик дашборда
+ * Фоновый загрузчик дашборда (Optimized V3)
  * Периодически запрашивает данные из внешнего API Fastopertor и сохраняет их в кэш PostgreSQL.
+ * Особенности:
+ * - Параллельная загрузка подразделений
+ * - Транзакционная целостность
+ * - Пакетная запись истории
  */
 class DashboardFetcher {
     constructor() {
@@ -51,12 +55,11 @@ class DashboardFetcher {
      */
     async start() {
         logger.info('============================================================');
-        logger.info('Фоновый загрузчик дашборда');
+        logger.info('Фоновый загрузчик дашборда [OPTIMIZED V3]');
         logger.info('============================================================');
         logger.info(`API URL: ${this.apiUrl}`);
         logger.info(`Интервал загрузки: ${this.fetchInterval}мс`);
         logger.info(`Макс. попыток: ${this.maxRetries}`);
-        logger.info(`Базовая задержка: ${this.baseBackoff}мс`);
         logger.info('============================================================');
 
         // Проверка подключения к базе данных и установка блокировки
@@ -65,20 +68,17 @@ class DashboardFetcher {
             logger.info('База данных подключена');
 
             // Singleton check: используем PostgreSQL Advisory Lock
-            // 777777 - произвольный ID для блокировки загрузчика
             const lockResult = await this.pool.query('SELECT pg_try_advisory_lock(777777)');
             const hasLock = lockResult.rows[0].pg_try_advisory_lock;
 
             if (!hasLock) {
                 logger.warn('!!! ВНИМАНИЕ: Другой экземпляр загрузчика уже запущен !!!');
-                logger.warn('Этот процесс продолжит работу как клон (игнорируем интервал загрузки)');
-                // process.exit(0);
+                logger.warn('Этот процесс продолжит работу как клон');
                 return;
             }
 
             logger.info('Блокировка получена. Этот процесс является активным загрузчиком.');
 
-            // Загрузка последнего хеша для обнаружения изменений после перезапуска
             this.lastHash = await this.getLastHash();
             if (this.lastHash) {
                 logger.info(`Загружен хеш последних данных: ${this.lastHash.substring(0, 8)}...`);
@@ -110,28 +110,12 @@ class DashboardFetcher {
             );
             return result.rows.length > 0 ? result.rows[0].data_hash : null;
         } catch (error) {
-            logger.info(`    Повтор через ${delay}мс...`);
             return null;
         }
     }
 
     /**
-     * Получение последних данных из базы
-     */
-    async getLastPayload() {
-        try {
-            const result = await this.pool.query(
-                'SELECT payload FROM api_dashboard_cache WHERE status_code = 200 ORDER BY created_at DESC LIMIT 1'
-            );
-            return result.rows.length > 0 ? result.rows[0].payload : null;
-        } catch (error) {
-            logger.error('Ошибка при получении последних данных:', error.message);
-            return null;
-        }
-    }
-
-    /**
-     * Получение списка активных подразделений из таблицы пользователей
+     * Получение списка активных подразделений
      */
     async getActiveDepartments() {
         try {
@@ -140,7 +124,6 @@ class DashboardFetcher {
                 .map(r => r.divisionId)
                 .filter(id => id && id !== 'all' && !isNaN(parseInt(id, 10)));
 
-            // Если указан дефолтный ID в окружении, добавляем его
             if (process.env.DASHBOARD_DEPARTMENT_ID && !depts.includes(process.env.DASHBOARD_DEPARTMENT_ID)) {
                 depts.push(process.env.DASHBOARD_DEPARTMENT_ID);
             }
@@ -153,34 +136,41 @@ class DashboardFetcher {
     }
 
     /**
-     * Основная логика загрузки и сохранения
+     * Основная логика загрузки и сохранения (Параллельная версия)
      */
     async fetchAndStore() {
         const departments = await this.getActiveDepartments();
-        logger.info(`[${new Date().toISOString()}] Запуск цикла обновления для ${departments.length} подразделений (Сегодня и Вчера)...`);
+        logger.info(`[FETCHER OPTIMIZED] Starting parallel update for ${departments.length} departments...`);
 
+        const tasks = [];
         for (const deptId of departments) {
-            // Загружаем данные за сегодня (0) и за вчера (-1)
-            await this.fetchForDepartment(deptId, 0);
-            await this.fetchForDepartment(deptId, -1);
+            // Запускаем задачи параллельно для Сегодня (0) и Вчера (-1)
+            tasks.push(this.processDepartmentSafe(deptId, 0));
+            tasks.push(this.processDepartmentSafe(deptId, -1));
+        }
+
+        const results = await Promise.allSettled(tasks);
+
+        const successCount = results.filter(r => r.status === 'fulfilled' && r.value === true).length;
+        const failCount = results.filter(r => r.status === 'rejected' || r.value === false).length;
+
+        logger.info(`[FETCHER OPTIMIZED] Cycle finished. Success: ${successCount}, Failed: ${failCount}. Total: ${tasks.length}`);
+    }
+
+    /**
+     * Обертка для безопасного вызова
+     */
+    async processDepartmentSafe(deptId, dateShiftDays) {
+        try {
+            await this.fetchForDepartment(deptId, dateShiftDays);
+            return true;
+        } catch (e) {
+            return false;
         }
     }
 
     /**
-     * Получение текущей даты в часовом поясе Киева
-     */
-    getKyivDate() {
-        // Create a date object from the current UTC time
-        const now = new Date();
-        // Convert to Kyiv time string
-        const kyivTimeStr = now.toLocaleString("en-US", {
-            timeZone: "Europe/Kiev"
-        });
-        return new Date(kyivTimeStr);
-    }
-
-    /**
-     * Загрузка данных для конкретного подразделения
+     * Загрузка данных для конкретного подразделения (Транзакционная версия)
      */
     async fetchForDepartment(deptId, dateShiftDays = 0) {
         const startTime = Date.now();
@@ -190,17 +180,17 @@ class DashboardFetcher {
         const targetDate = this.getKyivDate();
         targetDate.setDate(targetDate.getDate() + dateShiftDays);
 
-        const targetDateStr = this.formatDate(targetDate, '').trim(); // "dd.mm.yyyy"
+        const targetDateStr = this.formatDate(targetDate, '').trim();
 
-        logger.info(`[FETCHER V2] Starting fetch for Dept: ${deptId}, Date: ${targetDateStr} (Shift: ${dateShiftDays})`);
+        // logger.debug(`[Task] Dept: ${deptId}, Date: ${targetDateStr}`);
+
+        let client = null;
 
         try {
             const timeBeg = this.formatDate(targetDate, '00:00:00');
             const timeEnd = this.formatDate(targetDate, '23:59:59');
 
-            logger.debug(`  Requesting API: ${timeBeg} - ${timeEnd}`);
-
-            // Подготовка параметров запроса
+            // 1. API Request (ДО транзакции)
             const params = {
                 top: '2000',
                 timeDeliveryBeg: timeBeg,
@@ -210,7 +200,7 @@ class DashboardFetcher {
 
             const response = await axios.get(this.apiUrl, {
                 headers: {
-                    'x-api-key': process.env.EXTERNAL_API_KEY || 'killmetraj_secret_key_2024', // Add API key here just in case axios instance misses it
+                    'x-api-key': process.env.EXTERNAL_API_KEY || 'killmetraj_secret_key_2024',
                     'Accept': 'application/json'
                 },
                 params: params,
@@ -218,46 +208,52 @@ class DashboardFetcher {
             });
             const responseData = response.data;
 
-            // 1. Получение предыдущих заказов для сравнения (из этой же дивизии и за эту же дату)
-            const prevResult = await this.pool.query(
-                'SELECT payload FROM api_dashboard_cache WHERE status_code = 200 AND division_id = $1 AND target_date = $2 ORDER BY created_at DESC LIMIT 1',
+            if (!responseData || !responseData.orders) {
+                logger.warn(`  [Dept: ${deptId}] Empty response or no orders array`);
+                return;
+            }
+
+            // 2. Начало транзакции БД
+            client = await this.pool.connect();
+            await client.query('BEGIN');
+
+            // 3. Получение предыдущих данных (Внутри транзакции)
+            const prevResult = await client.query(
+                'SELECT payload, data_hash FROM api_dashboard_cache WHERE status_code = 200 AND division_id = $1 AND target_date = $2 ORDER BY created_at DESC LIMIT 1',
                 [String(deptId), targetDateStr]
             );
-            const prevPayload = prevResult.rows.length > 0 ? prevResult.rows[0].payload : null;
-            const prevOrders = prevPayload?.orders || [];
-            const ordersMap = new Map(prevOrders.map(o => [o.orderNumber, o]));
 
-            // 2. Отслеживание изменений статуса и слияние данных
-            // Мы должны объединить новые данные с предыдущими, чтобы сохранить завершенные заказы,
-            // которые могут исчезнуть из ответа API (если API возвращает только активные).
+            const lastRecord = prevResult.rows[0];
+            const prevPayload = lastRecord ? lastRecord.payload : null;
+            const lastHash = lastRecord ? lastRecord.data_hash : null;
+
+            const prevOrders = prevPayload?.orders || [];
+
+            // 4. Слияние данных
             const mergedOrdersMap = new Map();
 
-            // Сначала добавляем старые заказы
+            // Добавляем старые заказы
             if (prevOrders && Array.isArray(prevOrders)) {
                 prevOrders.forEach(o => mergedOrdersMap.set(o.orderNumber, o));
             }
 
-            logger.debug(`  [FETCHER V2] Merging: Prev=${prevOrders.length}, New=${responseData.orders.length}`);
+            const historyEntries = [];
 
             if (responseData.orders && Array.isArray(responseData.orders)) {
                 for (const order of responseData.orders) {
-                    const prevOrder = mergedOrdersMap.get(order.orderNumber); // Get from map to reuse existing data if needed
+                    const prevOrder = mergedOrdersMap.get(order.orderNumber);
                     const oldStatus = prevOrder?.status || null;
                     const newStatus = order.status;
 
-                    // Preserve status timings from previous version or init new
+                    // Preserve status timings
                     order.statusTimings = {
                         ...(prevOrder?.statusTimings || {}),
                         ...(order.statusTimings || {})
                     };
 
                     if (oldStatus !== newStatus) {
-                        // Только если есть реальное изменение
                         if (prevOrder) {
-                            await this.pool.query(
-                                'INSERT INTO api_dashboard_status_history (order_number, old_status, new_status) VALUES ($1, $2, $3)',
-                                [order.orderNumber, oldStatus, newStatus]
-                            ).catch(e => logger.error('  Ошибка записи истории:', e.message));
+                            historyEntries.push([order.orderNumber, oldStatus, newStatus]);
                         }
 
                         const nowTimestamp = new Date().toISOString();
@@ -270,80 +266,88 @@ class DashboardFetcher {
                         }
                     }
 
-                    // Add/Update in map
                     mergedOrdersMap.set(order.orderNumber, order);
                 }
             }
 
-            // Создаем итоговый payload с объединенными заказами
+            // 5. Формирование payload
             const mergedPayload = {
                 ...responseData,
                 orders: Array.from(mergedOrdersMap.values())
             };
 
-            logger.info(`  [FETCHER V2] Merge Result: ${mergedPayload.orders.length} orders (accumulated)`);
-
-
-            // Расчет хеша и проверка изменений
-            // Считаем хеш от mergedPayload, так как именно его мы будем сохранять
-            // Важно: нужно убедиться, что порядок ключей/массива стабилен для корректного хеша,
-            // но для простоты пока полагаемся на то, что если данные меняются, хеш изменится.
-            // JSON.stringify не гарантирует порядок ключей, но для массивов порядок важен.
-            // Лучше хешировать сами данные или просто сохранять, если есть changes.
-            // Но мы используем хеш для дедупликации записей в БД.
             const dataHash = this.calculateHash(mergedPayload);
 
-            // Получаем последний хеш именно для этого подразделения и даты
-            const lastHashResult = await this.pool.query(
-                'SELECT data_hash FROM api_dashboard_cache WHERE division_id = $1 AND target_date = $2 ORDER BY created_at DESC LIMIT 1',
-                [String(deptId), targetDateStr]
-            );
-            const lastHash = lastHashResult.rows.length > 0 ? lastHashResult.rows[0].data_hash : null;
-
+            // 6. Проверка хеша
             if (lastHash === dataHash) {
-                logger.debug(`  [Dept: ${deptId}] Данные не изменились (после слияния)`);
+                await client.query('ROLLBACK'); // Откат пустой транзакции
                 this.successfulFetches++;
                 this.retryCount = 0;
                 return;
             }
 
-            // Вставка новых данных в базу с указанием целевой даты
-            await this.pool.query(
+            // 7. Запись истории статусов (Пакетная вставка)
+            if (historyEntries.length > 0) {
+                for (const [orderNumber, oldStatus, newStatus] of historyEntries) {
+                    await client.query(
+                        'INSERT INTO api_dashboard_status_history (order_number, old_status, new_status) VALUES ($1, $2, $3)',
+                        [orderNumber, oldStatus, newStatus]
+                    );
+                }
+                logger.info(`  [Dept: ${deptId}] Recorded ${historyEntries.length} status changes`);
+            }
+
+            // 8. Сохранение кэша
+            await client.query(
                 `INSERT INTO api_dashboard_cache (payload, data_hash, status_code, division_id, target_date)
                  VALUES ($1, $2, $3, $4, $5)`,
                 [mergedPayload, dataHash, 200, String(deptId), targetDateStr]
             );
 
+            await client.query('COMMIT');
+
             this.successfulFetches++;
             this.retryCount = 0;
-
-
             const elapsed = Date.now() - startTime;
-            logger.info(`  [Dept: ${deptId}] Сохранено ${mergedPayload.orders?.length || 0} заказов (${elapsed}мс)`);
+
+            logger.info(`  [Dept: ${deptId}] Saved ${mergedPayload.orders.length} orders (${elapsed}ms). +${historyEntries.length} updates.`);
 
         } catch (error) {
-            let errorDetail = error.message;
-            if (error.response) {
-                errorDetail = `API Error ${error.response.status}: ${JSON.stringify(error.response.data).substring(0, 200)}`;
-            } else if (error.request) {
-                errorDetail = `No response from API: ${error.message}`;
+            if (client) {
+                try { await client.query('ROLLBACK'); } catch (e) { }
             }
 
-            logger.error(`  [Dept: ${deptId}] Ошибка: ${errorDetail}`);
+            let errorDetail = error.message;
+            if (error.response) {
+                errorDetail = `API Error ${error.response.status}: ${JSON.stringify(error.response.data).substring(0, 100)}...`;
+            } else if (error.request) {
+                errorDetail = `No response: ${error.message}`;
+            }
+
+            logger.error(`  [Dept: ${deptId}] Error: ${errorDetail}`);
 
             if (this.retryCount < this.maxRetries) {
                 this.retryCount++;
-                const delay = this.baseBackoff * Math.pow(2, this.retryCount - 1);
-                logger.info(`    Повтор через ${delay}мс...`);
-                setTimeout(() => this.fetchForDepartment(deptId, dateShiftDays), delay);
-            } else {
-                this.retryCount = 0;
             }
+            throw error;
+        } finally {
+            if (client) client.release();
         }
     }
 
     /**
-     * Форматирование даты для API (дд.мм.гггг ЧЧ:ММ:СС)
+     * Получение текущей даты в часовом поясе Киева
+     */
+    getKyivDate() {
+        const now = new Date();
+        const kyivTimeStr = now.toLocaleString("en-US", {
+            timeZone: "Europe/Kiev"
+        });
+        return new Date(kyivTimeStr);
+    }
+
+    /**
+     * Форматирование даты
      */
     formatDate(date, timeStr) {
         const day = String(date.getDate()).padStart(2, '0');
@@ -353,7 +357,7 @@ class DashboardFetcher {
     }
 
     /**
-     * Расчет хеша объекта для дедупликации
+     * Расчет хеша
      */
     calculateHash(obj) {
         const str = JSON.stringify(obj);
@@ -361,7 +365,7 @@ class DashboardFetcher {
     }
 }
 
-// Глобальные обработчики ошибок процесса
+// Глобальные обработчики
 process.on('uncaughtException', (err) => {
     logger.error('КРИТИЧЕСКАЯ ОШИБКА: Неперехваченное исключение в загрузчике:', err);
     process.exit(1);
