@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { User, AuditLog } = require('../models');
 const { rlsContextStore } = require('../utils/context');
+const logger = require('../utils/logger');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRES_IN = '16h'; // Срок действия токена доступа
