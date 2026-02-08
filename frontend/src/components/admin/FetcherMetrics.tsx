@@ -4,6 +4,7 @@ import { clsx } from 'clsx';
 import { toast } from 'react-hot-toast';
 import { useTheme } from '../../contexts/ThemeContext';
 import { authService } from '../../utils/auth/authService';
+import { API_URL } from '../../config/apiConfig';
 
 interface MetricsData {
     success: boolean;
@@ -46,7 +47,6 @@ export const FetcherMetrics: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
-    import { API_URL } from '../../config/apiConfig';
 
     const fetchMetrics = async () => {
         setIsLoading(true);
