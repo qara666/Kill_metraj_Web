@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { API_URL } from '../../config/apiConfig';
 
 // Интерфейс для ответа от API
 export interface FetchDashboardDataResponse {
@@ -14,7 +15,7 @@ export interface FetchDashboardDataRequest {
     divisionId?: string; // Опционально, если админ хочет конкретное подразделение
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
+const API_BASE_URL = `${API_URL}/api/v1`;
 
 export const dashboardApiService = {
     /**
