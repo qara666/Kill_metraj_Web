@@ -45,7 +45,16 @@ class GetDashboardDataQuery {
 
     async execute({ divisionId, user, date }) {
         try {
-            const targetDate = date || new Date().toISOString().split('T')[0];
+            // Standardize targetDate to DD.MM.YYYY for DB lookup consistency
+            let targetDate = date;
+            if (!targetDate) {
+                const now = new Date();
+                const day = String(now.getDate()).padStart(2, '0');
+                const month = String(now.getMonth() + 1).padStart(2, '0');
+                const year = now.getFullYear();
+                targetDate = `${day}.${month}.${year}`;
+            }
+
             logger.info(`CQRS Execute: divisionId=${divisionId}, date=${targetDate}, user=${user?.username}`);
 
             // 1. Try Cache First (for non-admin or specific division)

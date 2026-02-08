@@ -190,121 +190,101 @@ router.post('/dashboard/fetch', async (req, res) => {
         // Конвертируем дату в формат для БД (DD.MM.YYYY)
         const targetDateStr = date.trim();
 
-        // 1. Проверяем кэш в БД
-        const { sequelize } = require('../models');
-        const cachedResults = await sequelize.query(
-            `SELECT * FROM api_dashboard_cache 
-             WHERE status_code = 200 
-             AND target_date = :targetDate 
-             AND division_id = :divisionId
-             ORDER BY created_at DESC LIMIT 1`,
-            {
-                replacements: { targetDate: targetDateStr, divisionId: String(divisionId) },
-                type: sequelize.QueryTypes.SELECT
-            }
-        );
+        // Defined departments for multi-fetch
+        const departmentsToFetch = divisionId === 'all'
+            ? ['100000052', '100000053', '100000001', '100000002']
+            : [divisionId];
 
-        // Если данные есть в кэше - возвращаем
-        if (cachedResults.length > 0) {
-            logger.info(`✅ Cache hit для ${targetDateStr}, divisionId=${divisionId}`);
+        logger.info(`📅 Fetching data for ${departmentsToFetch.length} departments on ${targetDateStr}`);
 
-            let payload = cachedResults[0].payload;
+        const fetchPromises = departmentsToFetch.map(async (divId) => {
+            // 1. Check cache
+            const cachedResults = await sequelize.query(
+                `SELECT * FROM api_dashboard_cache 
+                 WHERE status_code = 200 
+                 AND target_date = :targetDate 
+                 AND division_id = :divisionId
+                 ORDER BY created_at DESC LIMIT 1`,
+                {
+                    replacements: { targetDate: targetDateStr, divisionId: String(divId) },
+                    type: sequelize.QueryTypes.SELECT
+                }
+            );
 
-            // Фильтруем по divisionId если не админ
-            if (user.role !== 'admin' && user.divisionId) {
-                payload = {
-                    ...payload,
-                    orders: (payload.orders || []).filter(o => String(o.departmentId) === String(user.divisionId)),
-                    couriers: (payload.couriers || []).filter(c => String(c.departmentId) === String(user.divisionId))
-                };
+            if (cachedResults.length > 0) {
+                logger.debug(`✅ Cache hit for ${targetDateStr}, divId=${divId}`);
+                return { divId, data: cachedResults[0].payload, cached: true };
             }
 
-            return res.json({
-                success: true,
-                data: payload,
-                cached: true,
-                fetchedAt: cachedResults[0].created_at
+            // 2. Fetch from External API
+            if (!process.env.EXTERNAL_API_KEY) {
+                throw new Error('Внешний API не настроен');
+            }
+
+            const [day, month, year] = targetDateStr.split('.');
+            const timeBeg = `${targetDateStr} 00:00:00`;
+            const timeEnd = `${targetDateStr} 23:59:59`;
+            const apiUrl = process.env.EXTERNAL_API_URL || 'http://app.yaposhka.kh.ua:4999/api/v1/dashboard';
+
+            const params = {
+                top: '2000',
+                timeDeliveryBeg: timeBeg,
+                timeDeliveryEnd: timeEnd,
+                departmentId: divId
+            };
+
+            const response = await axios.get(apiUrl, {
+                headers: {
+                    'x-api-key': process.env.EXTERNAL_API_KEY,
+                    'Accept': 'application/json'
+                },
+                params: params,
+                timeout: 30000
             });
-        }
 
-        // 2. Данных нет - делаем запрос к внешнему API
-        logger.info(`🔄 Cache miss для ${targetDateStr}. Запрос к внешнему API...`);
+            const responseData = response.data;
+            if (!responseData || !responseData.orders) {
+                return { divId, data: null, error: 'Empty response' };
+            }
 
-        if (!process.env.EXTERNAL_API_KEY) {
-            return res.status(503).json({
-                success: false,
-                error: 'Внешний API не настроен. Обратитесь к администратору.'
-            });
-        }
+            // 3. Store in DB
+            const crypto = require('crypto');
+            const dataHash = crypto.createHash('sha256').update(JSON.stringify(responseData)).digest('hex');
 
-        // Парсим дату для формирования временного диапазона
-        const [day, month, year] = targetDateStr.split('.');
-        const timeBeg = `${targetDateStr} 00:00:00`;
-        const timeEnd = `${targetDateStr} 23:59:59`;
+            await sequelize.query(
+                `INSERT INTO api_dashboard_cache (payload, data_hash, status_code, division_id, target_date)
+                 VALUES (:payload, :dataHash, :statusCode, :divisionId, :targetDate)`,
+                {
+                    replacements: {
+                        payload: JSON.stringify(responseData),
+                        dataHash: dataHash,
+                        statusCode: 200,
+                        divisionId: String(divId),
+                        targetDate: targetDateStr
+                    }
+                }
+            );
 
-        const apiUrl = process.env.EXTERNAL_API_URL || 'http://app.yaposhka.kh.ua:4999/api/v1/dashboard';
-
-        const params = {
-            top: '2000',
-            timeDeliveryBeg: timeBeg,
-            timeDeliveryEnd: timeEnd,
-            departmentId: divisionId
-        };
-
-        logger.debug(`API запрос: ${apiUrl}`, params);
-
-        const response = await axios.get(apiUrl, {
-            headers: {
-                'x-api-key': process.env.EXTERNAL_API_KEY,
-                'Accept': 'application/json'
-            },
-            params: params,
-            timeout: 30000 // 30 секунд для пользовательского запроса
+            return { divId, data: responseData, cached: false };
         });
 
-        const responseData = response.data;
+        const results = await Promise.allSettled(fetchPromises);
+        const successfulResults = results
+            .filter(r => r.status === 'fulfilled' && r.value.data)
+            .map(r => r.value);
 
-        if (!responseData || !responseData.orders) {
+        if (successfulResults.length === 0) {
             return res.status(404).json({
                 success: false,
-                error: 'Внешний API вернул пустой ответ'
+                error: 'Данные не найдены ни в одном из отделений'
             });
         }
 
-        // 3. Сохраняем в БД для будущих запросов
-        const crypto = require('crypto');
-        const dataHash = crypto.createHash('sha256').update(JSON.stringify(responseData)).digest('hex');
-
-        await sequelize.query(
-            `INSERT INTO api_dashboard_cache (payload, data_hash, status_code, division_id, target_date)
-             VALUES (:payload, :dataHash, :statusCode, :divisionId, :targetDate)`,
-            {
-                replacements: {
-                    payload: JSON.stringify(responseData),
-                    dataHash: dataHash,
-                    statusCode: 200,
-                    divisionId: String(divisionId),
-                    targetDate: targetDateStr
-                }
-            }
-        );
-
-        logger.info(`💾 Данные за ${targetDateStr} сохранены в кэш. Заказов: ${responseData.orders?.length || 0}`);
-
-        // Фильтруем для не-админов
-        let filteredData = responseData;
-        if (user.role !== 'admin' && user.divisionId) {
-            filteredData = {
-                ...responseData,
-                orders: (responseData.orders || []).filter(o => String(o.departmentId) === String(user.divisionId)),
-                couriers: (responseData.couriers || []).filter(c => String(c.departmentId) === String(user.divisionId))
-            };
-        }
-
+        // Return combined data or just a success message for 'all'
+        // For 'all', the next frontend refresh will trigger the merged GetDashboardDataQuery
         res.json({
             success: true,
-            data: filteredData,
-            cached: false,
+            message: `Обновлены данные для ${successfulResults.length} отделений`,
             fetchedAt: new Date().toISOString()
         });
 
