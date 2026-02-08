@@ -167,28 +167,53 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     }
   }, [contextData?.routes])
 
-  // Создаем курьеров из данных Excel при загрузке
+  // Создаем курьеров из всех доступных данных при загрузке
   useEffect(() => {
+    const courierNames = new Set<string>()
+
+    // 1. Из основного списка курьеров
     if (excelData?.couriers && Array.isArray(excelData.couriers)) {
-      const map = localStorageUtils.getCourierVehicleMap()
-      const couriersFromExcel = excelData.couriers.map((courier: any, index: number) => {
-        const courierName = courier.name || 'Неизвестный курьер'
-        const mappedType = (map[courierName] || courier.vehicleType || 'car') as 'car' | 'motorcycle'
+      excelData.couriers.forEach((c: any) => {
+        if (c.name) courierNames.add(c.name)
+      })
+    }
+
+    // 2. Из списка заказов (могут быть курьеры, которых нет в первом списке)
+    if (excelData?.orders && Array.isArray(excelData.orders)) {
+      excelData.orders.forEach((o: any) => {
+        if (o.courier) {
+          let name = o.courier
+          // Нормализуем ID:0
+          if (name === 'ID:0' || name.startsWith('ID:0')) {
+            name = 'Не назначено'
+          }
+          courierNames.add(name)
+        }
+      })
+    }
+
+    const map = localStorageUtils.getCourierVehicleMap()
+    const couriersList = Array.from(courierNames)
+      .filter(name => name && name !== 'Не назначено' && name !== 'ID:0') // Не показываем виртуальных курьеров в управлении
+      .map((courierName, index) => {
+        const excelInfo = (excelData?.couriers || []).find((c: any) => c.name === courierName)
+        const mappedType = (map[courierName] || excelInfo?.vehicleType || 'car') as 'car' | 'motorcycle'
+
         return {
-          id: `excel_${index}`,
+          id: excelInfo?.id || `derived_${index}`,
           name: courierName,
-          phone: '',
-          email: '',
+          phone: excelInfo?.phone || '',
+          email: excelInfo?.email || '',
           vehicleType: mappedType,
-          location: 'Киев',
-          isActive: true,
+          location: excelInfo?.location || 'Киев',
+          isActive: excelInfo?.isActive !== false,
           orders: calculateCourierOrdersInRoutes(courierName),
-          totalAmount: courier.totalAmount || 0,
+          totalAmount: excelInfo?.totalAmount || 0,
           totalDistance: calculateCourierDistance(courierName)
         }
       })
-      setCouriers(couriersFromExcel)
-    }
+
+    setCouriers(couriersList)
   }, [excelData, calculateCourierDistance, calculateCourierOrdersInRoutes])
 
   // Обновляем расстояния и заказы курьеров при изменении маршрутов

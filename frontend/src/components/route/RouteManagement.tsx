@@ -9,6 +9,7 @@ import {
   ClockIcon,
   MapPinIcon,
   CheckCircleIcon,
+  CheckBadgeIcon,
   ChevronUpIcon,
   ChevronDownIcon,
   PencilIcon,
@@ -56,8 +57,10 @@ interface Order {
   isSelected?: boolean
   routeOrder?: number
   plannedTime?: string
-  paymentMethod?: string // Добавляем поле для способа оплаты
-  manualGroupId?: string // Phase 4.7
+  paymentMethod?: string
+  manualGroupId?: string
+  status?: string
+  raw?: any
 }
 
 interface Route {
@@ -106,7 +109,7 @@ const OrderItem = memo(({
         e.dataTransfer.effectAllowed = 'move';
       }}
       className={clsx(
-        'p-4 rounded-2xl border-2 transition-all duration-300 ease-in-out transform',
+        'p-4 rounded-2xl border-2 transition-all duration-300 ease-in-out transform relative overflow-hidden',
         'hover:shadow-lg active:scale-[0.98]',
         isSelected
           ? isDark
@@ -121,16 +124,39 @@ const OrderItem = memo(({
               : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-blue-200 cursor-pointer shadow-sm hover:shadow-md'
       )}
     >
+      {/* Aging Background for "Собран" orders */}
+      {order.status === 'Собран' && !isInRoute && !isSelected && (() => {
+        const assembledAt = order.raw?.statusTimings?.assembledAt;
+        if (!assembledAt) return null;
+        const waitMs = Date.now() - new Date(assembledAt).getTime();
+        const waitMin = Math.floor(waitMs / 60000);
+
+        if (waitMin >= 30) return <div className="absolute inset-0 bg-red-500/5 animate-pulse pointer-events-none" />;
+        if (waitMin >= 15) return <div className="absolute inset-0 bg-yellow-500/5 pointer-events-none" />;
+        return null;
+      })()}
+
       <div className="flex items-start gap-4">
         {/* Selection Index */}
-        {(isSelected || isInRoute) && (
+        {(isSelected || isInRoute || order.status === 'Собран' || order.status === 'Доставляется' || order.status === 'Исполнен') && (
           <div className={clsx(
             'flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-black transition-all',
             isSelected
               ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-              : 'bg-gray-500/20 text-gray-500'
+              : order.status === 'Исполнен'
+                ? 'bg-green-500 text-white'
+                : order.status === 'Доставляется'
+                  ? 'bg-orange-500 text-white'
+                  : order.status === 'Собран'
+                    ? 'bg-blue-500 text-white animate-bounce-slow'
+                    : 'bg-gray-500/20 text-gray-500'
           )}>
-            {isSelected ? selectionOrder : <CheckCircleIcon className="w-5 h-5" />}
+            {isSelected ? selectionOrder : (
+              order.status === 'Исполнен' ? <CheckCircleIcon className="w-5 h-5" /> :
+                order.status === 'Доставляется' ? <TruckIcon className="w-5 h-5" /> :
+                  order.status === 'Собран' ? <InboxIcon className="w-5 h-5" /> :
+                    <CheckCircleIcon className="w-5 h-5" />
+            )}
           </div>
         )}
 
@@ -212,6 +238,17 @@ const OrderItem = memo(({
               )}>
                 <MapIcon className="w-3 h-3" />
                 {(order as any).geoMeta.zoneName}
+              </span>
+            )}
+            {order.status && (
+              <span className={clsx(
+                'px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-widest',
+                order.status === 'Исполнен' ? 'bg-green-500/20 text-green-500' :
+                  order.status === 'Доставляется' ? 'bg-orange-500/20 text-orange-500' :
+                    order.status === 'Собран' ? 'bg-blue-500/20 text-blue-500' :
+                      'bg-gray-500/10 text-gray-500'
+              )}>
+                {order.status}
               </span>
             )}
           </div>
@@ -460,9 +497,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
     excelData.orders.forEach((order: any) => {
       if (order.courier && order.address) {
-        let courierName = order.courier
+        let courierName = order.courier || 'Не назначено'
         // Force rename if it slipped through
-        if (courierName === 'ID:0' || courierName.startsWith('ID:0')) {
+        if (courierName === 'ID:0' || courierName.startsWith('ID:0') || !courierName) {
           courierName = 'Не назначено'
         }
 
@@ -496,18 +533,38 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
       // Собираем ID всех заказов, которые уже в маршрутах
       ; (excelData?.routes || []).forEach((route: Route) => {
-        if (route.courier === courierName) {
-          route.orders.forEach((order: Order) => {
-            ordersInRoutes.add(order.id)
-          })
-        }
+        route.orders.forEach((order: Order) => {
+          ordersInRoutes.add(order.id)
+        })
       })
 
-    // Возвращаем количество заказов, которые НЕ в маршрутах
-    return allOrders.filter(order => !ordersInRoutes.has(order.id)).length
+    // Возвращаем количество заказов, которые НЕ в маршрутах и НЕ исполнены
+    return allOrders.filter(order => !ordersInRoutes.has(order.id) && order.status !== 'Исполнен').length
   }
 
-  const couriers = Object.keys(courierOrders)
+  // Объединяем курьеров из всех источников: из заказов и из общего списка курьеров (если есть)
+  const couriers = useMemo(() => {
+    const courierNames = new Set<string>()
+
+    // Из уже сгруппированных по заказам
+    Object.keys(courierOrders).forEach(name => courierNames.add(name))
+
+    // Из основного списка курьеров в excelData (чтобы видеть даже тех, у кого нет заказов)
+    if (excelData?.couriers && Array.isArray(excelData.couriers)) {
+      excelData.couriers.forEach((c: any) => {
+        let name = c.name
+        if (name) {
+          // Нормализуем ID:0 в Не назначено
+          if (name === 'ID:0' || name.startsWith('ID:0')) {
+            name = 'Не назначено'
+          }
+          courierNames.add(name)
+        }
+      })
+    }
+
+    return Array.from(courierNames)
+  }, [courierOrders, excelData?.couriers])
 
   // Определяем тип транспорта курьера
   const getCourierVehicleType = (courierName: string) => {
@@ -635,7 +692,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     const seen = new Set<string>()
     all = all.filter(o => (seen.has(o.id) ? false : (seen.add(o.id), true)))
 
-    return all.filter(order => !isOrderInExistingRoute(order.id))
+    return all.filter(order => !isOrderInExistingRoute(order.id) && order.status !== 'Исполнен')
   }, [selectedCourier, courierOrders, orderSearchTerm, excelData?.routes])
 
   const ordersInRoutes = useMemo(() => {
@@ -841,12 +898,24 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       createdAt: Date.now()
     }
 
-    // Добавляем новый маршрут в список маршрутов (функциональный апдейт во избежание гонок состояний)
-    updateExcelData((prev: any) => ({
-      ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
-      routes: [...(prev?.routes || []), newRoute],
-      orders: (prev?.orders || [])
-    }))
+    // Добавляем новый маршрут и синхронизируем курьера в списке всех заказов
+    updateExcelData((prev: any) => {
+      const currentOrders = prev?.orders || []
+      const updatedOrders = currentOrders.map((order: any) => {
+        // Если ID заказа в списке создаваемого маршрута, обновляем его курьера
+        const isAssignedToThisRoute = selectedOrdersList.some(so => String(so.id) === String(order.id))
+        if (isAssignedToThisRoute) {
+          return { ...order, courier: courier }
+        }
+        return order
+      })
+
+      return {
+        ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
+        routes: [...(prev?.routes || []), newRoute],
+        orders: updatedOrders
+      }
+    })
 
     // Сбрасываем выбор заказов и порядок
     setSelectedOrders(new Set())
@@ -1561,6 +1630,25 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     }
   }
 
+  const clearFinishedRoutes = () => {
+    updateExcelData((prev: any) => {
+      const routes = prev?.routes || [];
+      const activeRoutes = routes.filter((r: Route) => {
+        if (!r.orders || r.orders.length === 0) return true;
+        // Маршрут считается завершенным, если ВСЕ его заказы в статусе 'Исполнен'
+        return !r.orders.every(o => o.status === 'Исполнен');
+      });
+
+      if (activeRoutes.length === routes.length) {
+        toast.error('Нет завершенных маршрутов для очистки');
+        return prev;
+      }
+
+      toast.success(`Очищено маршрутов: ${routes.length - activeRoutes.length}`);
+      return { ...prev, routes: activeRoutes };
+    });
+  }
+
   const openRouteInGoogleMaps = async (route: Route) => {
     if (route.orders.length === 0) {
       toast.error('Нет точек для маршрута')
@@ -2055,17 +2143,30 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
               <div className="flex items-center gap-4">
                 {(excelData?.routes?.length ?? 0) > 0 && (
-                  <button
-                    onClick={clearAllRoutes}
-                    className={clsx(
-                      'px-6 py-3 rounded-xl text-sm font-black uppercase tracking-widest transition-all border-2',
-                      isDark
-                        ? 'border-red-500/30 text-red-400 hover:bg-red-500/10'
-                        : 'border-red-100 text-red-600 hover:bg-red-50 hover:border-red-200 shadow-sm'
-                    )}
-                  >
-                    Очистить все
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={clearFinishedRoutes}
+                      className={clsx(
+                        'px-6 py-3 rounded-xl text-sm font-black uppercase tracking-widest transition-all border-2',
+                        isDark
+                          ? 'border-green-500/30 text-green-400 hover:bg-green-500/10'
+                          : 'border-green-100 text-green-600 hover:bg-green-50 hover:border-green-200 shadow-sm'
+                      )}
+                    >
+                      Очистить завершенные
+                    </button>
+                    <button
+                      onClick={clearAllRoutes}
+                      className={clsx(
+                        'px-6 py-3 rounded-xl text-sm font-black uppercase tracking-widest transition-all border-2',
+                        isDark
+                          ? 'border-red-500/30 text-red-400 hover:bg-red-500/10'
+                          : 'border-red-100 text-red-600 hover:bg-red-50 hover:border-red-200 shadow-sm'
+                      )}
+                    >
+                      Очистить все
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -2128,6 +2229,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                               )}>
                                 {courierVehicle === 'car' ? 'Car' : 'Moto'}
                               </span>
+                              {route.orders.every(o => o.status === 'Исполнен') && (
+                                <span className="bg-green-500 text-white text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-widest flex items-center gap-1">
+                                  <CheckBadgeIcon className="w-3 h-3" />
+                                  DONE
+                                </span>
+                              )}
                             </div>
                             <p className={clsx(
                               'text-sm font-bold opacity-50 uppercase tracking-widest',

@@ -259,10 +259,27 @@ class DashboardFetcher {
             const historyEntries = [];
 
             if (responseData.orders && Array.isArray(responseData.orders)) {
+                // Вспомогательная функция для чистки времени
+                const isTimeEmpty = (t) => {
+                    if (!t) return true;
+                    const s = String(t).trim();
+                    return s === '00:00' || s === '00:00:00' || s === '0:00' || s === '';
+                };
+
                 for (const order of responseData.orders) {
                     const prevOrder = mergedOrdersMap.get(order.orderNumber);
                     const oldStatus = prevOrder?.status || null;
                     const newStatus = order.status;
+
+                    // --- NORMALIZATION: deliverBy <=> plannedTime ---
+                    // Если deliverBy пусто, но есть plannedTime — берем его как дедлайн
+                    if (isTimeEmpty(order.deliverBy) && !isTimeEmpty(order.plannedTime)) {
+                        order.deliverBy = order.plannedTime;
+                    }
+                    // И наоборот, для обратной совместимости старых компонентов
+                    if (isTimeEmpty(order.plannedTime) && !isTimeEmpty(order.deliverBy)) {
+                        order.plannedTime = order.deliverBy;
+                    }
 
                     // Preserve status timings
                     order.statusTimings = {

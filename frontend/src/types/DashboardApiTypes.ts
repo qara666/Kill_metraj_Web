@@ -17,6 +17,10 @@ export interface DashboardOrderResponse {
     orderType: string;             // Тип заказа (Доставка, Самовывоз и т.д.)
     creationDate: string;          // Дата создания (формат "dd.mm.yyyy HH:MM")
     totalTime: string;             // Общее время (например "1ч. 12мин.")
+    statusTimings?: {
+        assembledAt?: string;      // ISO string
+        deliveringAt?: string;     // ISO string
+    };
 }
 
 export interface DashboardCourierResponse {

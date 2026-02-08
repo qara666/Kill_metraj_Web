@@ -117,7 +117,11 @@ export const transformDashboardData = (
  */
 const transformDashboardOrder = (swaggerOrder: DashboardOrderResponse, baseDate: string, index: number): Order => {
     // Вспомогательная функция для проверки на "пустое" или "нулевое" время
-    const isTimeEmpty = (t?: string) => !t || t === '00:00' || t === '00:00:00';
+    const isTimeEmpty = (t?: string) => {
+        if (!t) return true;
+        const trimmed = t.trim();
+        return trimmed === '00:00' || trimmed === '00:00:00' || trimmed === '0:00' || trimmed === '';
+    };
 
     // Парсинг времени готовности на кухне
     const readyAtSource = parseTimeToTimestamp(baseDate, swaggerOrder.kitchenTime);
@@ -142,12 +146,24 @@ const transformDashboardOrder = (swaggerOrder: DashboardOrderResponse, baseDate:
         deadlineStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     }
 
+    // FINAL FAIL-SAFE: Если в итоге получилось "00:00", заменяем на "Без времени"
+    if (deadlineStr === '00:00' || deadlineStr === '00:00:00') {
+        deadlineStr = 'Без времени';
+    }
+
+    // Извлечение времени перехода в доставку (Phase 4.4)
+    let handoverAt = null;
+    if (swaggerOrder.statusTimings?.deliveringAt) {
+        handoverAt = new Date(swaggerOrder.statusTimings.deliveringAt).getTime();
+    }
+
     return {
         idx: index,
         address: swaggerOrder.address,
         orderNumber: swaggerOrder.orderNumber,
         readyAtSource,
         deadlineAt,
+        handoverAt, // Добавлено (Phase 4.4)
         plannedTime: deadlineStr || 'Без времени',
         deliveryZone: swaggerOrder.deliveryZone,
         courier: (swaggerOrder.courier && (swaggerOrder.courier === 'ID:0' || swaggerOrder.courier.startsWith('ID:0'))) ? 'Не назначено' : swaggerOrder.courier,
