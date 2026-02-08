@@ -185,10 +185,16 @@ export const getPlannedTime = (o: any, baseDate?: Date): number | null => {
 export const getArrivalTime = (o: any, baseDate?: Date): number | null => {
     if (!o) return null;
 
-    // Phase 4.4: Если заказ уже в доставке, главным временем "поступления" для группировки 
-    // считается время его передачи курьеру (handoverAt).
-    if (o.status === 'Доставляется' && o.handoverAt) {
-        return o.handoverAt;
+    // Phase 4.4: Если заказ уже в доставке, главным временем "поступления" для группировки
+    // считается время его передачи курьеру.
+    if (o.status === 'Доставляется' || o.status === 'В пути') {
+        if (o.statusTimings?.deliveringAt) return o.statusTimings.deliveringAt;
+        if (o.handoverAt) return o.handoverAt;
+    }
+
+    // Для собранных заказов используем время сборки
+    if (o.status === 'Собран') {
+        if (o.statusTimings?.assembledAt) return o.statusTimings.assembledAt;
     }
 
     if (o.createdAt && typeof o.createdAt === 'number') return o.createdAt;
