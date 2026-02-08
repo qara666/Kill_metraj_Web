@@ -1,9 +1,81 @@
 const { authenticateToken, authorize, auditLog } = require('../middleware/auth');
+const { DashboardState } = require('../models'); // Added import
 
 const axios = require('axios');
 const express = require('express');
 const router = express.Router();
 const logger = require('../utils/logger');
+
+// ... (existing code)
+
+/**
+ * GET /api/v1/state
+ * Получение сохраненного состояния дашборда для текущего пользователя
+ */
+router.get('/state', authenticateToken, async (req, res) => {
+    try {
+        const state = await DashboardState.findOne({
+            where: { userId: req.user.id }
+        });
+
+        if (!state) {
+            return res.json({
+                success: true,
+                data: null
+            });
+        }
+
+        res.json({
+            success: true,
+            data: state.data
+        });
+    } catch (error) {
+        logger.error('Ошибка получения состояния дашборда', { error: error.message });
+        res.status(500).json({
+            success: false,
+            error: 'Ошибка получения состояния'
+        });
+    }
+});
+
+/**
+ * POST /api/v1/state
+ * Сохранение состояния дашборда для текущего пользователя
+ */
+router.post('/state', authenticateToken, async (req, res) => {
+    try {
+        const { data } = req.body;
+
+        if (!data) {
+            return res.status(400).json({
+                success: false,
+                error: 'Данные отсутствуют'
+            });
+        }
+
+        const [state, created] = await DashboardState.upsert({
+            userId: req.user.id,
+            data: data,
+            lastSavedAt: new Date()
+        }, {
+            returning: true
+        });
+
+        res.json({
+            success: true,
+            message: created ? 'Состояние создано' : 'Состояние обновлено',
+            lastSavedAt: state.lastSavedAt
+        });
+    } catch (error) {
+        logger.error('Ошибка сохранения состояния дашборда', { error: error.message });
+        res.status(500).json({
+            success: false,
+            error: 'Ошибка сохранения состояния',
+            details: error.message
+        });
+    }
+});
+
 
 // Use DASHBOARD_API_URL (base) or extract from EXTERNAL_API_URL (full)
 let DASHBOARD_API_BASE_URL = process.env.DASHBOARD_API_URL;

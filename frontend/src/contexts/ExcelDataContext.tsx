@@ -44,7 +44,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       const loadData = async () => {
         try {
           // 1. Сначала пробуем загрузить с сервера
-          const token = localStorage.getItem('token');
+          const token = localStorage.getItem('km_access_token');
           if (token) {
             try {
               const response = await fetch('/api/v1/state', {
@@ -88,7 +88,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   const saveTimeoutRef = useRef<any>(null);
 
   const saveDataToServer = async (data: ExcelData) => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('km_access_token');
     if (!token) return;
 
     try {
