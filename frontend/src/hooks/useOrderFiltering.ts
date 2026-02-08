@@ -19,7 +19,7 @@ export const useOrderFiltering = (excelData: ProcessedExcelData | null) => {
         deliveryZones: [],
         statuses: [],
         orderTypes: [],
-        excludeCompleted: true,
+        excludeCompleted: false,
         timeRange: { start: null, end: null }
     })
     const [isFiltersExpanded, setIsFiltersExpanded] = useState<boolean>(false)
