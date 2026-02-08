@@ -42,6 +42,7 @@ const adminNavigation = [
   { name: 'Пользователи', href: '/admin/users', icon: UsersIcon },
   { name: 'Настройки пользователей', href: '/admin/presets', icon: AdjustmentsHorizontalIcon },
   { name: 'Логи активности', href: '/admin/logs', icon: DocumentTextIcon },
+  { name: 'Администрирование системы', href: '/admin/system', icon: ShieldCheckIcon },
 ]
 
 export function Layout({ children }: LayoutProps) {

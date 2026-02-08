@@ -18,6 +18,7 @@ import { Profile } from './pages/Profile'
 const AdminUsers = React.lazy(() => import('./pages/admin/Users').then(m => ({ default: m.AdminUsers })))
 const AdminPresets = React.lazy(() => import('./pages/admin/Presets').then(m => ({ default: m.AdminPresets })))
 const AdminLogs = React.lazy(() => import('./pages/admin/Logs').then(m => ({ default: m.AdminLogs })))
+const Administration = React.lazy(() => import('./pages/admin/Administration').then(m => ({ default: m.Administration })))
 
 // Components
 import { Layout } from './components/shared/Layout'
@@ -82,6 +83,14 @@ function App() {
                               element={
                                 <ProtectedRoute requireAdmin>
                                   <AdminLogs />
+                                </ProtectedRoute>
+                              }
+                            />
+                            <Route
+                              path="/admin/system"
+                              element={
+                                <ProtectedRoute requireAdmin>
+                                  <Administration />
                                 </ProtectedRoute>
                               }
                             />
