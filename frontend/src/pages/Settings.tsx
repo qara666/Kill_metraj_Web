@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-hot-toast'
-import { CogIcon, KeyIcon, MapIcon, ShieldCheckIcon, ArrowPathIcon, CloudArrowUpIcon, TrashIcon, MagnifyingGlassIcon, ChartBarIcon } from '@heroicons/react/24/outline'
+import { CogIcon, KeyIcon, MapIcon, ShieldCheckIcon, ArrowPathIcon, CloudArrowUpIcon, TrashIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 import { parseKML } from '../utils/maps/kmlParser'
 import { LoadingSpinner } from '../components/shared/LoadingSpinner'
 import { DashboardSettingsPanel } from '../components/autoplanner/DashboardSettingsPanel'
@@ -14,8 +14,6 @@ import { CityBiasSection } from '../components/zone/CityBiasSection'
 import { CollapsibleSection } from '../components/shared/CollapsibleSection'
 import { KmlPreviewMap } from '../components/zone/KmlPreviewMap'
 import { authService } from '../utils/auth/authService'
-import { AdminDatabaseCleanup } from '../components/admin/AdminDatabaseCleanup'
-import { FetcherMetrics } from '../components/admin/FetcherMetrics'
 
 
 interface SettingsForm {
@@ -650,27 +648,6 @@ export const Settings: React.FC = () => {
             />
           </CollapsibleSection>
 
-          {/* Административные инструменты */}
-          {isAdmin && (
-            <CollapsibleSection
-              isDark={isDark}
-              icon={<TrashIcon className="h-4 w-4" />}
-              title="Административные инструменты (Очистка БД)"
-            >
-              <AdminDatabaseCleanup />
-            </CollapsibleSection>
-          )}
-
-          {/* Метрики Fetcher */}
-          {isAdmin && (
-            <CollapsibleSection
-              isDark={isDark}
-              icon={<ChartBarIcon className="h-4 w-4" />}
-              title="Метрики и Мониторинг Fetcher"
-            >
-              <FetcherMetrics />
-            </CollapsibleSection>
-          )}
 
           {/* Фильтр аномалий маршрута (collapsible) */}
           {isAdmin && (

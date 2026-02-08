@@ -105,64 +105,70 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
     }
   }
 
-  if (!data || !summary) {
-    return null
-  }
-
-  const { orders, couriers, routes, errors, warnings } = data
-
-  // Memoized paginated orders
+  // Memoized paginated orders - MOVED ABOVE EARLY RETURN
   const paginatedOrders = useMemo(() => {
-    if (!orders) return []
-    return orders.slice(ordersPagination.startIndex, ordersPagination.endIndex)
-  }, [orders, ordersPagination.startIndex, ordersPagination.endIndex])
+    if (!data?.orders) return []
+    return data.orders.slice(ordersPagination.startIndex, ordersPagination.endIndex)
+  }, [data?.orders, ordersPagination.startIndex, ordersPagination.endIndex])
 
-  // Enrich couriers with stats
-  const enrichedCouriers = (couriers || []).map((courier: any) => {
-    const courierName = typeof courier === 'string' ? courier : courier.name;
-    const courierOrders = (orders || []).filter((o: any) => o && o.courier === courierName);
-    const courierRoutes = (routes || []).filter((r: any) => r && r.courier === courierName);
-    const totalAmount = courierOrders.reduce((sum: number, o: any) => sum + (o.amount || 0), 0);
-    const count = courierOrders.length;
-    const routesCount = courierRoutes.length;
+  // Enrich couriers with stats - MOVED ABOVE EARLY RETURN
+  const enrichedCouriers = useMemo(() => {
+    const orders = data?.orders || []
+    const couriers = data?.couriers || []
+    const routes = data?.routes || []
 
-    // Calculate zone breakdown using deliveryZone with proper fallback
-    const zoneBreakdown = courierOrders.reduce((acc: Record<string, number>, order: any) => {
-      const zone = order.deliveryZone || order.zone || 'Неизвестно';
-      acc[zone] = (acc[zone] || 0) + 1;
-      return acc;
-    }, {});
+    return couriers.map((courier: any) => {
+      const courierName = typeof courier === 'string' ? courier : courier.name;
+      const courierOrders = orders.filter((o: any) => o && o.courier === courierName);
+      const courierRoutes = routes.filter((r: any) => r && r.courier === courierName);
+      const totalAmount = courierOrders.reduce((sum: number, o: any) => sum + (o.amount || 0), 0);
+      const count = courierOrders.length;
+      const routesCount = courierRoutes.length;
 
-    let zoneLabel = 'Малая загрузка';
-    if (count >= 2 && count <= 4) {
-      zoneLabel = 'Зона 2.5 - 4 заказа';
-    } else if (count > 4 && count < 15) {
-      zoneLabel = `Плановая загрузка (${count})`;
-    } else if (count >= 15) {
-      zoneLabel = `Высокая нагрузка (${count})`;
-    }
+      // Calculate zone breakdown using deliveryZone with proper fallback
+      const zoneBreakdown = courierOrders.reduce((acc: Record<string, number>, order: any) => {
+        const zone = order.deliveryZone || order.zone || 'Неизвестно';
+        acc[zone] = (acc[zone] || 0) + 1;
+        return acc;
+      }, {});
 
-    return {
-      ...(typeof courier === 'string' ? { name: courier } : courier),
-      ordersCount: count,
-      routesCount,
-      totalAmount,
-      zoneLabel,
-      zoneBreakdown,
-      avgAmount: count > 0 ? totalAmount / count : 0,
-      efficiency: routesCount > 0 ? (count / routesCount).toFixed(1) : '—'
-    };
-  });
+      let zoneLabel = 'Малая загрузка';
+      if (count >= 2 && count <= 4) {
+        zoneLabel = 'Зона 2.5 - 4 заказа';
+      } else if (count > 4 && count < 15) {
+        zoneLabel = `Плановая загрузка (${count})`;
+      } else if (count >= 15) {
+        zoneLabel = `Высокая нагрузка (${count})`;
+      }
 
-  // Memoized sorted couriers
+      return {
+        ...(typeof courier === 'string' ? { name: courier } : courier),
+        ordersCount: count,
+        routesCount,
+        totalAmount,
+        zoneLabel,
+        zoneBreakdown,
+        avgAmount: count > 0 ? totalAmount / count : 0,
+        efficiency: routesCount > 0 ? (count / routesCount).toFixed(1) : '—'
+      };
+    });
+  }, [data?.orders, data?.couriers, data?.routes])
+
+  // Memoized sorted couriers - MOVED ABOVE EARLY RETURN
   const sortedCouriers = useMemo(() => {
     return sortCouriers(enrichedCouriers)
   }, [enrichedCouriers, courierSortBy, courierSortOrder])
 
-  // Memoized paginated couriers
+  // Memoized paginated couriers - MOVED ABOVE EARLY RETURN
   const paginatedCouriers = useMemo(() => {
     return sortedCouriers.slice(couriersPagination.startIndex, couriersPagination.endIndex)
   }, [sortedCouriers, couriersPagination.startIndex, couriersPagination.endIndex])
+
+  if (!data || !summary) {
+    return null
+  }
+
+  const { orders, couriers, errors, warnings } = data
 
   const toggleCourierZones = (courierName: string) => {
     const next = new Set(expandedCourierZones);
