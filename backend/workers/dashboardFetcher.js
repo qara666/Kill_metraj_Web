@@ -751,10 +751,18 @@ class DashboardFetcher {
                         logger.info(`[Dept: ${deptId}] Recorded ${historyEntries.length} status changes`);
                     }
 
-                    await client.query(
+                    const insertResult = await client.query(
                         `INSERT INTO api_dashboard_cache (payload, data_hash, status_code, division_id, target_date)
-                         VALUES ($1, $2, $3, $4, $5)`,
+                         VALUES ($1, $2, $3, $4, $5)
+                         RETURNING id`,
                         [mergedPayload, dataHash, 200, String(deptId), targetDateStr]
+                    );
+
+                    const newId = insertResult.rows[0].id;
+
+                    // Notify listeners (simple_server.js) about the update
+                    await client.query(
+                        `NOTIFY dashboard_update, '${JSON.stringify({ id: newId, divisionId: String(deptId) })}'`
                     );
 
                     await client.query('COMMIT');
