@@ -82,7 +82,24 @@ class GetDashboardDataQuery {
                     paymentMethods: [],
                     addresses: [],
                     routes: [],
-                    statistics: { totalOrders: 0, totalAmount: 0 }
+                    errors: [],
+                    warnings: [],
+                    statistics: {
+                        totalOrders: 0,
+                        totalAmount: 0,
+                        averageAmount: 0,
+                        deliveryCount: 0,
+                        pickupCount: 0
+                    },
+                    summary: {
+                        totalRows: 0,
+                        orders: 0,
+                        couriers: 0,
+                        paymentMethods: 0,
+                        errors: [],
+                        successfulGeocoding: 0,
+                        failedGeocoding: 0
+                    }
                 };
 
                 let latestTotalTimestamp = 0;
@@ -102,16 +119,47 @@ class GetDashboardDataQuery {
                         const row = result[0];
                         const payload = row.payload || {};
 
-                        // Merge data
-                        if (payload.orders) mergedPayload.orders.push(...payload.orders);
-                        if (payload.couriers) mergedPayload.couriers.push(...payload.couriers);
-                        if (payload.paymentMethods) mergedPayload.paymentMethods.push(...payload.paymentMethods);
-                        if (payload.addresses) mergedPayload.addresses.push(...payload.addresses);
+                        // Merge data arrays
+                        if (Array.isArray(payload.orders)) mergedPayload.orders.push(...payload.orders);
+                        if (Array.isArray(payload.couriers)) mergedPayload.couriers.push(...payload.couriers);
+                        if (Array.isArray(payload.paymentMethods)) mergedPayload.paymentMethods.push(...payload.paymentMethods);
+                        if (Array.isArray(payload.addresses)) mergedPayload.addresses.push(...payload.addresses);
+                        if (Array.isArray(payload.routes)) mergedPayload.routes.push(...payload.routes);
+                        if (Array.isArray(payload.errors)) mergedPayload.errors.push(...payload.errors);
+                        if (Array.isArray(payload.warnings)) mergedPayload.warnings.push(...payload.warnings);
+
+                        // Accumulate stats if they exist in source payload
+                        if (payload.statistics) {
+                            mergedPayload.statistics.totalOrders += (payload.statistics.totalOrders || 0);
+                            mergedPayload.statistics.totalAmount += (payload.statistics.totalAmount || 0);
+                            mergedPayload.statistics.deliveryCount += (payload.statistics.deliveryCount || 0);
+                            mergedPayload.statistics.pickupCount += (payload.statistics.pickupCount || 0);
+                        } else if (payload.orders) {
+                            // Fallback if statistics missing
+                            mergedPayload.statistics.totalOrders += payload.orders.length;
+                            mergedPayload.statistics.totalAmount += payload.orders.reduce((sum, o) => sum + (o.amount || 0), 0);
+                        }
 
                         const ts = new Date(row.created_at).getTime();
                         if (ts > latestTotalTimestamp) latestTotalTimestamp = ts;
                     }
                 }
+
+                // Finalize statistics
+                if (mergedPayload.statistics.totalOrders > 0) {
+                    mergedPayload.statistics.averageAmount = mergedPayload.statistics.totalAmount / mergedPayload.statistics.totalOrders;
+                }
+
+                // Finalize summary
+                mergedPayload.summary = {
+                    totalRows: mergedPayload.orders.length + mergedPayload.couriers.length,
+                    orders: mergedPayload.orders.length,
+                    couriers: mergedPayload.couriers.length,
+                    paymentMethods: mergedPayload.paymentMethods.length,
+                    errors: mergedPayload.errors,
+                    successfulGeocoding: mergedPayload.orders.filter(o => o.geocoded).length,
+                    failedGeocoding: mergedPayload.orders.filter(o => !o.geocoded).length
+                };
 
                 logger.info(`CQRS: Merged ${mergedPayload.orders.length} orders from ${divisions.length} departments`);
 
