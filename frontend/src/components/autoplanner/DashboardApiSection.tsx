@@ -5,9 +5,11 @@ import { format } from 'date-fns';
 import { ArrowPathIcon, CalendarIcon } from '@heroicons/react/24/outline';
 import { clsx } from 'clsx';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useExcelData } from '../../contexts/ExcelDataContext'; // Added
 
 export const DashboardApiSection: React.FC = () => {
     const { isDark } = useTheme();
+    const { setExcelData } = useExcelData(); // Added
     const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
     const [isLoading, setIsLoading] = useState(false);
     const [isAutoUpdate, setIsAutoUpdate] = useState(false);
@@ -35,24 +37,19 @@ export const DashboardApiSection: React.FC = () => {
             if (response.success && response.data) {
                 const ordersCount = response.data.orders?.length || 0;
 
+                // Update context directly
+                setExcelData(response.data);
+
                 if (!isSilent) {
                     toast.success(`Успешно загружено ${ordersCount} заказов!`, { id: toastId });
-
-                    // Перезагрузка страницы только при ручном запросе
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1500);
                 } else {
                     console.log(`✅ Автообновление успешно: ${ordersCount} заказов`);
-                    // В идеале здесь должно быть уведомление системы данных о новых заказах
-                    // без перезагрузки всей страницы, но для простоты оставим так или 
-                    // можно вызвать перезагрузку если данные реально изменились.
-                    // Для автообновления лучше просто обновить данные в контексте если он есть.
                 }
             } else {
                 throw new Error(response.error || 'Неизвестная ошибка API');
             }
         } catch (error: any) {
+
             console.error('❌ Ошибка загрузки дашборда:', error);
             if (!isSilent) {
                 const errorMessage = error.response?.data?.error || error.message || 'Ошибка загрузки';
