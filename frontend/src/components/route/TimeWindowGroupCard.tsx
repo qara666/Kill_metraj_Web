@@ -101,6 +101,22 @@ export function TimeWindowGroupCard({
                                 {depStatus === 'overdue' ? 'Готов' : formatTimeLabel(group.predictedDepartureAt)}
                             </div>
                         )}
+
+                        {/* Readiness Highlights (Anti-Mess) */}
+                        {(() => {
+                            const allAssembled = group.orders.length > 0 && group.orders.every(o => o.status === 'Собран' || o.status === 'Исполнен');
+                            if (allAssembled) {
+                                return (
+                                    <div className={clsx(
+                                        'px-3 py-1.5 rounded-xl flex items-center gap-2 text-[10px] font-black uppercase tracking-widest bg-green-500 text-white shadow-lg shadow-green-500/20 animate-pulse'
+                                    )}>
+                                        <CheckBadgeIcon className="w-3.5 h-3.5" />
+                                        READY FOR COURIER
+                                    </div>
+                                );
+                            }
+                            return null;
+                        })()}
                     </div>
 
                     <div className="flex items-center gap-2">

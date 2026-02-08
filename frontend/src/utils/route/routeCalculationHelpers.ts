@@ -72,7 +72,7 @@ export function getTimeWindowBounds(
 }
 
 // Константы для группировки
-const PROXIMITY_MINUTES = 20;            // Группируем если прилетели в течение 20 мин
+const PROXIMITY_MINUTES = 10;            // Группируем если прилетели в течение 10 мин
 const MAX_DELIVERY_SPAN_MINUTES = 60;   // Максимальный разброс доставки в одной группе
 
 /**
