@@ -48,26 +48,87 @@ class GetDashboardDataQuery {
             const targetDate = date || new Date().toISOString().split('T')[0];
             logger.info(`CQRS Execute: divisionId=${divisionId}, date=${targetDate}, user=${user?.username}`);
 
-            // 1. Пытка получить из кэша
-            if (!date) {
+            // 1. Try Cache First (for non-admin or specific division)
+            if (!date && divisionId !== 'all') {
                 try {
                     const cached = await cacheService.getDashboardData(divisionId);
                     if (cached) {
-                        logger.info(`CQRS: Каш-хит для ${divisionId}`);
+                        logger.info(`CQRS: Cache Hit for ${divisionId}`);
                         return { ...cached, cached: true };
                     }
                 } catch (cacheErr) {
-                    logger.error('CQRS: Ошибка при чтении кэша', { error: cacheErr.message });
+                    logger.error('CQRS: Cache Read Error', { error: cacheErr.message });
                 }
             }
 
-            // 2. Запрос в БД с ретраями
-            logger.debug(`CQRS: Запрос к БД за ${targetDate}`);
+            // 2. Admin Logic: Merge all departments
+            if (divisionId === 'all') {
+                logger.info('CQRS: Admin request - merging all departments');
+
+                // Get unique divisions
+                const divisions = await sequelize.query(
+                    'SELECT DISTINCT division_id FROM api_dashboard_cache WHERE status_code = 200 AND target_date = :targetDate',
+                    { replacements: { targetDate }, type: sequelize.QueryTypes.SELECT }
+                );
+
+                if (divisions.length === 0) {
+                    logger.warn(`CQRS: No data for any department on ${targetDate}`);
+                    return null;
+                }
+
+                const mergedPayload = {
+                    orders: [],
+                    couriers: [],
+                    paymentMethods: [],
+                    addresses: [],
+                    routes: [],
+                    statistics: { totalOrders: 0, totalAmount: 0 }
+                };
+
+                let latestTotalTimestamp = 0;
+
+                for (const divRow of divisions) {
+                    const divId = divRow.division_id;
+                    const result = await sequelize.query(
+                        `SELECT * FROM api_dashboard_cache 
+                         WHERE status_code = 200 
+                         AND target_date = :targetDate 
+                         AND division_id = :divId
+                         ORDER BY created_at DESC LIMIT 1`,
+                        { replacements: { targetDate, divId }, type: sequelize.QueryTypes.SELECT }
+                    );
+
+                    if (result.length > 0) {
+                        const row = result[0];
+                        const payload = row.payload || {};
+
+                        // Merge data
+                        if (payload.orders) mergedPayload.orders.push(...payload.orders);
+                        if (payload.couriers) mergedPayload.couriers.push(...payload.couriers);
+                        if (payload.paymentMethods) mergedPayload.paymentMethods.push(...payload.paymentMethods);
+                        if (payload.addresses) mergedPayload.addresses.push(...payload.addresses);
+
+                        const ts = new Date(row.created_at).getTime();
+                        if (ts > latestTotalTimestamp) latestTotalTimestamp = ts;
+                    }
+                }
+
+                logger.info(`CQRS: Merged ${mergedPayload.orders.length} orders from ${divisions.length} departments`);
+
+                return {
+                    payload: mergedPayload,
+                    created_at: new Date(latestTotalTimestamp).toISOString(),
+                    cached: false,
+                    status_code: 200
+                };
+            }
+
+            // 3. Division Logic: Single department query
             const results = await this.withRetry(() => sequelize.query(
                 `SELECT * FROM api_dashboard_cache 
                  WHERE status_code = 200 
                  AND target_date = :targetDate 
-                 AND (division_id = :divisionId OR :divisionId = 'all')
+                 AND division_id = :divisionId
                  ORDER BY created_at DESC LIMIT 1`,
                 {
                     replacements: { targetDate, divisionId: String(divisionId) },
@@ -76,23 +137,12 @@ class GetDashboardDataQuery {
             ));
 
             if (results.length === 0) {
-                if (!date) {
-                    logger.debug('CQRS: Записей за дату нет, ищем последнюю доступную');
-                    const fallbackResults = await this.withRetry(() => sequelize.query(
-                        'SELECT * FROM api_dashboard_cache WHERE status_code = 200 ORDER BY created_at DESC LIMIT 1',
-                        { type: sequelize.QueryTypes.SELECT }
-                    ));
-
-                    if (fallbackResults.length === 0) {
-                        logger.warn('CQRS: В БД нет никаких данных дашборда');
-                        return null;
-                    }
-                    return await this.processPayload(fallbackResults[0], user, divisionId);
-                }
+                logger.warn(`CQRS: No data for department ${divisionId} on ${targetDate}`);
                 return null;
             }
 
             return await this.processPayload(results[0], user, divisionId);
+
         } catch (error) {
             logger.error('CQRS CRITICAL ERROR:', {
                 message: error.message,
@@ -111,21 +161,25 @@ class GetDashboardDataQuery {
         let payload = row.payload;
         const createdAt = row.created_at;
 
-        // 1. Filter by divisionId if not admin
+        // Ensure data is structured
+        if (!payload) payload = { orders: [], couriers: [] };
+
+        // 1. Filter by divisionId if not admin (Extra layer of security)
         if (user.role !== 'admin' && user.divisionId) {
             payload = {
                 ...payload,
-                orders: (payload.orders || []).filter(o => String(o.departmentId) === String(user.divisionId)),
-                couriers: (payload.couriers || []).filter(c => String(c.departmentId) === String(user.divisionId))
+                orders: (payload.orders || []).filter(o => String(o.departmentId || o.divisionId) === String(user.divisionId)),
+                couriers: (payload.couriers || []).filter(c => String(c.departmentId || c.divisionId) === String(user.divisionId))
             };
         }
 
-        // 2. Store filtered data in Redis cache for future requests
-        // Note: We use divisionId as part of the key in CacheService
-        await cacheService.setDashboardData(divisionId, {
-            payload: payload,
-            created_at: createdAt
-        }).catch(err => logger.error('Cache Store Error:', err.message));
+        // 2. Store filtered data in cache for future requests
+        if (divisionId !== 'all') {
+            await cacheService.setDashboardData(divisionId, {
+                payload: payload,
+                created_at: createdAt
+            }).catch(err => logger.error('Cache Store Error:', err.message));
+        }
 
         return {
             payload: payload,

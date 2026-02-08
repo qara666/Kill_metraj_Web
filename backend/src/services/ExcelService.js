@@ -14,9 +14,9 @@ class ExcelService {
     }
   }
 
-  async processExcelFile(buffer) {
+  async processExcelFile(buffer, divisionId = 'all') {
     this.debugLogs = [];
-    this.addDebugLog('Начало обработки Excel файла');
+    this.addDebugLog(`Начало обработки Excel файла. Целевое подразделение: ${divisionId}`);
 
     try {
       const workbook = XLSX.read(buffer, {
@@ -65,7 +65,7 @@ class ExcelService {
         this.addDebugLog(`Обработка листа: ${sheetName}`);
 
         const sheet = workbook.Sheets[sheetName];
-        const sheetData = this.processSheet(sheet, sheetName);
+        const sheetData = this.processSheet(sheet, sheetName, divisionId);
 
         result.orders.push(...sheetData.orders);
         result.couriers.push(...sheetData.couriers);
@@ -158,7 +158,8 @@ class ExcelService {
     }
   }
 
-  processSheet(sheet, sheetName) {
+  processSheet(sheet, sheetName, divisionId) {
+    this.addDebugLog(`Обработка листа "${sheetName}" для подразделения ${divisionId}`);
     this.addDebugLog(`Обработка листа "${sheetName}"`);
 
     // Читаем данные из листа
@@ -268,11 +269,11 @@ class ExcelService {
         });
 
         if (!row[headerMap.address] || !row[headerMap.orderNumber]) {
-          this.addDebugLog(`Пропуск строки ${rowNumber} - нет адреса или номера заказа`);
+          this.addDebugLog(`Пропуск строки ${rowNumber} - нет адреса или номера заказа. Адрес: ${row[headerMap.address]}, Номер: ${row[headerMap.orderNumber]}`);
           return;
         }
 
-        const order = this.processOrderRow(row, headerMap, rowNumber);
+        const order = this.processOrderRow(row, headerMap, rowNumber, divisionId);
 
         if (order) {
           orders.push(order);
@@ -442,10 +443,11 @@ class ExcelService {
     return headerMap;
   }
 
-  processOrderRow(row, headerMap, rowNumber) {
-    this.addDebugLog(`Обработка строки ${rowNumber}`, {
+  processOrderRow(row, headerMap, rowNumber, divisionId) {
+    this.addDebugLog(`Обработка строки данных ${rowNumber}`, {
       row,
-      headerMap
+      headerMap,
+      divisionId
     });
 
     // Проверяем обязательные поля
@@ -516,6 +518,7 @@ class ExcelService {
       geocoded: false,
       rowNumber,
       // Дополнительные поля для совместимости
+      departmentId: divisionId !== 'all' ? String(divisionId) : (row[headerMap.departmentId] || row[headerMap.divisionId] || ''),
       phone: row[headerMap.phone]?.toString().trim() || '',
       customerName: row[headerMap.customerName]?.toString().trim() || '',
       amount: amount,

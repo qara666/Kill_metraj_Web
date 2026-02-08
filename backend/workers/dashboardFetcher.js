@@ -713,6 +713,9 @@ class DashboardFetcher {
                                 }
                             }
 
+                            // CRITICAL FIX: Ensure departmentId is set for filtering
+                            order.departmentId = order.departmentId || deptId;
+
                             mergedOrdersMap.set(order.orderNumber, order);
                         }
                     }

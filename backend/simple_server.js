@@ -215,7 +215,8 @@ app.post('/api/upload/excel', authenticateToken, uploadLimiter, upload.single('f
 
     logger.info(`Получен файл: ${req.file.originalname}, размер: ${req.file.size} байт`);
 
-    const result = await excelService.processExcelFile(req.file.buffer);
+    const divisionId = req.user?.divisionId || 'all';
+    const result = await excelService.processExcelFile(req.file.buffer, divisionId);
 
     logger.info(`Результат: успех=${result.success}, заказов=${result.data?.orders?.length || 0}`);
 
@@ -592,50 +593,43 @@ async function setupDashboardListener() {
       if (msg.channel === 'dashboard_update') {
         try {
           const notification = JSON.parse(msg.payload);
-          logger.info('Получено уведомление об обновлении дашборда', { id: notification.id });
+          const divisionId = notification.divisionId;
+          logger.info('Получено уведомление об обновлении дашборда', { id: notification.id, divisionId });
 
           // Сброс кэша при обновлении данных
           await cacheService.invalidateAll();
           logger.debug('Кэш сброшен из-за обновления данных');
 
-          // Fetch full data from database
-          const [results] = await sequelize.query(
-            'SELECT * FROM api_dashboard_cache WHERE id = $1',
-            {
-              bind: [notification.id],
-              type: sequelize.QueryTypes.SELECT
+          // Broadcast to all connected WebSocket clients with filtering
+          const sockets = await io.fetchSockets();
+
+          for (const socketInstance of sockets) {
+            const socket = io.sockets.sockets.get(socketInstance.id);
+            if (!socket || !socket.user) continue;
+
+            const user = socket.user;
+
+            // Optimization: Skip broadcast if it's for a different division and user is not admin
+            if (user.role !== 'admin' && user.divisionId && String(user.divisionId) !== String(divisionId)) {
+              continue;
             }
-          );
 
-          if (results) {
-            // Broadcast to all connected WebSocket clients with filtering
-            const sockets = await io.fetchSockets();
+            // Fetch correctly filtered/merged data for this specific user
+            const result = await GetDashboardDataQuery.execute({
+              divisionId: user.role === 'admin' ? 'all' : user.divisionId,
+              user
+            });
 
-            for (const socketInstance of sockets) {
-              const socket = io.sockets.sockets.get(socketInstance.id);
-              if (!socket || !socket.user) continue;
-
-              const user = socket.user;
-              let payload = results.payload;
-
-              // Filter by divisionId
-              if (user.role !== 'admin' && user.divisionId) {
-                payload = {
-                  ...payload,
-                  orders: (payload.orders || []).filter(o => String(o.departmentId) === String(user.divisionId)),
-                  couriers: (payload.couriers || []).filter(c => String(c.departmentId) === String(user.divisionId))
-                };
-              }
-
+            if (result) {
               socket.emit('dashboard:update', {
-                data: payload,
-                timestamp: results.created_at,
-                status: results.status_code
+                data: result.payload,
+                timestamp: result.created_at,
+                status: result.status_code
               });
             }
-
-            logger.info(`Обновление дашборда разослано ${sockets.length} клиентам с фильтрацией`);
           }
+
+          logger.info(`Обновление дашборда обработано для ${sockets.length} клиентов`);
         } catch (error) {
           logger.error('Error handling dashboard notification:', error);
         }
@@ -692,28 +686,17 @@ io.on('connection', (socket) => {
   trackWebSocketConnection('connect', user.divisionId, user.role);
 
   // Send latest dashboard data on connection
-  sequelize.query(
-    'SELECT * FROM api_dashboard_cache WHERE status_code = 200 ORDER BY created_at DESC LIMIT 1',
-    { type: sequelize.QueryTypes.SELECT }
-  ).then(results => {
-    if (results.length > 0) {
-      let payload = results[0].payload;
-
-      // Filter orders by divisionId if user is not admin and has divisionId
-      if (user.role !== 'admin' && user.divisionId) {
-        payload = {
-          ...payload,
-          orders: (payload.orders || []).filter(o => String(o.departmentId) === String(user.divisionId)),
-          couriers: (payload.couriers || []).filter(c => String(c.departmentId) === String(user.divisionId))
-        };
-      }
-
+  GetDashboardDataQuery.execute({
+    divisionId: user.role === 'admin' ? 'all' : user.divisionId,
+    user
+  }).then(result => {
+    if (result) {
       socket.emit('dashboard:update', {
-        data: payload,
-        timestamp: results[0].created_at,
-        status: results[0].status_code
+        data: result.payload,
+        timestamp: result.created_at,
+        status: result.status_code
       });
-      logger.info(`Отправлены отфильтрованные данные дашборда клиенту ${socket.id} (заказов: ${payload.orders?.length || 0})`);
+      logger.info(`Отправлены начальные данные дашборда клиенту ${socket.id} (заказов: ${result.payload.orders?.length || 0})`);
     }
   }).catch(error => {
     logger.error('Ошибка при отправке начальных данных дашборда:', error);
