@@ -1,7 +1,9 @@
 import React, { lazy, Suspense, useCallback, useMemo, useState, useEffect } from 'react'
+import { useDashboardWebSocket } from '../hooks/useDashboardWebSocket'
 import { clsx } from 'clsx'
 import { useTheme } from '../contexts/ThemeContext'
 import { ClockIcon, ChartBarIcon, QuestionMarkCircleIcon } from '@heroicons/react/24/outline'
+
 import { SparklesIcon as SparklesIconSolid } from '@heroicons/react/24/solid'
 import { routeHistory } from '../utils/routes/routeHistory'
 import { Tooltip } from '../components/shared/Tooltip'
@@ -126,6 +128,15 @@ export const AutoPlanner: React.FC = () => {
         hasSeenHelp,
         setHasSeenHelp
     } = state
+
+    // --- WebSocket Hook for Real-time Updates ---
+    useDashboardWebSocket({
+        onDataLoaded: (data) => {
+            console.log('🔄 Dashboard data updated via WebSocket/API');
+            setExcelData(data);
+        },
+        enabled: true
+    });
 
     const trafficState = useTrafficManagement(maxStopsPerRoute, maxRouteDurationMin, maxRouteDistanceKm)
     const {

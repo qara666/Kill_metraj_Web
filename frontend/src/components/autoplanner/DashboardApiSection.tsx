@@ -5,14 +5,18 @@ import { format } from 'date-fns';
 import { ArrowPathIcon, CalendarIcon } from '@heroicons/react/24/outline';
 import { clsx } from 'clsx';
 import { useTheme } from '../../contexts/ThemeContext';
-import { useExcelData } from '../../contexts/ExcelDataContext'; // Added
+import { useExcelData } from '../../contexts/ExcelDataContext';
+import { useAutoPlannerStore } from '../../stores/useAutoPlannerStore'; // Import Store
 
 export const DashboardApiSection: React.FC = () => {
     const { isDark } = useTheme();
-    const { setExcelData } = useExcelData(); // Added
+    const { setExcelData } = useExcelData();
     const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
     const [isLoading, setIsLoading] = useState(false);
-    const [isAutoUpdate, setIsAutoUpdate] = useState(false);
+
+    // Use global store for auto-update state
+    const apiAutoRefreshEnabled = useAutoPlannerStore(s => s.apiAutoRefreshEnabled);
+    const setApiAutoRefreshEnabled = useAutoPlannerStore(s => s.setApiAutoRefreshEnabled);
 
     const handleFetchData = async (isSilent = false) => {
         if (!selectedDate) {
@@ -68,29 +72,15 @@ export const DashboardApiSection: React.FC = () => {
         }
     };
 
-    // Эффект для автоматического обновления
-    React.useEffect(() => {
-        let interval: NodeJS.Timeout | null = null;
-
-        if (isAutoUpdate) {
-            const today = format(new Date(), 'yyyy-MM-dd');
-            // Проверяем, что выбрана сегодняшняя дата
-            if (selectedDate === today) {
-                console.log('⏱️ Автообновление включено (интервал 60с)');
-                interval = setInterval(() => {
-                    handleFetchData(true);
-                }, 60000); // Раз в минуту
-            } else {
-                console.warn('⚠️ Автообновление доступно только для текущей даты');
-                setIsAutoUpdate(false);
-                toast.error('Автообновление доступно только за сегодня');
-            }
+    // Toggle handler
+    const handleToggleAutoUpdate = () => {
+        const today = format(new Date(), 'yyyy-MM-dd');
+        if (selectedDate !== today && !apiAutoRefreshEnabled) {
+            toast.error('Автообновление доступно только за сегодня');
+            return;
         }
-
-        return () => {
-            if (interval) clearInterval(interval);
-        };
-    }, [isAutoUpdate, selectedDate]);
+        setApiAutoRefreshEnabled(!apiAutoRefreshEnabled);
+    };
 
     return (
         <div className={clsx(
@@ -128,19 +118,19 @@ export const DashboardApiSection: React.FC = () => {
                             'text-sm font-medium',
                             isDark ? 'text-gray-300' : 'text-gray-700'
                         )}>
-                            Автообновление
+                            Автообновление (WebSocket)
                         </span>
                         <button
-                            onClick={() => setIsAutoUpdate(!isAutoUpdate)}
+                            onClick={handleToggleAutoUpdate}
                             className={clsx(
                                 'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2',
-                                isAutoUpdate ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
+                                apiAutoRefreshEnabled ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
                             )}
                         >
                             <span
                                 className={clsx(
                                     'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
-                                    isAutoUpdate ? 'translate-x-6' : 'translate-x-1'
+                                    apiAutoRefreshEnabled ? 'translate-x-6' : 'translate-x-1'
                                 )}
                             />
                         </button>
