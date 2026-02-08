@@ -472,14 +472,27 @@ class DashboardFetcher {
                 .map(r => r.divisionId)
                 .filter(id => id && id !== 'all' && !isNaN(parseInt(id, 10)));
 
+            // Always ensure the default department is included
+            const defaultDept = process.env.DASHBOARD_DEPARTMENT_ID || '100000052';
+            if (!depts.includes(defaultDept)) {
+                logger.info(`Adding default department ${defaultDept} to fetch list`);
+                depts.push(defaultDept);
+            }
+
+            // Also add any explicitly configured department
             if (process.env.DASHBOARD_DEPARTMENT_ID && !depts.includes(process.env.DASHBOARD_DEPARTMENT_ID)) {
                 depts.push(process.env.DASHBOARD_DEPARTMENT_ID);
             }
 
-            return depts.length > 0 ? depts : ['100000052'];
+            const finalDepts = depts.length > 0 ? depts : [defaultDept];
+            logger.info(`Active departments for fetching: ${finalDepts.join(', ')}`);
+
+            return finalDepts;
         } catch (error) {
             logger.error('Error getting departments:', error.message);
-            return ['100000052'];
+            const fallback = process.env.DASHBOARD_DEPARTMENT_ID || '100000052';
+            logger.warn(`Using fallback department: ${fallback}`);
+            return [fallback];
         }
     }
 
