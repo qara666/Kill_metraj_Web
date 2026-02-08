@@ -52,6 +52,7 @@ export const transformDashboardData = (
         try {
             // CLIENT-SIDE FAIL-SAFE: Verify date and department if possible
             // 1. Date check
+            /* DISABLED: API already filters by date range correctly. Client-side check causes issues with timezone differences or late night orders.
             if (effectiveDate && swaggerOrder.creationDate) {
                 // creationDate is "dd.mm.yyyy HH:MM"
                 // effectiveDate is "dd.mm.yyyy"
@@ -60,6 +61,7 @@ export const transformDashboardData = (
                     return; // Skip wrong date
                 }
             }
+            */
 
             const order = transformDashboardOrder(swaggerOrder, effectiveDate, index);
             orders.push(order);
