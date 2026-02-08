@@ -23,7 +23,7 @@ export const dashboardApiService = {
     async fetchDataForDate(request: FetchDashboardDataRequest): Promise<FetchDashboardDataResponse> {
         try {
             // Получаем токен из localStorage
-            const token = localStorage.getItem('token');
+            const token = localStorage.getItem('km_access_token');
 
             if (!token) {
                 return {
