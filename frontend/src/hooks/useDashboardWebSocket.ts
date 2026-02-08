@@ -48,6 +48,12 @@ export const useDashboardWebSocket = ({
     const lastProcessedTriggerRef = useRef<number | null>(null);
     const intervalRef = useRef<any>(null);
 
+    // Use ref to store latest callback to avoid re-connecting when callback changes
+    const onDataLoadedRef = useRef(onDataLoaded);
+    useEffect(() => {
+        onDataLoadedRef.current = onDataLoaded;
+    }, [onDataLoaded]);
+
     /**
      * Fetch latest data from REST API (fallback or manual trigger)
      */
@@ -105,8 +111,8 @@ export const useDashboardWebSocket = ({
                 setApiSyncStatus('idle');
                 setApiSyncError(null);
 
-                if (onDataLoaded) {
-                    onDataLoaded(result.data);
+                if (onDataLoadedRef.current) {
+                    onDataLoadedRef.current(result.data);
                 }
             } else {
                 throw new Error(result.error || 'Failed to fetch data');
@@ -119,7 +125,6 @@ export const useDashboardWebSocket = ({
             setApiSyncError(errorMessage);
         }
     }, [
-        onDataLoaded,
         setApiLastSyncTime,
         setApiNextSyncTime,
         setApiSyncStatus,
@@ -149,10 +154,10 @@ export const useDashboardWebSocket = ({
         setApiSyncStatus('idle');
         setApiSyncError(null);
 
-        if (onDataLoaded && update.data) {
-            onDataLoaded(update.data);
+        if (onDataLoadedRef.current && update.data) {
+            onDataLoadedRef.current(update.data);
         }
-    }, [onDataLoaded, setApiLastSyncTime, setApiNextSyncTime, setApiSyncStatus, setApiSyncError]);
+    }, [setApiLastSyncTime, setApiNextSyncTime, setApiSyncStatus, setApiSyncError]);
 
     /**
      * Connect to WebSocket server
