@@ -29,6 +29,11 @@ export interface Order {
   status?: string // 'В работе', 'Собран', 'Доставляется', 'Исполнен'
   handoverAt?: number | null // Время перехода в статус 'Доставляется' (Phase 4.4)
   manualGroupId?: string | null // Ручное назначение группы (Phase 4.7)
+  statusTimings?: {
+    assembledAt?: number;
+    deliveringAt?: number;
+    completedAt?: number;
+  };
   isSelected?: boolean
   isInRoute?: boolean
   [key: string]: any

@@ -60,6 +60,11 @@ interface Order {
   paymentMethod?: string
   manualGroupId?: string
   status?: string
+  statusTimings?: {
+    assembledAt?: number;
+    deliveringAt?: number;
+    completedAt?: number;
+  };
   raw?: any
 }
 
@@ -496,7 +501,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     const grouped: { [courier: string]: Order[] } = {}
 
     excelData.orders.forEach((order: any) => {
-      if (order.courier && order.address) {
+      if (order.address) {
         let courierName = order.courier || 'Не назначено'
         // Force rename if it slipped through
         if (courierName === 'ID:0' || courierName.startsWith('ID:0') || !courierName) {
@@ -511,13 +516,16 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           id: order.id || `order_${order.orderNumber || Math.random()}`,
           orderNumber: order.orderNumber || 'N/A',
           address: order.address,
-          courier: order.courier,
+          courier: courierName, // Use the normalized name
           amount: order.amount || 0,
           phone: order.phone || '',
           customerName: order.customerName || '',
           plannedTime: order.plannedTime || '',
           paymentMethod: order.paymentMethod || '', // Добавляем способ оплаты
           manualGroupId: order.manualGroupId,      // Phase 4.7
+          status: order.status,                    // Ensure status is passed
+          statusTimings: order.statusTimings,      // Pass status timings
+          raw: order,                              // Pass full raw object for access to extra fields
           isSelected: false
         })
       }
