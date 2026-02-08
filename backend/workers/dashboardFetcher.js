@@ -465,6 +465,7 @@ class DashboardFetcher {
 
     async getActiveDepartments() {
         try {
+            // Get departments from users
             const result = await this.pool.query(
                 'SELECT DISTINCT "divisionId" FROM users WHERE "divisionId" IS NOT NULL'
             );
@@ -475,23 +476,23 @@ class DashboardFetcher {
             // Always ensure the default department is included
             const defaultDept = process.env.DASHBOARD_DEPARTMENT_ID || '100000052';
             if (!depts.includes(defaultDept)) {
-                logger.info(`Adding default department ${defaultDept} to fetch list`);
                 depts.push(defaultDept);
             }
 
-            // Also add any explicitly configured department
-            if (process.env.DASHBOARD_DEPARTMENT_ID && !depts.includes(process.env.DASHBOARD_DEPARTMENT_ID)) {
-                depts.push(process.env.DASHBOARD_DEPARTMENT_ID);
-            }
+            // Expanded list of known departments to ensure full coverage
+            // These are common department IDs used in the system
+            const knownDepts = ['100000052', '100000053', '100000001', '100000002'];
+            knownDepts.forEach(id => {
+                if (!depts.includes(id)) depts.push(id);
+            });
 
-            const finalDepts = depts.length > 0 ? depts : [defaultDept];
+            const finalDepts = [...new Set(depts)];
             logger.info(`Active departments for fetching: ${finalDepts.join(', ')}`);
 
             return finalDepts;
         } catch (error) {
             logger.error('Error getting departments:', error.message);
             const fallback = process.env.DASHBOARD_DEPARTMENT_ID || '100000052';
-            logger.warn(`Using fallback department: ${fallback}`);
             return [fallback];
         }
     }
@@ -668,9 +669,14 @@ class DashboardFetcher {
                     const prevOrders = prevPayload?.orders || [];
 
                     const mergedOrdersMap = new Map();
+                    const mergedCouriersMap = new Map();
 
+                    // Load previous data for merging
                     if (prevOrders && Array.isArray(prevOrders)) {
                         prevOrders.forEach(o => mergedOrdersMap.set(o.orderNumber, o));
+                    }
+                    if (prevPayload?.couriers && Array.isArray(prevPayload.couriers)) {
+                        prevPayload.couriers.forEach(c => mergedCouriersMap.set(c.id, c));
                     }
 
                     const historyEntries = [];
@@ -680,6 +686,7 @@ class DashboardFetcher {
                         return s === '00:00' || s === '00:00:00' || s === '0:00' || s === '';
                     };
 
+                    // Merge new orders
                     if (responseData.orders && Array.isArray(responseData.orders)) {
                         for (const order of responseData.orders) {
                             const prevOrder = mergedOrdersMap.get(order.orderNumber);
@@ -713,16 +720,23 @@ class DashboardFetcher {
                                 }
                             }
 
-                            // CRITICAL FIX: Ensure departmentId is set for filtering
                             order.departmentId = order.departmentId || deptId;
-
                             mergedOrdersMap.set(order.orderNumber, order);
+                        }
+                    }
+
+                    // Merge new couriers
+                    if (responseData.couriers && Array.isArray(responseData.couriers)) {
+                        for (const courier of responseData.couriers) {
+                            courier.departmentId = courier.departmentId || deptId;
+                            mergedCouriersMap.set(courier.id, courier);
                         }
                     }
 
                     const mergedPayload = {
                         ...responseData,
-                        orders: Array.from(mergedOrdersMap.values())
+                        orders: Array.from(mergedOrdersMap.values()),
+                        couriers: Array.from(mergedCouriersMap.values())
                     };
 
                     const dataHash = this.calculateHash(mergedPayload);
@@ -827,7 +841,8 @@ class DashboardFetcher {
         const day = String(date.getDate()).padStart(2, '0');
         const month = String(date.getMonth() + 1).padStart(2, '0');
         const year = date.getFullYear();
-        return `${day}.${month}.${year} ${timeStr}`;
+        const dateStr = `${day}.${month}.${year}`;
+        return timeStr ? `${dateStr} ${timeStr}` : dateStr;
     }
 
     calculateHash(obj) {
