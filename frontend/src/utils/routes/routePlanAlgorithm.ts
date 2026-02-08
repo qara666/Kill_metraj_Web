@@ -135,22 +135,40 @@ export async function runRoutePlanningAlgorithm(
             }));
 
             evaluations.sort((a, b) => b.score - a.score);
-            const best = evaluations[0];
 
-            if (!best || best.score <= 0) break;
+            // Parallel check for top N candidates instead of just one
+            const topCandidates = evaluations.filter(e => e.score > 0).slice(0, 5);
 
-            const trialChain = [...routeChain, best.candidate];
-            const check = await apiManager.checkRouteWithTraffic(trialChain, {
-                includeStartEnd: true,
-                priority: 'high',
-                maxDistanceKm: optimizedSettings.maxDistanceBetweenOrdersKm,
-                maxReadyTimeDiffMinutes: optimizedSettings.maxReadyTimeDifferenceMinutes
-            });
+            if (topCandidates.length === 0) break;
 
-            if (check.feasible) {
-                routeChain.push(best.candidate);
-                usedOrderIds.add(getOrderId(best.candidate));
-                routeReasons.push(`Заказ #${best.candidate.orderNumber} добавлен (оценка: ${best.score.toFixed(1)})`);
+            console.log(`Checking ${topCandidates.length} candidates in parallel for route ${routes.length + 1}`);
+
+            let bestFeasible = null;
+
+            // Check in parallel
+            const checks = await Promise.all(topCandidates.map(async (candidateEval) => {
+                const trialChain = [...routeChain, candidateEval.candidate];
+                const check = await apiManager.checkRouteWithTraffic(trialChain, {
+                    includeStartEnd: true,
+                    priority: 'high',
+                    maxDistanceKm: optimizedSettings.maxDistanceBetweenOrdersKm,
+                    maxReadyTimeDiffMinutes: optimizedSettings.maxReadyTimeDifferenceMinutes
+                });
+                return { candidateEval, check };
+            }));
+
+            // Find best feasible (since they were sorted by score, the first feasible is the best)
+            for (const { candidateEval, check } of checks) {
+                if (check.feasible) {
+                    bestFeasible = { candidate: candidateEval.candidate, score: candidateEval.score };
+                    break;
+                }
+            }
+
+            if (bestFeasible) {
+                routeChain.push(bestFeasible.candidate);
+                usedOrderIds.add(getOrderId(bestFeasible.candidate));
+                routeReasons.push(`Заказ #${bestFeasible.candidate.orderNumber} добавлен (оценка: ${bestFeasible.score.toFixed(1)})`);
 
                 // Yield periodically in nested loops
                 if (routeChain.length % 3 === 0) await new Promise(r => setTimeout(r, 0));
