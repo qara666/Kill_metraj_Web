@@ -1,7 +1,4 @@
 import axios from 'axios';
-import { toast } from 'react-hot-toast';
-
-const API_REFRESH_INTERVAL = 30000; // 30 seconds
 
 // Интерфейс для ответа от API
 export interface FetchDashboardDataResponse {
