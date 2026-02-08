@@ -120,10 +120,10 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       // Clear previous timeout
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
-      // Debounce save (1s)
+      // Debounce save (0.5s)
       saveTimeoutRef.current = setTimeout(() => {
         saveDataToServer(val);
-      }, 1000);
+      }, 500);
 
       // Legacy support (optional, can be removed to free space)
       try {
@@ -150,10 +150,10 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       // Clear previous timeout
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
-      // Debounce save (2s for updates as they might be frequent)
+      // Debounce save (0.5s for updates)
       saveTimeoutRef.current = setTimeout(() => {
         saveDataToServer(next);
-      }, 2000);
+      }, 500);
 
       return next;
     });

@@ -46,11 +46,13 @@ export const FetcherMetrics: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
+    import { API_URL } from '../../config/apiConfig';
+
     const fetchMetrics = async () => {
         setIsLoading(true);
         try {
             const token = authService.getAccessToken();
-            const response = await fetch(`${import.meta.env.VITE_API_URL || '/api/v1'}/dashboard/metrics`, {
+            const response = await fetch(`${API_URL}/api/v1/dashboard/metrics`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
