@@ -546,8 +546,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         })
       })
 
-    // Возвращаем количество заказов, которые НЕ в маршрутах и НЕ исполнены
-    return allOrders.filter(order => !ordersInRoutes.has(order.id) && order.status !== 'Исполнен').length
+    // Возвращаем количество заказов, которые НЕ в маршрутах
+    return allOrders.filter(order => !ordersInRoutes.has(order.id)).length
   }
 
   // Объединяем курьеров из всех источников: из заказов и из общего списка курьеров (если есть)
@@ -700,7 +700,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     const seen = new Set<string>()
     all = all.filter(o => (seen.has(o.id) ? false : (seen.add(o.id), true)))
 
-    return all.filter(order => !isOrderInExistingRoute(order.id) && order.status !== 'Исполнен')
+    return all.filter(order => !isOrderInExistingRoute(order.id))
   }, [selectedCourier, courierOrders, orderSearchTerm, excelData?.routes])
 
   const ordersInRoutes = useMemo(() => {
