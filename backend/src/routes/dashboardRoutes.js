@@ -1,5 +1,5 @@
 const { authenticateToken, authorize, auditLog } = require('../middleware/auth');
-const { DashboardState } = require('../models'); // Added import
+const { DashboardState, sequelize } = require('../models');
 
 const axios = require('axios');
 const express = require('express');

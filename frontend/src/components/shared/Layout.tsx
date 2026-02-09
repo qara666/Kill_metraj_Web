@@ -70,14 +70,17 @@ export function Layout({ children }: LayoutProps) {
       )}>
         <div className="fixed inset-0 bg-gray-600 bg-opacity-75" onClick={() => setSidebarOpen(false)} />
         <div className={clsx(
-          'fixed inset-y-0 left-0 flex w-64 flex-col shadow-2xl transition-transform duration-300 transform-gpu',
+          'fixed inset-y-0 left-0 flex w-64 flex-col shadow-2xl transition-transform duration-300 transform-gpu glass-panel border-r-0',
           isDark
-            ? 'bg-[#151B2C] border-r border-gray-800'
-            : 'bg-white border-r border-gray-200'
+            ? 'bg-[#151B2C]/40 border-white/5'
+            : 'bg-white/40 border-gray-200/50'
         )}>
+          {/* Elite Gradient Border Accent */}
+          <div className="absolute top-0 right-0 w-[1px] h-full bg-gradient-to-b from-transparent via-blue-500/20 to-transparent" />
+
           <div className={clsx(
             'flex h-16 items-center justify-between px-4 border-b',
-            isDark ? 'border-blue-800/30' : 'border-gray-200/50'
+            isDark ? 'border-white/5' : 'border-gray-200/50'
           )}>
             <div className="flex items-center">
               <div className="flex-shrink-0">
@@ -198,11 +201,13 @@ export function Layout({ children }: LayoutProps) {
       {/* Desktop sidebar */}
       <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
         <div className={clsx(
-          'flex flex-col flex-grow shadow-sm border-r transition-colors duration-200',
+          'flex flex-col flex-grow shadow-sm transition-colors duration-200 relative',
           isDark
-            ? 'bg-[#0F1424] border-gray-800'
-            : 'bg-white border-gray-200'
+            ? 'bg-[#0F1424]/40 backdrop-blur-xl border-r border-white/5'
+            : 'bg-white border-r border-gray-200'
         )}>
+          {/* Glass Accent */}
+          <div className="absolute inset-0 bg-gradient-to-b from-blue-500/5 to-transparent pointer-events-none" />
           <div className={clsx(
             'flex h-16 items-center px-4 border-b',
             isDark ? 'border-blue-800/30' : 'border-gray-200/50'
@@ -317,10 +322,12 @@ export function Layout({ children }: LayoutProps) {
           clsx(
             'sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8',
             isDark
-              ? 'border-gray-800 bg-[#0B0F1A]/80 backdrop-blur-md'
-              : 'border-gray-200 bg-white/80 backdrop-blur-md'
+              ? 'border-white/5 bg-[#0B0F1A]/60 backdrop-blur-xl'
+              : 'border-gray-200 bg-white/60 backdrop-blur-xl'
           )
         } >
+          {/* Subtle top light leak */}
+          <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-blue-500/30 to-transparent" />
           <button
             type="button"
             className={clsx(
