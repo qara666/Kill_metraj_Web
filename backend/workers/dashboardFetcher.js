@@ -654,6 +654,9 @@ class DashboardFetcher {
                         (this.metrics.avgResponseTime * (this.metrics.totalFetches - 1) + apiElapsed) / this.metrics.totalFetches
                     );
 
+                    const responseData = response.data;
+                    const receivedCount = responseData?.orders?.length || 0;
+
                     const rawJson = JSON.stringify(responseData);
                     const rawSizeKB = Math.round(rawJson.length / 1024);
                     logger.info(`[Dept: ${deptId}] API Response: ${receivedCount} orders, Size: ${rawSizeKB}KB, Keys: ${Object.keys(responseData || {}).join(', ')}`);
