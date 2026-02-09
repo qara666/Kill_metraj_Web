@@ -610,7 +610,9 @@ class DashboardFetcher {
 
         const targetDate = this.getKyivDate();
         targetDate.setDate(targetDate.getDate() + dateShiftDays);
-        const targetDateStr = this.formatDate(targetDate, '').trim();
+        const targetDateLegacy = this.formatDate(targetDate, '').trim(); // DD.MM.YYYY
+        const targetDateISO = this.formatDateISO(targetDate); // YYYY-MM-DD
+        const targetDateStr = targetDateISO; // Use ISO as primary
 
         // Request Deduplication
         const dedupKey = `${deptId}_${targetDateStr}`;
@@ -659,8 +661,8 @@ class DashboardFetcher {
                     await client.query('BEGIN');
 
                     const prevResult = await client.query(
-                        'SELECT payload, data_hash FROM api_dashboard_cache WHERE status_code = 200 AND division_id = $1 AND target_date = $2 ORDER BY created_at DESC LIMIT 1',
-                        [String(deptId), targetDateStr]
+                        'SELECT payload, data_hash FROM api_dashboard_cache WHERE status_code = 200 AND division_id = $1 AND (target_date = $2 OR target_date = $3) ORDER BY created_at DESC LIMIT 1',
+                        [String(deptId), targetDateISO, targetDateLegacy]
                     );
 
                     const lastRecord = prevResult.rows[0];
@@ -843,6 +845,13 @@ class DashboardFetcher {
         const year = date.getFullYear();
         const dateStr = `${day}.${month}.${year}`;
         return timeStr ? `${dateStr} ${timeStr}` : dateStr;
+    }
+
+    formatDateISO(date) {
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        return `${year}-${month}-${day}`;
     }
 
     calculateHash(obj) {

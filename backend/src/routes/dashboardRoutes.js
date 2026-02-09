@@ -149,6 +149,17 @@ router.get('/dashboard', async (req, res) => {
 router.post('/dashboard/fetch', async (req, res) => {
     try {
         const user = req.user;
+        // Fix for strangely serialized request body (spread string issue)
+        if (req.body && !req.body.date && req.body['0'] === '{') {
+            try {
+                const bodyStr = Object.values(req.body).join('');
+                req.body = JSON.parse(bodyStr);
+                logger.info(`🩹 [FETCH] Fixed mangled request body:`, JSON.stringify(req.body));
+            } catch (err) {
+                logger.error(`❌ [FETCH] Failed to fix mangled request body:`, err.message);
+            }
+        }
+
         const { date, divisionId: requestDivisionId } = req.body;
 
         // Detailed logging to debug 422 errors
@@ -187,8 +198,15 @@ router.post('/dashboard/fetch', async (req, res) => {
 
         logger.info(`📅 On-demand fetch запрос: date=${date}, divisionId=${divisionId}, user=${user.username}`);
 
-        // Конвертируем дату в формат для БД (DD.MM.YYYY)
+        // Standardize date format for DB lookup and storage
+        // targetDateStr will be DD.MM.YYYY (legacy)
+        // targetDateISO will be YYYY-MM-DD (standard)
         const targetDateStr = date.trim();
+        let targetDateISO = targetDateStr;
+        if (/^\d{2}\.\d{2}\.\d{4}$/.test(targetDateStr)) {
+            const [d, m, y] = targetDateStr.split('.');
+            targetDateISO = `${y}-${m}-${d}`;
+        }
 
         // Defined departments for multi-fetch
         const departmentsToFetch = divisionId === 'all'
@@ -202,11 +220,15 @@ router.post('/dashboard/fetch', async (req, res) => {
             const cachedResults = await sequelize.query(
                 `SELECT * FROM api_dashboard_cache 
                  WHERE status_code = 200 
-                 AND target_date = :targetDate 
+                 AND (target_date = :targetDateISO OR target_date = :targetDateStr)
                  AND division_id = :divisionId
                  ORDER BY created_at DESC LIMIT 1`,
                 {
-                    replacements: { targetDate: targetDateStr, divisionId: String(divId) },
+                    replacements: {
+                        targetDateISO,
+                        targetDateStr,
+                        divisionId: String(divId)
+                    },
                     type: sequelize.QueryTypes.SELECT
                 }
             );
@@ -260,7 +282,7 @@ router.post('/dashboard/fetch', async (req, res) => {
                         dataHash: dataHash,
                         statusCode: 200,
                         divisionId: String(divId),
-                        targetDate: targetDateStr
+                        targetDate: targetDateISO // Store in ISO format YYYY-MM-DD
                     }
                 }
             );

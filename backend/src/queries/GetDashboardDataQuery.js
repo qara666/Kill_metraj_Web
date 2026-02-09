@@ -45,14 +45,28 @@ class GetDashboardDataQuery {
 
     async execute({ divisionId, user, date }) {
         try {
-            // Standardize targetDate to DD.MM.YYYY for DB lookup consistency
+            // Standardize targetDate to DD.MM.YYYY for legacy lookups
+            // and YYYY-MM-DD for standard Postgres lookups
             let targetDate = date;
+            let targetDateISO = null;
+
             if (!targetDate) {
                 const now = new Date();
                 const day = String(now.getDate()).padStart(2, '0');
                 const month = String(now.getMonth() + 1).padStart(2, '0');
                 const year = now.getFullYear();
                 targetDate = `${day}.${month}.${year}`;
+                targetDateISO = `${year}-${month}-${day}`;
+            } else {
+                // Parse date if it's in DD.MM.YYYY or YYYY-MM-DD
+                if (/^\d{2}\.\d{2}\.\d{4}$/.test(targetDate)) {
+                    const [d, m, y] = targetDate.split('.');
+                    targetDateISO = `${y}-${m}-${d}`;
+                } else if (/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+                    targetDateISO = targetDate;
+                    const [y, m, d] = targetDate.split('-');
+                    targetDate = `${d}.${m}.${y}`;
+                }
             }
 
             logger.info(`CQRS Execute: divisionId=${divisionId}, date=${targetDate}, user=${user?.username}`);
@@ -75,9 +89,18 @@ class GetDashboardDataQuery {
                 logger.info('CQRS: Admin request - merging all departments');
 
                 // Get unique divisions
+                // Search by both legacy and ISO formats for maximum compatibility
                 const divisions = await sequelize.query(
-                    'SELECT DISTINCT division_id FROM api_dashboard_cache WHERE status_code = 200 AND target_date = :targetDate',
-                    { replacements: { targetDate }, type: sequelize.QueryTypes.SELECT }
+                    `SELECT DISTINCT division_id FROM api_dashboard_cache 
+                     WHERE status_code = 200 
+                     AND (target_date = :targetDate OR target_date = :targetDateISO)`,
+                    {
+                        replacements: {
+                            targetDate,
+                            targetDateISO: targetDateISO || targetDate
+                        },
+                        type: sequelize.QueryTypes.SELECT
+                    }
                 );
 
                 if (divisions.length === 0) {
@@ -118,13 +141,13 @@ class GetDashboardDataQuery {
                     const result = await sequelize.query(
                         `SELECT * FROM api_dashboard_cache 
                          WHERE status_code = 200 
-                         AND (target_date = :targetDate OR target_date = :targetDateAlt)
+                         AND (target_date = :targetDate OR target_date = :targetDateISO)
                          AND division_id = :divId
                          ORDER BY created_at DESC LIMIT 1`,
                         {
                             replacements: {
                                 targetDate,
-                                targetDateAlt: date || '', // Try both if date provided
+                                targetDateISO: targetDateISO || targetDate,
                                 divId
                             },
                             type: sequelize.QueryTypes.SELECT
@@ -191,13 +214,13 @@ class GetDashboardDataQuery {
             const results = await this.withRetry(() => sequelize.query(
                 `SELECT * FROM api_dashboard_cache 
                  WHERE status_code = 200 
-                 AND (target_date = :targetDate OR target_date = :targetDateAlt)
+                 AND (target_date = :targetDate OR target_date = :targetDateISO)
                  AND division_id = :divisionId
                  ORDER BY created_at DESC LIMIT 1`,
                 {
                     replacements: {
                         targetDate,
-                        targetDateAlt: date || '',
+                        targetDateISO: targetDateISO || targetDate,
                         divisionId: String(divisionId)
                     },
                     type: sequelize.QueryTypes.SELECT
