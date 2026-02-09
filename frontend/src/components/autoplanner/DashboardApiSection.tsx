@@ -18,7 +18,7 @@ export const DashboardApiSection: React.FC = () => {
     const apiAutoRefreshEnabled = useAutoPlannerStore(s => s.apiAutoRefreshEnabled);
     const setApiAutoRefreshEnabled = useAutoPlannerStore(s => s.setApiAutoRefreshEnabled);
 
-    const handleFetchData = async (isSilent = false) => {
+    const handleFetchData = async (isSilent = false, forceRefresh = false) => {
         if (!selectedDate) {
             if (!isSilent) toast.error('Выберите дату');
             return;
@@ -35,7 +35,8 @@ export const DashboardApiSection: React.FC = () => {
         try {
             console.log(`🚀 ${isSilent ? 'Авто-запрос' : 'Запрос'} данных дашборда за ${dateInApiFormat}`);
             const response = await dashboardApiService.fetchDataForDate({
-                date: dateInApiFormat
+                date: dateInApiFormat,
+                force: forceRefresh
             });
 
             if (response.success && response.data) {
@@ -152,7 +153,7 @@ export const DashboardApiSection: React.FC = () => {
                     </div>
 
                     <button
-                        onClick={() => handleFetchData(false)}
+                        onClick={() => handleFetchData(false, true)}
                         disabled={isLoading}
                         className={clsx(
                             'btn btn-primary flex items-center gap-2 whitespace-nowrap min-w-[120px] justify-center',
