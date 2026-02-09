@@ -27,10 +27,10 @@ export const FileUploadPanel: React.FC<FileUploadPanelProps> = React.memo(({
 }) => {
     return (
         <div className={clsx(
-            'rounded-xl p-4 border-2 transition-all hover:shadow-lg',
+            'rounded-2xl p-5 border shadow-sm transition-all duration-200 transform-gpu hover:shadow-md hover:-translate-y-0.5',
             isDark
-                ? 'border-blue-700/50 bg-gradient-to-br from-gray-800/50 to-gray-900/50 hover:border-blue-600'
-                : 'border-blue-200 bg-gradient-to-br from-blue-50/50 to-indigo-50/50 hover:border-blue-300'
+                ? 'border-gray-800 bg-[#1A2133] hover:border-blue-900/50'
+                : 'border-blue-100 bg-blue-50/30 hover:border-blue-200'
         )}>
             <div className="flex items-center gap-2 mb-3">
                 <div className={clsx(
@@ -46,10 +46,10 @@ export const FileUploadPanel: React.FC<FileUploadPanelProps> = React.memo(({
 
             <div className="space-y-4">
                 <label className={clsx(
-                    'block w-full cursor-pointer border-2 border-dashed rounded-xl p-4 transition-all text-center',
+                    'block w-full cursor-pointer border-2 border-dashed rounded-2xl p-6 transition-all text-center group transform-gpu',
                     isDark
-                        ? 'border-gray-700 bg-gray-800/50 hover:border-blue-500/50 hover:bg-gray-800'
-                        : 'border-gray-200 bg-gray-50/50 hover:border-blue-400 hover:bg-gray-100'
+                        ? 'border-gray-800 bg-gray-900/50 hover:border-blue-600/50 hover:bg-gray-900'
+                        : 'border-blue-100 bg-white/50 hover:border-blue-300 hover:bg-white'
                 )}>
                     <input
                         type="file"
@@ -80,14 +80,14 @@ export const FileUploadPanel: React.FC<FileUploadPanelProps> = React.memo(({
                             onChange={(e) => setHtmlUrl(e.target.value)}
                             placeholder="https://..."
                             className={clsx(
-                                'flex-1 px-3 py-2 text-xs rounded-lg border focus:ring-2 outline-none transition-all',
-                                isDark ? 'bg-gray-800 border-gray-700 focus:ring-blue-500/30' : 'bg-white border-gray-300 focus:ring-blue-500/20'
+                                'flex-1 px-4 py-2.5 text-sm rounded-xl border outline-none transition-all',
+                                isDark ? 'bg-gray-900 border-gray-800 focus:border-blue-600/50' : 'bg-white border-blue-100 focus:border-blue-400'
                             )}
                         />
                         <button
                             onClick={onHtmlLoad}
                             disabled={isProcessingHtml || !htmlUrl}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold disabled:opacity-50"
+                            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition-all transform-gpu active:scale-95 disabled:opacity-50 shadow-md shadow-blue-600/20"
                         >
                             {isProcessingHtml ? '...' : 'Загрузить'}
                         </button>

@@ -3,46 +3,56 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --radius: 0.75rem;
+    --background: 210 40% 98%;
+    --foreground: 222.2 84% 4.9%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+  }
+
   html {
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
   }
   
   body {
-    @apply bg-gray-50 text-gray-900 transition-colors duration-200;
+    @apply bg-gray-50 text-gray-900;
+    font-feature-settings: "cv02", "cv05", "cv08", "cv11";
   }
   
   .dark body {
-    @apply bg-gray-900 text-gray-100;
+    @apply bg-[#0B0F1A] text-gray-100;
   }
 }
 
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-200;
+    @apply inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-150 active:scale-[0.98];
   }
   
   .btn-primary {
-    @apply btn bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500;
+    @apply btn bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500 shadow-blue-500/20;
   }
   
   .btn-secondary {
-    @apply btn bg-gray-600 text-white hover:bg-gray-700 focus:ring-gray-500;
-  }
-  
-  .btn-success {
-    @apply btn bg-success-600 text-white hover:bg-success-700 focus:ring-success-500;
-  }
-  
-  .btn-danger {
-    @apply btn bg-danger-600 text-white hover:bg-danger-700 focus:ring-danger-500;
-  }
-  
-  .btn-outline {
-    @apply btn border-gray-300 text-gray-700 bg-white hover:bg-gray-50 focus:ring-primary-500 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700;
+    @apply btn bg-slate-600 text-white hover:bg-slate-700 focus:ring-slate-500 shadow-slate-500/20;
   }
   
   .card {
-    @apply bg-white rounded-lg shadow-sm border border-gray-200 dark:bg-gray-800 dark:border-gray-700;
+    @apply bg-white rounded-2xl shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_-1px_rgba(0,0,0,0.1)] border border-gray-200/60 dark:bg-[#151B2C] dark:border-gray-800/60;
+    @apply transition-transform duration-200 transform-gpu;
+  }
+
+  .glass-panel {
+    @apply card border-white/20 bg-white/70 backdrop-blur-md dark:bg-gray-900/40 dark:border-white/5;
   }
   
   .input {

@@ -149,12 +149,14 @@ router.get('/dashboard', async (req, res) => {
 router.post('/dashboard/fetch', async (req, res) => {
     try {
         const user = req.user;
-        // Fix for strangely serialized request body (spread string issue)
-        if (req.body && !req.body.date && req.body['0'] === '{') {
+        // Robust fix for strangely serialized request body (sometimes caused by proxies/middleware)
+        if (req.body && !req.body.date && (req.body['0'] === '{' || typeof req.body === 'string')) {
             try {
-                const bodyStr = Object.values(req.body).join('');
-                req.body = JSON.parse(bodyStr);
-                logger.info(`🩹 [FETCH] Fixed mangled request body:`, JSON.stringify(req.body));
+                let bodyStr = typeof req.body === 'string' ? req.body : Object.values(req.body).join('');
+                if (bodyStr.startsWith('{')) {
+                    req.body = JSON.parse(bodyStr);
+                    logger.info(`🩹 [FETCH] Fixed mangled request body:`, JSON.stringify(req.body));
+                }
             } catch (err) {
                 logger.error(`❌ [FETCH] Failed to fix mangled request body:`, err.message);
             }
@@ -239,9 +241,7 @@ router.post('/dashboard/fetch', async (req, res) => {
             }
 
             // 2. Fetch from External API
-            if (!process.env.EXTERNAL_API_KEY) {
-                throw new Error('Внешний API не настроен');
-            }
+            const apiKey = process.env.EXTERNAL_API_KEY || 'killmetraj_secret_key_2024';
 
             const [day, month, year] = targetDateStr.split('.');
             const timeBeg = `${targetDateStr} 00:00:00`;
@@ -352,9 +352,16 @@ router.post('/dashboard/fetch', async (req, res) => {
             .map(r => r.value);
 
         if (successfulResults.length === 0) {
+            const allErrors = results
+                .filter(r => r.status === 'rejected')
+                .map(r => r.reason?.message || 'Unknown error');
+
+            logger.warn(`⚠️ [FETCH] Data not found/All fetches failed. Errors:`, allErrors);
+
             return res.status(404).json({
                 success: false,
-                error: 'Данные не найдены ни в одном из отделений'
+                error: 'Данные не найдены ни в одном из отделений',
+                details: allErrors.length > 0 ? allErrors : 'Нет доступных данных за эту дату'
             });
         }
 
