@@ -4,6 +4,7 @@ import { clsx } from 'clsx';
 import { toast } from 'react-hot-toast';
 import { useTheme } from '../../contexts/ThemeContext';
 import { authService } from '../../utils/auth/authService';
+import { API_URL } from '../../config/apiConfig';
 
 export const AdminDatabaseCleanup: React.FC = () => {
     const { isDark } = useTheme();
@@ -17,13 +18,18 @@ export const AdminDatabaseCleanup: React.FC = () => {
         setIsLoading(true);
         try {
             const token = authService.getAccessToken();
-            const response = await fetch(`${import.meta.env.VITE_API_URL || '/api/v1'}/dashboard/cleanup`, {
+            const response = await fetch(`${API_URL}/api/maintenance/cleanup`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 }
             });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: 'Неизвестная ошибка сервера' }));
+                throw new Error(errorData.error || `Ошибка сервера: ${response.status}`);
+            }
 
             const data = await response.json();
 

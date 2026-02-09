@@ -310,44 +310,7 @@ router.post('/dashboard/fetch', async (req, res) => {
     }
 });
 
-/**
- * POST /api/v1/dashboard/cleanup
- * Очистка кэша и старых данных (Только для админов)
- */
-router.post('/dashboard/cleanup', async (req, res) => {
-    try {
-        const user = req.user;
-        if (user.role !== 'admin') {
-            return res.status(403).json({
-                success: false,
-                error: 'Доступ запрещен. Требуются права администратора.'
-            });
-        }
-
-        const { sequelize } = require('../models');
-
-        // Очистка кэша
-        await sequelize.query('TRUNCATE TABLE api_dashboard_cache');
-
-        // Очистка истории (опционально, можно оставить за последние N дней, но TRUNCATE быстрее)
-        await sequelize.query('TRUNCATE TABLE api_dashboard_status_history');
-
-        logger.info(`🧹 DB Cleanup executed by ${user.username}`);
-
-        res.json({
-            success: true,
-            message: 'База данных успешно очищена (кэш и история удалены).'
-        });
-
-    } catch (error) {
-        logger.error('Cleanup error:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Ошибка при очистке базы данных',
-            details: error.message
-        });
-    }
-});
+// Maintenance routes moved to maintenanceRoutes.js
 
 /**
  * GET /api/v1/health
