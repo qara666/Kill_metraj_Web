@@ -583,9 +583,10 @@ class DashboardFetcher {
         this.activeRequests.add(requestId);
 
         try {
-            await this.fetchForDepartment(deptId, dateShiftDays);
-            return true;
+            const success = await this.fetchForDepartment(deptId, dateShiftDays);
+            return success === true;
         } catch (e) {
+            logger.error(`[Dept: ${deptId}] Critical error in safe wrapper:`, e.message);
             return false;
         } finally {
             this.activeRequests.delete(requestId);
@@ -652,9 +653,9 @@ class DashboardFetcher {
 
                     const responseData = response.data;
 
-                    if (!responseData || !responseData.orders) {
-                        logger.warn(`[Dept: ${deptId}] Empty response or no orders array`);
-                        return;
+                    if (!responseData || !responseData.orders || responseData.orders.length === 0) {
+                        logger.warn(`[Dept: ${deptId}] Empty response or zero orders received for ${targetDateStr}`);
+                        return false;
                     }
 
                     client = await this.pool.connect();
@@ -786,6 +787,11 @@ class DashboardFetcher {
 
                     await client.query('COMMIT');
 
+                    // Invalidate cache immediately after commit to ensure fresh data for users
+                    await cacheService.invalidate(String(deptId)).catch(err =>
+                        logger.error(`[Dept: ${deptId}] Error invalidating cache after fetch:`, err.message)
+                    );
+
                     this.metrics.successfulFetches++;
                     this.metrics.totalOrders += mergedPayload.orders.length;
                     this.retryCount = 0;
@@ -794,7 +800,7 @@ class DashboardFetcher {
                     const elapsed = Date.now() - startTime;
                     logger.info(`[Dept: ${deptId}] Saved ${mergedPayload.orders.length} orders in ${elapsed}ms (API: ${apiElapsed}ms). +${historyEntries.length} updates.`);
 
-                    return;
+                    return true;
 
                 } catch (error) {
                     if (client) {

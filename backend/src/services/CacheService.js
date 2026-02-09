@@ -145,12 +145,16 @@ class CacheService {
      * Сброс кэша для конкретного подразделения
      */
     async invalidate(divisionId = 'all') {
+        const key = `dashboard:${divisionId}`;
+
+        // Clear Memory Cache first
+        this.memoryCache.delete(key);
+
         if (!this.isEnabled || !this.redis) {
-            return false;
+            return true;
         }
 
         try {
-            const key = `dashboard:${divisionId}`;
             await this.redis.del(key);
             trackCacheOperation('invalidate', 'success');
             logger.debug(`Кэш для ${key} сброшен`);
@@ -166,8 +170,11 @@ class CacheService {
      * Сброс всего кэша дашбордов
      */
     async invalidateAll() {
+        // Clear Memory Cache first
+        this.memoryCache.clear();
+
         if (!this.isEnabled || !this.redis) {
-            return false;
+            return true;
         }
 
         try {
