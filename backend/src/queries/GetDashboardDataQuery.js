@@ -51,10 +51,12 @@ class GetDashboardDataQuery {
             let targetDateISO = null;
 
             if (!targetDate) {
+                // Use Kyiv timezone (UTC+2) to match the fetcher's date calculation
                 const now = new Date();
-                const day = String(now.getDate()).padStart(2, '0');
-                const month = String(now.getMonth() + 1).padStart(2, '0');
-                const year = now.getFullYear();
+                const kyivTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Kiev' }));
+                const day = String(kyivTime.getDate()).padStart(2, '0');
+                const month = String(kyivTime.getMonth() + 1).padStart(2, '0');
+                const year = kyivTime.getFullYear();
                 targetDate = `${day}.${month}.${year}`;
                 targetDateISO = `${year}-${month}-${day}`;
             } else {
@@ -69,7 +71,8 @@ class GetDashboardDataQuery {
                 }
             }
 
-            logger.info(`CQRS Execute: divisionId=${divisionId}, date=${targetDate}, user=${user?.username}`);
+            logger.info(`CQRS Execute: divisionId=${divisionId}, date=${targetDate}, dateISO=${targetDateISO}, user=${user?.username}`);
+            logger.debug(`CQRS: Searching for target_date='${targetDate}' OR target_date='${targetDateISO}'`);
 
             // 1. Try Cache First (for non-admin or specific division)
             if (!date && divisionId !== 'all') {
@@ -103,8 +106,13 @@ class GetDashboardDataQuery {
                     }
                 );
 
+                logger.info(`CQRS: Found ${divisions.length} divisions with data for ${targetDate} (ISO: ${targetDateISO})`);
+                if (divisions.length > 0) {
+                    logger.debug(`CQRS: Division IDs: ${divisions.map(d => d.division_id).join(', ')}`);
+                }
+
                 if (divisions.length === 0) {
-                    logger.warn(`CQRS: No data for any department on ${targetDate}`);
+                    logger.warn(`CQRS: No data for any department on ${targetDate} (ISO: ${targetDateISO})`);
                     return null;
                 }
 
