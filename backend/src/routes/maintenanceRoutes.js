@@ -26,18 +26,21 @@ router.post('/cleanup', auditLog('maintenance_db_cleanup'), async (req, res) => 
         // 2. Truncate Status History table
         await sequelize.query('TRUNCATE TABLE api_dashboard_status_history RESTART IDENTITY', { transaction: t });
 
+        // 3. Truncate Dashboard States (Excel processing results)
+        await sequelize.query('TRUNCATE TABLE dashboard_states RESTART IDENTITY', { transaction: t });
+
         await t.commit();
 
-        // 3. Clear In-Memory/Redis Cache if applicable
+        // 4. Clear In-Memory/Redis Cache if applicable
         await cacheService.invalidateAll();
 
         logger.info(`[Maintenance] Database cleanup completed successfully`);
 
         res.json({
             success: true,
-            message: 'Кэш API и история статусов успешно очищены.',
+            message: 'Кэш API, история статусов и результаты обработки Excel успешно очищены.',
             details: {
-                tables_cleared: ['api_dashboard_cache', 'api_dashboard_status_history']
+                tables_cleared: ['api_dashboard_cache', 'api_dashboard_status_history', 'dashboard_states']
             }
         });
 

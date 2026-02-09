@@ -5,13 +5,15 @@ import { toast } from 'react-hot-toast';
 import { useTheme } from '../../contexts/ThemeContext';
 import { authService } from '../../utils/auth/authService';
 import { API_URL } from '../../config/apiConfig';
+import { useExcelData } from '../../contexts/ExcelDataContext';
 
 export const AdminDatabaseCleanup: React.FC = () => {
     const { isDark } = useTheme();
+    const { clearExcelData } = useExcelData();
     const [isLoading, setIsLoading] = useState(false);
 
     const handleCleanup = async () => {
-        if (!window.confirm('Вы уверены, что хотите очистить кэш и историю статусов? Это действие необратимо.')) {
+        if (!window.confirm('Вы уверены, что хотите очистить кэш, историю статусов и результаты обработки Excel? Это действие необратимо.')) {
             return;
         }
 
@@ -34,6 +36,8 @@ export const AdminDatabaseCleanup: React.FC = () => {
             const data = await response.json();
 
             if (data.success) {
+                // Clear local Excel context
+                clearExcelData();
                 toast.success(data.message || 'База данных успешно очищена');
             } else {
                 throw new Error(data.error || 'Ошибка при очистке');
@@ -58,8 +62,8 @@ export const AdminDatabaseCleanup: React.FC = () => {
                         Очистка Базы Данных
                     </h3>
                     <p className={clsx('text-sm', isDark ? 'text-red-300' : 'text-red-600')}>
-                        Внимание! Эта операция удалит весь кэш заказов и историю изменений статусов, полученных от внешнего API.
-                        Настройки пользователей, аккаунты и маршруты НЕ будут затронуты.
+                        Внимание! Эта операция удалит весь кэш заказов, историю изменений статусов и результаты обработки Excel.
+                        Настройки пользователей и аккаунты НЕ будут затронуты.
                     </p>
                 </div>
             </div>
