@@ -13,6 +13,7 @@ export interface FetchDashboardDataResponse {
 export interface FetchDashboardDataRequest {
     date: string;       // DD.MM.YYYY
     divisionId?: string; // Опционально, если админ хочет конкретное подразделение
+    force?: boolean;     // Принудительно запросить данные из API, игнорируя кэш
 }
 
 const API_BASE_URL = `${API_URL}/api/v1`;

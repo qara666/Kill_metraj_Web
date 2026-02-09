@@ -160,7 +160,7 @@ router.post('/dashboard/fetch', async (req, res) => {
             }
         }
 
-        const { date, divisionId: requestDivisionId } = req.body;
+        const { date, divisionId: requestDivisionId, force = false } = req.body;
 
         // Detailed logging to debug 422 errors
         logger.info(`🔍 [FETCH REQUEST] Body:`, JSON.stringify(req.body));
@@ -216,8 +216,8 @@ router.post('/dashboard/fetch', async (req, res) => {
         logger.info(`📅 Fetching data for ${departmentsToFetch.length} departments on ${targetDateStr}`);
 
         const fetchPromises = departmentsToFetch.map(async (divId) => {
-            // 1. Check cache
-            const cachedResults = await sequelize.query(
+            // 1. Check cache (skip if force=true)
+            const cachedResults = force ? [] : await sequelize.query(
                 `SELECT * FROM api_dashboard_cache 
                  WHERE status_code = 200 
                  AND (target_date = :targetDateISO OR target_date = :targetDateStr)
@@ -257,7 +257,7 @@ router.post('/dashboard/fetch', async (req, res) => {
 
             const response = await axios.get(apiUrl, {
                 headers: {
-                    'x-api-key': process.env.EXTERNAL_API_KEY,
+                    'x-api-key': process.env.EXTERNAL_API_KEY || 'killmetraj_secret_key_2024',
                     'Accept': 'application/json'
                 },
                 params: params,
@@ -269,25 +269,81 @@ router.post('/dashboard/fetch', async (req, res) => {
                 return { divId, data: null, error: 'Empty response' };
             }
 
-            // 3. Store in DB
+            // 3. Smart Merge and Store in DB
             const crypto = require('crypto');
-            const dataHash = crypto.createHash('sha256').update(JSON.stringify(responseData)).digest('hex');
+
+            // Load existing data for merging
+            const prevResult = await sequelize.query(
+                `SELECT payload, data_hash FROM api_dashboard_cache 
+                 WHERE status_code = 200 AND division_id = :divId 
+                 AND (target_date = :targetDateISO OR target_date = :targetDateStr) 
+                 ORDER BY created_at DESC LIMIT 1`,
+                { replacements: { divId: String(divId), targetDateISO, targetDateStr }, type: sequelize.QueryTypes.SELECT }
+            );
+
+            const prevPayload = prevResult.length > 0 ? (typeof prevResult[0].payload === 'string' ? JSON.parse(prevResult[0].payload) : prevResult[0].payload) : null;
+            const lastRecordHash = prevResult.length > 0 ? prevResult[0].data_hash : null;
+
+            const mergedOrdersMap = new Map();
+            const mergedCouriersMap = new Map();
+
+            if (prevPayload?.orders && Array.isArray(prevPayload.orders)) {
+                prevPayload.orders.forEach(o => mergedOrdersMap.set(o.orderNumber, o));
+            }
+            if (prevPayload?.couriers && Array.isArray(prevPayload.couriers)) {
+                prevPayload.couriers.forEach(c => {
+                    const key = c.id || c.name;
+                    if (key) mergedCouriersMap.set(key, c);
+                });
+            }
+
+            const isTimeEmpty = (t) => {
+                if (!t) return true;
+                const s = String(t).trim();
+                return s === '00:00' || s === '00:00:00' || s === '0:00' || s === '';
+            };
+
+            if (responseData.orders && Array.isArray(responseData.orders)) {
+                for (const order of responseData.orders) {
+                    const prevOrder = mergedOrdersMap.get(order.orderNumber);
+                    if (isTimeEmpty(order.deliverBy) && !isTimeEmpty(order.plannedTime)) order.deliverBy = order.plannedTime;
+                    if (isTimeEmpty(order.plannedTime) && !isTimeEmpty(order.deliverBy)) order.plannedTime = order.deliverBy;
+                    order.statusTimings = { ...(prevOrder?.statusTimings || {}), ...(order.statusTimings || {}) };
+                    order.departmentId = order.departmentId || divId;
+                    mergedOrdersMap.set(order.orderNumber, order);
+                }
+            }
+
+            if (responseData.couriers && Array.isArray(responseData.couriers)) {
+                for (const courier of responseData.couriers) {
+                    courier.departmentId = courier.departmentId || divId;
+                    const key = courier.id || courier.name;
+                    if (key) mergedCouriersMap.set(key, courier);
+                }
+            }
+
+            const mergedPayload = { ...responseData, orders: Array.from(mergedOrdersMap.values()), couriers: Array.from(mergedCouriersMap.values()) };
+            const dataHash = crypto.createHash('sha256').update(JSON.stringify(mergedPayload)).digest('hex');
+
+            if (lastRecordHash === dataHash && !force) {
+                return { divId, data: mergedPayload, cached: true };
+            }
 
             await sequelize.query(
                 `INSERT INTO api_dashboard_cache (payload, data_hash, status_code, division_id, target_date)
                  VALUES (:payload, :dataHash, :statusCode, :divisionId, :targetDate)`,
                 {
                     replacements: {
-                        payload: JSON.stringify(responseData),
+                        payload: JSON.stringify(mergedPayload),
                         dataHash: dataHash,
                         statusCode: 200,
                         divisionId: String(divId),
-                        targetDate: targetDateISO // Store in ISO format YYYY-MM-DD
+                        targetDate: targetDateISO
                     }
                 }
             );
 
-            return { divId, data: responseData, cached: false };
+            return { divId, data: mergedPayload, cached: false };
         });
 
         const results = await Promise.allSettled(fetchPromises);
@@ -307,6 +363,9 @@ router.post('/dashboard/fetch', async (req, res) => {
             orders: [],
             couriers: [],
             routes: [],
+            addresses: [],
+            warnings: [],
+            statistics: { totalOrders: 0, totalAmount: 0, deliveryCount: 0, pickupCount: 0 },
             paymentMethods: [],
             errors: [],
             summary: {
@@ -332,6 +391,16 @@ router.post('/dashboard/fetch', async (req, res) => {
                 }
                 if (payload.paymentMethods && Array.isArray(payload.paymentMethods)) {
                     mergedData.paymentMethods.push(...payload.paymentMethods);
+                }
+                if (payload.addresses && Array.isArray(payload.addresses)) {
+                    mergedData.addresses.push(...payload.addresses);
+                }
+                if (payload.warnings && Array.isArray(payload.warnings)) {
+                    mergedData.warnings.push(...payload.warnings);
+                }
+                if (payload.statistics) {
+                    mergedData.statistics.totalOrders += (payload.statistics.totalOrders || 0);
+                    mergedData.statistics.totalAmount += (payload.statistics.totalAmount || 0);
                 }
             } catch (parseError) {
                 logger.error(`Failed to parse payload for divId ${result.divId}:`, parseError);
