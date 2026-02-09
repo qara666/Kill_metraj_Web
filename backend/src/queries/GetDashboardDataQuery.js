@@ -47,20 +47,23 @@ class GetDashboardDataQuery {
         try {
             // Standardize targetDate to DD.MM.YYYY for legacy lookups
             // and YYYY-MM-DD for standard Postgres lookups
+            // Standardize targetDate calculation to match fetcher
+            const todayKyiv = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Kiev' }));
+            const dStr = String(todayKyiv.getDate()).padStart(2, '0');
+            const mStr = String(todayKyiv.getMonth() + 1).padStart(2, '0');
+            const yStr = todayKyiv.getFullYear();
+
+            const kyivTodayLegacy = `${dStr}.${mStr}.${yStr}`;
+            const kyivTodayISO = `${yStr}-${mStr}-${dStr}`;
+
             let targetDate = date;
             let targetDateISO = null;
 
             if (!targetDate) {
-                // Use Kyiv timezone (UTC+2) to match the fetcher's date calculation
-                const now = new Date();
-                const kyivTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Kiev' }));
-                const day = String(kyivTime.getDate()).padStart(2, '0');
-                const month = String(kyivTime.getMonth() + 1).padStart(2, '0');
-                const year = kyivTime.getFullYear();
-                targetDate = `${day}.${month}.${year}`;
-                targetDateISO = `${year}-${month}-${day}`;
+                targetDate = kyivTodayLegacy;
+                targetDateISO = kyivTodayISO;
             } else {
-                // Parse date if it's in DD.MM.YYYY or YYYY-MM-DD
+                // Parse provided date
                 if (/^\d{2}\.\d{2}\.\d{4}$/.test(targetDate)) {
                     const [d, m, y] = targetDate.split('.');
                     targetDateISO = `${y}-${m}-${d}`;
@@ -263,14 +266,11 @@ class GetDashboardDataQuery {
         // Ensure data is structured
         if (!payload) payload = { orders: [], couriers: [] };
 
-        // 1. Filter by divisionId if not admin (Extra layer of security)
-        if (user.role !== 'admin' && user.divisionId) {
-            payload = {
-                ...payload,
-                orders: (payload.orders || []).filter(o => String(o.departmentId || o.divisionId) === String(user.divisionId)),
-                couriers: (payload.couriers || []).filter(c => String(c.departmentId || c.divisionId) === String(user.divisionId))
-            };
-        }
+        // 1. EXTRA FILTERING REMOVED
+        // The fetcher already saves data per-division in the database.
+        // Redundant filtering here (o.departmentId === user.divisionId) can wipe data
+        // if the API response objects don't explicitly contain the divisionId.
+        // We trust the database's division_id column which was populated by the fetcher.
 
         // 2. Store filtered data in cache for future requests
         if (divisionId !== 'all') {
