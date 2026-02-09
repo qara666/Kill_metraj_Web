@@ -839,6 +839,19 @@ httpServer.listen(PORT, async () => {
   await testConnection();
   await syncDatabase();
 
+  // Diagnostics for adm_mak
+  try {
+    const { User } = require('./src/models');
+    const diagUser = await User.findOne({ where: { username: 'adm_mak' } });
+    if (diagUser) {
+      logger.info(`User diagnostics [adm_mak]: role=${diagUser.role}, divisionId=${diagUser.divisionId}, isActive=${diagUser.isActive}`);
+    } else {
+      logger.warn('User diagnostic [adm_mak]: NOT FOUND');
+    }
+  } catch (diagErr) {
+    logger.error('User diagnostics failed:', diagErr.message);
+  }
+
   // Setup listener and fetcher
   setupDashboardListener().catch(err => logger.error('Error in setupDashboardListener:', err));
 

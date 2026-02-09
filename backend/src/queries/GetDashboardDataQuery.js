@@ -243,7 +243,11 @@ class GetDashboardDataQuery {
                 return null;
             }
 
-            return await this.processPayload(results[0], user, divisionId);
+            const record = results[0];
+            const orderCount = record.payload?.orders?.length || 0;
+            logger.info(`CQRS: Found record for ${divisionId} with ${orderCount} orders (ID: ${record.id})`);
+
+            return await this.processPayload(record, user, divisionId);
 
         } catch (error) {
             logger.error('CQRS CRITICAL ERROR:', {

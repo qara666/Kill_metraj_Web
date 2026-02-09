@@ -3,6 +3,7 @@ const { Pool } = require('pg');
 const crypto = require('crypto');
 const path = require('path');
 const logger = require('../src/utils/logger');
+const cacheService = require('../src/services/CacheService');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 /**
@@ -653,12 +654,14 @@ class DashboardFetcher {
                         (this.metrics.avgResponseTime * (this.metrics.totalFetches - 1) + apiElapsed) / this.metrics.totalFetches
                     );
 
-                    const responseData = response.data;
-                    const receivedCount = responseData?.orders?.length || 0;
-                    logger.info(`[Dept: ${deptId}] API Response keys: ${Object.keys(responseData || {}).join(', ')}`);
-                    logger.info(`[Dept: ${deptId}] Orders received: ${receivedCount} for ${targetDateStr}`);
+                    const rawJson = JSON.stringify(responseData);
+                    const rawSizeKB = Math.round(rawJson.length / 1024);
+                    logger.info(`[Dept: ${deptId}] API Response: ${receivedCount} orders, Size: ${rawSizeKB}KB, Keys: ${Object.keys(responseData || {}).join(', ')}`);
 
                     if (receivedCount > 0) {
+                        const deptsFound = new Set(responseData.orders.map(o => o.departmentId || o.divisionId || 'N/A'));
+                        logger.info(`[Dept: ${deptId}] Orders in payload actually belong to depts: ${Array.from(deptsFound).join(', ')}`);
+
                         const sample = responseData.orders.slice(0, 3).map(o => ({
                             num: o.orderNumber,
                             id: o.order_id,
@@ -737,8 +740,8 @@ class DashboardFetcher {
                                 }
                             }
 
-                            order.departmentId = order.departmentId || deptId;
-                            mergedOrdersMap.set(order.orderNumber, order);
+                            order.departmentId = String(order.departmentId || deptId);
+                            mergedOrdersMap.set(String(order.orderNumber), order);
                         }
                     }
 
