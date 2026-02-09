@@ -194,9 +194,6 @@ export function groupOrdersByTimeWindow(
 
     // Разделяем заказы
     orders.forEach(order => {
-        // Исключаем заказы, которые уже доставлены (Phase 4.3)
-        if (order.status === 'Исполнен') return;
-
         // Пробуем получить плановое время из разных источников
         let plannedTime = getPlannedTime(order);
 
