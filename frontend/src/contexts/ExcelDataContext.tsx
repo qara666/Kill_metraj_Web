@@ -197,16 +197,57 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
 function applyCourierVehicleMap(data: any): any {
   try {
     const map = localStorageUtils.getCourierVehicleMap()
-    const couriers = Array.isArray(data.couriers) ? data.couriers.map((c: any) => ({
+    const orders = Array.isArray(data.orders) ? data.orders : []
+
+    // 1. Process Couriers
+    let couriers = Array.isArray(data.couriers) ? [...data.couriers] : []
+
+    // If couriers array is empty or lacks couriers present in orders, derive them
+    const courierNamesInList = new Set(couriers.map(c => c.name || c._id || c.id));
+
+    orders.forEach((order: any) => {
+      const c = order.courier;
+      if (c) {
+        const cName = typeof c === 'string' ? c : (c.name || c._id || c.id);
+        const cId = typeof c === 'string' ? c : (c._id || c.id || cName);
+
+        if (cName && !courierNamesInList.has(cName)) {
+          couriers.push({
+            _id: cId,
+            id: cId,
+            name: cName,
+            vehicleType: 'car' // Default
+          });
+          courierNamesInList.add(cName);
+        }
+      }
+    });
+
+    // Apply vehicle types from map
+    couriers = couriers.map((c: any) => ({
       ...c,
       vehicleType: map[c.name] || c.vehicleType || 'car'
-    })) : []
+    }))
+
+    // 2. Process Payment Methods
+    let paymentMethods = Array.isArray(data.paymentMethods) ? [...data.paymentMethods] : []
+    if (paymentMethods.length === 0 && orders.length > 0) {
+      const uniqueMethods = new Set<string>();
+      orders.forEach((o: any) => {
+        if (o.paymentMethod) uniqueMethods.add(o.paymentMethod);
+      });
+      paymentMethods = Array.from(uniqueMethods).map(method => ({
+        id: method,
+        name: method
+      }));
+    }
+
     return {
       ...data,
       routes: Array.isArray(data.routes) ? data.routes : [],
-      orders: Array.isArray(data.orders) ? data.orders : [],
+      orders,
       couriers,
-      paymentMethods: Array.isArray(data.paymentMethods) ? data.paymentMethods : [],
+      paymentMethods,
       errors: Array.isArray(data.errors) ? data.errors : []
     }
   } catch (e) {
