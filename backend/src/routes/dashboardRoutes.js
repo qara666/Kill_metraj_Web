@@ -280,11 +280,75 @@ router.post('/dashboard/fetch', async (req, res) => {
             });
         }
 
-        // Return combined data or just a success message for 'all'
-        // For 'all', the next frontend refresh will trigger the merged GetDashboardDataQuery
+        // Merge data from all successful results
+        const mergedData = {
+            orders: [],
+            couriers: [],
+            routes: [],
+            paymentMethods: [],
+            errors: [],
+            summary: {
+                totalOrders: 0,
+                totalCouriers: 0,
+                departments: successfulResults.map(r => r.divId)
+            }
+        };
+
+        successfulResults.forEach(result => {
+            try {
+                // Parse payload if it's a string (from cache)
+                const payload = typeof result.data === 'string' ? JSON.parse(result.data) : result.data;
+
+                if (payload.orders && Array.isArray(payload.orders)) {
+                    mergedData.orders.push(...payload.orders);
+                }
+                if (payload.couriers && Array.isArray(payload.couriers)) {
+                    mergedData.couriers.push(...payload.couriers);
+                }
+                if (payload.routes && Array.isArray(payload.routes)) {
+                    mergedData.routes.push(...payload.routes);
+                }
+                if (payload.paymentMethods && Array.isArray(payload.paymentMethods)) {
+                    mergedData.paymentMethods.push(...payload.paymentMethods);
+                }
+            } catch (parseError) {
+                logger.error(`Failed to parse payload for divId ${result.divId}:`, parseError);
+            }
+        });
+
+        // Deduplicate orders by orderNumber
+        const orderMap = new Map();
+        mergedData.orders.forEach(order => {
+            if (order.orderNumber) {
+                orderMap.set(order.orderNumber, order);
+            }
+        });
+        mergedData.orders = Array.from(orderMap.values());
+
+        // Deduplicate couriers by name
+        const courierMap = new Map();
+        mergedData.couriers.forEach(courier => {
+            const courierName = typeof courier === 'string' ? courier : courier.name;
+            if (courierName) {
+                courierMap.set(courierName, courier);
+            }
+        });
+        mergedData.couriers = Array.from(courierMap.values());
+
+        // Deduplicate payment methods
+        mergedData.paymentMethods = Array.from(new Set(mergedData.paymentMethods));
+
+        // Update summary
+        mergedData.summary.totalOrders = mergedData.orders.length;
+        mergedData.summary.totalCouriers = mergedData.couriers.length;
+
+        logger.info(`✅ Merged data: ${mergedData.orders.length} orders, ${mergedData.couriers.length} couriers from ${successfulResults.length} departments`);
+
+        // Return merged data
         res.json({
             success: true,
-            message: `Обновлены данные для ${successfulResults.length} отделений`,
+            data: mergedData,
+            message: `Загружено ${mergedData.orders.length} заказов из ${successfulResults.length} отделений`,
             fetchedAt: new Date().toISOString()
         });
 
