@@ -804,8 +804,6 @@ app.get('/api/debug/fetcher', authenticateToken, async (req, res) => {
 });
 
 
-// ... gRPC and Fetcher start already inside httpServer.listen
-
 /**
  * Завершение работы сервера
  */
@@ -824,3 +822,18 @@ const shutdown = async () => {
 
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
+
+// Start server
+httpServer.listen(PORT, async () => {
+  logger.info(`Сервер запущен на порту ${PORT}`);
+  await testConnection();
+  await syncDatabase();
+
+  // Setup listener and fetcher
+  setupDashboardListener().catch(err => logger.error('Error in setupDashboardListener:', err));
+
+  // Start fetcher
+  const DashboardFetcher = require('./workers/dashboardFetcher');
+  const fetcher = new DashboardFetcher();
+  await fetcher.init();
+});
