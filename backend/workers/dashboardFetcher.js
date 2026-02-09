@@ -652,8 +652,20 @@ class DashboardFetcher {
                     );
 
                     const responseData = response.data;
+                    const receivedCount = responseData?.orders?.length || 0;
+                    logger.info(`[Dept: ${deptId}] API Response keys: ${Object.keys(responseData || {}).join(', ')}`);
+                    logger.info(`[Dept: ${deptId}] Orders received: ${receivedCount} for ${targetDateStr}`);
 
-                    if (!responseData || !responseData.orders || responseData.orders.length === 0) {
+                    if (receivedCount > 0) {
+                        const sample = responseData.orders.slice(0, 3).map(o => ({
+                            num: o.orderNumber,
+                            id: o.order_id,
+                            dept: o.departmentId || o.divisionId
+                        }));
+                        logger.info(`[Dept: ${deptId}] Sample orders: ${JSON.stringify(sample)}`);
+                    }
+
+                    if (!responseData || !responseData.orders || receivedCount === 0) {
                         logger.warn(`[Dept: ${deptId}] Empty response or zero orders received for ${targetDateStr}`);
                         return false;
                     }
@@ -744,13 +756,14 @@ class DashboardFetcher {
 
                     const dataHash = this.calculateHash(mergedPayload);
 
-                    if (lastHash === dataHash) {
+                    if (lastHash === dataHash && !this.forceUpdate) {
                         await client.query('ROLLBACK');
                         this.metrics.successfulFetches++;
                         this.metrics.cacheHits++;
                         this.retryCount = 0;
                         this.recordSuccess(); // Circuit Breaker
-                        return;
+                        logger.debug(`[Dept: ${deptId}] Data hash unchanged (${lastHash}), skipping save`);
+                        return true; // Return true so safe wrapper knows it was "successful"
                     }
 
                     this.metrics.cacheMisses++;
