@@ -634,6 +634,8 @@ class DashboardFetcher {
                         departmentId: deptId
                     };
 
+                    logger.info(`[Dept: ${deptId}] Fetching from API: ${this.apiUrl} with params: ${JSON.stringify(params)}`);
+
                     const apiStart = Date.now();
                     const response = await axios.get(this.apiUrl, {
                         headers: {

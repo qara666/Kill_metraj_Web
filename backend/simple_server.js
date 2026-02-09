@@ -572,13 +572,23 @@ async function setupDashboardListener() {
     const dbName = process.env.DB_NAME || 'kill_metraj';
     logger.info(`Настройка PostgreSQL LISTEN для базы данных: ${dbName}`);
 
-    pgListenClient = new Client({
-      host: process.env.DB_HOST || 'localhost',
-      port: parseInt(process.env.DB_PORT || '5432'),
-      database: dbName,
-      user: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASSWORD
-    });
+    const connectionConfig = process.env.DATABASE_URL
+      ? {
+        connectionString: process.env.DATABASE_URL,
+        ssl: {
+          require: true,
+          rejectUnauthorized: false
+        }
+      }
+      : {
+        host: process.env.DB_HOST || 'localhost',
+        port: parseInt(process.env.DB_PORT || '5432'),
+        database: dbName,
+        user: process.env.DB_USER || 'postgres',
+        password: process.env.DB_PASSWORD
+      };
+
+    pgListenClient = new Client(connectionConfig);
 
     await pgListenClient.connect();
     logger.info('Клиент PostgreSQL LISTEN успешно подключен');
@@ -835,5 +845,5 @@ httpServer.listen(PORT, async () => {
   // Start fetcher
   const DashboardFetcher = require('./workers/dashboardFetcher');
   const fetcher = new DashboardFetcher();
-  await fetcher.init();
+  await fetcher.start();
 });
