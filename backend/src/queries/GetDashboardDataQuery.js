@@ -118,10 +118,17 @@ class GetDashboardDataQuery {
                     const result = await sequelize.query(
                         `SELECT * FROM api_dashboard_cache 
                          WHERE status_code = 200 
-                         AND target_date = :targetDate 
+                         AND (target_date = :targetDate OR target_date = :targetDateAlt)
                          AND division_id = :divId
                          ORDER BY created_at DESC LIMIT 1`,
-                        { replacements: { targetDate, divId }, type: sequelize.QueryTypes.SELECT }
+                        {
+                            replacements: {
+                                targetDate,
+                                targetDateAlt: date || '', // Try both if date provided
+                                divId
+                            },
+                            type: sequelize.QueryTypes.SELECT
+                        }
                     );
 
                     if (result.length > 0) {
@@ -184,11 +191,15 @@ class GetDashboardDataQuery {
             const results = await this.withRetry(() => sequelize.query(
                 `SELECT * FROM api_dashboard_cache 
                  WHERE status_code = 200 
-                 AND target_date = :targetDate 
+                 AND (target_date = :targetDate OR target_date = :targetDateAlt)
                  AND division_id = :divisionId
                  ORDER BY created_at DESC LIMIT 1`,
                 {
-                    replacements: { targetDate, divisionId: String(divisionId) },
+                    replacements: {
+                        targetDate,
+                        targetDateAlt: date || '',
+                        divisionId: String(divisionId)
+                    },
                     type: sequelize.QueryTypes.SELECT
                 }
             ));

@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { ClockIcon, MapPinIcon, ChevronDownIcon, ChevronUpIcon, RocketLaunchIcon, CheckBadgeIcon, QuestionMarkCircleIcon } from '@heroicons/react/24/outline';
+import { ClockIcon, MapPinIcon, ChevronDownIcon, ChevronUpIcon, RocketLaunchIcon, CheckBadgeIcon } from '@heroicons/react/24/outline';
 import { useState, useEffect } from 'react';
 import { type TimeWindowGroup } from '../../utils/route/routeCalculationHelpers';
 
@@ -61,65 +61,63 @@ export function TimeWindowGroupCard({
                 }
             }}
             className={clsx(
-                'rounded-2xl border-2 transition-all relative overflow-hidden',
-                isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-blue-50 shadow-sm',
-                isDragOver && (isDark ? 'border-blue-500 bg-blue-900/20 shadow-blue-900/20' : 'border-blue-400 bg-blue-50 shadow-md transform scale-[1.02]')
+                'rounded-xl border-2 transition-all relative overflow-hidden',
+                isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-blue-50/50 shadow-sm',
+                isDragOver && (isDark ? 'border-blue-500 bg-blue-900/10' : 'border-blue-400 bg-blue-50/50 shadow-md')
             )}
         >
-            {/* Header / Clickable area */}
+            {/* Header Area */}
             <div
                 className={clsx(
-                    'p-4 cursor-pointer transition-colors',
-                    isDark ? 'hover:bg-gray-700/50' : 'hover:bg-blue-50/50'
+                    'p-3 cursor-pointer transition-colors',
+                    isDark ? 'hover:bg-gray-700/30' : 'hover:bg-blue-50/30'
                 )}
                 onClick={() => setIsExpanded(!isExpanded)}
             >
-                <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                        {/* Time Badge */}
-                        <div className={clsx(
-                            'px-3 py-1.5 rounded-xl flex items-center gap-2 text-xs font-black uppercase tracking-widest',
-                            hasTime
-                                ? (isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-50 text-blue-700')
-                                : (isDark ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400')
-                        )}>
-                            <ClockIcon className="w-3.5 h-3.5" />
-                            {group.windowLabel}
+                <div className="flex items-start justify-between">
+                    <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2">
+                            {/* Simple Time Badge */}
+                            <div className={clsx(
+                                'px-2 py-1 rounded-lg flex items-center gap-1.5 text-[11px] font-bold tracking-tight',
+                                hasTime
+                                    ? (isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-50 text-blue-600')
+                                    : (isDark ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400')
+                            )}>
+                                <ClockIcon className="w-3.5 h-3.5 opacity-70" />
+                                {group.windowLabel}
+                            </div>
+
+                            {/* Subdued Departure Status */}
+                            {group.predictedDepartureAt && (
+                                <div className={clsx(
+                                    'text-[10px] font-bold tracking-tight opacity-70 flex items-center gap-1',
+                                    depStatus === 'overdue' ? 'text-green-500' : 'text-gray-400'
+                                )}>
+                                    {depStatus === 'overdue' ? (
+                                        <CheckBadgeIcon className="w-3 h-3" />
+                                    ) : (
+                                        <div className="w-1 h-1 rounded-full bg-current opacity-40" />
+                                    )}
+                                    {depStatus === 'overdue' ? 'Готов' : formatTimeLabel(group.predictedDepartureAt)}
+                                </div>
+                            )}
                         </div>
 
-                        {/* Status / Departure */}
-                        {group.predictedDepartureAt && (
-                            <div className={clsx(
-                                'px-3 py-1.5 rounded-xl flex items-center gap-2 text-[10px] font-black uppercase tracking-widest border',
-                                depStatus === 'overdue'
-                                    ? 'bg-green-500/10 border-green-500/20 text-green-500'
-                                    : depStatus === 'soon'
-                                        ? 'bg-orange-500/10 border-orange-500/20 text-orange-500'
-                                        : 'bg-blue-500/10 border-blue-500/20 text-blue-500'
-                            )}>
-                                {depStatus === 'overdue' ? <CheckBadgeIcon className="w-3.5 h-3.5" /> : <RocketLaunchIcon className="w-3.5 h-3.5" />}
-                                {depStatus === 'overdue' ? 'Готов' : formatTimeLabel(group.predictedDepartureAt)}
-                            </div>
-                        )}
-
-                        {/* Readiness Highlights (Anti-Mess) */}
-                        {(() => {
-                            const allAssembled = group.orders.length > 0 && group.orders.every(o => o.status === 'Собран' || o.status === 'Исполнен');
-                            if (allAssembled) {
-                                return (
-                                    <div className={clsx(
-                                        'px-3 py-1.5 rounded-xl flex items-center gap-2 text-[10px] font-black uppercase tracking-widest bg-green-500 text-white shadow-lg shadow-green-500/20 animate-pulse'
-                                    )}>
-                                        <CheckBadgeIcon className="w-3.5 h-3.5" />
-                                        READY FOR COURIER
-                                    </div>
-                                );
-                            }
-                            return null;
-                        })()}
+                        {/* Combined Order Count and Split Reason */}
+                        <div className="flex items-center gap-2">
+                            <span className={clsx('text-[11px] font-medium opacity-50')}>
+                                {group.orders.length} заказ{getOrdersEnding(group.orders.length)}
+                            </span>
+                            {group.splitReason && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/5 text-blue-500/60 font-bold border border-blue-500/10">
+                                    {group.splitReason}
+                                </span>
+                            )}
+                        </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
                         {onJumpToGroup && (
                             <button
                                 onClick={(e) => {
@@ -127,35 +125,38 @@ export function TimeWindowGroupCard({
                                     onJumpToGroup(group);
                                 }}
                                 className={clsx(
-                                    'p-2 rounded-xl transition-all hover:scale-110 active:scale-90',
-                                    isDark ? 'bg-gray-700 text-gray-400 hover:text-blue-400' : 'bg-gray-50 text-gray-400 hover:text-blue-600'
+                                    'p-2 rounded-lg transition-all',
+                                    isDark ? 'text-gray-500 hover:text-blue-400 hover:bg-gray-700' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
                                 )}
-                                title="Перейти к заказам"
+                                title="Показать на карте"
                             >
-                                <MapPinIcon className="w-5 h-5" />
+                                <MapPinIcon className="w-4 h-4" />
                             </button>
                         )}
-                        {isExpanded ? <ChevronUpIcon className="w-5 h-5 opacity-30" /> : <ChevronDownIcon className="w-5 h-5 opacity-30" />}
+                        <div className="p-1 opacity-20">
+                            {isExpanded ? <ChevronUpIcon className="w-4 h-4" /> : <ChevronDownIcon className="w-4 h-4" />}
+                        </div>
                     </div>
                 </div>
 
-                <div className="mt-3 flex items-center justify-between">
-                    <span className={clsx('text-xs font-black opacity-40 uppercase tracking-widest')}>
-                        {group.orders.length} заказ{getOrdersEnding(group.orders.length)}
-                    </span>
-                    {group.splitReason && (
-                        <div className="flex items-center gap-1.5 text-[9px] font-bold text-blue-500 uppercase tracking-tight">
-                            <QuestionMarkCircleIcon className="w-3 h-3" />
-                            {group.splitReason}
-                        </div>
-                    )}
-                </div>
+                {/* Readiness Indicator Line (Anti-Mess) */}
+                {(() => {
+                    const allAssembled = group.orders.length > 0 && group.orders.every(o => o.status === 'Собран' || o.status === 'Исполнен');
+                    if (allAssembled) {
+                        return (
+                            <div className="mt-2 h-1 w-full bg-green-500/20 rounded-full overflow-hidden">
+                                <div className="h-full bg-green-500 w-full animate-pulse" />
+                            </div>
+                        );
+                    }
+                    return null;
+                })()}
             </div>
 
-            {/* Expanded Content */}
+            {/* Expanded Content with cleaner items */}
             {isExpanded && (
-                <div className={clsx('border-t-2', isDark ? 'border-gray-700 bg-gray-900/20' : 'border-blue-50 bg-gray-50/30')}>
-                    <div className="p-4 space-y-2 max-h-[300px] overflow-y-auto scrollbar-hide">
+                <div className={clsx('border-t', isDark ? 'border-gray-700 bg-gray-900/10' : 'border-blue-50/50 bg-gray-50/20')}>
+                    <div className="p-2 space-y-1.5 max-h-[260px] overflow-y-auto scrollbar-hide">
                         {group.orders.map((order, idx) => (
                             <div
                                 key={order.id || idx}
@@ -165,36 +166,38 @@ export function TimeWindowGroupCard({
                                     e.dataTransfer.effectAllowed = 'move';
                                 }}
                                 className={clsx(
-                                    'p-3 rounded-2xl border-2 flex flex-col gap-2 transition-all cursor-grab active:cursor-grabbing',
-                                    isDark ? 'bg-gray-800/80 border-gray-700' : 'bg-white border-white shadow-sm'
+                                    'p-2.5 rounded-lg border-2 transition-all cursor-grab active:cursor-grabbing',
+                                    isDark ? 'bg-gray-800/80 border-gray-700' : 'bg-white border-transparent shadow-sm'
                                 )}
                             >
-                                <div className="flex items-center justify-between font-black text-[10px] tracking-widest uppercase">
-                                    <span className={isDark ? 'text-blue-400' : 'text-blue-600'}>#{order.orderNumber}</span>
-                                    {order.plannedTime && !isNaN(order.plannedTime) && <span className="opacity-40">{formatTimeLabel(order.plannedTime)}</span>}
+                                <div className="flex items-center justify-between mb-1">
+                                    <span className={clsx('text-[10px] font-bold text-blue-600/80 tracking-tight')}>#{order.orderNumber}</span>
+                                    {order.plannedTime && !isNaN(order.plannedTime as any) && (
+                                        <span className="text-[9px] font-medium opacity-40">{formatTimeLabel(order.plannedTime as any)}</span>
+                                    )}
                                 </div>
-                                <p className="text-xs font-medium opacity-60 leading-relaxed line-clamp-2">{order.address}</p>
+                                <p className="text-[11px] font-medium opacity-60 leading-tight line-clamp-1">{order.address}</p>
                             </div>
                         ))}
                     </div>
 
-                    <div className="p-4 pt-0">
+                    <div className="p-3 pt-1">
                         <button
                             disabled={isCalculating}
                             onClick={() => onCalculateRoute && onCalculateRoute(group)}
                             className={clsx(
-                                'w-full py-4 rounded-2xl flex items-center justify-center gap-3 text-xs font-black uppercase tracking-widest transition-all active:scale-[0.98] shadow-xl',
+                                'w-full py-2.5 rounded-xl flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-wide transition-all active:scale-[0.98]',
                                 isDark
-                                    ? 'bg-blue-600 text-white shadow-blue-900/40 hover:bg-blue-500'
-                                    : 'bg-blue-600 text-white shadow-blue-500/30 hover:bg-blue-700'
+                                    ? 'bg-blue-600 text-white hover:bg-blue-500'
+                                    : 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
                             )}
                         >
                             {isCalculating ? (
-                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                             ) : (
-                                <RocketLaunchIcon className="w-4 h-4" />
+                                <RocketLaunchIcon className="w-3.5 h-3.5" />
                             )}
-                            В МАРШРУТ
+                            В Маршрут
                         </button>
                     </div>
                 </div>

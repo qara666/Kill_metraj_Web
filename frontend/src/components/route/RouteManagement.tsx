@@ -114,7 +114,7 @@ const OrderItem = memo(({
         e.dataTransfer.effectAllowed = 'move';
       }}
       className={clsx(
-        'p-4 rounded-2xl border-2 transition-all duration-300 ease-in-out transform relative overflow-hidden',
+        'p-3 rounded-xl border-2 transition-all duration-300 ease-in-out transform relative overflow-hidden',
         'hover:shadow-lg active:scale-[0.98]',
         isSelected
           ? isDark
@@ -202,56 +202,56 @@ const OrderItem = memo(({
             {order.address}
           </p>
 
-          <div className="flex flex-wrap gap-2 items-center">
+          <div className="flex flex-wrap gap-1.5 items-center">
             {order.customerName && (
               <span className={clsx(
-                'px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider',
-                isDark ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-500'
+                'px-2 py-0.5 rounded-md text-[10px] font-medium',
+                isDark ? 'bg-gray-700 text-gray-400' : 'bg-gray-50 text-gray-400'
               )}>
                 {order.customerName}
               </span>
             )}
             {typeof order.amount === 'number' && (
               <span className={clsx(
-                'px-2.5 py-1 rounded-lg text-[11px] font-black',
-                isDark ? 'bg-green-500/10 text-green-400' : 'bg-green-100 text-green-700'
+                'px-2 py-0.5 rounded-md text-[10px] font-bold',
+                isDark ? 'bg-green-500/10 text-green-400' : 'bg-green-50 text-green-600'
               )}>
                 {order.amount} ₴
               </span>
             )}
             {order.plannedTime && (
               <span className={clsx(
-                'flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold',
-                isDark ? 'bg-purple-500/10 text-purple-400' : 'bg-purple-100 text-purple-700'
+                'flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold',
+                isDark ? 'bg-purple-500/10 text-purple-400' : 'bg-purple-50 text-purple-600'
               )}>
-                <ClockIcon className="w-3 h-3" />
+                <ClockIcon className="w-2.5 h-2.5" />
                 {order.plannedTime}
               </span>
             )}
             {order.paymentMethod && (() => {
               const b = getPaymentMethodBadgeProps(order.paymentMethod, isDark)
               return (
-                <span className={clsx('px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase', b.bgColorClass, b.textColorClass)}>
+                <span className={clsx('px-2 py-0.5 rounded-md text-[10px] font-bold uppercase', b.bgColorClass, b.textColorClass)}>
                   {b.text}
                 </span>
               )
             })()}
             {(order as any).geoMeta?.zoneName && (
               <span className={clsx(
-                'px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-widest flex items-center gap-1',
-                isDark ? 'bg-indigo-500/10 text-indigo-400' : 'bg-indigo-100 text-indigo-700'
+                'px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-tight flex items-center gap-1',
+                isDark ? 'bg-indigo-500/10 text-indigo-400' : 'bg-indigo-50 text-indigo-600'
               )}>
-                <MapIcon className="w-3 h-3" />
+                <MapIcon className="w-2.5 h-2.5" />
                 {(order as any).geoMeta.zoneName}
               </span>
             )}
             {order.status && (
               <span className={clsx(
-                'px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-widest',
-                order.status === 'Исполнен' ? 'bg-green-500/20 text-green-500' :
-                  order.status === 'Доставляется' ? 'bg-orange-500/20 text-orange-500' :
-                    order.status === 'Собран' ? 'bg-blue-500/20 text-blue-500' :
-                      'bg-gray-500/10 text-gray-500'
+                'px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-tight',
+                order.status === 'Исполнен' ? 'bg-green-500/10 text-green-500' :
+                  order.status === 'Доставляется' ? 'bg-orange-500/10 text-orange-500' :
+                    order.status === 'Собран' ? 'bg-blue-500/10 text-blue-500' :
+                      'bg-gray-500/5 text-gray-500'
               )}>
                 {order.status}
               </span>
@@ -284,7 +284,7 @@ const CourierListItem = memo(({
     <button
       onClick={() => onSelect(courierName)}
       className={clsx(
-        'w-full text-left p-4 rounded-2xl border-2 transition-all duration-300 ease-in-out transform mb-2',
+        'w-full text-left p-3 rounded-xl border-2 transition-all duration-300 ease-in-out transform mb-2',
         'group relative overflow-hidden',
         isSelected || isUnassigned
           ? isDark

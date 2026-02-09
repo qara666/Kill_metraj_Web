@@ -10,12 +10,17 @@ export const getBaseUrl = (): string => {
             return url;
         }
 
-        // Smart inference for other cases
-        let inferredBackend = hostname.replace('-frontend', '-backend');
-
-        if (inferredBackend === hostname) {
-            if (hostname.includes('frontend')) inferredBackend = hostname.replace('frontend', 'backend');
-            else if (hostname.includes('ui')) inferredBackend = hostname.replace('ui', 'api');
+        // Handle cases where hostname doesn't contain 'frontend' explicitly
+        let inferredBackend = hostname;
+        if (hostname.includes('frontend')) {
+            inferredBackend = hostname.replace('frontend', 'backend');
+        } else if (hostname.includes('-ui')) {
+            inferredBackend = hostname.replace('-ui', '-api');
+        } else if (hostname.includes('client')) {
+            inferredBackend = hostname.replace('client', 'server');
+        } else {
+            // Default suffix replacement if no standard naming found
+            inferredBackend = hostname + '-api'; // risky but better than nothing
         }
 
         const url = `https://${inferredBackend}`;

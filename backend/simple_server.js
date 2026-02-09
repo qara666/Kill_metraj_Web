@@ -42,18 +42,17 @@ const io = new Server(httpServer, {
       if (origin.endsWith('.onrender.com')) {
         return callback(null, true);
       }
-      // Log disallowed origins to help debugging
-      logger.warn('[CORS] Origin disallowed by Socket.io:', { origin });
       callback(new Error('Not allowed by CORS'));
     },
     methods: ['GET', 'POST'],
     credentials: true
   },
-  // Start with polling and upgrade to websocket for better compatibility with Render/Load Balancers
+  // CRITICAL: Start with polling and upgrade to websocket for Render compatibility
   transports: ['polling', 'websocket'],
   allowEIO3: true,
   pingTimeout: 60000,
-  pingInterval: 25000
+  pingInterval: 25000,
+  connectTimeout: 45000
 });
 
 // Клиент PostgreSQL LISTEN (отдельно от Sequelize)
