@@ -60,8 +60,8 @@ export function Layout({ children }: LayoutProps) {
 
   return (
     <div className={clsx(
-      'min-h-screen transition-colors duration-300',
-      isDark ? 'bg-gray-900' : 'bg-gray-50'
+      'min-h-screen transition-colors duration-200',
+      isDark ? 'bg-[#0B0F1A]' : 'bg-gray-50'
     )}>
       {/* Mobile sidebar */}
       <div className={clsx(
@@ -70,10 +70,10 @@ export function Layout({ children }: LayoutProps) {
       )}>
         <div className="fixed inset-0 bg-gray-600 bg-opacity-75" onClick={() => setSidebarOpen(false)} />
         <div className={clsx(
-          'fixed inset-y-0 left-0 flex w-64 flex-col backdrop-blur-md shadow-2xl',
+          'fixed inset-y-0 left-0 flex w-64 flex-col shadow-2xl transition-transform duration-300 transform-gpu',
           isDark
-            ? 'bg-gradient-to-br from-slate-800/90 via-blue-800/80 to-pink-300/70 border-r border-white/10'
-            : 'bg-gradient-to-br from-slate-100/90 via-blue-100/80 to-pink-100/70 border-r border-gray-200/50'
+            ? 'bg-[#151B2C] border-r border-gray-800'
+            : 'bg-white border-r border-gray-200'
         )}>
           <div className={clsx(
             'flex h-16 items-center justify-between px-4 border-b',
@@ -124,12 +124,12 @@ export function Layout({ children }: LayoutProps) {
                       key={item.name}
                       to={item.href}
                       className={clsx(
-                        'group flex items-center px-3 py-3 text-sm font-medium rounded-xl transition-all duration-200',
+                        'group flex items-center px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 transform-gpu active:scale-95',
                         isActive
-                          ? 'bg-gradient-to-r from-purple-600 to-pink-500 text-white shadow-lg'
+                          ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
                           : isDark
-                            ? 'text-blue-200 hover:bg-purple-800/50 hover:text-white'
-                            : 'text-gray-700 hover:bg-purple-200/50 hover:text-gray-900'
+                            ? 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                       )}
                       onClick={() => setSidebarOpen(false)}
                     >
@@ -167,12 +167,12 @@ export function Layout({ children }: LayoutProps) {
                   key={item.name}
                   to={item.href}
                   className={clsx(
-                    'group flex items-center px-3 py-3 text-sm font-medium rounded-xl transition-all duration-200',
+                    'group flex items-center px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 transform-gpu active:scale-95',
                     isActive
-                      ? 'bg-gradient-to-r from-blue-600 to-pink-500 text-white shadow-lg'
+                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
                       : isDark
-                        ? 'text-blue-200 hover:bg-blue-800/50 hover:text-white'
-                        : 'text-gray-700 hover:bg-gray-200/50 hover:text-gray-900'
+                        ? 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                   )}
                   onClick={() => setSidebarOpen(false)}
                 >
@@ -198,10 +198,10 @@ export function Layout({ children }: LayoutProps) {
       {/* Desktop sidebar */}
       <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
         <div className={clsx(
-          'flex flex-col flex-grow backdrop-blur-md shadow-2xl',
+          'flex flex-col flex-grow shadow-sm border-r transition-colors duration-200',
           isDark
-            ? 'bg-gradient-to-br from-slate-800/90 via-blue-800/80 to-pink-300/70 border-r border-white/10'
-            : 'bg-gradient-to-br from-slate-100/90 via-blue-100/80 to-pink-100/70 border-r border-gray-200/50'
+            ? 'bg-[#0F1424] border-gray-800'
+            : 'bg-white border-gray-200'
         )}>
           <div className={clsx(
             'flex h-16 items-center px-4 border-b',
@@ -242,12 +242,12 @@ export function Layout({ children }: LayoutProps) {
                       key={item.name}
                       to={item.href}
                       className={clsx(
-                        'group flex items-center px-3 py-3 text-sm font-medium rounded-xl transition-all duration-200',
+                        'group flex items-center px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 transform-gpu active:scale-95',
                         isActive
-                          ? 'bg-gradient-to-r from-purple-600 to-pink-500 text-white shadow-lg'
+                          ? 'bg-blue-600 text-white shadow-md shadow-blue-600/10'
                           : isDark
-                            ? 'text-blue-200 hover:bg-purple-800/50 hover:text-white'
-                            : 'text-gray-700 hover:bg-purple-200/50 hover:text-gray-900'
+                            ? 'text-gray-400 hover:bg-gray-800/50 hover:text-white'
+                            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                       )}
                     >
                       <item.icon
@@ -284,12 +284,12 @@ export function Layout({ children }: LayoutProps) {
                   key={item.name}
                   to={item.href}
                   className={clsx(
-                    'group flex items-center px-3 py-3 text-sm font-medium rounded-xl transition-all duration-200',
+                    'group flex items-center px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 transform-gpu active:scale-95',
                     isActive
-                      ? 'bg-gradient-to-r from-blue-600 to-pink-500 text-white shadow-lg'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/10'
                       : isDark
-                        ? 'text-blue-200 hover:bg-blue-800/50 hover:text-white'
-                        : 'text-gray-700 hover:bg-gray-200/50 hover:text-gray-900'
+                        ? 'text-gray-400 hover:bg-gray-800/50 hover:text-white'
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   )}
                 >
                   <item.icon
@@ -315,10 +315,10 @@ export function Layout({ children }: LayoutProps) {
         {/* Top bar */}
         <div className={
           clsx(
-            'sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8 backdrop-blur-md',
+            'sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8',
             isDark
-              ? 'border-gray-700 bg-gradient-to-r from-gray-800/90 via-blue-900/80 to-pink-900/70'
-              : 'border-gray-200 bg-gradient-to-r from-white/90 via-blue-50/80 to-pink-50/70'
+              ? 'border-gray-800 bg-[#0B0F1A]/80 backdrop-blur-md'
+              : 'border-gray-200 bg-white/80 backdrop-blur-md'
           )
         } >
           <button
@@ -403,15 +403,15 @@ export function Layout({ children }: LayoutProps) {
 
               {/* Status indicator */}
               <div className={clsx(
-                'flex items-center gap-x-2 px-3 py-1.5 rounded-full shadow-sm border backdrop-blur-sm',
+                'flex items-center gap-x-2 px-3 py-1.5 rounded-full border',
                 isDark
-                  ? 'bg-gray-800/80 border-green-700/50'
-                  : 'bg-white/80 border-green-200'
+                  ? 'bg-gray-900/50 border-gray-800'
+                  : 'bg-gray-100 border-gray-200'
               )}>
-                <div className="h-2 w-2 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full animate-pulse" />
+                <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
                 <span className={clsx(
-                  'text-sm font-medium',
-                  isDark ? 'text-gray-300' : 'text-gray-700'
+                  'text-xs font-semibold uppercase tracking-wider',
+                  isDark ? 'text-gray-400' : 'text-gray-600'
                 )}>Система работает - ОПы не ловятся</span>
               </div>
             </div>

@@ -65,14 +65,14 @@ export const ImportSection: React.FC<ImportSectionProps> = React.memo(({
 
     return (
         <div className={clsx(
-            'rounded-xl border transition-all duration-300',
-            actualIsDark ? 'border-gray-700 bg-gray-800/30' : 'border-gray-200 bg-white'
+            'card overflow-hidden transition-all duration-300 transform-gpu',
+            actualIsDark ? 'bg-[#151B2C]/50' : 'bg-white'
         )}>
             <button
                 onClick={() => setIsImportExpanded(!isImportExpanded)}
                 className={clsx(
-                    'w-full px-4 py-3 flex items-center justify-between transition-colors',
-                    actualIsDark ? 'hover:bg-gray-700/50' : 'hover:bg-gray-50'
+                    'w-full px-5 py-3.5 flex items-center justify-between transition-colors',
+                    actualIsDark ? 'hover:bg-gray-800/50' : 'hover:bg-gray-50'
                 )}
             >
                 <div className={clsx('text-sm font-medium flex items-center gap-2', actualIsDark ? 'text-gray-300' : 'text-gray-700')}>

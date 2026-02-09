@@ -85,9 +85,11 @@ export const DashboardApiSection: React.FC = () => {
 
     return (
         <div className={clsx(
-            'card p-6 border',
-            isDark ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'
+            'card p-6 overflow-hidden relative',
+            isDark ? 'shadow-blue-900/10' : 'shadow-gray-200/50'
         )}>
+            {/* Subtle light effect for premium feel */}
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-600 via-pink-400 to-blue-600 opacity-80" />
             <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                     <div className={clsx(
@@ -114,7 +116,7 @@ export const DashboardApiSection: React.FC = () => {
 
                 <div className="flex flex-wrap items-center gap-4 justify-center w-full lg:w-auto">
                     {/* Переключатель автообновления */}
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-gray-300 dark:border-gray-600">
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
                         <span className={clsx(
                             'text-sm font-medium',
                             isDark ? 'text-gray-300' : 'text-gray-700'
@@ -124,14 +126,14 @@ export const DashboardApiSection: React.FC = () => {
                         <button
                             onClick={handleToggleAutoUpdate}
                             className={clsx(
-                                'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2',
+                                'relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1',
                                 apiAutoRefreshEnabled ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
                             )}
                         >
                             <span
                                 className={clsx(
-                                    'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
-                                    apiAutoRefreshEnabled ? 'translate-x-6' : 'translate-x-1'
+                                    'inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform duration-200',
+                                    apiAutoRefreshEnabled ? 'translate-x-[22px]' : 'translate-x-0.5'
                                 )}
                             />
                         </button>
@@ -146,8 +148,8 @@ export const DashboardApiSection: React.FC = () => {
                             value={selectedDate}
                             onChange={(e) => setSelectedDate(e.target.value)}
                             className={clsx(
-                                'input pl-10 w-full sm:w-48',
-                                isDark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'
+                                'input pl-10 w-full sm:w-48 rounded-xl',
+                                isDark ? 'bg-gray-800/50 border-gray-700 text-white' : 'bg-white border-gray-200 text-gray-900'
                             )}
                         />
                     </div>
