@@ -49,14 +49,15 @@ export function CourierTimeWindows({
     return (
         <div className="space-y-4">
             {/* Header */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                    <ClockIcon className={clsx('h-5 w-5', isDark ? 'text-blue-400' : 'text-blue-600')} />
-                    <h3 className={clsx('font-black text-sm uppercase tracking-widest', isDark ? 'text-gray-300' : 'text-gray-700')}>
-                        Сгруппировано по времени
-                    </h3>
+            {/* Header / Info Line - Made more subtle */}
+            <div className="flex items-center justify-between px-1">
+                <div className="flex items-center space-x-2 opacity-50">
+                    <ClockIcon className={clsx('h-4 w-4', isDark ? 'text-blue-400' : 'text-blue-600')} />
+                    <span className={clsx('text-[10px] font-bold uppercase tracking-wider', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                        Временные интервалы
+                    </span>
                 </div>
-                <span className={clsx('text-xs font-bold', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                <span className={clsx('text-[10px] font-bold uppercase tracking-wider opacity-50', isDark ? 'text-gray-400' : 'text-gray-500')}>
                     {timeGroups.length} групп{getGroupsEnding(timeGroups.length)}
                 </span>
             </div>

@@ -48,13 +48,15 @@ class SocketService {
         this.socket = io(apiUrl, {
             auth: { token },
             reconnection: true,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 10000, // Increased for stability
+            reconnectionDelay: 2000,
+            reconnectionDelayMax: 10000,
             reconnectionAttempts: this.maxReconnectAttempts,
-            // Start with polling and upgrade to websocket for better compatibility with Render/Load Balancers
+            // CRITICAL: Force polling first for Render compatibility
             transports: ['polling', 'websocket'],
-            timeout: 20000, // Increased timeout for slow mobile networks
-            autoConnect: true
+            timeout: 45000,
+            autoConnect: true,
+            upgrade: true,
+            rememberUpgrade: true
         });
 
         this.setupEventHandlers();

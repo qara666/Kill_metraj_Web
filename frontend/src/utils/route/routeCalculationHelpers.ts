@@ -72,7 +72,7 @@ export function getTimeWindowBounds(
 }
 
 // Константы для группировки
-const PROXIMITY_MINUTES = 10;            // Группируем если прилетели в течение 10 мин
+const PROXIMITY_MINUTES = 20;            // Увеличили с 10 до 20 для уменьшения дробления
 const MAX_DELIVERY_SPAN_MINUTES = 60;   // Максимальный разброс доставки в одной группе
 
 /**
@@ -282,7 +282,8 @@ export function groupOrdersByTimeWindow(
         } else {
             // Проверяем условия объединения:
             // 1. Прилетели близко друг к другу?
-            const arrivedClose = arrival - (currentGroup.arrivalEnd || 0) <= proximityMs;
+            // ИЛИ: У них одинаковое плановое время доставки (SLA)?
+            const arrivedClose = (arrival - (currentGroup.arrivalEnd || 0) <= proximityMs) || (planned === currentGroup.windowStart);
 
             // 2. Время доставки не слишком сильно разлетается?
             const minDelivery = Math.min(currentGroup.windowStart, planned);
@@ -320,11 +321,11 @@ export function groupOrdersByTimeWindow(
 
             // ОПРЕДЕЛЕНИЕ ПРИЧИНЫ РАЗДЕЛЕНИЯ (Phase 4.1)
             let newSplitReason = '';
-            if (!arrivedClose) newSplitReason = 'Интервал поступления';
-            else if (!deliveryFits) newSplitReason = 'Дедлайн (SLA > 60м)';
-            else if (!kitchenGapOk) newSplitReason = 'Разрыв готовности (> 30м)';
-            else if (!distanceOk) newSplitReason = 'Гео-дистанция (> 5км)';
-            else if (!districtOk) newSplitReason = 'Разные районы';
+            if (!arrivedClose) newSplitReason = 'Время';
+            else if (!deliveryFits) newSplitReason = 'SLA';
+            else if (!kitchenGapOk) newSplitReason = 'Готовность';
+            else if (!distanceOk) newSplitReason = 'Гео';
+            else if (!districtOk) newSplitReason = 'Район';
 
             if (newSplitReason === '') {
                 // Добавляем в текущую группу
