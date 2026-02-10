@@ -125,10 +125,12 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
         saveDataToServer(val);
       }, 500);
 
-      // Legacy support (optional, can be removed to free space)
+      // Update localStorage immediately
       try {
-        // localStorage.setItem('km_dashboard_processed_data', JSON.stringify(val))
-      } catch (e) { /* ignore */ }
+        localStorage.setItem('km_dashboard_processed_data', JSON.stringify(val))
+      } catch (e) {
+        console.warn('LocalStorage save failed:', e);
+      }
     } else {
       setExcelDataState(null)
       localStorage.removeItem('km_dashboard_processed_data')
@@ -149,6 +151,13 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
 
       // Clear previous timeout
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+
+      // Update localStorage immediately
+      try {
+        localStorage.setItem('km_dashboard_processed_data', JSON.stringify(next));
+      } catch (e) {
+        console.warn('LocalStorage update failed:', e);
+      }
 
       // Debounce save (0.5s for updates)
       saveTimeoutRef.current = setTimeout(() => {
@@ -175,6 +184,13 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       // Clear previous timeout
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
+      // Update localStorage immediately
+      try {
+        localStorage.setItem('km_dashboard_processed_data', JSON.stringify(next));
+      } catch (e) {
+        console.warn('LocalStorage route update failed:', e);
+      }
+
       // Debounce save (0.5s)
       saveTimeoutRef.current = setTimeout(() => {
         saveDataToServer(next);
@@ -191,6 +207,23 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     clearExcelData,
     updateRouteData
   }), [excelData, setExcelData, updateExcelData, clearExcelData, updateRouteData]);
+
+  // Handle unsaved changes on refresh/close
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      // If there's a pending debounced save, we can't easily wait for it
+      // in beforeunload without using synchronous XHR (deprecated) or 
+      // navigator.sendBeacon. However, we've already saved to localStorage
+      // immediately above, so at worst the server will be a few seconds behind
+      // but the next load will prefer localStorage anyway.
+
+      // We could trigger an immediate save here if we had access to the latest data
+      // but since it's debounced, we'll rely on the immediate localStorage save.
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
 
   return (
     <ExcelDataContext.Provider value={contextValue}>
