@@ -131,24 +131,48 @@ class DashboardFetcher {
     canProceed() {
         const now = Date.now();
 
-        switch (this.circuitBreaker.state) {
-            case 'OPEN':
-                if (now >= this.circuitBreaker.nextAttempt) {
-                    logger.info('[Circuit Breaker] Transitioning to HALF_OPEN');
-                    this.circuitBreaker.state = 'HALF_OPEN';
-                    this.circuitBreaker.successCount = 0;
-                    return true;
-                }
-                logger.warn('[Circuit Breaker] OPEN - Request blocked');
-                return false;
-
-            case 'HALF_OPEN':
-            case 'CLOSED':
+        if (this.circuitBreaker.state === 'OPEN') {
+            if (now >= this.circuitBreaker.nextAttempt) {
+                logger.info('[Circuit Breaker] Transitioning to HALF_OPEN');
+                this.circuitBreaker.state = 'HALF_OPEN';
+                this.circuitBreaker.successCount = 0;
                 return true;
-
-            default:
-                return true;
+            }
+            return false;
         }
+        return true;
+    }
+
+    /**
+     * Group global data by department
+     */
+    groupDataByDepartment(orders, couriers) {
+        const groups = {};
+
+        // Group orders
+        if (orders && Array.isArray(orders)) {
+            orders.forEach(o => {
+                const deptId = String(o.departmentId || o.divisionId || this.departmentId);
+                if (!groups[deptId]) groups[deptId] = { orders: [], couriers: [] };
+                groups[deptId].orders.push(o);
+            });
+        }
+
+        // Group couriers
+        if (couriers && Array.isArray(couriers)) {
+            couriers.forEach(c => {
+                const deptId = String(c.departmentId || c.divisionId || '');
+                if (deptId && groups[deptId]) {
+                    groups[deptId].couriers.push(c);
+                } else {
+                    Object.keys(groups).forEach(gid => {
+                        groups[gid].couriers.push(c);
+                    });
+                }
+            });
+        }
+
+        return groups;
     }
 
     /**
@@ -508,35 +532,17 @@ class DashboardFetcher {
         }
 
         const cycleStart = Date.now();
-        const departments = await this.getActiveDepartments();
-        const concurrency = this.adaptiveConcurrency.current;
-
-        logger.info(`\n[CYCLE] Starting updates for ${departments.length} departments (Concurrency: ${concurrency})`);
-
-        const allTasks = [];
-        for (const deptId of departments) {
-            allTasks.push(() => this.processDepartmentSafe(deptId, 0));
-            allTasks.push(() => this.processDepartmentSafe(deptId, -1));
-        }
+        logger.info(`\n[CYCLE] Starting BULK update (Today & Yesterday)`);
 
         let successCount = 0;
         let failCount = 0;
 
-        for (let i = 0; i < allTasks.length; i += concurrency) {
-            if (this.isShuttingDown) break;
+        // Perform Global Fetches (Capture Everything)
+        const todaySuccess = await this.fetchForDepartment(null, 0); // Today Global
+        const yesterdaySuccess = await this.fetchForDepartment(null, -1); // Yesterday Global
 
-            const batch = allTasks.slice(i, i + concurrency).map(task => task());
-            const results = await Promise.allSettled(batch);
-
-            results.forEach(r => {
-                if (r.status === 'fulfilled' && r.value === true) successCount++;
-                else failCount++;
-            });
-
-            if (i + concurrency < allTasks.length) {
-                await new Promise(resolve => setTimeout(resolve, 300));
-            }
-        }
+        if (todaySuccess) successCount++; else failCount++;
+        if (yesterdaySuccess) successCount++; else failCount++;
 
         const cycleElapsed = Date.now() - cycleStart;
         this.metrics.lastFetchTime = new Date();
@@ -549,7 +555,7 @@ class DashboardFetcher {
             this.metrics.lastErrorTime = new Date();
         }
 
-        logger.info(`[CYCLE] Finished in ${cycleElapsed}ms. Success: ${successCount}, Failed: ${failCount}, Total: ${allTasks.length}`);
+        logger.info(`[CYCLE] Finished Global Fetch in ${cycleElapsed}ms. Today: ${todaySuccess ? 'OK' : 'FAIL'}, Yesterday: ${yesterdaySuccess ? 'OK' : 'FAIL'}`);
     }
 
     /**
@@ -598,10 +604,13 @@ class DashboardFetcher {
      * Enhanced fetch with all patterns
      */
     async fetchForDepartment(deptId, dateShiftDays = 0) {
+        const isGlobal = (deptId === null || deptId === undefined);
+        const logTag = isGlobal ? '[GLOBAL]' : `[Dept: ${deptId}]`;
+
         // Circuit Breaker Check
         if (!this.canProceed()) {
-            logger.warn(`[Dept: ${deptId}] Skipped due to Circuit Breaker`);
-            return;
+            logger.warn(`${logTag} Skipped due to Circuit Breaker`);
+            return false;
         }
 
         // Rate Limiting
@@ -612,30 +621,26 @@ class DashboardFetcher {
 
         const targetDate = this.getKyivDate();
         targetDate.setDate(targetDate.getDate() + dateShiftDays);
-        const targetDateLegacy = this.formatDate(targetDate, '').trim(); // DD.MM.YYYY
-        const targetDateISO = this.formatDateISO(targetDate); // YYYY-MM-DD
-        const targetDateStr = targetDateISO; // Use ISO as primary
+        const targetDateISO = this.formatDateISO(targetDate);
+        const targetDateLegacy = this.formatDate(targetDate, '').trim();
 
         // Request Deduplication
-        const dedupKey = `${deptId}_${targetDateStr}`;
+        const dedupKey = `${deptId || 'global'}_${targetDateISO}`;
 
         return this.deduplicateRequest(dedupKey, async () => {
-            let client = null;
             let retryAttempt = 0;
 
             while (retryAttempt <= this.maxRetries) {
+                let client = null; // Declare client here to ensure it's accessible in finally
                 try {
-                    const timeBeg = this.formatDate(targetDate, '00:00:00');
-                    const timeEnd = this.formatDate(targetDate, '23:59:59');
-
                     const params = {
-                        top: this.topCount,
-                        timeDeliveryBeg: timeBeg,
-                        timeDeliveryEnd: timeEnd,
-                        departmentId: deptId
+                        top: isGlobal ? 2000 : this.topCount,
+                        timeDeliveryBeg: this.formatDate(targetDate, '00:00:00'),
+                        timeDeliveryEnd: this.formatDate(targetDate, '23:59:59')
                     };
+                    if (!isGlobal) params.departmentId = deptId;
 
-                    logger.info(`[Dept: ${deptId}] Fetching from API: ${this.apiUrl} with params: ${JSON.stringify(params)}`);
+                    logger.info(`${logTag} Fetching: ${this.apiUrl} with params: ${JSON.stringify(params)}`);
 
                     const apiStart = Date.now();
                     const response = await axios.get(this.apiUrl, {
@@ -644,7 +649,7 @@ class DashboardFetcher {
                             'Accept': 'application/json'
                         },
                         params: params,
-                        timeout: 15000
+                        timeout: 25000 // Increased timeout for global fetch
                     });
                     const apiElapsed = Date.now() - apiStart;
 
@@ -661,182 +666,70 @@ class DashboardFetcher {
                     const rawSizeKB = Math.round(rawJson.length / 1024);
                     logger.info(`[Dept: ${deptId}] API Response: ${receivedCount} orders, Size: ${rawSizeKB}KB, Keys: ${Object.keys(responseData || {}).join(', ')}`);
 
-                    if (receivedCount > 0) {
-                        const deptsFound = new Set(responseData.orders.map(o => o.departmentId || o.divisionId || 'N/A'));
-                        logger.info(`[Dept: ${deptId}] Orders in payload actually belong to depts: ${Array.from(deptsFound).join(', ')}`);
+                    const deptCounts = {};
+                    responseData.orders.forEach(o => {
+                        const d = String(o.departmentId || o.divisionId || 'UNKNOWN');
+                        deptCounts[d] = (deptCounts[d] || 0) + 1;
+                    });
+                    logger.info(`[Dept: ${deptId}] API response breakdown by dept: ${JSON.stringify(deptCounts)}`);
 
-                        const sample = responseData.orders.slice(0, 3).map(o => ({
-                            num: o.orderNumber,
-                            id: o.order_id,
-                            dept: o.departmentId || o.divisionId
-                        }));
-                        logger.info(`[Dept: ${deptId}] Sample orders: ${JSON.stringify(sample)}`);
-                    }
+                    const statusCounts = {};
+                    responseData.orders.forEach(o => {
+                        const s = String(o.status || 'UNKNOWN');
+                        statusCounts[s] = (statusCounts[s] || 0) + 1;
+                    });
+                    logger.info(`[Dept: ${deptId}] API response breakdown by status: ${JSON.stringify(statusCounts)}`);
 
-                    if (!responseData || !responseData.orders || receivedCount === 0) {
-                        logger.warn(`[Dept: ${deptId}] Empty response or zero orders received for ${targetDateStr}`);
+                    const sample = responseData.orders.slice(0, 5).map(o => ({
+                        num: o.orderNumber,
+                        id: o.order_id,
+                        dept: o.departmentId || o.divisionId,
+                        status: o.status
+                    }));
+                    logger.info(`[Dept: ${deptId}] Sample orders: ${JSON.stringify(sample)}`);
+
+                    if (!responseData || !responseData.orders) {
+                        logger.warn(`${logTag} Empty response or zero orders received for ${targetDateISO}`);
                         return false;
                     }
 
-                    client = await this.pool.connect();
-                    await client.query('BEGIN');
+                    // GLOBAL MODE: Split and process
+                    if (isGlobal) {
+                        let allDeptSuccess = true;
+                        const departmentalData = this.groupDataByDepartment(responseData.orders, responseData.couriers);
+                        const foundDepts = Object.keys(departmentalData);
+                        logger.info(`[GLOBAL] Found data for ${foundDepts.length} departments: ${foundDepts.join(', ')}`);
 
-                    const prevResult = await client.query(
-                        'SELECT payload, data_hash FROM api_dashboard_cache WHERE status_code = 200 AND division_id = $1 AND (target_date = $2 OR target_date = $3) ORDER BY created_at DESC LIMIT 1',
-                        [String(deptId), targetDateISO, targetDateLegacy]
-                    );
-
-                    const lastRecord = prevResult.rows[0];
-                    const prevPayload = lastRecord ? lastRecord.payload : null;
-                    const lastHash = lastRecord ? lastRecord.data_hash : null;
-                    const prevOrders = prevPayload?.orders || [];
-
-                    const mergedOrdersMap = new Map();
-                    const mergedCouriersMap = new Map();
-
-                    // Load previous data for merging
-                    if (prevOrders && Array.isArray(prevOrders)) {
-                        prevOrders.forEach(o => {
-                            if (o.orderNumber) {
-                                mergedOrdersMap.set(String(o.orderNumber), o);
+                        for (const dId of foundDepts) {
+                            try {
+                                await this.processDepartmentData(dId, targetDate, departmentalData[dId]);
+                            } catch (err) {
+                                logger.error(`[GLOBAL] Error processing dept ${dId}:`, err.message);
+                                allDeptSuccess = false;
                             }
-                        });
-                    }
-                    if (prevPayload?.couriers && Array.isArray(prevPayload.couriers)) {
-                        prevPayload.couriers.forEach(c => {
-                            const key = c.id || c.name;
-                            if (key) mergedCouriersMap.set(String(key), c);
-                        });
+                        }
+                        if (allDeptSuccess) {
+                            this.recordSuccess();
+                        } else {
+                            this.recordFailure();
+                        }
+                        return allDeptSuccess;
                     }
 
-                    logger.info(`[Dept: ${deptId}] Merging into ${mergedOrdersMap.size} existing orders from previous record`);
-
-                    const historyEntries = [];
-                    const isTimeEmpty = (t) => {
-                        if (!t) return true;
-                        const s = String(t).trim();
-                        return s === '00:00' || s === '00:00:00' || s === '0:00' || s === '';
-                    };
-
-                    // Merge new orders
-                    if (responseData.orders && Array.isArray(responseData.orders)) {
-                        for (const order of responseData.orders) {
-                            const prevOrder = mergedOrdersMap.get(order.orderNumber);
-                            const oldStatus = prevOrder?.status || null;
-                            const newStatus = order.status;
-
-                            if (isTimeEmpty(order.deliverBy) && !isTimeEmpty(order.plannedTime)) {
-                                order.deliverBy = order.plannedTime;
-                            }
-                            if (isTimeEmpty(order.plannedTime) && !isTimeEmpty(order.deliverBy)) {
-                                order.plannedTime = order.deliverBy;
-                            }
-
-                            order.statusTimings = {
-                                ...(prevOrder?.statusTimings || {}),
-                                ...(order.statusTimings || {})
-                            };
-
-                            if (oldStatus !== newStatus) {
-                                if (prevOrder) {
-                                    historyEntries.push([order.orderNumber, oldStatus, newStatus]);
-                                }
-
-                                const nowTimestamp = new Date().toISOString();
-                                const normalizedStatus = newStatus.toLowerCase();
-
-                                if (normalizedStatus === 'собран' && !order.statusTimings.assembledAt) {
-                                    order.statusTimings.assembledAt = nowTimestamp;
-                                } else if ((normalizedStatus === 'доставляется' || normalizedStatus === 'в пути') && !order.statusTimings.deliveringAt) {
-                                    order.statusTimings.deliveringAt = nowTimestamp;
-                                }
-                            }
-
-                            order.departmentId = String(order.departmentId || deptId);
-                            mergedOrdersMap.set(String(order.orderNumber), order);
+                    // SINGLE DEPT MODE: Process normally
+                    if (cacheService) {
+                        try {
+                            await cacheService.invalidate(String(deptId));
+                            logger.info(`${logTag} Cache invalidated`);
+                        } catch (err) {
+                            logger.error(`${logTag} Cache invalidation error:`, err.message);
                         }
                     }
-
-                    // Merge new couriers
-                    if (responseData.couriers && Array.isArray(responseData.couriers)) {
-                        for (const courier of responseData.couriers) {
-                            courier.departmentId = courier.departmentId || deptId;
-                            mergedCouriersMap.set(courier.id, courier);
-                        }
-                    }
-
-                    const mergedPayload = {
-                        ...responseData,
-                        orders: Array.from(mergedOrdersMap.values()),
-                        couriers: Array.from(mergedCouriersMap.values())
-                    };
-
-                    const dataHash = this.calculateHash(mergedPayload);
-
-                    if (lastHash === dataHash && !this.forceUpdate) {
-                        await client.query('ROLLBACK');
-                        this.metrics.successfulFetches++;
-                        this.metrics.cacheHits++;
-                        this.retryCount = 0;
-                        this.recordSuccess(); // Circuit Breaker
-                        logger.debug(`[Dept: ${deptId}] Data hash unchanged (${lastHash}), skipping save`);
-                        return true; // Return true so safe wrapper knows it was "successful"
-                    }
-
-                    this.metrics.cacheMisses++;
-
-                    if (historyEntries.length > 0) {
-                        const values = historyEntries.map((_, i) =>
-                            `($${i * 3 + 1}, $${i * 3 + 2}, $${i * 3 + 3})`
-                        ).join(',');
-
-                        const flatParams = historyEntries.flat();
-
-                        await client.query(
-                            `INSERT INTO api_dashboard_status_history (order_number, old_status, new_status) VALUES ${values}`,
-                            flatParams
-                        );
-
-                        this.metrics.totalStatusChanges += historyEntries.length;
-                        logger.info(`[Dept: ${deptId}] Recorded ${historyEntries.length} status changes`);
-                    }
-
-                    const insertResult = await client.query(
-                        `INSERT INTO api_dashboard_cache (payload, data_hash, status_code, division_id, target_date)
-                         VALUES ($1, $2, $3, $4, $5)
-                         RETURNING id`,
-                        [mergedPayload, dataHash, 200, String(deptId), targetDateStr]
-                    );
-
-                    const newId = insertResult.rows[0].id;
-
-                    // Notify listeners (simple_server.js) about the update
-                    await client.query(
-                        `NOTIFY dashboard_update, '${JSON.stringify({ id: newId, divisionId: String(deptId) })}'`
-                    );
-
-                    await client.query('COMMIT');
-
-                    // Invalidate cache immediately after commit to ensure fresh data for users
-                    await cacheService.invalidate(String(deptId)).catch(err =>
-                        logger.error(`[Dept: ${deptId}] Error invalidating cache after fetch:`, err.message)
-                    );
-
-                    this.metrics.successfulFetches++;
-                    this.metrics.totalOrders += mergedPayload.orders.length;
-                    this.retryCount = 0;
-                    this.recordSuccess(); // Circuit Breaker
-
-                    const elapsed = Date.now() - startTime;
-                    logger.info(`[Dept: ${deptId}] Saved ${mergedPayload.orders.length} orders in ${elapsed}ms (API: ${apiElapsed}ms). +${historyEntries.length} updates.`);
-
+                    await this.processDepartmentData(deptId, targetDate, responseData);
+                    this.recordSuccess();
                     return true;
 
                 } catch (error) {
-                    if (client) {
-                        try { await client.query('ROLLBACK'); } catch (e) { }
-                    }
-
                     this.metrics.failedFetches++;
                     this.recordFailure(); // Circuit Breaker
 
