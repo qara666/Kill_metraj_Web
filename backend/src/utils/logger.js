@@ -20,7 +20,20 @@ const consoleFormat = winston.format.combine(
   winston.format.printf(({ timestamp, level, message, ...meta }) => {
     let msg = `${timestamp} [${level}]: ${message}`;
     if (Object.keys(meta).length > 0) {
-      msg += ` ${JSON.stringify(meta)}`;
+      try {
+        msg += ` ${JSON.stringify(meta)}`;
+      } catch (e) {
+        // Handle circular structures
+        const cache = new Set();
+        const safeMeta = JSON.stringify(meta, (key, value) => {
+          if (typeof value === 'object' && value !== null) {
+            if (cache.has(value)) return '[Circular]';
+            cache.add(value);
+          }
+          return value;
+        });
+        msg += ` ${safeMeta}`;
+      }
     }
     return msg;
   })
