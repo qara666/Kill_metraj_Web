@@ -803,7 +803,7 @@ class DashboardFetcher {
 
             // 2. Merge data
             const mergedOrders = this.mergeOrders(existingData.orders, data.orders);
-            const mergedCouriers = this.mergeCouriers(existingData.couriers, data.couriers);
+            const mergedCouriers = this.mergeCouriers(existingData.couriers, data.couriers, mergedOrders);
             const statusChanges = this.detectStatusChanges(existingData.orders, mergedOrders);
 
             // 3. Track status changes
@@ -881,21 +881,38 @@ class DashboardFetcher {
     }
 
     /**
-     * Merge couriers with consistency
+     * Merge couriers with consistency and scrubbing
+     * @param {Array} existing - Existing couriers in DB
+     * @param {Array} incoming - Incoming couriers (already filtered by dept)
+     * @param {Array} mergedOrders - The finalized orders for this department
      */
-    mergeCouriers(existing, incoming) {
-        if (!existing || !Array.isArray(existing)) return incoming || [];
+    mergeCouriers(existing, incoming, mergedOrders) {
         if (!incoming || !Array.isArray(incoming)) return existing || [];
 
         const merged = new Map();
 
-        // Load existing couriers
-        existing.forEach(c => {
-            const id = String(c.id || c.name || '');
-            if (id) merged.set(id, c);
-        });
+        // 1. Get IDs of couriers actively assigned to orders
+        const activeCourierIds = new Set();
+        if (mergedOrders && Array.isArray(mergedOrders)) {
+            mergedOrders.forEach(o => {
+                const cid = o.courierId || o.courierName; // Fallback to name if ID missing
+                if (cid) activeCourierIds.add(String(cid));
+            });
+        }
 
-        // Upsert incoming couriers
+        // 2. Load existing couriers ONLY if they are active on orders
+        // This effectively scrubs legacy garbage from the database records
+        if (existing && Array.isArray(existing)) {
+            existing.forEach(c => {
+                const id = String(c.id || c.name || '');
+                if (id && activeCourierIds.has(id)) {
+                    merged.set(id, c);
+                }
+            });
+        }
+
+        // 3. Upsert incoming couriers (these are already filtered by dept)
+        // We ALWAYS keep these as they are fresh from the API for this department
         incoming.forEach(c => {
             const id = String(c.id || c.name || '');
             if (id) {
