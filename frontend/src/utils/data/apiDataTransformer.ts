@@ -36,10 +36,20 @@ export const transformDashboardData = (
 
         // Если в будущем API добавит дату курьеру, мы сможем фильтровать здесь
 
+        // Определяем тип транспорта из API или по умолчанию 'car'
+        let vehicleType: 'car' | 'motorcycle' = 'car';
+        if (swaggerCourier.vehicleType) {
+            // Нормализуем значение из API
+            const apiType = swaggerCourier.vehicleType.toLowerCase();
+            if (apiType === 'motorcycle' || apiType === 'мото' || apiType === 'мотоцикл') {
+                vehicleType = 'motorcycle';
+            }
+        }
+
         couriers.push({
             name: swaggerCourier.name,
             isActive: swaggerCourier.isActive,
-            vehicleType: swaggerCourier.vehicleType || 'car',
+            vehicleType: vehicleType,
         });
     });
 
@@ -87,10 +97,21 @@ export const transformDashboardData = (
             order.courier !== 'ID:0' && // Just in case
             !existingCourierNames.has(order.courier)) {
 
+            // Пытаемся определить тип транспорта по имени курьера
+            let vehicleType: 'car' | 'motorcycle' = 'car';
+            const courierNameLower = order.courier.toLowerCase();
+
+            // Проверяем, есть ли в имени указание на мото
+            if (courierNameLower.includes('мото') ||
+                courierNameLower.includes('moto') ||
+                courierNameLower.includes('motorcycle')) {
+                vehicleType = 'motorcycle';
+            }
+
             couriers.push({
                 name: order.courier,
                 isActive: true,
-                vehicleType: 'car'
+                vehicleType: vehicleType
             });
             existingCourierNames.add(order.courier);
         }

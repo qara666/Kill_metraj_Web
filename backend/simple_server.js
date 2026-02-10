@@ -275,6 +275,11 @@ app.get('/api/health', (req, res) => res.json({ ok: true }))
 const courierRoutes = require('./src/routes/courierRoutes');
 app.use('/api/couriers', courierRoutes);
 
+// Courier Financial Tracking
+const courierFinancialRoutes = require('./src/routes/courierFinancialRoutes');
+app.use('/api/v1/couriers', courierFinancialRoutes);
+app.use('/api/v1/settlements', courierFinancialRoutes);
+
 // Маршруты
 const routeRoutes = require('./src/routes/routeRoutes');
 app.use('/api/routes', routeRoutes);

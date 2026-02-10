@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { ClockIcon, MapIcon } from '@heroicons/react/24/outline';
+import { ClockIcon } from '@heroicons/react/24/outline';
 import type { Order } from '../../types';
 import { TimeWindowGroupCard } from './TimeWindowGroupCard';
 import { groupOrdersByTimeWindow, type TimeWindowGroup } from '../../utils/route/routeCalculationHelpers';
@@ -27,39 +27,41 @@ export function CourierTimeWindows({
     onCalculateRoute,
     onJumpToGroup,
 }: CourierTimeWindowsProps) {
-    // Группируем заказы по 15-минутным окнам
+    // Группируем заказы по временным окнам
     const timeGroups = groupOrdersByTimeWindow(orders, courierId, courierName);
 
-    if (timeGroups.length === 0) {
+    if (!timeGroups || timeGroups.length === 0) {
         return (
-            <div
-                className={clsx(
-                    'flex flex-col items-center justify-center p-6 rounded-lg border',
-                    isDark ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'
-                )}
-            >
-                <MapIcon className={clsx('h-8 w-8 mb-2', isDark ? 'text-gray-600' : 'text-gray-400')} />
-                <p className={clsx('text-sm', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                    Нет заказов для группировки
-                </p>
+            <div className={clsx(
+                'text-center py-8 rounded-lg border-2 border-dashed',
+                isDark ? 'border-gray-700 text-gray-500' : 'border-gray-200 text-gray-400'
+            )}>
+                <p className="text-sm font-medium">Нет заказов для группировки</p>
             </div>
         );
     }
 
     return (
         <div className="space-y-4">
-            {/* Header */}
-            {/* Header / Info Line - Made more subtle */}
-            <div className="flex items-center justify-between px-1">
-                <div className="flex items-center space-x-2 opacity-50">
-                    <ClockIcon className={clsx('h-4 w-4', isDark ? 'text-blue-400' : 'text-blue-600')} />
-                    <span className={clsx('text-[10px] font-bold uppercase tracking-wider', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                        Временные интервалы
-                    </span>
+            {/* Enhanced Header */}
+            <div className={clsx(
+                'flex items-center gap-3 px-4 py-3 rounded-lg border',
+                isDark ? 'bg-gray-800/50 border-gray-700' : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-100'
+            )}>
+                <div className={clsx(
+                    'p-2 rounded-lg',
+                    isDark ? 'bg-blue-500/20' : 'bg-white shadow-sm'
+                )}>
+                    <ClockIcon className={clsx('w-5 h-5', isDark ? 'text-blue-400' : 'text-blue-600')} />
                 </div>
-                <span className={clsx('text-[10px] font-bold uppercase tracking-wider opacity-50', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                    {timeGroups.length} групп{getGroupsEnding(timeGroups.length)}
-                </span>
+                <div>
+                    <h3 className={clsx('text-sm font-bold tracking-tight', isDark ? 'text-gray-200' : 'text-gray-800')}>
+                        СГРУППИРОВАНО ПО ВРЕМЕНИ
+                    </h3>
+                    <p className={clsx('text-xs font-medium', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                        {timeGroups.length} {timeGroups.length === 1 ? 'группа' : timeGroups.length < 5 ? 'группы' : 'групп'}
+                    </p>
+                </div>
             </div>
 
             {/* Time Window Groups - Grid Layout */}
@@ -78,15 +80,4 @@ export function CourierTimeWindows({
             </div>
         </div>
     );
-}
-
-
-function getGroupsEnding(count: number): string {
-    const lastDigit = count % 10;
-    const lastTwoDigits = count % 100;
-
-    if (lastTwoDigits >= 11 && lastTwoDigits <= 14) return '';
-    if (lastDigit === 1) return 'а';
-    if (lastDigit >= 2 && lastDigit <= 4) return 'ы';
-    return '';
 }
