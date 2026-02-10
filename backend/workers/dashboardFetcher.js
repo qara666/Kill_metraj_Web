@@ -534,6 +534,8 @@ class DashboardFetcher {
         const cycleStart = Date.now();
         logger.info(`\n[CYCLE] Starting BULK update (Today & Yesterday)`);
 
+        let successCount = 0;
+        let failCount = 0;
         let todaySuccess = false;
         let yesterdaySuccess = false;
 
@@ -545,7 +547,7 @@ class DashboardFetcher {
             if (todaySuccess) successCount++; else failCount++;
             if (yesterdaySuccess) successCount++; else failCount++;
         } catch (error) {
-            logger.error('[CYCLE] Critical error during bulk update:', error.message);
+            logger.error('[CYCLE] Critical error during bulk update:', error.message || error);
             failCount += 2; // Assume both failed if we caught here
         }
 
