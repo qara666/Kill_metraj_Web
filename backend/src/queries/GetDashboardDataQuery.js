@@ -154,7 +154,7 @@ class GetDashboardDataQuery {
                          WHERE status_code = 200 
                          AND (target_date = :targetDate OR target_date = :targetDateISO)
                          AND division_id = :divId
-                         ORDER BY created_at DESC LIMIT 1`,
+                         ORDER BY created_at DESC NULLS LAST LIMIT 1`,
                         {
                             replacements: {
                                 targetDate,
@@ -227,7 +227,7 @@ class GetDashboardDataQuery {
                  WHERE status_code = 200 
                  AND (target_date = :targetDate OR target_date = :targetDateISO)
                  AND division_id = :divisionId
-                 ORDER BY created_at DESC LIMIT 1`,
+                 ORDER BY created_at DESC NULLS LAST LIMIT 1`,
                 {
                     replacements: {
                         targetDate,

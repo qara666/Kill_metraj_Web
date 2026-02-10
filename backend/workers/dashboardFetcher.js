@@ -774,7 +774,7 @@ class DashboardFetcher {
 
             // 1. Get existing data from cache
             const existing = await client.query(
-                'SELECT payload, data_hash FROM api_dashboard_cache WHERE division_id = $1 AND target_date = $2 ORDER BY created_at DESC LIMIT 1',
+                'SELECT payload, data_hash FROM api_dashboard_cache WHERE division_id = $1 AND target_date = $2 ORDER BY created_at DESC NULLS LAST LIMIT 1',
                 [String(deptId), targetDateISO]
             );
 
