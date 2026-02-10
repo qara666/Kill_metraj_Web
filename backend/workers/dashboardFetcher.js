@@ -537,12 +537,17 @@ class DashboardFetcher {
         let successCount = 0;
         let failCount = 0;
 
-        // Perform Global Fetches (Capture Everything)
-        const todaySuccess = await this.fetchForDepartment(null, 0); // Today Global
-        const yesterdaySuccess = await this.fetchForDepartment(null, -1); // Yesterday Global
+        try {
+            // Perform Global Fetches (Capture Everything)
+            const todaySuccess = await this.fetchForDepartment(null, 0); // Today Global
+            const yesterdaySuccess = await this.fetchForDepartment(null, -1); // Yesterday Global
 
-        if (todaySuccess) successCount++; else failCount++;
-        if (yesterdaySuccess) successCount++; else failCount++;
+            if (todaySuccess) successCount++; else failCount++;
+            if (yesterdaySuccess) successCount++; else failCount++;
+        } catch (error) {
+            logger.error('[CYCLE] Critical error during bulk update:', error.message);
+            failCount += 2; // Assume both failed if we caught here
+        }
 
         const cycleElapsed = Date.now() - cycleStart;
         this.metrics.lastFetchTime = new Date();
@@ -632,7 +637,7 @@ class DashboardFetcher {
             while (retryAttempt <= this.maxRetries) {
                 try {
                     const params = {
-                        top: isGlobal ? 5000 : this.topCount,
+                        top: isGlobal ? 2000 : this.topCount,
                         timeDeliveryBeg: this.formatDate(targetDate, '00:00:00'),
                         timeDeliveryEnd: this.formatDate(targetDate, '23:59:59')
                     };
