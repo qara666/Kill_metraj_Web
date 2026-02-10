@@ -462,6 +462,8 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
       logger.error('User diagnostics failed:', diagErr.message);
     }
 
+
+
     await setupDashboardListener();
 
     // Start manual migration check
@@ -850,19 +852,4 @@ const shutdown = async () => {
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
-// Diagnostics for adm_mak
-try {
-  const diagUser = await User.findOne({ where: { username: 'adm_mak' } });
-  if (diagUser) {
-    if (diagUser.role !== 'user') {
-      diagUser.role = 'user';
-      await diagUser.save();
-      logger.info('User adm_mak demoted to user role as requested');
-    }
-    logger.info(`User diagnostics [adm_mak]: role=${diagUser.role}, divisionId=${diagUser.divisionId}, isActive=${diagUser.isActive}`);
-  } else {
-    logger.warn('User diagnostic [adm_mak]: NOT FOUND');
-  }
-} catch (diagErr) {
-  logger.error('User diagnostics failed:', diagErr.message);
-}
+
