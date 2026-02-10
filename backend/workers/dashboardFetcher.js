@@ -149,26 +149,40 @@ class DashboardFetcher {
     groupDataByDepartment(orders, couriers) {
         const groups = {};
 
-        // Group orders
+        // 1. Initialize groups with orders and track which couriers are on orders
+        const courierToDeptMap = new Map();
+
         if (orders && Array.isArray(orders)) {
             orders.forEach(o => {
                 const deptId = String(o.departmentId || o.divisionId || 'UNKNOWN');
                 if (!groups[deptId]) groups[deptId] = { orders: [], couriers: [] };
                 groups[deptId].orders.push(o);
+
+                // Track courier assignment from orders
+                if (o.courierId || o.courierName) {
+                    const cKey = String(o.courierId || o.courierName);
+                    if (!courierToDeptMap.has(cKey)) courierToDeptMap.set(cKey, new Set());
+                    courierToDeptMap.get(cKey).add(deptId);
+                }
             });
         }
 
-        // Group couriers
+        // 2. Group couriers based on explicit deptId or order assignment
         if (couriers && Array.isArray(couriers)) {
             couriers.forEach(c => {
-                const deptId = String(c.departmentId || c.divisionId || '');
-                if (deptId && groups[deptId]) {
-                    groups[deptId].couriers.push(c);
-                } else {
-                    Object.keys(groups).forEach(gid => {
-                        groups[gid].couriers.push(c);
+                const explicitDeptId = String(c.departmentId || c.divisionId || '');
+                const cKey = String(c.id || c.name || '');
+
+                if (explicitDeptId && groups[explicitDeptId]) {
+                    // Always add to explicit department
+                    groups[explicitDeptId].couriers.push(c);
+                } else if (cKey && courierToDeptMap.has(cKey)) {
+                    // Add to departments where courier has orders
+                    courierToDeptMap.get(cKey).forEach(deptId => {
+                        if (groups[deptId]) groups[deptId].couriers.push(c);
                     });
                 }
+                // REMOVED the "push to all" fallback that was causing the 144 courier flood
             });
         }
 
@@ -789,6 +803,7 @@ class DashboardFetcher {
 
             // 2. Merge data
             const mergedOrders = this.mergeOrders(existingData.orders, data.orders);
+            const mergedCouriers = this.mergeCouriers(existingData.couriers, data.couriers);
             const statusChanges = this.detectStatusChanges(existingData.orders, mergedOrders);
 
             // 3. Track status changes
@@ -810,7 +825,7 @@ class DashboardFetcher {
             // 5. Store in DB
             const finalPayload = {
                 orders: mergedOrders,
-                couriers: data.couriers || [],
+                couriers: mergedCouriers,
                 paymentMethods: data.paymentMethods || [],
                 addresses: data.addresses || [],
                 statistics: data.statistics || {}
@@ -828,7 +843,7 @@ class DashboardFetcher {
                 targetDate: targetDateISO
             })]);
 
-            logger.info(`${logTag} Successfully updated data for ${targetDateISO} (${mergedOrders.length} orders)`);
+            logger.info(`${logTag} Successfully updated data for ${targetDateISO} (${mergedOrders.length} orders, ${mergedCouriers.length} couriers)`);
 
         } catch (error) {
             logger.error(`${logTag} Error processing department data:`, error.message);
@@ -859,6 +874,33 @@ class DashboardFetcher {
             if (num) {
                 const existingOrder = merged.get(num) || {};
                 merged.set(num, { ...existingOrder, ...o });
+            }
+        });
+
+        return Array.from(merged.values());
+    }
+
+    /**
+     * Merge couriers with consistency
+     */
+    mergeCouriers(existing, incoming) {
+        if (!existing || !Array.isArray(existing)) return incoming || [];
+        if (!incoming || !Array.isArray(incoming)) return existing || [];
+
+        const merged = new Map();
+
+        // Load existing couriers
+        existing.forEach(c => {
+            const id = String(c.id || c.name || '');
+            if (id) merged.set(id, c);
+        });
+
+        // Upsert incoming couriers
+        incoming.forEach(c => {
+            const id = String(c.id || c.name || '');
+            if (id) {
+                const existingCourier = merged.get(id) || {};
+                merged.set(id, { ...existingCourier, ...c });
             }
         });
 
