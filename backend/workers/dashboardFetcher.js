@@ -534,13 +534,13 @@ class DashboardFetcher {
         const cycleStart = Date.now();
         logger.info(`\n[CYCLE] Starting BULK update (Today & Yesterday)`);
 
-        let successCount = 0;
-        let failCount = 0;
+        let todaySuccess = false;
+        let yesterdaySuccess = false;
 
         try {
             // Perform Global Fetches (Capture Everything)
-            const todaySuccess = await this.fetchForDepartment(null, 0); // Today Global
-            const yesterdaySuccess = await this.fetchForDepartment(null, -1); // Yesterday Global
+            todaySuccess = await this.fetchForDepartment(null, 0); // Today Global
+            yesterdaySuccess = await this.fetchForDepartment(null, -1); // Yesterday Global
 
             if (todaySuccess) successCount++; else failCount++;
             if (yesterdaySuccess) successCount++; else failCount++;
@@ -668,6 +668,7 @@ class DashboardFetcher {
                         return false;
                     }
 
+                    const receivedCount = responseData.orders.length;
                     if (receivedCount >= params.top) {
                         logger.warn(`${logTag} API response HIT THE LIMIT (${params.top} orders). Data may be truncated!`);
                     }
