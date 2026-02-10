@@ -622,7 +622,6 @@ class DashboardFetcher {
         const targetDate = this.getKyivDate();
         targetDate.setDate(targetDate.getDate() + dateShiftDays);
         const targetDateISO = this.formatDateISO(targetDate);
-        const targetDateLegacy = this.formatDate(targetDate, '').trim();
 
         // Request Deduplication
         const dedupKey = `${deptId || 'global'}_${targetDateISO}`;
@@ -631,7 +630,6 @@ class DashboardFetcher {
             let retryAttempt = 0;
 
             while (retryAttempt <= this.maxRetries) {
-                let client = null; // Declare client here to ensure it's accessible in finally
                 try {
                     const params = {
                         top: isGlobal ? 2000 : this.topCount,
@@ -660,38 +658,36 @@ class DashboardFetcher {
                     );
 
                     const responseData = response.data;
-                    const receivedCount = responseData?.orders?.length || 0;
+                    if (!responseData || !responseData.orders) {
+                        logger.warn(`${logTag} Empty response or zero orders received for ${targetDateISO}`);
+                        return false;
+                    }
 
-                    const rawJson = JSON.stringify(responseData);
-                    const rawSizeKB = Math.round(rawJson.length / 1024);
-                    logger.info(`[Dept: ${deptId}] API Response: ${receivedCount} orders, Size: ${rawSizeKB}KB, Keys: ${Object.keys(responseData || {}).join(', ')}`);
+                    const receivedCount = responseData.orders.length;
+                    const rawSizeKB = Math.round(JSON.stringify(responseData).length / 1024);
+                    logger.info(`${logTag} API Response: ${receivedCount} orders, Size: ${rawSizeKB}KB, Keys: ${Object.keys(responseData).join(', ')}`);
 
+                    // Diagnostics
                     const deptCounts = {};
                     responseData.orders.forEach(o => {
                         const d = String(o.departmentId || o.divisionId || 'UNKNOWN');
                         deptCounts[d] = (deptCounts[d] || 0) + 1;
                     });
-                    logger.info(`[Dept: ${deptId}] API response breakdown by dept: ${JSON.stringify(deptCounts)}`);
+                    logger.info(`${logTag} API response breakdown by dept: ${JSON.stringify(deptCounts)}`);
 
                     const statusCounts = {};
                     responseData.orders.forEach(o => {
                         const s = String(o.status || 'UNKNOWN');
                         statusCounts[s] = (statusCounts[s] || 0) + 1;
                     });
-                    logger.info(`[Dept: ${deptId}] API response breakdown by status: ${JSON.stringify(statusCounts)}`);
+                    logger.info(`${logTag} API response breakdown by status: ${JSON.stringify(statusCounts)}`);
 
                     const sample = responseData.orders.slice(0, 5).map(o => ({
                         num: o.orderNumber,
-                        id: o.order_id,
                         dept: o.departmentId || o.divisionId,
                         status: o.status
                     }));
-                    logger.info(`[Dept: ${deptId}] Sample orders: ${JSON.stringify(sample)}`);
-
-                    if (!responseData || !responseData.orders) {
-                        logger.warn(`${logTag} Empty response or zero orders received for ${targetDateISO}`);
-                        return false;
-                    }
+                    logger.info(`${logTag} Sample orders: ${JSON.stringify(sample)}`);
 
                     // GLOBAL MODE: Split and process
                     if (isGlobal) {
@@ -736,28 +732,155 @@ class DashboardFetcher {
                     let errorDetail = error.message;
                     if (error.response) {
                         errorDetail = `API Error ${error.response.status}: ${JSON.stringify(error.response.data).substring(0, 100)}...`;
-                    } else if (error.request) {
-                        errorDetail = `No response: ${error.message}`;
                     } else if (error.code === 'ECONNABORTED') {
                         errorDetail = 'Request timeout';
                     }
 
                     if (retryAttempt < this.maxRetries) {
                         const backoffTime = this.calculateBackoff(retryAttempt);
-                        logger.warn(`[Dept: ${deptId}] Attempt ${retryAttempt + 1}/${this.maxRetries} failed: ${errorDetail}`);
+                        logger.warn(`${logTag} Attempt ${retryAttempt + 1}/${this.maxRetries} failed: ${errorDetail}`);
                         logger.warn(`Retry in ${backoffTime}ms...`);
-
                         await new Promise(resolve => setTimeout(resolve, backoffTime));
                         retryAttempt++;
                     } else {
-                        logger.error(`[Dept: ${deptId}] All attempts exhausted. Error: ${errorDetail}`);
+                        logger.error(`${logTag} All attempts exhausted. Error: ${errorDetail}`);
                         throw error;
                     }
-                } finally {
-                    if (client) client.release();
                 }
             }
         });
+    }
+
+    /**
+     * Process data for a specific department
+     */
+    async processDepartmentData(deptId, targetDate, data) {
+        const logTag = `[Dept: ${deptId}]`;
+        const targetDateISO = this.formatDateISO(targetDate);
+
+        let client = null;
+        try {
+            client = await this.pool.connect();
+
+            // 1. Get existing data from cache
+            const existing = await client.query(
+                'SELECT payload, data_hash FROM api_dashboard_cache WHERE division_id = $1 AND target_date = $2 ORDER BY created_at DESC LIMIT 1',
+                [String(deptId), targetDateISO]
+            );
+
+            const existingData = existing.rows.length > 0 ? existing.rows[0].payload : { orders: [], couriers: [] };
+            const currentHash = this.calculateHash(data);
+
+            // Optimization: If nothing changed, skip DB update
+            if (existing.rows.length > 0 && existing.rows[0].data_hash === currentHash) {
+                logger.debug(`${logTag} Data unchanged for ${targetDateISO} (Hash: ${currentHash.substring(0, 8)})`);
+                return;
+            }
+
+            // 2. Merge data
+            const mergedOrders = this.mergeOrders(existingData.orders, data.orders);
+            const statusChanges = this.detectStatusChanges(existingData.orders, mergedOrders);
+
+            // 3. Track status changes
+            if (statusChanges.length > 0) {
+                this.metrics.totalStatusChanges += statusChanges.length;
+                logger.info(`${logTag} Detected ${statusChanges.length} status changes`);
+
+                for (const change of statusChanges) {
+                    await client.query(
+                        'INSERT INTO api_dashboard_status_history (order_number, old_status, new_status, created_at) VALUES ($1, $2, $3, NOW())',
+                        [change.orderNumber, change.oldStatus, change.newStatus]
+                    );
+                }
+            }
+
+            // 4. Update metrics
+            this.metrics.totalOrders = Math.max(this.metrics.totalOrders, mergedOrders.length);
+
+            // 5. Store in DB
+            const finalPayload = {
+                orders: mergedOrders,
+                couriers: data.couriers || [],
+                paymentMethods: data.paymentMethods || [],
+                addresses: data.addresses || [],
+                statistics: data.statistics || {}
+            };
+
+            await client.query(
+                `INSERT INTO api_dashboard_cache (division_id, target_date, payload, data_hash, status_code, created_at)
+                 VALUES ($1, $2, $3, $4, $5, NOW())`,
+                [String(deptId), targetDateISO, finalPayload, currentHash, 200]
+            );
+
+            // 6. Notify via WebSocket
+            await client.query('SELECT pg_notify(\'dashboard_update\', $1)', [JSON.stringify({
+                divisionId: deptId,
+                targetDate: targetDateISO
+            })]);
+
+            logger.info(`${logTag} Successfully updated data for ${targetDateISO} (${mergedOrders.length} orders)`);
+
+        } catch (error) {
+            logger.error(`${logTag} Error processing department data:`, error.message);
+            throw error;
+        } finally {
+            if (client) client.release();
+        }
+    }
+
+    /**
+     * Merge orders with type-safety and consistency
+     */
+    mergeOrders(existing, incoming) {
+        if (!existing || !Array.isArray(existing)) return incoming || [];
+        if (!incoming || !Array.isArray(incoming)) return existing || [];
+
+        const merged = new Map();
+
+        // Load existing orders
+        existing.forEach(o => {
+            const num = String(o.orderNumber || o.num || '');
+            if (num) merged.set(num, o);
+        });
+
+        // Upsert incoming orders
+        incoming.forEach(o => {
+            const num = String(o.orderNumber || o.num || '');
+            if (num) {
+                const existingOrder = merged.get(num) || {};
+                merged.set(num, { ...existingOrder, ...o });
+            }
+        });
+
+        return Array.from(merged.values());
+    }
+
+    /**
+     * Detect status changes
+     */
+    detectStatusChanges(oldOrders, newOrders) {
+        const changes = [];
+        if (!oldOrders || !newOrders) return changes;
+
+        const oldMap = new Map();
+        oldOrders.forEach(o => {
+            const num = String(o.orderNumber || o.num || '');
+            if (num) oldMap.set(num, o.status);
+        });
+
+        newOrders.forEach(n => {
+            const num = String(n.orderNumber || n.num || '');
+            const oldStatus = oldMap.get(num);
+            if (num && oldStatus && n.status && oldStatus !== n.status) {
+                changes.push({
+                    orderNumber: num,
+                    oldStatus,
+                    newStatus: n.status
+                });
+            }
+        });
+
+        return changes;
     }
 
     getKyivDate() {
