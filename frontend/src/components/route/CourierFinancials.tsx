@@ -80,12 +80,18 @@ export function CourierFinancials({
 
             const url = `/api/v1/couriers/${encodedCourierId}/financial-summary?divisionId=${encodedDivisionId}&targetDate=${encodedDate}`;
 
+            const token = localStorage.getItem('km_access_token');
+            const sanitizedToken = token ? token.trim() : '';
+
+            if (!sanitizedToken) {
+                throw new Error('Отсутствует токен авторизации');
+            }
+
             const response = await fetch(url, {
                 headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('km_access_token')}`
+                    'Authorization': `Bearer ${sanitizedToken}`
                 }
-            }
-            );
+            });
 
             if (!response.ok) {
                 throw new Error('Failed to fetch financial summary');
@@ -94,7 +100,19 @@ export function CourierFinancials({
             const data = await response.json();
             setSummary(data);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Unknown error');
+            console.error('Error fetching financial summary:', err);
+            let errorMessage = 'Unknown error';
+
+            if (err instanceof Error) {
+                if (err.name === 'DOMException' || err.message.includes('string did not match the expected pattern')) {
+                    errorMessage = 'Invalid authentication token. Please log in again.';
+                    // Optional: redirect to login or clear token
+                } else {
+                    errorMessage = err.message;
+                }
+            }
+
+            setError(errorMessage);
         } finally {
             setLoading(false);
         }
