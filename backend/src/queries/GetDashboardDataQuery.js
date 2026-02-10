@@ -245,7 +245,7 @@ class GetDashboardDataQuery {
 
             const record = results[0];
             const orderCount = record.payload?.orders?.length || 0;
-            logger.info(`CQRS: Found record for ${divisionId} with ${orderCount} orders (ID: ${record.id})`);
+            logger.info(`CQRS: Found record for ${divisionId} with ${orderCount} orders (ID: ${record.id}, CreatedAt: ${record.created_at})`);
 
             return await this.processPayload(record, user, divisionId);
 
