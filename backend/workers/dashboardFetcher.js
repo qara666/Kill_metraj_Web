@@ -696,11 +696,20 @@ class DashboardFetcher {
 
                     // Load previous data for merging
                     if (prevOrders && Array.isArray(prevOrders)) {
-                        prevOrders.forEach(o => mergedOrdersMap.set(o.orderNumber, o));
+                        prevOrders.forEach(o => {
+                            if (o.orderNumber) {
+                                mergedOrdersMap.set(String(o.orderNumber), o);
+                            }
+                        });
                     }
                     if (prevPayload?.couriers && Array.isArray(prevPayload.couriers)) {
-                        prevPayload.couriers.forEach(c => mergedCouriersMap.set(c.id, c));
+                        prevPayload.couriers.forEach(c => {
+                            const key = c.id || c.name;
+                            if (key) mergedCouriersMap.set(String(key), c);
+                        });
                     }
+
+                    logger.info(`[Dept: ${deptId}] Merging into ${mergedOrdersMap.size} existing orders from previous record`);
 
                     const historyEntries = [];
                     const isTimeEmpty = (t) => {

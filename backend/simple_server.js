@@ -844,6 +844,11 @@ httpServer.listen(PORT, async () => {
     const { User } = require('./src/models');
     const diagUser = await User.findOne({ where: { username: 'adm_mak' } });
     if (diagUser) {
+      if (diagUser.role !== 'user') {
+        diagUser.role = 'user';
+        await diagUser.save();
+        logger.info('User adm_mak demoted to user role as requested');
+      }
       logger.info(`User diagnostics [adm_mak]: role=${diagUser.role}, divisionId=${diagUser.divisionId}, isActive=${diagUser.isActive}`);
     } else {
       logger.warn('User diagnostic [adm_mak]: NOT FOUND');
