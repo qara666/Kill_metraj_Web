@@ -445,6 +445,23 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
       logger.error('CRITICAL: Failed to check/create administrator', { error: createErr.message });
     }
 
+    // Diagnostics for adm_mak
+    try {
+      const diagUser = await User.findOne({ where: { username: 'adm_mak' } });
+      if (diagUser) {
+        if (diagUser.role !== 'user') {
+          diagUser.role = 'user';
+          await diagUser.save();
+          logger.info('User adm_mak demoted to user role as requested');
+        }
+        logger.info(`User diagnostics [adm_mak]: role=${diagUser.role}, divisionId=${diagUser.divisionId}, isActive=${diagUser.isActive}`);
+      } else {
+        logger.warn('User diagnostic [adm_mak]: NOT FOUND');
+      }
+    } catch (diagErr) {
+      logger.error('User diagnostics failed:', diagErr.message);
+    }
+
     await setupDashboardListener();
 
     // Start manual migration check
@@ -833,35 +850,19 @@ const shutdown = async () => {
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
-// Start server
-httpServer.listen(PORT, async () => {
-  logger.info(`Сервер запущен на порту ${PORT}`);
-  await testConnection();
-  await syncDatabase();
-
-  // Diagnostics for adm_mak
-  try {
-    const { User } = require('./src/models');
-    const diagUser = await User.findOne({ where: { username: 'adm_mak' } });
-    if (diagUser) {
-      if (diagUser.role !== 'user') {
-        diagUser.role = 'user';
-        await diagUser.save();
-        logger.info('User adm_mak demoted to user role as requested');
-      }
-      logger.info(`User diagnostics [adm_mak]: role=${diagUser.role}, divisionId=${diagUser.divisionId}, isActive=${diagUser.isActive}`);
-    } else {
-      logger.warn('User diagnostic [adm_mak]: NOT FOUND');
+// Diagnostics for adm_mak
+try {
+  const diagUser = await User.findOne({ where: { username: 'adm_mak' } });
+  if (diagUser) {
+    if (diagUser.role !== 'user') {
+      diagUser.role = 'user';
+      await diagUser.save();
+      logger.info('User adm_mak demoted to user role as requested');
     }
-  } catch (diagErr) {
-    logger.error('User diagnostics failed:', diagErr.message);
+    logger.info(`User diagnostics [adm_mak]: role=${diagUser.role}, divisionId=${diagUser.divisionId}, isActive=${diagUser.isActive}`);
+  } else {
+    logger.warn('User diagnostic [adm_mak]: NOT FOUND');
   }
-
-  // Setup listener and fetcher
-  setupDashboardListener().catch(err => logger.error('Error in setupDashboardListener:', err));
-
-  // Start fetcher
-  const DashboardFetcher = require('./workers/dashboardFetcher');
-  const fetcher = new DashboardFetcher();
-  await fetcher.start();
-});
+} catch (diagErr) {
+  logger.error('User diagnostics failed:', diagErr.message);
+}
