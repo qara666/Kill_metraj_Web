@@ -31,7 +31,8 @@ export default defineConfig({
           vendor: ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query'],
           utils: ['clsx', 'axios', 'react-hot-toast'],
           // Группируем иконки в один чанк, чтобы избежать сотен мелких предзагрузок
-          icons: ['@heroicons/react'],
+          // Включаем как верхний уровень, так и подпапки для надежной группировки
+          icons: ['@heroicons/react', '@heroicons/react/24/outline', '@heroicons/react/24/solid'],
         },
       },
     },

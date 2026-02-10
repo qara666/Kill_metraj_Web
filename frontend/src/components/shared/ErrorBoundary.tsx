@@ -47,6 +47,11 @@ export class ErrorBoundary extends Component<Props, State> {
                             <code className="text-xs text-red-500 dark:text-red-400 whitespace-pre-wrap">
                                 {this.state.error?.toString()}
                             </code>
+                            {this.state.error?.toString().toLowerCase().includes('importing a module script failed') && (
+                                <p className="text-[10px] mt-2 text-gray-500 font-medium">
+                                    💡 Подсказка: Скорее всего, приложение было обновлено. Нажмите "Обновить страницу".
+                                </p>
+                            )}
                         </div>
 
                         <div className="flex flex-col gap-3">

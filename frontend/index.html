@@ -11,6 +11,33 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    // Global error listener to handle "ChunkLoadError" or "Importing a module script failed"
+    // This happens when the site is updated and old hashes are no longer available on the server
+    window.addEventListener('error', (e) => {
+      const isModuleError = 
+        e.message?.toLowerCase().includes('importing a module script failed') ||
+        e.message?.toLowerCase().includes('chunkloaderror') ||
+        // Safari specific error message for module load failure
+        (e.target && e.target.tagName === 'SCRIPT' && e.target.src && e.target.src.includes('/assets/'));
+
+      if (isModuleError) {
+        console.warn('Module load failure detected, attempting automatic reload to get latest version...');
+        
+        // Use session storage to prevent infinite reload loops
+        const lastReload = sessionStorage.getItem('last_module_reload');
+        const now = Date.now();
+        
+        // Only reload if we haven't reloaded in the last 10 seconds
+        if (!lastReload || (now - parseInt(lastReload)) > 10000) {
+          sessionStorage.setItem('last_module_reload', now.toString());
+          window.location.reload();
+        } else {
+          console.error('Multiple module failures detected. Automatic reload aborted to prevent loop.');
+        }
+      }
+    }, true); // Use capture phase to catch script errors
+  </script>
   <!-- Google Maps API будет загружаться динамически с ключом из настроек -->
 </head>
 
