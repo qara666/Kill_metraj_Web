@@ -78,13 +78,13 @@ export function CourierFinancials({
             const encodedDivisionId = encodeURIComponent(divisionId || 'all');
             const encodedDate = encodeURIComponent(date);
 
-            const response = await fetch(
-                `/api/v1/couriers/${encodedCourierId}/financial-summary?divisionId=${encodedDivisionId}&targetDate=${encodedDate}`,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('km_access_token')}`
-                    }
+            const url = `/api/v1/couriers/${encodedCourierId}/financial-summary?divisionId=${encodedDivisionId}&targetDate=${encodedDate}`;
+
+            const response = await fetch(url, {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('km_access_token')}`
                 }
+            }
             );
 
             if (!response.ok) {
@@ -150,7 +150,14 @@ export function CourierFinancials({
                             {courierName}
                         </h2>
                         <p className={clsx('text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>
-                            Смена: {new Date(currentShift.startTime).toLocaleDateString('ru-RU')}
+                            Смена: {(() => {
+                                try {
+                                    const d = new Date(currentShift.startTime);
+                                    return isNaN(d.getTime()) ? 'Дата не указана' : d.toLocaleDateString('ru-RU');
+                                } catch (e) {
+                                    return 'Дата не указана';
+                                }
+                            })()}
                         </p>
                     </div>
                     <div className="text-right">
@@ -287,7 +294,14 @@ export function CourierFinancials({
                                 Последняя сдача
                             </p>
                             <p className={clsx('text-sm font-bold', isDark ? 'text-gray-200' : 'text-gray-800')}>
-                                {new Date(summary.lastSettlement.date).toLocaleDateString('ru-RU')} - {formatCurrency(summary.lastSettlement.cashReceived)}
+                                {(() => {
+                                    try {
+                                        const d = new Date(summary.lastSettlement.date);
+                                        return isNaN(d.getTime()) ? 'Дата не указана' : d.toLocaleDateString('ru-RU');
+                                    } catch (e) {
+                                        return 'Дата не указана';
+                                    }
+                                })()} - {formatCurrency(summary.lastSettlement.cashReceived)}
                             </p>
                         </div>
                     </div>
