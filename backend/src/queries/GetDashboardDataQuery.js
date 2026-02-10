@@ -221,7 +221,115 @@ class GetDashboardDataQuery {
                 };
             }
 
-            // 3. Division Logic: Single department query
+            // 3. Division Logic: Single department query with 2-day merging for "latest" view
+            if (!date) {
+                // Fetch for both Today and Yesterday
+                const yesterdayKyiv = new Date(todayKyiv);
+                yesterdayKyiv.setDate(yesterdayKyiv.getDate() - 1);
+
+                const yDStr = String(yesterdayKyiv.getDate()).padStart(2, '0');
+                const yMStr = String(yesterdayKyiv.getMonth() + 1).padStart(2, '0');
+                const yYStr = yesterdayKyiv.getFullYear();
+
+                const yesterdayLegacy = `${yDStr}.${yMStr}.${yYStr}`;
+                const yesterdayISO = `${yYStr}-${yMStr}-${yDStr}`;
+
+                logger.info(`CQRS: Fetching 2-day data for ${divisionId} (${targetDate} and ${yesterdayLegacy})`);
+
+                const query = `
+                    (SELECT * FROM api_dashboard_cache 
+                     WHERE status_code = 200 
+                     AND (target_date = :targetDate OR target_date = :targetDateISO)
+                     AND division_id = :divisionId
+                     ORDER BY created_at DESC LIMIT 1)
+                    UNION ALL
+                    (SELECT * FROM api_dashboard_cache 
+                     WHERE status_code = 200 
+                     AND (target_date = :yesterdayDate OR target_date = :yesterdayDateISO)
+                     AND division_id = :divisionId
+                     ORDER BY created_at DESC LIMIT 1)
+                `;
+
+                const results = await this.withRetry(() => sequelize.query(query, {
+                    replacements: {
+                        targetDate,
+                        targetDateISO: targetDateISO || targetDate,
+                        yesterdayDate: yesterdayLegacy,
+                        yesterdayDateISO: yesterdayISO,
+                        divisionId: String(divisionId)
+                    },
+                    type: sequelize.QueryTypes.SELECT
+                }));
+
+                if (results.length === 0) {
+                    logger.warn(`CQRS: No data for department ${divisionId} on last 2 days`);
+                    return null;
+                }
+
+                // Merge today and yesterday
+                if (results.length === 1) {
+                    const record = results[0];
+                    logger.info(`CQRS: Found single record for ${divisionId} (Date: ${record.target_date}) with ${record.payload?.orders?.length || 0} orders`);
+                    return await this.processPayload(record, user, divisionId);
+                }
+
+                // Actually merge 2 records
+                const mergedOrders = new Map();
+                const mergedCouriers = new Map();
+                const mergedPaymentMethods = new Map();
+                let latestCreatedAt = results[0].created_at;
+
+                results.forEach(row => {
+                    const payload = row.payload || {};
+                    if (new Date(row.created_at) > new Date(latestCreatedAt)) {
+                        latestCreatedAt = row.created_at;
+                    }
+
+                    if (Array.isArray(payload.orders)) {
+                        payload.orders.forEach(o => {
+                            if (o.orderNumber) mergedOrders.set(String(o.orderNumber), o);
+                        });
+                    }
+                    if (Array.isArray(payload.couriers)) {
+                        payload.couriers.forEach(c => {
+                            const key = String(c.id || c.name);
+                            if (key) mergedCouriers.set(key, c);
+                        });
+                    }
+                    if (Array.isArray(payload.paymentMethods)) {
+                        payload.paymentMethods.forEach(p => {
+                            if (p.name) mergedPaymentMethods.set(p.name, p);
+                        });
+                    }
+                });
+
+                const mergedPayload = {
+                    ...results[0].payload, // Take metadata from first
+                    orders: Array.from(mergedOrders.values()),
+                    couriers: Array.from(mergedCouriers.values()),
+                    paymentMethods: Array.from(mergedPaymentMethods.values())
+                };
+
+                // Recalculate summary
+                mergedPayload.summary = {
+                    ...(mergedPayload.summary || {}),
+                    totalRows: mergedPayload.orders.length + mergedPayload.couriers.length,
+                    orders: mergedPayload.orders.length,
+                    couriers: mergedPayload.couriers.length,
+                    paymentMethods: mergedPayload.paymentMethods.length
+                };
+
+                logger.info(`CQRS: Merged 2-day view for ${divisionId}: ${mergedPayload.orders.length} orders total`);
+
+                return await this.processPayload({
+                    payload: mergedPayload,
+                    created_at: latestCreatedAt,
+                    status_code: 200,
+                    id: 'merged_2day'
+                }, user, divisionId);
+            }
+
+            // Standard single-date logic (for calendar selection)
             const results = await this.withRetry(() => sequelize.query(
                 `SELECT * FROM api_dashboard_cache 
                  WHERE status_code = 200 
