@@ -632,7 +632,7 @@ class DashboardFetcher {
             while (retryAttempt <= this.maxRetries) {
                 try {
                     const params = {
-                        top: isGlobal ? 10000 : this.topCount,
+                        top: isGlobal ? 5000 : this.topCount,
                         timeDeliveryBeg: this.formatDate(targetDate, '00:00:00'),
                         timeDeliveryEnd: this.formatDate(targetDate, '23:59:59')
                     };
