@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import clsx from 'clsx';
+import { useExcelData } from '../../contexts/ExcelDataContext';
 import {
     BanknotesIcon,
     CreditCardIcon,
@@ -61,7 +62,123 @@ export function CourierFinancials({
     const [error, setError] = useState<string | null>(null);
     const [showSettlementModal, setShowSettlementModal] = useState(false);
 
+    const { excelData } = useExcelData();
+
+    // Helper to calculate financials locally from Excel data
+    const calculateLocalFinancials = (): FinancialSummary | null => {
+        if (!excelData?.orders) return null;
+
+        const courierOrders = excelData.orders.filter((o: any) => {
+            const c = o.courier;
+            // Handle various courier formats (string ID/Name or object)
+            const cId = typeof c === 'object' ? (c.id || c._id || c.name) : c;
+            // We compare loosely or strictly depending on your data. 
+            // Often courierId prop is the Name or ID.
+            return String(cId) === String(courierId) || String(o.courierName) === String(courierId);
+        });
+
+        if (courierOrders.length === 0 && !excelData.couriers.find((c: any) => c.name === courierName)) {
+            // Maybe courier exists but has no orders?
+            // If courier not found in excelData at all, return null to try API?
+            // But if we are in "offline/local" mode, we should just show empty state.
+            return {
+                courierId,
+                courierName,
+                targetDate: targetDate || new Date().toISOString().split('T')[0],
+                currentShift: {
+                    startTime: new Date().toISOString(),
+                    totalOrders: 0,
+                    completedOrders: 0,
+                    cashOrders: { count: 0, totalAmount: 0, orders: [] },
+                    cardOrders: { count: 0, totalAmount: 0, orders: [] },
+                    onlineOrders: { count: 0, totalAmount: 0, orders: [] },
+                    totalExpected: 0
+                }
+            };
+        }
+
+        // Initialize Summary
+        const summary: FinancialSummary = {
+            courierId,
+            courierName,
+            targetDate: targetDate || new Date().toISOString().split('T')[0],
+            currentShift: {
+                startTime: new Date().toISOString(), // We might not have shift start in excel, use current/default
+                totalOrders: courierOrders.length,
+                completedOrders: courierOrders.filter((o: any) =>
+                    o.status === 'Исполнен' || o.status === 'Доставлен'
+                ).length,
+                cashOrders: { count: 0, totalAmount: 0, orders: [] },
+                cardOrders: { count: 0, totalAmount: 0, orders: [] },
+                onlineOrders: { count: 0, totalAmount: 0, orders: [] },
+                totalExpected: 0
+            }
+        };
+
+        // Categorize Orders
+        courierOrders.forEach((order: any) => {
+            // Only count completed orders for financials? 
+            // Usually financials are for ALL orders or just completed? 
+            // Validating against backend logic: "completedOrders" is separate count.
+            // But "cashOrders" usually implies money to Collect. 
+            // If order is CANCELED, we don't collect money.
+            // Let's assume we filter by Valid Statuses for money collection.
+            const isValidForFinancials = order.status !== 'Отменен' && order.status !== 'Возврат';
+            if (!isValidForFinancials) return;
+
+            const amount = parseFloat(order.amount || order.totalAmount || 0);
+            const paymentMethod = (order.paymentMethod || '').toLowerCase();
+
+            const orderData: Order = {
+                ...order,
+                id: order.id || order.orderNumber, // Ensure ID
+                amount
+            };
+
+            if (paymentMethod.includes('готівка') || paymentMethod.includes('наличные') || paymentMethod === 'cash') {
+                summary.currentShift.cashOrders.count++;
+                summary.currentShift.cashOrders.totalAmount += amount;
+                summary.currentShift.cashOrders.orders.push(orderData);
+            } else if (paymentMethod.includes('карт') || paymentMethod === 'card') {
+                summary.currentShift.cardOrders.count++;
+                summary.currentShift.cardOrders.totalAmount += amount;
+                summary.currentShift.cardOrders.orders.push(orderData);
+            } else if (paymentMethod.includes('онлайн') || paymentMethod === 'online') {
+                summary.currentShift.onlineOrders.count++;
+                summary.currentShift.onlineOrders.totalAmount += amount;
+                summary.currentShift.onlineOrders.orders.push(orderData);
+            }
+        });
+
+        summary.currentShift.totalExpected =
+            summary.currentShift.cashOrders.totalAmount +
+            summary.currentShift.cardOrders.totalAmount +
+            summary.currentShift.onlineOrders.totalAmount;
+
+        return summary;
+    };
+
+
     const fetchFinancialSummary = async () => {
+        setLoading(true);
+        setError(null);
+
+        // 1. Try Local Calculation First
+        if (excelData && excelData.orders.length > 0) {
+            console.log('Calculating financials from local Excel data...');
+            try {
+                const localSummary = calculateLocalFinancials();
+                if (localSummary) {
+                    setSummary(localSummary);
+                    setLoading(false);
+                    return; // Successfully used local data
+                }
+            } catch (localErr) {
+                console.warn('Local calculation failed, falling back to API', localErr);
+            }
+        }
+
+        // 2. Fallback to API if no local data or calculation failed
         if (!courierId) {
             setError('Не выбран курьер');
             setLoading(false);
@@ -69,11 +186,7 @@ export function CourierFinancials({
         }
 
         try {
-            setLoading(true);
-            setError(null);
             const date = targetDate || new Date().toISOString().split('T')[0];
-
-            // Безопасно кодируем параметры URL
             const encodedCourierId = encodeURIComponent(courierId);
             const encodedDivisionId = encodeURIComponent(divisionId || 'all');
             const encodedDate = encodeURIComponent(date);
@@ -83,8 +196,11 @@ export function CourierFinancials({
             const token = localStorage.getItem('km_access_token');
             const sanitizedToken = token ? token.trim() : '';
 
+            // If we are here, it means we don't have local data. 
+            // If we also don't have a token, we can't fetch from API.
             if (!sanitizedToken) {
-                throw new Error('Отсутствует токен авторизации');
+                // Instead of error, show empty state or "No Data" if we really can't load anything
+                throw new Error('Нет данных (локальных или токена)');
             }
 
             const response = await fetch(url, {
@@ -107,6 +223,8 @@ export function CourierFinancials({
                 if (err.name === 'DOMException' || err.message.includes('string did not match the expected pattern')) {
                     errorMessage = 'Invalid authentication token. Please log in again.';
                     // Optional: redirect to login or clear token
+                } else if (err.message === 'Нет данных (локальных или токена)') {
+                    errorMessage = 'Данные не найдены. Загрузите Excel файл или войдите в систему.';
                 } else {
                     errorMessage = err.message;
                 }
