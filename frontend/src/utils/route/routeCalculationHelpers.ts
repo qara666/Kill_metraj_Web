@@ -100,7 +100,7 @@ function createNewGroup(
     splitReason?: string
 ): TimeWindowGroup {
     const group: TimeWindowGroup = {
-        id: `group-${courierId}-${index}-${Date.now()}`,
+        id: `group-${courierId}-${index}-${planned}`,
         courierId,
         courierName,
         windowStart: planned,

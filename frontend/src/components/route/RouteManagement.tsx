@@ -32,7 +32,6 @@ import { Tooltip } from '../shared/Tooltip'
 import { googleApiCache } from '../../services/googleApiCache'
 import { lazy, Suspense } from 'react'
 import { CourierTimeWindows } from './CourierTimeWindows'
-import { CourierFinancials } from './CourierFinancials'
 import { type TimeWindowGroup } from '../../utils/route/routeCalculationHelpers'
 
 // Ленивая загрузка тяжелых компонентов
@@ -365,7 +364,6 @@ const CourierListItem = memo(({
 export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const { excelData, updateExcelData } = useExcelData()
   const { isDark } = useTheme()
-  const { user } = useAuth()
   const [selectedCourier, setSelectedCourier] = useState<string | null>(null)
   const [isCalculating, setIsCalculating] = useState(false)
   const [startAddress, setStartAddress] = useState('')
@@ -397,8 +395,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     return false
   })
 
-  // Состояние для вкладок
-  const [activeTab, setActiveTab] = useState<'routes' | 'financials'>('routes')
 
 
 
@@ -1538,24 +1534,37 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
 
   // Функция для перемещения заказа в другую временную группу ( Phase 4.7 )
+  // Функция для перемещения заказа в другую временную группу ( Phase 4.7 )
   const handleMoveOrderToGroup = (orderId: string, targetGroup: TimeWindowGroup) => {
     updateExcelData((prev: any) => {
       if (!prev) return prev;
 
+      // Если это авто-группа, нам нужно превратить её в ручную для стабильности
+      const isAutoGroup = !targetGroup.id.startsWith('manual-');
+      const manualIdForTarget = isAutoGroup ? `manual-${Date.now()}` : targetGroup.id;
+
       // 1. Обновляем метаданные в списке всех заказов
       const updatedAllOrders = (prev.orders || []).map((order: any) => {
+        // Перемещаемый заказ
         if (order.id === orderId) {
           return {
             ...order,
-            manualGroupId: targetGroup.id,
+            manualGroupId: manualIdForTarget,
             plannedTime: targetGroup.windowStart,
             courier: targetGroup.courierName
+          };
+        }
+        // Заказы, которые УЖЕ были в этой авто-группе (чтобы они не разлетелись)
+        if (isAutoGroup && targetGroup.orders.some(o => o.id === order.id)) {
+          return {
+            ...order,
+            manualGroupId: manualIdForTarget
           };
         }
         return order;
       });
 
-      // 2. Если заказ был в каком-то маршруте, удаляем его оттуда
+      // 2. Очищаем старые маршруты
       const updatedRoutes = (prev.routes || []).map((route: any) => {
         const hasOrder = route.orders.some((o: any) => o.id === orderId);
         if (!hasOrder) return route;
@@ -1577,6 +1586,46 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     });
 
     toast.success(`Заказ перемещен в ${targetGroup.windowLabel}`, { icon: '' });
+  }
+
+  // Функция для создания новой кастомной группы ( Phase 4.7 )
+  const handleCreateCustomGroup = (orderId: string) => {
+    const newManualId = `manual-${Date.now()}`;
+    updateExcelData((prev: any) => {
+      if (!prev) return prev;
+
+      const updatedOrders = (prev.orders || []).map((order: any) => {
+        if (order.id === orderId) {
+          return {
+            ...order,
+            manualGroupId: newManualId,
+            courier: selectedCourier
+          };
+        }
+        return order;
+      });
+
+      const updatedRoutes = (prev.routes || []).map((route: any) => {
+        const hasOrder = route.orders.some((o: any) => o.id === orderId);
+        if (!hasOrder) return route;
+
+        return {
+          ...route,
+          orders: route.orders.filter((o: any) => o.id !== orderId),
+          isOptimized: false,
+          totalDistance: 0,
+          totalDuration: 0
+        };
+      }).filter((route: any) => route.orders.length > 0);
+
+      return {
+        ...prev,
+        orders: updatedOrders,
+        routes: updatedRoutes
+      };
+    });
+
+    toast.success('Создана новая группа', { icon: '➕' });
   }
 
   // Функция для сохранения измененного адреса
@@ -1822,960 +1871,907 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         </div>
       </div>
 
-      {/* Tab Navigation */}
-      <div className={clsx(
-        'rounded-2xl p-2 border-2 flex gap-2',
-        isDark ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-100 shadow-sm'
-      )}>
-        <button
-          onClick={() => setActiveTab('routes')}
-          className={clsx(
-            'flex-1 px-6 py-3 rounded-xl font-bold text-sm transition-all duration-200 flex items-center justify-center gap-2',
-            activeTab === 'routes'
-              ? isDark
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
-                : 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
-              : isDark
-                ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-          )}
-        >
-          <MapIcon className="w-5 h-5" />
-          <span>Маршруты</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('financials')}
-          className={clsx(
-            'flex-1 px-6 py-3 rounded-xl font-bold text-sm transition-all duration-200 flex items-center justify-center gap-2',
-            activeTab === 'financials'
-              ? isDark
-                ? 'bg-green-600 text-white shadow-lg shadow-green-600/20'
-                : 'bg-green-600 text-white shadow-lg shadow-green-500/30'
-              : isDark
-                ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-          )}
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <span>Расчеты</span>
-        </button>
-      </div>
+      {/* Основная рабочая область: Сайдбар + Дашборд */}
+      <>
+        {/* Основная рабочая область: Сайдбар + Дашборд */}
+        <div className="flex flex-col lg:flex-row gap-8 items-start mb-12 relative min-h-[100px]">
+          {/* Левая панель: Выбор курьера */}
+          <div className="w-full lg:w-[420px] lg:sticky lg:top-8 animate-in slide-in-from-left-8 duration-700" data-tour="courier-select">
+            <div className={clsx(
+              'rounded-3xl shadow-xl border-2 p-6 overflow-hidden relative',
+              isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100 shadow-blue-500/5'
+            )}>
+              {/* Декоративный фон для сайдбара */}
+              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full -mr-16 -mt-16 blur-2xl opacity-50"></div>
 
-      {/* Conditional Content Based on Active Tab */}
-      {activeTab === 'routes' ? (
-        <>
-          {/* Основная рабочая область: Сайдбар + Дашборд */}
-          <div className="flex flex-col lg:flex-row gap-8 items-start mb-12 relative min-h-[100px]">
-            {/* Левая панель: Выбор курьера */}
-            <div className="w-full lg:w-[420px] lg:sticky lg:top-8 animate-in slide-in-from-left-8 duration-700" data-tour="courier-select">
-              <div className={clsx(
-                'rounded-3xl shadow-xl border-2 p-6 overflow-hidden relative',
-                isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100 shadow-blue-500/5'
-              )}>
-                {/* Декоративный фон для сайдбара */}
-                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full -mr-16 -mt-16 blur-2xl opacity-50"></div>
+              <div className="relative z-10 flex flex-col h-full">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className={clsx(
+                    'text-xl font-black tracking-tight',
+                    isDark ? 'text-gray-100' : 'text-gray-900'
+                  )}>Курьеры</h2>
+                  <div className="flex bg-gray-100 dark:bg-gray-700/50 p-1 rounded-xl">
+                    {['all', 'car', 'moto'].map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => setCourierFilter(f as any)}
+                        className={clsx(
+                          'px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all',
+                          courierFilter === f
+                            ? (isDark ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-white text-blue-600 shadow-md')
+                            : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-500 hover:text-gray-800')
+                        )}
+                      >
+                        {f === 'all' ? 'Все' : f === 'car' ? 'Авто' : 'Мото'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                <div className="relative z-10 flex flex-col h-full">
-                  <div className="flex items-center justify-between mb-6">
-                    <h2 className={clsx(
-                      'text-xl font-black tracking-tight',
-                      isDark ? 'text-gray-100' : 'text-gray-900'
-                    )}>Курьеры</h2>
-                    <div className="flex bg-gray-100 dark:bg-gray-700/50 p-1 rounded-xl">
-                      {['all', 'car', 'moto'].map((f) => (
-                        <button
-                          key={f}
-                          onClick={() => setCourierFilter(f as any)}
-                          className={clsx(
-                            'px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all',
-                            courierFilter === f
-                              ? (isDark ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-white text-blue-600 shadow-md')
-                              : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-500 hover:text-gray-800')
-                          )}
-                        >
-                          {f === 'all' ? 'Все' : f === 'car' ? 'Авто' : 'Мото'}
-                        </button>
-                      ))}
+                <div
+                  className="space-y-1 pr-2 max-h-[70vh] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700"
+                  data-tour="courier-select"
+                >
+                  {filteredCouriers.length === 0 ? (
+                    <div className="text-center py-10">
+                      <TruckIcon className="w-10 h-10 mx-auto text-gray-300 mb-2 opacity-50" />
+                      <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Нет курьеров</p>
                     </div>
-                  </div>
-
-                  <div
-                    className="space-y-1 pr-2 max-h-[70vh] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700"
-                    data-tour="courier-select"
-                  >
-                    {filteredCouriers.length === 0 ? (
-                      <div className="text-center py-10">
-                        <TruckIcon className="w-10 h-10 mx-auto text-gray-300 mb-2 opacity-50" />
-                        <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Нет курьеров</p>
-                      </div>
-                    ) : (
-                      filteredCouriers.map((name) => (
-                        <CourierListItem
-                          key={name}
-                          courierName={name}
-                          vehicleType={getCourierVehicleType(name)}
-                          isSelected={selectedCourier === name}
-                          onSelect={handleCourierSelect}
-                          availableOrdersCount={getAvailableOrdersCount(name)}
-                          isDark={isDark}
-                        />
-                      ))
-                    )}
-                  </div>
+                  ) : (
+                    filteredCouriers.map((name) => (
+                      <CourierListItem
+                        key={name}
+                        courierName={name}
+                        vehicleType={getCourierVehicleType(name)}
+                        isSelected={selectedCourier === name}
+                        onSelect={handleCourierSelect}
+                        availableOrdersCount={getAvailableOrdersCount(name)}
+                        isDark={isDark}
+                      />
+                    ))
+                  )}
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* Основной контент (Дашборд заказов) */}
-            <div className="flex-1 min-w-0 w-full">
-              {!selectedCourier ? (
+          {/* Основной контент (Дашборд заказов) */}
+          <div className="flex-1 min-w-0 w-full">
+            {!selectedCourier ? (
+              <div className={clsx(
+                "flex flex-col items-center justify-center p-12 lg:p-24 rounded-[3rem] border-4 border-dashed transition-colors duration-500",
+                isDark ? "bg-gray-800/20 border-gray-700/50" : "bg-gray-50 border-gray-200"
+              )}>
                 <div className={clsx(
-                  "flex flex-col items-center justify-center p-12 lg:p-24 rounded-[3rem] border-4 border-dashed transition-colors duration-500",
-                  isDark ? "bg-gray-800/20 border-gray-700/50" : "bg-gray-50 border-gray-200"
+                  "w-24 h-24 rounded-3xl flex items-center justify-center mb-6",
+                  isDark ? "bg-gray-800 shadow-inner" : "bg-white shadow-xl"
                 )}>
-                  <div className={clsx(
-                    "w-24 h-24 rounded-3xl flex items-center justify-center mb-6",
-                    isDark ? "bg-gray-800 shadow-inner" : "bg-white shadow-xl"
-                  )}>
-                    <TruckIcon className={clsx("w-12 h-12", isDark ? "text-gray-600" : "text-gray-300")} />
+                  <TruckIcon className={clsx("w-12 h-12", isDark ? "text-gray-600" : "text-gray-300")} />
+                </div>
+                <h3 className={clsx("text-2xl font-black mb-2", isDark ? "text-gray-600" : "text-gray-400")}>
+                  Выберите курьера
+                </h3>
+                <p className={clsx("text-sm max-w-xs text-center font-medium", isDark ? "text-gray-700" : "text-gray-500")}>
+                  Нажмите на курьера слева, чтобы начать распределение заказов и формирование маршрута
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+                {/* Хедер выбранного курьера */}
+                <div className={clsx(
+                  'rounded-3xl p-8 border-2 shadow-2xl relative overflow-hidden',
+                  isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-blue-100 shadow-blue-500/5'
+                )}>
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full -mr-32 -mt-32 blur-3xl opacity-50 lg:visible invisible"></div>
+
+                  <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                    <div className="flex items-center gap-6">
+                      <div className={clsx(
+                        "w-20 h-20 rounded-2xl flex items-center justify-center shadow-xl transition-transform hover:scale-110",
+                        isDark ? "bg-blue-600/20 text-blue-400 shadow-blue-900/20" : "bg-blue-600 text-white shadow-blue-500/30"
+                      )}>
+                        <InboxIcon className="w-10 h-10" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-3 mb-1">
+                          <h2 className={clsx('text-3xl font-black tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>
+                            {(selectedCourier === 'ID:0' || selectedCourier?.startsWith('ID:0')) ? 'Не назначено' : selectedCourier}
+                          </h2>
+                          <div className={clsx(
+                            "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1",
+                            isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-100 text-blue-700"
+                          )}>
+                            {getCourierVehicleType(selectedCourier) !== 'car' ? (
+                              <TruckIcon className="w-3 h-3" />
+                            ) : (
+                              <TruckIcon className="w-3 h-3" />
+                            )}
+                            <span>{getCourierVehicleType(selectedCourier) !== 'car' ? 'МОТО' : 'АВТО'}</span>
+                          </div>
+                        </div>
+                        <p className={clsx('text-lg font-bold opacity-60', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                          {availableOrders.length} заказов доступно для распределения
+                        </p>
+                      </div>
+                    </div>
+
                   </div>
-                  <h3 className={clsx("text-2xl font-black mb-2", isDark ? "text-gray-600" : "text-gray-400")}>
-                    Выберите курьера
-                  </h3>
-                  <p className={clsx("text-sm max-w-xs text-center font-medium", isDark ? "text-gray-700" : "text-gray-500")}>
-                    Нажмите на курьера слева, чтобы начать распределение заказов и формирование маршрута
-                  </p>
+
+                </div>
+
+                {/* Смарт-группы и Список ручного выбора */}
+                <div className="space-y-6">
+                  {/* Смарт-группы в виде горизонтальной ленты */}
+                  <div className={clsx(
+                    "rounded-3xl p-6 border-2 transition-all",
+                    isDark ? "bg-gray-800/40 border-gray-700 hover:border-gray-600" : "bg-white shadow-blue-500/5 border-blue-50 hover:border-blue-100"
+                  )}>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className={clsx("p-2 rounded-xl", isDark ? "bg-blue-500/10 text-blue-400" : "bg-blue-50 text-blue-600")}>
+                        <ClockIcon className="w-5 h-5" />
+                      </div>
+                      <h4 className={clsx("text-sm font-black uppercase tracking-widest", isDark ? "text-gray-300" : "text-gray-700")}>
+                        Сгруппировано по времени
+                      </h4>
+                    </div>
+
+                    <CourierTimeWindows
+                      courierId={selectedCourier || ''}
+                      courierName={(selectedCourier === 'ID:0' || selectedCourier?.startsWith('ID:0')) ? 'Не назначено' : (selectedCourier || '')}
+                      orders={availableOrders}
+                      isDark={isDark}
+                      onJumpToGroup={handleJumpToGroup}
+                      onOrderMoved={handleMoveOrderToGroup}
+                      onCreateCustomGroup={handleCreateCustomGroup}
+                      onCalculateRoute={async (group) => {
+                        const groupOrderIds = group.orders.map(o => o.id);
+                        setSelectedOrders(new Set(groupOrderIds));
+                        setSelectedOrdersOrder(groupOrderIds);
+                        // Автоматически создаем маршрут сразу без уведомления
+                        createRoute(group.orders);
+                      }}
+                    />
+                  </div>
+
+                  {/* Список ручного выбора (на всю ширину) */}
+                  <div className="flex flex-col gap-6" data-tour="order-select">
+                    <div className={clsx(
+                      "rounded-[3rem] p-10 border-2 shadow-2xl relative overflow-hidden",
+                      isDark ? "bg-gray-800 border-gray-700 shadow-black/40" : "bg-white border-blue-50 shadow-blue-500/5"
+                    )}>
+                      {/* Декоративный фон для списка заказов */}
+                      <div className="absolute top-0 left-0 w-64 h-64 bg-blue-500/5 rounded-full -ml-32 -mt-32 blur-3xl opacity-30"></div>
+
+                      <div className="relative z-10">
+                        <div className="flex flex-col gap-6 mb-10">
+                          <div className="flex items-center justify-between">
+                            <div className="flex flex-col gap-1">
+                              <h4 className={clsx('text-3xl font-black mb-1 tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>
+                                Доступные заказы
+                              </h4>
+                              <p className={clsx('text-sm font-bold opacity-40 uppercase tracking-[0.2em]', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                                Нажмите на заказ для выбора в маршрут
+                              </p>
+                            </div>
+
+                            <button
+                              onClick={() => createRoute()}
+                              disabled={availableOrders.length === 0 || isCalculating || selectedOrders.size === 0}
+                              className={clsx(
+                                "px-6 py-3 rounded-2xl font-black text-sm transition-all shadow-lg flex items-center gap-2 shrink-0 uppercase tracking-widest",
+                                selectedOrders.size > 0
+                                  ? (isDark ? "bg-blue-600 text-white shadow-blue-900/40 hover:bg-blue-500" : "bg-blue-600 text-white shadow-blue-500/30 hover:bg-blue-700")
+                                  : (isDark ? "bg-gray-700 text-gray-500 cursor-not-allowed" : "bg-gray-100 text-gray-400 cursor-not-allowed")
+                              )}
+                            >
+                              {isCalculating ? (
+                                <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                              ) : (
+                                <PlusIcon className="h-5 w-5" />
+                              )}
+                              <span>Маршрут {selectedOrders.size > 0 && `(${selectedOrders.size})`}</span>
+                            </button>
+                          </div>
+
+                          {/* Поиск на всю ширину */}
+                          <div className="relative group">
+                            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                              <InboxIcon className={clsx("h-5 w-5 transition-colors", isDark ? "text-gray-600 group-focus-within:text-blue-400" : "text-gray-300 group-focus-within:text-blue-500")} />
+                            </div>
+                            <input
+                              type="text"
+                              placeholder="Поиск по номеру, адресу или имени..."
+                              value={orderSearchTerm}
+                              onChange={(e) => setOrderSearchTerm(e.target.value)}
+                              className={clsx(
+                                "block w-full pl-12 pr-4 py-4 rounded-2xl text-base font-medium transition-all outline-none border-2",
+                                isDark
+                                  ? "bg-gray-900 border-gray-700 focus:border-blue-500 text-white placeholder-gray-600"
+                                  : "bg-gray-50 border-gray-100 focus:border-blue-400 text-gray-900 placeholder-gray-300 shadow-inner"
+                              )}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="h-[600px] w-full" data-tour="order-list">
+                          {availableOrders.length > 0 ? (
+                            <div className="animate-in fade-in duration-700">
+                              <div style={{ height: 600 }}>
+                                <List
+                                  ref={availableListRef as any}
+                                  height={600}
+                                  itemCount={availableOrders.length}
+                                  itemSize={getAvailableSize}
+                                  width={'100%'}
+                                  className="scrollbar-hide"
+                                >
+                                  {({ index, style }: { index: number; style: React.CSSProperties }) => {
+                                    const order = availableOrders[index]
+                                    const selectionOrder = selectedOrdersOrder.indexOf(order.id) + 1
+                                    return (
+                                      <MeasuredRow
+                                        index={index}
+                                        style={style}
+                                        order={order}
+                                        isSelected={selectedOrders.has(order.id)}
+                                        selectionOrder={selectionOrder}
+                                        onSelect={handleOrderSelect}
+                                        onMoveUp={moveOrderUp}
+                                        onMoveDown={moveOrderDown}
+                                        isInRoute={false}
+                                        setSize={setAvailableSize}
+                                      />
+                                    )
+                                  }}
+                                </List>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-center py-20 opacity-30 italic">Список пуст</div>
+                          )}
+
+                          {ordersInRoutes.length > 0 && (
+                            <div className="mt-12 pt-12 border-t-4 border-dotted border-gray-100 dark:border-gray-700/50 opacity-60 grayscale scale-[0.98] origin-top transition-all hover:grayscale-0 hover:opacity-100">
+                              <div className="flex items-center gap-3 mb-8 px-4">
+                                <ClockIcon className="w-6 h-6 text-yellow-500" />
+                                <span className={clsx("text-lg font-black uppercase tracking-widest", isDark ? "text-gray-400" : "text-gray-500")}>
+                                  Уже в маршрутах ({ordersInRoutes.length})
+                                </span>
+                              </div>
+                              <div style={{ height: 300 }}>
+                                <List
+                                  ref={inRouteListRef as any}
+                                  height={300}
+                                  itemCount={ordersInRoutes.length}
+                                  itemSize={getInRouteSize}
+                                  width={'100%'}
+                                >
+                                  {({ index, style }: { index: number; style: React.CSSProperties }) => {
+                                    const order = ordersInRoutes[index]
+                                    return (
+                                      <MeasuredRow
+                                        index={index}
+                                        style={style}
+                                        order={order}
+                                        isSelected={false}
+                                        selectionOrder={0}
+                                        onSelect={() => { }}
+                                        onMoveUp={() => { }}
+                                        onMoveDown={() => { }}
+                                        isInRoute={true}
+                                        setSize={setInRouteSize}
+                                      />
+                                    )
+                                  }}
+                                </List>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Нижняя часть: Созданные маршруты */}
+        <div className="mt-12 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-300">
+          <div className={clsx(
+            'rounded-[3rem] shadow-2xl border-2 p-10 overflow-hidden relative',
+            isDark ? 'bg-gray-800 border-gray-700 shadow-black/40' : 'bg-white border-blue-50 shadow-blue-500/5'
+          )}>
+            {/* Декоративный фон */}
+            <div className="absolute top-0 left-0 w-96 h-96 bg-purple-500/5 rounded-full -ml-48 -mt-48 blur-3xl opacity-50"></div>
+
+            <div className="relative z-10">
+              <div className="flex items-center justify-between mb-10">
+                <div className="flex items-center gap-4">
+                  <div className={clsx(
+                    "p-4 rounded-2xl flex items-center justify-center shadow-xl",
+                    isDark ? "bg-purple-600/20 text-purple-400" : "bg-purple-600 text-white shadow-purple-500/30"
+                  )}>
+                    <MapIcon className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <h2 className={clsx(
+                      'text-3xl font-black tracking-tight',
+                      isDark ? 'text-gray-100' : 'text-gray-900'
+                    )}>Созданные маршруты</h2>
+                    <p className={clsx('text-sm font-bold opacity-40 uppercase tracking-[0.2em]', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                      История и возможность редачить маршруты
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  {(excelData?.routes?.length ?? 0) > 0 && (
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={clearFinishedRoutes}
+                        className={clsx(
+                          'px-6 py-3 rounded-xl text-sm font-black uppercase tracking-widest transition-all border-2',
+                          isDark
+                            ? 'border-green-500/30 text-green-400 hover:bg-green-500/10'
+                            : 'border-green-100 text-green-600 hover:bg-green-50 hover:border-green-200 shadow-sm'
+                        )}
+                      >
+                        Очистить завершенные
+                      </button>
+                      <button
+                        onClick={clearAllRoutes}
+                        className={clsx(
+                          'px-6 py-3 rounded-xl text-sm font-black uppercase tracking-widest transition-all border-2',
+                          isDark
+                            ? 'border-red-500/30 text-red-400 hover:bg-red-500/10'
+                            : 'border-red-100 text-red-600 hover:bg-red-50 hover:border-red-200 shadow-sm'
+                        )}
+                      >
+                        Очистить все
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {(excelData?.routes?.length ?? 0) === 0 ? (
+                <div className={clsx(
+                  "flex flex-col items-center justify-center py-20 rounded-[2rem] border-4 border-dotted",
+                  isDark ? "bg-gray-900/40 border-gray-700/50" : "bg-gray-50 border-gray-100"
+                )}>
+                  <MapIcon className={clsx(
+                    'h-20 w-20 mb-6 opacity-10',
+                    isDark ? 'text-white' : 'text-black'
+                  )} />
+                  <p className={clsx(
+                    'text-xl font-bold opacity-30',
+                    isDark ? 'text-gray-400' : 'text-gray-500'
+                  )}>Маршруты еще не созданы</p>
                 </div>
               ) : (
-                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="grid grid-cols-1 gap-8" data-tour="route-list">
+                  {paginatedRoutes.map(route => {
+                    const courierVehicle = getCourierVehicleType(route.courier);
+                    const anomalyCheck = routeAnomalies.get(route.id);
 
-                  {/* Хедер выбранного курьера */}
-                  <div className={clsx(
-                    'rounded-3xl p-8 border-2 shadow-2xl relative overflow-hidden',
-                    isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-blue-100 shadow-blue-500/5'
-                  )}>
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full -mr-32 -mt-32 blur-3xl opacity-50 lg:visible invisible"></div>
-
-                    <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                      <div className="flex items-center gap-6">
+                    return (
+                      <div key={route.id} className={clsx(
+                        'group rounded-[2.5rem] border-2 p-8 transition-all duration-500 relative overflow-hidden',
+                        isDark
+                          ? 'bg-gray-800/40 border-gray-700 hover:border-blue-500/50 hover:bg-gray-800/80 shadow-black/20'
+                          : 'bg-white border-blue-50 shadow-blue-500/5 hover:shadow-2xl hover:border-blue-400'
+                      )}>
+                        {/* Линия-акцент */}
                         <div className={clsx(
-                          "w-20 h-20 rounded-2xl flex items-center justify-center shadow-xl transition-transform hover:scale-110",
-                          isDark ? "bg-blue-600/20 text-blue-400 shadow-blue-900/20" : "bg-blue-600 text-white shadow-blue-500/30"
-                        )}>
-                          <InboxIcon className="w-10 h-10" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-3 mb-1">
-                            <h2 className={clsx('text-3xl font-black tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>
-                              {(selectedCourier === 'ID:0' || selectedCourier?.startsWith('ID:0')) ? 'Не назначено' : selectedCourier}
-                            </h2>
+                          "absolute top-0 left-0 w-2 h-full transition-all duration-500",
+                          courierVehicle === 'car' ? "bg-green-500/50" : "bg-orange-500/50",
+                          "group-hover:w-4"
+                        )}></div>
+
+                        <div className="flex flex-col lg:flex-row items-start justify-between gap-8 mb-8">
+                          <div className="flex items-center gap-6">
                             <div className={clsx(
-                              "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1",
-                              isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-100 text-blue-700"
+                              'w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-110',
+                              courierVehicle === 'car'
+                                ? (isDark ? 'bg-green-600/20 text-green-400' : 'bg-green-600 text-white')
+                                : (isDark ? 'bg-orange-600/20 text-orange-400' : 'bg-orange-600 text-white')
                             )}>
-                              {getCourierVehicleType(selectedCourier) !== 'car' ? (
-                                <TruckIcon className="w-3 h-3" />
-                              ) : (
-                                <TruckIcon className="w-3 h-3" />
-                              )}
-                              <span>{getCourierVehicleType(selectedCourier) !== 'car' ? 'МОТО' : 'АВТО'}</span>
+                              {courierVehicle === 'car' ? <TruckIcon className="w-8 h-8" /> : <TruckIcon className="w-8 h-8" />}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-3 mb-1">
+                                <h3 className={clsx(
+                                  'text-2xl font-black tracking-tight',
+                                  isDark ? 'text-gray-100' : 'text-gray-900'
+                                )}>{route.courier}</h3>
+                                <span className={clsx(
+                                  'text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-widest',
+                                  courierVehicle === 'car'
+                                    ? (isDark ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-700')
+                                    : (isDark ? 'bg-orange-500/20 text-orange-400' : 'bg-orange-100 text-orange-700')
+                                )}>
+                                  {courierVehicle === 'car' ? 'Авто' : 'Мото'}
+                                </span>
+                                {route.orders.every(o => o.status === 'Исполнен') && (
+                                  <span className="bg-green-500 text-white text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-widest flex items-center gap-1">
+                                    <CheckBadgeIcon className="w-3 h-3" />
+                                    ГОТОВ
+                                  </span>
+                                )}
+                              </div>
+                              <p className={clsx(
+                                'text-sm font-bold opacity-50 uppercase tracking-widest',
+                                isDark ? 'text-gray-400' : 'text-gray-500'
+                              )}>
+                                {route.orders.length} заказов в списке
+                              </p>
                             </div>
                           </div>
-                          <p className={clsx('text-lg font-bold opacity-60', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                            {availableOrders.length} заказов доступно для распределения
-                          </p>
-                        </div>
-                      </div>
 
-                    </div>
-
-                  </div>
-
-                  {/* Смарт-группы и Список ручного выбора */}
-                  <div className="space-y-6">
-                    {/* Смарт-группы в виде горизонтальной ленты */}
-                    <div className={clsx(
-                      "rounded-3xl p-6 border-2 transition-all",
-                      isDark ? "bg-gray-800/40 border-gray-700 hover:border-gray-600" : "bg-white shadow-blue-500/5 border-blue-50 hover:border-blue-100"
-                    )}>
-                      <div className="flex items-center gap-3 mb-4">
-                        <div className={clsx("p-2 rounded-xl", isDark ? "bg-blue-500/10 text-blue-400" : "bg-blue-50 text-blue-600")}>
-                          <ClockIcon className="w-5 h-5" />
-                        </div>
-                        <h4 className={clsx("text-sm font-black uppercase tracking-widest", isDark ? "text-gray-300" : "text-gray-700")}>
-                          Сгруппировано по времени
-                        </h4>
-                      </div>
-
-                      <CourierTimeWindows
-                        courierId={selectedCourier || ''}
-                        courierName={(selectedCourier === 'ID:0' || selectedCourier?.startsWith('ID:0')) ? 'Не назначено' : (selectedCourier || '')}
-                        orders={availableOrders}
-                        isDark={isDark}
-                        onJumpToGroup={handleJumpToGroup}
-                        onOrderMoved={handleMoveOrderToGroup}
-                        onCalculateRoute={async (group) => {
-                          const groupOrderIds = group.orders.map(o => o.id);
-                          setSelectedOrders(new Set(groupOrderIds));
-                          setSelectedOrdersOrder(groupOrderIds);
-                          // Автоматически создаем маршрут сразу без уведомления
-                          createRoute(group.orders);
-                        }}
-                      />
-                    </div>
-
-                    {/* Список ручного выбора (на всю ширину) */}
-                    <div className="flex flex-col gap-6" data-tour="order-select">
-                      <div className={clsx(
-                        "rounded-[3rem] p-10 border-2 shadow-2xl relative overflow-hidden",
-                        isDark ? "bg-gray-800 border-gray-700 shadow-black/40" : "bg-white border-blue-50 shadow-blue-500/5"
-                      )}>
-                        {/* Декоративный фон для списка заказов */}
-                        <div className="absolute top-0 left-0 w-64 h-64 bg-blue-500/5 rounded-full -ml-32 -mt-32 blur-3xl opacity-30"></div>
-
-                        <div className="relative z-10">
-                          <div className="flex flex-col gap-6 mb-10">
-                            <div className="flex items-center justify-between">
-                              <div className="flex flex-col gap-1">
-                                <h4 className={clsx('text-3xl font-black mb-1 tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>
-                                  Доступные заказы
-                                </h4>
-                                <p className={clsx('text-sm font-bold opacity-40 uppercase tracking-[0.2em]', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                                  Нажмите на заказ для выбора в маршрут
-                                </p>
-                              </div>
-
+                          <div className="flex items-center gap-4 self-center lg:self-start">
+                            <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/30 p-2 rounded-2xl">
                               <button
-                                onClick={() => createRoute()}
-                                disabled={availableOrders.length === 0 || isCalculating || selectedOrders.size === 0}
+                                onClick={() => route.isOptimized ? openRouteInGoogleMaps(route) : calculateRouteDistance(route)}
+                                disabled={isCalculating}
                                 className={clsx(
-                                  "px-6 py-3 rounded-2xl font-black text-sm transition-all shadow-lg flex items-center gap-2 shrink-0 uppercase tracking-widest",
-                                  selectedOrders.size > 0
-                                    ? (isDark ? "bg-blue-600 text-white shadow-blue-900/40 hover:bg-blue-500" : "bg-blue-600 text-white shadow-blue-500/30 hover:bg-blue-700")
-                                    : (isDark ? "bg-gray-700 text-gray-500 cursor-not-allowed" : "bg-gray-100 text-gray-400 cursor-not-allowed")
+                                  'p-3 rounded-xl transition-all hover:scale-110 active:scale-90',
+                                  isDark ? 'text-blue-400 hover:bg-blue-900/20' : 'text-blue-600 hover:bg-blue-50'
                                 )}
+                                title={route.isOptimized ? "Открыть в Google Maps" : "Рассчитать"}
                               >
-                                {isCalculating ? (
-                                  <ArrowPathIcon className="h-5 w-5 animate-spin" />
-                                ) : (
-                                  <PlusIcon className="h-5 w-5" />
+                                <MapIcon className="h-6 w-6" />
+                              </button>
+                              <button
+                                onClick={() => recalculateRoute(route)}
+                                disabled={isCalculating}
+                                className={clsx(
+                                  'p-3 rounded-xl transition-all hover:scale-110 active:scale-90',
+                                  isDark ? 'text-green-400 hover:bg-green-900/20' : 'text-green-600 hover:bg-green-50'
                                 )}
-                                <span>Маршрут {selectedOrders.size > 0 && `(${selectedOrders.size})`}</span>
+                                title="Пересчитать"
+                              >
+                                <ArrowPathIcon className="h-6 w-6" />
+                              </button>
+                              <div className="w-px h-6 bg-gray-200 dark:bg-gray-600 mx-1"></div>
+                              <button
+                                onClick={() => deleteRoute(route.id)}
+                                className={clsx(
+                                  'p-3 rounded-xl transition-all hover:scale-110 active:scale-90',
+                                  isDark ? 'text-red-400 hover:bg-red-900/20' : 'text-red-600 hover:bg-red-50'
+                                )}
+                                title="Удалить"
+                              >
+                                <TrashIcon className="h-6 w-6" />
                               </button>
                             </div>
-
-                            {/* Поиск на всю ширину */}
-                            <div className="relative group">
-                              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                                <InboxIcon className={clsx("h-5 w-5 transition-colors", isDark ? "text-gray-600 group-focus-within:text-blue-400" : "text-gray-300 group-focus-within:text-blue-500")} />
-                              </div>
-                              <input
-                                type="text"
-                                placeholder="Поиск по номеру, адресу или имени..."
-                                value={orderSearchTerm}
-                                onChange={(e) => setOrderSearchTerm(e.target.value)}
-                                className={clsx(
-                                  "block w-full pl-12 pr-4 py-4 rounded-2xl text-base font-medium transition-all outline-none border-2",
-                                  isDark
-                                    ? "bg-gray-900 border-gray-700 focus:border-blue-500 text-white placeholder-gray-600"
-                                    : "bg-gray-50 border-gray-100 focus:border-blue-400 text-gray-900 placeholder-gray-300 shadow-inner"
-                                )}
-                              />
-                            </div>
-                          </div>
-
-                          <div className="h-[600px] w-full" data-tour="order-list">
-                            {availableOrders.length > 0 ? (
-                              <div className="animate-in fade-in duration-700">
-                                <div style={{ height: 600 }}>
-                                  <List
-                                    ref={availableListRef as any}
-                                    height={600}
-                                    itemCount={availableOrders.length}
-                                    itemSize={getAvailableSize}
-                                    width={'100%'}
-                                    className="scrollbar-hide"
-                                  >
-                                    {({ index, style }: { index: number; style: React.CSSProperties }) => {
-                                      const order = availableOrders[index]
-                                      const selectionOrder = selectedOrdersOrder.indexOf(order.id) + 1
-                                      return (
-                                        <MeasuredRow
-                                          index={index}
-                                          style={style}
-                                          order={order}
-                                          isSelected={selectedOrders.has(order.id)}
-                                          selectionOrder={selectionOrder}
-                                          onSelect={handleOrderSelect}
-                                          onMoveUp={moveOrderUp}
-                                          onMoveDown={moveOrderDown}
-                                          isInRoute={false}
-                                          setSize={setAvailableSize}
-                                        />
-                                      )
-                                    }}
-                                  </List>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="text-center py-20 opacity-30 italic">Список пуст</div>
-                            )}
-
-                            {ordersInRoutes.length > 0 && (
-                              <div className="mt-12 pt-12 border-t-4 border-dotted border-gray-100 dark:border-gray-700/50 opacity-60 grayscale scale-[0.98] origin-top transition-all hover:grayscale-0 hover:opacity-100">
-                                <div className="flex items-center gap-3 mb-8 px-4">
-                                  <ClockIcon className="w-6 h-6 text-yellow-500" />
-                                  <span className={clsx("text-lg font-black uppercase tracking-widest", isDark ? "text-gray-400" : "text-gray-500")}>
-                                    Уже в маршрутах ({ordersInRoutes.length})
-                                  </span>
-                                </div>
-                                <div style={{ height: 300 }}>
-                                  <List
-                                    ref={inRouteListRef as any}
-                                    height={300}
-                                    itemCount={ordersInRoutes.length}
-                                    itemSize={getInRouteSize}
-                                    width={'100%'}
-                                  >
-                                    {({ index, style }: { index: number; style: React.CSSProperties }) => {
-                                      const order = ordersInRoutes[index]
-                                      return (
-                                        <MeasuredRow
-                                          index={index}
-                                          style={style}
-                                          order={order}
-                                          isSelected={false}
-                                          selectionOrder={0}
-                                          onSelect={() => { }}
-                                          onMoveUp={() => { }}
-                                          onMoveDown={() => { }}
-                                          isInRoute={true}
-                                          setSize={setInRouteSize}
-                                        />
-                                      )
-                                    }}
-                                  </List>
-                                </div>
-                              </div>
-                            )}
                           </div>
                         </div>
+
+                        <div className="space-y-4">
+                          {route.orders.map((order: Order, index: number) => {
+                            const meta = (route as any).geoMeta?.waypoints?.[index]
+                            const metaBadge = meta ? (
+                              <div className="mt-2 flex items-center flex-wrap gap-2 text-[10px] font-black uppercase tracking-widest">
+                                <span className={clsx(
+                                  'px-2 py-0.5 rounded-lg border',
+                                  meta.locationType === 'ROOFTOP'
+                                    ? (isDark ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-green-50 text-green-700 border-green-200')
+                                    : meta.locationType === 'RANGE_INTERPOLATED'
+                                      ? (isDark ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : 'bg-yellow-50 text-yellow-700 border-yellow-200')
+                                      : (isDark ? 'bg-gray-700 text-gray-400 border-gray-600' : 'bg-gray-50 text-gray-600 border-gray-200')
+                                )}>{translateLocationType(meta.locationType)}</span>
+                                {typeof meta.streetNumberMatched === 'boolean' && (
+                                  <span className={clsx(
+                                    'px-2 py-0.5 rounded-lg border',
+                                    meta.streetNumberMatched
+                                      ? (isDark ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-blue-50 text-blue-700 border-blue-200')
+                                      : (isDark ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-red-50 text-red-700 border-red-200')
+                                  )}>
+                                    {meta.streetNumberMatched ? ' Найден номер дома' : ' Не нашел номера дома'}
+                                  </span>
+                                )}
+                                {meta.zoneName && (
+                                  <span className={clsx(
+                                    'px-2 py-0.5 rounded-lg border',
+                                    isDark ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-purple-50 text-purple-700 border-purple-200'
+                                  )}>
+                                    Зона: {meta.zoneName}
+                                  </span>
+                                )}
+                              </div>
+                            ) : null
+
+                            const hasAddressIssues = anomalyCheck?.errors.some(error =>
+                              error.includes('адрес') || error.includes('адресов')
+                            )
+
+                            return (
+                              <div
+                                key={order.id}
+                                draggable
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData('orderId', order.id);
+                                  e.dataTransfer.effectAllowed = 'move';
+                                }}
+                                className={clsx(
+                                  "flex items-start justify-between p-4 rounded-2xl transition-all duration-300",
+                                  isDark ? "hover:bg-gray-700/30" : "hover:bg-gray-50",
+                                  "cursor-grab active:cursor-grabbing"
+                                )}
+                              >
+                                <div className="flex items-start gap-4 flex-1">
+                                  <span className={clsx(
+                                    'w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black shadow-inner flex-shrink-0',
+                                    isDark
+                                      ? 'bg-gray-700 text-blue-400'
+                                      : 'bg-white text-blue-600 border border-blue-100'
+                                  )}>
+                                    {index + 1}
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center flex-wrap gap-2 mb-1">
+                                      <span className={clsx(
+                                        'font-black text-sm tracking-tight',
+                                        isDark ? 'text-gray-100' : 'text-gray-900'
+                                      )}>#{order.orderNumber}</span>
+                                      {order.plannedTime && (
+                                        <span className={clsx(
+                                          'px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider',
+                                          isDark ? 'bg-purple-600/20 text-purple-300' : 'bg-purple-50 text-purple-700 border border-purple-100'
+                                        )}>
+                                          {order.plannedTime}
+                                        </span>
+                                      )}
+                                      {order.paymentMethod && (() => {
+                                        const badgeProps = getPaymentMethodBadgeProps(order.paymentMethod, isDark)
+                                        return (
+                                          <span className={clsx('px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider', badgeProps.bgColorClass, badgeProps.textColorClass)}>
+                                            {badgeProps.text}
+                                          </span>
+                                        )
+                                      })()}
+                                    </div>
+                                    <div className={clsx(
+                                      'truncate text-sm font-medium',
+                                      isDark ? 'text-gray-400' : 'text-gray-600',
+                                      hasAddressIssues && 'text-red-500 animate-pulse'
+                                    )} title={order.address}>{order.address}</div>
+                                    {metaBadge}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 pl-4">
+                                  <button
+                                    onClick={() => handleEditAddress(order)}
+                                    className={clsx(
+                                      'p-2 rounded-xl transition-all hover:scale-110 active:scale-90',
+                                      isDark
+                                        ? 'text-gray-400 hover:text-blue-400 hover:bg-blue-900/20'
+                                        : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
+                                    )}
+                                    title="Редактировать адрес"
+                                  >
+                                    <PencilIcon className="h-4 w-4" />
+                                  </button>
+                                  {hasAddressIssues && (
+                                    <ExclamationTriangleIcon className="h-5 w-5 text-red-500 animate-bounce" title="Проблемы с адресом" />
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        {/* Метрики маршрута */}
+                        <div className="mt-8 pt-8 border-t border-gray-100 dark:border-gray-700/50">
+                          {route.totalDistance || route.totalDuration ? (
+                            <div className="flex flex-wrap items-center gap-6">
+                              <div className={clsx(
+                                "flex items-center gap-3 px-4 py-2 rounded-2xl",
+                                isDark ? "bg-blue-500/10 text-blue-300" : "bg-blue-50 text-blue-700"
+                              )}>
+                                <MapIcon className="w-5 h-5" />
+                                <span className="text-sm font-black tracking-tight">{formatDistance(route.totalDistance || 0)}</span>
+                              </div>
+                              <div className={clsx(
+                                "flex items-center gap-3 px-4 py-2 rounded-2xl",
+                                isDark ? "bg-purple-500/10 text-purple-300" : "bg-purple-50 text-purple-700"
+                              )}>
+                                <ClockIcon className="w-5 h-5" />
+                                <span className="text-sm font-black tracking-tight">{formatDuration(route.totalDuration || 0)}</span>
+                              </div>
+                              {route.isOptimized && (
+                                <div className={clsx(
+                                  "flex items-center gap-2 px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest",
+                                  isDark ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-green-50 text-green-700 border border-green-100 shadow-sm"
+                                )}>
+                                  <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
+                                  Оптимизирован
+                                </div>
+                              )}
+
+                              {anomalyCheck && (
+                                <div className="flex flex-wrap gap-2 ml-auto">
+                                  {anomalyCheck.errors.length > 0 && (
+                                    <div className={clsx(
+                                      "flex items-center gap-2 px-4 py-2 rounded-2xl bg-red-500/10 text-red-500 border border-red-500/20"
+                                    )}>
+                                      <ExclamationCircleIcon className="w-4 h-4" />
+                                      <span className="text-xs font-black uppercase tracking-wider">{anomalyCheck.errors.length} Ошибок</span>
+                                    </div>
+                                  )}
+                                  {anomalyCheck.warnings.length > 0 && (
+                                    <div className={clsx(
+                                      "flex items-center gap-2 px-4 py-2 rounded-2xl bg-yellow-500/10 text-yellow-500 border border-yellow-500/20"
+                                    )}>
+                                      <ExclamationTriangleIcon className="w-4 h-4" />
+                                      <span className="text-xs font-black uppercase tracking-wider">{anomalyCheck.warnings.length} Предупр.</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className={clsx(
+                              'text-sm font-bold opacity-30 italic flex items-center gap-2',
+                              isDark ? 'text-gray-400' : 'text-gray-500'
+                            )}>
+                              <div className="w-2 h-2 rounded-full bg-gray-400"></div>
+                              {isCalculating ? 'Расчет расстояния...' : 'Расстояние не рассчитано'}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Пагинация */}
+              {totalRoutePages > 1 && (
+                <div className="mt-8 flex items-center justify-between px-4">
+                  <button
+                    onClick={() => setRoutePage(Math.max(0, routePage - 1))}
+                    disabled={routePage === 0}
+                    className={clsx(
+                      'px-6 py-2 rounded-xl text-sm font-black uppercase tracking-widest transition-all disabled:opacity-30',
+                      isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    )}
+                  >
+                    ← Назад
+                  </button>
+                  <span className={clsx(
+                    'text-sm font-black uppercase tracking-[0.2em]',
+                    isDark ? 'text-gray-500' : 'text-gray-400'
+                  )}>
+                    {routePage + 1} / {totalRoutePages}
+                  </span>
+                  <button
+                    onClick={() => setRoutePage(Math.min(totalRoutePages - 1, routePage + 1))}
+                    disabled={routePage >= totalRoutePages - 1}
+                    className={clsx(
+                      'px-6 py-2 rounded-xl text-sm font-black uppercase tracking-widest transition-all disabled:opacity-30',
+                      isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    )}
+                  >
+                    Вперед →
+                  </button>
                 </div>
               )}
             </div>
           </div>
+        </div>
 
-          {/* Нижняя часть: Созданные маршруты */}
-          <div className="mt-12 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-300">
-            <div className={clsx(
-              'rounded-[3rem] shadow-2xl border-2 p-10 overflow-hidden relative',
-              isDark ? 'bg-gray-800 border-gray-700 shadow-black/40' : 'bg-white border-blue-50 shadow-blue-500/5'
-            )}>
-              {/* Декоративный фон */}
-              <div className="absolute top-0 left-0 w-96 h-96 bg-purple-500/5 rounded-full -ml-48 -mt-48 blur-3xl opacity-50"></div>
-
-              <div className="relative z-10">
-                <div className="flex items-center justify-between mb-10">
-                  <div className="flex items-center gap-4">
-                    <div className={clsx(
-                      "p-4 rounded-2xl flex items-center justify-center shadow-xl",
-                      isDark ? "bg-purple-600/20 text-purple-400" : "bg-purple-600 text-white shadow-purple-500/30"
-                    )}>
-                      <MapIcon className="w-8 h-8" />
-                    </div>
-                    <div>
-                      <h2 className={clsx(
-                        'text-3xl font-black tracking-tight',
-                        isDark ? 'text-gray-100' : 'text-gray-900'
-                      )}>Созданные маршруты</h2>
-                      <p className={clsx('text-sm font-bold opacity-40 uppercase tracking-[0.2em]', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                        История и возможность редачить маршруты
-                      </p>
-                    </div>
+        {/* Модальные окна */}
+        {
+          showDeleteModal && routeToDelete && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
+              <div className={clsx(
+                'w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl transform animate-in zoom-in-95 duration-300',
+                isDark ? 'bg-gray-800 border border-gray-700' : 'bg-white'
+              )}>
+                <div className="text-center">
+                  <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-red-100 dark:bg-red-900/20 mb-6 shadow-inner">
+                    <TrashIcon className="h-10 w-10 text-red-600" />
                   </div>
-
-                  <div className="flex items-center gap-4">
-                    {(excelData?.routes?.length ?? 0) > 0 && (
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={clearFinishedRoutes}
-                          className={clsx(
-                            'px-6 py-3 rounded-xl text-sm font-black uppercase tracking-widest transition-all border-2',
-                            isDark
-                              ? 'border-green-500/30 text-green-400 hover:bg-green-500/10'
-                              : 'border-green-100 text-green-600 hover:bg-green-50 hover:border-green-200 shadow-sm'
-                          )}
-                        >
-                          Очистить завершенные
-                        </button>
-                        <button
-                          onClick={clearAllRoutes}
-                          className={clsx(
-                            'px-6 py-3 rounded-xl text-sm font-black uppercase tracking-widest transition-all border-2',
-                            isDark
-                              ? 'border-red-500/30 text-red-400 hover:bg-red-500/10'
-                              : 'border-red-100 text-red-600 hover:bg-red-50 hover:border-red-200 shadow-sm'
-                          )}
-                        >
-                          Очистить все
-                        </button>
-                      </div>
-                    )}
+                  <h3 className={clsx("text-2xl font-black mb-2 tracking-tight", isDark ? "text-white" : "text-gray-900")}>
+                    Удалить маршрут?
+                  </h3>
+                  <p className={clsx("text-sm mb-8 font-medium", isDark ? "text-gray-400" : "text-gray-500")}>
+                    Это действие безвозвратно удалит маршрут. Заказы станут снова доступны для распределения.
+                  </p>
+                  <div className="flex gap-4">
+                    <button
+                      type="button"
+                      className={clsx(
+                        "flex-1 px-6 py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all",
+                        isDark ? "bg-gray-700 text-gray-300 hover:bg-gray-600" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      )}
+                      onClick={() => setShowDeleteModal(false)}
+                    >
+                      Отмена
+                    </button>
+                    <button
+                      type="button"
+                      className="flex-1 px-6 py-4 rounded-2xl text-sm font-black uppercase tracking-widest bg-red-600 text-white hover:bg-red-700 transition-all shadow-xl shadow-red-600/30 active:scale-95"
+                      onClick={handleDeleteRoute}
+                    >
+                      Удалить
+                    </button>
                   </div>
                 </div>
-
-                {(excelData?.routes?.length ?? 0) === 0 ? (
-                  <div className={clsx(
-                    "flex flex-col items-center justify-center py-20 rounded-[2rem] border-4 border-dotted",
-                    isDark ? "bg-gray-900/40 border-gray-700/50" : "bg-gray-50 border-gray-100"
-                  )}>
-                    <MapIcon className={clsx(
-                      'h-20 w-20 mb-6 opacity-10',
-                      isDark ? 'text-white' : 'text-black'
-                    )} />
-                    <p className={clsx(
-                      'text-xl font-bold opacity-30',
-                      isDark ? 'text-gray-400' : 'text-gray-500'
-                    )}>Маршруты еще не созданы</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-8" data-tour="route-list">
-                    {paginatedRoutes.map(route => {
-                      const courierVehicle = getCourierVehicleType(route.courier);
-                      const anomalyCheck = routeAnomalies.get(route.id);
-
-                      return (
-                        <div key={route.id} className={clsx(
-                          'group rounded-[2.5rem] border-2 p-8 transition-all duration-500 relative overflow-hidden',
-                          isDark
-                            ? 'bg-gray-800/40 border-gray-700 hover:border-blue-500/50 hover:bg-gray-800/80 shadow-black/20'
-                            : 'bg-white border-blue-50 shadow-blue-500/5 hover:shadow-2xl hover:border-blue-400'
-                        )}>
-                          {/* Линия-акцент */}
-                          <div className={clsx(
-                            "absolute top-0 left-0 w-2 h-full transition-all duration-500",
-                            courierVehicle === 'car' ? "bg-green-500/50" : "bg-orange-500/50",
-                            "group-hover:w-4"
-                          )}></div>
-
-                          <div className="flex flex-col lg:flex-row items-start justify-between gap-8 mb-8">
-                            <div className="flex items-center gap-6">
-                              <div className={clsx(
-                                'w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-110',
-                                courierVehicle === 'car'
-                                  ? (isDark ? 'bg-green-600/20 text-green-400' : 'bg-green-600 text-white')
-                                  : (isDark ? 'bg-orange-600/20 text-orange-400' : 'bg-orange-600 text-white')
-                              )}>
-                                {courierVehicle === 'car' ? <TruckIcon className="w-8 h-8" /> : <TruckIcon className="w-8 h-8" />}
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-3 mb-1">
-                                  <h3 className={clsx(
-                                    'text-2xl font-black tracking-tight',
-                                    isDark ? 'text-gray-100' : 'text-gray-900'
-                                  )}>{route.courier}</h3>
-                                  <span className={clsx(
-                                    'text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-widest',
-                                    courierVehicle === 'car'
-                                      ? (isDark ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-700')
-                                      : (isDark ? 'bg-orange-500/20 text-orange-400' : 'bg-orange-100 text-orange-700')
-                                  )}>
-                                    {courierVehicle === 'car' ? 'Авто' : 'Мото'}
-                                  </span>
-                                  {route.orders.every(o => o.status === 'Исполнен') && (
-                                    <span className="bg-green-500 text-white text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-widest flex items-center gap-1">
-                                      <CheckBadgeIcon className="w-3 h-3" />
-                                      ГОТОВ
-                                    </span>
-                                  )}
-                                </div>
-                                <p className={clsx(
-                                  'text-sm font-bold opacity-50 uppercase tracking-widest',
-                                  isDark ? 'text-gray-400' : 'text-gray-500'
-                                )}>
-                                  {route.orders.length} заказов в списке
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-4 self-center lg:self-start">
-                              <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/30 p-2 rounded-2xl">
-                                <button
-                                  onClick={() => route.isOptimized ? openRouteInGoogleMaps(route) : calculateRouteDistance(route)}
-                                  disabled={isCalculating}
-                                  className={clsx(
-                                    'p-3 rounded-xl transition-all hover:scale-110 active:scale-90',
-                                    isDark ? 'text-blue-400 hover:bg-blue-900/20' : 'text-blue-600 hover:bg-blue-50'
-                                  )}
-                                  title={route.isOptimized ? "Открыть в Google Maps" : "Рассчитать"}
-                                >
-                                  <MapIcon className="h-6 w-6" />
-                                </button>
-                                <button
-                                  onClick={() => recalculateRoute(route)}
-                                  disabled={isCalculating}
-                                  className={clsx(
-                                    'p-3 rounded-xl transition-all hover:scale-110 active:scale-90',
-                                    isDark ? 'text-green-400 hover:bg-green-900/20' : 'text-green-600 hover:bg-green-50'
-                                  )}
-                                  title="Пересчитать"
-                                >
-                                  <ArrowPathIcon className="h-6 w-6" />
-                                </button>
-                                <div className="w-px h-6 bg-gray-200 dark:bg-gray-600 mx-1"></div>
-                                <button
-                                  onClick={() => deleteRoute(route.id)}
-                                  className={clsx(
-                                    'p-3 rounded-xl transition-all hover:scale-110 active:scale-90',
-                                    isDark ? 'text-red-400 hover:bg-red-900/20' : 'text-red-600 hover:bg-red-50'
-                                  )}
-                                  title="Удалить"
-                                >
-                                  <TrashIcon className="h-6 w-6" />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="space-y-4">
-                            {route.orders.map((order: Order, index: number) => {
-                              const meta = (route as any).geoMeta?.waypoints?.[index]
-                              const metaBadge = meta ? (
-                                <div className="mt-2 flex items-center flex-wrap gap-2 text-[10px] font-black uppercase tracking-widest">
-                                  <span className={clsx(
-                                    'px-2 py-0.5 rounded-lg border',
-                                    meta.locationType === 'ROOFTOP'
-                                      ? (isDark ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-green-50 text-green-700 border-green-200')
-                                      : meta.locationType === 'RANGE_INTERPOLATED'
-                                        ? (isDark ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : 'bg-yellow-50 text-yellow-700 border-yellow-200')
-                                        : (isDark ? 'bg-gray-700 text-gray-400 border-gray-600' : 'bg-gray-50 text-gray-600 border-gray-200')
-                                  )}>{translateLocationType(meta.locationType)}</span>
-                                  {typeof meta.streetNumberMatched === 'boolean' && (
-                                    <span className={clsx(
-                                      'px-2 py-0.5 rounded-lg border',
-                                      meta.streetNumberMatched
-                                        ? (isDark ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-blue-50 text-blue-700 border-blue-200')
-                                        : (isDark ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-red-50 text-red-700 border-red-200')
-                                    )}>
-                                      {meta.streetNumberMatched ? ' Найден номер дома' : ' Не нашел номера дома'}
-                                    </span>
-                                  )}
-                                  {meta.zoneName && (
-                                    <span className={clsx(
-                                      'px-2 py-0.5 rounded-lg border',
-                                      isDark ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-purple-50 text-purple-700 border-purple-200'
-                                    )}>
-                                      Зона: {meta.zoneName}
-                                    </span>
-                                  )}
-                                </div>
-                              ) : null
-
-                              const hasAddressIssues = anomalyCheck?.errors.some(error =>
-                                error.includes('адрес') || error.includes('адресов')
-                              )
-
-                              return (
-                                <div
-                                  key={order.id}
-                                  draggable
-                                  onDragStart={(e) => {
-                                    e.dataTransfer.setData('orderId', order.id);
-                                    e.dataTransfer.effectAllowed = 'move';
-                                  }}
-                                  className={clsx(
-                                    "flex items-start justify-between p-4 rounded-2xl transition-all duration-300",
-                                    isDark ? "hover:bg-gray-700/30" : "hover:bg-gray-50",
-                                    "cursor-grab active:cursor-grabbing"
-                                  )}
-                                >
-                                  <div className="flex items-start gap-4 flex-1">
-                                    <span className={clsx(
-                                      'w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black shadow-inner flex-shrink-0',
-                                      isDark
-                                        ? 'bg-gray-700 text-blue-400'
-                                        : 'bg-white text-blue-600 border border-blue-100'
-                                    )}>
-                                      {index + 1}
-                                    </span>
-                                    <div className="min-w-0 flex-1">
-                                      <div className="flex items-center flex-wrap gap-2 mb-1">
-                                        <span className={clsx(
-                                          'font-black text-sm tracking-tight',
-                                          isDark ? 'text-gray-100' : 'text-gray-900'
-                                        )}>#{order.orderNumber}</span>
-                                        {order.plannedTime && (
-                                          <span className={clsx(
-                                            'px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider',
-                                            isDark ? 'bg-purple-600/20 text-purple-300' : 'bg-purple-50 text-purple-700 border border-purple-100'
-                                          )}>
-                                            {order.plannedTime}
-                                          </span>
-                                        )}
-                                        {order.paymentMethod && (() => {
-                                          const badgeProps = getPaymentMethodBadgeProps(order.paymentMethod, isDark)
-                                          return (
-                                            <span className={clsx('px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider', badgeProps.bgColorClass, badgeProps.textColorClass)}>
-                                              {badgeProps.text}
-                                            </span>
-                                          )
-                                        })()}
-                                      </div>
-                                      <div className={clsx(
-                                        'truncate text-sm font-medium',
-                                        isDark ? 'text-gray-400' : 'text-gray-600',
-                                        hasAddressIssues && 'text-red-500 animate-pulse'
-                                      )} title={order.address}>{order.address}</div>
-                                      {metaBadge}
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-2 pl-4">
-                                    <button
-                                      onClick={() => handleEditAddress(order)}
-                                      className={clsx(
-                                        'p-2 rounded-xl transition-all hover:scale-110 active:scale-90',
-                                        isDark
-                                          ? 'text-gray-400 hover:text-blue-400 hover:bg-blue-900/20'
-                                          : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
-                                      )}
-                                      title="Редактировать адрес"
-                                    >
-                                      <PencilIcon className="h-4 w-4" />
-                                    </button>
-                                    {hasAddressIssues && (
-                                      <ExclamationTriangleIcon className="h-5 w-5 text-red-500 animate-bounce" title="Проблемы с адресом" />
-                                    )}
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-
-                          {/* Метрики маршрута */}
-                          <div className="mt-8 pt-8 border-t border-gray-100 dark:border-gray-700/50">
-                            {route.totalDistance || route.totalDuration ? (
-                              <div className="flex flex-wrap items-center gap-6">
-                                <div className={clsx(
-                                  "flex items-center gap-3 px-4 py-2 rounded-2xl",
-                                  isDark ? "bg-blue-500/10 text-blue-300" : "bg-blue-50 text-blue-700"
-                                )}>
-                                  <MapIcon className="w-5 h-5" />
-                                  <span className="text-sm font-black tracking-tight">{formatDistance(route.totalDistance || 0)}</span>
-                                </div>
-                                <div className={clsx(
-                                  "flex items-center gap-3 px-4 py-2 rounded-2xl",
-                                  isDark ? "bg-purple-500/10 text-purple-300" : "bg-purple-50 text-purple-700"
-                                )}>
-                                  <ClockIcon className="w-5 h-5" />
-                                  <span className="text-sm font-black tracking-tight">{formatDuration(route.totalDuration || 0)}</span>
-                                </div>
-                                {route.isOptimized && (
-                                  <div className={clsx(
-                                    "flex items-center gap-2 px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest",
-                                    isDark ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-green-50 text-green-700 border border-green-100 shadow-sm"
-                                  )}>
-                                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
-                                    Оптимизирован
-                                  </div>
-                                )}
-
-                                {anomalyCheck && (
-                                  <div className="flex flex-wrap gap-2 ml-auto">
-                                    {anomalyCheck.errors.length > 0 && (
-                                      <div className={clsx(
-                                        "flex items-center gap-2 px-4 py-2 rounded-2xl bg-red-500/10 text-red-500 border border-red-500/20"
-                                      )}>
-                                        <ExclamationCircleIcon className="w-4 h-4" />
-                                        <span className="text-xs font-black uppercase tracking-wider">{anomalyCheck.errors.length} Ошибок</span>
-                                      </div>
-                                    )}
-                                    {anomalyCheck.warnings.length > 0 && (
-                                      <div className={clsx(
-                                        "flex items-center gap-2 px-4 py-2 rounded-2xl bg-yellow-500/10 text-yellow-500 border border-yellow-500/20"
-                                      )}>
-                                        <ExclamationTriangleIcon className="w-4 h-4" />
-                                        <span className="text-xs font-black uppercase tracking-wider">{anomalyCheck.warnings.length} Предупр.</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <div className={clsx(
-                                'text-sm font-bold opacity-30 italic flex items-center gap-2',
-                                isDark ? 'text-gray-400' : 'text-gray-500'
-                              )}>
-                                <div className="w-2 h-2 rounded-full bg-gray-400"></div>
-                                {isCalculating ? 'Расчет расстояния...' : 'Расстояние не рассчитано'}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-
-                {/* Пагинация */}
-                {totalRoutePages > 1 && (
-                  <div className="mt-8 flex items-center justify-between px-4">
-                    <button
-                      onClick={() => setRoutePage(Math.max(0, routePage - 1))}
-                      disabled={routePage === 0}
-                      className={clsx(
-                        'px-6 py-2 rounded-xl text-sm font-black uppercase tracking-widest transition-all disabled:opacity-30',
-                        isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      )}
-                    >
-                      ← Назад
-                    </button>
-                    <span className={clsx(
-                      'text-sm font-black uppercase tracking-[0.2em]',
-                      isDark ? 'text-gray-500' : 'text-gray-400'
-                    )}>
-                      {routePage + 1} / {totalRoutePages}
-                    </span>
-                    <button
-                      onClick={() => setRoutePage(Math.min(totalRoutePages - 1, routePage + 1))}
-                      disabled={routePage >= totalRoutePages - 1}
-                      className={clsx(
-                        'px-6 py-2 rounded-xl text-sm font-black uppercase tracking-widest transition-all disabled:opacity-30',
-                        isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      )}
-                    >
-                      Вперед →
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
-          </div>
+          )
+        }
 
-          {/* Модальные окна */}
-          {
-            showDeleteModal && routeToDelete && (
-              <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
-                <div className={clsx(
-                  'w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl transform animate-in zoom-in-95 duration-300',
-                  isDark ? 'bg-gray-800 border border-gray-700' : 'bg-white'
-                )}>
-                  <div className="text-center">
-                    <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-red-100 dark:bg-red-900/20 mb-6 shadow-inner">
-                      <TrashIcon className="h-10 w-10 text-red-600" />
-                    </div>
-                    <h3 className={clsx("text-2xl font-black mb-2 tracking-tight", isDark ? "text-white" : "text-gray-900")}>
-                      Удалить маршрут?
+        {
+          showAddressEditModal && editingOrder && (
+            <AddressEditModal
+              isOpen={showAddressEditModal}
+              onClose={() => {
+                setShowAddressEditModal(false)
+                setEditingOrder(null)
+              }}
+              onSave={(newAddress) => handleAddressUpdate(newAddress)}
+              currentAddress={editingOrder.address}
+              orderNumber={editingOrder.orderNumber}
+              customerName={editingOrder.customerName}
+              isDark={isDark}
+            />
+          )
+        }
+
+        {
+          disambModal && (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
+              <div className={clsx(
+                'w-full max-w-lg rounded-[2.5rem] p-10 shadow-2xl transform animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto',
+                isDark ? 'bg-gray-800 border border-gray-700' : 'bg-white'
+              )}>
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="p-3 bg-blue-100 dark:bg-blue-900/20 rounded-2xl">
+                    <MapPinIcon className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div>
+                    <h3 className={clsx("text-2xl font-black tracking-tight", isDark ? "text-white" : "text-gray-900")}>
+                      Уточните адрес
                     </h3>
-                    <p className={clsx("text-sm mb-8 font-medium", isDark ? "text-gray-400" : "text-gray-500")}>
-                      Это действие безвозвратно удалит маршрут. Заказы станут снова доступны для распределения.
+                    <p className={clsx("text-sm font-bold opacity-50 uppercase tracking-widest", isDark ? "text-gray-400" : "text-gray-500")}>
+                      Найдены неоднозначности
                     </p>
-                    <div className="flex gap-4">
-                      <button
-                        type="button"
-                        className={clsx(
-                          "flex-1 px-6 py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all",
-                          isDark ? "bg-gray-700 text-gray-300 hover:bg-gray-600" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                        )}
-                        onClick={() => setShowDeleteModal(false)}
-                      >
-                        Отмена
-                      </button>
-                      <button
-                        type="button"
-                        className="flex-1 px-6 py-4 rounded-2xl text-sm font-black uppercase tracking-widest bg-red-600 text-white hover:bg-red-700 transition-all shadow-xl shadow-red-600/30 active:scale-95"
-                        onClick={handleDeleteRoute}
-                      >
-                        Удалить
-                      </button>
-                    </div>
                   </div>
                 </div>
-              </div>
-            )
-          }
 
-          {
-            showAddressEditModal && editingOrder && (
-              <AddressEditModal
-                isOpen={showAddressEditModal}
-                onClose={() => {
-                  setShowAddressEditModal(false)
-                  setEditingOrder(null)
-                }}
-                onSave={(newAddress) => handleAddressUpdate(newAddress)}
-                currentAddress={editingOrder.address}
-                orderNumber={editingOrder.orderNumber}
-                customerName={editingOrder.customerName}
-                isDark={isDark}
-              />
-            )
-          }
+                <p className={clsx("text-sm mb-6 leading-relaxed", isDark ? "text-gray-400" : "text-gray-600")}>
+                  {disambModal.title}
+                </p>
 
-          {
-            disambModal && (
-              <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
-                <div className={clsx(
-                  'w-full max-w-lg rounded-[2.5rem] p-10 shadow-2xl transform animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto',
-                  isDark ? 'bg-gray-800 border border-gray-700' : 'bg-white'
-                )}>
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className="p-3 bg-blue-100 dark:bg-blue-900/20 rounded-2xl">
-                      <MapPinIcon className="w-8 h-8 text-blue-600 dark:text-blue-400" />
-                    </div>
-                    <div>
-                      <h3 className={clsx("text-2xl font-black tracking-tight", isDark ? "text-white" : "text-gray-900")}>
-                        Уточните адрес
-                      </h3>
-                      <p className={clsx("text-sm font-bold opacity-50 uppercase tracking-widest", isDark ? "text-gray-400" : "text-gray-500")}>
-                        Найдены неоднозначности
-                      </p>
-                    </div>
-                  </div>
-
-                  <p className={clsx("text-sm mb-6 leading-relaxed", isDark ? "text-gray-400" : "text-gray-600")}>
-                    {disambModal.title}
-                  </p>
-
-                  <div className="space-y-3 mb-8">
-                    {disambModal.options.map((option, idx) => (
-                      <button
-                        key={idx}
-                        className={clsx(
-                          "w-full text-left p-5 rounded-3xl border-2 transition-all hover:scale-[1.02] shadow-sm hover:shadow-md",
-                          isDark
-                            ? "bg-gray-700/50 border-gray-600 hover:border-blue-500/50 hover:bg-gray-700 text-gray-200"
-                            : "bg-gray-50 border-gray-100 hover:bg-blue-50 hover:border-blue-300 text-gray-800 shadow-blue-500/5"
-                        )}
-                        onClick={() => handleDisambiguationResolve(option.res)}
-                      >
-                        <div className="font-black text-lg mb-1">{option.label}</div>
-                        {option.distanceMeters !== undefined && (
-                          <div className={clsx("text-xs font-bold opacity-60 uppercase", isDark ? "text-blue-400" : "text-blue-600")}>
-                            Дистанция: {Math.round(option.distanceMeters)} м
-                          </div>
-                        )}
-                      </button>
-                    ))}
+                <div className="space-y-3 mb-8">
+                  {disambModal.options.map((option, idx) => (
                     <button
+                      key={idx}
                       className={clsx(
-                        "w-full text-center p-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all mt-4",
-                        isDark ? "text-gray-500 hover:text-white" : "text-gray-400 hover:text-gray-900"
+                        "w-full text-left p-5 rounded-3xl border-2 transition-all hover:scale-[1.02] shadow-sm hover:shadow-md",
+                        isDark
+                          ? "bg-gray-700/50 border-gray-600 hover:border-blue-500/50 hover:bg-gray-700 text-gray-200"
+                          : "bg-gray-50 border-gray-100 hover:bg-blue-50 hover:border-blue-300 text-gray-800 shadow-blue-500/5"
                       )}
-                      onClick={() => handleDisambiguationResolve(null)}
+                      onClick={() => handleDisambiguationResolve(option.res)}
                     >
-                      Пропустить / Не использовать
+                      <div className="font-black text-lg mb-1">{option.label}</div>
+                      {option.distanceMeters !== undefined && (
+                        <div className={clsx("text-xs font-bold opacity-60 uppercase", isDark ? "text-blue-400" : "text-blue-600")}>
+                          Дистанция: {Math.round(option.distanceMeters)} м
+                        </div>
+                      )}
                     </button>
-                  </div>
+                  ))}
+                  <button
+                    className={clsx(
+                      "w-full text-center p-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all mt-4",
+                      isDark ? "text-gray-500 hover:text-white" : "text-gray-400 hover:text-gray-900"
+                    )}
+                    onClick={() => handleDisambiguationResolve(null)}
+                  >
+                    Пропустить / Не использовать
+                  </button>
                 </div>
               </div>
-            )
-          }
+            </div>
+          )
+        }
 
-          {
-            showHelpModal && (
-              <Suspense fallback={null}>
-                <HelpModalRoutes
-                  isOpen={showHelpModal}
-                  onClose={() => {
-                    setShowHelpModal(false)
-                    localStorage.setItem('km_routes_has_seen_help', 'true')
-                    setHasSeenHelp(true)
-                  }}
-                  onStartTour={() => {
-                    setShowHelpModal(false)
-                    setTimeout(() => setShowHelpTour(true), 300)
-                  }}
-                />
-              </Suspense>
-            )
-          }
+        {
+          showHelpModal && (
+            <Suspense fallback={null}>
+              <HelpModalRoutes
+                isOpen={showHelpModal}
+                onClose={() => {
+                  setShowHelpModal(false)
+                  localStorage.setItem('km_routes_has_seen_help', 'true')
+                  setHasSeenHelp(true)
+                }}
+                onStartTour={() => {
+                  setShowHelpModal(false)
+                  setTimeout(() => setShowHelpTour(true), 300)
+                }}
+              />
+            </Suspense>
+          )
+        }
 
-          {
-            showHelpTour && (
-              <Suspense fallback={null}>
-                <HelpTour
-                  isOpen={showHelpTour}
-                  onClose={() => {
-                    setShowHelpTour(false)
-                    localStorage.setItem('km_routes_has_seen_help', 'true')
-                    setHasSeenHelp(true)
-                  }}
-                  onComplete={() => {
-                    setShowHelpTour(false)
-                    localStorage.setItem('km_routes_has_seen_help', 'true')
-                    setHasSeenHelp(true)
-                  }}
-                  steps={[
-                    {
-                      id: 'courier-select',
-                      title: ' Выбор курьера',
-                      content: ` Начните с выбора курьера из списка слева.
+        {
+          showHelpTour && (
+            <Suspense fallback={null}>
+              <HelpTour
+                isOpen={showHelpTour}
+                onClose={() => {
+                  setShowHelpTour(false)
+                  localStorage.setItem('km_routes_has_seen_help', 'true')
+                  setHasSeenHelp(true)
+                }}
+                onComplete={() => {
+                  setShowHelpTour(false)
+                  localStorage.setItem('km_routes_has_seen_help', 'true')
+                  setHasSeenHelp(true)
+                }}
+                steps={[
+                  {
+                    id: 'courier-select',
+                    title: ' Выбор курьера',
+                    content: ` Начните с выбора курьера из списка слева.
  Что делать:
 1. Найдите нужного курьера в списке
 2. Кликните на карточку курьера
 3. После выбора вы увидите доступные заказы справа
  Подсказка: Используйте фильтры "Все", "Авто" или "Мото" для быстрого поиска нужного типа курьера.`,
-                      target: '[data-tour="courier-select"]',
-                      position: 'right'
-                    },
-                    {
-                      id: 'order-select',
-                      title: ' Выбор заказов',
-                      content: `️ Кликните на заказы, чтобы добавить их в маршрут.
+                    target: '[data-tour="courier-select"]',
+                    position: 'right'
+                  },
+                  {
+                    id: 'order-select',
+                    title: ' Выбор заказов',
+                    content: `️ Кликните на заказы, чтобы добавить их в маршрут.
  Как это работает:
 • Порядок выбора = порядок доставки
 • Выбранные заказы подсвечиваются синим
 • Используйте кнопки ↑ и ↓ для изменения порядка
 ️ Заказы, уже находящиеся в других маршрутах, нельзя выбрать.`,
-                      target: '[data-tour="order-select"]',
-                      position: 'left'
-                    },
-                    {
-                      id: 'create-route',
-                      title: ' Создание маршрута',
-                      content: ` После выбора заказов нажмите кнопку "Создать маршрут".
+                    target: '[data-tour="order-select"]',
+                    position: 'left'
+                  },
+                  {
+                    id: 'create-route',
+                    title: ' Создание маршрута',
+                    content: ` После выбора заказов нажмите кнопку "Создать маршрут".
 ️ Что происходит:
 1. Система создает новый маршрут
 2. Автоматически рассчитывает расстояние
 3. Маршрут появляется в списке внизу`,
-                      target: '[data-tour="create-route"]',
-                      position: 'top'
-                    },
-                    {
-                      id: 'route-list',
-                      title: '️ Список маршрутов',
-                      content: ` Здесь отображаются все созданные маршруты.
+                    target: '[data-tour="create-route"]',
+                    position: 'top'
+                  },
+                  {
+                    id: 'route-list',
+                    title: '️ Список маршрутов',
+                    content: ` Здесь отображаются все созданные маршруты.
  Доступные действия:
 ️ Открыть в Google Maps - просмотр маршрута
  Пересчитать - обновить расстояние и время
 ️ Удалить - удалить маршрут`,
-                      target: '[data-tour="route-list"]',
-                      position: 'top'
-                    }
-                  ]}
-                />
-              </Suspense>
-            )
-          }
+                    target: '[data-tour="route-list"]',
+                    position: 'top'
+                  }
+                ]}
+              />
+            </Suspense>
+          )
+        }
 
-        </>
-      ) : (
-        <div className="animate-in fade-in duration-500">
-          {selectedCourier && (
-            <CourierFinancials
-              courierId={selectedCourier || ''}
-              courierName={(selectedCourier === 'ID:0' || selectedCourier?.startsWith('ID:0')) ? 'Не назначено' : (selectedCourier || '')}
-              divisionId={user?.divisionId || ''}
-              isDark={isDark}
-            />
-          )}
-        </div>
-      )}
+      </>
     </div>
   )
 }

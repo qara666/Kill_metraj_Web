@@ -61,16 +61,25 @@ export function CourierFinancials({
     const [error, setError] = useState<string | null>(null);
     const [showSettlementModal, setShowSettlementModal] = useState(false);
 
-    useEffect(() => {
-        fetchFinancialSummary();
-    }, [courierId, divisionId, targetDate]);
-
     const fetchFinancialSummary = async () => {
+        if (!courierId) {
+            setError('Не выбран курьер');
+            setLoading(false);
+            return;
+        }
+
         try {
             setLoading(true);
+            setError(null);
             const date = targetDate || new Date().toISOString().split('T')[0];
+
+            // Безопасно кодируем параметры URL
+            const encodedCourierId = encodeURIComponent(courierId);
+            const encodedDivisionId = encodeURIComponent(divisionId || 'all');
+            const encodedDate = encodeURIComponent(date);
+
             const response = await fetch(
-                `/api/v1/couriers/${courierId}/financial-summary?divisionId=${divisionId}&targetDate=${date}`,
+                `/api/v1/couriers/${encodedCourierId}/financial-summary?divisionId=${encodedDivisionId}&targetDate=${encodedDate}`,
                 {
                     headers: {
                         'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -90,6 +99,10 @@ export function CourierFinancials({
             setLoading(false);
         }
     };
+
+    useEffect(() => {
+        fetchFinancialSummary();
+    }, [courierId, divisionId, targetDate]);
 
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat('uk-UA', {

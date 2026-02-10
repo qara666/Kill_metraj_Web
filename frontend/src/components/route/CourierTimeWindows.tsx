@@ -12,6 +12,7 @@ interface CourierTimeWindowsProps {
     isCalculating?: boolean;
     calculatingGroupId?: string | null;
     onOrderMoved?: (orderId: string, targetGroup: TimeWindowGroup) => void;
+    onCreateCustomGroup?: (orderId: string) => void;
     onCalculateRoute?: (group: TimeWindowGroup) => void;
     onJumpToGroup?: (group: TimeWindowGroup) => void;
 }
@@ -24,6 +25,7 @@ export function CourierTimeWindows({
     isCalculating = false,
     calculatingGroupId = null,
     onOrderMoved,
+    onCreateCustomGroup,
     onCalculateRoute,
     onJumpToGroup,
 }: CourierTimeWindowsProps) {
@@ -42,7 +44,23 @@ export function CourierTimeWindows({
     }
 
     return (
-        <div className="space-y-4">
+        <div
+            className="space-y-4"
+            onDragOver={(e) => {
+                if (onCreateCustomGroup) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                }
+            }}
+            onDrop={(e) => {
+                if (onCreateCustomGroup) {
+                    const orderId = e.dataTransfer.getData('orderId');
+                    if (orderId) {
+                        onCreateCustomGroup(orderId);
+                    }
+                }
+            }}
+        >
             {/* Enhanced Header */}
             <div className={clsx(
                 'flex items-center gap-3 px-4 py-3 rounded-lg border',

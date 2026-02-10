@@ -9,6 +9,7 @@ const Analytics = React.lazy(() => import('./pages/Analytics').then(m => ({ defa
 const AutoPlanner = React.lazy(() => import('./pages/AutoPlanner').then(m => ({ default: m.AutoPlanner })))
 const Settings = React.lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })))
 const TelegramParsing = React.lazy(() => import('./pages/TelegramParsing').then(m => ({ default: m.TelegramParsing })))
+const Financials = React.lazy(() => import('./pages/Financials').then(m => ({ default: m.Financials })))
 
 // Auth pages
 import { Login } from './pages/Login'
@@ -58,6 +59,7 @@ function App() {
                             <Route path="/autoplanner" element={<AutoPlanner />} />
                             <Route path="/analytics" element={<Analytics />} />
                             <Route path="/telegram-parsing" element={<TelegramParsing />} />
+                            <Route path="/financials" element={<Financials />} />
                             <Route path="/settings" element={<Settings />} />
                             <Route path="/profile" element={<Profile />} />
 

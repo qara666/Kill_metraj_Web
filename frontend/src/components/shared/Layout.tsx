@@ -17,7 +17,8 @@ import {
   DocumentTextIcon,
   UserCircleIcon,
   ArrowRightOnRectangleIcon,
-  AdjustmentsHorizontalIcon
+  AdjustmentsHorizontalIcon,
+  BanknotesIcon
 } from '@heroicons/react/24/outline'
 import { clsx } from 'clsx'
 import { useTheme } from '../../contexts/ThemeContext'
@@ -31,6 +32,7 @@ interface LayoutProps {
 const navigation = [
   { name: 'Панель управления', href: '/', icon: HomeIcon, restricted: false },
   { name: 'Маршруты', href: '/routes', icon: MapIcon, restricted: false },
+  { name: 'Расчеты', href: '/financials', icon: BanknotesIcon, restricted: false },
   { name: 'Курьеры', href: '/couriers', icon: UserGroupIcon, restricted: false },
   { name: 'Автоматическая оптимизация маршрутов по зонам доставки', href: '/autoplanner', icon: SparklesIcon, restricted: true },
   { name: 'Аналитика', href: '/analytics', icon: ChartBarIcon, restricted: true },
