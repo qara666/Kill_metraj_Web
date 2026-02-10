@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { ClockIcon, MapPinIcon, ChevronDownIcon, ChevronUpIcon, RocketLaunchIcon, CheckBadgeIcon } from '@heroicons/react/24/outline';
+import { ClockIcon, MapPinIcon, ChevronDownIcon, ChevronUpIcon, RocketLaunchIcon, CheckBadgeIcon, InboxArrowDownIcon, FireIcon } from '@heroicons/react/24/outline';
 import { useState, useEffect } from 'react';
 import { type TimeWindowGroup } from '../../utils/route/routeCalculationHelpers';
 
@@ -23,7 +23,7 @@ export function TimeWindowGroupCard({
     const [isExpanded, setIsExpanded] = useState(false);
     const [isDragOver, setIsDragOver] = useState(false);
 
-    // Phase 4.2: Departure Timer Logic
+    // Departure Timer Logic
     const [now, setNow] = useState(Date.now());
     useEffect(() => {
         const timer = setInterval(() => setNow(Date.now()), 60000);
@@ -38,8 +38,26 @@ export function TimeWindowGroupCard({
         return 'ok';
     };
 
+    // Calculate readiness status
+    const getReadinessStatus = () => {
+        const assembledCount = group.orders.filter(o => o.status === 'Собран' || o.status === 'Исполнен').length;
+        const total = group.orders.length;
+        if (assembledCount === total) return 'ready';
+        if (assembledCount > 0) return 'partial';
+        return 'preparing';
+    };
+
     const depStatus = getDepartureStatus();
+    const readinessStatus = getReadinessStatus();
     const hasTime = group.windowStart > 0;
+
+    // Get status color
+    const getStatusColor = () => {
+        if (readinessStatus === 'ready') return isDark ? 'bg-green-500/20 border-green-500/30' : 'bg-green-50 border-green-200';
+        if (readinessStatus === 'partial') return isDark ? 'bg-yellow-500/20 border-yellow-500/30' : 'bg-yellow-50 border-yellow-200';
+        if (depStatus === 'soon') return isDark ? 'bg-orange-500/20 border-orange-500/30' : 'bg-orange-50 border-orange-200';
+        return isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-blue-50/50';
+    };
 
     return (
         <div
@@ -61,56 +79,92 @@ export function TimeWindowGroupCard({
                 }
             }}
             className={clsx(
-                'rounded-xl border-2 transition-all relative overflow-hidden',
-                isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-blue-50/50 shadow-sm',
-                isDragOver && (isDark ? 'border-blue-500 bg-blue-900/10' : 'border-blue-400 bg-blue-50/50 shadow-md')
+                'rounded-xl border-2 transition-all relative overflow-hidden shadow-sm',
+                getStatusColor(),
+                isDragOver && (isDark ? 'border-blue-500 bg-blue-900/10 shadow-lg' : 'border-blue-400 bg-blue-50/50 shadow-lg')
             )}
         >
+            {/* Status Indicator Bar */}
+            <div className={clsx(
+                'absolute top-0 left-0 right-0 h-1',
+                readinessStatus === 'ready' && 'bg-gradient-to-r from-green-500 to-emerald-500',
+                readinessStatus === 'partial' && 'bg-gradient-to-r from-yellow-500 to-orange-500',
+                readinessStatus === 'preparing' && 'bg-gradient-to-r from-blue-500 to-indigo-500'
+            )} />
+
             {/* Header Area */}
             <div
                 className={clsx(
-                    'p-3 cursor-pointer transition-colors',
-                    isDark ? 'hover:bg-gray-700/30' : 'hover:bg-blue-50/30'
+                    'p-3 pt-4 cursor-pointer transition-colors',
+                    isDark ? 'hover:bg-gray-700/20' : 'hover:bg-blue-50/20'
                 )}
                 onClick={() => setIsExpanded(!isExpanded)}
             >
                 <div className="flex items-start justify-between">
-                    <div className="flex flex-col gap-2">
+                    <div className="flex flex-col gap-2.5 flex-1">
+                        {/* Time Badge with Status Icon */}
                         <div className="flex items-center gap-2">
-                            {/* Simple Time Badge */}
                             <div className={clsx(
-                                'px-2 py-1 rounded-lg flex items-center gap-1.5 text-[11px] font-bold tracking-tight',
+                                'px-2.5 py-1.5 rounded-lg flex items-center gap-2 text-xs font-bold tracking-tight shadow-sm',
                                 hasTime
-                                    ? (isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-50 text-blue-600')
-                                    : (isDark ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400')
+                                    ? (isDark ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-blue-50 text-blue-700 border border-blue-200')
+                                    : (isDark ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-500')
                             )}>
-                                <ClockIcon className="w-3.5 h-3.5 opacity-70" />
-                                {group.windowLabel}
+                                <ClockIcon className="w-4 h-4" />
+                                <span className="font-mono">{group.windowLabel}</span>
                             </div>
 
-                            {/* Subdued Departure Status */}
-                            {group.predictedDepartureAt && (
-                                <div className={clsx(
-                                    'text-[10px] font-bold tracking-tight opacity-70 flex items-center gap-1',
-                                    depStatus === 'overdue' ? 'text-green-500' : 'text-gray-400'
-                                )}>
-                                    {depStatus === 'overdue' ? (
-                                        <CheckBadgeIcon className="w-3 h-3" />
-                                    ) : (
-                                        <div className="w-1 h-1 rounded-full bg-current opacity-40" />
-                                    )}
-                                    {depStatus === 'overdue' ? 'Готов' : formatTimeLabel(group.predictedDepartureAt)}
+                            {/* Readiness Badge */}
+                            {readinessStatus === 'ready' && (
+                                <div className="px-2 py-1 rounded-md bg-green-500/20 text-green-600 dark:text-green-400 text-[10px] font-bold flex items-center gap-1">
+                                    <CheckBadgeIcon className="w-3.5 h-3.5" />
+                                    Готовы
+                                </div>
+                            )}
+                            {readinessStatus === 'partial' && (
+                                <div className="px-2 py-1 rounded-md bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 text-[10px] font-bold">
+                                    Частично
                                 </div>
                             )}
                         </div>
 
-                        {/* Combined Order Count and Split Reason */}
+                        {/* Timeline Visualization - НОВОЕ */}
+                        {hasTime && (
+                            <div className="flex items-center gap-2 text-[10px] font-medium opacity-60">
+                                {group.arrivalStart && (
+                                    <div className="flex items-center gap-1">
+                                        <InboxArrowDownIcon className="w-3 h-3" />
+                                        <span>{formatTimeLabel(group.arrivalStart)}</span>
+                                    </div>
+                                )}
+                                <div className="flex-1 h-px bg-current opacity-20" />
+                                {group.predictedDepartureAt && (
+                                    <div className={clsx(
+                                        'flex items-center gap-1 px-1.5 py-0.5 rounded',
+                                        depStatus === 'overdue' ? 'bg-green-500/20 text-green-600' :
+                                            depStatus === 'soon' ? 'bg-orange-500/20 text-orange-600' :
+                                                'bg-blue-500/10 text-blue-600'
+                                    )}>
+                                        {depStatus === 'overdue' ? (
+                                            <CheckBadgeIcon className="w-3 h-3" />
+                                        ) : depStatus === 'soon' ? (
+                                            <FireIcon className="w-3 h-3" />
+                                        ) : (
+                                            <RocketLaunchIcon className="w-3 h-3" />
+                                        )}
+                                        <span className="font-mono">{formatTimeLabel(group.predictedDepartureAt)}</span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Order Count and Split Reason */}
                         <div className="flex items-center gap-2">
-                            <span className={clsx('text-[11px] font-medium opacity-50')}>
+                            <span className={clsx('text-[11px] font-semibold', isDark ? 'text-gray-400' : 'text-gray-600')}>
                                 {group.orders.length} заказ{getOrdersEnding(group.orders.length)}
                             </span>
                             {group.splitReason && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/5 text-blue-500/60 font-bold border border-blue-500/10">
+                                <span className="text-[9px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold border border-blue-500/20">
                                     {group.splitReason}
                                 </span>
                             )}
@@ -133,71 +187,78 @@ export function TimeWindowGroupCard({
                                 <MapPinIcon className="w-4 h-4" />
                             </button>
                         )}
-                        <div className="p-1 opacity-20">
+                        <div className="p-1 opacity-30">
                             {isExpanded ? <ChevronUpIcon className="w-4 h-4" /> : <ChevronDownIcon className="w-4 h-4" />}
                         </div>
                     </div>
                 </div>
-
-                {/* Readiness Indicator Line (Anti-Mess) */}
-                {(() => {
-                    const allAssembled = group.orders.length > 0 && group.orders.every(o => o.status === 'Собран' || o.status === 'Исполнен');
-                    if (allAssembled) {
-                        return (
-                            <div className="mt-2 h-1 w-full bg-green-500/20 rounded-full overflow-hidden">
-                                <div className="h-full bg-green-500 w-full animate-pulse" />
-                            </div>
-                        );
-                    }
-                    return null;
-                })()}
             </div>
 
-            {/* Expanded Content with cleaner items */}
+            {/* Expanded Content */}
             {isExpanded && (
-                <div className={clsx('border-t', isDark ? 'border-gray-700 bg-gray-900/10' : 'border-blue-50/50 bg-gray-50/20')}>
-                    <div className="p-2 space-y-1.5 max-h-[260px] overflow-y-auto scrollbar-hide">
-                        {group.orders.map((order, idx) => (
-                            <div
-                                key={order.id || idx}
-                                draggable
-                                onDragStart={(e) => {
-                                    e.dataTransfer.setData('orderId', order.id);
-                                    e.dataTransfer.effectAllowed = 'move';
-                                }}
-                                className={clsx(
-                                    'p-2.5 rounded-lg border-2 transition-all cursor-grab active:cursor-grabbing',
-                                    isDark ? 'bg-gray-800/80 border-gray-700' : 'bg-white border-transparent shadow-sm'
-                                )}
-                            >
-                                <div className="flex items-center justify-between mb-1">
-                                    <span className={clsx('text-[10px] font-bold text-blue-600/80 tracking-tight')}>#{order.orderNumber}</span>
-                                    {order.plannedTime && !isNaN(order.plannedTime as any) && (
-                                        <span className="text-[9px] font-medium opacity-40">{formatTimeLabel(order.plannedTime as any)}</span>
+                <div className={clsx('border-t', isDark ? 'border-gray-700 bg-gray-900/20' : 'border-gray-100 bg-gray-50/30')}>
+                    <div className="p-2 space-y-1.5 max-h-[280px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
+                        {group.orders.map((order, idx) => {
+                            const orderStatus = order.status || 'Новый';
+                            const isReady = orderStatus === 'Собран' || orderStatus === 'Исполнен';
+
+                            return (
+                                <div
+                                    key={order.id || idx}
+                                    draggable
+                                    onDragStart={(e) => {
+                                        e.dataTransfer.setData('orderId', order.id);
+                                        e.dataTransfer.effectAllowed = 'move';
+                                    }}
+                                    className={clsx(
+                                        'p-2.5 rounded-lg border transition-all cursor-grab active:cursor-grabbing hover:shadow-md',
+                                        isDark ? 'bg-gray-800/80 border-gray-700 hover:border-gray-600' : 'bg-white border-gray-200 hover:border-blue-300',
+                                        isReady && 'border-l-4 border-l-green-500'
                                     )}
+                                >
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <div className="flex items-center gap-2">
+                                            <span className={clsx('text-[11px] font-bold tracking-tight', isReady ? 'text-green-600' : 'text-blue-600')}>
+                                                #{order.orderNumber}
+                                            </span>
+                                            <span className={clsx(
+                                                'text-[9px] px-1.5 py-0.5 rounded-full font-bold',
+                                                isReady ? 'bg-green-500/20 text-green-700 dark:text-green-400' : 'bg-gray-500/20 text-gray-600 dark:text-gray-400'
+                                            )}>
+                                                {orderStatus}
+                                            </span>
+                                        </div>
+                                        {order.plannedTime && !isNaN(order.plannedTime as any) && (
+                                            <span className="text-[10px] font-mono font-medium opacity-50">
+                                                {formatTimeLabel(order.plannedTime as any)}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className="text-[11px] font-medium opacity-70 leading-tight line-clamp-1">
+                                        {order.address}
+                                    </p>
                                 </div>
-                                <p className="text-[11px] font-medium opacity-60 leading-tight line-clamp-1">{order.address}</p>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
 
-                    <div className="p-3 pt-1">
+                    <div className="p-3 pt-2">
                         <button
                             disabled={isCalculating}
                             onClick={() => onCalculateRoute && onCalculateRoute(group)}
                             className={clsx(
-                                'w-full py-2.5 rounded-xl flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-wide transition-all active:scale-[0.98]',
+                                'w-full py-3 rounded-xl flex items-center justify-center gap-2.5 text-xs font-bold uppercase tracking-wide transition-all active:scale-[0.98] shadow-sm',
                                 isDark
-                                    ? 'bg-blue-600 text-white hover:bg-blue-500'
-                                    : 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
+                                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-500 hover:to-blue-600'
+                                    : 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800'
                             )}
                         >
                             {isCalculating ? (
-                                <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                             ) : (
-                                <RocketLaunchIcon className="w-3.5 h-3.5" />
+                                <RocketLaunchIcon className="w-4 h-4" />
                             )}
-                            В Маршрут
+                            Построить маршрут
                         </button>
                     </div>
                 </div>

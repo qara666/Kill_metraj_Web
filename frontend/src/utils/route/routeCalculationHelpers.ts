@@ -287,11 +287,12 @@ export function groupOrdersByTimeWindow(
             const maxDelivery = Math.max(currentGroup.windowEnd, planned);
             const deliveryFits = (maxDelivery - minDelivery) <= deliverySpanMs;
 
-            // 3. Доп. проверка: Если у заказов сильно разное время готовности (более 30 мин),
+            // 3. Доп. проверка: Если у заказов сильно разное время готовности (более 15 мин),
             // даже если они в одном окне доставки - лучше разделить.
+            // УЛУЧШЕНО: Снижен порог с 30 до 15 минут для более точной группировки
             let kitchenGapOk = true;
             const prevKitchen = (currentGroup as any).lastKitchen;
-            if (prevKitchen && kitchen && Math.abs(kitchen - prevKitchen) > 30 * 60 * 1000) {
+            if (prevKitchen && kitchen && Math.abs(kitchen - prevKitchen) > 15 * 60 * 1000) {
                 kitchenGapOk = false;
             }
 
