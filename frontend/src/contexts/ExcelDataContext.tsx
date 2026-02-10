@@ -168,13 +168,19 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   const updateRouteData = useCallback((newRoutes: any[]) => {
     if (window && (window as any).debugExcel) console.warn('[ExcelDataProvider:UPDATEROUTE]', newRoutes, (new Error()).stack)
     setExcelDataState(prev => {
-      if (prev) {
-        return { ...prev, routes: newRoutes }
-      } else {
-        return {
-          orders: [], couriers: [], paymentMethods: [], routes: newRoutes, errors: [], summary: undefined
-        }
-      }
+      const next = prev ? { ...prev, routes: newRoutes } : {
+        orders: [], couriers: [], paymentMethods: [], routes: newRoutes, errors: [], summary: undefined
+      } as any;
+
+      // Clear previous timeout
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+
+      // Debounce save (0.5s)
+      saveTimeoutRef.current = setTimeout(() => {
+        saveDataToServer(next);
+      }, 500);
+
+      return next;
     })
   }, [])
 
