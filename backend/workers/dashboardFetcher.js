@@ -152,7 +152,7 @@ class DashboardFetcher {
         // Group orders
         if (orders && Array.isArray(orders)) {
             orders.forEach(o => {
-                const deptId = String(o.departmentId || o.divisionId || this.departmentId);
+                const deptId = String(o.departmentId || o.divisionId || 'UNKNOWN');
                 if (!groups[deptId]) groups[deptId] = { orders: [], couriers: [] };
                 groups[deptId].orders.push(o);
             });
@@ -632,7 +632,7 @@ class DashboardFetcher {
             while (retryAttempt <= this.maxRetries) {
                 try {
                     const params = {
-                        top: isGlobal ? 2000 : this.topCount,
+                        top: isGlobal ? 10000 : this.topCount,
                         timeDeliveryBeg: this.formatDate(targetDate, '00:00:00'),
                         timeDeliveryEnd: this.formatDate(targetDate, '23:59:59')
                     };
@@ -663,7 +663,9 @@ class DashboardFetcher {
                         return false;
                     }
 
-                    const receivedCount = responseData.orders.length;
+                    if (receivedCount >= params.top) {
+                        logger.warn(`${logTag} API response HIT THE LIMIT (${params.top} orders). Data may be truncated!`);
+                    }
                     const rawSizeKB = Math.round(JSON.stringify(responseData).length / 1024);
                     logger.info(`${logTag} API Response: ${receivedCount} orders, Size: ${rawSizeKB}KB, Keys: ${Object.keys(responseData).join(', ')}`);
 
