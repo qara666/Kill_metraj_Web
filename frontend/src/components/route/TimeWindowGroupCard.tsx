@@ -71,6 +71,7 @@ export function TimeWindowGroupCard({
             onDrop={(e) => {
                 if (onOrderMoved) {
                     e.preventDefault();
+                    e.stopPropagation();
                     setIsDragOver(false);
                     const orderId = e.dataTransfer.getData('orderId');
                     if (orderId) {
@@ -116,14 +117,13 @@ export function TimeWindowGroupCard({
 
                             {/* Readiness Badge */}
                             {readinessStatus === 'ready' && (
-                                <div className="px-2 py-1 rounded-md bg-green-500/20 text-green-600 dark:text-green-400 text-[10px] font-bold flex items-center gap-1">
+                                <div className="p-1 px-1.5 rounded-md bg-green-500/20 text-green-600 dark:text-green-400 text-[10px] font-bold flex items-center gap-1 shadow-sm border border-green-500/20" title="Все заказы собраны">
                                     <CheckBadgeIcon className="w-3.5 h-3.5" />
-                                    Готовы
                                 </div>
                             )}
                             {readinessStatus === 'partial' && (
-                                <div className="px-2 py-1 rounded-md bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 text-[10px] font-bold">
-                                    Частично
+                                <div className="p-1 px-1.5 rounded-md bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 text-[10px] font-bold shadow-sm border border-yellow-500/20" title="Частично собрано">
+                                    <ClockIcon className="w-3.5 h-3.5" />
                                 </div>
                             )}
                         </div>
