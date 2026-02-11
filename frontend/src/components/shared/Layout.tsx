@@ -225,7 +225,7 @@ export function Layout({ children }: LayoutProps) {
                   'text-lg font-black tracking-tight leading-none',
                   isDark ? 'text-white' : 'text-gray-900'
                 )}>
-                  <span className="block text-xs font-bold opacity-60 uppercase tracking-[0.2em] mt-1">Сиситема авто рассчетов</span>
+                  <span className="block text-xs font-bold opacity-60 uppercase tracking-[0.2em] mt-1">Система авто рассчетов</span>
                 </h1>
               </div>
             </div>
@@ -420,13 +420,13 @@ export function Layout({ children }: LayoutProps) {
 
         {/* Page content */}
         <main className="py-6 flex-1 flex flex-col">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex-1">
+          <div className="px-4 sm:px-6 lg:px-8 flex-1">
             {children}
           </div>
 
           {/* Premium Footer */}
           <footer className="mt-auto py-8 px-4 sm:px-6 lg:px-8 border-t border-gray-200/5 dark:border-white/5">
-            <div className="mx-auto max-w-7xl flex flex-col items-center justify-center space-y-4">
+            <div className="flex flex-col items-center justify-center space-y-4">
               <div className="flex items-center gap-3 group cursor-pointer transition-all duration-300">
                 <div className="h-px w-8 bg-gradient-to-r from-transparent to-blue-500/50 group-hover:w-12 transition-all" />
                 <span className={clsx(
