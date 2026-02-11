@@ -682,73 +682,83 @@ export function CourierFinancials({
                             </div>
 
                             <div className="flex items-center gap-4">
-                                title="Сменить способ оплаты"
-                                >
-                                {switchingOrderId === order.orderNumber ? (
-                                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                ) : (
-                                    <ArrowsRightLeftIcon className="w-4 h-4" />
+                                <div className="text-right">
+                                    <p className={clsx('text-lg font-black', activeTab === 'cash' ? (isDark ? 'text-green-400' : 'text-green-600') : activeTab === 'online' ? (isDark ? 'text-purple-400' : 'text-purple-600') : (isDark ? 'text-blue-400' : 'text-blue-600'))}>
+                                        {formatCurrency((order as any).settledAmount || order.amount)}
+                                    </p>
+                                    {activeTab === 'history' && order.amount !== (order as any).settledAmount && (
+                                        <p className={clsx('text-[10px] font-bold', (order as any).settledAmount > order.amount ? 'text-green-500' : 'text-red-500')}>
+                                            {(order as any).settledAmount > order.amount ? '+' : '-'}{formatCurrency(Math.abs((order as any).settledAmount - order.amount))}
+                                        </p>
+                                    )}
+                                </div>
+                                {activeTab !== 'history' && (
+                                    <button
+                                        onClick={() => handleSwitchPaymentMethod(String(order.orderNumber), String((order as any).paymentMethod || ''))}
+                                        disabled={switchingOrderId === String(order.id || order.orderNumber)}
+                                        className={clsx(
+                                            'p-2 rounded-lg transition-all opacity-0 group-hover:opacity-100',
+                                            isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-200 text-gray-500'
+                                        )}
+                                        title="Сменить способ оплаты"
+                                    >
+                                        {switchingOrderId === order.orderNumber ? (
+                                            <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                        ) : (
+                                            <ArrowsRightLeftIcon className="w-4 h-4" />
+                                        )}
+                                    </button>
                                 )}
-                            </button>
-                            <div className="text-right flex-shrink-0">
-                                <p className={clsx('text-lg font-black', activeTab === 'cash' ? (isDark ? 'text-green-400' : 'text-green-600') : (isDark ? 'text-purple-400' : 'text-purple-600'))}>
-                                    {formatCurrency(order.amount)}
-                                </p>
                             </div>
                         </div>
-                        </div>
                     ))}
-                {(activeTab === 'cash' ? currentShift.cashOrders.orders : currentShift.onlineOrders.orders).length === 0 && (
-                    <div className="py-12 text-center opacity-40 font-bold uppercase tracking-widest text-xs">
-                        Нет заказов в этой категории
-                    </div>
-                )}
-            </div>
-        </div>
-
-            {/* Last Settlement Info */ }
-    {
-        summary.lastSettlement && (
-            <div className={clsx(
-                'p-4 rounded-lg border',
-                isDark ? 'bg-gray-800 border-gray-700' : 'bg-blue-50 border-blue-200'
-            )}>
-                <div className="flex items-center gap-2">
-                    <ClockIcon className={clsx('w-5 h-5', isDark ? 'text-blue-400' : 'text-blue-600')} />
-                    <div>
-                        <p className={clsx('text-xs font-medium', isDark ? 'text-gray-400' : 'text-gray-600')}>
-                            Последняя сдача
-                        </p>
-                        <p className={clsx('text-sm font-bold', isDark ? 'text-gray-200' : 'text-gray-800')}>
-                            {(() => {
-                                try {
-                                    const d = new Date(summary.lastSettlement.date);
-                                    return isNaN(d.getTime()) ? 'Дата не указана' : d.toLocaleDateString('ru-RU');
-                                } catch (e) {
-                                    return 'Дата не указана';
-                                }
-                            })()} - {formatCurrency(summary.lastSettlement.cashReceived)}
-                        </p>
-                    </div>
+                    {(activeTab === 'cash' ? currentShift.cashOrders.orders : activeTab === 'online' ? currentShift.onlineOrders.orders : summary.historyOrders).length === 0 && (
+                        <div className="py-12 text-center opacity-40 font-bold uppercase tracking-widest text-xs">
+                            Нет заказов в этой категории
+                        </div>
+                    )}
                 </div>
             </div>
-        )
-    }
 
-    {/* Settlement Modal */ }
-    {
-        showSettlementModal && (
-            <SettlementModal
-                courierName={courierName}
-                orders={currentShift.cashOrders.orders}
-                isDark={isDark}
-                onClose={() => setShowSettlementModal(false)}
-                updateExcelData={updateExcelData}
-                setShowSettlementModal={setShowSettlementModal}
-                fetchFinancialSummary={fetchFinancialSummary}
-            />
-        )
-    }
+            {/* Last Settlement Info */}
+            {summary.lastSettlement && (
+                <div className={clsx(
+                    'p-4 rounded-lg border',
+                    isDark ? 'bg-gray-800 border-gray-700' : 'bg-blue-50 border-blue-200'
+                )}>
+                    <div className="flex items-center gap-2">
+                        <ClockIcon className={clsx('w-5 h-5', isDark ? 'text-blue-400' : 'text-blue-600')} />
+                        <div>
+                            <p className={clsx('text-xs font-medium', isDark ? 'text-gray-400' : 'text-gray-600')}>
+                                Последняя сдача
+                            </p>
+                            <p className={clsx('text-sm font-bold', isDark ? 'text-gray-200' : 'text-gray-800')}>
+                                {(() => {
+                                    try {
+                                        const d = new Date(summary.lastSettlement.date);
+                                        return isNaN(d.getTime()) ? 'Дата не указана' : d.toLocaleDateString('ru-RU');
+                                    } catch (e) {
+                                        return 'Дата не указана';
+                                    }
+                                })()} - {formatCurrency(summary.lastSettlement.cashReceived)}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Settlement Modal */}
+            {showSettlementModal && (
+                <SettlementModal
+                    courierName={courierName}
+                    orders={currentShift.cashOrders.orders}
+                    isDark={isDark}
+                    onClose={() => setShowSettlementModal(false)}
+                    updateExcelData={updateExcelData}
+                    setShowSettlementModal={setShowSettlementModal}
+                    fetchFinancialSummary={fetchFinancialSummary}
+                />
+            )}
         </div >
     );
 }
