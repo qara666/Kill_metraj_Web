@@ -33,7 +33,7 @@ const navigation = [
   { name: 'Панель управления', href: '/', icon: HomeIcon, restricted: false },
   { name: 'Маршруты', href: '/routes', icon: MapIcon, restricted: false },
   { name: 'Курьеры', href: '/couriers', icon: UserGroupIcon, restricted: false },
-  { name: 'Расчеты', href: '/financials', icon: BanknotesIcon, restricted: false },
+  { name: 'Касса рассчет', href: '/financials', icon: BanknotesIcon, restricted: false },
   { name: 'Автоматическая оптимизация маршрутов по зонам доставки', href: '/autoplanner', icon: SparklesIcon, restricted: true },
   { name: 'Аналитика', href: '/analytics', icon: ChartBarIcon, restricted: true },
   { name: 'Парсинг выгрузки в телеграм и реестре', href: '/telegram-parsing', icon: PaperClipIcon, restricted: true },
@@ -44,7 +44,7 @@ const adminNavigation = [
   { name: 'Пользователи', href: '/admin/users', icon: UsersIcon },
   { name: 'Настройки пользователей', href: '/admin/presets', icon: AdjustmentsHorizontalIcon },
   { name: 'Логи активности', href: '/admin/logs', icon: DocumentTextIcon },
-  { name: 'Администрирование системы', href: '/admin/system', icon: ShieldCheckIcon },
+  { name: 'Админ фичи', href: '/admin/system', icon: ShieldCheckIcon },
 ]
 
 export function Layout({ children }: LayoutProps) {
