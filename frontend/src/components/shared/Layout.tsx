@@ -420,7 +420,7 @@ export function Layout({ children }: LayoutProps) {
 
         {/* Page content */}
         <main className="py-6 flex-1 flex flex-col">
-          <div className="px-4 sm:px-6 lg:px-8 flex-1">
+          <div className="px-4 sm:px-6 lg:px-8 flex-1 max-w-[1600px] mx-auto w-full">
             {children}
           </div>
 

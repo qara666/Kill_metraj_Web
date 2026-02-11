@@ -244,7 +244,12 @@ export function CourierFinancials({
             }
 
             const data = await response.json();
-            setSummary(data);
+            // Guard against missing properties that might cause .query or other undefined errors
+            if (data && typeof data === 'object') {
+                setSummary(data);
+            } else {
+                throw new Error('Получен пустой или некорректный ответ от сервера');
+            }
         } catch (err) {
             console.error('Error fetching financial summary:', err);
             let errorMessage = 'Unknown error';
@@ -293,7 +298,6 @@ export function CourierFinancials({
         setSwitchingOrderId(orderNumber);
         try {
             const token = localStorage.getItem('km_access_token');
-            const url = `${import.meta.env.VITE_API_URL || ''}/api/v1/orders/${orderNumber}/payment-method`;
             const options = {
                 headers: {
                     'Content-Type': 'application/json',
@@ -304,16 +308,35 @@ export function CourierFinancials({
 
             let response;
             try {
-                // Try PUT first as many CORS configs allow it but block PATCH
-                response = await fetch(url, { ...options, method: 'PUT' });
+                // Try several common endpoint patterns before giving up
+                const paths = [
+                    `/api/v1/orders/${orderNumber}/payment-method`,
+                    `/api/v1/orders/${orderNumber}/payment`,
+                    `/api/orders/${orderNumber}/payment-method`,
+                    `/api/orders/payment-method/${orderNumber}`
+                ];
+
+                for (const path of paths) {
+                    try {
+                        const fullUrl = `${import.meta.env.VITE_API_URL || ''}${path}`;
+                        response = await fetch(fullUrl, { ...options, method: 'PUT' });
+                        if (response.ok) break;
+
+                        // Try POST if PUT fails with 405 or 404
+                        if (response.status === 405 || response.status === 404) {
+                            response = await fetch(fullUrl, { ...options, method: 'POST' });
+                            if (response.ok) break;
+                        }
+                    } catch (e) {
+                        console.warn(`Path ${path} failed:`, e);
+                    }
+                }
             } catch (e) {
-                console.warn('PUT failed (possible CORS), trying POST...', e);
+                console.warn('All payment switch strategies failed', e);
             }
 
             if (!response || !response.ok) {
-                // Fallback to POST which is most likely to pass CORS
-                const postResponse = await fetch(url, { ...options, method: 'POST' });
-                if (!postResponse.ok) throw new Error('Failed to switch payment method');
+                throw new Error(`Server returned ${response?.status || 'no response'}`);
             }
 
             // Refresh data
@@ -999,11 +1022,11 @@ function SettlementModal({
                                             : (isDark ? 'bg-gray-900/40 border-gray-700 grayscale opacity-40' : 'bg-gray-50 border-gray-100 grayscale opacity-40')
                                     )}
                                 >
-                                    <div className="flex items-center gap-4 flex-1 mr-4">
+                                    <div className="flex items-center gap-3 min-w-0 flex-1">
                                         <div
                                             onClick={() => toggleOrder(orderId)}
                                             className={clsx(
-                                                'w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all cursor-pointer',
+                                                'w-6 h-6 flex-shrink-0 rounded-lg border-2 flex items-center justify-center transition-all cursor-pointer',
                                                 isSelected
                                                     ? 'bg-blue-500 border-blue-500 text-white'
                                                     : (isDark ? 'border-gray-600' : 'border-gray-300')
@@ -1012,7 +1035,7 @@ function SettlementModal({
                                             {isSelected && <CheckCircleIcon className="w-4 h-4" />}
                                         </div>
                                         <div className="min-w-0 flex-1">
-                                            <p className={clsx('text-sm font-black', isDark ? 'text-white' : 'text-gray-900')}>
+                                            <p className={clsx('text-sm font-black truncate', isDark ? 'text-white' : 'text-gray-900')}>
                                                 #{order.orderNumber}
                                             </p>
                                             <p className={clsx('text-[10px] font-bold opacity-60 truncate', isDark ? 'text-gray-400' : 'text-gray-500')}>
@@ -1020,22 +1043,22 @@ function SettlementModal({
                                             </p>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-1 flex-shrink-0 ml-4">
                                         {isSelected ? (
-                                            <div className="relative group">
+                                            <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-xl px-2 py-1 border border-black/5 dark:border-white/10 shadow-inner">
                                                 <input
                                                     type="text"
                                                     value={orderAmounts[orderId]}
                                                     onChange={(e) => handleOrderAmountChange(orderId, e.target.value)}
                                                     className={clsx(
-                                                        'w-20 text-right text-sm font-black bg-transparent border-b-2 outline-none transition-all focus:border-blue-500',
-                                                        isDark ? 'text-blue-400 border-blue-900/30' : 'text-blue-600 border-blue-200'
+                                                        'w-16 md:w-20 text-right text-sm font-black bg-transparent outline-none transition-all',
+                                                        isDark ? 'text-blue-400' : 'text-blue-600'
                                                     )}
                                                 />
-                                                <span className="ml-1 text-[10px] opacity-40">₴</span>
+                                                <span className="ml-1 text-[10px] font-black opacity-30">₴</span>
                                             </div>
                                         ) : (
-                                            <p className="text-sm font-bold text-gray-400">
+                                            <p className="text-sm font-black text-gray-400 whitespace-nowrap px-2">
                                                 {formatCurrency(parseFloat(order.amount || 0))}
                                             </p>
                                         )}
@@ -1083,23 +1106,29 @@ function SettlementModal({
                         </div>
 
                         {/* Balance Calculation Result */}
-                        {(difference !== 0 || isManualTotalOverride) && (
-                            <div className={clsx(
-                                "flex items-center justify-between py-3 px-4 rounded-2xl mb-4 animate-in slide-in-from-top-2",
-                                difference > 0
-                                    ? (isDark ? "bg-green-500/10 text-green-400" : "bg-green-50 text-green-700")
-                                    : difference < 0
-                                        ? (isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700")
-                                        : (isDark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-500")
-                            )}>
-                                <span className="text-[10px] font-black uppercase tracking-wider">
-                                    {difference > 0 ? 'Переплата (Лишние)' : difference < 0 ? 'Задолженность (Недодал)' : 'Идеально'}
+                        <div className={clsx(
+                            "flex items-center justify-between py-4 px-5 rounded-2xl mb-4 transition-all duration-300 shadow-sm",
+                            difference > 0
+                                ? (isDark ? "bg-green-500/10 text-green-400 border border-green-500/30" : "bg-green-50 text-green-700 border border-green-200")
+                                : difference < 0
+                                    ? (isDark ? "bg-red-500/10 text-red-400 border border-red-500/30" : "bg-red-50 text-red-700 border border-red-200")
+                                    : (isDark ? "bg-gray-800 text-gray-400 border border-gray-700" : "bg-gray-100 text-gray-500 border border-gray-200")
+                        )}>
+                            <div className="flex flex-col">
+                                <span className="text-[10px] font-black uppercase tracking-[0.1em] opacity-60 mb-0.5">
+                                    {difference > 0 ? 'Переплата (Лишние)' : difference < 0 ? 'Задолженность (Недодал)' : 'Итого к расчету'}
                                 </span>
-                                <span className="text-sm font-black">
-                                    {difference > 0 ? '+' : ''}{formatCurrency(difference)}
+                                <span className="text-xs font-bold opacity-40">
+                                    {isManualTotalOverride ? 'Ручной ввод активен' : 'Авто расчет по заказам'}
                                 </span>
                             </div>
-                        )}
+                            <span className={clsx(
+                                "text-xl font-black tabular-nums",
+                                difference !== 0 && "animate-pulse"
+                            )}>
+                                {difference > 0 ? '+' : ''}{formatCurrency(difference)}
+                            </span>
+                        </div>
 
                         <textarea
                             value={notes}
