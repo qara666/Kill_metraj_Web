@@ -49,6 +49,7 @@ interface FinancialSummary {
         cashReceived: number;
         status: string;
     };
+    historyOrders: Order[];
 }
 
 // Helper to format currency moved to top-level for shared use
@@ -72,8 +73,10 @@ export function CourierFinancials({
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showSettlementModal, setShowSettlementModal] = useState(false);
-    const [activeTab, setActiveTab] = useState<'cash' | 'online'>('cash');
+    const [activeTab, setActiveTab] = useState<'cash' | 'online' | 'history'>('cash');
     const [switchingOrderId, setSwitchingOrderId] = useState<string | null>(null);
+    const [debtSummary, setDebtSummary] = useState<any>(null);
+    const [showDebts, setShowDebts] = useState(false);
 
     const { excelData, updateOrderPaymentMethod, updateExcelData } = useExcelData();
 
@@ -106,7 +109,8 @@ export function CourierFinancials({
                     cardOrders: { count: 0, totalAmount: 0, orders: [] },
                     onlineOrders: { count: 0, totalAmount: 0, orders: [] },
                     totalExpected: 0
-                }
+                },
+                historyOrders: []
             };
         }
 
@@ -125,7 +129,8 @@ export function CourierFinancials({
                 cardOrders: { count: 0, totalAmount: 0, orders: [] },
                 onlineOrders: { count: 0, totalAmount: 0, orders: [] },
                 totalExpected: 0
-            }
+            },
+            historyOrders: []
         };
 
         // Categorize Orders
@@ -138,6 +143,16 @@ export function CourierFinancials({
             // Let's assume we filter by Valid Statuses for money collection.
             const isValidForFinancials = order.status !== 'Отменен' && order.status !== 'Возврат';
             if (!isValidForFinancials) return;
+
+            // If order is already settled, add to history and don't count in active shift totals
+            if (order.status === 'Исполнен') {
+                summary.historyOrders.push({
+                    ...order,
+                    id: order.id || order.orderNumber,
+                    amount: parseFloat(order.amount || order.totalAmount || 0)
+                });
+                return;
+            }
 
             const amount = parseFloat(order.amount || order.totalAmount || 0);
             const paymentMethod = (order.paymentMethod || '').toLowerCase();
@@ -272,7 +287,24 @@ export function CourierFinancials({
 
     useEffect(() => {
         fetchFinancialSummary();
+        fetchDebtSummary();
     }, [courierId, divisionId, targetDate]);
+
+    const fetchDebtSummary = async () => {
+        try {
+            const token = localStorage.getItem('km_access_token');
+            const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/settlements/statistics-summary?divisionId=${divisionId}`, {
+                headers: { 'Authorization': `Bearer ${token ? token.trim() : ''}` }
+            });
+            if (!response.ok) throw new Error('Failed to fetch debt summary');
+            const result = await response.json();
+            // Find current courier in the summary
+            const courierData = result.data.find((d: any) => String(d.courierId) === String(courierId));
+            setDebtSummary(courierData || null);
+        } catch (err) {
+            console.error('Error fetching debt summary:', err);
+        }
+    };
 
 
     const handleSwitchPaymentMethod = async (orderNumber: string, currentMethod: string) => {
@@ -492,6 +524,76 @@ export function CourierFinancials({
                 </div>
             </div>
 
+            {/* Debts & Overages Section */}
+            {debtSummary && (
+                <div className={clsx(
+                    'p-6 rounded-3xl border transition-all hover:shadow-lg glass-panel relative overflow-hidden mb-6',
+                    isDark ? 'shadow-black/20' : 'shadow-gray-200'
+                )}>
+                    {/* Background glow for debt section */}
+                    <div className={clsx(
+                        'absolute -inset-1 opacity-10 blur-xl pointer-events-none',
+                        debtSummary.totalDifference > 0 ? 'bg-red-500' : 'bg-green-500'
+                    )} />
+
+                    <div className="relative z-10">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-3">
+                                <div className={clsx(
+                                    'p-2 rounded-xl',
+                                    debtSummary.totalDifference > 0 ? 'bg-red-500/10 text-red-500' : 'bg-green-500/10 text-green-500'
+                                )}>
+                                    <BanknotesIcon className="w-5 h-5" />
+                                </div>
+                                <h3 className={clsx('text-lg font-bold', isDark ? 'text-gray-200' : 'text-gray-800')}>
+                                    Состояние счета
+                                </h3>
+                            </div>
+                            <div className={clsx(
+                                'text-xl font-black',
+                                debtSummary.totalDifference > 0 ? 'text-red-500' : 'text-green-500'
+                            )}>
+                                {debtSummary.totalDifference > 0 ? '-' : '+'}{formatCurrency(Math.abs(debtSummary.totalDifference))}
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <p className={clsx('text-xs font-bold opacity-60', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                                {debtSummary.totalDifference > 0 ? 'Общая задолженность' : 'Переплата (баланс)'}
+                            </p>
+                            <button
+                                onClick={() => setShowDebts(!showDebts)}
+                                className="text-xs font-bold text-blue-500 hover:underline"
+                            >
+                                {showDebts ? 'Скрыть детали' : 'Подробнее'}
+                            </button>
+                        </div>
+
+                        {showDebts && (
+                            <div className="mt-6 space-y-4 animate-in slide-in-from-top-2 duration-300">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="p-3 rounded-2xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 transition-all hover:border-black/10 dark:hover:border-white/10">
+                                        <p className="text-[10px] uppercase font-bold opacity-40 mb-1">Сдано всего</p>
+                                        <p className="font-black text-lg">{formatCurrency(debtSummary.totalReceived)}</p>
+                                    </div>
+                                    <div className="p-3 rounded-2xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 transition-all hover:border-black/10 dark:hover:border-white/10">
+                                        <p className="text-[10px] uppercase font-bold opacity-40 mb-1">Ожидалось</p>
+                                        <p className="font-black text-lg">{formatCurrency(debtSummary.totalExpected)}</p>
+                                    </div>
+                                </div>
+                                {debtSummary.allNotes && (
+                                    <div className="p-4 rounded-2xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10">
+                                        <p className="text-[10px] uppercase font-bold opacity-40 mb-2 font-mono">История заметок</p>
+                                        <p className="text-sm leading-relaxed opacity-80 italic font-medium">
+                                            {debtSummary.allNotes.split(' | ').slice(-5).join(' • ')}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {/* Orders List */}
             <div className={clsx(
                 'p-6 rounded-3xl border transition-all hover:shadow-lg glass-panel',
@@ -525,11 +627,22 @@ export function CourierFinancials({
                         >
                             Онлайн ({currentShift.onlineOrders.count})
                         </button>
+                        <button
+                            onClick={() => setActiveTab('history')}
+                            className={clsx(
+                                'px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all',
+                                activeTab === 'history'
+                                    ? (isDark ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-blue-600 shadow-sm')
+                                    : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')
+                            )}
+                        >
+                            История ({summary.historyOrders.length})
+                        </button>
                     </div>
                 </div>
 
                 <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                    {(activeTab === 'cash' ? currentShift.cashOrders.orders : currentShift.onlineOrders.orders).map((order, idx) => (
+                    {(activeTab === 'cash' ? currentShift.cashOrders.orders : activeTab === 'online' ? currentShift.onlineOrders.orders : summary.historyOrders).map((order, idx) => (
                         <div
                             key={order.id || idx}
                             className={clsx(
@@ -561,83 +674,81 @@ export function CourierFinancials({
                                     <span>{order.plannedTime || 'Время не указано'}</span>
                                     {order.customerName && <span>• {order.customerName}</span>}
                                 </div>
+                                {activeTab === 'history' && (order as any).settlementNote && (
+                                    <div className="mt-2 text-xs italic opacity-60 bg-black/5 dark:bg-white/5 p-2 rounded-lg">
+                                        Note: {(order as any).settlementNote}
+                                    </div>
+                                )}
                             </div>
 
                             <div className="flex items-center gap-4">
-                                <button
-                                    onClick={() => handleSwitchPaymentMethod(String(order.orderNumber), String((order as any).paymentMethod || ''))}
-                                    disabled={switchingOrderId === String(order.id || order.orderNumber)}
-                                    className={clsx(
-                                        'p-2 rounded-lg transition-all opacity-0 group-hover:opacity-100',
-                                        isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-200 text-gray-500'
-                                    )}
-                                    title="Сменить способ оплаты"
+                                title="Сменить способ оплаты"
                                 >
-                                    {switchingOrderId === order.orderNumber ? (
-                                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                    ) : (
-                                        <ArrowsRightLeftIcon className="w-4 h-4" />
-                                    )}
-                                </button>
-                                <div className="text-right flex-shrink-0">
-                                    <p className={clsx('text-lg font-black', activeTab === 'cash' ? (isDark ? 'text-green-400' : 'text-green-600') : (isDark ? 'text-purple-400' : 'text-purple-600'))}>
-                                        {formatCurrency(order.amount)}
-                                    </p>
-                                </div>
+                                {switchingOrderId === order.orderNumber ? (
+                                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                    <ArrowsRightLeftIcon className="w-4 h-4" />
+                                )}
+                            </button>
+                            <div className="text-right flex-shrink-0">
+                                <p className={clsx('text-lg font-black', activeTab === 'cash' ? (isDark ? 'text-green-400' : 'text-green-600') : (isDark ? 'text-purple-400' : 'text-purple-600'))}>
+                                    {formatCurrency(order.amount)}
+                                </p>
                             </div>
+                        </div>
                         </div>
                     ))}
-                    {(activeTab === 'cash' ? currentShift.cashOrders.orders : currentShift.onlineOrders.orders).length === 0 && (
-                        <div className="py-12 text-center opacity-40 font-bold uppercase tracking-widest text-xs">
-                            Нет заказов в этой категории
-                        </div>
-                    )}
+                {(activeTab === 'cash' ? currentShift.cashOrders.orders : currentShift.onlineOrders.orders).length === 0 && (
+                    <div className="py-12 text-center opacity-40 font-bold uppercase tracking-widest text-xs">
+                        Нет заказов в этой категории
+                    </div>
+                )}
+            </div>
+        </div>
+
+            {/* Last Settlement Info */ }
+    {
+        summary.lastSettlement && (
+            <div className={clsx(
+                'p-4 rounded-lg border',
+                isDark ? 'bg-gray-800 border-gray-700' : 'bg-blue-50 border-blue-200'
+            )}>
+                <div className="flex items-center gap-2">
+                    <ClockIcon className={clsx('w-5 h-5', isDark ? 'text-blue-400' : 'text-blue-600')} />
+                    <div>
+                        <p className={clsx('text-xs font-medium', isDark ? 'text-gray-400' : 'text-gray-600')}>
+                            Последняя сдача
+                        </p>
+                        <p className={clsx('text-sm font-bold', isDark ? 'text-gray-200' : 'text-gray-800')}>
+                            {(() => {
+                                try {
+                                    const d = new Date(summary.lastSettlement.date);
+                                    return isNaN(d.getTime()) ? 'Дата не указана' : d.toLocaleDateString('ru-RU');
+                                } catch (e) {
+                                    return 'Дата не указана';
+                                }
+                            })()} - {formatCurrency(summary.lastSettlement.cashReceived)}
+                        </p>
+                    </div>
                 </div>
             </div>
+        )
+    }
 
-            {/* Last Settlement Info */}
-            {
-                summary.lastSettlement && (
-                    <div className={clsx(
-                        'p-4 rounded-lg border',
-                        isDark ? 'bg-gray-800 border-gray-700' : 'bg-blue-50 border-blue-200'
-                    )}>
-                        <div className="flex items-center gap-2">
-                            <ClockIcon className={clsx('w-5 h-5', isDark ? 'text-blue-400' : 'text-blue-600')} />
-                            <div>
-                                <p className={clsx('text-xs font-medium', isDark ? 'text-gray-400' : 'text-gray-600')}>
-                                    Последняя сдача
-                                </p>
-                                <p className={clsx('text-sm font-bold', isDark ? 'text-gray-200' : 'text-gray-800')}>
-                                    {(() => {
-                                        try {
-                                            const d = new Date(summary.lastSettlement.date);
-                                            return isNaN(d.getTime()) ? 'Дата не указана' : d.toLocaleDateString('ru-RU');
-                                        } catch (e) {
-                                            return 'Дата не указана';
-                                        }
-                                    })()} - {formatCurrency(summary.lastSettlement.cashReceived)}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                )
-            }
-
-            {/* Settlement Modal */}
-            {
-                showSettlementModal && (
-                    <SettlementModal
-                        courierName={courierName}
-                        orders={currentShift.cashOrders.orders}
-                        isDark={isDark}
-                        onClose={() => setShowSettlementModal(false)}
-                        updateExcelData={updateExcelData}
-                        setShowSettlementModal={setShowSettlementModal}
-                        fetchFinancialSummary={fetchFinancialSummary}
-                    />
-                )
-            }
+    {/* Settlement Modal */ }
+    {
+        showSettlementModal && (
+            <SettlementModal
+                courierName={courierName}
+                orders={currentShift.cashOrders.orders}
+                isDark={isDark}
+                onClose={() => setShowSettlementModal(false)}
+                updateExcelData={updateExcelData}
+                setShowSettlementModal={setShowSettlementModal}
+                fetchFinancialSummary={fetchFinancialSummary}
+            />
+        )
+    }
         </div >
     );
 }
@@ -811,8 +922,15 @@ function SettlementModal({
             // Update order statuses to 'Исполнен' (completed)
             updateExcelData((prev: any) => {
                 const updatedOrders = prev.orders.map((order: any) => {
-                    if (selectedOrders.includes(order.orderNumber)) {
-                        return { ...order, status: 'Исполнен' };
+                    const orderId = String(order.id || order.orderNumber);
+                    if (selectedOrderIds.has(orderId)) {
+                        return {
+                            ...order,
+                            status: 'Исполнен',
+                            settlementNote: notes,
+                            settledAmount: orderAmounts[orderId],
+                            settledDate: new Date().toISOString()
+                        };
                     }
                     return order;
                 });

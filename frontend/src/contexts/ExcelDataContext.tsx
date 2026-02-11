@@ -171,6 +171,13 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
 
   const clearExcelData = useCallback(() => {
     if (window && (window as any).debugExcel) console.warn('[ExcelDataProvider:CLEAR]', (new Error()).stack)
+
+    // Clear any pending debounced saves to prevent data from reappearing
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+
     setExcelDataState(null)
     localStorage.removeItem('km_dashboard_processed_data')
 
