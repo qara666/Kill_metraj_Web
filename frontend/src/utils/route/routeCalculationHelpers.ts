@@ -123,6 +123,18 @@ function createNewGroup(
 }
 
 /**
+ * Нормализует адрес для сравнения
+ */
+function normalizeAddress(address: string): string {
+    if (!address) return '';
+    return address
+        .toLowerCase()
+        .replace(/,\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
+        .replace(/[^a-z0-9а-яё]/gi, '')
+        .trim();
+}
+
+/**
  * Создает группу для ручного объединения (Phase 4.7)
  */
 function createManualGroup(
@@ -246,16 +258,37 @@ export function groupOrdersByTimeWindow(
 
     const groups: TimeWindowGroup[] = [];
     const manualGroupsMap = new Map<string, Order[]>();
+    const handoverGroupsMap = new Map<string, Order[]>(); // NEW: Handover-based groups
     const ordersForAuto: Array<{ order: Order; planned: number; arrival: number; kitchen?: number }> = [];
 
-    // Разделяем ручные и автоматические заказы
+    // НОВАЯ ЛОГИКА: Разделяем заказы на ручные, handover-based, и автоматические
     ordersWithData.forEach(item => {
+        // 1. Ручные группы (приоритет)
         if (item.order.manualGroupId) {
             if (!manualGroupsMap.has(item.order.manualGroupId)) {
                 manualGroupsMap.set(item.order.manualGroupId, []);
             }
             manualGroupsMap.get(item.order.manualGroupId)!.push(item.order);
-        } else {
+        }
+        // 2. Handover-based группы (для заказов в доставке)
+        else if (item.order.status === 'Доставляется' || item.order.status === 'В пути') {
+            const handoverTime = item.order.statusTimings?.deliveringAt || item.order.handoverAt;
+            if (handoverTime) {
+                // Округляем до 15-минутного окна для группировки
+                const windowKey = Math.floor(handoverTime / (15 * 60 * 1000));
+                const groupKey = `handover-${courierId}-${windowKey}`;
+
+                if (!handoverGroupsMap.has(groupKey)) {
+                    handoverGroupsMap.set(groupKey, []);
+                }
+                handoverGroupsMap.get(groupKey)!.push(item.order);
+            } else {
+                // Если нет времени передачи, используем обычную логику
+                ordersForAuto.push(item);
+            }
+        }
+        // 3. Автоматическая группировка (для остальных)
+        else {
             ordersForAuto.push(item);
         }
     });
@@ -265,7 +298,38 @@ export function groupOrdersByTimeWindow(
         groups.push(createManualGroup(courierId, courierName, mOrders, mgId));
     });
 
-    // 2. Группируем автоматические заказы
+    // 2. Создаем группы для handover-based заказов (НОВОЕ)
+    handoverGroupsMap.forEach((hOrders, groupKey) => {
+        const handoverTimes = hOrders
+            .map(o => o.statusTimings?.deliveringAt || o.handoverAt)
+            .filter((t): t is number => !!t);
+
+        if (handoverTimes.length === 0) return;
+
+        const minHandover = Math.min(...handoverTimes);
+        const maxHandover = Math.max(...handoverTimes);
+        const plannedTimes = hOrders.map(o => getPlannedTime(o)).filter((t): t is number => !!t);
+        const minPlanned = plannedTimes.length > 0 ? Math.min(...plannedTimes) : minHandover;
+        const maxPlanned = plannedTimes.length > 0 ? Math.max(...plannedTimes) : maxHandover;
+
+        const group: TimeWindowGroup = {
+            id: groupKey,
+            courierId,
+            courierName,
+            windowStart: minPlanned,
+            windowEnd: maxPlanned,
+            windowLabel: formatTimeRange(minPlanned, maxPlanned),
+            orders: hOrders,
+            isReadyForCalculation: true,
+            arrivalStart: minHandover,
+            arrivalEnd: maxHandover,
+            splitReason: 'Маршрут' // Помечаем как реальный маршрут
+        };
+        updatePredictedDeparture(group);
+        groups.push(group);
+    });
+
+    // 3. Группируем автоматические заказы (существующая логика)
     let currentGroup: TimeWindowGroup | null = null;
 
     ordersForAuto.forEach(({ order, planned, arrival, kitchen }) => {
@@ -280,7 +344,17 @@ export function groupOrdersByTimeWindow(
             // Проверяем условия объединения:
             // 1. Прилетели близко друг к другу?
             // ИЛИ: У них одинаковое плановое время доставки (SLA)?
-            const arrivedClose = (arrival - (currentGroup.arrivalEnd || 0) <= proximityMs) || (planned === currentGroup.windowStart);
+            // ИЛИ: У них ОДИНАКОВЫЙ АДРЕС (с нормализацией) ПРИ УСЛОВИИ близости по времени
+            const sameAddress = normalizeAddress(order.address) === normalizeAddress(currentGroup.orders[0].address);
+
+            // ВАЖНО: Даже при одинаковом адресе, если разрыв по времени SLA > 90 мин 
+            // или разрыв по времени прихода > 60 мин — НЕ объединяем (разные смены/волны).
+            const slaGapOk = Math.abs(planned - currentGroup.windowStart) <= 90 * 60 * 1000;
+            const arrivalGapOk = (arrival - (currentGroup.arrivalEnd || 0)) <= 60 * 60 * 1000;
+
+            const arrivedClose = (arrival - (currentGroup.arrivalEnd || 0) <= proximityMs) ||
+                (planned === currentGroup.windowStart) ||
+                (sameAddress && slaGapOk && arrivalGapOk);
 
             // 2. Время доставки не слишком сильно разлетается?
             const minDelivery = Math.min(currentGroup.windowStart, planned);
@@ -319,11 +393,16 @@ export function groupOrdersByTimeWindow(
 
             // ОПРЕДЕЛЕНИЕ ПРИЧИНЫ РАЗДЕЛЕНИЯ (Phase 4.1)
             let newSplitReason = '';
-            if (!arrivedClose) newSplitReason = 'Время';
-            else if (!deliveryFits) newSplitReason = 'SLA';
-            else if (!kitchenGapOk) newSplitReason = 'Готовность';
-            else if (!distanceOk) newSplitReason = 'Гео';
-            else if (!districtOk) newSplitReason = 'Район';
+            // Если адрес совпадает, игнорируем большинство причин для разделения
+            if (sameAddress) {
+                newSplitReason = '';
+            } else {
+                if (!arrivedClose) newSplitReason = 'Время';
+                else if (!deliveryFits) newSplitReason = 'SLA';
+                else if (!kitchenGapOk) newSplitReason = 'Готовность';
+                else if (!distanceOk) newSplitReason = 'Гео';
+                else if (!districtOk) newSplitReason = 'Район';
+            }
 
             if (newSplitReason === '') {
                 // Добавляем в текущую группу
