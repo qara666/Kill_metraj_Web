@@ -180,35 +180,37 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
       <div
         onClick={() => setIsExpanded(!isExpanded)}
         className={clsx(
-          'rounded-3xl p-8 shadow-2xl border-2 overflow-hidden relative cursor-pointer transition-all hover:scale-[1.01] active:scale-[0.99]',
+          'rounded-3xl p-6 shadow-sm border overflow-hidden relative cursor-pointer transition-all hover:bg-gray-50/50 dark:hover:bg-white/5',
           isDark
-            ? 'bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 border-gray-700'
-            : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-blue-200'
+            ? 'bg-gray-900/20 border-gray-800 opacity-60 hover:opacity-100'
+            : 'bg-white border-gray-100 opacity-60 hover:opacity-100'
         )}
       >
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10 opacity-50"></div>
         <div className="relative z-10">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className={clsx(
-                'p-4 rounded-2xl shadow-lg',
+                'p-3 rounded-xl',
                 isDark
-                  ? 'bg-gradient-to-br from-blue-600 to-purple-600'
-                  : 'bg-gradient-to-br from-blue-500 to-indigo-600'
+                  ? 'bg-gray-800 text-gray-400'
+                  : 'bg-gray-100 text-gray-500'
               )}>
-                <DocumentArrowUpIcon className="w-8 h-8 text-white" />
+                <DocumentArrowUpIcon className="w-6 h-6" />
               </div>
               <div>
-                <h2 className={clsx(
-                  'text-3xl font-bold mb-1 bg-gradient-to-r bg-clip-text text-transparent',
-                  isDark
-                    ? 'from-blue-400 to-purple-400'
-                    : 'from-blue-600 to-indigo-600'
-                )}>
-                  Загрузка Excel файлов (устаревшая история но работает)
-                </h2>
-                <p className={clsx('text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>
-                  Загрузите Excel файл с заказами для автоматической обработки и создания маршрутов
+                <div className="flex items-center gap-2 mb-0.5">
+                  <h2 className={clsx(
+                    'text-xl font-bold',
+                    isDark ? 'text-gray-300' : 'text-gray-700'
+                  )}>
+                    Загрузка Excel файлов
+                  </h2>
+                  <span className="px-2 py-0.5 rounded-full bg-gray-500/10 text-gray-500 text-[10px] font-black uppercase tracking-widest border border-gray-500/20">
+                    Legacy
+                  </span>
+                </div>
+                <p className={clsx('text-xs', isDark ? 'text-gray-500' : 'text-gray-500')}>
+                  Для ручной загрузки (рекомендуется использовать FastOperator Sync выше)
                 </p>
               </div>
             </div>

@@ -3,7 +3,6 @@ import { clsx } from 'clsx';
 import { useExcelData } from '../../contexts/ExcelDataContext';
 import {
     BanknotesIcon,
-    CreditCardIcon,
     GlobeAltIcon,
     ClockIcon
 } from '@heroicons/react/24/outline';
@@ -408,12 +407,6 @@ export function CourierFinancials({
                                         className="h-full bg-gradient-to-r from-green-400 to-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"
                                         title={`Наличные: ${formatCurrency(currentShift.cashOrders.totalAmount)}`}
                                     />
-                                    {/* Card */}
-                                    <div
-                                        style={{ width: `${(currentShift.cardOrders.totalAmount / currentShift.totalExpected) * 100}%` }}
-                                        className="h-full bg-gradient-to-r from-blue-400 to-indigo-500"
-                                        title={`Карта: ${formatCurrency(currentShift.cardOrders.totalAmount)}`}
-                                    />
                                     {/* Online */}
                                     <div
                                         style={{ width: `${(currentShift.onlineOrders.totalAmount / currentShift.totalExpected) * 100}%` }}
@@ -423,11 +416,11 @@ export function CourierFinancials({
                                 </div>
                                 <div className="flex gap-4 mt-3 text-[10px] font-bold justify-between opacity-70">
                                     <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.8)]"></div>Наличные</div>
-                                    <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-400"></div>Карта</div>
                                     <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-purple-400"></div>Онлайн</div>
                                 </div>
                             </div>
                         )}
+
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -442,16 +435,6 @@ export function CourierFinancials({
                             percent={currentShift.totalExpected > 0 ? (currentShift.cashOrders.totalAmount / currentShift.totalExpected) * 100 : 0}
                         />
 
-                        {/* Card */}
-                        <PaymentMethodCard
-                            icon={CreditCardIcon}
-                            label="Терминал"
-                            amount={currentShift.cardOrders.totalAmount}
-                            count={currentShift.cardOrders.count}
-                            color="blue"
-                            isDark={isDark}
-                            percent={currentShift.totalExpected > 0 ? (currentShift.cardOrders.totalAmount / currentShift.totalExpected) * 100 : 0}
-                        />
 
                         {/* Online */}
                         <PaymentMethodCard
