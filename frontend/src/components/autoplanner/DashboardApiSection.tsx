@@ -21,6 +21,34 @@ export const DashboardApiSection: React.FC = () => {
     const apiNextSyncTime = useAutoPlannerStore(s => s.apiNextSyncTime);
     const apiSyncStatus = useAutoPlannerStore(s => s.apiSyncStatus);
 
+    const [timeLeft, setTimeLeft] = useState<string>('--:--');
+
+    // Countdown logic
+    React.useEffect(() => {
+        if (!apiAutoRefreshEnabled || !apiNextSyncTime) {
+            setTimeLeft('--:--');
+            return;
+        }
+
+        const updateTimer = () => {
+            const now = Date.now();
+            const diff = apiNextSyncTime - now;
+
+            if (diff <= 0) {
+                setTimeLeft('00:00');
+                return;
+            }
+
+            const minutes = Math.floor(diff / 1000 / 60);
+            const seconds = Math.floor((diff / 1000) % 60);
+            setTimeLeft(`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
+        };
+
+        updateTimer();
+        const interval = setInterval(updateTimer, 1000);
+        return () => clearInterval(interval);
+    }, [apiNextSyncTime, apiAutoRefreshEnabled]);
+
     const handleFetchData = async (isSilent = false, forceRefresh = false) => {
         if (!selectedDate) {
             if (!isSilent) toast.error('Выберите дату');
@@ -108,7 +136,7 @@ export const DashboardApiSection: React.FC = () => {
                             'font-bold text-lg tracking-tight',
                             isDark ? 'text-white' : 'text-gray-900'
                         )}>
-                            Загрузка данных с API
+                            Загрузка текущих данных с ФастОператора
                         </h3>
                         <div className="flex items-center gap-2 mt-0.5">
                             <p className={clsx(
@@ -118,9 +146,19 @@ export const DashboardApiSection: React.FC = () => {
                                 {apiLastSyncTime ? `Обновлено: ${format(apiLastSyncTime, 'HH:mm:ss')}` : 'Ожидание первого обновления...'}
                             </p>
                             {apiAutoRefreshEnabled && apiNextSyncTime && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 font-bold">
-                                    След: {format(apiNextSyncTime, 'HH:mm')}
-                                </span>
+                                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 group/timer">
+                                    <span className="text-[10px] text-blue-500 font-bold tabular-nums">
+                                        След: {timeLeft}
+                                    </span>
+                                    <button
+                                        onClick={() => handleFetchData(false, true)}
+                                        disabled={isLoading || apiSyncStatus === 'syncing'}
+                                        className="hover:scale-110 active:rotate-180 transition-all duration-300"
+                                        title="Обновить сейчас"
+                                    >
+                                        <ArrowPathIcon className={clsx("w-3 h-3 text-blue-400", (isLoading || apiSyncStatus === 'syncing') && "animate-spin")} />
+                                    </button>
+                                </div>
                             )}
                         </div>
                     </div>
@@ -138,7 +176,7 @@ export const DashboardApiSection: React.FC = () => {
                                 'text-sm font-bold',
                                 isDark ? 'text-gray-200' : 'text-gray-700'
                             )}>
-                                WebSocket
+                                Автообновление
                             </span>
                         </div>
                         <button

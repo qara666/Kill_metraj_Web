@@ -49,7 +49,7 @@ interface FinancialSummary {
     };
 }
 
-// Helper to format currency
+// Helper to format currency moved to top-level for shared use
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('uk-UA', {
         style: 'currency',
@@ -265,13 +265,8 @@ export function CourierFinancials({
         fetchFinancialSummary();
     }, [courierId, divisionId, targetDate]);
 
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('uk-UA', {
-            style: 'currency',
-            currency: 'UAH',
-            minimumFractionDigits: 2
-        }).format(amount);
-    };
+    // Use top-level formatCurrency helper instead of re-defining here
+
 
     if (loading) {
         return (
@@ -741,13 +736,14 @@ function SettlementModal({
             const userStr = localStorage.getItem('user');
             const user = userStr ? JSON.parse(userStr) : null;
             const settledBy = user?.name || user?.email || 'Admin';
+            const token = localStorage.getItem('km_access_token');
+            const encodedCourierId = encodeURIComponent(courierId);
 
-            const response = await fetch(`${import.meta.env.VITE_API_URL || '/api/v1'}/couriers/${courierId}/settle`, {
+            const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/couriers/${encodedCourierId}/settle`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    // Add auth token if needed
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    'Authorization': `Bearer ${token ? token.trim() : ''}`
                 },
                 body: JSON.stringify({
                     cashReceived: parseFloat(cashReceived),
