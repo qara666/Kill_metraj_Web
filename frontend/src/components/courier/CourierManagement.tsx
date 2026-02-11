@@ -23,6 +23,7 @@ import { toast } from 'react-hot-toast'
 import { AddressEditModal } from '../modals/AddressEditModal'
 import { Tooltip } from '../shared/Tooltip'
 import { googleApiCache } from '../../services/googleApiCache'
+import { getUkraineTrafficForOrders, calculateTotalTrafficDelay } from '../../utils/maps/ukraineTrafficAPI'
 import { lazy, Suspense } from 'react'
 import type { TourStep } from '../features/HelpTour'
 
@@ -48,7 +49,7 @@ interface CourierManagementProps {
 }
 
 export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData }) => {
-  const { excelData: contextData, updateRouteData } = useExcelData()
+  const { excelData: contextData, updateRouteData, updateExcelData } = useExcelData()
   const { isDark } = useTheme()
   const [couriers, setCouriers] = useState<Courier[]>([])
   const [showAddModal, setShowAddModal] = useState(false)
@@ -299,30 +300,41 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
 
   const toggleCourierVehicleType = (id: string) => {
     setCouriers(prev => {
+      let changedCourier: Courier | null = null;
       const updatedCouriers = prev.map(courier => {
         if (courier.id === id) {
           const newVehicleType = courier.vehicleType === 'car' ? 'motorcycle' : 'car'
-          return {
+          changedCourier = {
             ...courier,
             vehicleType: newVehicleType as 'car' | 'motorcycle',
             totalDistance: calculateCourierDistance(courier.name)
           }
+          return changedCourier
         }
         return courier
       })
 
-      // Сохраняем изменения в контексте
-      // Update log removed for production
-
       // Persist to persistent map immediately
       try {
         const existingMap = localStorageUtils.getCourierVehicleMap()
-        const changed = updatedCouriers.find(c => c.id === id)
-        if (changed) {
-          const updatedMap = { ...existingMap, [changed.name]: changed.vehicleType }
+        if (changedCourier) {
+          const updatedMap = { ...existingMap, [(changedCourier as Courier).name]: (changedCourier as Courier).vehicleType }
           localStorageUtils.setCourierVehicleMap(updatedMap)
+
+          // Sync to ExcelDataContext to trigger server save
+          updateExcelData(prevData => {
+            if (!prevData) return prevData;
+            const updatedContextCouriers = (prevData.couriers || []).map((c: any) =>
+              c.name === (changedCourier as Courier).name
+                ? { ...c, vehicleType: (changedCourier as Courier).vehicleType }
+                : c
+            );
+            return { ...prevData, couriers: updatedContextCouriers };
+          });
         }
-      } catch { }
+      } catch (e) {
+        console.error('Error syncing vehicle type:', e);
+      }
 
       return updatedCouriers
     })
@@ -558,11 +570,43 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
         return sum;
       }, 0);
 
+      // --- TRAFFIC ENHANCEMENT (NEW) ---
+      let adjustedDurationSec = totalDurationSec
+      let trafficDelayMin = 0
+      const settings = localStorageUtils.getAllSettings()
+      const mapboxToken = settings.mapboxToken || localStorage.getItem('km_mapbox_token')
+
+      if (mapboxToken && route.orders.length >= 1) {
+        try {
+          const chainForTraffic = route.orders.map((o: any) => ({
+            ...o,
+            coords: o.coords || (o.raw?.coords)
+          })).filter((o: any) => o.coords)
+
+          if (chainForTraffic.length >= 1) {
+            const trafficInfo = await getUkraineTrafficForOrders(chainForTraffic as any, mapboxToken)
+            if (trafficInfo.length > 0) {
+              trafficDelayMin = calculateTotalTrafficDelay(trafficInfo)
+
+              // Apply motorcycle reduction factor
+              const courierObj = couriers.find(c => c.name === route.courier)
+              if (route.vehicleType === 'motorcycle' || (courierObj && courierObj.vehicleType === 'motorcycle')) {
+                trafficDelayMin = trafficDelayMin * 0.5
+              }
+
+              adjustedDurationSec += (trafficDelayMin * 60)
+            }
+          }
+        } catch (err) {
+          console.warn('Traffic calculation failed in CourierManagement:', err)
+        }
+      }
+
       // Обновляем маршрут с новыми данными
       const updatedRoute = {
         ...route,
         totalDistance: Math.round(totalDistanceMeters / 1000 * 10) / 10, // в км
-        totalDuration: Math.round(totalDurationSec / 60), // в минутах
+        totalDuration: Math.round(adjustedDurationSec / 60), // в минутах (adjusted)
         isOptimized: true,
         lastCalculated: new Date().toISOString()
       }

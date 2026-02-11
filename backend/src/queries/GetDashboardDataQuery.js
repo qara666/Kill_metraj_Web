@@ -271,13 +271,16 @@ class GetDashboardDataQuery {
         // Ensure data is structured
         if (!payload) payload = { orders: [], couriers: [] };
 
-        // 1. EXTRA FILTERING REMOVED
-        // The fetcher already saves data per-division in the database.
-        // Redundant filtering here (o.departmentId === user.divisionId) can wipe data
-        // if the API response objects don't explicitly contain the divisionId.
-        // We trust the database's division_id column which was populated by the fetcher.
+        // 1. EXTRA FILTERING REMOVED ... (existing comments)
 
-        // 2. Store filtered data in cache for future requests
+        // 2. APPLY MANUAL OVERRIDES
+        try {
+            payload = await this.applyManualOverrides(payload);
+        } catch (overrideErr) {
+            logger.error('CQRS: Failed to apply manual overrides', { error: overrideErr.message });
+        }
+
+        // 3. Store filtered data in cache for future requests
         if (divisionId !== 'all') {
             await cacheService.setDashboardData(divisionId, {
                 payload: payload,
@@ -291,6 +294,50 @@ class GetDashboardDataQuery {
             cached: false,
             status_code: row.status_code
         };
+    }
+
+    /**
+     * Fetch and apply manual payment method overrides to orders
+     */
+    async async_apply_manual_overrides(payload) {
+        if (!payload.orders || payload.orders.length === 0) return payload;
+
+        try {
+            const overrides = await sequelize.query(
+                `SELECT order_number, payment_method FROM manual_order_overrides`,
+                { type: sequelize.QueryTypes.SELECT }
+            );
+
+            if (overrides.length === 0) return payload;
+
+            const overrideMap = new Map();
+            overrides.forEach(ov => overrideMap.set(String(ov.order_number), ov.payment_method));
+
+            let hasChanges = false;
+            const updatedOrders = payload.orders.map(order => {
+                const orderNumStr = String(order.orderNumber);
+                if (overrideMap.has(orderNumStr)) {
+                    hasChanges = true;
+                    return {
+                        ...order,
+                        paymentMethod: overrideMap.get(orderNumStr)
+                    };
+                }
+                return order;
+            });
+
+            if (hasChanges) {
+                return { ...payload, orders: updatedOrders };
+            }
+        } catch (err) {
+            logger.error('Error in applyManualOverrides:', err);
+        }
+        return payload;
+    }
+
+    // Proxy for async version to keep consistent with existing naming if needed
+    async applyManualOverrides(payload) {
+        return await this.async_apply_manual_overrides(payload);
     }
 }
 

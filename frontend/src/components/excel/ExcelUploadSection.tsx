@@ -206,7 +206,7 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
                     Загрузка Excel файлов
                   </h2>
                   <span className="px-2 py-0.5 rounded-full bg-gray-500/10 text-gray-500 text-[10px] font-black uppercase tracking-widest border border-gray-500/20">
-                    Legacy
+                    Устарело
                   </span>
                 </div>
                 <p className={clsx('text-xs', isDark ? 'text-gray-500' : 'text-gray-500')}>

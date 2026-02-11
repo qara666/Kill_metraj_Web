@@ -146,7 +146,7 @@ router.get('/:courierId/financial-summary', async (req, res) => {
 router.post('/:courierId/settle', async (req, res) => {
     try {
         const { courierId } = req.params;
-        const { cashReceived, notes, settledBy, divisionId, targetDate } = req.body;
+        const { cashReceived, notes, settledBy, divisionId, targetDate, paidOrderIds } = req.body;
 
         if (cashReceived === undefined || cashReceived === null) {
             return res.status(400).json({ error: 'cashReceived is required' });
@@ -154,8 +154,21 @@ router.post('/:courierId/settle', async (req, res) => {
 
         const dateStr = targetDate || new Date().toISOString().split('T')[0];
 
-        // Get financial summary using helper function instead of internal fetch
+        // Get financial summary
         const summary = await getSummary(courierId, divisionId, dateStr);
+
+        // If paidOrderIds are provided, we filter the expected amount to only those orders
+        let effectiveExpected = summary.currentShift.cashOrders.totalAmount;
+        let effectiveOrderIds = summary.currentShift.cashOrders.orders.map(o => o.id || o.orderNumber);
+
+        if (paidOrderIds && Array.isArray(paidOrderIds) && paidOrderIds.length > 0) {
+            const paidSet = new Set(paidOrderIds.map(String));
+            const filteredOrders = summary.currentShift.cashOrders.orders.filter(o =>
+                paidSet.has(String(o.id)) || paidSet.has(String(o.orderNumber))
+            );
+            effectiveExpected = filteredOrders.reduce((sum, o) => sum + (o.amount || 0), 0);
+            effectiveOrderIds = filteredOrders.map(o => o.id || o.orderNumber);
+        }
 
         // Create settlement record
         const settlement = await CourierSettlement.create({
@@ -165,18 +178,18 @@ router.post('/:courierId/settle', async (req, res) => {
             settlementDate: dateStr,
             shiftStart: new Date(dateStr + 'T00:00:00Z'),
             shiftEnd: new Date(),
-            totalCashExpected: summary.currentShift.cashOrders.totalAmount,
+            totalCashExpected: effectiveExpected,
             totalCashReceived: parseFloat(cashReceived),
-            totalCardAmount: summary.currentShift.cardOrders.totalAmount,
+            totalCardAmount: summary.currentShift.cardOrders.totalAmount, // Note: Card/Online are usually just for info in cash settlement
             totalOnlineAmount: summary.currentShift.onlineOrders.totalAmount,
-            ordersCount: summary.currentShift.totalOrders,
-            orderIds: summary.currentShift.cashOrders.orders.map(o => o.id),
+            ordersCount: effectiveOrderIds.length,
+            orderIds: effectiveOrderIds,
             status: 'settled',
             settledBy,
             notes
         });
 
-        const difference = parseFloat(cashReceived) - summary.currentShift.cashOrders.totalAmount;
+        const difference = parseFloat(cashReceived) - effectiveExpected;
 
         res.json({
             settlementId: settlement.id,
@@ -256,6 +269,63 @@ router.get('/:courierId/statistics', async (req, res) => {
         });
     } catch (error) {
         logger.error('Error getting courier statistics:', error);
+        res.status(500).json({ error: 'Internal server error', message: error.message });
+    }
+});
+
+/**
+ * GET /api/v1/settlements/statistics-summary
+ * Get summarized statistics for all couriers including differences (debts)
+ */
+router.get('/statistics-summary', async (req, res) => {
+    try {
+        const { divisionId, startDate, endDate } = req.query;
+
+        let query = `
+            SELECT 
+                courier_id as "courierId",
+                courier_name as "courierName",
+                COUNT(*) as "totalSettlements",
+                SUM(total_cash_expected) as "totalExpected",
+                SUM(total_cash_received) as "totalReceived",
+                SUM(total_cash_expected - total_cash_received) as "totalDifference",
+                MAX(settlement_date) as "lastSettlementDate",
+                STRING_AGG(notes, ' | ') as "allNotes"
+            FROM courier_settlements
+            WHERE status = 'settled'
+        `;
+
+        const values = [];
+        let paramIndex = 1;
+
+        if (divisionId && divisionId !== 'all') {
+            query += ` AND division_id = $${paramIndex}`;
+            values.push(divisionId);
+            paramIndex++;
+        }
+
+        if (startDate) {
+            query += ` AND settlement_date >= $${paramIndex}`;
+            values.push(startDate);
+            paramIndex++;
+        }
+
+        if (endDate) {
+            query += ` AND settlement_date <= $${paramIndex}`;
+            values.push(endDate);
+            paramIndex++;
+        }
+
+        query += ` GROUP BY courier_id, courier_name ORDER BY "totalDifference" DESC`;
+
+        const result = await pool.query(query, values);
+
+        res.json({
+            success: true,
+            data: result.rows
+        });
+    } catch (error) {
+        logger.error('Error getting settlement statistics summary:', error);
         res.status(500).json({ error: 'Internal server error', message: error.message });
     }
 });

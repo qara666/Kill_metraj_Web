@@ -139,7 +139,7 @@ export const DashboardApiSection: React.FC = () => {
                             'font-bold text-lg tracking-tight',
                             isDark ? 'text-white' : 'text-gray-900'
                         )}>
-                            Загрузка текущих данных с ФастОператора
+                            Загрузка данных с ФастОператора
                         </h3>
                         <div className="flex items-center gap-2 mt-0.5">
                             <p className={clsx(

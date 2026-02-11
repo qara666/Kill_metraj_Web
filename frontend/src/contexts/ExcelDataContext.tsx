@@ -172,6 +172,19 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     if (window && (window as any).debugExcel) console.warn('[ExcelDataProvider:CLEAR]', (new Error()).stack)
     setExcelDataState(null)
     localStorage.removeItem('km_dashboard_processed_data')
+
+    // Also clear on server
+    const token = localStorage.getItem('km_access_token');
+    if (token) {
+      fetch('/api/v1/state', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ data: null })
+      }).catch(err => console.error('Error clearing server state:', err));
+    }
   }, [])
 
   const updateRouteData = useCallback((newRoutes: any[]) => {
@@ -233,9 +246,20 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
 }
 
 // Helpers
+function normalizeCourierName(name: string | null | undefined): string {
+  if (!name) return '';
+  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 function applyCourierVehicleMap(data: any): any {
   try {
-    const map = localStorageUtils.getCourierVehicleMap()
+    const rawMap = localStorageUtils.getCourierVehicleMap()
+    // Create a normalized version of the map for lookup
+    const map: Record<string, string> = {};
+    Object.keys(rawMap).forEach(name => {
+      map[normalizeCourierName(name)] = rawMap[name];
+    });
+
     const orders = Array.isArray(data.orders) ? data.orders : []
 
     // 1. Process Couriers
@@ -249,8 +273,9 @@ function applyCourierVehicleMap(data: any): any {
       if (c) {
         const cName = typeof c === 'string' ? c : (c.name || c._id || c.id);
         const cId = typeof c === 'string' ? c : (c._id || c.id || cName);
+        const normalizedCName = normalizeCourierName(cName);
 
-        if (cName && !courierNamesInList.has(cName)) {
+        if (cName && !Array.from(courierNamesInList).some(n => normalizeCourierName(n) === normalizedCName)) {
           couriers.push({
             _id: cId,
             id: cId,
@@ -263,10 +288,13 @@ function applyCourierVehicleMap(data: any): any {
     });
 
     // Apply vehicle types from map
-    couriers = couriers.map((c: any) => ({
-      ...c,
-      vehicleType: map[c.name] || c.vehicleType || 'car'
-    }))
+    couriers = couriers.map((c: any) => {
+      const normalizedName = normalizeCourierName(c.name);
+      return {
+        ...c,
+        vehicleType: map[normalizedName] || c.vehicleType || 'car'
+      };
+    })
 
     // 2. Process Payment Methods
     let paymentMethods = Array.isArray(data.paymentMethods) ? [...data.paymentMethods] : []

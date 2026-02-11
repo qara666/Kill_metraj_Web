@@ -4,7 +4,9 @@ import { useExcelData } from '../../contexts/ExcelDataContext';
 import {
     BanknotesIcon,
     GlobeAltIcon,
-    ClockIcon
+    ClockIcon,
+    ArrowsRightLeftIcon,
+    CheckCircleIcon
 } from '@heroicons/react/24/outline';
 import type { Order } from '../../types';
 
@@ -69,6 +71,10 @@ export function CourierFinancials({
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showSettlementModal, setShowSettlementModal] = useState(false);
+    const [activeTab, setActiveTab] = useState<'cash' | 'online'>('cash');
+    const [switchingOrderId, setSwitchingOrderId] = useState<string | null>(null);
+    const [debtSummary, setDebtSummary] = useState<any>(null);
+    const [showDebts, setShowDebts] = useState(false);
 
     const { excelData } = useExcelData();
 
@@ -262,7 +268,51 @@ export function CourierFinancials({
 
     useEffect(() => {
         fetchFinancialSummary();
+        fetchDebtSummary();
     }, [courierId, divisionId, targetDate]);
+
+    const fetchDebtSummary = async () => {
+        try {
+            const token = localStorage.getItem('km_access_token');
+            const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/settlements/statistics-summary?divisionId=${divisionId}`, {
+                headers: { 'Authorization': `Bearer ${token ? token.trim() : ''}` }
+            });
+            if (!response.ok) throw new Error('Failed to fetch debt summary');
+            const result = await response.json();
+            // Find current courier in the summary
+            const courierData = result.data.find((d: any) => String(d.courierId) === String(courierId));
+            setDebtSummary(courierData || null);
+        } catch (err) {
+            console.error('Error fetching debt summary:', err);
+        }
+    };
+
+    const handleSwitchPaymentMethod = async (orderNumber: string, currentMethod: string) => {
+        const newMethod = currentMethod.toLowerCase().includes('налич') || currentMethod.toLowerCase().includes('cash') ? 'Онлайн' : 'Наличные';
+
+        setSwitchingOrderId(orderNumber);
+        try {
+            const token = localStorage.getItem('km_access_token');
+            const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/orders/${orderNumber}/payment-method`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token ? token.trim() : ''}`
+                },
+                body: JSON.stringify({ paymentMethod: newMethod })
+            });
+
+            if (!response.ok) throw new Error('Failed to switch payment method');
+
+            // Refresh data
+            await fetchFinancialSummary();
+        } catch (err) {
+            console.error('Error switching payment method:', err);
+            alert('Ошибка при смене способа оплаты');
+        } finally {
+            setSwitchingOrderId(null);
+        }
+    };
 
     // Use top-level formatCurrency helper instead of re-defining here
 
@@ -463,68 +513,170 @@ export function CourierFinancials({
                 </div>
             </div>
 
-            {/* Orders List */}
-            {
-                currentShift.cashOrders.orders.length > 0 && (
-                    <div className={clsx(
-                        'p-6 rounded-3xl border transition-all hover:shadow-lg glass-panel',
-                        isDark ? 'shadow-black/20' : 'shadow-gray-200'
-                    )}>
-                        <div className="flex items-center justify-between mb-6">
-                            <h3 className={clsx('text-lg font-bold flex items-center gap-3', isDark ? 'text-gray-200' : 'text-gray-800')}>
-                                <span>Детализация (Наличные)</span>
-                                <span className={clsx('text-xs px-2.5 py-1 rounded-full font-black', isDark ? 'bg-white/10 text-white' : 'bg-black/5 text-black')}>
-                                    {currentShift.cashOrders.count}
-                                </span>
+            {/* Debts & Overages Section */}
+            {debtSummary && (
+                <div className={clsx(
+                    'p-6 rounded-3xl border transition-all hover:shadow-lg glass-panel relative overflow-hidden',
+                    isDark ? 'shadow-black/20' : 'shadow-gray-200'
+                )}>
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                            <div className={clsx(
+                                'p-2 rounded-xl',
+                                debtSummary.totalDifference > 0 ? 'bg-red-500/10 text-red-500' : 'bg-green-500/10 text-green-500'
+                            )}>
+                                <BanknotesIcon className="w-5 h-5" />
+                            </div>
+                            <h3 className={clsx('text-lg font-bold', isDark ? 'text-gray-200' : 'text-gray-800')}>
+                                Состояние счета
                             </h3>
                         </div>
-
-                        <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                            {currentShift.cashOrders.orders.map((order, idx) => (
-                                <div
-                                    key={order.id || idx}
-                                    className={clsx(
-                                        'p-4 rounded-xl border flex items-center justify-between transition-colors group',
-                                        isDark ? 'bg-gray-900/40 border-gray-700 hover:bg-gray-900/60' : 'bg-gray-50 border-gray-100 hover:bg-white hover:border-blue-200 hover:shadow-md'
-                                    )}
-                                >
-                                    <div className="flex-1 min-w-0 mr-4">
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <span className={clsx(
-                                                "text-xs font-black px-1.5 py-0.5 rounded",
-                                                isDark ? "bg-blue-900/30 text-blue-400" : "bg-blue-100 text-blue-700"
-                                            )}>
-                                                #{order.orderNumber}
-                                            </span>
-                                            {/* Status Badge */}
-                                            <span className={clsx(
-                                                "text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded",
-                                                order.status === 'Исполнен' ? (isDark ? 'bg-green-900/30 text-green-400' : 'bg-green-100 text-green-700') :
-                                                    (isDark ? 'bg-gray-700 text-gray-400' : 'bg-gray-200 text-gray-600')
-                                            )}>
-                                                {order.status || 'Неизвестно'}
-                                            </span>
-                                        </div>
-                                        <p className={clsx('text-sm truncate font-medium', isDark ? 'text-gray-300' : 'text-gray-700')} title={order.address}>
-                                            {order.address}
-                                        </p>
-                                        <div className="flex items-center gap-2 mt-1 text-xs opacity-60">
-                                            <ClockIcon className="w-3 h-3" />
-                                            <span>{order.plannedTime || 'Время не указано'}</span>
-                                            {order.customerName && <span>• {order.customerName}</span>}
-                                        </div>
-                                    </div>
-                                    <div className="text-right flex-shrink-0">
-                                        <p className={clsx('text-lg font-black', isDark ? 'text-green-400' : 'text-green-600')}>
-                                            {formatCurrency(order.amount)}
-                                        </p>
-                                    </div>
-                                </div>
-                            ))}
+                        <div className={clsx(
+                            'text-xl font-black',
+                            debtSummary.totalDifference > 0 ? 'text-red-500' : 'text-green-500'
+                        )}>
+                            {debtSummary.totalDifference > 0 ? '-' : '+'}{formatCurrency(Math.abs(debtSummary.totalDifference))}
                         </div>
                     </div>
-                )
-            }
+                    <div className="flex items-center justify-between">
+                        <p className={clsx('text-xs font-bold opacity-60', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                            {debtSummary.totalDifference > 0 ? 'Общая задолженность' : 'Переплата (баланс)'}
+                        </p>
+                        <button
+                            onClick={() => setShowDebts(!showDebts)}
+                            className="text-xs font-bold text-blue-500 hover:underline"
+                        >
+                            {showDebts ? 'Скрыть детали' : 'Подробнее'}
+                        </button>
+                    </div>
+
+                    {showDebts && (
+                        <div className="mt-6 space-y-4 animate-in slide-in-from-top-2 duration-300">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="p-3 rounded-2xl bg-black/5 dark:bg-white/5">
+                                    <p className="text-[10px] uppercase font-bold opacity-40 mb-1">Сдано всего</p>
+                                    <p className="font-black">{formatCurrency(debtSummary.totalReceived)}</p>
+                                </div>
+                                <div className="p-3 rounded-2xl bg-black/5 dark:bg-white/5">
+                                    <p className="text-[10px] uppercase font-bold opacity-40 mb-1">Ожидалось</p>
+                                    <p className="font-black">{formatCurrency(debtSummary.totalExpected)}</p>
+                                </div>
+                            </div>
+                            {debtSummary.allNotes && (
+                                <div className="p-4 rounded-2xl bg-yellow-500/5 border border-yellow-500/20">
+                                    <p className="text-[10px] uppercase font-bold opacity-40 mb-2">История заметок</p>
+                                    <p className="text-xs leading-relaxed opacity-70 italic">
+                                        {debtSummary.allNotes.split(' | ').slice(-3).join(' • ')}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Orders List */}
+            <div className={clsx(
+                'p-6 rounded-3xl border transition-all hover:shadow-lg glass-panel',
+                isDark ? 'shadow-black/20' : 'shadow-gray-200'
+            )}>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+                    <h3 className={clsx('text-lg font-bold flex items-center gap-3', isDark ? 'text-gray-200' : 'text-gray-800')}>
+                        <span>Детализация заказов</span>
+                    </h3>
+
+                    <div className="flex p-1 bg-black/5 dark:bg-white/5 rounded-2xl">
+                        <button
+                            onClick={() => setActiveTab('cash')}
+                            className={clsx(
+                                'px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all',
+                                activeTab === 'cash'
+                                    ? (isDark ? 'bg-green-600 text-white shadow-lg' : 'bg-white text-green-600 shadow-sm')
+                                    : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')
+                            )}
+                        >
+                            Наличные ({currentShift.cashOrders.count})
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('online')}
+                            className={clsx(
+                                'px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all',
+                                activeTab === 'online'
+                                    ? (isDark ? 'bg-purple-600 text-white shadow-lg' : 'bg-white text-purple-600 shadow-sm')
+                                    : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')
+                            )}
+                        >
+                            Онлайн ({currentShift.onlineOrders.count})
+                        </button>
+                    </div>
+                </div>
+
+                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                    {(activeTab === 'cash' ? currentShift.cashOrders.orders : currentShift.onlineOrders.orders).map((order, idx) => (
+                        <div
+                            key={order.id || idx}
+                            className={clsx(
+                                'p-4 rounded-xl border flex items-center justify-between transition-colors group',
+                                isDark ? 'bg-gray-900/40 border-gray-700 hover:bg-gray-900/60' : 'bg-gray-50 border-gray-100 hover:bg-white hover:border-blue-200 hover:shadow-md'
+                            )}
+                        >
+                            <div className="flex-1 min-w-0 mr-4">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className={clsx(
+                                        "text-xs font-black px-1.5 py-0.5 rounded",
+                                        isDark ? "bg-blue-900/30 text-blue-400" : "bg-blue-100 text-blue-700"
+                                    )}>
+                                        #{order.orderNumber}
+                                    </span>
+                                    <span className={clsx(
+                                        "text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded",
+                                        order.status === 'Исполнен' ? (isDark ? 'bg-green-900/30 text-green-400' : 'bg-green-100 text-green-700') :
+                                            (isDark ? 'bg-gray-700 text-gray-400' : 'bg-gray-200 text-gray-600')
+                                    )}>
+                                        {order.status || 'Неизвестно'}
+                                    </span>
+                                </div>
+                                <p className={clsx('text-sm truncate font-medium', isDark ? 'text-gray-300' : 'text-gray-700')} title={order.address}>
+                                    {order.address}
+                                </p>
+                                <div className="flex items-center gap-2 mt-1 text-xs opacity-60">
+                                    <ClockIcon className="w-3 h-3" />
+                                    <span>{order.plannedTime || 'Время не указано'}</span>
+                                    {order.customerName && <span>• {order.customerName}</span>}
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-4">
+                                <button
+                                    onClick={() => handleSwitchPaymentMethod(String(order.orderNumber), String((order as any).paymentMethod || ''))}
+                                    disabled={switchingOrderId === String(order.id || order.orderNumber)}
+                                    className={clsx(
+                                        'p-2 rounded-lg transition-all opacity-0 group-hover:opacity-100',
+                                        isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-200 text-gray-500'
+                                    )}
+                                    title="Сменить способ оплаты"
+                                >
+                                    {switchingOrderId === order.orderNumber ? (
+                                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                        <ArrowsRightLeftIcon className="w-4 h-4" />
+                                    )}
+                                </button>
+                                <div className="text-right flex-shrink-0">
+                                    <p className={clsx('text-lg font-black', activeTab === 'cash' ? (isDark ? 'text-green-400' : 'text-green-600') : (isDark ? 'text-purple-400' : 'text-purple-600'))}>
+                                        {formatCurrency(order.amount)}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                    {(activeTab === 'cash' ? currentShift.cashOrders.orders : currentShift.onlineOrders.orders).length === 0 && (
+                        <div className="py-12 text-center opacity-40 font-bold uppercase tracking-widest text-xs">
+                            Нет заказов в этой категории
+                        </div>
+                    )}
+                </div>
+            </div>
 
             {/* Last Settlement Info */}
             {
@@ -660,54 +812,42 @@ function PaymentMethodCard({ icon: Icon, label, amount, count, color, isDark, pe
 }
 
 // Settlement Modal Component
+// Settlement Modal Component (Redesigned with Checkboxes)
 function SettlementModal({
     courierId,
     courierName,
     divisionId,
-    expectedAmount,
-    orders = [], // New prop
+    orders = [],
     targetDate,
     isDark,
     onClose,
     onSuccess
 }: any) {
-    // State for overall cash received (can be manually edited or sum of orders)
-    const [cashReceived, setCashReceived] = React.useState(expectedAmount.toString());
     const [notes, setNotes] = React.useState('');
     const [loading, setLoading] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
 
-    // State for individual order settlements
-    const [settledOrders, setSettledOrders] = React.useState<Record<string, number>>({});
-    const [showDetails, setShowDetails] = React.useState(true); // Default to showing details if available
+    // Track which orders are being paid
+    const [selectedOrderIds, setSelectedOrderIds] = React.useState<Set<string>>(
+        new Set(orders.map((o: any) => String(o.id || o.orderNumber)))
+    );
 
-    // Initialize settled orders with expected amounts
-    React.useEffect(() => {
-        const initialSettled: Record<string, number> = {};
-        if (orders && orders.length > 0) {
-            orders.forEach((o: any) => {
-                initialSettled[o.id || o.orderNumber] = parseFloat(o.amount || 0);
-            });
-            setSettledOrders(initialSettled);
+    // Dynamic sum calculation
+    const cashReceived = React.useMemo(() => {
+        return orders
+            .filter((o: any) => selectedOrderIds.has(String(o.id || o.orderNumber)))
+            .reduce((sum: number, o: any) => sum + parseFloat(o.amount || 0), 0);
+    }, [orders, selectedOrderIds]);
+
+    const toggleOrder = (id: string) => {
+        const newSet = new Set(selectedOrderIds);
+        if (newSet.has(id)) {
+            newSet.delete(id);
+        } else {
+            newSet.add(id);
         }
-    }, [orders]);
-
-    // Update total cash received when individual orders change
-    const handleOrderChange = (orderId: string, amount: string) => {
-        const val = parseFloat(amount);
-        if (isNaN(val)) return;
-
-        const newSettled = { ...settledOrders, [orderId]: val };
-        setSettledOrders(newSettled);
-
-        // Recalculate total
-        const total = Object.values(newSettled).reduce((sum, curr) => sum + curr, 0);
-        setCashReceived(total.toFixed(2));
+        setSelectedOrderIds(newSet);
     };
-
-    // Handle manual total change (optional, maybe disable if details are active?)
-    // For now, let's keep it simple: if you edit total, it overrides. 
-    // But better UX is if you edit details, total updates. 
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -715,7 +855,6 @@ function SettlementModal({
         setError(null);
 
         try {
-            // Retrieve user info from localStorage if available, or default to 'Admin'
             const userStr = localStorage.getItem('user');
             const user = userStr ? JSON.parse(userStr) : null;
             const settledBy = user?.name || user?.email || 'Admin';
@@ -729,200 +868,137 @@ function SettlementModal({
                     'Authorization': `Bearer ${token ? token.trim() : ''}`
                 },
                 body: JSON.stringify({
-                    cashReceived: parseFloat(cashReceived),
+                    cashReceived,
                     notes,
                     settledBy,
                     divisionId,
                     targetDate,
-                    // Optional: send detailed breakdown if backend supports it later
-                    details: settledOrders
+                    paidOrderIds: Array.from(selectedOrderIds)
                 })
             });
 
             if (!response.ok) {
                 const data = await response.json();
-                throw new Error(data.message || 'Ошибка при закрытии смены');
+                throw new Error(data.message || 'Ошибка при сохранении расчета');
             }
 
-            // Success
             onSuccess();
         } catch (err: any) {
             console.error('Settlement error:', err);
-            // Fallback for demo/dev mode if API is not actually running locally on this port
-            if (err.message.includes('Failed to fetch') || err.message.includes('404')) {
-                console.warn('API unavailable, simulating success for demo');
-                setTimeout(onSuccess, 500);
-                return;
-            }
             setError(err.message);
         } finally {
             setLoading(false);
         }
     };
 
-    const difference = parseFloat(cashReceived) - expectedAmount;
-
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200 p-4 overflow-y-auto">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200 p-4">
             <div className={clsx(
-                'p-6 md:p-8 rounded-3xl max-w-2xl w-full mx-auto shadow-2xl transition-all scale-100 flex flex-col max-h-[90vh]',
+                'p-6 md:p-8 rounded-[2.5rem] max-w-xl w-full mx-auto shadow-2xl transition-all scale-100 flex flex-col max-h-[90vh]',
                 isDark ? 'bg-gray-800/95 border border-gray-700' : 'bg-white/95 border border-white/50'
             )} style={{ backdropFilter: 'blur(20px)' }}>
 
-                <div className="flex-shrink-0 flex items-center justify-between mb-6">
-                    <h3 className={clsx('text-xl font-black', isDark ? 'text-white' : 'text-gray-900')}>
-                        Закрытие смены
-                    </h3>
-                    <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition">
-                        <span className="sr-only">Закрыть</span>
-                        <svg className="w-5 h-5 opacity-60" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                <div className="flex-shrink-0 flex items-center justify-between mb-8">
+                    <div>
+                        <h3 className={clsx('text-2xl font-black mb-1', isDark ? 'text-white' : 'text-gray-900')}>
+                            Расчет курьера
+                        </h3>
+                        <p className={clsx('text-sm font-bold opacity-50', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                            {courierName}
+                        </p>
+                    </div>
+                    <button onClick={onClose} className="p-3 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        <svg className="w-6 h-6 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
                     </button>
                 </div>
 
-                <div className="flex-shrink-0 mb-6 p-4 rounded-2xl bg-blue-50/50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 flex justify-between items-center">
-                    <div>
-                        <p className={clsx('text-xs uppercase font-bold mb-1 opacity-60', isDark ? 'text-blue-300' : 'text-blue-700')}>
-                            Курьер
-                        </p>
-                        <p className={clsx('text-lg font-bold', isDark ? 'text-blue-100' : 'text-blue-900')}>
-                            {courierName}
-                        </p>
-                    </div>
-                    <div className="text-right">
-                        <p className={clsx('text-xs uppercase font-bold mb-1 opacity-60', isDark ? 'text-blue-300' : 'text-blue-700')}>
-                            К сдаче
-                        </p>
-                        <p className={clsx('text-2xl font-black', isDark ? 'text-blue-100' : 'text-blue-900')}>
-                            {formatCurrency(expectedAmount)}
-                        </p>
-                    </div>
-                </div>
+                <div className="flex-1 overflow-y-auto mb-8 pr-2 custom-scrollbar">
+                    <label className={clsx('block text-xs font-black uppercase tracking-widest mb-4 opacity-60', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                        Выберите оплаченные заказы ({selectedOrderIds.size})
+                    </label>
 
-                <div className="flex-1 overflow-y-auto mb-6 pr-2 custom-scrollbar">
-                    <div className="flex items-center justify-between mb-4">
-                        <label className={clsx('text-sm font-bold', isDark ? 'text-gray-300' : 'text-gray-700')}>
-                            Детализация заказов ({orders?.length || 0})
-                        </label>
-                        <button
-                            type="button"
-                            onClick={() => setShowDetails(!showDetails)}
-                            className="text-xs text-blue-500 hover:text-blue-600 font-medium"
-                        >
-                            {showDetails ? 'Скрыть' : 'Показать'}
-                        </button>
-                    </div>
+                    <div className="space-y-2">
+                        {orders.map((order: any, idx: number) => {
+                            const orderId = String(order.id || order.orderNumber);
+                            const isSelected = selectedOrderIds.has(orderId);
 
-                    {showDetails && orders && orders.length > 0 && (
-                        <div className="space-y-3">
-                            {orders.map((order: any, idx: number) => {
-                                const orderId = order.id || order.orderNumber;
-                                const expected = parseFloat(order.amount || 0);
-                                const actual = settledOrders[orderId] ?? expected;
-                                const diff = actual - expected;
-
-                                return (
-                                    <div key={idx} className={clsx(
-                                        'flex items-center justify-between p-3 rounded-xl border transition-colors',
-                                        diff !== 0
-                                            ? (isDark ? 'bg-red-900/10 border-red-800' : 'bg-red-50 border-red-200')
-                                            : (isDark ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-100')
-                                    )}>
-                                        <div className="flex-1">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xs font-black bg-white/20 px-1.5 py-0.5 rounded">#{order.orderNumber}</span>
-                                                <span className={clsx('text-xs truncate max-w-[150px]', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                                                    {order.address}
-                                                </span>
-                                            </div>
+                            return (
+                                <div
+                                    key={idx}
+                                    onClick={() => toggleOrder(orderId)}
+                                    className={clsx(
+                                        'flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all active:scale-95',
+                                        isSelected
+                                            ? (isDark ? 'bg-blue-500/10 border-blue-500/50' : 'bg-blue-50 border-blue-200')
+                                            : (isDark ? 'bg-gray-900/40 border-gray-700 grayscale opacity-60' : 'bg-gray-50 border-gray-100 grayscale opacity-60')
+                                    )}
+                                >
+                                    <div className="flex items-center gap-4">
+                                        <div className={clsx(
+                                            'w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all',
+                                            isSelected
+                                                ? 'bg-blue-500 border-blue-500 text-white'
+                                                : (isDark ? 'border-gray-600' : 'border-gray-300')
+                                        )}>
+                                            {isSelected && <CheckCircleIcon className="w-4 h-4" />}
                                         </div>
-                                        <div className="flex items-center gap-4">
-                                            <div className="text-right text-xs opacity-60">
-                                                {formatCurrency(expected)}
-                                            </div>
-                                            <input
-                                                type="number"
-                                                value={actual}
-                                                onChange={(e) => handleOrderChange(orderId, e.target.value)}
-                                                className={clsx(
-                                                    "w-24 px-2 py-1 text-right font-bold rounded-lg border focus:outline-none focus:ring-2",
-                                                    isDark ? "bg-gray-900 border-gray-600 text-white focus:ring-blue-500" : "bg-white border-gray-300 text-gray-900 focus:ring-blue-500",
-                                                    diff !== 0 && "text-red-500 border-red-300"
-                                                )}
-                                            />
+                                        <div>
+                                            <p className={clsx('text-sm font-black', isDark ? 'text-white' : 'text-gray-900')}>
+                                                #{order.orderNumber}
+                                            </p>
+                                            <p className={clsx('text-[10px] font-bold opacity-60 truncate max-w-[180px]', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                                                {order.address}
+                                            </p>
                                         </div>
                                     </div>
-                                );
-                            })}
-                        </div>
-                    )}
+                                    <p className={clsx('text-base font-black', isSelected ? (isDark ? 'text-blue-400' : 'text-blue-600') : 'text-gray-400')}>
+                                        {formatCurrency(parseFloat(order.amount || 0))}
+                                    </p>
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
 
-                <form onSubmit={handleSubmit} className="flex-shrink-0 space-y-5">
-                    <div className="flex items-end justify-between gap-4 p-4 rounded-2xl bg-gray-50 dark:bg-gray-800/50">
-                        <div className="flex-1">
-                            <label className={clsx('block text-sm font-bold mb-1', isDark ? 'text-gray-300' : 'text-gray-700')}>
-                                Итого принято (факт)
-                            </label>
-                            <input
-                                type="number"
-                                step="0.01"
-                                value={cashReceived}
-                                // Allow manual override of total if needed, but warning: details sync might break?
-                                // Let's allow it, but maybe just visually it's the sum. 
-                                onChange={(e) => setCashReceived(e.target.value)}
-                                className={clsx(
-                                    'w-full bg-transparent text-3xl font-black border-none focus:ring-0 p-0 transition-colors',
-                                    isDark ? 'text-white' : 'text-gray-900'
-                                )}
-                            />
+                <form onSubmit={handleSubmit} className="flex-shrink-0 space-y-6">
+                    <div className="p-6 rounded-3xl bg-gray-50 dark:bg-gray-900/50 border border-black/5 dark:border-white/5">
+                        <div className="flex items-center justify-between mb-4">
+                            <span className={clsx('text-xs font-black uppercase tracking-widest opacity-60', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                                Итого к оплате
+                            </span>
+                            <span className={clsx('text-3xl font-black tracking-tighter', isDark ? 'text-white' : 'text-gray-900')}>
+                                {formatCurrency(cashReceived)}
+                            </span>
                         </div>
-                        {difference !== 0 && (
-                            <div className={clsx(
-                                'text-right',
-                                difference > 0 ? 'text-green-500' : 'text-red-500'
-                            )}>
-                                <div className="text-sm font-bold">
-                                    {difference > 0 ? 'Излишек' : 'Недостача'}
-                                </div>
-                                <div className="text-xl font-black">
-                                    {formatCurrency(Math.abs(difference))}
-                                </div>
-                            </div>
-                        )}
-                    </div>
 
-                    <div>
-                        <label className={clsx('block text-sm font-bold mb-2', isDark ? 'text-gray-300' : 'text-gray-700')}>
-                            Примечание
-                        </label>
                         <textarea
                             value={notes}
                             onChange={(e) => setNotes(e.target.value)}
                             rows={1}
                             className={clsx(
-                                'w-full px-4 py-3 rounded-xl text-sm border-2 transition-colors focus:outline-none resize-none',
+                                'w-full px-4 py-3 rounded-2xl text-sm border-2 transition-all focus:outline-none resize-none',
                                 isDark
-                                    ? 'bg-gray-900/50 border-gray-600 focus:border-blue-500 text-white'
+                                    ? 'bg-gray-900/50 border-gray-700 focus:border-blue-500 text-white'
                                     : 'bg-white border-gray-200 focus:border-blue-500 text-gray-900'
                             )}
-                            placeholder="Комментарий к недостаче..."
+                            placeholder="Примечание (необязательно)..."
                         />
                     </div>
 
                     {error && (
-                        <div className="p-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-medium">
+                        <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-bold ring-1 ring-red-200 dark:ring-red-800">
                             {error}
                         </div>
                     )}
 
-                    <div className="flex gap-3">
+                    <div className="flex gap-4">
                         <button
                             type="button"
                             onClick={onClose}
                             className={clsx(
-                                'px-6 py-4 rounded-xl font-bold text-sm transition-colors',
+                                'px-8 py-5 rounded-[1.5rem] font-black text-sm uppercase tracking-widest transition-colors',
                                 isDark ? 'text-gray-400 hover:text-white hover:bg-white/5' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
                             )}
                         >
@@ -930,15 +1006,15 @@ function SettlementModal({
                         </button>
                         <button
                             type="submit"
-                            disabled={loading}
+                            disabled={loading || selectedOrderIds.size === 0}
                             className={clsx(
-                                'flex-1 py-4 rounded-xl font-black text-white shadow-lg transition-all transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed',
+                                'flex-1 py-5 rounded-[1.5rem] font-black text-white text-sm uppercase tracking-[0.2em] shadow-2xl transition-all transform hover:-translate-y-1 active:scale-95 disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed',
                                 isDark
-                                    ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 shadow-green-900/40'
-                                    : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 shadow-green-500/30'
+                                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 shadow-blue-900/40'
+                                    : 'bg-gradient-to-r from-blue-500 to-indigo-600 shadow-blue-500/30'
                             )}
                         >
-                            {loading ? 'Обработка...' : 'Закрыть смену'}
+                            {loading ? 'Обработка...' : 'Оплатил'}
                         </button>
                     </div>
                 </form>
