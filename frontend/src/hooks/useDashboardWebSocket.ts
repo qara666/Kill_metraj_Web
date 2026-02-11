@@ -23,7 +23,7 @@ interface DashboardWebSocketParams {
     enabled?: boolean;
 }
 
-const REFRESH_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 export const useDashboardWebSocket = ({
     onDataLoaded,
@@ -47,6 +47,7 @@ export const useDashboardWebSocket = ({
     const isConnectedRef = useRef(false);
     const lastProcessedTriggerRef = useRef<number | null>(null);
     const intervalRef = useRef<any>(null);
+    const lastFetchTimeRef = useRef<number>(0);
 
     // Use ref to store latest callback to avoid re-connecting when callback changes
     const onDataLoadedRef = useRef(onDataLoaded);
@@ -58,6 +59,14 @@ export const useDashboardWebSocket = ({
      * Fetch latest data from REST API (fallback or manual trigger)
      */
     const fetchLatestData = useCallback(async () => {
+        // Simple throttle: prevent fetching more than once every 2 seconds
+        const now = Date.now();
+        if (now - lastFetchTimeRef.current < 2000) {
+            logger.info('Skipping fetch (throttled)');
+            return;
+        }
+        lastFetchTimeRef.current = now;
+
         setApiSyncStatus('syncing');
         setApiSyncError(null);
 
