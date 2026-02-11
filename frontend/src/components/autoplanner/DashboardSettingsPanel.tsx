@@ -318,244 +318,262 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
 
     return (
         <div className="space-y-4">
-            <p className={clsx('text-xs mb-3', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                Настройка интеграции с Dashboard API для автоматического получения заказов.
-                Вы можете использовать ручную выгрузку через Excel, отключив автообновление.
-            </p>
+            <style>{`
+                .glass-panel-settings {
+                    background: rgba(255, 255, 255, 0.6);
+                    backdrop-filter: blur(8px);
+                    -webkit-backdrop-filter: blur(8px);
+                    border: 1px solid rgba(255, 255, 255, 0.3);
+                }
+                .dark .glass-panel-settings {
+                    background: rgba(17, 24, 39, 0.6);
+                    border: 1px solid rgba(255, 255, 255, 0.05);
+                }
+            `}</style>
 
-            {/* Auto-Refresh Toggle */}
             <div className={clsx(
-                'flex items-center justify-between p-3 rounded-xl border transition-all',
-                apiAutoRefreshEnabled
-                    ? (isDark ? 'bg-blue-900/20 border-blue-700/50' : 'bg-blue-50 border-blue-200')
-                    : (isDark ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-200')
+                'p-4 rounded-2xl glass-panel-settings transition-all hover:shadow-lg',
+                isDark ? 'shadow-black/20' : 'shadow-blue-900/5'
             )}>
-                <label className="flex items-center gap-3 cursor-pointer flex-1">
-                    <div className="relative">
-                        <input
-                            type="checkbox"
-                            checked={apiAutoRefreshEnabled}
-                            onChange={handleToggleAutoRefresh}
-                            className="sr-only"
-                        />
-                        <div className={clsx(
-                            "w-10 h-6 rounded-full transition-colors",
-                            apiAutoRefreshEnabled ? "bg-blue-600" : (isDark ? "bg-gray-600" : "bg-gray-300")
-                        )}></div>
-                        <div className={clsx(
-                            "absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform",
-                            apiAutoRefreshEnabled ? "translate-x-4" : "translate-x-0"
-                        )}></div>
-                    </div>
-                    <div>
-                        <div className={clsx('font-medium text-sm', isDark ? 'text-gray-200' : 'text-gray-900')}>
-                            Автообновление API
-                        </div>
-                        <div className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                            {apiAutoRefreshEnabled
-                                ? 'Включено: данные обновляются каждые 5 мин'
-                                : 'Выключено: используется только ручной режим или Excel'}
-                        </div>
-                    </div>
-                </label>
-            </div>
+                <p className={clsx('text-xs mb-3 font-medium', isDark ? 'text-gray-300' : 'text-gray-600')}>
+                    Настройка интеграции с Dashboard API для автоматического получения заказов.
+                    Вы можете использовать ручную выгрузку через Excel, отключив автообновление.
+                </p>
 
-            {/* Status Bar - Hide in Admin Presets Mode if no sync status available */}
-            {!isControlled && (
+                {/* Auto-Refresh Toggle */}
                 <div className={clsx(
-                    'flex items-center justify-between p-2 rounded-lg text-xs border',
-                    isDark ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50 border-gray-100'
+                    'flex items-center justify-between p-3 rounded-xl border transition-all',
+                    apiAutoRefreshEnabled
+                        ? (isDark ? 'bg-blue-900/20 border-blue-700/50' : 'bg-blue-50 border-blue-200')
+                        : (isDark ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-200')
                 )}>
-                    <div className="flex items-center gap-2">
-                        {getStatusIcon()}
-                        <span className={clsx(isDark ? 'text-gray-300' : 'text-gray-700')}>
-                            {apiSyncStatus === 'syncing' && 'Синхронизация...'}
-                            {apiSyncStatus === 'error' && 'Ошибка синхронизации'}
-                            {apiSyncStatus === 'idle' && `Последняя: ${formatTimeAgo(apiLastSyncTime)}`}
-                        </span>
-                    </div>
-                    {apiAutoRefreshEnabled && (
-                        <span className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-600')}>
-                            Следующая: {formatTimeUntil(apiNextSyncTime)}
-                        </span>
-                    )}
-                </div>
-            )}
-
-            {/* Expanded Settings */}
-            <div className="space-y-3 pt-2">
-                {/* API Key */}
-                <div>
-                    <label className={clsx('block text-xs font-medium mb-1', isDark ? 'text-gray-300' : 'text-gray-700')}>
-                        <KeyIcon className="w-3 h-3 inline mr-1" />
-                        API Ключ {isAdmin ? '(Администратор)' : '(Только чтение)'}
-                    </label>
-                    <input
-                        type="password"
-                        value={editApiKey}
-                        onChange={(e) => isAdmin && setEditApiKey(e.target.value)}
-                        disabled={!isAdmin}
-                        placeholder={!isAdmin ? "Ключ задается администратором" : "Введите API ключ"}
-                        className={clsx(
-                            'w-full px-3 py-1.5 rounded-lg text-xs border transition-colors',
-                            !isAdmin && 'opacity-60 cursor-not-allowed',
-                            isDark
-                                ? 'bg-gray-900 border-gray-700 text-gray-100 placeholder-gray-500 focus:border-blue-500'
-                                : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500'
-                        )}
-                    />
-                </div>
-
-                {/* Date Shift (Explicit Date for Sync) */}
-                <div>
-                    <div className="flex items-center justify-between mb-1">
-                        <label className={clsx('block text-xs font-medium', isDark ? 'text-gray-300' : 'text-gray-700')}>
-                            <ClockIcon className="w-3 h-3 inline mr-1" />
-                            Дата смены (dateShift)
-                        </label>
-                        <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-gray-500">{apiDateShiftFilterEnabled ? 'Вкл' : 'Выкл'}</span>
-                            <label className="relative inline-flex items-center cursor-pointer scale-75 origin-right">
-                                <input
-                                    type="checkbox"
-                                    checked={apiDateShiftFilterEnabled}
-                                    onChange={(e) => handleDateShiftFilterToggle(e.target.checked)}
-                                    className="sr-only peer"
-                                />
-                                <div className="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
-                            </label>
-                        </div>
-                    </div>
-                    <input
-                        type="date"
-                        value={apiDateShift}
-                        disabled={!apiDateShiftFilterEnabled}
-                        onChange={(e) => handleDateShiftChange(e.target.value)}
-                        placeholder="Оставьте пустым для автоопределения"
-                        className={clsx(
-                            'w-full px-3 py-1.5 rounded-lg text-xs border transition-colors',
-                            !apiDateShiftFilterEnabled && 'opacity-50 cursor-not-allowed',
-                            isDark
-                                ? 'bg-gray-900 border-gray-700 text-gray-100 focus:border-blue-500'
-                                : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
-                        )}
-                    />
-                    <p className={clsx('mt-1 text-[10px]', isDark ? 'text-gray-500' : 'text-gray-500')}>
-                        Если не указана, будет использована дата из "Время начала". Оставьте пустым для поиска только по времени.
-                    </p>
-                </div>
-
-                {/* Time Window */}
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                        <label className={clsx('block text-xs font-medium', isDark ? 'text-gray-300' : 'text-gray-700')}>
-                            Время доставки (окно)
-                        </label>
-                        <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-gray-500">{apiTimeFilterEnabled ? 'Вкл' : 'Выкл'}</span>
-                            <label className="relative inline-flex items-center cursor-pointer scale-75 origin-right">
-                                <input
-                                    type="checkbox"
-                                    checked={apiTimeFilterEnabled}
-                                    onChange={(e) => handleTimeFilterToggle(e.target.checked)}
-                                    className="sr-only peer"
-                                />
-                                <div className="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
-                            </label>
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                        <div>
-                            <label className={clsx('block text-[10px] uppercase font-semibold mb-1', isDark ? 'text-gray-500' : 'text-gray-400')}>
-                                <ClockIcon className="w-3 h-3 inline mr-1" />
-                                Начало
-                            </label>
+                    <label className="flex items-center gap-3 cursor-pointer flex-1">
+                        <div className="relative">
                             <input
-                                type="datetime-local"
-                                value={apiTimeDeliveryBeg}
-                                disabled={!apiTimeFilterEnabled}
-                                onChange={(e) => handleTimeBegChange(e.target.value)}
-                                className={clsx(
-                                    'w-full px-2 py-1.5 rounded-lg text-xs border transition-colors',
-                                    !apiTimeFilterEnabled && 'opacity-50 cursor-not-allowed',
-                                    isDark
-                                        ? 'bg-gray-900 border-gray-700 text-gray-100 focus:border-blue-500'
-                                        : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
-                                )}
+                                type="checkbox"
+                                checked={apiAutoRefreshEnabled}
+                                onChange={handleToggleAutoRefresh}
+                                className="sr-only"
                             />
+                            <div className={clsx(
+                                "w-10 h-6 rounded-full transition-colors",
+                                apiAutoRefreshEnabled ? "bg-blue-600" : (isDark ? "bg-gray-600" : "bg-gray-300")
+                            )}></div>
+                            <div className={clsx(
+                                "absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform",
+                                apiAutoRefreshEnabled ? "translate-x-4" : "translate-x-0"
+                            )}></div>
                         </div>
                         <div>
-                            <label className={clsx('block text-[10px] uppercase font-semibold mb-1', isDark ? 'text-gray-500' : 'text-gray-400')}>
+                            <div className={clsx('font-medium text-sm', isDark ? 'text-gray-200' : 'text-gray-900')}>
+                                Автообновление API
+                            </div>
+                            <div className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                                {apiAutoRefreshEnabled
+                                    ? 'Включено: данные обновляются каждые 5 мин'
+                                    : 'Выключено: используется только ручной режим или Excel'}
+                            </div>
+                        </div>
+                    </label>
+                </div>
+
+                {/* Status Bar - Hide in Admin Presets Mode if no sync status available */}
+                {!isControlled && (
+                    <div className={clsx(
+                        'flex items-center justify-between p-2 rounded-lg text-xs border',
+                        isDark ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50 border-gray-100'
+                    )}>
+                        <div className="flex items-center gap-2">
+                            {getStatusIcon()}
+                            <span className={clsx(isDark ? 'text-gray-300' : 'text-gray-700')}>
+                                {apiSyncStatus === 'syncing' && 'Синхронизация...'}
+                                {apiSyncStatus === 'error' && 'Ошибка синхронизации'}
+                                {apiSyncStatus === 'idle' && `Последняя: ${formatTimeAgo(apiLastSyncTime)}`}
+                            </span>
+                        </div>
+                        {apiAutoRefreshEnabled && (
+                            <span className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-600')}>
+                                Следующая: {formatTimeUntil(apiNextSyncTime)}
+                            </span>
+                        )}
+                    </div>
+                )}
+
+                {/* Expanded Settings */}
+                <div className="space-y-3 pt-2">
+                    {/* API Key */}
+                    <div>
+                        <label className={clsx('block text-xs font-medium mb-1', isDark ? 'text-gray-300' : 'text-gray-700')}>
+                            <KeyIcon className="w-3 h-3 inline mr-1" />
+                            API Ключ {isAdmin ? '(Администратор)' : '(Только чтение)'}
+                        </label>
+                        <input
+                            type="password"
+                            value={editApiKey}
+                            onChange={(e) => isAdmin && setEditApiKey(e.target.value)}
+                            disabled={!isAdmin}
+                            placeholder={!isAdmin ? "Ключ задается администратором" : "Введите API ключ"}
+                            className={clsx(
+                                'w-full px-3 py-1.5 rounded-lg text-xs border transition-colors',
+                                !isAdmin && 'opacity-60 cursor-not-allowed',
+                                isDark
+                                    ? 'bg-gray-900 border-gray-700 text-gray-100 placeholder-gray-500 focus:border-blue-500'
+                                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500'
+                            )}
+                        />
+                    </div>
+
+                    {/* Date Shift (Explicit Date for Sync) */}
+                    <div>
+                        <div className="flex items-center justify-between mb-1">
+                            <label className={clsx('block text-xs font-medium', isDark ? 'text-gray-300' : 'text-gray-700')}>
                                 <ClockIcon className="w-3 h-3 inline mr-1" />
-                                Конец
+                                Дата смены (dateShift)
                             </label>
-                            <input
-                                type="datetime-local"
-                                value={apiTimeDeliveryEnd}
-                                disabled={!apiTimeFilterEnabled}
-                                onChange={(e) => handleTimeEndChange(e.target.value)}
-                                className={clsx(
-                                    'w-full px-2 py-1.5 rounded-lg text-xs border transition-colors',
-                                    !apiTimeFilterEnabled && 'opacity-50 cursor-not-allowed',
-                                    isDark
-                                        ? 'bg-gray-900 border-gray-700 text-gray-100 focus:border-blue-500'
-                                        : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
-                                )}
-                            />
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-gray-500">{apiDateShiftFilterEnabled ? 'Вкл' : 'Выкл'}</span>
+                                <label className="relative inline-flex items-center cursor-pointer scale-75 origin-right">
+                                    <input
+                                        type="checkbox"
+                                        checked={apiDateShiftFilterEnabled}
+                                        onChange={(e) => handleDateShiftFilterToggle(e.target.checked)}
+                                        className="sr-only peer"
+                                    />
+                                    <div className="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
+                                </label>
+                            </div>
+                        </div>
+                        <input
+                            type="date"
+                            value={apiDateShift}
+                            disabled={!apiDateShiftFilterEnabled}
+                            onChange={(e) => handleDateShiftChange(e.target.value)}
+                            placeholder="Оставьте пустым для автоопределения"
+                            className={clsx(
+                                'w-full px-3 py-1.5 rounded-lg text-xs border transition-colors',
+                                !apiDateShiftFilterEnabled && 'opacity-50 cursor-not-allowed',
+                                isDark
+                                    ? 'bg-gray-900 border-gray-700 text-gray-100 focus:border-blue-500'
+                                    : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+                            )}
+                        />
+                        <p className={clsx('mt-1 text-[10px]', isDark ? 'text-gray-500' : 'text-gray-500')}>
+                            Если не указана, будет использована дата из "Время начала". Оставьте пустым для поиска только по времени.
+                        </p>
+                    </div>
+
+                    {/* Time Window */}
+                    <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                            <label className={clsx('block text-xs font-medium', isDark ? 'text-gray-300' : 'text-gray-700')}>
+                                Время доставки (окно)
+                            </label>
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-gray-500">{apiTimeFilterEnabled ? 'Вкл' : 'Выкл'}</span>
+                                <label className="relative inline-flex items-center cursor-pointer scale-75 origin-right">
+                                    <input
+                                        type="checkbox"
+                                        checked={apiTimeFilterEnabled}
+                                        onChange={(e) => handleTimeFilterToggle(e.target.checked)}
+                                        className="sr-only peer"
+                                    />
+                                    <div className="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
+                                </label>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className={clsx('block text-[10px] uppercase font-semibold mb-1', isDark ? 'text-gray-500' : 'text-gray-400')}>
+                                    <ClockIcon className="w-3 h-3 inline mr-1" />
+                                    Начало
+                                </label>
+                                <input
+                                    type="datetime-local"
+                                    value={apiTimeDeliveryBeg}
+                                    disabled={!apiTimeFilterEnabled}
+                                    onChange={(e) => handleTimeBegChange(e.target.value)}
+                                    className={clsx(
+                                        'w-full px-2 py-1.5 rounded-lg text-xs border transition-colors',
+                                        !apiTimeFilterEnabled && 'opacity-50 cursor-not-allowed',
+                                        isDark
+                                            ? 'bg-gray-900 border-gray-700 text-gray-100 focus:border-blue-500'
+                                            : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+                                    )}
+                                />
+                            </div>
+                            <div>
+                                <label className={clsx('block text-[10px] uppercase font-semibold mb-1', isDark ? 'text-gray-500' : 'text-gray-400')}>
+                                    <ClockIcon className="w-3 h-3 inline mr-1" />
+                                    Конец
+                                </label>
+                                <input
+                                    type="datetime-local"
+                                    value={apiTimeDeliveryEnd}
+                                    disabled={!apiTimeFilterEnabled}
+                                    onChange={(e) => handleTimeEndChange(e.target.value)}
+                                    className={clsx(
+                                        'w-full px-2 py-1.5 rounded-lg text-xs border transition-colors',
+                                        !apiTimeFilterEnabled && 'opacity-50 cursor-not-allowed',
+                                        isDark
+                                            ? 'bg-gray-900 border-gray-700 text-gray-100 focus:border-blue-500'
+                                            : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+                                    )}
+                                />
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                {/* Department ID */}
-                <div>
-                    <label className={clsx('block text-xs font-medium mb-1', isDark ? 'text-gray-300' : 'text-gray-700')}>
-                        <BuildingOfficeIcon className="w-3 h-3 inline mr-1" />
-                        ID Подразделения {isAdmin ? '(Администратор)' : '(Только чтение)'}
-                    </label>
-                    <input
-                        type="number"
-                        value={editDepartmentId}
-                        onChange={(e) => isAdmin && setEditDepartmentId(e.target.value)}
-                        disabled={!isAdmin}
-                        placeholder={!isAdmin ? "ID задается администратором" : "100000052"}
-                        className={clsx(
-                            'w-full px-3 py-1.5 rounded-lg text-xs border transition-colors',
-                            !isAdmin && 'opacity-60 cursor-not-allowed',
-                            isDark
-                                ? 'bg-gray-900 border-gray-700 text-gray-100 placeholder-gray-500 focus:border-blue-500'
-                                : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500'
-                        )}
-                    />
-                </div>
+                    {/* Department ID */}
+                    <div>
+                        <label className={clsx('block text-xs font-medium mb-1', isDark ? 'text-gray-300' : 'text-gray-700')}>
+                            <BuildingOfficeIcon className="w-3 h-3 inline mr-1" />
+                            ID Подразделения {isAdmin ? '(Администратор)' : '(Только чтение)'}
+                        </label>
+                        <input
+                            type="number"
+                            value={editDepartmentId}
+                            onChange={(e) => isAdmin && setEditDepartmentId(e.target.value)}
+                            disabled={!isAdmin}
+                            placeholder={!isAdmin ? "ID задается администратором" : "100000052"}
+                            className={clsx(
+                                'w-full px-3 py-1.5 rounded-lg text-xs border transition-colors',
+                                !isAdmin && 'opacity-60 cursor-not-allowed',
+                                isDark
+                                    ? 'bg-gray-900 border-gray-700 text-gray-100 placeholder-gray-500 focus:border-blue-500'
+                                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500'
+                            )}
+                        />
+                    </div>
 
-                {/* Action Buttons */}
-                <div className="flex gap-2 pt-2">
-                    <button
-                        onClick={handleSaveSettings}
-                        className={clsx(
-                            'flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-colors',
-                            isDark
-                                ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                                : 'bg-blue-500 hover:bg-blue-600 text-white'
-                        )}
-                    >
-                        {isControlled ? 'Сохранить параметры' : 'Сохранить настройки API'}
-                    </button>
-                    <button
-                        onClick={handleManualSync}
-                        disabled={apiSyncStatus === 'syncing' || !editApiKey.trim()}
-                        className={clsx(
-                            'flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1',
-                            apiSyncStatus === 'syncing' || !editApiKey.trim()
-                                ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                                : isDark
-                                    ? 'bg-green-600 hover:bg-green-700 text-white'
-                                    : 'bg-green-500 hover:bg-green-600 text-white'
-                        )}
-                    >
-                        <ArrowPathIcon className={clsx('w-3 h-3', apiSyncStatus === 'syncing' && 'animate-spin')} />
-                        {isControlled ? 'Проверить синхронизацию' : 'Синхронизировать сейчас'}
-                    </button>
+                    {/* Action Buttons */}
+                    <div className="flex gap-2 pt-2">
+                        <button
+                            onClick={handleSaveSettings}
+                            className={clsx(
+                                'flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-colors',
+                                isDark
+                                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                                    : 'bg-blue-500 hover:bg-blue-600 text-white'
+                            )}
+                        >
+                            {isControlled ? 'Сохранить параметры' : 'Сохранить настройки API'}
+                        </button>
+                        <button
+                            onClick={handleManualSync}
+                            disabled={apiSyncStatus === 'syncing' || !editApiKey.trim()}
+                            className={clsx(
+                                'flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1',
+                                apiSyncStatus === 'syncing' || !editApiKey.trim()
+                                    ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                                    : isDark
+                                        ? 'bg-green-600 hover:bg-green-700 text-white'
+                                        : 'bg-green-500 hover:bg-green-600 text-white'
+                            )}
+                        >
+                            <ArrowPathIcon className={clsx('w-3 h-3', apiSyncStatus === 'syncing' && 'animate-spin')} />
+                            {isControlled ? 'Проверить синхронизацию' : 'Синхронизировать сейчас'}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
