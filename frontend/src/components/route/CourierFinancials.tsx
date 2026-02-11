@@ -628,18 +628,10 @@ export function CourierFinancials({
             {
                 showSettlementModal && (
                     <SettlementModal
-                        courierId={courierId}
                         courierName={courierName}
-                        divisionId={divisionId}
-                        expectedAmount={cashToCollect}
-                        orders={currentShift.cashOrders.orders} // Pass orders for detailed settlement
-                        targetDate={summary.targetDate}
+                        orders={currentShift.cashOrders.orders}
                         isDark={isDark}
                         onClose={() => setShowSettlementModal(false)}
-                        onSuccess={() => {
-                            setShowSettlementModal(false);
-                            fetchFinancialSummary();
-                        }}
                         updateExcelData={updateExcelData}
                         setShowSettlementModal={setShowSettlementModal}
                         fetchFinancialSummary={fetchFinancialSummary}
@@ -733,14 +725,10 @@ function PaymentMethodCard({ icon: Icon, label, amount, count, color, isDark, pe
 
 // Settlement Modal Component (Redesigned with Checkboxes, Per-Order Amounts, and Manual Total)
 function SettlementModal({
-    courierId,
     courierName,
-    divisionId,
     orders = [],
-    targetDate,
     isDark,
     onClose,
-    onSuccess,
     updateExcelData,
     setShowSettlementModal,
     fetchFinancialSummary
@@ -821,8 +809,8 @@ function SettlementModal({
             }
 
             // Update order statuses to 'Исполнен' (completed)
-            updateExcelData(prev => {
-                const updatedOrders = prev.orders.map(order => {
+            updateExcelData((prev: any) => {
+                const updatedOrders = prev.orders.map((order: any) => {
                     if (selectedOrders.includes(order.orderNumber)) {
                         return { ...order, status: 'Исполнен' };
                     }
