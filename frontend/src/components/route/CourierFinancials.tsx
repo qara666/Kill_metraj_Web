@@ -221,7 +221,7 @@ export function CourierFinancials({
             const encodedDivisionId = encodeURIComponent(divisionId || 'all');
             const encodedDate = encodeURIComponent(date);
 
-            const url = `/ api / v1 / couriers / ${encodedCourierId}/financial-summary?divisionId=${encodedDivisionId}&targetDate=${encodedDate}`;
+            const url = `${import.meta.env.VITE_API_URL || ''}/api/v1/couriers/${encodedCourierId}/financial-summary?divisionId=${encodedDivisionId}&targetDate=${encodedDate}`;
 
             const token = localStorage.getItem('km_access_token');
             const sanitizedToken = token ? token.trim() : '';
@@ -293,34 +293,34 @@ export function CourierFinancials({
         setSwitchingOrderId(orderNumber);
         try {
             const token = localStorage.getItem('km_access_token');
-            // Assuming the API expect paymentMethod object or field
-            const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/orders/${orderNumber}/payment-method`, {
-                method: 'PATCH',
+            const url = `${import.meta.env.VITE_API_URL || ''}/api/v1/orders/${orderNumber}/payment-method`;
+            const options = {
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token ? token.trim() : ''}`
                 },
-                body: JSON.stringify(newMethod) // Just the string or { paymentMethod: newMethod }? usually { paymentMethod }
-            });
+                body: JSON.stringify({ paymentMethod: newMethod })
+            };
 
-            if (!response.ok) {
-                // Try JSON body if string fails
-                const retryResponse = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/orders/${orderNumber}/payment-method`, {
-                    method: 'PATCH',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token ? token.trim() : ''}`
-                    },
-                    body: JSON.stringify({ paymentMethod: newMethod })
-                });
-                if (!retryResponse.ok) throw new Error('Failed to switch payment method');
+            let response;
+            try {
+                // Try PUT first as many CORS configs allow it but block PATCH
+                response = await fetch(url, { ...options, method: 'PUT' });
+            } catch (e) {
+                console.warn('PUT failed (possible CORS), trying POST...', e);
+            }
+
+            if (!response || !response.ok) {
+                // Fallback to POST which is most likely to pass CORS
+                const postResponse = await fetch(url, { ...options, method: 'POST' });
+                if (!postResponse.ok) throw new Error('Failed to switch payment method');
             }
 
             // Refresh data
             await fetchFinancialSummary();
         } catch (err) {
             console.error('Error switching payment method:', err);
-            alert('Ошибка при смене способа оплаты');
+            alert('Ошибка при смене способа оплаты: ' + (err instanceof Error ? err.message : 'Unknown error'));
         } finally {
             setSwitchingOrderId(null);
         }
@@ -823,7 +823,7 @@ function PaymentMethodCard({ icon: Icon, label, amount, count, color, isDark, pe
     );
 }
 
-// Settlement Modal Component (Redesigned with Checkboxes and Manual Amount)
+// Settlement Modal Component (Redesigned with Checkboxes, Per-Order Amounts, and Manual Total)
 function SettlementModal({
     courierId,
     courierName,
@@ -843,23 +843,37 @@ function SettlementModal({
         new Set(orders.map((o: any) => String(o.id || o.orderNumber)))
     );
 
-    // Manual amount state
-    const [manualAmount, setManualAmount] = React.useState<string>('0');
-    const [isManualOverride, setIsManualOverride] = React.useState(false);
+    // Track per-order manual amounts (if they differ from calculated)
+    const [orderAmounts, setOrderAmounts] = React.useState<Record<string, string>>(() => {
+        const initial: Record<string, string> = {};
+        orders.forEach((o: any) => {
+            const id = String(o.id || o.orderNumber);
+            initial[id] = String(o.amount || 0);
+        });
+        return initial;
+    });
 
-    // Dynamic sum calculation
-    const calculatedSum = React.useMemo(() => {
+    // Manual TOTAL amount state (the actual cash the courier handed over)
+    const [manualTotal, setManualTotal] = React.useState<string>('0');
+    const [isManualTotalOverride, setIsManualTotalOverride] = React.useState(false);
+
+    // Sum of currently selected orders (considering their individual overridden amounts)
+    const expectedSumBySelection = React.useMemo(() => {
         return orders
             .filter((o: any) => selectedOrderIds.has(String(o.id || o.orderNumber)))
-            .reduce((sum: number, o: any) => sum + parseFloat(o.amount || 0), 0);
-    }, [orders, selectedOrderIds]);
+            .reduce((sum: number, o: any) => {
+                const id = String(o.id || o.orderNumber);
+                const val = parseFloat(orderAmounts[id] || '0');
+                return sum + (isNaN(val) ? 0 : val);
+            }, 0);
+    }, [orders, selectedOrderIds, orderAmounts]);
 
-    // Update manual amount when selection changes, but only if not manually overridden
+    // Update manual total when selection or individual amounts change, but only if not manually overridden at the total level
     React.useEffect(() => {
-        if (!isManualOverride) {
-            setManualAmount(calculatedSum.toString());
+        if (!isManualTotalOverride) {
+            setManualTotal(expectedSumBySelection.toString());
         }
-    }, [calculatedSum, isManualOverride]);
+    }, [expectedSumBySelection, isManualTotalOverride]);
 
     const toggleOrder = (id: string) => {
         const newSet = new Set(selectedOrderIds);
@@ -871,12 +885,16 @@ function SettlementModal({
         setSelectedOrderIds(newSet);
     };
 
+    const handleOrderAmountChange = (id: string, value: string) => {
+        setOrderAmounts(prev => ({ ...prev, [id]: value }));
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError(null);
 
-        const cashReceived = parseFloat(manualAmount);
+        const cashReceived = parseFloat(manualTotal);
         if (isNaN(cashReceived)) {
             setError('Введите корректную сумму');
             setLoading(false);
@@ -888,7 +906,20 @@ function SettlementModal({
             const user = userStr ? JSON.parse(userStr) : null;
             const settledBy = user?.name || user?.email || 'Admin';
             const token = localStorage.getItem('km_access_token');
-            const encodedCourierId = encodeURIComponent(courierId);
+            const encodedCourierId = encodeURIComponent(courierId || '');
+
+            if (!encodedCourierId) throw new Error('Courier ID is missing');
+
+            const payload = {
+                cashReceived,
+                notes,
+                settledBy,
+                divisionId,
+                targetDate,
+                paidOrderIds: Array.from(selectedOrderIds),
+                // Send individual amounts if backend supports it, or just use them for local sum
+                orderOverrides: orderAmounts
+            };
 
             const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/couriers/${encodedCourierId}/settle`, {
                 method: 'POST',
@@ -896,29 +927,31 @@ function SettlementModal({
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token ? token.trim() : ''}`
                 },
-                body: JSON.stringify({
-                    cashReceived,
-                    notes,
-                    settledBy,
-                    divisionId,
-                    targetDate,
-                    paidOrderIds: Array.from(selectedOrderIds)
-                })
+                body: JSON.stringify(payload)
             });
 
             if (!response.ok) {
-                const data = await response.json();
-                throw new Error(data.message || 'Ошибка при сохранении расчета');
+                let errorData;
+                try {
+                    errorData = await response.json();
+                } catch (e) {
+                    errorData = { message: `Ошибка сервера (${response.status})` };
+                }
+                throw new Error(errorData.message || 'Ошибка при сохранении расчета');
             }
 
-            onSuccess();
+            if (onSuccess) onSuccess();
         } catch (err: any) {
             console.error('Settlement error:', err);
-            setError(err.message);
+            setError(err.message || 'Произошла непредвиденная ошибка');
         } finally {
             setLoading(false);
         }
     };
+
+    // Calculate difference (Debt/Overpayment)
+    const totalPaid = parseFloat(manualTotal) || 0;
+    const difference = totalPaid - expectedSumBySelection;
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200 p-4">
@@ -944,11 +977,14 @@ function SettlementModal({
                 </div>
 
                 <div className="flex-1 overflow-y-auto mb-8 pr-2 custom-scrollbar">
-                    <label className={clsx('block text-xs font-black uppercase tracking-widest mb-4 opacity-60', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                        Выберите оплаченные заказы ({selectedOrderIds.size})
-                    </label>
+                    <div className="flex items-center justify-between mb-4">
+                        <label className={clsx('text-xs font-black uppercase tracking-widest opacity-60', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                            Выберите оплаченные заказы ({selectedOrderIds.size})
+                        </label>
+                        <span className="text-[10px] font-bold opacity-40 italic">Отредактируйте сумму если нужно</span>
+                    </div>
 
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                         {orders.map((order: any, idx: number) => {
                             const orderId = String(order.id || order.orderNumber);
                             const isSelected = selectedOrderIds.has(orderId);
@@ -956,35 +992,54 @@ function SettlementModal({
                             return (
                                 <div
                                     key={idx}
-                                    onClick={() => toggleOrder(orderId)}
                                     className={clsx(
-                                        'flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all active:scale-95',
+                                        'flex items-center justify-between p-4 rounded-2xl border transition-all',
                                         isSelected
                                             ? (isDark ? 'bg-blue-500/10 border-blue-500/50' : 'bg-blue-50 border-blue-200')
-                                            : (isDark ? 'bg-gray-900/40 border-gray-700 grayscale opacity-60' : 'bg-gray-50 border-gray-100 grayscale opacity-60')
+                                            : (isDark ? 'bg-gray-900/40 border-gray-700 grayscale opacity-40' : 'bg-gray-50 border-gray-100 grayscale opacity-40')
                                     )}
                                 >
-                                    <div className="flex items-center gap-4">
-                                        <div className={clsx(
-                                            'w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all',
-                                            isSelected
-                                                ? 'bg-blue-500 border-blue-500 text-white'
-                                                : (isDark ? 'border-gray-600' : 'border-gray-300')
-                                        )}>
+                                    <div className="flex items-center gap-4 flex-1 mr-4">
+                                        <div
+                                            onClick={() => toggleOrder(orderId)}
+                                            className={clsx(
+                                                'w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all cursor-pointer',
+                                                isSelected
+                                                    ? 'bg-blue-500 border-blue-500 text-white'
+                                                    : (isDark ? 'border-gray-600' : 'border-gray-300')
+                                            )}
+                                        >
                                             {isSelected && <CheckCircleIcon className="w-4 h-4" />}
                                         </div>
-                                        <div>
+                                        <div className="min-w-0 flex-1">
                                             <p className={clsx('text-sm font-black', isDark ? 'text-white' : 'text-gray-900')}>
                                                 #{order.orderNumber}
                                             </p>
-                                            <p className={clsx('text-[10px] font-bold opacity-60 truncate max-w-[180px]', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                                            <p className={clsx('text-[10px] font-bold opacity-60 truncate', isDark ? 'text-gray-400' : 'text-gray-500')}>
                                                 {order.address}
                                             </p>
                                         </div>
                                     </div>
-                                    <p className={clsx('text-base font-black', isSelected ? (isDark ? 'text-blue-400' : 'text-blue-600') : 'text-gray-400')}>
-                                        {formatCurrency(parseFloat(order.amount || 0))}
-                                    </p>
+                                    <div className="flex items-center gap-2">
+                                        {isSelected ? (
+                                            <div className="relative group">
+                                                <input
+                                                    type="text"
+                                                    value={orderAmounts[orderId]}
+                                                    onChange={(e) => handleOrderAmountChange(orderId, e.target.value)}
+                                                    className={clsx(
+                                                        'w-20 text-right text-sm font-black bg-transparent border-b-2 outline-none transition-all focus:border-blue-500',
+                                                        isDark ? 'text-blue-400 border-blue-900/30' : 'text-blue-600 border-blue-200'
+                                                    )}
+                                                />
+                                                <span className="ml-1 text-[10px] opacity-40">₴</span>
+                                            </div>
+                                        ) : (
+                                            <p className="text-sm font-bold text-gray-400">
+                                                {formatCurrency(parseFloat(order.amount || 0))}
+                                            </p>
+                                        )}
+                                    </div>
                                 </div>
                             );
                         })}
@@ -992,37 +1047,59 @@ function SettlementModal({
                 </div>
 
                 <form onSubmit={handleSubmit} className="flex-shrink-0 space-y-6">
-                    <div className="p-6 rounded-3xl bg-gray-50 dark:bg-gray-900/50 border border-black/5 dark:border-white/5">
+                    <div className="p-6 rounded-[2rem] bg-gray-50 dark:bg-gray-900/50 border border-black/5 dark:border-white/5 shadow-inner">
                         <div className="flex items-center justify-between mb-4">
                             <span className={clsx('text-xs font-black uppercase tracking-widest opacity-60', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                                Сумма к оплате
+                                Сколько сдал курьер
                             </span>
                             <div className="flex flex-col items-end">
-                                <input
-                                    type="text"
-                                    value={manualAmount}
-                                    onChange={(e) => {
-                                        setManualAmount(e.target.value);
-                                        setIsManualOverride(true);
-                                    }}
-                                    className={clsx(
-                                        'w-32 text-right text-2xl font-black bg-transparent border-b-2 outline-none transition-all',
-                                        isDark
-                                            ? 'text-white border-blue-500/50 focus:border-blue-500'
-                                            : 'text-gray-900 border-blue-500/30 focus:border-blue-500'
-                                    )}
-                                />
-                                {isManualOverride && (
+                                <div className="flex items-center">
+                                    <input
+                                        type="text"
+                                        value={manualTotal}
+                                        onChange={(e) => {
+                                            setManualTotal(e.target.value);
+                                            setIsManualTotalOverride(true);
+                                        }}
+                                        className={clsx(
+                                            'w-32 text-right text-3xl font-black bg-transparent border-b-2 outline-none transition-all',
+                                            isDark
+                                                ? 'text-white border-blue-500/50 focus:border-blue-500'
+                                                : 'text-gray-900 border-blue-500/30 focus:border-blue-500'
+                                        )}
+                                    />
+                                    <span className={clsx("ml-2 text-xl font-bold opacity-30", isDark ? "text-white" : "text-gray-900")}>₴</span>
+                                </div>
+                                {isManualTotalOverride && (
                                     <button
                                         type="button"
-                                        onClick={() => setIsManualOverride(false)}
+                                        onClick={() => setIsManualTotalOverride(false)}
                                         className="text-[10px] font-black text-blue-500 uppercase mt-1 hover:underline"
                                     >
-                                        Сбросить (было {formatCurrency(calculatedSum)})
+                                        Сбросить (авто: {formatCurrency(expectedSumBySelection)})
                                     </button>
                                 )}
                             </div>
                         </div>
+
+                        {/* Balance Calculation Result */}
+                        {(difference !== 0 || isManualTotalOverride) && (
+                            <div className={clsx(
+                                "flex items-center justify-between py-3 px-4 rounded-2xl mb-4 animate-in slide-in-from-top-2",
+                                difference > 0
+                                    ? (isDark ? "bg-green-500/10 text-green-400" : "bg-green-50 text-green-700")
+                                    : difference < 0
+                                        ? (isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700")
+                                        : (isDark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-500")
+                            )}>
+                                <span className="text-[10px] font-black uppercase tracking-wider">
+                                    {difference > 0 ? 'Переплата (Лишние)' : difference < 0 ? 'Задолженность (Недодал)' : 'Идеально'}
+                                </span>
+                                <span className="text-sm font-black">
+                                    {difference > 0 ? '+' : ''}{formatCurrency(difference)}
+                                </span>
+                            </div>
+                        )}
 
                         <textarea
                             value={notes}
@@ -1039,7 +1116,7 @@ function SettlementModal({
                     </div>
 
                     {error && (
-                        <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-bold ring-1 ring-red-200 dark:ring-red-800">
+                        <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-bold ring-1 ring-red-200 dark:ring-red-800 animate-pulse">
                             {error}
                         </div>
                     )}
@@ -1053,7 +1130,7 @@ function SettlementModal({
                                 isDark ? 'text-gray-400 hover:text-white hover:bg-white/5' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
                             )}
                         >
-                            Отмена
+                            ОТМЕНА
                         </button>
                         <button
                             type="submit"
@@ -1065,7 +1142,7 @@ function SettlementModal({
                                     : 'bg-gradient-to-r from-blue-500 to-indigo-600 shadow-blue-500/30'
                             )}
                         >
-                            {loading ? 'Обработка...' : 'Оплатил'}
+                            {loading ? 'Обработка...' : 'ОПЛАТИЛ'}
                         </button>
                     </div>
                 </form>
