@@ -51,12 +51,17 @@ export function TimeWindowGroupCard({
     const readinessStatus = getReadinessStatus();
     const hasTime = group.windowStart > 0;
 
-    // Get status color
+    // Get status color - NOW SUBTLE ACCENTS
     const getStatusColor = () => {
-        if (readinessStatus === 'ready') return isDark ? 'bg-green-500/20 border-green-500/30' : 'bg-green-50 border-green-200';
-        if (readinessStatus === 'partial') return isDark ? 'bg-yellow-500/20 border-yellow-500/30' : 'bg-yellow-50 border-yellow-200';
-        if (depStatus === 'soon') return isDark ? 'bg-orange-500/20 border-orange-500/30' : 'bg-orange-50 border-orange-200';
-        return isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-blue-50/50';
+        if (readinessStatus === 'ready') return isDark ? 'border-green-500/30 ring-1 ring-green-500/10' : 'border-green-200 ring-1 ring-green-100/50';
+        if (readinessStatus === 'partial') return isDark ? 'border-yellow-500/30' : 'border-yellow-200';
+        if (depStatus === 'soon') return isDark ? 'border-orange-500/30' : 'border-orange-200';
+        return isDark ? 'border-white/5' : 'border-gray-200';
+    };
+
+    // Card background
+    const getCardBackground = () => {
+        return isDark ? 'bg-[#151B2C]/40 backdrop-blur-md' : 'bg-white/60 backdrop-blur-md';
     };
 
     return (
@@ -80,18 +85,22 @@ export function TimeWindowGroupCard({
                 }
             }}
             className={clsx(
-                'rounded-xl border-2 transition-all relative overflow-hidden shadow-sm',
+                'rounded-2xl border transition-all duration-500 relative overflow-hidden group',
                 getStatusColor(),
-                isDragOver && (isDark ? 'border-blue-500 bg-blue-900/10 shadow-lg' : 'border-blue-400 bg-blue-50/50 shadow-lg')
+                getCardBackground(),
+                isDragOver && (isDark ? 'border-blue-500 bg-blue-900/10 shadow-[0_0_20px_rgba(59,130,246,0.2)]' : 'border-blue-400 bg-blue-50/50 shadow-lg')
             )}
         >
-            {/* Status Indicator Bar */}
+            {/* Left Status Accent - NEW SUBTLE UI */}
             <div className={clsx(
-                'absolute top-0 left-0 right-0 h-1',
-                readinessStatus === 'ready' && 'bg-gradient-to-r from-green-500 to-emerald-500',
-                readinessStatus === 'partial' && 'bg-gradient-to-r from-yellow-500 to-orange-500',
-                readinessStatus === 'preparing' && 'bg-gradient-to-r from-blue-500 to-indigo-500'
+                'absolute top-0 left-0 bottom-0 w-1.5 transition-all duration-500 group-hover:w-2',
+                readinessStatus === 'ready' && 'bg-gradient-to-b from-green-500 to-emerald-500',
+                readinessStatus === 'partial' && 'bg-gradient-to-b from-yellow-500 to-orange-500',
+                readinessStatus === 'preparing' && 'bg-gradient-to-b from-blue-500 to-indigo-500'
             )} />
+
+            {/* Subtle glow on hover */}
+            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
 
             {/* Header Area */}
             <div
@@ -247,16 +256,17 @@ export function TimeWindowGroupCard({
                             disabled={isCalculating}
                             onClick={() => onCalculateRoute && onCalculateRoute(group)}
                             className={clsx(
-                                'w-full py-3 rounded-xl flex items-center justify-center gap-2.5 text-xs font-bold uppercase tracking-wide transition-all active:scale-[0.98] shadow-sm',
+                                'w-full py-3.5 rounded-2xl flex items-center justify-center gap-2.5 text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98] shadow-xl relative overflow-hidden group/btn',
                                 isDark
-                                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-500 hover:to-blue-600'
-                                    : 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800'
+                                    ? 'bg-blue-600 text-white hover:bg-blue-500 shadow-blue-900/20'
+                                    : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200'
                             )}
                         >
+                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover/btn:animate-[shimmer_2s_infinite]" />
                             {isCalculating ? (
                                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                             ) : (
-                                <RocketLaunchIcon className="w-4 h-4" />
+                                <RocketLaunchIcon className="w-4 h-4 transition-transform group-hover/btn:-translate-y-1 group-hover/btn:translate-x-1" />
                             )}
                             Построить маршрут
                         </button>

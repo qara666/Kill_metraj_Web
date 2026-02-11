@@ -293,6 +293,10 @@ app.use('/api/fastopertor', fastopertorRoutes);
 // Маршруты Dashboard API
 app.use('/api/v1', dashboardRoutes);
 
+// Маршруты заказов (overrides)
+const orderRoutes = require('./src/routes/orderRoutes');
+app.use('/api/v1/orders', orderRoutes);
+
 // Маршруты авторизации
 app.use('/api/auth', authRoutes);
 
@@ -474,6 +478,7 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
     // Start manual migration check
     await ensureStatusHistoryTable();
     await ensureDivisionIdColumn();
+    await ensureManualOverridesTable();
     await ensureIndexes();
 
     // Start Kafka CDC Consumer if enabled

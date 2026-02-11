@@ -31,6 +31,7 @@ import { Tooltip } from '../shared/Tooltip'
 import { googleApiCache } from '../../services/googleApiCache'
 import { lazy, Suspense } from 'react'
 import { CourierTimeWindows } from './CourierTimeWindows'
+import { getUkraineTrafficForOrders, calculateTotalTrafficDelay } from '../../utils/maps/ukraineTrafficAPI'
 import { type TimeWindowGroup } from '../../utils/route/routeCalculationHelpers'
 
 // Ленивая загрузка тяжелых компонентов
@@ -450,7 +451,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         const addr = baseMarker.name
         setStartAddress(addr)
         setEndAddress(addr)
-        toast.success(`Установлена база локации: ${addr}`, { icon: '', duration: 3000 })
+        // toast.success(`Установлена база локации: ${addr}`, { icon: '', duration: 3000 })
       }
     }
   }, [selectedHubs])
@@ -1427,9 +1428,41 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           }
         }
 
+        // --- TRAFFIC ENHANCEMENT (NEW) ---
+        let adjustedDuration = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
+        let trafficDelayMin = 0
+        const mapboxToken = settings.mapboxToken || localStorage.getItem('km_mapbox_token')
+        const vType = getCourierVehicleType(route.courier)
+
+        if (mapboxToken && route.orders.length >= 1) {
+          try {
+            // We need coords for traffic API
+            const chainForTraffic = route.orders.map((o, i) => ({
+              ...o,
+              coords: routeGeoMeta.waypoints[i] ? { lat: routeGeoMeta.waypoints[i].lat, lng: routeGeoMeta.waypoints[i].lng } : null
+            })).filter(o => o.coords)
+
+            if (chainForTraffic.length >= 1) {
+              const trafficInfo = await getUkraineTrafficForOrders(chainForTraffic as any, mapboxToken)
+              if (trafficInfo.length > 0) {
+                trafficDelayMin = calculateTotalTrafficDelay(trafficInfo)
+
+                // Apply motorcycle reduction factor
+                if (vType === 'motorcycle') {
+                  trafficDelayMin = trafficDelayMin * 0.5
+                }
+
+                adjustedDuration += (trafficDelayMin * 60)
+              }
+            }
+          } catch (err) {
+            console.warn('Traffic calculation failed:', err)
+          }
+        }
+
         // Используем точное расстояние из Google Maps API
         const totalDistance = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
-        const totalDuration = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
+        const totalDuration = adjustedDuration // Use adjusted duration with traffic
 
         // Конвертируем в километры с высокой точностью
         const distanceKm = totalDistance / 1000

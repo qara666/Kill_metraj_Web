@@ -550,6 +550,7 @@ export class GoogleAPIManager {
       prefilter?: boolean
       maxDistanceKm?: number | null
       maxReadyTimeDiffMinutes?: number
+      vehicleType?: 'car' | 'motorcycle'
     } = {}
   ): Promise<{
     feasible: boolean
@@ -569,7 +570,13 @@ export class GoogleAPIManager {
         const trafficInfo = await getUkraineTrafficForOrders(chain, this.config.mapboxToken)
 
         if (trafficInfo.length > 0) {
-          const totalDelay = calculateTotalTrafficDelay(trafficInfo)
+          let totalDelay = calculateTotalTrafficDelay(trafficInfo)
+
+          // Apply vehicle-specific traffic filtering capabilities
+          if (options.vehicleType === 'motorcycle') {
+            totalDelay = totalDelay * 0.5; // Motorcycles filter through traffic 50% more effectively
+          }
+
           const adjustedDuration = (result.totalDuration || 0) + (totalDelay * 60) // конвертируем минуты в секунды
           const critical = hasCriticalTraffic(trafficInfo)
 
@@ -578,7 +585,7 @@ export class GoogleAPIManager {
             adjustedDuration,
             trafficInfo,
             totalTrafficDelay: totalDelay,
-            hasCriticalTraffic: critical
+            hasCriticalTraffic: options.vehicleType === 'motorcycle' ? false : critical // Motorcycles rarely hit "critical" traffic bottlenecks
           }
         }
       } catch (error) {

@@ -225,8 +225,8 @@ export function Layout({ children }: LayoutProps) {
                   'text-lg font-black tracking-tight leading-none',
                   isDark ? 'text-white' : 'text-gray-900'
                 )}>
-                  <span className="text-blue-500">Auto</span>
-                  <span className="block text-xs font-bold opacity-60 uppercase tracking-[0.2em] mt-1">KM Calculation</span>
+                  <span className="text-blue-500">Авто</span>
+                  <span className="block text-xs font-bold opacity-60 uppercase tracking-[0.2em] mt-1">KM Система автоматизации рассчетов</span>
                 </h1>
               </div>
             </div>
@@ -413,17 +413,39 @@ export function Layout({ children }: LayoutProps) {
                 <span className={clsx(
                   'text-xs font-semibold uppercase tracking-wider',
                   isDark ? 'text-gray-400' : 'text-gray-600'
-                )}>Система работает</span>
+                )}>Система работает - ОПы не ловятся</span>
               </div>
             </div>
           </div>
         </div>
 
         {/* Page content */}
-        <main className="py-6 flex-1">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <main className="py-6 flex-1 flex flex-col">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex-1">
             {children}
           </div>
+
+          {/* Premium Footer */}
+          <footer className="mt-auto py-8 px-4 sm:px-6 lg:px-8 border-t border-gray-200/5 dark:border-white/5">
+            <div className="mx-auto max-w-7xl flex flex-col items-center justify-center space-y-4">
+              <div className="flex items-center gap-3 group cursor-pointer transition-all duration-300">
+                <div className="h-px w-8 bg-gradient-to-r from-transparent to-blue-500/50 group-hover:w-12 transition-all" />
+                <span className={clsx(
+                  'text-sm font-black tracking-[0.3em] uppercase transition-colors',
+                  isDark ? 'text-gray-500 group-hover:text-blue-400' : 'text-gray-400 group-hover:text-blue-600'
+                )}>
+                  Создатель MaxSun
+                </span>
+                <div className="h-px w-8 bg-gradient-to-l from-transparent to-blue-500/50 group-hover:w-12 transition-all" />
+              </div>
+              <p className={clsx(
+                'text-[10px] font-bold uppercase tracking-widest opacity-30',
+                isDark ? 'text-white' : 'text-black'
+              )}>
+                Elite Logistics Management System v2.0
+              </p>
+            </div>
+          </footer>
         </main>
       </div>
     </div>

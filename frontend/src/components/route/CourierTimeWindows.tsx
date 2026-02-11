@@ -61,23 +61,25 @@ export function CourierTimeWindows({
                 }
             }}
         >
-            {/* Enhanced Header */}
+            {/* Enhanced Header - More Subtle and Premium */}
             <div className={clsx(
-                'flex items-center gap-3 px-4 py-3 rounded-lg border',
-                isDark ? 'bg-gray-800/50 border-gray-700' : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-100'
-            )}>
+                'flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all duration-300',
+                isDark
+                    ? 'bg-gray-800/30 border-white/5 hover:bg-gray-800/50'
+                    : 'bg-white/40 border-gray-200/50 hover:bg-white/60 shadow-sm'
+            )} style={{ backdropFilter: 'blur(10px)' }}>
                 <div className={clsx(
-                    'p-2 rounded-lg',
-                    isDark ? 'bg-blue-500/20' : 'bg-white shadow-sm'
+                    'p-2 rounded-xl transition-colors duration-300',
+                    isDark ? 'bg-blue-500/10 text-blue-400' : 'bg-blue-50 text-blue-600'
                 )}>
-                    <ClockIcon className={clsx('w-5 h-5', isDark ? 'text-blue-400' : 'text-blue-600')} />
+                    <ClockIcon className="w-5 h-5" />
                 </div>
                 <div>
-                    <h3 className={clsx('text-sm font-bold tracking-tight', isDark ? 'text-gray-200' : 'text-gray-800')}>
-                        СГРУППИРОВАНО ПО ВРЕМЕНИ
+                    <h3 className={clsx('text-[11px] font-black uppercase tracking-[0.2em] opacity-80', isDark ? 'text-gray-300' : 'text-gray-500')}>
+                        Группировка по времени
                     </h3>
-                    <p className={clsx('text-xs font-medium', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                        {timeGroups.length} {timeGroups.length === 1 ? 'группа' : timeGroups.length < 5 ? 'группы' : 'групп'}
+                    <p className={clsx('text-xs font-bold mt-0.5', isDark ? 'text-white' : 'text-gray-900')}>
+                        {timeGroups.length} {timeGroups.length === 1 ? 'активная группа' : timeGroups.length < 5 ? 'активные группы' : 'активных групп'}
                     </p>
                 </div>
             </div>
