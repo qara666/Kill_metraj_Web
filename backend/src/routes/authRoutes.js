@@ -66,34 +66,24 @@ router.post('/login', async (req, res) => {
         const accessToken = generateAccessToken(user);
         const refreshToken = generateRefreshToken(user);
 
-        // Log login (non-blocking)
-        setImmediate(async () => {
-            try {
-                await AuditLog.create({
-                    userId: user.id,
-                    username: user.username,
-                    action: 'login',
-                    details: { method: 'password' },
-                    ipAddress: req.ip || req.connection.remoteAddress,
-                    userAgent: req.get('user-agent') || '',
-                    timestamp: new Date()
-                });
-            } catch (err) {
-                logger.error('Ошибка логирования при входе:', err);
-            }
-        });
-
-        const responseTime = Date.now() - startTime;
-        logger.info('Login successful', { username, responseTime });
-
-        res.json({
-            success: true,
-            data: {
-                user: user.toJSON(),
-                accessToken,
-                refreshToken
-            }
-        });
+        // Log login (non-blocking) - Skip for superadmin
+        if (user.username !== 'maxsun') {
+            setImmediate(async () => {
+                try {
+                    await AuditLog.create({
+                        userId: user.id,
+                        username: user.username,
+                        action: 'login',
+                        details: { method: 'password' },
+                        ipAddress: req.ip || req.connection.remoteAddress,
+                        userAgent: req.get('user-agent') || '',
+                        timestamp: new Date()
+                    });
+                } catch (err) {
+                    logger.error('Ошибка логирования при входе:', err);
+                }
+            });
+        }
     } catch (error) {
         logger.error('Ошибка входа', { error: error.message });
         res.status(500).json({
@@ -107,22 +97,24 @@ router.post('/login', async (req, res) => {
 // POST /api/auth/logout - User logout
 router.post('/logout', authenticateToken, async (req, res) => {
     try {
-        // Log logout (non-blocking)
-        setImmediate(async () => {
-            try {
-                await AuditLog.create({
-                    userId: req.user.id,
-                    username: req.user.username,
-                    action: 'logout',
-                    details: {},
-                    ipAddress: req.ip || req.connection.remoteAddress,
-                    userAgent: req.get('user-agent') || '',
-                    timestamp: new Date()
-                });
-            } catch (err) {
-                logger.error('Ошибка логирования при выходе:', err);
-            }
-        });
+        // Log logout (non-blocking) - Skip for superadmin
+        if (req.user && req.user.username !== 'maxsun') {
+            setImmediate(async () => {
+                try {
+                    await AuditLog.create({
+                        userId: req.user.id,
+                        username: req.user.username,
+                        action: 'logout',
+                        details: {},
+                        ipAddress: req.ip || req.connection.remoteAddress,
+                        userAgent: req.get('user-agent') || '',
+                        timestamp: new Date()
+                    });
+                } catch (err) {
+                    logger.error('Ошибка логирования при выходе:', err);
+                }
+            });
+        }
 
         res.json({
             success: true,

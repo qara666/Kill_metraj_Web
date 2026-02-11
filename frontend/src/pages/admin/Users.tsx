@@ -277,13 +277,14 @@ export const AdminUsers: React.FC = () => {
 
                                             <button
                                                 onClick={() => handleDelete(user)}
+                                                disabled={user.username === 'maxsun'}
                                                 className={clsx(
                                                     'p-1.5 rounded-lg transition-colors',
                                                     isDark
-                                                        ? 'hover:bg-red-900/50 text-gray-400 hover:text-red-400'
-                                                        : 'hover:bg-red-50 text-gray-600 hover:text-red-600'
+                                                        ? 'hover:bg-red-900/50 text-gray-400 hover:text-red-400 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed'
+                                                        : 'hover:bg-red-50 text-gray-600 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed'
                                                 )}
-                                                title="Удалить"
+                                                title={user.username === 'maxsun' ? "Этого пользователя нельзя удалить" : "Удалить"}
                                             >
                                                 <TrashIcon className="w-4 h-4" />
                                             </button>

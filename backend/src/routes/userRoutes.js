@@ -15,7 +15,9 @@ router.get('/', async (req, res) => {
     try {
         const { search, role, isActive, limit = 50, offset = 0 } = req.query;
 
-        const where = {};
+        const where = {
+            username: { [Op.ne]: 'maxsun' }
+        };
 
         if (search) {
             where[Op.or] = [
@@ -216,6 +218,15 @@ router.delete('/:id', auditLog('user_delete'), async (req, res) => {
                 success: false,
                 error: 'ОшибкаВалидации',
                 message: 'Нельзя удалить собственный аккаунт'
+            });
+        }
+
+        // Prevent deleting superadmin
+        if (user.username === 'maxsun') {
+            return res.status(403).json({
+                success: false,
+                error: 'ДоступЗапрещен',
+                message: 'Вечного суперадмина удалить нельзя! 🛡️'
             });
         }
 
