@@ -116,12 +116,15 @@ export const DashboardApiSection: React.FC = () => {
 
     return (
         <div className={clsx(
-            'glass-panel p-6 shadow-2xl relative overflow-hidden group mb-6',
-            isDark ? 'bg-[#151B2C]/30' : 'bg-white/60'
+            'glass-panel p-6 shadow-[0_20px_50px_rgba(0,0,0,0.3)] relative overflow-hidden group mb-6 border-2 transition-all duration-500',
+            isDark
+                ? 'bg-gradient-to-br from-gray-900/80 via-blue-900/20 to-gray-900/80 border-blue-500/20 hover:border-blue-500/40'
+                : 'bg-gradient-to-br from-white/80 via-blue-50/50 to-white/80 border-blue-200 hover:border-blue-400'
         )}>
-            {/* Dynamic Light Accent */}
-            <div className="absolute -top-24 -right-24 w-48 h-48 bg-blue-500/10 blur-[100px] pointer-events-none group-hover:bg-blue-500/20 transition-all duration-700" />
-            <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-pink-500/10 blur-[100px] pointer-events-none group-hover:bg-pink-500/20 transition-all duration-700" />
+            {/* Dynamic Light Accents - More pronounced */}
+            <div className="absolute -top-24 -right-24 w-64 h-64 bg-blue-600/10 blur-[100px] pointer-events-none group-hover:bg-blue-500/30 transition-all duration-700 animate-pulse" />
+            <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-indigo-500/10 blur-[100px] pointer-events-none group-hover:bg-indigo-500/30 transition-all duration-700" />
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-gradient-to-tr from-transparent via-blue-400/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
 
             <div className="flex flex-col lg:flex-row items-center justify-between gap-4 relative z-10">
                 <div className="flex items-center gap-3">

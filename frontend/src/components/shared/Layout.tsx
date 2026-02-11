@@ -222,9 +222,12 @@ export function Layout({ children }: LayoutProps) {
               </div>
               <div className="ml-6">
                 <h1 className={clsx(
-                  'text-lg font-semibold',
+                  'text-lg font-black tracking-tight leading-none',
                   isDark ? 'text-white' : 'text-gray-900'
-                )}>Авто рассчет км для курьеров</h1>
+                )}>
+                  <span className="text-blue-500">Auto</span>
+                  <span className="block text-xs font-bold opacity-60 uppercase tracking-[0.2em] mt-1">KM Calculation</span>
+                </h1>
               </div>
             </div>
           </div>
@@ -318,34 +321,23 @@ export function Layout({ children }: LayoutProps) {
       </div>
 
       {/* Main content */}
-      <div className="lg:pl-64">
-        {/* Top bar */}
-        <div className={
-          clsx(
-            'sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8',
-            isDark
-              ? 'border-white/5 bg-[#0B0F1A]/60 backdrop-blur-xl'
-              : 'border-gray-200 bg-white/60 backdrop-blur-xl'
-          )
-        } >
-          {/* Subtle top light leak */}
-          <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-blue-500/30 to-transparent" />
-          <button
-            type="button"
-            className={clsx(
-              '-m-2.5 p-2.5 lg:hidden transition-colors',
-              isDark ? 'text-gray-300 hover:text-white' : 'text-gray-700 hover:text-blue-600'
-            )}
-            onClick={() => setSidebarOpen(true)}
-          >
-            <Bars3Icon className="h-6 w-6" />
-          </button>
+      <div className="lg:pl-64 flex flex-col min-h-screen">
+        {/* Top bar - Floating Effect */}
+        <div className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 px-4 sm:gap-x-6 sm:px-6 lg:px-8 bg-transparent pointer-events-none">
+          {/* Mobile hamburger - Always visible on small screens, pointer-events-auto to be clickable */}
+          <div className="flex flex-1 items-center justify-between lg:justify-end gap-x-4 lg:gap-x-6">
+            <button
+              type="button"
+              className={clsx(
+                'p-2.5 lg:hidden pointer-events-auto rounded-xl transition-all active:scale-90',
+                isDark ? 'text-gray-300 hover:text-white bg-gray-800/40' : 'text-gray-700 hover:text-blue-600 bg-white/40 shadow-sm'
+              )}
+              onClick={() => setSidebarOpen(true)}
+            >
+              <Bars3Icon className="h-6 w-6" />
+            </button>
 
-          <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
-            <div className="flex flex-1" />
-            <div className="flex items-center gap-x-4 lg:gap-x-6">
-
-
+            <div className="flex items-center gap-x-4 lg:gap-x-6 pointer-events-auto">
               {/* Theme toggle */}
               <button
                 onClick={toggleTheme}
@@ -421,14 +413,14 @@ export function Layout({ children }: LayoutProps) {
                 <span className={clsx(
                   'text-xs font-semibold uppercase tracking-wider',
                   isDark ? 'text-gray-400' : 'text-gray-600'
-                )}>Система работает - ОПы не ловятся</span>
+                )}>Система работает</span>
               </div>
             </div>
           </div>
         </div>
 
         {/* Page content */}
-        <main className="py-6">
+        <main className="py-6 flex-1">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             {children}
           </div>
@@ -437,6 +429,7 @@ export function Layout({ children }: LayoutProps) {
     </div>
   )
 }
+
 
 
 
