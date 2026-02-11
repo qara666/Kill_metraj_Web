@@ -140,7 +140,16 @@ export const useAutoPlannerStore = create<AutoPlannerUIState>()(
             triggerApiManualSync: () => set({ apiManualSyncTrigger: Date.now() }),
         }),
         {
-            name: 'autoplanner-ui-storage-v2', // Updated storage name to force clean slate or handle migration
+            name: 'autoplanner-ui-storage-v2',
+            partialize: (state) => {
+                const {
+                    apiManualSyncTrigger,
+                    apiSyncStatus,
+                    apiSyncError,
+                    ...persistentState
+                } = state;
+                return persistentState;
+            }
         }
     )
 );

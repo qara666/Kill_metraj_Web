@@ -42,6 +42,11 @@ export const mergeExcelData = (newData: any, existingData: any): ProcessedExcelD
                 isInRoute: existingOrder.isInRoute,    // Сохраняем принадлежность маршруту
                 handoverAt: existingOrder.handoverAt,  // Сохраняем уже записанное время
 
+                // Финансовые состояния (Phase 5)
+                settledDate: existingOrder.settledDate,
+                settledAmount: existingOrder.settledAmount,
+                settlementNote: existingOrder.settlementNote,
+
                 // Геокоординаты сохраняем, если адрес не изменился (чтобы не мигало/не пересчитывало)
                 coords: (existingOrder.address === newOrder.address && existingOrder.coords)
                     ? existingOrder.coords
@@ -209,6 +214,10 @@ export const syncDashboardData = (newData: any, existingData: any): ProcessedExc
                 id: existing.id,
                 isSelected: existing.isSelected,
                 isInRoute: existing.isInRoute,
+                // Финансовые состояния
+                settledDate: existing.settledDate,
+                settledAmount: existing.settledAmount,
+                settlementNote: existing.settlementNote,
                 // Сохраняем координаты чтобы не мигало
                 coords: (existing.address === newOrder.address && existing.coords) ? existing.coords : newOrder.coords
             };
