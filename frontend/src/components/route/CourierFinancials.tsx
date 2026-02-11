@@ -7,15 +7,15 @@ import {
     GlobeAltIcon,
     ClockIcon,
     ArrowsRightLeftIcon,
-    ArrowTrendingUpIcon,
     ScaleIcon,
-    ExclamationCircleIcon,
     PrinterIcon
 } from '@heroicons/react/24/outline';
 import type { Order } from '../../types';
 import { SettlementModal } from './modals/SettlementModal';
 import { PaymentDistributionChart } from './financials/PaymentDistributionChart';
 import { FinancialMetricCard } from './financials/FinancialMetricCard';
+import { EfficiencyGauge } from './financials/EfficiencyGauge';
+import { BalanceWalletCard } from './financials/BalanceWalletCard';
 
 interface CourierFinancialsProps {
     courierId: string;
@@ -438,24 +438,18 @@ export function CourierFinancials({
                     subValue={`${currentShift.totalOrders} заказов`}
                 />
 
-                <FinancialMetricCard
-                    title="Долг / Баланс"
-                    value={debtSummary ? formatCurrency(Math.abs(debtSummary.totalDifference)) : '₴0'}
-                    icon={ExclamationCircleIcon}
-                    color={!debtSummary ? 'gray' : debtSummary.totalDifference < 0 ? 'red' : 'green'}
+                <BalanceWalletCard
+                    expected={debtSummary ? debtSummary.totalExpected : 0}
+                    received={debtSummary ? debtSummary.totalReceived : 0}
+                    difference={debtSummary ? debtSummary.totalDifference : 0}
                     isDark={isDark}
-                    trend={debtSummary?.totalDifference ? (debtSummary.totalDifference < 0 ? -1 : 1) : 0}
-                    trendLabel={debtSummary?.totalDifference < 0 ? 'Должен курьер' : 'Переплата'}
                     onClick={() => setShowDebts(!showDebts)}
                 />
 
-                <FinancialMetricCard
-                    title="Эффективность"
-                    value={`${currentShift.totalOrders > 0 ? Math.round((currentShift.completedOrders / currentShift.totalOrders) * 100) : 0}%`}
-                    icon={ArrowTrendingUpIcon}
-                    color="purple"
+                <EfficiencyGauge
+                    completed={currentShift.completedOrders}
+                    total={currentShift.totalOrders}
                     isDark={isDark}
-                    subValue={`${currentShift.completedOrders} выполнено`}
                 />
             </div>
 
