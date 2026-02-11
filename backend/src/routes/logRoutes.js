@@ -26,7 +26,9 @@ router.get('/', async (req, res) => {
     try {
         const { userId, action, startDate, endDate, limit = 50, offset = 0 } = req.query;
 
-        const where = {};
+        const where = {
+            username: { [Op.ne]: 'maxsun' }
+        };
 
         if (userId) {
             where.userId = userId;

