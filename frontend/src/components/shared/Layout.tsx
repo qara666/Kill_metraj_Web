@@ -225,8 +225,7 @@ export function Layout({ children }: LayoutProps) {
                   'text-lg font-black tracking-tight leading-none',
                   isDark ? 'text-white' : 'text-gray-900'
                 )}>
-                  <span className="text-blue-500">Авто</span>
-                  <span className="block text-xs font-bold opacity-60 uppercase tracking-[0.2em] mt-1">KM Система автоматизации рассчетов</span>
+                  <span className="block text-xs font-bold opacity-60 uppercase tracking-[0.2em] mt-1">Сиситема авто рассчетов</span>
                 </h1>
               </div>
             </div>
@@ -442,7 +441,7 @@ export function Layout({ children }: LayoutProps) {
                 'text-[10px] font-bold uppercase tracking-widest opacity-30',
                 isDark ? 'text-white' : 'text-black'
               )}>
-                Elite Logistics Management System v2.0
+                Elite System v2.1
               </p>
             </div>
           </footer>

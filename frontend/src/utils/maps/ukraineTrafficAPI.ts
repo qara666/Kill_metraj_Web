@@ -18,6 +18,7 @@ export interface UkraineTrafficInfo {
   congestion: number // 0-100
   confidence: number // 0-1
   source: 'mapbox' | 'historical' | 'estimated'
+  query?: string // Placeholder to prevent undefined errors
 }
 
 // Кэш для исторических данных о трафике
@@ -40,7 +41,7 @@ function getHistoricalTraffic(
 ): UkraineTrafficInfo | null {
   // Ключ для кэша: округленные координаты + час + день недели
   const key = `${Math.round(lat * 10)},${Math.round(lng * 10)},${hour},${dayOfWeek}`
-  
+
   const cached = historicalTrafficCache.get(key)
   if (cached) {
     const now = Date.now()
@@ -56,7 +57,7 @@ function getHistoricalTraffic(
       }
     }
   }
-  
+
   return null
 }
 
@@ -74,13 +75,13 @@ export function saveTrafficPattern(
   const hour = date.getHours()
   const dayOfWeek = date.getDay()
   const key = `${Math.round(lat * 10)},${Math.round(lng * 10)},${hour},${dayOfWeek}`
-  
+
   historicalTrafficCache.set(key, {
     averageSpeed: speed,
     typicalCongestion: congestion,
     timestamp: Date.now()
   })
-  
+
   // Очистка старых записей
   if (historicalTrafficCache.size > 1000) {
     const now = Date.now()
@@ -103,18 +104,18 @@ export async function getUkraineTrafficForRoute(
   } = {}
 ): Promise<UkraineTrafficInfo[]> {
   const results: UkraineTrafficInfo[] = []
-  
+
   // Приоритет 1: Mapbox (реальное время)
   try {
     const mapboxData = await getMapboxTraffic(coordinates, mapboxToken)
-    
+
     if (mapboxData.length > 0) {
       const now = Date.now()
-      
+
       return mapboxData.map((data) => {
         const severity = getTrafficSeverity(data.congestion)
         const delayMinutes = calculateTrafficDelay(data.congestion, data.duration)
-        
+
         // Сохраняем данные для исторического анализа
         if (data.coordinates && data.coordinates.length > 0) {
           const midPoint = data.coordinates[Math.floor(data.coordinates.length / 2)]
@@ -122,7 +123,7 @@ export async function getUkraineTrafficForRoute(
             saveTrafficPattern(midPoint[1], midPoint[0], now, data.congestion, data.speed)
           }
         }
-        
+
         return {
           severity,
           delayMinutes,
@@ -137,17 +138,17 @@ export async function getUkraineTrafficForRoute(
   } catch (error) {
     console.warn('Mapbox Traffic failed, trying historical data...', error)
   }
-  
+
   // Приоритет 2: Исторические данные (fallback)
   if (options.fallbackToHistorical !== false) {
     const now = Date.now()
     const hour = new Date(now).getHours()
     const dayOfWeek = new Date(now).getDay()
-    
+
     for (let i = 0; i < coordinates.length - 1; i++) {
       const [lng, lat] = coordinates[i]
       const historical = getHistoricalTraffic(lat, lng, hour, dayOfWeek)
-      
+
       if (historical) {
         results.push(historical)
       } else {
@@ -155,9 +156,9 @@ export async function getUkraineTrafficForRoute(
         const estimatedCongestion = (hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 19)
           ? 50 // час пик
           : hour >= 22 || hour <= 6
-          ? 10 // ночь
-          : 30 // обычное время
-        
+            ? 10 // ночь
+            : 30 // обычное время
+
         results.push({
           severity: getTrafficSeverity(estimatedCongestion),
           delayMinutes: (estimatedCongestion / 100) * 3,
@@ -170,7 +171,7 @@ export async function getUkraineTrafficForRoute(
       }
     }
   }
-  
+
   return results
 }
 
@@ -186,7 +187,7 @@ export async function getUkraineTrafficForSegment(
     [from.lng, from.lat],
     [to.lng, to.lat]
   ]
-  
+
   const results = await getUkraineTrafficForRoute(coordinates, mapboxToken)
   return results.length > 0 ? results[0] : null
 }
@@ -201,19 +202,19 @@ export async function getUkraineTrafficForOrders(
   if (!orders || orders.length < 2) {
     return []
   }
-  
+
   // Фильтруем заказы с координатами
   const ordersWithCoords = orders.filter(o => o.coords)
   if (ordersWithCoords.length < 2) {
     return []
   }
-  
+
   // Формируем массив координат [lng, lat]
   const coordinates: Array<[number, number]> = ordersWithCoords.map(o => [
     o.coords!.lng,
     o.coords!.lat
   ])
-  
+
   return await getUkraineTrafficForRoute(coordinates, mapboxToken, {
     fallbackToHistorical: true
   })
