@@ -293,16 +293,28 @@ export function CourierFinancials({
         setSwitchingOrderId(orderNumber);
         try {
             const token = localStorage.getItem('km_access_token');
+            // Assuming the API expect paymentMethod object or field
             const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/orders/${orderNumber}/payment-method`, {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token ? token.trim() : ''}`
                 },
-                body: JSON.stringify({ paymentMethod: newMethod })
+                body: JSON.stringify(newMethod) // Just the string or { paymentMethod: newMethod }? usually { paymentMethod }
             });
 
-            if (!response.ok) throw new Error('Failed to switch payment method');
+            if (!response.ok) {
+                // Try JSON body if string fails
+                const retryResponse = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/orders/${orderNumber}/payment-method`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token ? token.trim() : ''}`
+                    },
+                    body: JSON.stringify({ paymentMethod: newMethod })
+                });
+                if (!retryResponse.ok) throw new Error('Failed to switch payment method');
+            }
 
             // Refresh data
             await fetchFinancialSummary();
@@ -811,8 +823,7 @@ function PaymentMethodCard({ icon: Icon, label, amount, count, color, isDark, pe
     );
 }
 
-// Settlement Modal Component
-// Settlement Modal Component (Redesigned with Checkboxes)
+// Settlement Modal Component (Redesigned with Checkboxes and Manual Amount)
 function SettlementModal({
     courierId,
     courierName,
@@ -832,12 +843,23 @@ function SettlementModal({
         new Set(orders.map((o: any) => String(o.id || o.orderNumber)))
     );
 
+    // Manual amount state
+    const [manualAmount, setManualAmount] = React.useState<string>('0');
+    const [isManualOverride, setIsManualOverride] = React.useState(false);
+
     // Dynamic sum calculation
-    const cashReceived = React.useMemo(() => {
+    const calculatedSum = React.useMemo(() => {
         return orders
             .filter((o: any) => selectedOrderIds.has(String(o.id || o.orderNumber)))
             .reduce((sum: number, o: any) => sum + parseFloat(o.amount || 0), 0);
     }, [orders, selectedOrderIds]);
+
+    // Update manual amount when selection changes, but only if not manually overridden
+    React.useEffect(() => {
+        if (!isManualOverride) {
+            setManualAmount(calculatedSum.toString());
+        }
+    }, [calculatedSum, isManualOverride]);
 
     const toggleOrder = (id: string) => {
         const newSet = new Set(selectedOrderIds);
@@ -853,6 +875,13 @@ function SettlementModal({
         e.preventDefault();
         setLoading(true);
         setError(null);
+
+        const cashReceived = parseFloat(manualAmount);
+        if (isNaN(cashReceived)) {
+            setError('Введите корректную сумму');
+            setLoading(false);
+            return;
+        }
 
         try {
             const userStr = localStorage.getItem('user');
@@ -966,11 +995,33 @@ function SettlementModal({
                     <div className="p-6 rounded-3xl bg-gray-50 dark:bg-gray-900/50 border border-black/5 dark:border-white/5">
                         <div className="flex items-center justify-between mb-4">
                             <span className={clsx('text-xs font-black uppercase tracking-widest opacity-60', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                                Итого к оплате
+                                Сумма к оплате
                             </span>
-                            <span className={clsx('text-3xl font-black tracking-tighter', isDark ? 'text-white' : 'text-gray-900')}>
-                                {formatCurrency(cashReceived)}
-                            </span>
+                            <div className="flex flex-col items-end">
+                                <input
+                                    type="text"
+                                    value={manualAmount}
+                                    onChange={(e) => {
+                                        setManualAmount(e.target.value);
+                                        setIsManualOverride(true);
+                                    }}
+                                    className={clsx(
+                                        'w-32 text-right text-2xl font-black bg-transparent border-b-2 outline-none transition-all',
+                                        isDark
+                                            ? 'text-white border-blue-500/50 focus:border-blue-500'
+                                            : 'text-gray-900 border-blue-500/30 focus:border-blue-500'
+                                    )}
+                                />
+                                {isManualOverride && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsManualOverride(false)}
+                                        className="text-[10px] font-black text-blue-500 uppercase mt-1 hover:underline"
+                                    >
+                                        Сбросить (было {formatCurrency(calculatedSum)})
+                                    </button>
+                                )}
+                            </div>
                         </div>
 
                         <textarea

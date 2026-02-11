@@ -256,7 +256,7 @@ export function TimeWindowGroupCard({
                             disabled={isCalculating}
                             onClick={() => onCalculateRoute && onCalculateRoute(group)}
                             className={clsx(
-                                'w-full py-3.5 rounded-2xl flex items-center justify-center gap-2.5 text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98] shadow-xl relative overflow-hidden group/btn',
+                                'w-full py-2.5 rounded-xl flex items-center justify-center gap-2.5 text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98] shadow-xl relative overflow-hidden group/btn',
                                 isDark
                                     ? 'bg-blue-600 text-white hover:bg-blue-500 shadow-blue-900/20'
                                     : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200'

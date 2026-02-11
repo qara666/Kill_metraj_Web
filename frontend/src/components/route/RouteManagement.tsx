@@ -17,6 +17,8 @@ import {
   ExclamationTriangleIcon,
   ExclamationCircleIcon,
   QuestionMarkCircleIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
 } from '@heroicons/react/24/outline'
 import { localStorageUtils } from '../../utils/ui/localStorage'
 import { googleMapsLoader } from '../../utils/maps/googleMapsLoader'
@@ -1568,6 +1570,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   // Функция для перемещения заказа в другую временную группу ( Phase 4.7 )
   // Функция для перемещения заказа в другую временную группу ( Phase 4.7 )
   const handleMoveOrderToGroup = (orderId: string, targetGroup: TimeWindowGroup) => {
+    console.log('[DND] Moving order:', orderId, 'to group:', targetGroup.id);
     updateExcelData((prev: any) => {
       if (!prev) return prev;
 
@@ -1577,8 +1580,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
       // 1. Обновляем метаданные в списке всех заказов
       const updatedAllOrders = (prev.orders || []).map((order: any) => {
+        const currentOrderId = String(order.id || order.orderNumber);
+        const targetId = String(orderId);
+
         // Перемещаемый заказ
-        if (order.id === orderId) {
+        if (currentOrderId === targetId) {
           return {
             ...order,
             manualGroupId: manualIdForTarget,
@@ -1587,7 +1593,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           };
         }
         // Заказы, которые УЖЕ были в этой авто-группе (чтобы они не разлетелись)
-        if (isAutoGroup && targetGroup.orders.some(o => o.id === order.id)) {
+        if (isAutoGroup && targetGroup.orders.some(o => String(o.id || o.orderNumber) === currentOrderId)) {
           return {
             ...order,
             manualGroupId: manualIdForTarget
@@ -1598,12 +1604,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
       // 2. Очищаем старые маршруты
       const updatedRoutes = (prev.routes || []).map((route: any) => {
-        const hasOrder = route.orders.some((o: any) => o.id === orderId);
+        const hasOrder = route.orders.some((o: any) => String(o.id || o.orderNumber) === String(orderId));
         if (!hasOrder) return route;
 
         return {
           ...route,
-          orders: route.orders.filter((o: any) => o.id !== orderId),
+          orders: route.orders.filter((o: any) => String(o.id || o.orderNumber) !== String(orderId)),
           isOptimized: false,
           totalDistance: 0,
           totalDuration: 0
@@ -2563,32 +2569,62 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
               {/* Пагинация */}
               {totalRoutePages > 1 && (
-                <div className="mt-8 flex items-center justify-between px-4">
+                <div className="mt-12 flex items-center justify-center gap-2">
                   <button
                     onClick={() => setRoutePage(Math.max(0, routePage - 1))}
                     disabled={routePage === 0}
                     className={clsx(
-                      'px-6 py-2 rounded-xl text-sm font-black uppercase tracking-widest transition-all disabled:opacity-30',
-                      isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      'w-10 h-10 rounded-xl flex items-center justify-center transition-all disabled:opacity-20',
+                      isDark ? 'bg-gray-700 text-white hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     )}
                   >
-                    ← Назад
+                    <ChevronLeftIcon className="w-5 h-5" />
                   </button>
-                  <span className={clsx(
-                    'text-sm font-black uppercase tracking-[0.2em]',
-                    isDark ? 'text-gray-500' : 'text-gray-400'
-                  )}>
-                    {routePage + 1} / {totalRoutePages}
-                  </span>
+
+                  <div className="flex items-center gap-1 mx-2">
+                    {Array.from({ length: totalRoutePages }).map((_, i) => {
+                      // Show first, last, current, and pages around current
+                      if (
+                        i === 0 ||
+                        i === totalRoutePages - 1 ||
+                        (i >= routePage - 1 && i <= routePage + 1)
+                      ) {
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => setRoutePage(i)}
+                            className={clsx(
+                              'w-10 h-10 rounded-xl text-xs font-black transition-all',
+                              routePage === i
+                                ? (isDark ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-blue-600 text-white shadow-lg shadow-blue-500/30')
+                                : (isDark ? 'bg-gray-800 text-gray-400 hover:bg-gray-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200')
+                            )}
+                          >
+                            {i + 1}
+                          </button>
+                        );
+                      }
+                      if (
+                        (i === 1 && routePage > 2) ||
+                        (i === totalRoutePages - 2 && routePage < totalRoutePages - 3)
+                      ) {
+                        return (
+                          <span key={i} className="px-2 opacity-30 text-xs font-black">...</span>
+                        );
+                      }
+                      return null;
+                    })}
+                  </div>
+
                   <button
                     onClick={() => setRoutePage(Math.min(totalRoutePages - 1, routePage + 1))}
                     disabled={routePage >= totalRoutePages - 1}
                     className={clsx(
-                      'px-6 py-2 rounded-xl text-sm font-black uppercase tracking-widest transition-all disabled:opacity-30',
-                      isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      'w-10 h-10 rounded-xl flex items-center justify-center transition-all disabled:opacity-20',
+                      isDark ? 'bg-gray-700 text-white hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     )}
                   >
-                    Вперед →
+                    <ChevronRightIcon className="w-5 h-5" />
                   </button>
                 </div>
               )}
