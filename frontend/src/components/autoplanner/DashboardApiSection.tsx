@@ -17,6 +17,9 @@ export const DashboardApiSection: React.FC = () => {
     // Use global store for auto-update state
     const apiAutoRefreshEnabled = useAutoPlannerStore(s => s.apiAutoRefreshEnabled);
     const setApiAutoRefreshEnabled = useAutoPlannerStore(s => s.setApiAutoRefreshEnabled);
+    const apiLastSyncTime = useAutoPlannerStore(s => s.apiLastSyncTime);
+    const apiNextSyncTime = useAutoPlannerStore(s => s.apiNextSyncTime);
+    const apiSyncStatus = useAutoPlannerStore(s => s.apiSyncStatus);
 
     const handleFetchData = async (isSilent = false, forceRefresh = false) => {
         if (!selectedDate) {
@@ -85,57 +88,70 @@ export const DashboardApiSection: React.FC = () => {
 
     return (
         <div className={clsx(
-            'premium-card p-6 shadow-2xl',
-            isDark ? 'bg-[#151B2C]/40 backdrop-blur-xl shadow-black/40' : 'bg-white/70 backdrop-blur-xl shadow-blue-900/5'
+            'glass-panel p-6 shadow-2xl relative overflow-hidden group mb-6',
+            isDark ? 'bg-[#151B2C]/30' : 'bg-white/60'
         )}>
             {/* Dynamic Light Accent */}
-            <div className="absolute -top-24 -right-24 w-48 h-48 bg-blue-500/10 blur-[100px] pointer-events-none" />
-            <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-pink-500/10 blur-[100px] pointer-events-none" />
+            <div className="absolute -top-24 -right-24 w-48 h-48 bg-blue-500/10 blur-[100px] pointer-events-none group-hover:bg-blue-500/20 transition-all duration-700" />
+            <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-pink-500/10 blur-[100px] pointer-events-none group-hover:bg-pink-500/20 transition-all duration-700" />
 
             <div className="flex flex-col lg:flex-row items-center justify-between gap-4 relative z-10">
                 <div className="flex items-center gap-3">
                     <div className={clsx(
-                        'p-2 rounded-lg',
+                        'p-3 rounded-2xl shadow-inner transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3',
                         isDark ? 'bg-blue-900/30 text-blue-400' : 'bg-blue-50 text-blue-600'
                     )}>
-                        <ArrowPathIcon className="w-6 h-6" />
+                        <ArrowPathIcon className={clsx("w-6 h-6", (isLoading || apiSyncStatus === 'syncing') && "animate-spin")} />
                     </div>
                     <div>
                         <h3 className={clsx(
-                            'font-semibold text-lg',
-                            isDark ? 'text-gray-100' : 'text-gray-900'
+                            'font-bold text-lg tracking-tight',
+                            isDark ? 'text-white' : 'text-gray-900'
                         )}>
                             Загрузка данных с API
                         </h3>
-                        <p className={clsx(
-                            'text-sm',
-                            isDark ? 'text-gray-400' : 'text-gray-500'
-                        )}>
-                            Обновление данных за выбранную дату
-                        </p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                            <p className={clsx(
+                                'text-xs font-semibold uppercase tracking-wider',
+                                isDark ? 'text-gray-400' : 'text-gray-500'
+                            )}>
+                                {apiLastSyncTime ? `Обновлено: ${format(apiLastSyncTime, 'HH:mm:ss')}` : 'Ожидание первого обновления...'}
+                            </p>
+                            {apiAutoRefreshEnabled && apiNextSyncTime && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 font-bold">
+                                    След: {format(apiNextSyncTime, 'HH:mm')}
+                                </span>
+                            )}
+                        </div>
                     </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-4 justify-center w-full lg:w-auto">
                     {/* Переключатель автообновления */}
-                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
-                        <span className={clsx(
-                            'text-sm font-medium',
-                            isDark ? 'text-gray-300' : 'text-gray-700'
-                        )}>
-                            Автообновление (WebSocket)
-                        </span>
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-2xl border border-dashed border-gray-300 dark:border-white/10 bg-gray-50/30 dark:bg-white/5 backdrop-blur-md transition-colors hover:border-blue-400/50">
+                        <div className="flex items-center gap-2">
+                            <div className={clsx(
+                                "w-2 h-2 rounded-full",
+                                apiAutoRefreshEnabled ? "bg-green-500 animate-pulse" : "bg-gray-400"
+                            )} />
+                            <span className={clsx(
+                                'text-sm font-bold',
+                                isDark ? 'text-gray-200' : 'text-gray-700'
+                            )}>
+                                WebSocket
+                            </span>
+                        </div>
                         <button
                             onClick={handleToggleAutoUpdate}
                             className={clsx(
-                                'relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1',
-                                apiAutoRefreshEnabled ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
+                                'relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1',
+                                apiAutoRefreshEnabled ? 'bg-blue-600 shadow-lg shadow-blue-600/30' : 'bg-gray-300 dark:bg-gray-700'
                             )}
                         >
                             <span
                                 className={clsx(
-                                    'inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform duration-200',
-                                    apiAutoRefreshEnabled ? 'translate-x-[22px]' : 'translate-x-0.5'
+                                    'inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-all duration-300',
+                                    apiAutoRefreshEnabled ? 'translate-x-[24px]' : 'translate-x-1'
                                 )}
                             />
                         </button>
@@ -150,28 +166,27 @@ export const DashboardApiSection: React.FC = () => {
                             value={selectedDate}
                             onChange={(e) => setSelectedDate(e.target.value)}
                             className={clsx(
-                                'input pl-10 w-full sm:w-48 rounded-xl',
-                                isDark ? 'bg-gray-800/50 border-gray-700 text-white' : 'bg-white border-gray-200 text-gray-900'
+                                'input pl-10 w-full sm:w-48 rounded-2xl font-bold transition-all duration-300',
+                                isDark ? 'bg-gray-800/40 border-white/5 text-white hover:bg-gray-800/60 focus:bg-gray-800/80 outline-none' : 'bg-white border-gray-200 text-gray-900 hover:border-blue-300'
                             )}
                         />
                     </div>
 
                     <button
                         onClick={() => handleFetchData(false, true)}
-                        disabled={isLoading}
+                        disabled={isLoading || apiSyncStatus === 'syncing'}
                         className={clsx(
-                            'btn btn-primary flex items-center gap-2 whitespace-nowrap min-w-[120px] justify-center',
-                            isLoading && 'opacity-70 cursor-not-allowed'
+                            'btn btn-primary flex items-center gap-2 whitespace-nowrap min-w-[140px] justify-center px-6 py-2.5 rounded-2xl font-bold transform transition-all duration-200 active:scale-95 shadow-xl',
+                            (isLoading || apiSyncStatus === 'syncing') && 'opacity-70 cursor-not-allowed grayscale'
                         )}
                     >
-                        {isLoading ? (
+                        {isLoading || apiSyncStatus === 'syncing' ? (
                             <>
-                                <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 animate-gradient-x" />
-                                <svg className="animate-spin h-5 w-5 text-white relative z-10" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                 </svg>
-                                <span className="relative z-10">Загрузка...</span>
+                                <span>Синхрон...</span>
                             </>
                         ) : (
                             <>

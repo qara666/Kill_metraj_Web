@@ -300,25 +300,30 @@ export function CourierFinancials({
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
-            {/* Styles */}
+            {/* Local Styles Harmonization */}
             <style>{`
-                .glass-panel {
-                    background: rgba(255, 255, 255, 0.7);
-                    backdrop-filter: blur(12px);
-                    -webkit-backdrop-filter: blur(12px);
-                    border: 1px solid rgba(255, 255, 255, 0.5);
+                .custom-scrollbar::-webkit-scrollbar {
+                    width: 6px;
                 }
-                .dark .glass-panel {
-                    background: rgba(31, 41, 55, 0.7);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
+                .custom-scrollbar::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb {
+                    background: rgba(100, 116, 139, 0.2);
+                    border-radius: 10px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                    background: rgba(100, 116, 139, 0.4);
                 }
             `}</style>
 
             {/* Header */}
             <div className={clsx(
-                'p-6 rounded-3xl border flex items-center justify-between transition-all duration-300 shadow-sm glass-panel',
-                isDark ? 'shadow-gray-900/20' : 'shadow-gray-200/50'
+                'p-6 rounded-3xl border flex items-center justify-between transition-all duration-300 shadow-xl glass-panel relative overflow-hidden group',
+                isDark ? 'shadow-gray-900/40' : 'shadow-blue-500/5'
             )}>
+                {/* Header Light Reflection */}
+                <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-blue-500/30 to-transparent" />
                 <div className="flex items-center gap-5">
                     <div className={clsx(
                         'w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-black shadow-lg',
@@ -362,8 +367,8 @@ export function CourierFinancials({
 
             {/* Main Summary Card - Print Area */}
             <div id="financials-print-area" className={clsx(
-                'p-8 rounded-[2rem] border shadow-2xl overflow-hidden relative glass-panel transition-all hover:shadow-3xl',
-                isDark ? 'shadow-black/40' : 'shadow-blue-500/10'
+                'p-8 rounded-[2rem] border shadow-2xl overflow-hidden relative glass-panel transition-all hover:shadow-3xl group mb-6',
+                isDark ? 'shadow-black/60' : 'shadow-blue-900/10'
             )}>
                 {/* Decorative Elements */}
                 <div className={clsx(
@@ -634,33 +639,40 @@ function PaymentMethodCard({ icon: Icon, label, amount, count, color, isDark, pe
     const colors = colorClasses[color];
 
     return (
-        <div className={clsx('p-5 rounded-2xl border transition-all duration-300 hover:scale-[1.02] hover:shadow-lg flex flex-col justify-between', colors.bg, colors.border)}>
-            <div className="flex items-center justify-between mb-4">
+        <div className={clsx(
+            'p-5 rounded-3xl border transition-all duration-300 hover:scale-[1.05] hover:shadow-2xl flex flex-col justify-between glass-panel relative overflow-hidden group',
+            colors.bg,
+            colors.border
+        )}>
+            {/* Inner Glow */}
+            <div className={clsx("absolute -top-10 -left-10 w-24 h-24 blur-3xl opacity-20 pointer-events-none transition-opacity group-hover:opacity-40", colors.text)} />
+
+            <div className="flex items-center justify-between mb-4 relative z-10">
                 <div className="flex items-center gap-3">
-                    <div className={clsx('p-2 rounded-xl transition-colors', colors.iconBg)}>
+                    <div className={clsx('p-2.5 rounded-2xl transition-all duration-300 group-hover:rotate-6 group-hover:scale-110', colors.iconBg)}>
                         <Icon className="w-5 h-5" />
                     </div>
-                    <span className={clsx('text-xs font-bold uppercase tracking-wider opacity-80', colors.text)}>{label}</span>
+                    <span className={clsx('text-xs font-black uppercase tracking-[0.1em] opacity-80', colors.text)}>{label}</span>
                 </div>
                 {percent !== undefined && (
-                    <span className={clsx('text-[10px] font-black opacity-60 px-2 py-0.5 rounded-full bg-white/20', colors.text)}>
+                    <span className={clsx('text-[10px] font-black opacity-60 px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-md', colors.text)}>
                         {Math.round(percent)}%
                     </span>
                 )}
             </div>
 
-            <div>
-                <p className={clsx('text-2xl font-black tracking-tight mb-2', colors.text)}>
+            <div className="relative z-10">
+                <p className={clsx('text-2xl font-black tracking-tighter mb-2', colors.text)}>
                     {new Intl.NumberFormat('uk-UA', { style: 'currency', currency: 'UAH', minimumFractionDigits: 0 }).format(amount)}
                 </p>
 
                 <div className="flex items-center justify-between gap-4">
-                    <p className={clsx('text-xs font-bold opacity-60', colors.text)}>
+                    <p className={clsx('text-[10px] font-bold uppercase tracking-wider opacity-60', colors.text)}>
                         {count} {count === 1 ? 'заказ' : count < 5 ? 'заказа' : 'заказов'}
                     </p>
                     {percent !== undefined && (
-                        <div className="flex-1 max-w-[60px] h-1.5 bg-black/5 dark:bg-white/10 rounded-full overflow-hidden">
-                            <div style={{ width: `${percent}%` }} className={clsx('h-full rounded-full bg-gradient-to-r', colors.bar)} />
+                        <div className="flex-1 max-w-[60px] h-1.5 bg-black/5 dark:bg-white/10 rounded-full overflow-hidden shadow-inner">
+                            <div style={{ width: `${percent}%` }} className={clsx('h-full rounded-full bg-gradient-to-r transition-all duration-1000', colors.bar)} />
                         </div>
                     )}
                 </div>
