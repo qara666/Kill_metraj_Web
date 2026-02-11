@@ -121,21 +121,18 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       // Clear previous timeout
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
-      // Debounce save (0.5s)
+      // Debounce both API save and localStorage (0.5s)
       saveTimeoutRef.current = setTimeout(() => {
         saveDataToServer(val);
+        try {
+          localStorage.setItem('km_dashboard_processed_data', JSON.stringify(val))
+        } catch (e) {
+          console.warn('LocalStorage save failed:', e);
+        }
       }, 500);
-
-      // Update localStorage immediately
-      try {
-        localStorage.setItem('km_dashboard_processed_data', JSON.stringify(val))
-      } catch (e) {
-        console.warn('LocalStorage save failed:', e);
-      }
     } else {
       setExcelDataState(null)
       localStorage.removeItem('km_dashboard_processed_data')
-      // TODO: Add API call to clear state if needed
     }
   }, [])
 
@@ -153,16 +150,14 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       // Clear previous timeout
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
-      // Update localStorage immediately
-      try {
-        localStorage.setItem('km_dashboard_processed_data', JSON.stringify(next));
-      } catch (e) {
-        console.warn('LocalStorage update failed:', e);
-      }
-
-      // Debounce save (0.5s for updates)
+      // Debounce both API save and localStorage (0.5s)
       saveTimeoutRef.current = setTimeout(() => {
         saveDataToServer(next);
+        try {
+          localStorage.setItem('km_dashboard_processed_data', JSON.stringify(next));
+        } catch (e) {
+          console.warn('LocalStorage update failed:', e);
+        }
       }, 500);
 
       return next;
@@ -172,7 +167,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   const clearExcelData = useCallback(() => {
     if (window && (window as any).debugExcel) console.warn('[ExcelDataProvider:CLEAR]', (new Error()).stack)
 
-    // Clear any pending debounced saves to prevent data from reappearing
+    // Clear any pending debounced saves
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = null;
@@ -206,16 +201,14 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       // Clear previous timeout
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
-      // Update localStorage immediately
-      try {
-        localStorage.setItem('km_dashboard_processed_data', JSON.stringify(next));
-      } catch (e) {
-        console.warn('LocalStorage route update failed:', e);
-      }
-
-      // Debounce save (0.5s)
+      // Debounce both API save and localStorage (0.5s)
       saveTimeoutRef.current = setTimeout(() => {
         saveDataToServer(next);
+        try {
+          localStorage.setItem('km_dashboard_processed_data', JSON.stringify(next));
+        } catch (e) {
+          console.warn('LocalStorage route update failed:', e);
+        }
       }, 500);
 
       return next;
@@ -275,7 +268,12 @@ function normalizeCourierName(name: string | null | undefined): string {
   return name.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+/**
+ * Optimizes the data by mapping vehicle types and ensuring required structures.
+ * Memoized via useMemo in the provider.
+ */
 function applyCourierVehicleMap(data: any): any {
+  if (!data) return data;
   try {
     const rawMap = localStorageUtils.getCourierVehicleMap()
     // Create a normalized version of the map for lookup
@@ -285,48 +283,46 @@ function applyCourierVehicleMap(data: any): any {
     });
 
     const orders = Array.isArray(data.orders) ? data.orders : []
-
-    // 1. Process Couriers
-    let couriers = Array.isArray(data.couriers) ? [...data.couriers] : []
-
-    // If couriers array is empty or lacks couriers present in orders, derive them
+    const couriers = Array.isArray(data.couriers) ? [...data.couriers] : []
     const courierNamesInList = new Set(couriers.map(c => c.name || c._id || c.id));
 
-    orders.forEach((order: any) => {
-      const c = order.courier;
+    // 1. Process Couriers from orders (efficiently)
+    for (let i = 0; i < orders.length; i++) {
+      const c = orders[i].courier;
       if (c) {
         const cName = typeof c === 'string' ? c : (c.name || c._id || c.id);
-        const cId = typeof c === 'string' ? c : (c._id || c.id || cName);
         const normalizedCName = normalizeCourierName(cName);
 
         if (cName && !Array.from(courierNamesInList).some(n => normalizeCourierName(n) === normalizedCName)) {
+          const cId = typeof c === 'string' ? c : (c._id || c.id || cName);
           couriers.push({
             _id: cId,
             id: cId,
             name: cName,
-            vehicleType: 'car' // Default
+            vehicleType: 'car'
           });
           courierNamesInList.add(cName);
         }
       }
+    }
+
+    // 2. Map vehicle types once
+    const processedCouriers = couriers.map((c: any) => {
+      const normalizedName = normalizeCourierName(c.name);
+      const mappedType = map[normalizedName];
+      if (mappedType && mappedType !== c.vehicleType) {
+        return { ...c, vehicleType: mappedType };
+      }
+      return c.vehicleType ? c : { ...c, vehicleType: 'car' };
     });
 
-    // Apply vehicle types from map
-    couriers = couriers.map((c: any) => {
-      const normalizedName = normalizeCourierName(c.name);
-      return {
-        ...c,
-        vehicleType: map[normalizedName] || c.vehicleType || 'car'
-      };
-    })
-
-    // 2. Process Payment Methods
-    let paymentMethods = Array.isArray(data.paymentMethods) ? [...data.paymentMethods] : []
+    // 3. Process Payment Methods (if missing)
+    let paymentMethods = Array.isArray(data.paymentMethods) ? data.paymentMethods : []
     if (paymentMethods.length === 0 && orders.length > 0) {
       const uniqueMethods = new Set<string>();
-      orders.forEach((o: any) => {
-        if (o.paymentMethod) uniqueMethods.add(o.paymentMethod);
-      });
+      for (let i = 0; i < orders.length; i++) {
+        if (orders[i].paymentMethod) uniqueMethods.add(orders[i].paymentMethod);
+      }
       paymentMethods = Array.from(uniqueMethods).map(method => ({
         id: method,
         name: method
@@ -337,20 +333,13 @@ function applyCourierVehicleMap(data: any): any {
       ...data,
       routes: Array.isArray(data.routes) ? data.routes : [],
       orders,
-      couriers,
+      couriers: processedCouriers,
       paymentMethods,
       errors: Array.isArray(data.errors) ? data.errors : []
     }
   } catch (e) {
     console.error('CRITICAL ERROR in applyCourierVehicleMap:', e);
-    return {
-      ...data,
-      routes: Array.isArray(data.routes) ? data.routes : [],
-      orders: Array.isArray(data.orders) ? data.orders : [],
-      couriers: Array.isArray(data.couriers) ? data.couriers : [],
-      paymentMethods: Array.isArray(data.paymentMethods) ? data.paymentMethods : [],
-      errors: Array.isArray(data.errors) ? data.errors : []
-    }
+    return data;
   }
 }
 

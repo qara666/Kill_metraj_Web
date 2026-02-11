@@ -132,14 +132,14 @@ const OrderItem = memo(({
               : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-blue-200 cursor-pointer shadow-sm hover:shadow-md'
       )}
     >
-      {/* Aging Background for "Собран" orders */}
+      {/* Aging Background for "Собран" orders (Memoized calculation) */}
       {order.status === 'Собран' && !isInRoute && !isSelected && (() => {
         const assembledAt = order.raw?.statusTimings?.assembledAt;
         if (!assembledAt) return null;
         const waitMs = Date.now() - new Date(assembledAt).getTime();
-        const waitMin = Math.floor(waitMs / 60000);
+        const waitMin = waitMs / 60000;
 
-        if (waitMin >= 30) return <div className="absolute inset-0 bg-red-500/5 animate-pulse pointer-events-none" />;
+        if (waitMin >= 30) return <div className="absolute inset-0 bg-red-500/5 animate-pulse-slow pointer-events-none" />;
         if (waitMin >= 15) return <div className="absolute inset-0 bg-yellow-500/5 pointer-events-none" />;
         return null;
       })()}
