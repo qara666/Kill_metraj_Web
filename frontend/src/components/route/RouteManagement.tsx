@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback, memo, useRef, useLayoutEffect } from 'react'
-import { VariableSizeList as List, areEqual } from 'react-window'
+import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
+import { areEqual } from 'react-window'
+import { OrderList } from './OrderList'
 import {
   MapIcon,
   TruckIcon,
@@ -8,17 +9,14 @@ import {
   TrashIcon,
   ClockIcon,
   MapPinIcon,
-  CheckCircleIcon,
   CheckBadgeIcon,
-  ChevronUpIcon,
-  ChevronDownIcon,
   PencilIcon,
   ArrowPathIcon,
   ExclamationTriangleIcon,
   ExclamationCircleIcon,
   QuestionMarkCircleIcon,
   ChevronLeftIcon,
-  ChevronRightIcon,
+  ChevronRightIcon
 } from '@heroicons/react/24/outline'
 import { localStorageUtils } from '../../utils/ui/localStorage'
 import { googleMapsLoader } from '../../utils/maps/googleMapsLoader'
@@ -88,183 +86,6 @@ interface RouteManagementProps {
   excelData?: any
 }
 
-// Мемоизированный компонент для заказа
-const OrderItem = memo(({
-  order,
-  isSelected,
-  selectionOrder,
-  onSelect,
-  onMoveUp,
-  onMoveDown,
-  isInRoute,
-  isDark = false
-}: {
-  order: Order
-  isSelected: boolean
-  selectionOrder: number
-  onSelect: (id: string) => void
-  onMoveUp: (id: string) => void
-  onMoveDown: (id: string) => void
-  isInRoute: boolean
-  isDark?: boolean
-}) => {
-  return (
-    <div
-      onClick={() => onSelect(order.id)}
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData('orderId', order.id);
-        e.dataTransfer.effectAllowed = 'move';
-      }}
-      className={clsx(
-        'p-3 rounded-xl border-2 transition-all duration-300 ease-in-out transform relative overflow-hidden',
-        'hover:shadow-lg active:scale-[0.98]',
-        isSelected
-          ? isDark
-            ? 'bg-blue-500/10 border-blue-500 shadow-blue-500/20 cursor-pointer'
-            : 'bg-blue-50 border-blue-500 shadow-blue-500/10 cursor-pointer'
-          : isInRoute
-            ? isDark
-              ? 'bg-gray-800/40 border-gray-700/50 cursor-not-allowed grayscale opacity-60'
-              : 'bg-gray-50 border-gray-100 cursor-not-allowed grayscale opacity-60'
-            : isDark
-              ? 'bg-gray-800/60 border-gray-700 hover:bg-gray-700/80 hover:border-gray-500 cursor-pointer'
-              : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-blue-200 cursor-pointer shadow-sm hover:shadow-md'
-      )}
-    >
-      {/* Aging Background for "Собран" orders (Memoized calculation) */}
-      {order.status === 'Собран' && !isInRoute && !isSelected && (() => {
-        const assembledAt = order.raw?.statusTimings?.assembledAt;
-        if (!assembledAt) return null;
-        const waitMs = Date.now() - new Date(assembledAt).getTime();
-        const waitMin = waitMs / 60000;
-
-        if (waitMin >= 30) return <div className="absolute inset-0 bg-red-500/5 animate-pulse-slow pointer-events-none" />;
-        if (waitMin >= 15) return <div className="absolute inset-0 bg-yellow-500/5 pointer-events-none" />;
-        return null;
-      })()}
-
-      <div className="flex items-start gap-4">
-        {/* Selection Index */}
-        {(isSelected || isInRoute || order.status === 'Собран' || order.status === 'Доставляется' || order.status === 'Исполнен') && (
-          <div className={clsx(
-            'flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-black transition-all',
-            isSelected
-              ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-              : order.status === 'Исполнен'
-                ? 'bg-green-500 text-white'
-                : order.status === 'Доставляется'
-                  ? 'bg-orange-500 text-white'
-                  : order.status === 'Собран'
-                    ? 'bg-blue-500 text-white animate-bounce-slow'
-                    : 'bg-gray-500/20 text-gray-500'
-          )}>
-            {isSelected ? selectionOrder : (
-              order.status === 'Исполнен' ? <CheckCircleIcon className="w-5 h-5" /> :
-                order.status === 'Доставляется' ? <TruckIcon className="w-5 h-5" /> :
-                  order.status === 'Собран' ? <InboxIcon className="w-5 h-5" /> :
-                    <CheckCircleIcon className="w-5 h-5" />
-            )}
-          </div>
-        )}
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2 mb-1">
-            <span className={clsx(
-              'font-extrabold text-base tracking-tight',
-              isDark ? 'text-white' : 'text-gray-900'
-            )}>
-              #{order.orderNumber}
-            </span>
-            <div className="flex items-center gap-1">
-              {isSelected && (
-                <div className="flex items-center bg-blue-100 dark:bg-blue-900/40 rounded-lg p-0.5">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onMoveUp(order.id); }}
-                    disabled={selectionOrder === 1}
-                    className="p-1 hover:bg-blue-200 dark:hover:bg-blue-800 rounded-md transition-colors disabled:opacity-30"
-                  >
-                    <ChevronUpIcon className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onMoveDown(order.id); }}
-                    disabled={selectionOrder === 0}
-                    className="p-1 hover:bg-blue-200 dark:hover:bg-blue-800 rounded-md transition-colors disabled:opacity-30"
-                  >
-                    <ChevronDownIcon className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <p className={clsx(
-            'text-sm leading-snug mb-3 line-clamp-2 font-medium',
-            isDark ? 'text-gray-300' : 'text-gray-600'
-          )}>
-            {order.address}
-          </p>
-
-          <div className="flex flex-wrap gap-1.5 items-center">
-            {order.customerName && (
-              <span className={clsx(
-                'px-2 py-0.5 rounded-md text-[10px] font-medium',
-                isDark ? 'bg-gray-700 text-gray-400' : 'bg-gray-50 text-gray-400'
-              )}>
-                {order.customerName}
-              </span>
-            )}
-            {typeof order.amount === 'number' && (
-              <span className={clsx(
-                'px-2 py-0.5 rounded-md text-[10px] font-bold',
-                isDark ? 'bg-green-500/10 text-green-400' : 'bg-green-50 text-green-600'
-              )}>
-                {order.amount} ₴
-              </span>
-            )}
-            {order.plannedTime && (
-              <span className={clsx(
-                'flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold',
-                isDark ? 'bg-purple-500/10 text-purple-400' : 'bg-purple-50 text-purple-600'
-              )}>
-                <ClockIcon className="w-2.5 h-2.5" />
-                {order.plannedTime}
-              </span>
-            )}
-            {order.paymentMethod && (() => {
-              const b = getPaymentMethodBadgeProps(order.paymentMethod, isDark)
-              return (
-                <span className={clsx('px-2 py-0.5 rounded-md text-[10px] font-bold uppercase', b.bgColorClass, b.textColorClass)}>
-                  {b.text}
-                </span>
-              )
-            })()}
-            {(order as any).geoMeta?.zoneName && (
-              <span className={clsx(
-                'px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-tight flex items-center gap-1',
-                isDark ? 'bg-indigo-500/10 text-indigo-400' : 'bg-indigo-50 text-indigo-600'
-              )}>
-                <MapIcon className="w-2.5 h-2.5" />
-                {(order as any).geoMeta.zoneName}
-              </span>
-            )}
-            {order.status && (
-              <span className={clsx(
-                'px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-tight',
-                order.status === 'Исполнен' ? 'bg-green-500/10 text-green-500' :
-                  order.status === 'Доставляется' ? 'bg-orange-500/10 text-orange-500' :
-                    order.status === 'Собран' ? 'bg-blue-500/10 text-blue-500' :
-                      'bg-gray-500/5 text-gray-500'
-              )}>
-                {order.status}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-    </div >
-  )
-}, areEqual)
 
 const CourierListItem = memo(({
   courierName,
@@ -684,9 +505,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
   // --- Виртуализация с динамической высотой ---
   const availableListRef = useRef<any>(null)
-  const inRouteListRef = useRef<any>(null)
   const availableSizeMap = useRef<Record<string, number>>({})
-  const inRouteSizeMap = useRef<Record<string, number>>({})
   const ROW_GAP = 8 // расстояние между элементами
 
   const setAvailableSize = useCallback((id: string, index: number, size: number) => {
@@ -717,68 +536,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     return all.filter(order => isOrderInExistingRoute(order.id))
   }, [selectedCourier, courierOrders, orderSearchTerm, excelData?.routes])
 
-  const getAvailableSize = useCallback((index: number) => {
-    const order = availableOrders[index]
-    return (order && availableSizeMap.current[order.id]) || 120
-  }, [availableOrders])
 
-  const setInRouteSize = useCallback((id: string, index: number, size: number) => {
-    const next = size + ROW_GAP
-    if (inRouteSizeMap.current[id] !== next) {
-      inRouteSizeMap.current[id] = next
-      inRouteListRef.current?.resetAfterIndex(index)
-    }
-  }, [])
-
-  const getInRouteSize = useCallback((index: number) => {
-    const order = ordersInRoutes[index]
-    return (order && inRouteSizeMap.current[order.id]) || 120
-  }, [ordersInRoutes])
-
-  const MeasuredRow: React.FC<{
-    index: number
-    style: React.CSSProperties
-    order: Order
-    isSelected: boolean
-    selectionOrder: number
-    isInRoute: boolean
-    onSelect: (id: string) => void
-    onMoveUp: (id: string) => void
-    onMoveDown: (id: string) => void
-    setSize: (id: string, index: number, size: number) => void
-  }> = ({ index, style, order, isSelected, selectionOrder, isInRoute, onSelect, onMoveUp, onMoveDown, setSize }) => {
-    const rowRef = useRef<HTMLDivElement>(null)
-
-    useLayoutEffect(() => {
-      if (!rowRef.current) return
-      const el = rowRef.current
-      const measure = () => setSize(order.id, index, el.getBoundingClientRect().height)
-      measure()
-      const ro = new ResizeObserver(measure)
-      ro.observe(el)
-      return () => ro.disconnect()
-    }, [index, order.id, setSize])
-
-    return (
-      <div style={style}>
-        <div ref={rowRef} className="mb-2">
-          <OrderItem
-            key={order.id}
-            order={order}
-            isSelected={isSelected}
-            selectionOrder={selectionOrder}
-            onSelect={onSelect}
-            onMoveUp={onMoveUp}
-            onMoveDown={onMoveDown}
-            isInRoute={isInRoute}
-            isDark={isDark}
-          />
-        </div>
-      </div>
-    )
-  }
-
-  const handleOrderSelect = useCallback((orderId: string) => {
+  const handleOrderSelect = useCallback((orderId: string, _multi?: boolean) => {
     if (!selectedCourier) return
 
     // Проверяем, что заказ не находится уже в маршруте
@@ -2136,33 +1895,20 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                           {availableOrders.length > 0 ? (
                             <div className="animate-in fade-in duration-700">
                               <div style={{ height: 600 }}>
-                                <List
-                                  ref={availableListRef as any}
-                                  height={600}
-                                  itemCount={availableOrders.length}
-                                  itemSize={getAvailableSize}
-                                  width={'100%'}
-                                  className="scrollbar-hide"
-                                >
-                                  {({ index, style }: { index: number; style: React.CSSProperties }) => {
-                                    const order = availableOrders[index]
-                                    const selectionOrder = selectedOrdersOrder.indexOf(order.id) + 1
-                                    return (
-                                      <MeasuredRow
-                                        index={index}
-                                        style={style}
-                                        order={order}
-                                        isSelected={selectedOrders.has(order.id)}
-                                        selectionOrder={selectionOrder}
-                                        onSelect={handleOrderSelect}
-                                        onMoveUp={moveOrderUp}
-                                        onMoveDown={moveOrderDown}
-                                        isInRoute={false}
-                                        setSize={setAvailableSize}
-                                      />
-                                    )
-                                  }}
-                                </List>
+                                <OrderList
+                                  orders={availableOrders}
+                                  isDark={isDark}
+                                  selectedOrders={selectedOrders}
+                                  selectedOrdersOrder={selectedOrdersOrder}
+                                  onSelectOrder={(id, multi) => handleOrderSelect(id, multi)}
+                                  onMoveUp={moveOrderUp}
+                                  onMoveDown={moveOrderDown}
+                                  isInRoute={false}
+                                  listHeight={600}
+                                  // setSize={...} // Add if dynamic height is needed per column
+                                  listRef={availableListRef}
+                                  setSize={setAvailableSize}
+                                />
                               </div>
                             </div>
                           ) : (
@@ -2178,31 +1924,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                 </span>
                               </div>
                               <div style={{ height: 300 }}>
-                                <List
-                                  ref={inRouteListRef as any}
-                                  height={300}
-                                  itemCount={ordersInRoutes.length}
-                                  itemSize={getInRouteSize}
-                                  width={'100%'}
-                                >
-                                  {({ index, style }: { index: number; style: React.CSSProperties }) => {
-                                    const order = ordersInRoutes[index]
-                                    return (
-                                      <MeasuredRow
-                                        index={index}
-                                        style={style}
-                                        order={order}
-                                        isSelected={false}
-                                        selectionOrder={0}
-                                        onSelect={() => { }}
-                                        onMoveUp={() => { }}
-                                        onMoveDown={() => { }}
-                                        isInRoute={true}
-                                        setSize={setInRouteSize}
-                                      />
-                                    )
-                                  }}
-                                </List>
+                                <OrderList
+                                  orders={ordersInRoutes}
+                                  isDark={isDark}
+                                  selectedOrders={new Set()} // No selection in this list
+                                  onSelectOrder={() => { }}
+                                  isInRoute={true}
+                                  listHeight={300}
+                                />
                               </div>
                             </div>
                           )}

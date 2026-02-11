@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { clsx } from 'clsx';
 import { useExcelData } from '../../contexts/ExcelDataContext';
 import { toast } from 'react-hot-toast';
@@ -193,7 +193,7 @@ export function CourierFinancials({
     }, [excelData, courierId, courierName, targetDate]);
 
 
-    const fetchFinancialSummary = async () => {
+    const fetchFinancialSummary = useCallback(async () => {
         setLoading(true);
         setError(null);
 
@@ -225,10 +225,7 @@ export function CourierFinancials({
             const token = localStorage.getItem('km_access_token');
             const sanitizedToken = token ? token.trim() : '';
 
-            // If we are here, it means we don't have local data. 
-            // If we also don't have a token, we can't fetch from API.
             if (!sanitizedToken) {
-                // Instead of error, show empty state or "No Data" if we really can't load anything
                 throw new Error('Нет данных (локальных или токена)');
             }
 
@@ -243,7 +240,6 @@ export function CourierFinancials({
             }
 
             const data = await response.json();
-            // Guard against missing properties that might cause .query or other undefined errors
             if (data && typeof data === 'object') {
                 setSummary(data);
             } else {
@@ -256,7 +252,6 @@ export function CourierFinancials({
             if (err instanceof Error) {
                 if (err.name === 'DOMException' || err.message.includes('string did not match the expected pattern')) {
                     errorMessage = 'Invalid authentication token. Please log in again.';
-                    // Optional: redirect to login or clear token
                 } else if (err.message === 'Нет данных (локальных или токена)') {
                     errorMessage = 'Данные не найдены. Загрузите Excel файл или войдите в систему.';
                 } else {
@@ -268,14 +263,9 @@ export function CourierFinancials({
         } finally {
             setLoading(false);
         }
-    };
+    }, [courierId, divisionId, targetDate, excelData, localSummary]);
 
-    useEffect(() => {
-        fetchFinancialSummary();
-        fetchDebtSummary();
-    }, [courierId, divisionId, targetDate]);
-
-    const fetchDebtSummary = async () => {
+    const fetchDebtSummary = useCallback(async () => {
         try {
             const token = localStorage.getItem('km_access_token');
             const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/settlements/statistics-summary?divisionId=${divisionId}`, {
@@ -283,13 +273,34 @@ export function CourierFinancials({
             });
             if (!response.ok) throw new Error('Failed to fetch debt summary');
             const result = await response.json();
-            // Find current courier in the summary
             const courierData = result.data.find((d: any) => String(d.courierId) === String(courierId));
             setDebtSummary(courierData || null);
         } catch (err) {
             console.error('Error fetching debt summary:', err);
         }
-    };
+    }, [courierId, divisionId]);
+
+    useEffect(() => {
+        fetchFinancialSummary();
+        fetchDebtSummary();
+    }, [fetchFinancialSummary, fetchDebtSummary]);
+
+    // Memoize the active orders list to prevent recalculation on every render
+    const activeOrders = useMemo(() => {
+        if (!summary) return [];
+        const { currentShift, historyOrders } = summary;
+
+        switch (activeTab) {
+            case 'cash':
+                return currentShift.cashOrders.orders;
+            case 'online':
+                return currentShift.onlineOrders.orders;
+            case 'history':
+                return historyOrders;
+            default:
+                return [];
+        }
+    }, [summary, activeTab]);
 
 
     const handleSwitchPaymentMethod = async (orderNumber: string, currentMethod: string) => {
@@ -627,7 +638,7 @@ export function CourierFinancials({
                 </div>
 
                 <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                    {(activeTab === 'cash' ? currentShift.cashOrders.orders : activeTab === 'online' ? currentShift.onlineOrders.orders : summary.historyOrders).map((order, idx) => (
+                    {activeOrders.map((order, idx) => (
                         <div
                             key={order.id || idx}
                             className={clsx(
