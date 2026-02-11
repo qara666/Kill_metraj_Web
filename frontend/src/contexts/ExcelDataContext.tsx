@@ -17,6 +17,7 @@ interface ExcelDataContextType {
   updateExcelData: (dataOrUpdater: ExcelData | ((prev: ExcelData) => ExcelData)) => void
   clearExcelData: () => void
   updateRouteData: (routes: any[]) => void
+  updateOrderPaymentMethod: (orderNumber: string, newPaymentMethod: string) => void
 }
 
 const ExcelDataContext = createContext<ExcelDataContextType | undefined>(undefined)
@@ -213,13 +214,28 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     })
   }, [])
 
+  const updateOrderPaymentMethod = useCallback((orderNumber: string, newPaymentMethod: string) => {
+    console.log(`🔄 Updating payment method for order ${orderNumber} to ${newPaymentMethod}`);
+    updateExcelData(prev => {
+      const updatedOrders = prev.orders.map(order => {
+        if (order.orderNumber === orderNumber) {
+          return { ...order, paymentMethod: newPaymentMethod };
+        }
+        return order;
+      });
+      return { ...prev, orders: updatedOrders };
+    });
+    toast.success(`Способ оплаты изменен на ${newPaymentMethod}`, { duration: 2000 });
+  }, [updateExcelData])
+
   const contextValue = useMemo(() => ({
     excelData,
     setExcelData,
     updateExcelData,
     clearExcelData,
-    updateRouteData
-  }), [excelData, setExcelData, updateExcelData, clearExcelData, updateRouteData]);
+    updateRouteData,
+    updateOrderPaymentMethod
+  }), [excelData, setExcelData, updateExcelData, clearExcelData, updateRouteData, updateOrderPaymentMethod]);
 
   // Handle unsaved changes on refresh/close
   useEffect(() => {

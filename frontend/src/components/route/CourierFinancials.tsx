@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { clsx } from 'clsx';
 import { useExcelData } from '../../contexts/ExcelDataContext';
+import { toast } from 'react-hot-toast';
 import {
     BanknotesIcon,
     GlobeAltIcon,
@@ -76,7 +77,7 @@ export function CourierFinancials({
     const [debtSummary, setDebtSummary] = useState<any>(null);
     const [showDebts, setShowDebts] = useState(false);
 
-    const { excelData } = useExcelData();
+    const { excelData, updateOrderPaymentMethod } = useExcelData();
 
     // Helper to calculate financials locally from Excel data
     const calculateLocalFinancials = (): FinancialSummary | null => {
@@ -297,53 +298,14 @@ export function CourierFinancials({
 
         setSwitchingOrderId(orderNumber);
         try {
-            const token = localStorage.getItem('km_access_token');
-            const options = {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token ? token.trim() : ''}`
-                },
-                body: JSON.stringify({ paymentMethod: newMethod })
-            };
+            // Use client-side update instead of backend API
+            updateOrderPaymentMethod(orderNumber, newMethod);
 
-            let response;
-            try {
-                // Try several common endpoint patterns before giving up
-                const paths = [
-                    `/api/v1/orders/${orderNumber}/payment-method`,
-                    `/api/v1/orders/${orderNumber}/payment`,
-                    `/api/orders/${orderNumber}/payment-method`,
-                    `/api/orders/payment-method/${orderNumber}`
-                ];
-
-                for (const path of paths) {
-                    try {
-                        const fullUrl = `${import.meta.env.VITE_API_URL || ''}${path}`;
-                        response = await fetch(fullUrl, { ...options, method: 'PUT' });
-                        if (response.ok) break;
-
-                        // Try POST if PUT fails with 405 or 404
-                        if (response.status === 405 || response.status === 404) {
-                            response = await fetch(fullUrl, { ...options, method: 'POST' });
-                            if (response.ok) break;
-                        }
-                    } catch (e) {
-                        console.warn(`Path ${path} failed:`, e);
-                    }
-                }
-            } catch (e) {
-                console.warn('All payment switch strategies failed', e);
-            }
-
-            if (!response || !response.ok) {
-                throw new Error(`Server returned ${response?.status || 'no response'}`);
-            }
-
-            // Refresh data
+            // Refresh financial summary to reflect the change
             await fetchFinancialSummary();
         } catch (err) {
             console.error('Error switching payment method:', err);
-            alert('Ошибка при смене способа оплаты: ' + (err instanceof Error ? err.message : 'Unknown error'));
+            toast.error('Ошибка при смене способа оплаты');
         } finally {
             setSwitchingOrderId(null);
         }
