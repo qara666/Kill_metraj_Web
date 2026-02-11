@@ -127,3 +127,49 @@
     transform: translateX(100%);
   }
 }
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  /* Hide sidebar and navigation if they have specific classes or tags */
+  nav,
+  aside,
+  header {
+    display: none !important;
+  }
+
+  body {
+    background: white;
+    color: black;
+  }
+
+  #root,
+  .app-container,
+  main {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: none !important;
+    overflow: visible !important;
+  }
+
+  .card,
+  .glass-panel,
+  .premium-card {
+    box-shadow: none !important;
+    border: 1px solid #ddd !important;
+    background: white !important;
+    break-inside: avoid;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  ::-webkit-scrollbar {
+    display: none;
+  }
+}
