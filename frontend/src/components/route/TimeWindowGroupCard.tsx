@@ -216,7 +216,8 @@ export function TimeWindowGroupCard({
                                     key={order.id || idx}
                                     draggable
                                     onDragStart={(e) => {
-                                        e.dataTransfer.setData('orderId', order.id);
+                                        const orderId = order.id || (order.orderNumber ? String(order.orderNumber) : '');
+                                        e.dataTransfer.setData('orderId', orderId);
                                         e.dataTransfer.effectAllowed = 'move';
                                     }}
                                     className={clsx(
