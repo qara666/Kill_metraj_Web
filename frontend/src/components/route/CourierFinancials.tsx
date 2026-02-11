@@ -74,10 +74,8 @@ export function CourierFinancials({
     const [showSettlementModal, setShowSettlementModal] = useState(false);
     const [activeTab, setActiveTab] = useState<'cash' | 'online'>('cash');
     const [switchingOrderId, setSwitchingOrderId] = useState<string | null>(null);
-    const [debtSummary, setDebtSummary] = useState<any>(null);
-    const [showDebts, setShowDebts] = useState(false);
 
-    const { excelData, updateOrderPaymentMethod } = useExcelData();
+    const { excelData, updateOrderPaymentMethod, updateExcelData } = useExcelData();
 
     // Helper to calculate financials locally from Excel data
     const calculateLocalFinancials = (): FinancialSummary | null => {
@@ -274,24 +272,8 @@ export function CourierFinancials({
 
     useEffect(() => {
         fetchFinancialSummary();
-        fetchDebtSummary();
     }, [courierId, divisionId, targetDate]);
 
-    const fetchDebtSummary = async () => {
-        try {
-            const token = localStorage.getItem('km_access_token');
-            const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/settlements/statistics-summary?divisionId=${divisionId}`, {
-                headers: { 'Authorization': `Bearer ${token ? token.trim() : ''}` }
-            });
-            if (!response.ok) throw new Error('Failed to fetch debt summary');
-            const result = await response.json();
-            // Find current courier in the summary
-            const courierData = result.data.find((d: any) => String(d.courierId) === String(courierId));
-            setDebtSummary(courierData || null);
-        } catch (err) {
-            console.error('Error fetching debt summary:', err);
-        }
-    };
 
     const handleSwitchPaymentMethod = async (orderNumber: string, currentMethod: string) => {
         const newMethod = currentMethod.toLowerCase().includes('налич') || currentMethod.toLowerCase().includes('cash') ? 'Онлайн' : 'Наличные';
@@ -510,68 +492,6 @@ export function CourierFinancials({
                 </div>
             </div>
 
-            {/* Debts & Overages Section */}
-            {debtSummary && (
-                <div className={clsx(
-                    'p-6 rounded-3xl border transition-all hover:shadow-lg glass-panel relative overflow-hidden',
-                    isDark ? 'shadow-black/20' : 'shadow-gray-200'
-                )}>
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                            <div className={clsx(
-                                'p-2 rounded-xl',
-                                debtSummary.totalDifference > 0 ? 'bg-red-500/10 text-red-500' : 'bg-green-500/10 text-green-500'
-                            )}>
-                                <BanknotesIcon className="w-5 h-5" />
-                            </div>
-                            <h3 className={clsx('text-lg font-bold', isDark ? 'text-gray-200' : 'text-gray-800')}>
-                                Состояние счета
-                            </h3>
-                        </div>
-                        <div className={clsx(
-                            'text-xl font-black',
-                            debtSummary.totalDifference > 0 ? 'text-red-500' : 'text-green-500'
-                        )}>
-                            {debtSummary.totalDifference > 0 ? '-' : '+'}{formatCurrency(Math.abs(debtSummary.totalDifference))}
-                        </div>
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <p className={clsx('text-xs font-bold opacity-60', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                            {debtSummary.totalDifference > 0 ? 'Общая задолженность' : 'Переплата (баланс)'}
-                        </p>
-                        <button
-                            onClick={() => setShowDebts(!showDebts)}
-                            className="text-xs font-bold text-blue-500 hover:underline"
-                        >
-                            {showDebts ? 'Скрыть детали' : 'Подробнее'}
-                        </button>
-                    </div>
-
-                    {showDebts && (
-                        <div className="mt-6 space-y-4 animate-in slide-in-from-top-2 duration-300">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="p-3 rounded-2xl bg-black/5 dark:bg-white/5">
-                                    <p className="text-[10px] uppercase font-bold opacity-40 mb-1">Сдано всего</p>
-                                    <p className="font-black">{formatCurrency(debtSummary.totalReceived)}</p>
-                                </div>
-                                <div className="p-3 rounded-2xl bg-black/5 dark:bg-white/5">
-                                    <p className="text-[10px] uppercase font-bold opacity-40 mb-1">Ожидалось</p>
-                                    <p className="font-black">{formatCurrency(debtSummary.totalExpected)}</p>
-                                </div>
-                            </div>
-                            {debtSummary.allNotes && (
-                                <div className="p-4 rounded-2xl bg-yellow-500/5 border border-yellow-500/20">
-                                    <p className="text-[10px] uppercase font-bold opacity-40 mb-2">История заметок</p>
-                                    <p className="text-xs leading-relaxed opacity-70 italic">
-                                        {debtSummary.allNotes.split(' | ').slice(-3).join(' • ')}
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-            )}
-
             {/* Orders List */}
             <div className={clsx(
                 'p-6 rounded-3xl border transition-all hover:shadow-lg glass-panel',
@@ -720,6 +640,9 @@ export function CourierFinancials({
                             setShowSettlementModal(false);
                             fetchFinancialSummary();
                         }}
+                        updateExcelData={updateExcelData}
+                        setShowSettlementModal={setShowSettlementModal}
+                        fetchFinancialSummary={fetchFinancialSummary}
                     />
                 )
             }
@@ -817,7 +740,10 @@ function SettlementModal({
     targetDate,
     isDark,
     onClose,
-    onSuccess
+    onSuccess,
+    updateExcelData,
+    setShowSettlementModal,
+    fetchFinancialSummary
 }: any) {
     const [notes, setNotes] = React.useState('');
     const [loading, setLoading] = React.useState(false);
@@ -887,45 +813,31 @@ function SettlementModal({
         }
 
         try {
-            const userStr = localStorage.getItem('user');
-            const user = userStr ? JSON.parse(userStr) : null;
-            const settledBy = user?.name || user?.email || 'Admin';
-            const token = localStorage.getItem('km_access_token');
-            const encodedCourierId = encodeURIComponent(courierId || '');
+            // Client-side settlement: mark selected orders as settled
+            const selectedOrders = Array.from(selectedOrderIds);
 
-            if (!encodedCourierId) throw new Error('Courier ID is missing');
-
-            const payload = {
-                cashReceived,
-                notes,
-                settledBy,
-                divisionId,
-                targetDate,
-                paidOrderIds: Array.from(selectedOrderIds),
-                // Send individual amounts if backend supports it, or just use them for local sum
-                orderOverrides: orderAmounts
-            };
-
-            const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/couriers/${encodedCourierId}/settle`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token ? token.trim() : ''}`
-                },
-                body: JSON.stringify(payload)
-            });
-
-            if (!response.ok) {
-                let errorData;
-                try {
-                    errorData = await response.json();
-                } catch (e) {
-                    errorData = { message: `Ошибка сервера (${response.status})` };
-                }
-                throw new Error(errorData.message || 'Ошибка при сохранении расчета');
+            if (selectedOrders.length === 0) {
+                throw new Error('Выберите хотя бы один заказ');
             }
 
-            if (onSuccess) onSuccess();
+            // Update order statuses to 'Исполнен' (completed)
+            updateExcelData(prev => {
+                const updatedOrders = prev.orders.map(order => {
+                    if (selectedOrders.includes(order.orderNumber)) {
+                        return { ...order, status: 'Исполнен' };
+                    }
+                    return order;
+                });
+                return { ...prev, orders: updatedOrders };
+            });
+
+            // Show success message
+            toast.success(`Расчет выполнен! Получено: ${formatCurrency(cashReceived)}`, { duration: 3000 });
+
+            // Close modal and refresh
+            setShowSettlementModal(false);
+            await fetchFinancialSummary();
+
         } catch (err: any) {
             console.error('Settlement error:', err);
             setError(err.message || 'Произошла непредвиденная ошибка');
