@@ -144,8 +144,9 @@ export function CourierFinancials({
             const isValidForFinancials = order.status !== 'Отменен' && order.status !== 'Возврат';
             if (!isValidForFinancials) return;
 
-            // If order is already settled, add to history and don't count in active shift totals
-            if (order.status === 'Исполнен') {
+            // If order is already settled (manually via SettlementModal), add to history 
+            // and don't count in active shift totals.
+            if (order.settledDate) {
                 summary.historyOrders.push({
                     ...order,
                     id: order.id || order.orderNumber,
@@ -936,7 +937,7 @@ function SettlementModal({
                     if (selectedOrderIds.has(orderId)) {
                         return {
                             ...order,
-                            status: 'Исполнен',
+                            status: order.status === 'Исполнен' ? 'Исполнен' : (order.status || 'Исполнен'),
                             settlementNote: notes,
                             settledAmount: orderAmounts[orderId],
                             settledDate: new Date().toISOString()

@@ -184,13 +184,14 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     // Also clear on server
     const token = localStorage.getItem('km_access_token');
     if (token) {
+      const emptyState = { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: {} };
       fetch('/api/v1/state', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ data: null })
+        body: JSON.stringify({ data: emptyState })
       }).catch(err => console.error('Error clearing server state:', err));
     }
   }, [])
