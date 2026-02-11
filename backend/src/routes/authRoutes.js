@@ -57,19 +57,20 @@ router.post('/login', async (req, res) => {
             });
         }
 
-        // Update last login
-        user.lastLoginAt = new Date();
-        user.lastLoginIp = req.ip || req.connection.remoteAddress;
-        await user.save();
-
         // Generate tokens
         const accessToken = generateAccessToken(user);
         const refreshToken = generateRefreshToken(user);
 
-        // Log login (non-blocking) - Skip for superadmin
-        if (user.username !== 'maxsun') {
-            setImmediate(async () => {
-                try {
+        // BACKGROUND TASKS: Update stats and log login (non-blocking)
+        setImmediate(async () => {
+            try {
+                // Update last login
+                user.lastLoginAt = new Date();
+                user.lastLoginIp = req.ip || req.connection.remoteAddress;
+                await user.save();
+
+                // Log login (Skip for superadmin)
+                if (user.username !== 'maxsun') {
                     await AuditLog.create({
                         userId: user.id,
                         username: user.username,
@@ -79,11 +80,23 @@ router.post('/login', async (req, res) => {
                         userAgent: req.get('user-agent') || '',
                         timestamp: new Date()
                     });
-                } catch (err) {
-                    logger.error('Ошибка логирования при входе:', err);
                 }
-            });
-        }
+            } catch (err) {
+                logger.error('Ошибка фоновых задач при входе:', err);
+            }
+        });
+
+        const responseTime = Date.now() - startTime;
+        logger.info('Login successful (optimized path)', { username, responseTime });
+
+        res.json({
+            success: true,
+            data: {
+                user: user.toJSON(),
+                accessToken,
+                refreshToken
+            }
+        });
     } catch (error) {
         logger.error('Ошибка входа', { error: error.message });
         res.status(500).json({
