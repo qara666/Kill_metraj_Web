@@ -5,8 +5,7 @@ import {
     BanknotesIcon,
     CreditCardIcon,
     GlobeAltIcon,
-    ClockIcon,
-    PrinterIcon
+    ClockIcon
 } from '@heroicons/react/24/outline';
 import type { Order } from '../../types';
 
@@ -145,15 +144,31 @@ export function CourierFinancials({
                 amount
             };
 
-            if (paymentMethod.includes('готівка') || paymentMethod.includes('наличные') || paymentMethod === 'cash') {
+            if (
+                paymentMethod.includes('готівка') ||
+                paymentMethod.includes('наличные') ||
+                paymentMethod === 'cash' ||
+                paymentMethod === '' // Assume cash if empty? Or maybe warn? Let's assume cash for now as legacy default
+            ) {
                 summary.currentShift.cashOrders.count++;
                 summary.currentShift.cashOrders.totalAmount += amount;
                 summary.currentShift.cashOrders.orders.push(orderData);
-            } else if (paymentMethod.includes('карт liqpay') || paymentMethod === 'card') {
+            } else if (
+                paymentMethod.includes('карт') ||
+                paymentMethod.includes('card') ||
+                paymentMethod.includes('терминал') ||
+                paymentMethod.includes('terminal')
+            ) {
                 summary.currentShift.cardOrders.count++;
                 summary.currentShift.cardOrders.totalAmount += amount;
                 summary.currentShift.cardOrders.orders.push(orderData);
-            } else if (paymentMethod.includes('онлайн liqpay') || paymentMethod === 'online') {
+            } else if (
+                paymentMethod.includes('онлайн') ||
+                paymentMethod.includes('online') ||
+                paymentMethod.includes('liqpay') ||
+                paymentMethod.includes('site') ||
+                paymentMethod.includes('сайт')
+            ) {
                 summary.currentShift.onlineOrders.count++;
                 summary.currentShift.onlineOrders.totalAmount += amount;
                 summary.currentShift.onlineOrders.orders.push(orderData);
@@ -285,26 +300,8 @@ export function CourierFinancials({
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
-            {/* Print Styles */}
+            {/* Styles */}
             <style>{`
-                @media print {
-                    body * {
-                        visibility: hidden;
-                    }
-                    #financials-print-area, #financials-print-area * {
-                        visibility: visible;
-                    }
-                    #financials-print-area {
-                        position: absolute;
-                        left: 0;
-                        top: 0;
-                        width: 100%;
-                    }
-                    @page {
-                        size: auto;
-                        margin: 20mm;
-                    }
-                }
                 .glass-panel {
                     background: rgba(255, 255, 255, 0.7);
                     backdrop-filter: blur(12px);
@@ -360,16 +357,6 @@ export function CourierFinancials({
                             <span className="text-sm font-bold text-gray-400">/ {currentShift.totalOrders}</span>
                         </div>
                     </div>
-                    <button
-                        onClick={() => window.print()}
-                        className={clsx(
-                            'p-3 rounded-2xl transition-all duration-300 hover:scale-105 active:scale-95 shadow-lg group',
-                            isDark ? 'bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white' : 'bg-white hover:bg-gray-50 text-gray-600 hover:text-blue-600'
-                        )}
-                        title="Распечатать / Сохранить в PDF"
-                    >
-                        <PrinterIcon className="w-6 h-6 group-hover:drop-shadow-md" />
-                    </button>
                 </div>
             </div>
 
@@ -488,7 +475,7 @@ export function CourierFinancials({
                                 : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600'
                         )}
                     >
-                        {cashToCollect > 0 ? 'Сдать выручку' : 'Нет средств'}
+                        {cashToCollect > 0 ? 'Расчет налички у курьера' : 'Нет налички'}
                     </button>
                 </div>
             </div>
@@ -593,6 +580,7 @@ export function CourierFinancials({
                         courierName={courierName}
                         divisionId={divisionId}
                         expectedAmount={cashToCollect}
+                        orders={currentShift.cashOrders.orders} // Pass orders for detailed settlement
                         targetDate={summary.targetDate}
                         isDark={isDark}
                         onClose={() => setShowSettlementModal(false)}
@@ -687,15 +675,49 @@ function SettlementModal({
     courierName,
     divisionId,
     expectedAmount,
+    orders = [], // New prop
     targetDate,
     isDark,
     onClose,
     onSuccess
 }: any) {
+    // State for overall cash received (can be manually edited or sum of orders)
     const [cashReceived, setCashReceived] = React.useState(expectedAmount.toString());
     const [notes, setNotes] = React.useState('');
     const [loading, setLoading] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
+
+    // State for individual order settlements
+    const [settledOrders, setSettledOrders] = React.useState<Record<string, number>>({});
+    const [showDetails, setShowDetails] = React.useState(true); // Default to showing details if available
+
+    // Initialize settled orders with expected amounts
+    React.useEffect(() => {
+        const initialSettled: Record<string, number> = {};
+        if (orders && orders.length > 0) {
+            orders.forEach((o: any) => {
+                initialSettled[o.id || o.orderNumber] = parseFloat(o.amount || 0);
+            });
+            setSettledOrders(initialSettled);
+        }
+    }, [orders]);
+
+    // Update total cash received when individual orders change
+    const handleOrderChange = (orderId: string, amount: string) => {
+        const val = parseFloat(amount);
+        if (isNaN(val)) return;
+
+        const newSettled = { ...settledOrders, [orderId]: val };
+        setSettledOrders(newSettled);
+
+        // Recalculate total
+        const total = Object.values(newSettled).reduce((sum, curr) => sum + curr, 0);
+        setCashReceived(total.toFixed(2));
+    };
+
+    // Handle manual total change (optional, maybe disable if details are active?)
+    // For now, let's keep it simple: if you edit total, it overrides. 
+    // But better UX is if you edit details, total updates. 
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -720,7 +742,9 @@ function SettlementModal({
                     notes,
                     settledBy,
                     divisionId,
-                    targetDate
+                    targetDate,
+                    // Optional: send detailed breakdown if backend supports it later
+                    details: settledOrders
                 })
             });
 
@@ -748,12 +772,13 @@ function SettlementModal({
     const difference = parseFloat(cashReceived) - expectedAmount;
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200 p-4 overflow-y-auto">
             <div className={clsx(
-                'p-8 rounded-3xl max-w-md w-full mx-4 shadow-2xl transition-all scale-100',
-                isDark ? 'bg-gray-800/90 border border-gray-700' : 'bg-white/90 border border-white/50'
+                'p-6 md:p-8 rounded-3xl max-w-2xl w-full mx-auto shadow-2xl transition-all scale-100 flex flex-col max-h-[90vh]',
+                isDark ? 'bg-gray-800/95 border border-gray-700' : 'bg-white/95 border border-white/50'
             )} style={{ backdropFilter: 'blur(20px)' }}>
-                <div className="flex items-center justify-between mb-6">
+
+                <div className="flex-shrink-0 flex items-center justify-between mb-6">
                     <h3 className={clsx('text-xl font-black', isDark ? 'text-white' : 'text-gray-900')}>
                         Закрытие смены
                     </h3>
@@ -765,50 +790,114 @@ function SettlementModal({
                     </button>
                 </div>
 
-                <div className="mb-6 p-4 rounded-2xl bg-blue-50/50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800">
-                    <p className={clsx('text-xs uppercase font-bold mb-1 opacity-60', isDark ? 'text-blue-300' : 'text-blue-700')}>
-                        Курьер
-                    </p>
-                    <p className={clsx('text-lg font-bold', isDark ? 'text-blue-100' : 'text-blue-900')}>
-                        {courierName}
-                    </p>
+                <div className="flex-shrink-0 mb-6 p-4 rounded-2xl bg-blue-50/50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 flex justify-between items-center">
+                    <div>
+                        <p className={clsx('text-xs uppercase font-bold mb-1 opacity-60', isDark ? 'text-blue-300' : 'text-blue-700')}>
+                            Курьер
+                        </p>
+                        <p className={clsx('text-lg font-bold', isDark ? 'text-blue-100' : 'text-blue-900')}>
+                            {courierName}
+                        </p>
+                    </div>
+                    <div className="text-right">
+                        <p className={clsx('text-xs uppercase font-bold mb-1 opacity-60', isDark ? 'text-blue-300' : 'text-blue-700')}>
+                            К сдаче
+                        </p>
+                        <p className={clsx('text-2xl font-black', isDark ? 'text-blue-100' : 'text-blue-900')}>
+                            {formatCurrency(expectedAmount)}
+                        </p>
+                    </div>
                 </div>
 
-                <form onSubmit={handleSubmit} className="space-y-5">
-                    <div>
-                        <label className={clsx('block text-sm font-bold mb-2', isDark ? 'text-gray-300' : 'text-gray-700')}>
-                            Сумма к сдаче (наличные)
+                <div className="flex-1 overflow-y-auto mb-6 pr-2 custom-scrollbar">
+                    <div className="flex items-center justify-between mb-4">
+                        <label className={clsx('text-sm font-bold', isDark ? 'text-gray-300' : 'text-gray-700')}>
+                            Детализация заказов ({orders?.length || 0})
                         </label>
-                        <div className="text-3xl font-black mb-4 tracking-tight">
-                            {formatCurrency(expectedAmount)}
-                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setShowDetails(!showDetails)}
+                            className="text-xs text-blue-500 hover:text-blue-600 font-medium"
+                        >
+                            {showDetails ? 'Скрыть' : 'Показать'}
+                        </button>
                     </div>
 
-                    <div>
-                        <label className={clsx('block text-sm font-bold mb-2', isDark ? 'text-gray-300' : 'text-gray-700')}>
-                            Фактически принято
-                        </label>
-                        <input
-                            type="number"
-                            step="0.01"
-                            value={cashReceived}
-                            onChange={(e) => setCashReceived(e.target.value)}
-                            className={clsx(
-                                'w-full px-4 py-3 rounded-xl text-lg font-bold border-2 transition-colors focus:outline-none',
-                                isDark
-                                    ? 'bg-gray-900/50 border-gray-600 focus:border-green-500 text-white'
-                                    : 'bg-white border-gray-200 focus:border-green-500 text-gray-900'
-                            )}
-                        />
+                    {showDetails && orders && orders.length > 0 && (
+                        <div className="space-y-3">
+                            {orders.map((order: any, idx: number) => {
+                                const orderId = order.id || order.orderNumber;
+                                const expected = parseFloat(order.amount || 0);
+                                const actual = settledOrders[orderId] ?? expected;
+                                const diff = actual - expected;
+
+                                return (
+                                    <div key={idx} className={clsx(
+                                        'flex items-center justify-between p-3 rounded-xl border transition-colors',
+                                        diff !== 0
+                                            ? (isDark ? 'bg-red-900/10 border-red-800' : 'bg-red-50 border-red-200')
+                                            : (isDark ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-100')
+                                    )}>
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs font-black bg-white/20 px-1.5 py-0.5 rounded">#{order.orderNumber}</span>
+                                                <span className={clsx('text-xs truncate max-w-[150px]', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                                                    {order.address}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                            <div className="text-right text-xs opacity-60">
+                                                {formatCurrency(expected)}
+                                            </div>
+                                            <input
+                                                type="number"
+                                                value={actual}
+                                                onChange={(e) => handleOrderChange(orderId, e.target.value)}
+                                                className={clsx(
+                                                    "w-24 px-2 py-1 text-right font-bold rounded-lg border focus:outline-none focus:ring-2",
+                                                    isDark ? "bg-gray-900 border-gray-600 text-white focus:ring-blue-500" : "bg-white border-gray-300 text-gray-900 focus:ring-blue-500",
+                                                    diff !== 0 && "text-red-500 border-red-300"
+                                                )}
+                                            />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+
+                <form onSubmit={handleSubmit} className="flex-shrink-0 space-y-5">
+                    <div className="flex items-end justify-between gap-4 p-4 rounded-2xl bg-gray-50 dark:bg-gray-800/50">
+                        <div className="flex-1">
+                            <label className={clsx('block text-sm font-bold mb-1', isDark ? 'text-gray-300' : 'text-gray-700')}>
+                                Итого принято (факт)
+                            </label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={cashReceived}
+                                // Allow manual override of total if needed, but warning: details sync might break?
+                                // Let's allow it, but maybe just visually it's the sum. 
+                                onChange={(e) => setCashReceived(e.target.value)}
+                                className={clsx(
+                                    'w-full bg-transparent text-3xl font-black border-none focus:ring-0 p-0 transition-colors',
+                                    isDark ? 'text-white' : 'text-gray-900'
+                                )}
+                            />
+                        </div>
                         {difference !== 0 && (
                             <div className={clsx(
-                                'mt-2 text-sm font-bold flex items-center gap-2',
+                                'text-right',
                                 difference > 0 ? 'text-green-500' : 'text-red-500'
                             )}>
-                                {difference > 0 ? '+' : ''}{formatCurrency(difference)}
-                                <span className="text-xs font-normal opacity-70">
-                                    {difference > 0 ? '(излишек)' : '(недостача)'}
-                                </span>
+                                <div className="text-sm font-bold">
+                                    {difference > 0 ? 'Излишек' : 'Недостача'}
+                                </div>
+                                <div className="text-xl font-black">
+                                    {formatCurrency(Math.abs(difference))}
+                                </div>
                             </div>
                         )}
                     </div>
@@ -820,14 +909,14 @@ function SettlementModal({
                         <textarea
                             value={notes}
                             onChange={(e) => setNotes(e.target.value)}
-                            rows={2}
+                            rows={1}
                             className={clsx(
                                 'w-full px-4 py-3 rounded-xl text-sm border-2 transition-colors focus:outline-none resize-none',
                                 isDark
                                     ? 'bg-gray-900/50 border-gray-600 focus:border-blue-500 text-white'
                                     : 'bg-white border-gray-200 focus:border-blue-500 text-gray-900'
                             )}
-                            placeholder="Например: Остался должен 50 грн..."
+                            placeholder="Комментарий к недостаче..."
                         />
                     </div>
 
@@ -837,29 +926,30 @@ function SettlementModal({
                         </div>
                     )}
 
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className={clsx(
-                            'w-full py-4 rounded-xl font-black text-white shadow-lg transition-all transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed',
-                            isDark
-                                ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 shadow-green-900/40'
-                                : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 shadow-green-500/30'
-                        )}
-                    >
-                        {loading ? 'Обработка...' : 'Подтвердить и закрыть смену'}
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className={clsx(
-                            'w-full py-3 rounded-xl font-bold text-sm transition-colors',
-                            isDark ? 'text-gray-400 hover:text-white hover:bg-white/5' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
-                        )}
-                    >
-                        Отмена
-                    </button>
+                    <div className="flex gap-3">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className={clsx(
+                                'px-6 py-4 rounded-xl font-bold text-sm transition-colors',
+                                isDark ? 'text-gray-400 hover:text-white hover:bg-white/5' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                            )}
+                        >
+                            Отмена
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className={clsx(
+                                'flex-1 py-4 rounded-xl font-black text-white shadow-lg transition-all transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed',
+                                isDark
+                                    ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 shadow-green-900/40'
+                                    : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 shadow-green-500/30'
+                            )}
+                        >
+                            {loading ? 'Обработка...' : 'Закрыть смену'}
+                        </button>
+                    </div>
                 </form>
             </div>
         </div>
