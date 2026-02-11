@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { useExcelData } from '../../contexts/ExcelDataContext';
 import { toast } from 'react-hot-toast';
@@ -81,22 +81,17 @@ export function CourierFinancials({
     const { excelData, updateOrderPaymentMethod, updateExcelData } = useExcelData();
 
     // Helper to calculate financials locally from Excel data
-    const calculateLocalFinancials = (): FinancialSummary | null => {
+    // Memoized result to avoid re-calculating on every UI ripple
+    const localSummary = useMemo((): FinancialSummary | null => {
         if (!excelData?.orders) return null;
 
         const courierOrders = excelData.orders.filter((o: any) => {
             const c = o.courier;
-            // Handle various courier formats (string ID/Name or object)
             const cId = typeof c === 'object' ? (c.id || c._id || c.name) : c;
-            // We compare loosely or strictly depending on your data. 
-            // Often courierId prop is the Name or ID.
             return String(cId) === String(courierId) || String(o.courierName) === String(courierId);
         });
 
         if (courierOrders.length === 0 && !excelData.couriers.find((c: any) => c.name === courierName)) {
-            // Maybe courier exists but has no orders?
-            // If courier not found in excelData at all, return null to try API?
-            // But if we are in "offline/local" mode, we should just show empty state.
             return {
                 courierId,
                 courierName,
@@ -114,13 +109,12 @@ export function CourierFinancials({
             };
         }
 
-        // Initialize Summary
         const summary: FinancialSummary = {
             courierId,
             courierName,
             targetDate: targetDate || new Date().toISOString().split('T')[0],
             currentShift: {
-                startTime: new Date().toISOString(), // We might not have shift start in excel, use current/default
+                startTime: new Date().toISOString(),
                 totalOrders: courierOrders.length,
                 completedOrders: courierOrders.filter((o: any) =>
                     o.status === 'Исполнен' || o.status === 'Доставлен'
@@ -133,19 +127,10 @@ export function CourierFinancials({
             historyOrders: []
         };
 
-        // Categorize Orders
         courierOrders.forEach((order: any) => {
-            // Only count completed orders for financials? 
-            // Usually financials are for ALL orders or just completed? 
-            // Validating against backend logic: "completedOrders" is separate count.
-            // But "cashOrders" usually implies money to Collect. 
-            // If order is CANCELED, we don't collect money.
-            // Let's assume we filter by Valid Statuses for money collection.
             const isValidForFinancials = order.status !== 'Отменен' && order.status !== 'Возврат';
             if (!isValidForFinancials) return;
 
-            // If order is already settled (manually via SettlementModal), add to history 
-            // and don't count in active shift totals.
             if (order.settledDate) {
                 summary.historyOrders.push({
                     ...order,
@@ -156,22 +141,26 @@ export function CourierFinancials({
             }
 
             const amount = parseFloat(order.amount || order.totalAmount || 0);
+            const changeAmount = parseFloat(order.changeAmount || 0);
             const paymentMethod = (order.paymentMethod || '').toLowerCase();
+            const isCash = paymentMethod.includes('готівка') ||
+                paymentMethod.includes('наличные') ||
+                paymentMethod === 'cash' ||
+                paymentMethod === '';
+
+            const effectiveAmount = isCash ? Math.max(amount, changeAmount) : amount;
 
             const orderData: Order = {
                 ...order,
-                id: order.id || order.orderNumber, // Ensure ID
-                amount
+                id: order.id || order.orderNumber,
+                amount,
+                changeAmount,
+                effectiveAmount
             };
 
-            if (
-                paymentMethod.includes('готівка') ||
-                paymentMethod.includes('наличные') ||
-                paymentMethod === 'cash' ||
-                paymentMethod === '' // Assume cash if empty? Or maybe warn? Let's assume cash for now as legacy default
-            ) {
+            if (isCash) {
                 summary.currentShift.cashOrders.count++;
-                summary.currentShift.cashOrders.totalAmount += amount;
+                summary.currentShift.cashOrders.totalAmount += effectiveAmount;
                 summary.currentShift.cashOrders.orders.push(orderData);
             } else if (
                 paymentMethod.includes('карт') ||
@@ -201,7 +190,7 @@ export function CourierFinancials({
             summary.currentShift.onlineOrders.totalAmount;
 
         return summary;
-    };
+    }, [excelData, courierId, courierName, targetDate]);
 
 
     const fetchFinancialSummary = async () => {
@@ -211,15 +200,10 @@ export function CourierFinancials({
         // 1. Try Local Calculation First
         if (excelData && excelData.orders.length > 0) {
             console.log('загрузка с екселя');
-            try {
-                const localSummary = calculateLocalFinancials();
-                if (localSummary) {
-                    setSummary(localSummary);
-                    setLoading(false);
-                    return; // Successfully used local data
-                }
-            } catch (localErr) {
-                console.warn('локал ошибка', localErr);
+            if (localSummary) {
+                setSummary(localSummary);
+                setLoading(false);
+                return;
             }
         }
 
@@ -670,10 +654,20 @@ export function CourierFinancials({
                                 <p className={clsx('text-sm truncate font-medium', isDark ? 'text-gray-300' : 'text-gray-700')} title={order.address}>
                                     {order.address}
                                 </p>
-                                <div className="flex items-center gap-2 mt-1 text-xs opacity-60">
-                                    <ClockIcon className="w-3 h-3" />
-                                    <span>{order.plannedTime || 'Время не указано'}</span>
-                                    {order.customerName && <span>• {order.customerName}</span>}
+                                <div className="flex items-center gap-3 mt-1">
+                                    <div className="flex items-center gap-1 text-[10px] opacity-60 font-bold uppercase">
+                                        <ClockIcon className="w-3 h-3" />
+                                        <span>{order.plannedTime || '—'}</span>
+                                    </div>
+                                    {order.changeAmount > order.amount && (
+                                        <div className={clsx(
+                                            "flex items-center gap-1 text-[10px] font-black px-1.5 py-0.5 rounded-full",
+                                            isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-100 text-amber-700"
+                                        )}>
+                                            <span>Сдача: {formatCurrency(order.changeAmount - order.amount)}</span>
+                                        </div>
+                                    )}
+                                    {order.customerName && <span className="text-[10px] opacity-40">• {order.customerName}</span>}
                                 </div>
                                 {activeTab === 'history' && (order as any).settlementNote && (
                                     <div className="mt-2 text-xs italic opacity-60 bg-black/5 dark:bg-white/5 p-2 rounded-lg">
@@ -685,7 +679,7 @@ export function CourierFinancials({
                             <div className="flex items-center gap-4">
                                 <div className="text-right">
                                     <p className={clsx('text-lg font-black', activeTab === 'cash' ? (isDark ? 'text-green-400' : 'text-green-600') : activeTab === 'online' ? (isDark ? 'text-purple-400' : 'text-purple-600') : (isDark ? 'text-blue-400' : 'text-blue-600'))}>
-                                        {formatCurrency((order as any).settledAmount || order.amount)}
+                                        {formatCurrency((order as any).settledAmount || (order as any).effectiveAmount || order.amount)}
                                     </p>
                                     {activeTab === 'history' && order.amount !== (order as any).settledAmount && (
                                         <p className={clsx('text-[10px] font-bold', (order as any).settledAmount > order.amount ? 'text-green-500' : 'text-red-500')}>
@@ -869,7 +863,7 @@ function SettlementModal({
         const initial: Record<string, string> = {};
         orders.forEach((o: any) => {
             const id = String(o.id || o.orderNumber);
-            initial[id] = String(o.amount || 0);
+            initial[id] = String(o.effectiveAmount || o.amount || 0);
         });
         return initial;
     });
@@ -1036,21 +1030,28 @@ function SettlementModal({
                                     </div>
                                     <div className="flex items-center gap-1 flex-shrink-0 ml-4">
                                         {isSelected ? (
-                                            <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-xl px-2 py-1 border border-black/5 dark:border-white/10 shadow-inner">
-                                                <input
-                                                    type="text"
-                                                    value={orderAmounts[orderId]}
-                                                    onChange={(e) => handleOrderAmountChange(orderId, e.target.value)}
-                                                    className={clsx(
-                                                        'w-16 md:w-20 text-right text-sm font-black bg-transparent outline-none transition-all',
-                                                        isDark ? 'text-blue-400' : 'text-blue-600'
-                                                    )}
-                                                />
-                                                <span className="ml-1 text-[10px] font-black opacity-30">₴</span>
+                                            <div className="flex flex-col items-end">
+                                                <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-xl px-2 py-1 border border-black/5 dark:border-white/10 shadow-inner">
+                                                    <input
+                                                        type="text"
+                                                        value={orderAmounts[orderId]}
+                                                        onChange={(e) => handleOrderAmountChange(orderId, e.target.value)}
+                                                        className={clsx(
+                                                            'w-16 md:w-20 text-right text-sm font-black bg-transparent outline-none transition-all',
+                                                            isDark ? 'text-blue-400' : 'text-blue-600'
+                                                        )}
+                                                    />
+                                                    <span className="ml-1 text-[10px] font-black opacity-30">₴</span>
+                                                </div>
+                                                {order.changeAmount > order.amount && (
+                                                    <span className="text-[9px] font-bold text-amber-500 mt-1">
+                                                        Вкл. сдачу: {formatCurrency(order.changeAmount - order.amount)}
+                                                    </span>
+                                                )}
                                             </div>
                                         ) : (
                                             <p className="text-sm font-black text-gray-400 whitespace-nowrap px-2">
-                                                {formatCurrency(parseFloat(order.amount || 0))}
+                                                {formatCurrency(parseFloat(order.effectiveAmount || order.amount || 0))}
                                             </p>
                                         )}
                                     </div>
