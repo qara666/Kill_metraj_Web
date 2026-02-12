@@ -1,16 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { clsx } from 'clsx';
-import { CheckCircleIcon } from '@heroicons/react/24/outline';
+import { CheckCircleIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { toast } from 'react-hot-toast';
 
-// Helper to format currency moved to top-level for shared use
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('uk-UA', {
         style: 'currency',
         currency: 'UAH',
         minimumFractionDigits: 0,
         maximumFractionDigits: 0
-    }).format(value);
+    }).format(value).replace('UAH', '₴');
 };
 
 interface SettlementModalProps {
@@ -36,12 +35,14 @@ export function SettlementModal({
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Track which orders are being paid
     const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(
         new Set(orders.map((o: any) => String(o.id || o.orderNumber)))
     );
 
-    // Track per-order manual amounts (if they differ from calculated)
+    // Search state
+    const [searchQuery, setSearchQuery] = useState('');
+
+    // Track per-order manual amounts
     const [orderAmounts, setOrderAmounts] = useState<Record<string, string>>(() => {
         const initial: Record<string, string> = {};
         orders.forEach((o: any) => {
@@ -51,11 +52,10 @@ export function SettlementModal({
         return initial;
     });
 
-    // Manual TOTAL amount state (the actual cash the courier handed over)
+    // Manual TOTAL amount state
     const [manualTotal, setManualTotal] = useState<string>('0');
     const [isManualTotalOverride, setIsManualTotalOverride] = useState(false);
 
-    // Sum of currently selected orders (considering their individual overridden amounts)
     const expectedSumBySelection = useMemo(() => {
         return orders
             .filter((o: any) => selectedOrderIds.has(String(o.id || o.orderNumber)))
@@ -66,12 +66,25 @@ export function SettlementModal({
             }, 0);
     }, [orders, selectedOrderIds, orderAmounts]);
 
-    // Update manual total when selection or individual amounts change, but only if not manually overridden at the total level
     useEffect(() => {
         if (!isManualTotalOverride) {
             setManualTotal(expectedSumBySelection.toString());
         }
     }, [expectedSumBySelection, isManualTotalOverride]);
+
+    const filteredOrders = useMemo(() => {
+        if (!searchQuery) return orders;
+        const q = searchQuery.toLowerCase();
+        return orders.filter((o: any) =>
+            String(o.orderNumber).toLowerCase().includes(q) ||
+            (o.address || '').toLowerCase().includes(q)
+        );
+    }, [orders, searchQuery]);
+
+    const handleExactCash = () => {
+        setIsManualTotalOverride(false);
+        setManualTotal(expectedSumBySelection.toString());
+    };
 
     const toggleOrder = (id: string) => {
         const newSet = new Set(selectedOrderIds);
@@ -81,6 +94,14 @@ export function SettlementModal({
             newSet.add(id);
         }
         setSelectedOrderIds(newSet);
+    };
+
+    const toggleAll = () => {
+        if (selectedOrderIds.size === orders.length) {
+            setSelectedOrderIds(new Set());
+        } else {
+            setSelectedOrderIds(new Set(orders.map(o => String(o.id || o.orderNumber))));
+        }
     };
 
     const handleOrderAmountChange = (id: string, value: string) => {
@@ -100,21 +121,19 @@ export function SettlementModal({
         }
 
         try {
-            // Client-side settlement: mark selected orders as settled
             const selectedOrders = Array.from(selectedOrderIds);
 
             if (selectedOrders.length === 0) {
                 throw new Error('Выберите хотя бы один заказ');
             }
 
-            // Update order statuses to 'Исполнен' (completed)
             updateExcelData((prev: any) => {
                 const updatedOrders = prev.orders.map((order: any) => {
                     const orderId = String(order.id || order.orderNumber);
                     if (selectedOrderIds.has(orderId)) {
                         return {
                             ...order,
-                            status: order.status === 'Исполнен' ? 'Исполнен' : (order.status || 'Исполнен'),
+                            status: 'Исполнен',
                             settlementNote: notes,
                             settledAmount: orderAmounts[orderId],
                             settledDate: new Date().toISOString()
@@ -125,133 +144,159 @@ export function SettlementModal({
                 return { ...prev, orders: updatedOrders };
             });
 
-            // Show success message
-            toast.success(`Расчет выполнен! Получено: ${formatCurrency(cashReceived)}`, { duration: 3000 });
-
-            // Close modal and refresh
+            toast.success(`Расчет выполнен!`, { duration: 3000 });
             setShowSettlementModal(false);
             await fetchFinancialSummary();
-
         } catch (err: any) {
-            console.error('Settlement error:', err);
-            setError(err.message || 'Произошла непредвиденная ошибка');
+            setError(err.message || 'Ошибка при расчете');
         } finally {
             setLoading(false);
         }
     };
 
-    // Calculate difference (Debt/Overpayment)
-    const totalPaid = parseFloat(manualTotal) || 0;
-    const difference = totalPaid - expectedSumBySelection;
+    const difference = (parseFloat(manualTotal) || 0) - expectedSumBySelection;
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200 p-4">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center z-[100] animate-in fade-in duration-300 p-4">
             <div className={clsx(
-                'p-6 md:p-8 rounded-[2.5rem] max-w-xl w-full mx-auto shadow-2xl transition-all scale-100 flex flex-col max-h-[90vh]',
-                isDark ? 'bg-gray-800/95 border border-gray-700' : 'bg-white/95 border border-white/50'
-            )} style={{ backdropFilter: 'blur(20px)' }}>
+                'rounded-[2.5rem] max-w-5xl w-full mx-auto shadow-[0_32px_128px_-16px_rgba(0,0,0,0.3)] transition-all flex flex-col max-h-[92vh] border overflow-hidden',
+                isDark ? 'bg-[#1a1c1e] border-white/5 text-white' : 'bg-white border-gray-100 text-gray-900'
+            )}>
 
-                <div className="flex-shrink-0 flex items-center justify-between mb-8">
-                    <div>
-                        <h3 className={clsx('text-2xl font-black mb-1', isDark ? 'text-white' : 'text-gray-900')}>
-                            Расчет курьера
-                        </h3>
-                        <p className={clsx('text-sm font-bold opacity-50', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                            {courierName}
-                        </p>
-                    </div>
-                    <button onClick={onClose} className="p-3 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                        <svg className="w-6 h-6 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </button>
-                </div>
+                {/* Main Content Area: Split Pane */}
+                <div className="flex flex-1 overflow-hidden">
 
-                <div className="flex-1 overflow-y-auto mb-8 pr-2 custom-scrollbar">
-                    <div className="flex items-center justify-between mb-4">
-                        <label className={clsx('text-xs font-black uppercase tracking-widest opacity-60', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                            Выберите оплаченные заказы ({selectedOrderIds.size})
-                        </label>
-                        <span className="text-[10px] font-bold opacity-40 italic">Отредактируйте сумму если нужно</span>
-                    </div>
-
-                    <div className="space-y-3">
-                        {orders.map((order: any, idx: number) => {
-                            const orderId = String(order.id || order.orderNumber);
-                            const isSelected = selectedOrderIds.has(orderId);
-
-                            return (
-                                <div
-                                    key={idx}
-                                    className={clsx(
-                                        'flex items-center justify-between p-4 rounded-2xl border transition-all',
-                                        isSelected
-                                            ? (isDark ? 'bg-blue-500/10 border-blue-500/50' : 'bg-blue-50 border-blue-200')
-                                            : (isDark ? 'bg-gray-900/40 border-gray-700 grayscale opacity-40' : 'bg-gray-50 border-gray-100 grayscale opacity-40')
-                                    )}
+                    {/* LEFT COLUMN: Orders List */}
+                    <div className="flex-[1.4] flex flex-col border-r border-white/5 overflow-hidden">
+                        {/* Compact Header */}
+                        <div className="px-6 pt-6 pb-2 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-xl font-black tracking-tight">Расчет с курьером</h3>
+                                <p className="text-[9px] font-bold opacity-30 uppercase tracking-[0.2em]">{courierName}</p>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <button
+                                    onClick={toggleAll}
+                                    className="text-[9px] font-black uppercase tracking-widest text-blue-500 hover:scale-105 active:scale-95 transition-transform"
                                 >
-                                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                                    {selectedOrderIds.size === orders.length ? 'Сбросить все' : 'Выбрать все'}
+                                </button>
+                                <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-white/5 opacity-40 hover:opacity-100 transition-all">
+                                    <XMarkIcon className="w-5 h-5 " />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Search Bar */}
+                        <div className="px-6 py-4">
+                            <div className={clsx(
+                                "flex items-center gap-3 px-4 py-2 rounded-2xl border transition-all",
+                                isDark ? "bg-black/20 border-white/5 focus-within:border-blue-500/30" : "bg-gray-50 border-gray-100 focus-within:border-blue-200"
+                            )}>
+                                <svg className="w-4 h-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                                <input
+                                    type="text"
+                                    placeholder="Поиск заказа..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="bg-transparent border-none outline-none text-xs font-bold w-full placeholder:opacity-30"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Scrollable Orders List */}
+                        <div className="flex-1 overflow-y-auto px-6 pb-6 custom-scrollbar">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                {filteredOrders.length === 0 ? (
+                                    <div className="col-span-full py-20 text-center opacity-20">
+                                        <p className="text-[10px] font-black uppercase tracking-widest">Список пуст</p>
+                                    </div>
+                                ) : filteredOrders.map((order: any, idx: number) => {
+                                    const orderId = String(order.id || order.orderNumber);
+                                    const isSelected = selectedOrderIds.has(orderId);
+
+                                    return (
                                         <div
+                                            key={idx}
                                             onClick={() => toggleOrder(orderId)}
                                             className={clsx(
-                                                'w-6 h-6 flex-shrink-0 rounded-lg border-2 flex items-center justify-center transition-all cursor-pointer',
+                                                'flex items-center justify-between p-3 rounded-[1.25rem] border-2 transition-all cursor-pointer group',
                                                 isSelected
-                                                    ? 'bg-blue-500 border-blue-500 text-white'
-                                                    : (isDark ? 'border-gray-600' : 'border-gray-300')
+                                                    ? (isDark ? 'bg-blue-500/10 border-blue-500/30' : 'bg-[#f0f7ff] border-blue-100')
+                                                    : (isDark ? 'bg-black/10 border-white/5 opacity-40 hover:opacity-100' : 'bg-[#fcfdff] border-gray-50 opacity-40 hover:opacity-100')
                                             )}
                                         >
-                                            {isSelected && <CheckCircleIcon className="w-4 h-4" />}
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                            <p className={clsx('text-sm font-black truncate', isDark ? 'text-white' : 'text-gray-900')}>
-                                                #{order.orderNumber}
-                                            </p>
-                                            <p className={clsx('text-[10px] font-bold opacity-60 truncate', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                                                {order.address}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-1 flex-shrink-0 ml-4">
-                                        {isSelected ? (
-                                            <div className="flex flex-col items-end">
-                                                <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-xl px-2 py-1 border border-black/5 dark:border-white/10 shadow-inner">
+                                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                <div className={clsx(
+                                                    'w-7 h-7 rounded-lg border-2 flex items-center justify-center transition-all',
+                                                    isSelected ? 'bg-blue-500 border-blue-500 text-white' : (isDark ? 'border-gray-700' : 'border-gray-200')
+                                                )}>
+                                                    <CheckCircleIcon className={clsx("w-4 h-4 transition-transform", isSelected ? "scale-100" : "scale-0")} />
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="text-xs font-black tracking-tight mb-0.5 truncate">
+                                                        #{order.orderNumber}
+                                                    </p>
+                                                    <p className="text-[8px] font-black opacity-20 truncate uppercase tracking-widest">
+                                                        {order.address}
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            <div className="ml-3" onClick={e => e.stopPropagation()}>
+                                                <div className={clsx(
+                                                    "flex items-center rounded-lg px-2 py-1 border transition-all",
+                                                    isSelected
+                                                        ? (isDark ? 'bg-gray-950 border-white/5' : 'bg-white border-blue-50')
+                                                        : 'border-transparent'
+                                                )}>
                                                     <input
                                                         type="text"
+                                                        disabled={!isSelected}
                                                         value={orderAmounts[orderId]}
                                                         onChange={(e) => handleOrderAmountChange(orderId, e.target.value)}
                                                         className={clsx(
-                                                            'w-16 md:w-20 text-right text-sm font-black bg-transparent outline-none transition-all',
-                                                            isDark ? 'text-blue-400' : 'text-blue-600'
+                                                            'w-12 text-right text-[11px] font-black bg-transparent outline-none',
+                                                            isSelected ? 'text-blue-500' : 'text-gray-400'
                                                         )}
                                                     />
-                                                    <span className="ml-1 text-[10px] font-black opacity-30">₴</span>
+                                                    <span className="ml-[2px] text-[8px] font-black opacity-20">₴</span>
                                                 </div>
-                                                {order.changeAmount > order.amount && (
-                                                    <span className="text-[9px] font-bold text-amber-500 mt-1">
-                                                        Вкл. сдачу: {formatCurrency(order.changeAmount - order.amount)}
-                                                    </span>
-                                                )}
                                             </div>
-                                        ) : (
-                                            <p className="text-sm font-black text-gray-400 whitespace-nowrap px-2">
-                                                {formatCurrency(parseFloat(order.effectiveAmount || order.amount || 0))}
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-                            );
-                        })}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
                     </div>
-                </div>
 
-                <form onSubmit={handleSubmit} className="flex-shrink-0 space-y-6">
-                    <div className="p-6 rounded-[2rem] bg-gray-50 dark:bg-gray-900/50 border border-black/5 dark:border-white/5 shadow-inner">
-                        <div className="flex items-center justify-between mb-4">
-                            <span className={clsx('text-xs font-black uppercase tracking-widest opacity-60', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                                Сколько сдал курьер
-                            </span>
-                            <div className="flex flex-col items-end">
-                                <div className="flex items-center">
+                    {/* RIGHT COLUMN: Summary & Payment */}
+                    <div className={clsx(
+                        "flex-1 p-8 flex flex-col",
+                        isDark ? "bg-[#141618]/50" : "bg-gray-50/50"
+                    )}>
+                        <div className="flex-1 space-y-6">
+                            {/* Manual Input Area */}
+                            <div className={clsx(
+                                "p-6 rounded-3xl border shadow-xl relative overflow-hidden",
+                                isDark ? "bg-[#1a1c1e] border-white/5" : "bg-white border-gray-100"
+                            )}>
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-[9px] font-black uppercase tracking-[0.2em] opacity-40">
+                                        СДАЛ КУРЬЕР
+                                    </span>
+                                    {isManualTotalOverride && (
+                                        <button
+                                            onClick={handleExactCash}
+                                            className="text-[8px] font-black uppercase tracking-widest text-blue-500 hover:scale-105 transition-transform"
+                                        >
+                                            Сброс авто
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="flex items-center justify-end gap-2 group/input mb-4">
                                     <input
                                         type="text"
                                         value={manualTotal}
@@ -260,96 +305,93 @@ export function SettlementModal({
                                             setIsManualTotalOverride(true);
                                         }}
                                         className={clsx(
-                                            'w-32 text-right text-3xl font-black bg-transparent border-b-2 outline-none transition-all',
-                                            isDark
-                                                ? 'text-white border-blue-500/50 focus:border-blue-500'
-                                                : 'text-gray-900 border-blue-500/30 focus:border-blue-500'
+                                            'w-full text-right text-5xl font-black bg-transparent outline-none transition-all',
+                                            isDark ? 'text-white' : 'text-gray-900'
                                         )}
                                     />
-                                    <span className={clsx("ml-2 text-xl font-bold opacity-30", isDark ? "text-white" : "text-gray-900")}>₴</span>
+                                    <span className="text-3xl font-black opacity-10">₴</span>
                                 </div>
-                                {isManualTotalOverride && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsManualTotalOverride(false)}
-                                        className="text-[10px] font-black text-blue-500 uppercase mt-1 hover:underline"
-                                    >
-                                        Сбросить (авто: {formatCurrency(expectedSumBySelection)})
-                                    </button>
+
+                                {/* Status Card */}
+                                <div className={clsx(
+                                    "p-4 rounded-2xl flex items-center justify-between",
+                                    difference > 0 ? (isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-600") :
+                                        difference < 0 ? (isDark ? "bg-red-500/10 text-red-500" : "bg-red-50 text-red-600") :
+                                            (isDark ? "bg-white/5 text-gray-500" : "bg-gray-100 text-gray-400")
+                                )}>
+                                    <div className="flex flex-col">
+                                        <span className="text-[8px] font-black uppercase tracking-widest opacity-60">
+                                            {difference > 0 ? 'Переплата' : difference < 0 ? 'Долг' : 'Итог'}
+                                        </span>
+                                        <span className="text-[7px] font-bold opacity-40 uppercase tracking-widest">
+                                            {isManualTotalOverride ? 'Ручной ввод' : 'Авторасчет'}
+                                        </span>
+                                    </div>
+                                    <div className="text-xl font-black tracking-tight italic">
+                                        {difference > 0 ? '+' : ''}{formatCurrency(difference)}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Info Rows */}
+                            <div className="px-2 space-y-3">
+                                <div className="flex justify-between items-center opacity-40">
+                                    <span className="text-[9px] font-bold uppercase tracking-widest">Всего выбрано</span>
+                                    <span className="text-xs font-black">{formatCurrency(expectedSumBySelection)}</span>
+                                </div>
+                                <div className="flex justify-between items-center opacity-40">
+                                    <span className="text-[9px] font-bold uppercase tracking-widest">Заказов</span>
+                                    <span className="text-xs font-black">{selectedOrderIds.size}</span>
+                                </div>
+                            </div>
+
+                            {/* Notes */}
+                            <div className="space-y-2">
+                                <label className="text-[9px] font-black uppercase tracking-widest opacity-30 ml-2">Примечание</label>
+                                <textarea
+                                    value={notes}
+                                    onChange={(e) => setNotes(e.target.value)}
+                                    rows={3}
+                                    className={clsx(
+                                        'w-full bg-transparent border-2 p-4 rounded-2xl text-xs font-bold outline-none transition-all placeholder:opacity-20',
+                                        isDark ? 'border-white/5 focus:border-blue-500/20' : 'border-gray-100 focus:border-blue-100'
+                                    )}
+                                    placeholder="Важный комментарий к расчету..."
+                                />
+                            </div>
+                        </div>
+
+                        {/* Error Msg */}
+                        {error && (
+                            <div className="mb-4 px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-[9px] font-black uppercase tracking-widest text-center">
+                                {error}
+                            </div>
+                        )}
+
+                        {/* Bottom Actions */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className={clsx(
+                                    'py-4 rounded-2xl text-[9px] font-black uppercase tracking-[0.2em] transition-all border border-transparent',
+                                    isDark ? 'text-gray-500 hover:bg-white/5' : 'text-gray-400 hover:bg-gray-100'
                                 )}
-                            </div>
+                            >
+                                ОТМЕНА
+                            </button>
+                            <button
+                                onClick={handleSubmit}
+                                disabled={loading || selectedOrderIds.size === 0}
+                                className={clsx(
+                                    'py-4 rounded-2xl font-black text-white text-[10px] uppercase tracking-[0.2em] shadow-xl transition-all transform hover:-translate-y-1 active:scale-95 disabled:opacity-20 disabled:grayscale disabled:pointer-events-none bg-[#5175f0] shadow-blue-500/30'
+                                )}
+                            >
+                                {loading ? '...' : 'ОПЛАТИЛ'}
+                            </button>
                         </div>
-
-                        {/* Balance Calculation Result */}
-                        <div className={clsx(
-                            "flex items-center justify-between py-4 px-5 rounded-2xl mb-4 transition-all duration-300 shadow-sm",
-                            difference > 0
-                                ? (isDark ? "bg-green-500/10 text-green-400 border border-green-500/30" : "bg-green-50 text-green-700 border border-green-200")
-                                : difference < 0
-                                    ? (isDark ? "bg-red-500/10 text-red-400 border border-red-500/30" : "bg-red-50 text-red-700 border border-red-200")
-                                    : (isDark ? "bg-gray-800 text-gray-400 border border-gray-700" : "bg-gray-100 text-gray-500 border border-gray-200")
-                        )}>
-                            <div className="flex flex-col">
-                                <span className="text-[10px] font-black uppercase tracking-[0.1em] opacity-60 mb-0.5">
-                                    {difference > 0 ? 'Переплата (Лишние)' : difference < 0 ? 'Задолженность (Недодал)' : 'Итого к расчету'}
-                                </span>
-                                <span className="text-xs font-bold opacity-40">
-                                    {isManualTotalOverride ? 'Ручной ввод активен' : 'Авто расчет по заказам'}
-                                </span>
-                            </div>
-                            <span className={clsx(
-                                "text-xl font-black tabular-nums",
-                                difference !== 0 && "animate-pulse"
-                            )}>
-                                {difference > 0 ? '+' : ''}{formatCurrency(difference)}
-                            </span>
-                        </div>
-
-                        <textarea
-                            value={notes}
-                            onChange={(e) => setNotes(e.target.value)}
-                            rows={1}
-                            className={clsx(
-                                'w-full px-4 py-3 rounded-2xl text-sm border-2 transition-all focus:outline-none resize-none',
-                                isDark
-                                    ? 'bg-gray-900/50 border-gray-700 focus:border-blue-500 text-white'
-                                    : 'bg-white border-gray-200 focus:border-blue-500 text-gray-900'
-                            )}
-                            placeholder="Примечание (необязательно)..."
-                        />
                     </div>
-
-                    {error && (
-                        <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-bold ring-1 ring-red-200 dark:ring-red-800 animate-pulse">
-                            {error}
-                        </div>
-                    )}
-
-                    <div className="flex gap-4">
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className={clsx(
-                                'px-8 py-5 rounded-[1.5rem] font-black text-sm uppercase tracking-widest transition-colors',
-                                isDark ? 'text-gray-400 hover:text-white hover:bg-white/5' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
-                            )}
-                        >
-                            ОТМЕНА
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={loading || selectedOrderIds.size === 0}
-                            className={clsx(
-                                'flex-1 py-5 rounded-[1.5rem] font-black text-white text-sm uppercase tracking-[0.2em] shadow-2xl transition-all transform hover:-translate-y-1 active:scale-95 disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed',
-                                isDark
-                                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 shadow-blue-900/40'
-                                    : 'bg-gradient-to-r from-blue-500 to-indigo-600 shadow-blue-500/30'
-                            )}
-                        >
-                            {loading ? 'Обработка...' : 'ОПЛАТИЛ'}
-                        </button>
-                    </div>
-                </form>
+                </div>
             </div>
         </div>
     );
