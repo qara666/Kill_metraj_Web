@@ -234,7 +234,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [orderSearchTerm, setOrderSearchTerm] = useState('')
   const [courierSearchTerm, setCourierSearchTerm] = useState('')
   const [courierSortType, setCourierSortType] = useState<'alpha' | 'load'>('alpha')
-  const TypedAutoSizer = AutoSizer as any
+  const TypedAutoSizer = (AutoSizer as any).AutoSizer || AutoSizer || (AutoSizer as any).default
 
   // Debounce hook
   const useDebounce = <T,>(value: T, delay: number): T => {
@@ -569,6 +569,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   // Courier Row Component for Virtualized List
   const CourierRow = useCallback(({ index, style }: { index: number, style: React.CSSProperties }) => {
     const courierName = filteredCouriers[index]
+    if (!courierName) return null
+
     const metric = getCourierMetrics(courierName)
     const vehicleType = getCourierVehicleType(courierName)
 
@@ -1924,7 +1926,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   </div>
                 </div>
 
-                <div className="flex-1 min-h-[300px]" style={{ height: 'calc(100vh - 420px)' }}>
+                <div className="flex-1 min-h-[300px] relative" style={{ height: 'calc(100vh - 420px)' }}>
                   {filteredCouriers.length === 0 ? (
                     <div className="text-center py-10 h-full flex flex-col items-center justify-center">
                       <TruckIcon className="w-10 h-10 mx-auto text-gray-300 mb-2 opacity-50" />
@@ -1932,16 +1934,23 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                     </div>
                   ) : (
                     <TypedAutoSizer>
-                      {({ height, width }: any) => (
-                        <List
-                          height={height}
-                          itemCount={filteredCouriers.length}
-                          itemSize={110}
-                          width={width}
-                        >
-                          {CourierRow}
-                        </List>
-                      )}
+                      {({ height, width }: any) => {
+                        // Fallback dimensions if AutoSizer fails to detect them
+                        // In some production builds, AutoSizer might report 0 initially
+                        const finalHeight = height > 0 ? height : 400;
+                        const finalWidth = width > 0 ? width : '100%';
+
+                        return (
+                          <List
+                            height={finalHeight}
+                            itemCount={filteredCouriers.length}
+                            itemSize={114}
+                            width={finalWidth}
+                          >
+                            {CourierRow}
+                          </List>
+                        );
+                      }}
                     </TypedAutoSizer>
                   )}
                 </div>
