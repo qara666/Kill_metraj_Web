@@ -11,15 +11,20 @@ import { useAutoPlannerStore } from '../../stores/useAutoPlannerStore'; // Impor
 export const DashboardApiSection: React.FC = () => {
     const { isDark } = useTheme();
     const { setExcelData } = useExcelData();
-    const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
     const [isLoading, setIsLoading] = useState(false);
 
-    // Use global store for auto-update state
+    // Store values
+    const apiSyncStatus = useAutoPlannerStore(s => s.apiSyncStatus);
+    const apiDateShift = useAutoPlannerStore(s => s.apiDateShift);
+    const setApiDateShift = useAutoPlannerStore(s => s.setApiDateShift);
     const apiAutoRefreshEnabled = useAutoPlannerStore(s => s.apiAutoRefreshEnabled);
     const setApiAutoRefreshEnabled = useAutoPlannerStore(s => s.setApiAutoRefreshEnabled);
     const apiLastSyncTime = useAutoPlannerStore(s => s.apiLastSyncTime);
     const apiNextSyncTime = useAutoPlannerStore(s => s.apiNextSyncTime);
-    const apiSyncStatus = useAutoPlannerStore(s => s.apiSyncStatus);
+
+    // Initial selectedDate state removal, use apiDateShift instead
+    const selectedDate = apiDateShift;
+    const setSelectedDate = setApiDateShift;
 
     const [timeLeft, setTimeLeft] = useState<string>('--:--');
 
