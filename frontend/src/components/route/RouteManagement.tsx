@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
-import { areEqual } from 'react-window'
 import { OrderList } from './OrderList'
 import {
   MapIcon,
@@ -93,6 +92,8 @@ const CourierListItem = memo(({
   isSelected,
   onSelect,
   availableOrdersCount,
+  deliveredOrdersCount,
+  totalOrdersCount,
   isDark
 }: {
   courierName: string
@@ -100,51 +101,66 @@ const CourierListItem = memo(({
   isSelected: boolean
   onSelect: (name: string) => void
   availableOrdersCount: number
+  deliveredOrdersCount: number
+  totalOrdersCount: number
   isDark: boolean
 }) => {
   const isUnassigned = courierName === 'Не назначено' || courierName === 'ID:0' || courierName.startsWith('ID:0')
+  const progress = totalOrdersCount > 0 ? (deliveredOrdersCount / totalOrdersCount) * 100 : 0
+  const isFinished = totalOrdersCount > 0 && deliveredOrdersCount === totalOrdersCount
+  const isOnRoute = totalOrdersCount > 0 && deliveredOrdersCount < totalOrdersCount && deliveredOrdersCount > 0
 
   return (
-    <button
-      onClick={() => onSelect(courierName)}
-      className={clsx(
-        'w-full text-left p-3 rounded-xl border-2 transition-all duration-300 ease-in-out transform mb-2',
-        'group relative overflow-hidden',
-        isSelected || isUnassigned
-          ? isDark
-            ? (isUnassigned
-              ? 'bg-yellow-600/10 border-yellow-500 shadow-lg shadow-yellow-500/10'
-              : 'bg-blue-600/10 border-blue-500 shadow-lg shadow-blue-500/10')
-            : (isUnassigned
-              ? 'bg-yellow-50 border-yellow-400 shadow-md ring-1 ring-yellow-400'
-              : 'bg-blue-50 border-blue-500 shadow-md ring-1 ring-blue-500')
-          : isDark
-            ? 'bg-gray-800/40 border-gray-700 hover:border-gray-500 hover:bg-gray-700/60'
-            : 'bg-white border-gray-100 hover:border-blue-200 hover:bg-gray-50 shadow-sm'
-      )}
-    >
-      <div className="flex items-center justify-between relative z-10">
-        <div className="flex items-center gap-4">
-          <div className={clsx(
-            'p-3 rounded-xl transition-all duration-300',
-            isSelected || isUnassigned
-              ? isUnassigned ? 'bg-yellow-500 text-white' : 'bg-blue-600 text-white'
-              : isDark ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400',
-            'group-hover:scale-110 group-hover:rotate-3'
-          )}>
-            {isUnassigned ? (
-              <InboxIcon className="h-6 w-6" />
-            ) : vehicleType === 'car' ? (
-              <TruckIcon className="h-6 w-6" />
-            ) : (
-              <TruckIcon className="h-6 w-6" />
+    <div className="group/item relative">
+      <button
+        onClick={() => onSelect(courierName)}
+        className={clsx(
+          'w-full text-left p-3.5 rounded-2xl border-2 transition-all duration-300 transform mb-2.5',
+          'relative overflow-hidden',
+          isSelected
+            ? (isDark
+              ? 'bg-blue-600/10 border-blue-500 shadow-[0_8px_32px_-8px_rgba(59,130,246,0.3)] scale-[1.02]'
+              : 'bg-[#f0f7ff] border-blue-500 shadow-lg shadow-blue-500/10 scale-[1.02]')
+            : isUnassigned
+              ? (isDark
+                ? 'bg-amber-500/10 border-amber-500/30 opacity-90 shadow-none grayscale-0'
+                : 'bg-amber-50 border-amber-200 opacity-90 shadow-sm grayscale-0')
+              : (isDark
+                ? 'bg-black/20 border-white/[0.03] hover:border-white/10 opacity-60 hover:opacity-100'
+                : 'bg-white border-gray-100/80 hover:border-blue-200 shadow-sm opacity-50 hover:opacity-100')
+        )}
+      >
+        <div className="flex items-center gap-4 relative z-10">
+          <div className="relative">
+            <div className={clsx(
+              'w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-500',
+              isSelected
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/40'
+                : isDark ? 'bg-gray-800 text-gray-500' : 'bg-gray-100 text-gray-400',
+              'group-hover/item:scale-110 group-hover/item:rotate-6'
+            )}>
+              {isUnassigned ? (
+                <InboxIcon className="h-6 w-6" />
+              ) : vehicleType === 'car' ? (
+                <TruckIcon className="h-6 w-6" />
+              ) : (
+                <TruckIcon className="h-6 w-6" />
+              )}
+            </div>
+            {!isUnassigned && (
+              <div className={clsx(
+                "absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-4 flex items-center justify-center",
+                isDark ? "border-[#1a1c1e]" : "border-white",
+                isFinished ? "bg-emerald-500" : isOnRoute ? "bg-blue-500 animate-pulse" : "bg-gray-400"
+              )} />
             )}
           </div>
-          <div>
-            <div className="flex items-center gap-2 mb-0.5">
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2 mb-1">
               <span className={clsx(
-                "font-black text-base tracking-tight transition-colors",
-                isSelected || isUnassigned
+                "font-black text-sm tracking-tight truncate transition-colors",
+                isSelected
                   ? isDark ? 'text-white' : 'text-gray-900'
                   : isDark ? 'text-gray-400' : 'text-gray-600'
               )}>
@@ -152,35 +168,57 @@ const CourierListItem = memo(({
               </span>
               {!isUnassigned && (
                 <span className={clsx(
-                  'text-[10px] px-1.5 py-0.5 rounded font-black tracking-widest uppercase',
+                  'text-[8px] px-1.5 py-0.5 rounded-lg font-black tracking-widest uppercase flex-shrink-0',
                   vehicleType === 'car'
-                    ? (isDark ? 'bg-green-500/10 text-green-400' : 'bg-green-100 text-green-700')
-                    : (isDark ? 'bg-orange-500/10 text-orange-400' : 'bg-orange-100 text-orange-700')
+                    ? (isDark ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-emerald-50 text-emerald-700 border border-emerald-100')
+                    : (isDark ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' : 'bg-orange-50 text-orange-700 border border-orange-100')
                 )}>
-                  {vehicleType === 'car' ? 'Авто' : 'Мото'}
+                  {vehicleType === 'car' ? 'Авто' : 'Moto'}
                 </span>
               )}
             </div>
-            <div className={clsx(
-              'text-[13px] font-bold transition-colors',
-              isSelected
-                ? isDark ? 'text-blue-400' : 'text-blue-600'
-                : isDark ? 'text-gray-600' : 'text-gray-400'
-            )}>
-              {availableOrdersCount} заказов
+
+            <div className="flex items-center justify-between">
+              <div className={clsx(
+                'text-[10px] font-bold transition-colors flex items-center gap-1.5',
+                isSelected
+                  ? isDark ? 'text-blue-400' : 'text-blue-600'
+                  : isDark ? 'text-gray-600' : 'text-gray-400'
+              )}>
+                <span className="opacity-50 tracking-widest uppercase text-[9px] font-black">Заказы:</span>
+                <span className="font-black text-[11px]">{availableOrdersCount}</span>
+              </div>
+              {totalOrdersCount > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black opacity-30 italic">{Math.round(progress)}%</span>
+                </div>
+              )}
             </div>
+
+            {!isUnassigned && (
+              <div className="mt-2 h-1 w-full bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
+                <div
+                  className={clsx(
+                    "h-full transition-all duration-1000 ease-out",
+                    isFinished ? "bg-emerald-500" : "bg-blue-500"
+                  )}
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            )}
           </div>
         </div>
-      </div>
 
-      {/* Decorative accent for selected state */}
-      {isSelected && (
-        <div className={clsx(
-          'absolute top-0 right-0 w-16 h-16 -mr-8 -mt-8 rounded-full blur-xl opacity-20',
-          isUnassigned ? 'bg-yellow-500' : 'bg-blue-500'
-        )} />
-      )}
-    </button>
+        {isSelected && (
+          <div className={clsx(
+            'absolute inset-0 opacity-10 pointer-events-none transition-opacity duration-500',
+            isDark ? 'bg-gradient-to-br from-blue-500 to-transparent' : 'bg-gradient-to-br from-blue-100 to-transparent'
+          )} />
+        )}
+      </button>
+
+      {/* Hover Actions Removed per user request */}
+    </div>
   )
 }, areEqual)
 
@@ -191,6 +229,27 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [isCalculating, setIsCalculating] = useState(false)
   const [startAddress, setStartAddress] = useState('')
   const [endAddress, setEndAddress] = useState('')
+  const [orderSearchTerm, setOrderSearchTerm] = useState('')
+  const [courierSearchTerm, setCourierSearchTerm] = useState('')
+  const [courierSortType, setCourierSortType] = useState<'alpha' | 'load'>('alpha')
+
+  // Debounce hook
+  const useDebounce = <T,>(value: T, delay: number): T => {
+    const [debouncedValue, setDebouncedValue] = useState<T>(value)
+    useEffect(() => {
+      const handler = setTimeout(() => {
+        setDebouncedValue(value)
+      }, delay)
+      return () => {
+        clearTimeout(handler)
+      }
+    }, [value, delay])
+    return debouncedValue
+  }
+
+  const debouncedCourierSearchTerm = useDebounce(courierSearchTerm, 300)
+  const debouncedOrderSearchTerm = useDebounce(orderSearchTerm, 300)
+
   const [googleMapsReady, setGoogleMapsReady] = useState(false)
   const [courierFilter, setCourierFilter] = useState<string>('all')
   const [selectedHubs, setSelectedHubs] = useState<string[]>(localStorageUtils.getAllSettings().selectedHubs || [])
@@ -198,7 +257,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [routePage, setRoutePage] = useState(0)
   const [routesPerPage] = useState(5) // Количество маршрутов на странице
   const [sortRoutesByNewest] = useState(true)
-  const [orderSearchTerm, setOrderSearchTerm] = useState('')
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [routeToDelete, setRouteToDelete] = useState<Route | null>(null)
   const [showAddressEditModal, setShowAddressEditModal] = useState(false)
@@ -359,21 +417,71 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     return grouped
   }, [excelData?.orders])
 
-  // Функция для подсчета доступных заказов (исключая те, что уже в маршрутах)
-  const getAvailableOrdersCount = (courierName: string) => {
-    const allOrders = courierOrders[courierName] || []
-    const ordersInRoutes = new Set()
-
-      // Собираем ID всех заказов, которые уже в маршрутах
+  // Precompute set of orders in routes for O(1) lookups
+  const ordersInRoutesSet = useMemo(() => {
+    const set = new Set()
       ; (excelData?.routes || []).forEach((route: Route) => {
         route.orders.forEach((order: Order) => {
-          ordersInRoutes.add(order.id)
+          set.add(order.id)
         })
       })
+    return set
+  }, [excelData?.routes])
 
-    // Возвращаем количество заказов, которые НЕ в маршрутах
-    return allOrders.filter(order => !ordersInRoutes.has(order.id)).length
-  }
+  // Функция для получения метрик курьера
+  const getCourierMetrics = useCallback((courierName: string) => {
+    const allOrders = courierOrders[courierName] || []
+
+    let available = 0
+    let delivered = 0
+
+    allOrders.forEach(order => {
+      if (!ordersInRoutesSet.has(order.id)) {
+        available++
+      }
+      if (order.status === 'Доставлено' || order.status === 'Исполнен') {
+        delivered++
+      }
+    })
+
+    return {
+      available,
+      delivered,
+      total: allOrders.length
+    }
+  }, [courierOrders, ordersInRoutesSet])
+
+  // Aggregate Fleet Stats
+  const fleetStats = useMemo(() => {
+    const couriersList = Array.from(new Set([
+      ...Object.keys(courierOrders),
+      ...(excelData?.couriers?.map((c: any) => c.name) || [])
+    ])).filter(n => n && n !== 'Не назначено' && n !== 'ID:0')
+
+    let activeCount = 0
+    let finishedCount = 0
+    let totalDelivered = 0
+    let totalExpected = 0
+
+    couriersList.forEach(name => {
+      const m = getCourierMetrics(name)
+      if (m.total > 0) {
+        if (m.delivered === m.total) finishedCount++
+        else if (m.delivered > 0) activeCount++
+        totalDelivered += m.delivered
+        totalExpected += m.total
+      }
+    })
+
+    const avgProgress = totalExpected > 0 ? (totalDelivered / totalExpected) * 100 : 0
+
+    return {
+      total: couriersList.length,
+      active: activeCount,
+      finished: finishedCount,
+      progress: avgProgress
+    }
+  }, [courierOrders, excelData?.couriers, getCourierMetrics])
 
   // Объединяем курьеров из всех источников: из заказов и из общего списка курьеров (если есть)
   const couriers = useMemo(() => {
@@ -412,19 +520,47 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     return courier?.vehicleType || 'car'
   }
 
-  // Фильтруем и сортируем курьеров по типу транспорта и алфавиту
-  const filteredCouriers = couriers
-    .filter(courierName => {
-      if (courierFilter === 'all') return true
-      const vehicleType = getCourierVehicleType(courierName)
-      return vehicleType === courierFilter
-    })
-    .sort((a, b) => {
-      // Сортировка: "Не назначен" всегда сверху
+  const handleCourierSelect = useCallback((courierName: string) => {
+    setSelectedCourier(courierName)
+    // При смене курьера сбрасываем выбор и порядок, чтобы избежать артефактов
+    setSelectedOrders(new Set())
+    setSelectedOrdersOrder([])
+  }, [])
+
+  const filteredCouriers = useMemo(() => {
+    let result = couriers
+
+    // Filter by type
+    if (courierFilter !== 'all') {
+      result = result.filter(courierName => {
+        const vehicleType = getCourierVehicleType(courierName)
+        return vehicleType === courierFilter
+      })
+    }
+
+    // Filter by search (debounced)
+    if (debouncedCourierSearchTerm) {
+      const term = debouncedCourierSearchTerm.toLowerCase()
+      result = result.filter(name => name.toLowerCase().includes(term))
+    }
+
+    // Sort
+    return result.sort((a, b) => {
+      // "Не назначен" always top
       if (a === 'Не назначено' || a === 'ID:0') return -1;
       if (b === 'Не назначено' || b === 'ID:0') return 1;
+
+      if (courierSortType === 'load') {
+        const loadA = getCourierMetrics(a).available
+        const loadB = getCourierMetrics(b).available
+        // Sort descending by load
+        if (loadA !== loadB) return loadB - loadA
+      }
+
       return a.localeCompare(b, 'ru');
     })
+  }, [couriers, courierFilter, debouncedCourierSearchTerm, courierSortType, getCourierMetrics])
+
 
   // Сортировка и пагинация маршрутов
   const allRoutes = (excelData?.routes || []) as Route[]
@@ -437,25 +573,17 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     (routePage + 1) * routesPerPage
   )
 
-  const handleCourierSelect = useCallback((courierName: string) => {
-    setSelectedCourier(courierName)
-    // При смене курьера сбрасываем выбор и порядок, чтобы избежать артефактов
-    setSelectedOrders(new Set())
-    setSelectedOrdersOrder([])
-  }, [])
-
-
   // Функция для поиска заказов по номеру
   const searchOrders = useCallback((orders: Order[]) => {
-    if (!orderSearchTerm.trim()) return orders
+    if (!debouncedOrderSearchTerm.trim()) return orders
 
-    const searchTerm = orderSearchTerm.toLowerCase().trim()
+    const searchTerm = debouncedOrderSearchTerm.toLowerCase().trim()
     return orders.filter(order =>
       String(order.orderNumber).toLowerCase().includes(searchTerm) ||
       (order.customerName || '').toLowerCase().includes(searchTerm) ||
       (order.address || '').toLowerCase().includes(searchTerm)
     )
-  }, [orderSearchTerm])
+  }, [debouncedOrderSearchTerm])
 
   // Сортируем заказы: сначала доступные по времени, потом заказы в маршрутах
   const sortOrdersByTime = (orders: Order[]) => {
@@ -1682,50 +1810,117 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
               <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full -mr-16 -mt-16 blur-2xl opacity-50"></div>
 
               <div className="relative z-10 flex flex-col h-full">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className={clsx(
-                    'text-xl font-black tracking-tight',
-                    isDark ? 'text-gray-100' : 'text-gray-900'
-                  )}>Курьеры</h2>
-                  <div className="flex bg-gray-100 dark:bg-gray-700/50 p-1 rounded-xl">
-                    {['all', 'car', 'moto'].map((f) => (
-                      <button
-                        key={f}
-                        onClick={() => setCourierFilter(f as any)}
-                        className={clsx(
-                          'px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all',
-                          courierFilter === f
-                            ? (isDark ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-white text-blue-600 shadow-md')
-                            : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-500 hover:text-gray-800')
-                        )}
-                      >
-                        {f === 'all' ? 'Все' : f === 'car' ? 'Авто' : 'Мото'}
-                      </button>
-                    ))}
+                <div className="flex flex-col gap-4 mb-6">
+                  <div className="flex items-center justify-between">
+                    <h2 className={clsx(
+                      'text-xl font-black tracking-tight',
+                      isDark ? 'text-gray-100' : 'text-gray-900'
+                    )}>Курьеры</h2>
+                    <div className="flex bg-gray-100 dark:bg-black/40 p-1 rounded-xl border dark:border-white/5 shadow-inner">
+                      {['all', 'car', 'moto'].map((f) => (
+                        <button
+                          key={f}
+                          onClick={() => setCourierFilter(f as any)}
+                          className={clsx(
+                            'px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all',
+                            courierFilter === f
+                              ? (isDark ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-white text-blue-600 shadow-md')
+                              : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-800')
+                          )}
+                        >
+                          {f === 'all' ? 'Все' : f === 'car' ? 'Авто' : 'Мото'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Fleet Dashboard Mini stats */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className={clsx(
+                      "p-3 rounded-2xl border flex flex-col items-center justify-center transition-all",
+                      isDark ? "bg-black/20 border-white/5" : "bg-gray-50 border-gray-100"
+                    )}>
+                      <span className="text-[14px] font-black leading-none mb-1">{fleetStats.total}</span>
+                      <span className="text-[7px] font-black uppercase tracking-widest opacity-30">Всего</span>
+                    </div>
+                    <div className={clsx(
+                      "p-3 rounded-2xl border flex flex-col items-center justify-center transition-all relative overflow-hidden",
+                      isDark ? "bg-blue-500/5 border-blue-500/20" : "bg-blue-50 border-blue-100"
+                    )}>
+                      <span className="text-[14px] font-black leading-none mb-1 text-blue-500">{fleetStats.active}</span>
+                      <span className="text-[7px] font-black uppercase tracking-widest text-blue-500/50">В пути</span>
+                      <div className="absolute bottom-0 left-0 h-[2px] bg-blue-500 opacity-20 transition-all duration-1000" style={{ width: `${fleetStats.progress}%` }} />
+                    </div>
+                    <div className={clsx(
+                      "p-3 rounded-2xl border flex flex-col items-center justify-center transition-all",
+                      isDark ? "bg-emerald-500/5 border-emerald-500/20" : "bg-emerald-50 border-emerald-100"
+                    )}>
+                      <span className="text-[14px] font-black leading-none mb-1 text-emerald-500">{fleetStats.finished}</span>
+                      <span className="text-[7px] font-black uppercase tracking-widest text-emerald-500/50">Завершил</span>
+                    </div>
+                  </div>
+
+                  {/* Search & Sort Row */}
+                  <div className="flex items-center gap-2">
+                    <div className={clsx(
+                      "flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border transition-all",
+                      isDark ? "bg-black/20 border-white/5 focus-within:border-blue-500/30" : "bg-gray-50 border-gray-100 focus-within:border-blue-200"
+                    )}>
+                      <svg className="w-3.5 h-3.5 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      <input
+                        type="text"
+                        placeholder="Поиск..."
+                        value={courierSearchTerm}
+                        onChange={(e) => setCourierSearchTerm(e.target.value)}
+                        className="bg-transparent border-none outline-none text-[10px] font-black w-full placeholder:opacity-30 uppercase tracking-widest"
+                      />
+                    </div>
+                    <button
+                      onClick={() => setCourierSortType(prev => prev === 'alpha' ? 'load' : 'alpha')}
+                      className={clsx(
+                        "p-2 rounded-xl border transition-all group",
+                        isDark ? "bg-black/20 border-white/5 hover:border-blue-500/30" : "bg-gray-50 border-gray-100 hover:border-blue-200"
+                      )}
+                      title={courierSortType === 'alpha' ? 'Сортировка по алфавиту' : 'Сортировка по нагрузке'}
+                    >
+                      {courierSortType === 'alpha' ? (
+                        <svg className="w-4 h-4 opacity-40 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4 text-blue-500 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                      )}
+                    </button>
                   </div>
                 </div>
 
-                <div
-                  className="space-y-1 pr-2 max-h-[70vh] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700"
-                  data-tour="courier-select"
-                >
+                <div className="space-y-1 pr-2 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 420px)' }}>
                   {filteredCouriers.length === 0 ? (
                     <div className="text-center py-10">
                       <TruckIcon className="w-10 h-10 mx-auto text-gray-300 mb-2 opacity-50" />
-                      <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Нет курьеров</p>
+                      <p className="text-xs text-gray-400 font-bold uppercase tracking-widest px-4">Список пуст</p>
                     </div>
                   ) : (
-                    filteredCouriers.map((name) => (
-                      <CourierListItem
-                        key={name}
-                        courierName={name}
-                        vehicleType={getCourierVehicleType(name)}
-                        isSelected={selectedCourier === name}
-                        onSelect={handleCourierSelect}
-                        availableOrdersCount={getAvailableOrdersCount(name)}
-                        isDark={isDark}
-                      />
-                    ))
+                    filteredCouriers.map((name) => {
+                      const metrics = getCourierMetrics(name)
+                      return (
+                        <CourierListItem
+                          key={name}
+                          courierName={name}
+                          vehicleType={getCourierVehicleType(name)}
+                          isSelected={selectedCourier === name}
+                          onSelect={handleCourierSelect}
+                          availableOrdersCount={metrics.available}
+                          deliveredOrdersCount={metrics.delivered}
+                          totalOrdersCount={metrics.total}
+                          isDark={isDark}
+                        />
+                      )
+                    })
                   )}
                 </div>
               </div>

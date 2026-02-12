@@ -6,16 +6,12 @@ import {
     BanknotesIcon,
     GlobeAltIcon,
     ClockIcon,
-    ArrowsRightLeftIcon,
-    ScaleIcon,
-    PrinterIcon
+    ArrowsRightLeftIcon
 } from '@heroicons/react/24/outline';
 import type { Order } from '../../types';
 import { SettlementModal } from './modals/SettlementModal';
-import { PaymentDistributionChart } from './financials/PaymentDistributionChart';
-import { FinancialMetricCard } from './financials/FinancialMetricCard';
-import { EfficiencyGauge } from './financials/EfficiencyGauge';
-import { BalanceWalletCard } from './financials/BalanceWalletCard';
+import { RevenueProgressBar } from './financials/RevenueProgressBar';
+import { PaymentMethodCard } from './financials/PaymentMethodCard';
 
 interface CourierFinancialsProps {
     courierId: string;
@@ -58,14 +54,13 @@ interface FinancialSummary {
     historyOrders: Order[];
 }
 
-// Helper to format currency moved to top-level for shared use
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('uk-UA', {
         style: 'currency',
         currency: 'UAH',
         minimumFractionDigits: 0,
         maximumFractionDigits: 0
-    }).format(value);
+    }).format(value).replace('UAH', '₴');
 };
 
 export function CourierFinancials({
@@ -81,13 +76,23 @@ export function CourierFinancials({
     const [showSettlementModal, setShowSettlementModal] = useState(false);
     const [activeTab, setActiveTab] = useState<'cash' | 'online' | 'history'>('cash');
     const [switchingOrderId, setSwitchingOrderId] = useState<string | null>(null);
-    const [debtSummary, setDebtSummary] = useState<any>(null);
-    const [showDebts, setShowDebts] = useState(false);
+    const [notes, setNotes] = useState('');
 
     const { excelData, updateOrderPaymentMethod, updateExcelData } = useExcelData();
 
+    useEffect(() => {
+        const storageKey = `shift_notes_${courierId}_${targetDate || new Date().toISOString().split('T')[0]}`;
+        const saved = localStorage.getItem(storageKey);
+        if (saved) setNotes(saved);
+    }, [courierId, targetDate]);
+
+    const handleNotesChange = (val: string) => {
+        setNotes(val);
+        const storageKey = `shift_notes_${courierId}_${targetDate || new Date().toISOString().split('T')[0]}`;
+        localStorage.setItem(storageKey, val);
+    };
+
     // Helper to calculate financials locally from Excel data
-    // Memoized result to avoid re-calculating on every UI ripple
     const localSummary = useMemo((): FinancialSummary | null => {
         if (!excelData?.orders) return null;
 
@@ -134,14 +139,9 @@ export function CourierFinancials({
         };
 
         courierOrders.forEach((order: any) => {
-            // Only consider valid statuses for financials
             const isValidForFinancials = order.status !== 'Отменен' && order.status !== 'Возврат';
 
-            // For history, we only care about settled orders from today or past
             if (order.settledDate) {
-                // If it's settled today, we still count it towards today's stats? 
-                // Usually history is ONLY for past settled. 
-                // Let's keep existing logic: if settled -> history.
                 summary.historyOrders.push({
                     ...order,
                     id: order.id || order.orderNumber,
@@ -160,19 +160,6 @@ export function CourierFinancials({
                 paymentMethod === 'cash' ||
                 paymentMethod === '';
 
-            // If cash, the courier might have collected MORE than the order amount if they needed to give change (but didn't?) 
-            // Wait, changeAmount is "Сдача с...". So if order is 500, changeAmount is 1000, client gave 1000.
-            // Courier collects 1000? NO. Courier collects 500. 
-            // The "Change" logic in previous code was: effectiveAmount = Math.max(amount, changeAmount). 
-            // This implies changeAmount is "Total Cash Handed Over"? 
-            // Let's stick to the previous logic to be safe, but usually "changeAmount" means "Amount to give back".
-            // Re-reading logic: `effectiveAmount = isCash ? Math.max(amount, changeAmount) : amount;`
-            // If amount=500, changeAmount=1000 (client pays with 1000). 
-            // Then effective = 1000. Courier has 1000 cash. 
-            // Debt = 500 (order cost). He owes 500 to store? Or 1000? 
-            // If he brings 1000 back, 500 is for order, 500 change? 
-            // IF the store provides the change, then courier takes 500 + 500 change from store => delivers => gets 1000. Net change 0.
-            // Let's assume the previous logic was correct for this specific business: `changeAmount` is likely "Received Check" or similar.
             const effectiveAmount = isCash ? Math.max(amount, changeAmount) : amount;
 
             const orderData: Order = {
@@ -222,9 +209,7 @@ export function CourierFinancials({
         setLoading(true);
         setError(null);
 
-        // 1. Try Local Calculation First
         if (excelData && excelData.orders.length > 0) {
-            console.log('загрузка с екселя');
             if (localSummary) {
                 setSummary(localSummary);
                 setLoading(false);
@@ -232,7 +217,6 @@ export function CourierFinancials({
             }
         }
 
-        // 2. Fallback to API
         if (!courierId) {
             setError('Не выбран курьер');
             setLoading(false);
@@ -272,45 +256,16 @@ export function CourierFinancials({
             }
         } catch (err) {
             console.error('Error fetching financial summary:', err);
-            let errorMessage = 'Unknown error';
-
-            if (err instanceof Error) {
-                if (err.name === 'DOMException' || err.message.includes('string did not match the expected pattern')) {
-                    errorMessage = 'Invalid authentication token. Please log in again.';
-                } else if (err.message === 'Нет данных (локальных или токена)') {
-                    errorMessage = 'Данные не найдены. Загрузите Excel файл или войдите в систему.';
-                } else {
-                    errorMessage = err.message;
-                }
-            }
-
-            setError(errorMessage);
+            setError(err instanceof Error ? err.message : 'Unknown error');
         } finally {
             setLoading(false);
         }
     }, [courierId, divisionId, targetDate, excelData, localSummary]);
 
-    const fetchDebtSummary = useCallback(async () => {
-        try {
-            const token = localStorage.getItem('km_access_token');
-            const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/settlements/statistics-summary?divisionId=${divisionId}`, {
-                headers: { 'Authorization': `Bearer ${token ? token.trim() : ''}` }
-            });
-            if (!response.ok) throw new Error('Failed to fetch debt summary');
-            const result = await response.json();
-            const courierData = result.data.find((d: any) => String(d.courierId) === String(courierId));
-            setDebtSummary(courierData || null);
-        } catch (err) {
-            console.error('Error fetching debt summary:', err);
-        }
-    }, [courierId, divisionId]);
-
     useEffect(() => {
         fetchFinancialSummary();
-        fetchDebtSummary();
-    }, [fetchFinancialSummary, fetchDebtSummary]);
+    }, [fetchFinancialSummary]);
 
-    // Memoize the active orders list
     const activeOrders = useMemo(() => {
         if (!summary) return [];
         const { currentShift, historyOrders } = summary;
@@ -327,6 +282,23 @@ export function CourierFinancials({
         }
     }, [summary, activeTab]);
 
+
+    const handleCopyReport = () => {
+        if (!summary) return;
+        const { currentShift } = summary;
+        const report = `📊 Отчет по курьеру: ${courierName}\n` +
+            `📅 Дата: ${new Date().toLocaleDateString('ru-RU')}\n` +
+            `✅ Выполнено: ${currentShift.completedOrders}/${currentShift.totalOrders}\n` +
+            `-------------------\n` +
+            `💵 Наличные: ${formatCurrency(currentShift.cashOrders.totalAmount)}\n` +
+            `💳 Онлайн: ${formatCurrency(currentShift.onlineOrders.totalAmount)}\n` +
+            `💰 Всего выручка: ${formatCurrency(currentShift.totalExpected)}\n` +
+            (notes ? `📝 Заметка: ${notes}\n` : '') +
+            `-------------------`;
+
+        navigator.clipboard.writeText(report);
+        toast.success('Отчет скопирован в буфер обмена');
+    };
 
     const handleSwitchPaymentMethod = async (orderNumber: string, currentMethod: string) => {
         const newMethod = currentMethod.toLowerCase().includes('налич') || currentMethod.toLowerCase().includes('cash') ? 'Онлайн' : 'Наличные';
@@ -368,282 +340,254 @@ export function CourierFinancials({
 
     const { currentShift } = summary;
     const cashToCollect = currentShift.cashOrders.totalAmount;
+    const courierInitial = courierName.charAt(0).toUpperCase();
 
-    // Calculate Net Payable including debts (for future use or display if needed)
-    // const deptAmount = debtSummary ? Math.abs(debtSummary.totalDifference) : 0;
-    // const isDebtPositive = debtSummary ? debtSummary.totalDifference < 0 : false;
-    // const netPayable = cashToCollect + (isDebtPositive ? deptAmount : -deptAmount);
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500">
-            {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-2">
-                <div>
-                    <h2 className={clsx('text-3xl font-black tracking-tight mb-1', isDark ? 'text-white' : 'text-gray-900')}>
-                        {courierName}
-                    </h2>
-                    <div className="flex items-center gap-2">
-                        <div className={clsx('w-2 h-2 rounded-full animate-pulse', currentShift.completedOrders > 0 ? 'bg-green-500' : 'bg-gray-400')}></div>
-                        <p className={clsx('text-sm font-medium opacity-60', isDark ? 'text-gray-300' : 'text-gray-500')}>
-                            Смена открыта • {new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}
-                        </p>
+        <div className="space-y-6 animate-in fade-in duration-700 max-w-6xl mx-auto">
+            {/* Courier Header Card */}
+            <div className={clsx(
+                'p-6 rounded-[32px] flex items-center justify-between',
+                isDark ? 'bg-gray-900 shadow-black/20' : 'bg-white shadow-sm border border-gray-100'
+            )}>
+                <div className="flex items-center gap-5">
+                    <div className="w-14 h-14 bg-[#5175f0] rounded-2xl flex items-center justify-center text-white text-2xl font-black shadow-lg shadow-[#5175f0]/20 transform transition-transform hover:rotate-6">
+                        {courierInitial}
+                    </div>
+                    <div>
+                        <h2 className={clsx('text-2xl font-black tracking-tight mb-1', isDark ? 'text-white' : 'text-gray-900')}>
+                            {courierName}
+                        </h2>
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                            <p className={clsx('text-[10px] font-bold uppercase tracking-widest opacity-40', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                                Смена: {new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}
+                            </p>
+                        </div>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-6">
                     <button
-                        onClick={() => window.print()}
+                        onClick={handleCopyReport}
                         className={clsx(
-                            'p-3 rounded-xl transition-all shadow-sm border no-print',
-                            isDark ? 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-400' : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-500 hover:text-gray-900'
-                        )}
-                        title="Распечатать отчет"
-                    >
-                        <PrinterIcon className="w-5 h-5" />
-                    </button>
-
-                    <button
-                        onClick={() => setShowSettlementModal(true)}
-                        disabled={cashToCollect === 0}
-                        className={clsx(
-                            'px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg transition-all transform hover:-translate-y-1 active:scale-95 border border-transparent no-print',
-                            cashToCollect > 0
-                                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-blue-500/30 hover:shadow-blue-500/50'
-                                : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600'
+                            'px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all hover:scale-105 active:scale-95 border no-print',
+                            isDark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white' : 'bg-[#f8faff] border-gray-100 text-gray-400 hover:text-blue-600'
                         )}
                     >
-                        {cashToCollect > 0 ? 'Рассчитать курьера' : 'Нет средств'}
+                        Копировать отчет
                     </button>
+                    <div className="text-right">
+                        <p className={clsx('text-[10px] font-black uppercase tracking-widest opacity-30 mb-1', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                            Выполнено
+                        </p>
+                        <div className={clsx('text-3xl font-black tracking-tighter', isDark ? 'text-white' : 'text-gray-900')}>
+                            {currentShift.completedOrders} <span className="opacity-15 inline-block scale-75 translate-y-[-2px]">/ {currentShift.totalOrders}</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            {/* Metrics Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <FinancialMetricCard
-                    title="К сдаче (Нал)"
-                    value={formatCurrency(cashToCollect)}
-                    icon={BanknotesIcon}
-                    color="green"
-                    isDark={isDark}
-                    trend={cashToCollect > 0 ? 100 : 0}
-                    trendLabel="от выручки"
-                />
+            {/* Financial Overview Main Card */}
+            <div className={clsx(
+                'p-10 rounded-[48px] shadow-2xl relative overflow-hidden',
+                isDark ? 'bg-gray-900 shadow-black/40' : 'bg-white shadow-blue-500/5'
+            )}>
+                {/* Background Decor */}
+                <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 blur-[100px] pointer-events-none" />
 
-                <FinancialMetricCard
-                    title="Всего выручка"
-                    value={formatCurrency(currentShift.totalExpected)}
-                    icon={ScaleIcon}
-                    color="blue"
-                    isDark={isDark}
-                    subValue={`${currentShift.totalOrders} заказов`}
-                />
-
-                <BalanceWalletCard
-                    expected={debtSummary ? debtSummary.totalExpected : 0}
-                    received={debtSummary ? debtSummary.totalReceived : 0}
-                    difference={debtSummary ? debtSummary.totalDifference : 0}
-                    isDark={isDark}
-                    onClick={() => setShowDebts(!showDebts)}
-                />
-
-                <EfficiencyGauge
-                    completed={currentShift.completedOrders}
-                    total={currentShift.totalOrders}
-                    isDark={isDark}
-                />
-            </div>
-
-            {/* Main Content Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-                {/* Left Column: Charts & Stats */}
-                <div className="space-y-6 lg:col-span-1">
-                    <PaymentDistributionChart
-                        data={[
-                            { label: 'Наличные', value: currentShift.cashOrders.totalAmount, color: '#10b981', icon: BanknotesIcon },
-                            { label: 'Онлайн', value: currentShift.onlineOrders.totalAmount, color: '#8b5cf6', icon: GlobeAltIcon },
-                            //{ label: 'Карта', value: currentShift.cardOrders.totalAmount, color: '#3b82f6', icon: CreditCardIcon }
-                        ]}
-                        total={currentShift.totalExpected}
-                        isDark={isDark}
-                    />
-
-                    {/* Detailed Debt Info (Expandable) */}
-                    {showDebts && debtSummary && (
-                        <div className={clsx(
-                            'p-6 rounded-3xl border transition-all animate-in slide-in-from-top-4',
-                            isDark ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-100 shadow-sm'
-                        )}>
-                            <h3 className={clsx('text-sm font-bold uppercase tracking-wider mb-4 opacity-70', isDark ? 'text-gray-300' : 'text-gray-600')}>
-                                Детали балланса
-                            </h3>
-                            <div className="space-y-3">
-                                <div className="flex justify-between text-sm">
-                                    <span className="opacity-60">Сдано всего:</span>
-                                    <span className="font-bold">{formatCurrency(debtSummary.totalReceived)}</span>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="opacity-60">Ожидалось:</span>
-                                    <span className="font-bold">{formatCurrency(debtSummary.totalExpected)}</span>
-                                </div>
-                                <div className="pt-3 border-t border-dashed border-gray-200 dark:border-gray-700 mt-2">
-                                    <div className="flex justify-between text-sm font-black">
-                                        <span className={debtSummary.totalDifference < 0 ? 'text-red-500' : 'text-green-500'}>
-                                            {debtSummary.totalDifference < 0 ? 'ДОЛГ' : 'ПЕРЕПЛАТА'}
-                                        </span>
-                                        <span className={debtSummary.totalDifference < 0 ? 'text-red-500' : 'text-green-500'}>
-                                            {formatCurrency(Math.abs(debtSummary.totalDifference))}
-                                        </span>
-                                    </div>
-                                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 mb-12">
+                    {/* Left: Cash to Collect */}
+                    <div className="flex items-center gap-8">
+                        <div className="w-24 h-24 bg-[#10b981] rounded-[32px] flex items-center justify-center text-white shadow-2xl shadow-[#10b981]/30 transform transition-transform hover:scale-110">
+                            <BanknotesIcon className="w-12 h-12" />
+                        </div>
+                        <div>
+                            <h4 className={clsx('text-[10px] font-black uppercase tracking-widest opacity-40 mb-3', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                                К сдаче (Наличные)
+                            </h4>
+                            <div className={clsx('text-6xl font-black tracking-tighter leading-none flex items-baseline gap-2', isDark ? 'text-white' : 'text-gray-900')}>
+                                {cashToCollect.toLocaleString('ru-RU')} <span className="text-4xl font-bold opacity-20 translate-y-[-4px]">₴</span>
                             </div>
                         </div>
-                    )}
+                    </div>
+
+                    {/* Right: Revenue Progress */}
+                    <div className="flex items-center">
+                        <RevenueProgressBar
+                            cashAmount={currentShift.cashOrders.totalAmount}
+                            onlineAmount={currentShift.onlineOrders.totalAmount}
+                            totalAmount={currentShift.totalExpected}
+                            isDark={isDark}
+                        />
+                    </div>
                 </div>
 
-                {/* Right Column: Order List */}
-                <div className="lg:col-span-2">
+                {/* Sub Cards: Detailed breakdown */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
+                    <PaymentMethodCard
+                        label="Готівка"
+                        amount={currentShift.cashOrders.totalAmount}
+                        orderCount={currentShift.cashOrders.count}
+                        percentage={currentShift.totalExpected > 0 ? Math.round((currentShift.cashOrders.totalAmount / currentShift.totalExpected) * 100) : 0}
+                        color="green"
+                        icon={BanknotesIcon}
+                        isDark={isDark}
+                    />
+                    <PaymentMethodCard
+                        label="Онлайн"
+                        amount={currentShift.onlineOrders.totalAmount}
+                        orderCount={currentShift.onlineOrders.count}
+                        percentage={currentShift.totalExpected > 0 ? Math.round((currentShift.onlineOrders.totalAmount / currentShift.totalExpected) * 100) : 0}
+                        color="purple"
+                        icon={GlobeAltIcon}
+                        isDark={isDark}
+                    />
+                </div>
+
+                {/* Settlement Button */}
+                <button
+                    onClick={() => setShowSettlementModal(true)}
+                    disabled={cashToCollect === 0}
+                    className={clsx(
+                        'w-full py-8 rounded-[40px] font-black text-sm uppercase tracking-[0.25em] shadow-2xl transition-all transform hover:-translate-y-1 active:scale-[0.99] border border-transparent no-print',
+                        cashToCollect > 0
+                            ? 'bg-[#10b981] text-white shadow-[#10b981]/40 hover:shadow-[#10b981]/60'
+                            : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600 shadow-none'
+                    )}
+                >
+                    {cashToCollect > 0 ? 'Расчет налички у курьера' : 'Нет средств для расчета'}
+                </button>
+            </div>
+
+            {/* Shift Notes Section */}
+            <div className={clsx(
+                'p-8 rounded-[40px] border transition-all',
+                isDark ? 'bg-gray-900/40 border-white/5' : 'bg-white shadow-blue-500/5 border-gray-100'
+            )}>
+                <h3 className={clsx('text-xs font-black uppercase tracking-widest opacity-40 mb-2', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                    Заметки по смене
+                </h3>
+                <textarea
+                    value={notes}
+                    onChange={(e) => handleNotesChange(e.target.value)}
+                    rows={2}
+                    className={clsx(
+                        'w-full bg-transparent border-b-2 py-2 text-sm font-bold outline-none transition-all placeholder:opacity-20',
+                        isDark ? 'border-white/5 focus:border-blue-500/50 text-white' : 'border-gray-50 focus:border-blue-100 text-gray-900'
+                    )}
+                    placeholder="Напишите что-то важное о сегодняшней смене..."
+                />
+            </div>
+
+            {/* Order Details Grid */}
+            <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 px-4">
+                    <h3 className={clsx('text-2xl font-black tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>
+                        Детализация заказов
+                    </h3>
+
+                    {/* Minimalist Tabs */}
                     <div className={clsx(
-                        'rounded-3xl border overflow-hidden flex flex-col h-full min-h-[500px] glass-panel transition-all',
-                        isDark ? 'shadow-black/20 border-white/5 bg-gray-900/40' : 'shadow-blue-500/5 border-white/60 bg-white/60'
+                        "p-1.5 rounded-2xl flex gap-1",
+                        isDark ? "bg-gray-900" : "bg-white shadow-sm border border-gray-100"
                     )}>
-                        {/* Tabs */}
-                        <div className="flex items-center p-2 gap-2 border-b border-gray-100 dark:border-gray-800">
+                        {(['cash', 'online', 'history'] as const).map((tab) => (
                             <button
-                                onClick={() => setActiveTab('cash')}
+                                key={tab}
+                                onClick={() => setActiveTab(tab)}
                                 className={clsx(
-                                    'flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all relative overflow-hidden',
-                                    activeTab === 'cash'
-                                        ? (isDark ? 'bg-green-500/20 text-green-400' : 'bg-green-50 text-green-700')
-                                        : 'opacity-50 hover:opacity-100 hover:bg-gray-100 dark:hover:bg-gray-800'
+                                    'px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all',
+                                    activeTab === tab
+                                        ? (isDark ? 'bg-gray-800 text-[#5175f0]' : 'bg-blue-50 text-[#5175f0]')
+                                        : 'opacity-40 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/5'
                                 )}
                             >
-                                Наличные <span className="opacity-60 ml-1">({currentShift.cashOrders.count})</span>
-                                {activeTab === 'cash' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-green-500" />}
+                                {tab === 'cash' ? `Наличные (${currentShift.cashOrders.count})` :
+                                    tab === 'online' ? `Онлайн (${currentShift.onlineOrders.count})` :
+                                        `История (${summary.historyOrders.length})`}
                             </button>
-                            <button
-                                onClick={() => setActiveTab('online')}
-                                className={clsx(
-                                    'flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all relative overflow-hidden',
-                                    activeTab === 'online'
-                                        ? (isDark ? 'bg-purple-500/20 text-purple-400' : 'bg-purple-50 text-purple-700')
-                                        : 'opacity-50 hover:opacity-100 hover:bg-gray-100 dark:hover:bg-gray-800'
-                                )}
-                            >
-                                Онлайн <span className="opacity-60 ml-1">({currentShift.onlineOrders.count})</span>
-                                {activeTab === 'online' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-purple-500" />}
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('history')}
-                                className={clsx(
-                                    'flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all relative overflow-hidden',
-                                    activeTab === 'history'
-                                        ? (isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-50 text-blue-700')
-                                        : 'opacity-50 hover:opacity-100 hover:bg-gray-100 dark:hover:bg-gray-800'
-                                )}
-                            >
-                                История <span className="opacity-60 ml-1">({summary.historyOrders.length})</span>
-                                {activeTab === 'history' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-500" />}
-                            </button>
-                        </div>
+                        ))}
+                    </div>
+                </div>
 
-                        {/* List Content */}
-                        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-3">
-                            {activeOrders.length === 0 ? (
-                                <div className="h-full flex flex-col items-center justify-center opacity-40">
-                                    <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-800 mb-4 flex items-center justify-center">
-                                        <ClockIcon className="w-8 h-8" />
+                <div className={clsx(
+                    'rounded-[56px] border overflow-hidden p-8 transition-all min-h-[400px]',
+                    isDark ? 'bg-gray-900/60 border-white/5' : 'bg-white shadow-blue-500/5 border-gray-100'
+                )}>
+                    <div className="space-y-4">
+                        {activeOrders.length === 0 ? (
+                            <div className="py-32 flex flex-col items-center justify-center opacity-20">
+                                <ClockIcon className="w-16 h-16 mb-6" />
+                                <p className="text-xs font-black uppercase tracking-widest">Список пуст</p>
+                            </div>
+                        ) : (
+                            activeOrders.map((order, idx) => (
+                                <div
+                                    key={order.id || idx}
+                                    style={{ animationDelay: `${idx * 50}ms` }}
+                                    className={clsx(
+                                        'p-6 rounded-[36px] border flex items-center justify-between transition-all group animate-in slide-in-from-bottom-2 duration-500 fill-mode-both',
+                                        isDark ? 'bg-black/20 border-white/5 hover:bg-black/40' : 'bg-[#f8faff] border-gray-100/50 hover:bg-white hover:shadow-2xl hover:shadow-blue-500/10'
+                                    )}
+                                >
+                                    <div className="flex-1 min-w-0 mr-8">
+                                        <div className="flex items-center gap-3 mb-3">
+                                            <span className={clsx(
+                                                "text-[10px] font-black px-2.5 py-1 rounded-xl opacity-40",
+                                                isDark ? "bg-gray-800" : "bg-gray-100"
+                                            )}>
+                                                #{order.orderNumber}
+                                            </span>
+                                            <span className={clsx(
+                                                "text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-xl shadow-sm",
+                                                order.status === 'Исполнен' ? 'bg-[#10b981]/10 text-[#10b981]' : 'bg-gray-500/10 text-gray-400'
+                                            )}>
+                                                {order.status || 'ВЫПОЛНЯЕТСЯ'}
+                                            </span>
+                                        </div>
+                                        <p className={clsx('text-sm font-bold leading-relaxed', isDark ? 'text-gray-300' : 'text-gray-800')} title={order.address}>
+                                            {order.address}
+                                        </p>
                                     </div>
-                                    <p className="text-sm font-bold uppercase tracking-widest">Нет заказов</p>
-                                </div>
-                            ) : (
-                                activeOrders.map((order, idx) => (
-                                    <div
-                                        key={order.id || idx}
-                                        className={clsx(
-                                            'p-4 rounded-2xl border flex items-center justify-between transition-all group',
-                                            isDark ? 'bg-gray-800/30 border-gray-700 hover:bg-gray-800/50' : 'bg-white border-gray-100 hover:border-blue-200 hover:shadow-md'
-                                        )}
-                                    >
-                                        <div className="flex-1 min-w-0 mr-4">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <span className={clsx(
-                                                    "text-[10px] font-black px-1.5 py-0.5 rounded",
-                                                    isDark ? "bg-blue-900/30 text-blue-400" : "bg-blue-100 text-blue-700"
-                                                )}>
-                                                    #{order.orderNumber}
-                                                </span>
-                                                <span className={clsx(
-                                                    "text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded",
-                                                    order.status === 'Исполнен' ? (isDark ? 'bg-green-900/30 text-green-400' : 'bg-green-100 text-green-700') :
-                                                        (isDark ? 'bg-gray-700 text-gray-400' : 'bg-gray-200 text-gray-600')
-                                                )}>
-                                                    {order.status || 'Неизвестно'}
-                                                </span>
-                                            </div>
-                                            <p className={clsx('text-sm truncate font-bold', isDark ? 'text-gray-300' : 'text-gray-700')} title={order.address}>
-                                                {order.address}
+
+                                    <div className="flex items-center gap-8">
+                                        <div className="text-right">
+                                            <p className={clsx('text-xl font-black tracking-tight',
+                                                activeTab === 'cash' ? 'text-[#10b981]' :
+                                                    activeTab === 'online' ? 'text-[#8b5cf6]' :
+                                                        (isDark ? 'text-white' : 'text-gray-900')
+                                            )}>
+                                                {formatCurrency((order as any).settledAmount || (order as any).effectiveAmount || order.amount)}
                                             </p>
-
-                                            <div className="flex items-center gap-3 mt-1.5">
-                                                {order.changeAmount > order.amount && (
-                                                    <div className={clsx(
-                                                        "flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full border",
-                                                        isDark ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-amber-50 text-amber-700 border-amber-100"
-                                                    )}>
-                                                        <span>Сдача: {formatCurrency(order.changeAmount - order.amount)}</span>
-                                                    </div>
-                                                )}
-                                                <span className="text-[10px] font-medium opacity-50 flex items-center gap-1">
-                                                    <ClockIcon className="w-3 h-3" />
-                                                    {order.plannedTime || '—'}
-                                                </span>
-                                            </div>
-                                            {activeTab === 'history' && (order as any).settlementNote && (
-                                                <div className="mt-2 text-xs italic opacity-60 bg-black/5 dark:bg-white/5 p-2 rounded-lg border border-black/5 dark:border-white/5">
-                                                    {(order as any).settlementNote}
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <div className="flex items-center gap-4">
-                                            <div className="text-right">
-                                                <p className={clsx('text-lg font-black tracking-tight',
-                                                    activeTab === 'cash' ? (isDark ? 'text-green-400' : 'text-green-600') :
-                                                        activeTab === 'online' ? (isDark ? 'text-purple-400' : 'text-purple-600') :
-                                                            (isDark ? 'text-blue-400' : 'text-blue-600')
-                                                )}>
-                                                    {formatCurrency((order as any).settledAmount || (order as any).effectiveAmount || order.amount)}
+                                            {activeTab === 'history' && order.amount !== (order as any).settledAmount && (
+                                                <p className={clsx('text-[11px] font-black', (order as any).settledAmount > order.amount ? 'text-green-500' : 'text-red-500')}>
+                                                    {(order as any).settledAmount > order.amount ? '+' : '-'}{formatCurrency(Math.abs((order as any).settledAmount - order.amount))}
                                                 </p>
-                                                {activeTab === 'history' && order.amount !== (order as any).settledAmount && (
-                                                    <p className={clsx('text-[10px] font-bold', (order as any).settledAmount > order.amount ? 'text-green-500' : 'text-red-500')}>
-                                                        {(order as any).settledAmount > order.amount ? '+' : '-'}{formatCurrency(Math.abs((order as any).settledAmount - order.amount))}
-                                                    </p>
-                                                )}
-                                            </div>
-
-                                            {activeTab !== 'history' && (
-                                                <button
-                                                    onClick={() => handleSwitchPaymentMethod(String(order.orderNumber), String((order as any).paymentMethod || ''))}
-                                                    disabled={switchingOrderId === String(order.id || order.orderNumber)}
-                                                    className={clsx(
-                                                        'p-2 rounded-xl transition-all opacity-0 group-hover:opacity-100 shadow-sm border no-print',
-                                                        isDark ? 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-400' : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-500'
-                                                    )}
-                                                    title="Сменить способ оплаты"
-                                                >
-                                                    {switchingOrderId === order.orderNumber ? (
-                                                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                                    ) : (
-                                                        <ArrowsRightLeftIcon className="w-4 h-4" />
-                                                    )}
-                                                </button>
                                             )}
                                         </div>
+
+                                        {activeTab !== 'history' && (
+                                            <button
+                                                onClick={() => handleSwitchPaymentMethod(String(order.orderNumber), String((order as any).paymentMethod || ''))}
+                                                disabled={switchingOrderId === String(order.id || order.orderNumber)}
+                                                className={clsx(
+                                                    'p-4 rounded-[20px] transition-all opacity-0 group-hover:opacity-100 border no-print relative overflow-hidden',
+                                                    isDark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white' : 'bg-white border-gray-100 text-gray-500 hover:text-blue-600 hover:shadow-xl hover:shadow-blue-500/10'
+                                                )}
+                                                title="Сменить способ оплаты"
+                                            >
+                                                {switchingOrderId === order.orderNumber ? (
+                                                    <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                                ) : (
+                                                    <ArrowsRightLeftIcon className="w-5 h-5" />
+                                                )}
+                                            </button>
+                                        )}
                                     </div>
-                                ))
-                            )}
-                        </div>
+                                </div>
+                            ))
+                        )}
                     </div>
                 </div>
             </div>
