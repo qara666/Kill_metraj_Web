@@ -664,23 +664,21 @@ export function CourierFinancials({
                                                 </p>
                                             </div>
 
-                                            {(activeTab as string) !== 'history' && (
-                                                <button
-                                                    onClick={() => handleSwitchPaymentMethod(String(order.orderNumber), String((order as any).paymentMethod || ''))}
-                                                    disabled={switchingOrderId === String(order.id || order.orderNumber)}
-                                                    className={clsx(
-                                                        'p-4 rounded-[20px] transition-all opacity-0 group-hover:opacity-100 border no-print relative overflow-hidden',
-                                                        isDark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white' : 'bg-white border-gray-100 text-gray-500 hover:text-blue-600 hover:shadow-xl hover:shadow-blue-500/10'
-                                                    )}
-                                                    title="Сменить способ оплаты"
-                                                >
-                                                    {switchingOrderId === order.orderNumber ? (
-                                                        <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                                    ) : (
-                                                        <ArrowsRightLeftIcon className="w-5 h-5" />
-                                                    )}
-                                                </button>
-                                            )}
+                                            <button
+                                                onClick={() => handleSwitchPaymentMethod(String(order.orderNumber), String((order as any).paymentMethod || ''))}
+                                                disabled={switchingOrderId === String(order.id || order.orderNumber)}
+                                                className={clsx(
+                                                    'p-4 rounded-[20px] transition-all opacity-0 group-hover:opacity-100 border no-print relative overflow-hidden',
+                                                    isDark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white' : 'bg-white border-gray-100 text-gray-500 hover:text-blue-600 hover:shadow-xl hover:shadow-blue-500/10'
+                                                )}
+                                                title="Сменить способ оплаты"
+                                            >
+                                                {switchingOrderId === order.orderNumber ? (
+                                                    <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                                ) : (
+                                                    <ArrowsRightLeftIcon className="w-5 h-5" />
+                                                )}
+                                            </button>
                                         </div>
                                     </div>
                                 ))
