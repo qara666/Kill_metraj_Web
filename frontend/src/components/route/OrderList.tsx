@@ -268,10 +268,10 @@ export const OrderList = memo(({
     return (
         <List
             ref={listRef}
-            height={listHeight}
+            height={listHeight || 600}
             itemCount={orders.length}
             itemSize={() => 130}
-            width={'100%'}
+            width={typeof window !== 'undefined' ? (window.innerWidth < 1024 ? window.innerWidth - 48 : 800) : 800}
             itemKey={getItemKey}
             itemData={itemData}
         >

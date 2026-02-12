@@ -234,7 +234,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [orderSearchTerm, setOrderSearchTerm] = useState('')
   const [courierSearchTerm, setCourierSearchTerm] = useState('')
   const [courierSortType, setCourierSortType] = useState<'alpha' | 'load'>('alpha')
-  const TypedAutoSizer = (AutoSizer as any).AutoSizer || AutoSizer || (AutoSizer as any).default
+  // Robust AutoSizer resolution for different build environments (ESM/CJS)
+  const TypedAutoSizer = useMemo(() => {
+    const AS = AutoSizer as any;
+    if (AS?.AutoSizer) return AS.AutoSizer;
+    if (AS?.default?.AutoSizer) return AS.default.AutoSizer;
+    if (AS?.default) return AS.default;
+    return AutoSizer;
+  }, []);
 
   // Debounce hook
   const useDebounce = <T,>(value: T, delay: number): T => {
@@ -1938,7 +1945,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                         // Fallback dimensions if AutoSizer fails to detect them
                         // In some production builds, AutoSizer might report 0 initially
                         const finalHeight = height > 0 ? height : 400;
-                        const finalWidth = width > 0 ? width : '100%';
+                        const finalWidth = width > 0 ? width : 380;
 
                         return (
                           <List
