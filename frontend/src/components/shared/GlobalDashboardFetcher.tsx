@@ -4,18 +4,18 @@ import { useAutoPlannerStore } from '../../stores/useAutoPlannerStore';
 import { useDashboardWebSocket } from '../../hooks/useDashboardWebSocket';
 import { ProcessedExcelData } from '../../types';
 import { logger } from '../../utils/ui/logger';
-import { mergeExcelData } from '../../utils/data/dataMerging';
+import { syncDashboardData } from '../../utils/data/dataMerging';
 
 export const GlobalDashboardFetcher: React.FC = () => {
     const { updateExcelData } = useExcelData();
     const { apiAutoRefreshEnabled } = useAutoPlannerStore();
 
     const handleDataLoaded = useCallback((data: ProcessedExcelData) => {
-        logger.info(` Global Fetcher: Loaded ${data.orders.length} orders from Dashboard API (WebSocket)`);
+        logger.info(` Global Fetcher: Loaded ${data.orders.length} orders from Dashboard API (WebSocket/Auto-Refresh)`);
 
-        // Use updateExcelData to merge with existing data
+        // Use updateExcelData to sync with existing data (replaces logic)
         updateExcelData((prevData) => {
-            return mergeExcelData(data, prevData);
+            return syncDashboardData(data, prevData);
         });
     }, [updateExcelData]);
 

@@ -15,8 +15,8 @@ import { useAutoPlannerStore } from '../stores/useAutoPlannerStore';
 import { socketService } from '../services/socketService';
 import { ProcessedExcelData } from '../types';
 import { logger } from '../utils/ui/logger';
-import { API_URL } from '../config/apiConfig';
-import { formatDateForApi, formatDateTimeForApi } from '../utils/data/apiDataTransformer';
+import { formatDateForApi } from '../utils/data/apiDataTransformer';
+import { dashboardApiService } from '../utils/api/dashboardApiService';
 
 interface DashboardWebSocketParams {
     onDataLoaded: (data: ProcessedExcelData) => void;
@@ -73,47 +73,21 @@ export const useDashboardWebSocket = ({
         try {
             logger.info(' Fetching latest dashboard data from REST API...');
 
-            const token = localStorage.getItem('km_access_token');
-            if (!token) {
-                logger.warn('Dashboard WebSocket: No auth token found');
-                setApiSyncError('Требуется авторизация');
-                return;
-            }
+            // Use dashboardApiService which handles date conversion and consistent fetching
+            const dateStr = apiDateShift || formatDateForApi(new Date());
 
-            // Build query parameters
-            const queryParams = new URLSearchParams();
-            queryParams.append('top', '300'); // As requested
+            // Convert to DD.MM.YYYY required by API service
+            const apiDate = dashboardApiService.convertDateToApiFormat(dateStr);
 
-            if (apiDateShift) {
-                const [y, m, d] = apiDateShift.split('-').map(Number);
-                const shiftDate = new Date(y, m - 1, d);
-                queryParams.append('dateShift', formatDateForApi(shiftDate));
-            }
+            logger.info(` Fetching dashboard for ${apiDate} (force=true)`);
 
-            if (apiTimeFilterEnabled) {
-                if (apiTimeDeliveryBeg) {
-                    queryParams.append('timeDeliveryBeg', formatDateTimeForApi(new Date(apiTimeDeliveryBeg)));
-                }
-                if (apiTimeDeliveryEnd) {
-                    queryParams.append('timeDeliveryEnd', formatDateTimeForApi(new Date(apiTimeDeliveryEnd)));
-                }
-            }
-
-            if (apiDepartmentId) {
-                queryParams.append('departmentId', String(apiDepartmentId));
-            }
-
-            const response = await fetch(`${API_URL}/api/dashboard/latest?${queryParams.toString()}`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
+            const response = await dashboardApiService.fetchDataForDate({
+                date: apiDate,
+                force: true // Force refresh to ensure sync with FastOperator
             });
 
-            const result = await response.json();
-
-            if (result.success && result.data) {
-                logger.info(` Loaded dashboard data from REST API (${result.data.orders?.length || 0} orders)`);
+            if (response.success && response.data) {
+                logger.info(` Loaded dashboard data via Service (${response.data.orders?.length || 0} orders)`);
 
                 setApiLastSyncTime(Date.now());
                 setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);
@@ -121,10 +95,10 @@ export const useDashboardWebSocket = ({
                 setApiSyncError(null);
 
                 if (onDataLoadedRef.current) {
-                    onDataLoadedRef.current(result.data);
+                    onDataLoadedRef.current(response.data);
                 }
             } else {
-                throw new Error(result.error || 'Failed to fetch data');
+                throw new Error(response.error || 'Failed to fetch data via Service');
             }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
