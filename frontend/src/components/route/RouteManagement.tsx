@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
 import { areEqual, FixedSizeList as List } from 'react-window'
-import { AutoSizer } from 'react-virtualized-auto-sizer'
+import AutoSizer from 'react-virtualized-auto-sizer'
 import { OrderList } from './OrderList'
 import {
   MapIcon,
