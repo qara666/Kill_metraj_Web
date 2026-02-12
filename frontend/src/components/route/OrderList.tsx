@@ -1,5 +1,4 @@
-import React, { memo, useMemo, useCallback } from 'react';
-import { VariableSizeList as List } from 'react-window';
+import React, { memo, useMemo } from 'react';
 import { clsx } from 'clsx';
 import {
     TruckIcon,
@@ -227,36 +226,17 @@ export const OrderList = memo(({
     onMoveUp,
     onMoveDown,
     isInRoute = false,
-    listHeight = 600,
-    listRef,
     setSize
 }: OrderListProps) => {
 
-    const getItemKey = useCallback((index: number, data: any) => {
-        return data.orders[index].id;
-    }, []);
-
     const selectionOrderMap = useMemo(() => {
-        if (!selectedOrdersOrder) return new Map();
-        const map = new Map();
+        if (!selectedOrdersOrder) return new Map<string, number>();
+        const map = new Map<string, number>();
         selectedOrdersOrder.forEach((id, index) => {
             map.set(id, index + 1);
         });
         return map;
     }, [selectedOrdersOrder]);
-
-    const itemData = useMemo(() => ({
-        orders,
-        isDark,
-        selectedOrders,
-        selectionOrderMap,
-        onSelectOrder,
-        onMoveUp,
-        onMoveDown,
-        isInRoute,
-        setSize
-    }), [orders, isDark, selectedOrders, selectionOrderMap, onSelectOrder, onMoveUp, onMoveDown, isInRoute, setSize]);
-
     if (orders.length === 0) {
         return (
             <div className={clsx("text-center py-8", isDark ? "text-gray-500" : "text-gray-400")}>
@@ -266,37 +246,27 @@ export const OrderList = memo(({
     }
 
     return (
-        <List
-            ref={listRef}
-            height={listHeight || 600}
-            itemCount={orders.length}
-            itemSize={() => 130}
-            width={typeof window !== 'undefined' ? (window.innerWidth < 1024 ? window.innerWidth - 48 : 800) : 800}
-            itemKey={getItemKey}
-            itemData={itemData}
-        >
-            {({ index, style, data }: { index: number; style: React.CSSProperties; data: any }) => {
-                const order = data.orders[index];
-                const isSelected = data.selectedOrders.has(order.id);
-                const selectionIndex = isSelected ? (data.selectionOrderMap.get(order.id) || 0) : 0;
+        <div className="space-y-3 p-1">
+            {orders.map((order, index) => {
+                const isSelected = selectedOrders.has(order.id);
+                const selectionIndex = isSelected ? (selectionOrderMap.get(order.id) || 0) : 0;
 
                 return (
                     <OrderItem
                         key={order.id}
                         index={index}
                         order={order}
-                        isDark={data.isDark}
+                        isDark={isDark}
                         isSelected={isSelected}
                         selectionOrder={selectionIndex}
-                        onSelect={(id) => data.onSelectOrder(id, false)}
-                        onMoveUp={data.onMoveUp}
-                        onMoveDown={data.onMoveDown}
-                        isInRoute={data.isInRoute}
-                        style={style}
-                        setSize={data.setSize}
+                        onSelect={(id) => onSelectOrder(id, false)}
+                        onMoveUp={onMoveUp}
+                        onMoveDown={onMoveDown}
+                        isInRoute={isInRoute}
+                        setSize={setSize}
                     />
                 );
-            }}
-        </List>
+            })}
+        </div>
     );
 });
