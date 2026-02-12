@@ -634,16 +634,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
   // --- Виртуализация с динамической высотой ---
   const availableListRef = useRef<any>(null)
-  const availableSizeMap = useRef<Record<string, number>>({})
-  const ROW_GAP = 8 // расстояние между элементами
 
-  const setAvailableSize = useCallback((id: string, index: number, size: number) => {
-    const next = size + ROW_GAP
-    if (availableSizeMap.current[id] !== next) {
-      availableSizeMap.current[id] = next
-      availableListRef.current?.resetAfterIndex(index)
-    }
-  }, [])
 
   const availableOrders = useMemo(() => {
     if (!selectedCourier) return []
@@ -2123,7 +2114,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                   orders={ordersInRoutes}
                                   isDark={isDark}
                                   selectedOrders={new Set()} // No selection in this list
-                                  onSelectOrder={(id: string, multi: boolean) => { }}
+                                  onSelectOrder={() => { }}
                                   isInRoute={true}
                                 />
                               </div>
