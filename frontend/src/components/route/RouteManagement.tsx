@@ -1,6 +1,4 @@
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
-import { FixedSizeList as List } from 'react-window'
-import { AutoSizer } from 'react-virtualized-auto-sizer'
 import { OrderList } from './OrderList'
 import {
   MapIcon,
@@ -234,15 +232,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [orderSearchTerm, setOrderSearchTerm] = useState('')
   const [courierSearchTerm, setCourierSearchTerm] = useState('')
   const [courierSortType, setCourierSortType] = useState<'alpha' | 'load'>('alpha')
-  // Robust AutoSizer resolution for different build environments (ESM/CJS)
-  const TypedAutoSizer = useMemo(() => {
-    const AS = AutoSizer as any;
-    if (AS?.AutoSizer) return AS.AutoSizer;
-    if (AS?.default?.AutoSizer) return AS.default.AutoSizer;
-    if (AS?.default) return AS.default;
-    return AutoSizer;
-  }, []);
-
   // Debounce hook
   const useDebounce = <T,>(value: T, delay: number): T => {
     const [debouncedValue, setDebouncedValue] = useState<T>(value)
@@ -573,29 +562,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
 
 
-  // Courier Row Component for Virtualized List
-  const CourierRow = useCallback(({ index, style }: { index: number, style: React.CSSProperties }) => {
-    const courierName = filteredCouriers[index]
-    if (!courierName) return null
-
-    const metric = getCourierMetrics(courierName)
-    const vehicleType = getCourierVehicleType(courierName)
-
-    return (
-      <div style={style} className="pr-2">
-        <CourierListItem
-          courierName={courierName}
-          vehicleType={vehicleType}
-          isSelected={selectedCourier === courierName}
-          onSelect={handleCourierSelect}
-          availableOrdersCount={metric.available}
-          deliveredOrdersCount={metric.delivered}
-          totalOrdersCount={metric.total}
-          isDark={isDark}
-        />
-      </div>
-    )
-  }, [filteredCouriers, getCourierMetrics, selectedCourier, isDark, handleCourierSelect])
 
   // Сортировка и пагинация маршрутов
   const allRoutes = (excelData?.routes || []) as Route[]
@@ -1933,32 +1899,32 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   </div>
                 </div>
 
-                <div className="flex-1 min-h-[300px] relative" style={{ height: 'calc(100vh - 420px)' }}>
+                <div className="flex-1 min-h-[300px] overflow-y-auto pr-2 custom-scrollbar" style={{ height: 'calc(100vh - 420px)' }}>
                   {filteredCouriers.length === 0 ? (
                     <div className="text-center py-10 h-full flex flex-col items-center justify-center">
                       <TruckIcon className="w-10 h-10 mx-auto text-gray-300 mb-2 opacity-50" />
                       <p className="text-xs text-gray-400 font-bold uppercase tracking-widest px-4">Список пуст</p>
                     </div>
                   ) : (
-                    <TypedAutoSizer>
-                      {({ height, width }: any) => {
-                        // Fallback dimensions if AutoSizer fails to detect them
-                        // In some production builds, AutoSizer might report 0 initially
-                        const finalHeight = height > 0 ? height : 400;
-                        const finalWidth = width > 0 ? width : 380;
-
+                    <div className="space-y-2">
+                      {filteredCouriers.map((courierName) => {
+                        const metric = getCourierMetrics(courierName)
+                        const vehicleType = getCourierVehicleType(courierName)
                         return (
-                          <List
-                            height={finalHeight}
-                            itemCount={filteredCouriers.length}
-                            itemSize={114}
-                            width={finalWidth}
-                          >
-                            {CourierRow}
-                          </List>
-                        );
-                      }}
-                    </TypedAutoSizer>
+                          <CourierListItem
+                            key={courierName}
+                            courierName={courierName}
+                            vehicleType={vehicleType}
+                            isSelected={selectedCourier === courierName}
+                            onSelect={handleCourierSelect}
+                            availableOrdersCount={metric.available}
+                            deliveredOrdersCount={metric.delivered}
+                            totalOrdersCount={metric.total}
+                            isDark={isDark}
+                          />
+                        )
+                      })}
+                    </div>
                   )}
                 </div>
               </div>
@@ -2133,14 +2099,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                   isDark={isDark}
                                   selectedOrders={selectedOrders}
                                   selectedOrdersOrder={selectedOrdersOrder}
-                                  onSelectOrder={(id, multi) => handleOrderSelect(id, multi)}
+                                  onSelectOrder={(id: string, multi: boolean) => handleOrderSelect(id, multi)}
                                   onMoveUp={moveOrderUp}
                                   onMoveDown={moveOrderDown}
                                   isInRoute={false}
-                                  listHeight={600}
-                                  // setSize={...} // Add if dynamic height is needed per column
-                                  listRef={availableListRef}
-                                  setSize={setAvailableSize}
                                 />
                               </div>
                             </div>
@@ -2161,9 +2123,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                   orders={ordersInRoutes}
                                   isDark={isDark}
                                   selectedOrders={new Set()} // No selection in this list
-                                  onSelectOrder={() => { }}
+                                  onSelectOrder={(id: string, multi: boolean) => { }}
                                   isInRoute={true}
-                                  listHeight={300}
                                 />
                               </div>
                             </div>
