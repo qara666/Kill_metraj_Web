@@ -77,6 +77,7 @@ export function CourierFinancials({
     const [activeTab, setActiveTab] = useState<'cash' | 'online' | 'history'>('cash');
     const [switchingOrderId, setSwitchingOrderId] = useState<string | null>(null);
     const [notes, setNotes] = useState('');
+    const [historySearchTerm, setHistorySearchTerm] = useState('');
 
     const { excelData, updateOrderPaymentMethod, updateExcelData } = useExcelData();
 
@@ -281,6 +282,26 @@ export function CourierFinancials({
                 return [];
         }
     }, [summary, activeTab]);
+
+    const groupedHistory = useMemo(() => {
+        if (!summary?.historyOrders) return [];
+
+        const filtered = summary.historyOrders.filter(o =>
+            !historySearchTerm ||
+            String(o.orderNumber || '').toLowerCase().includes(historySearchTerm.toLowerCase()) ||
+            String(o.address || '').toLowerCase().includes(historySearchTerm.toLowerCase())
+        );
+
+        // Group by settledDate (rounded to seconds or just unique timestamps)
+        const groups: Record<string, Order[]> = {};
+        filtered.forEach(order => {
+            const dateStr = order.settledDate || 'Unknown';
+            if (!groups[dateStr]) groups[dateStr] = [];
+            groups[dateStr].push(order);
+        });
+
+        return Object.entries(groups).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
+    }, [summary, historySearchTerm]);
 
 
     const handleCopyReport = () => {
@@ -511,82 +532,159 @@ export function CourierFinancials({
                     </div>
                 </div>
 
+                {activeTab === 'history' && (
+                    <div className="px-4">
+                        <div className={clsx(
+                            "flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all mb-4",
+                            isDark ? "bg-gray-900 border-white/5" : "bg-white border-gray-100 shadow-sm"
+                        )}>
+                            <svg className="w-4 h-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                            <input
+                                type="text"
+                                placeholder="Поиск в истории (номер заказа, адрес)..."
+                                value={historySearchTerm}
+                                onChange={(e) => setHistorySearchTerm(e.target.value)}
+                                className="bg-transparent border-none outline-none text-xs font-bold w-full placeholder:opacity-30"
+                            />
+                        </div>
+                    </div>
+                )}
+
                 <div className={clsx(
                     'rounded-[56px] border overflow-hidden p-8 transition-all min-h-[400px]',
                     isDark ? 'bg-gray-900/60 border-white/5' : 'bg-white shadow-blue-500/5 border-gray-100'
                 )}>
-                    <div className="space-y-4">
-                        {activeOrders.length === 0 ? (
-                            <div className="py-32 flex flex-col items-center justify-center opacity-20">
-                                <ClockIcon className="w-16 h-16 mb-6" />
-                                <p className="text-xs font-black uppercase tracking-widest">Список пуст</p>
-                            </div>
-                        ) : (
-                            activeOrders.map((order, idx) => (
-                                <div
-                                    key={order.id || idx}
-                                    style={{ animationDelay: `${idx * 50}ms` }}
-                                    className={clsx(
-                                        'p-6 rounded-[36px] border flex items-center justify-between transition-all group animate-in slide-in-from-bottom-2 duration-500 fill-mode-both',
-                                        isDark ? 'bg-black/20 border-white/5 hover:bg-black/40' : 'bg-[#f8faff] border-gray-100/50 hover:bg-white hover:shadow-2xl hover:shadow-blue-500/10'
-                                    )}
-                                >
-                                    <div className="flex-1 min-w-0 mr-8">
-                                        <div className="flex items-center gap-3 mb-3">
-                                            <span className={clsx(
-                                                "text-[10px] font-black px-2.5 py-1 rounded-xl opacity-40",
-                                                isDark ? "bg-gray-800" : "bg-gray-100"
-                                            )}>
-                                                #{order.orderNumber}
+                    <div className="space-y-6">
+                        {activeTab === 'history' ? (
+                            groupedHistory.length === 0 ? (
+                                <div className="py-32 flex flex-col items-center justify-center opacity-20">
+                                    <ClockIcon className="w-16 h-16 mb-6" />
+                                    <p className="text-xs font-black uppercase tracking-widest">История пуста</p>
+                                </div>
+                            ) : (
+                                groupedHistory.map(([date, orders]) => (
+                                    <div key={date} className="space-y-3">
+                                        <div className="flex items-center gap-3 px-4">
+                                            <div className="h-px flex-1 bg-current opacity-5" />
+                                            <span className="text-[9px] font-black uppercase tracking-[0.2em] opacity-30">
+                                                Расчет {new Date(date).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                                             </span>
-                                            <span className={clsx(
-                                                "text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-xl shadow-sm",
-                                                order.status === 'Исполнен' ? 'bg-[#10b981]/10 text-[#10b981]' : 'bg-gray-500/10 text-gray-400'
-                                            )}>
-                                                {order.status || 'ВЫПОЛНЯЕТСЯ'}
-                                            </span>
+                                            <div className="h-px flex-1 bg-current opacity-5" />
                                         </div>
-                                        <p className={clsx('text-sm font-bold leading-relaxed', isDark ? 'text-gray-300' : 'text-gray-800')} title={order.address}>
-                                            {order.address}
-                                        </p>
-                                    </div>
+                                        <div className="space-y-3">
+                                            {orders.map((order, idx) => (
+                                                <div
+                                                    key={order.id || idx}
+                                                    className={clsx(
+                                                        'p-6 rounded-[36px] border flex items-center justify-between transition-all group',
+                                                        isDark ? 'bg-black/20 border-white/5 hover:bg-black/40' : 'bg-[#f8faff] border-gray-100/50 hover:bg-white hover:shadow-2xl hover:shadow-blue-500/10'
+                                                    )}
+                                                >
+                                                    <div className="flex-1 min-w-0 mr-8">
+                                                        <div className="flex items-center gap-3 mb-3">
+                                                            <span className={clsx(
+                                                                "text-[10px] font-black px-2.5 py-1 rounded-xl opacity-40",
+                                                                isDark ? "bg-gray-800" : "bg-gray-100"
+                                                            )}>
+                                                                #{order.orderNumber}
+                                                            </span>
+                                                            <span className={clsx(
+                                                                "text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-xl bg-emerald-500/10 text-emerald-500"
+                                                            )}>
+                                                                Оплачено
+                                                            </span>
+                                                        </div>
+                                                        <p className={clsx('text-sm font-bold leading-relaxed', isDark ? 'text-gray-300' : 'text-gray-800')} title={order.address}>
+                                                            {order.address}
+                                                        </p>
+                                                    </div>
 
-                                    <div className="flex items-center gap-8">
-                                        <div className="text-right">
-                                            <p className={clsx('text-xl font-black tracking-tight',
-                                                activeTab === 'cash' ? 'text-[#10b981]' :
-                                                    activeTab === 'online' ? 'text-[#8b5cf6]' :
-                                                        (isDark ? 'text-white' : 'text-gray-900')
-                                            )}>
-                                                {formatCurrency((order as any).settledAmount || (order as any).effectiveAmount || order.amount)}
+                                                    <div className="text-right">
+                                                        <p className={clsx('text-xl font-black tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>
+                                                            {formatCurrency((order as any).settledAmount || order.amount)}
+                                                        </p>
+                                                        {order.settlementNote && (
+                                                            <p className="text-[10px] font-bold opacity-30 italic mt-1 max-w-[200px] truncate">
+                                                                {order.settlementNote}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))
+                            )
+                        ) : (
+                            activeOrders.length === 0 ? (
+                                <div className="py-32 flex flex-col items-center justify-center opacity-20">
+                                    <ClockIcon className="w-16 h-16 mb-6" />
+                                    <p className="text-xs font-black uppercase tracking-widest">Список пуст</p>
+                                </div>
+                            ) : (
+                                activeOrders.map((order, idx) => (
+                                    <div
+                                        key={order.id || idx}
+                                        style={{ animationDelay: `${idx * 50}ms` }}
+                                        className={clsx(
+                                            'p-6 rounded-[36px] border flex items-center justify-between transition-all group animate-in slide-in-from-bottom-2 duration-500 fill-mode-both',
+                                            isDark ? 'bg-black/20 border-white/5 hover:bg-black/40' : 'bg-[#f8faff] border-gray-100/50 hover:bg-white hover:shadow-2xl hover:shadow-blue-500/10'
+                                        )}
+                                    >
+                                        <div className="flex-1 min-w-0 mr-8">
+                                            <div className="flex items-center gap-3 mb-3">
+                                                <span className={clsx(
+                                                    "text-[10px] font-black px-2.5 py-1 rounded-xl opacity-40",
+                                                    isDark ? "bg-gray-800" : "bg-gray-100"
+                                                )}>
+                                                    #{order.orderNumber}
+                                                </span>
+                                                <span className={clsx(
+                                                    "text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-xl shadow-sm",
+                                                    order.status === 'Исполнен' ? 'bg-[#10b981]/10 text-[#10b981]' : 'bg-gray-500/10 text-gray-400'
+                                                )}>
+                                                    {order.status || 'ВЫПОЛНЯЕТСЯ'}
+                                                </span>
+                                            </div>
+                                            <p className={clsx('text-sm font-bold leading-relaxed', isDark ? 'text-gray-300' : 'text-gray-800')} title={order.address}>
+                                                {order.address}
                                             </p>
-                                            {activeTab === 'history' && order.amount !== (order as any).settledAmount && (
-                                                <p className={clsx('text-[11px] font-black', (order as any).settledAmount > order.amount ? 'text-green-500' : 'text-red-500')}>
-                                                    {(order as any).settledAmount > order.amount ? '+' : '-'}{formatCurrency(Math.abs((order as any).settledAmount - order.amount))}
+                                        </div>
+
+                                        <div className="flex items-center gap-8">
+                                            <div className="text-right">
+                                                <p className={clsx('text-xl font-black tracking-tight',
+                                                    activeTab === 'cash' ? 'text-[#10b981]' :
+                                                        activeTab === 'online' ? 'text-[#8b5cf6]' :
+                                                            (isDark ? 'text-white' : 'text-gray-900')
+                                                )}>
+                                                    {formatCurrency((order as any).settledAmount || (order as any).effectiveAmount || order.amount)}
                                                 </p>
+                                            </div>
+
+                                            {(activeTab as string) !== 'history' && (
+                                                <button
+                                                    onClick={() => handleSwitchPaymentMethod(String(order.orderNumber), String((order as any).paymentMethod || ''))}
+                                                    disabled={switchingOrderId === String(order.id || order.orderNumber)}
+                                                    className={clsx(
+                                                        'p-4 rounded-[20px] transition-all opacity-0 group-hover:opacity-100 border no-print relative overflow-hidden',
+                                                        isDark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white' : 'bg-white border-gray-100 text-gray-500 hover:text-blue-600 hover:shadow-xl hover:shadow-blue-500/10'
+                                                    )}
+                                                    title="Сменить способ оплаты"
+                                                >
+                                                    {switchingOrderId === order.orderNumber ? (
+                                                        <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                                    ) : (
+                                                        <ArrowsRightLeftIcon className="w-5 h-5" />
+                                                    )}
+                                                </button>
                                             )}
                                         </div>
-
-                                        {activeTab !== 'history' && (
-                                            <button
-                                                onClick={() => handleSwitchPaymentMethod(String(order.orderNumber), String((order as any).paymentMethod || ''))}
-                                                disabled={switchingOrderId === String(order.id || order.orderNumber)}
-                                                className={clsx(
-                                                    'p-4 rounded-[20px] transition-all opacity-0 group-hover:opacity-100 border no-print relative overflow-hidden',
-                                                    isDark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white' : 'bg-white border-gray-100 text-gray-500 hover:text-blue-600 hover:shadow-xl hover:shadow-blue-500/10'
-                                                )}
-                                                title="Сменить способ оплаты"
-                                            >
-                                                {switchingOrderId === order.orderNumber ? (
-                                                    <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                                ) : (
-                                                    <ArrowsRightLeftIcon className="w-5 h-5" />
-                                                )}
-                                            </button>
-                                        )}
                                     </div>
-                                </div>
-                            ))
+                                ))
+                            )
                         )}
                     </div>
                 </div>

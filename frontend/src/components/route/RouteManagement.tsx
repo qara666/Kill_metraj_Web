@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
+import { areEqual, FixedSizeList as List } from 'react-window'
+import { AutoSizer } from 'react-virtualized-auto-sizer'
 import { OrderList } from './OrderList'
 import {
   MapIcon,
@@ -220,7 +222,7 @@ const CourierListItem = memo(({
       {/* Hover Actions Removed per user request */}
     </div>
   )
-}, areEqual)
+})
 
 export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const { excelData, updateExcelData } = useExcelData()
@@ -561,6 +563,29 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     })
   }, [couriers, courierFilter, debouncedCourierSearchTerm, courierSortType, getCourierMetrics])
 
+
+
+  // Courier Row Component for Virtualized List
+  const CourierRow = useCallback(({ index, style }: { index: number, style: React.CSSProperties }) => {
+    const courierName = filteredCouriers[index]
+    const metric = getCourierMetrics(courierName)
+    const vehicleType = getCourierVehicleType(courierName)
+
+    return (
+      <div style={style} className="pr-2">
+        <CourierListItem
+          courierName={courierName}
+          vehicleType={vehicleType}
+          isSelected={selectedCourier === courierName}
+          onSelect={handleCourierSelect}
+          availableOrdersCount={metric.available}
+          deliveredOrdersCount={metric.delivered}
+          totalOrdersCount={metric.total}
+          isDark={isDark}
+        />
+      </div>
+    )
+  }, [filteredCouriers, getCourierMetrics, selectedCourier, isDark, handleCourierSelect])
 
   // Сортировка и пагинация маршрутов
   const allRoutes = (excelData?.routes || []) as Route[]
@@ -1898,29 +1923,25 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   </div>
                 </div>
 
-                <div className="space-y-1 pr-2 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 420px)' }}>
+                <div className="flex-1 min-h-[300px]" style={{ height: 'calc(100vh - 420px)' }}>
                   {filteredCouriers.length === 0 ? (
-                    <div className="text-center py-10">
+                    <div className="text-center py-10 h-full flex flex-col items-center justify-center">
                       <TruckIcon className="w-10 h-10 mx-auto text-gray-300 mb-2 opacity-50" />
                       <p className="text-xs text-gray-400 font-bold uppercase tracking-widest px-4">Список пуст</p>
                     </div>
                   ) : (
-                    filteredCouriers.map((name) => {
-                      const metrics = getCourierMetrics(name)
-                      return (
-                        <CourierListItem
-                          key={name}
-                          courierName={name}
-                          vehicleType={getCourierVehicleType(name)}
-                          isSelected={selectedCourier === name}
-                          onSelect={handleCourierSelect}
-                          availableOrdersCount={metrics.available}
-                          deliveredOrdersCount={metrics.delivered}
-                          totalOrdersCount={metrics.total}
-                          isDark={isDark}
-                        />
-                      )
-                    })
+                    <AutoSizer>
+                      {({ height, width }: any) => (
+                        <List
+                          height={height}
+                          itemCount={filteredCouriers.length}
+                          itemSize={110}
+                          width={width}
+                        >
+                          {CourierRow}
+                        </List>
+                      )}
+                    </AutoSizer>
                   )}
                 </div>
               </div>
