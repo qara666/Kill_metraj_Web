@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
-import { areEqual, FixedSizeList as List } from 'react-window'
-import AutoSizer from 'react-virtualized-auto-sizer'
+import { FixedSizeList as List } from 'react-window'
+import { AutoSizer } from 'react-virtualized-auto-sizer'
 import { OrderList } from './OrderList'
 import {
   MapIcon,
@@ -234,6 +234,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [orderSearchTerm, setOrderSearchTerm] = useState('')
   const [courierSearchTerm, setCourierSearchTerm] = useState('')
   const [courierSortType, setCourierSortType] = useState<'alpha' | 'load'>('alpha')
+  const TypedAutoSizer = AutoSizer as any
 
   // Debounce hook
   const useDebounce = <T,>(value: T, delay: number): T => {
@@ -1930,7 +1931,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                       <p className="text-xs text-gray-400 font-bold uppercase tracking-widest px-4">Список пуст</p>
                     </div>
                   ) : (
-                    <AutoSizer>
+                    <TypedAutoSizer>
                       {({ height, width }: any) => (
                         <List
                           height={height}
@@ -1941,7 +1942,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                           {CourierRow}
                         </List>
                       )}
-                    </AutoSizer>
+                    </TypedAutoSizer>
                   )}
                 </div>
               </div>
