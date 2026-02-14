@@ -2,11 +2,12 @@ import clsx from 'clsx';
 import {
     ClockIcon,
     ChevronDownIcon,
-    RocketLaunchIcon,
     CheckBadgeIcon,
     ExclamationTriangleIcon,
     ArrowPathIcon,
-    Bars2Icon
+    Bars2Icon,
+    MapPinIcon,
+    RocketLaunchIcon
 } from '@heroicons/react/24/outline';
 import { useState, useMemo } from 'react';
 import { type TimeWindowGroup, formatTimeLabel } from '../../utils/route/routeCalculationHelpers';
@@ -28,6 +29,7 @@ export function TimeWindowGroupCard({
     isCalculating = false,
     onOrderMoved,
     onCalculateRoute,
+    onJumpToGroup
 }: TimeWindowGroupCardProps) {
     const [isExpanded, setIsExpanded] = useState(false);
     const [isDragOver, setIsDragOver] = useState(false);
@@ -187,21 +189,21 @@ export function TimeWindowGroupCard({
                     </div>
 
                     <div className="flex items-center gap-2">
-                        {onCalculateRoute && (
+                        {onJumpToGroup && (
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    onCalculateRoute(group);
+                                    onJumpToGroup(group);
                                 }}
                                 className={clsx(
                                     'p-2 rounded-xl transition-all duration-300 hover:scale-110 active:scale-95 shadow-md border group/btn',
                                     isDark
-                                        ? 'bg-blue-600/20 text-blue-400 border-blue-500/20 hover:bg-blue-600 hover:text-white'
-                                        : 'bg-blue-600 text-white border-blue-500 hover:bg-blue-700 shadow-blue-500/20'
+                                        ? 'bg-emerald-600/20 text-emerald-400 border-emerald-500/20 hover:bg-emerald-600 hover:text-white'
+                                        : 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-600 hover:text-white shadow-emerald-500/10'
                                 )}
-                                title="Спланировать маршрут для этой группы"
+                                title="Показать на карте"
                             >
-                                <RocketLaunchIcon className="w-4 h-4 transition-transform group-hover/btn:translate-x-0.5" />
+                                <MapPinIcon className="w-4 h-4 transition-transform group-hover/btn:-translate-y-0.5" />
                             </button>
                         )}
 

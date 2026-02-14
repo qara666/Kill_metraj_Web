@@ -107,7 +107,7 @@ const CourierListItem = memo(({
   totalOrdersCount: number
   isDark: boolean
 }) => {
-  const isUnassigned = courierName === 'Не назначено' || courierName === 'ID:0' || courierName.startsWith('ID:0')
+  const isUnassigned = String(courierName) === 'Не назначено' || String(courierName) === 'ID:0' || String(courierName).startsWith('ID:0');
   const progress = totalOrdersCount > 0 ? (deliveredOrdersCount / totalOrdersCount) * 100 : 0
   const isFinished = totalOrdersCount > 0 && deliveredOrdersCount === totalOrdersCount
   const isOnRoute = totalOrdersCount > 0 && deliveredOrdersCount < totalOrdersCount && deliveredOrdersCount > 0
@@ -388,7 +388,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       if (order.address) {
         let courierName = order.courier || 'Не назначено'
         // Force rename if it slipped through
-        if (courierName === 'ID:0' || courierName.startsWith('ID:0') || !courierName) {
+        if (String(courierName) === 'ID:0' || String(courierName).startsWith('ID:0') || !courierName) {
           courierName = 'Не назначено'
         }
 
@@ -1452,83 +1452,117 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
   // Функция для перемещения заказа в другую временную группу ( Phase 4.7 )
   // Функция для перемещения заказа в другую временную группу ( Phase 4.7 )
+  // Функция для перемещения заказа в другую временную группу (Force Move / SOTA v2.0)
   const handleMoveOrderToGroup = (orderId: string, targetGroup: TimeWindowGroup) => {
-    console.log('[DND] Moving order:', orderId, 'to group:', targetGroup.id);
+    console.log('[DND] Force Move logic triggered for order:', orderId, 'to group:', targetGroup.id);
+
     updateExcelData((prev: any) => {
       if (!prev) return prev;
 
-      // Если это авто-группа, нам нужно превратить её в ручную для стабильности
-      const manualIdForTarget = targetGroup.manualGroupId || `${Date.now()}`;
+      // 1. Определяем стабильный manualGroupId для целевой группы
+      // ВАЖНО: Мы должны УБРАТЬ префикс 'manual-', так как он добавляется автоматически в createManualGroup
+      let rawManualId = targetGroup.manualGroupId || (String(targetGroup.id).startsWith('manual-') ? targetGroup.id : `${Date.now()}`);
 
-      // 1. Обновляем метаданные в списке всех заказов
-      const updatedAllOrders = (prev.orders || []).map((order: any) => {
+      // Очищаем от префикса, чтобы не было рекурсии manual-manual-...
+      if (rawManualId.startsWith('manual-')) {
+        rawManualId = rawManualId.replace(/^manual-/, '');
+      }
+
+      const targetManualId = rawManualId;
+
+      // 2. Находим полный объект целевого курьера для консистентности данных
+      const targetCourierId = targetGroup.courierId;
+      const targetCourier = (prev.couriers || []).find((c: any) =>
+        String(c._id) === String(targetCourierId) || String(c.id) === String(targetCourierId)
+      ) || { _id: targetCourierId, name: targetGroup.courierName };
+
+      // 3. Обновляем список заказов с жестким присвоением свойств
+      const updatedOrders = (prev.orders || []).map((order: any) => {
+        const oId = String(order.id || '');
+        const oNum = String(order.orderNumber || '');
+
         const targetIdStr = String(orderId);
-        const orderIdStr = order.id ? String(order.id) : '';
-        const orderNumStr = order.orderNumber ? String(order.orderNumber) : '';
+        // Robust ID matching: handle 'order_' prefix if present in drag data but not in store
+        const normalizedTargetId = targetIdStr.replace(/^order_/, '');
+        const normalizedOId = oId.replace(/^order_/, '');
 
-        const isTargetMove = (orderIdStr === targetIdStr) || (orderNumStr === targetIdStr);
+        // Это перемещаемый заказ?
+        const isMovedOrder = (normalizedOId === normalizedTargetId) || (oNum === normalizedTargetId) || (oId === targetIdStr);
 
-        // Перемещаемый заказ
-        if (isTargetMove) {
-          // Находим объект курьера для стабильности данных
-          const targetCourier = prev.couriers?.find((c: any) => (c._id || c.id) === targetGroup.courierId);
-
-          return {
-            ...order,
-            manualGroupId: manualIdForTarget,
-            deadlineAt: targetGroup.windowStart,
-            plannedTime: formatTimeLabel(targetGroup.windowStart),
-            // ВАЖНО: Используем полный объект курьера, если нашли
-            courier: targetCourier || { _id: targetGroup.courierId, name: targetGroup.courierName }
-          };
+        if (isMovedOrder) {
+          console.log('[DND] Matched Order:', oId, 'Moving to:', targetManualId);
         }
-        // Заказы, которые УЖЕ были в этой группе (чтобы они не разлетелись, если это превращение в ручную группу)
-        const isFromSameTargetGroup = (targetGroup.orders || []).some(o => {
-          const oIdStr = o.id ? String(o.id) : '';
-          const oNumStr = o.orderNumber ? String(o.orderNumber) : '';
-          return (oIdStr === orderIdStr && oIdStr !== '') || (oNumStr === orderNumStr && oNumStr !== '');
+
+        // Это заказ, который УЖЕ был в целевой группе?
+        // Нам нужно "связать" их вместе новым manualGroupId, чтобы они не разлетелись
+        const isExistingGroupMember = (targetGroup.orders || []).some((o: any) => {
+          const existingId = String(o.id || '');
+          const existingNum = String(o.orderNumber || '');
+          const normExistingId = existingId.replace(/^order_/, '');
+          return (normExistingId === normalizedOId && normExistingId !== '') || (existingNum !== '' && existingNum === oNum);
         });
 
-        if (isFromSameTargetGroup) {
+        if (isMovedOrder) {
           return {
             ...order,
-            manualGroupId: manualIdForTarget
+            // FORCE OVERRIDES / ЖЕСТКОЕ ПРИСВОЕНИЕ
+            manualGroupId: targetManualId,
+            courierId: targetCourierId,       // Явно меняем курьера
+            courier: targetCourier,           // Обновляем объект курьера
+            plannedTime: targetGroup.windowStart, // Синхронизируем время
+            deadlineAt: targetGroup.windowStart,
+            isInRoute: false,                 // Сбрасываем флаг маршрута
+            status: (order.status === 'Доставляется' || order.status === 'Исполнен') ? order.status : 'В работе'
           };
         }
+
+        if (isExistingGroupMember) {
+          // Привязываем существующих членов группы к тому же manualGroupId
+          return {
+            ...order,
+            manualGroupId: targetManualId,
+            courierId: targetCourierId,
+            plannedTime: targetGroup.windowStart,
+            deadlineAt: targetGroup.windowStart
+          };
+        }
+
         return order;
       });
 
-      // 2. Очищаем старые маршруты
+      // 4. Зачистка: удаляем перемещенный заказ из любых старых маршрутов
       const updatedRoutes = (prev.routes || []).map((route: any) => {
-        const targetIdStr = String(orderId);
-        const hasOrder = (route.orders || []).some((o: any) => {
-          const oIdStr = o.id ? String(o.id) : '';
-          const oNumStr = o.orderNumber ? String(o.orderNumber) : '';
-          return (oIdStr === targetIdStr) || (oNumStr === targetIdStr);
+        // Проверяем, есть ли наш заказ в этом маршруте
+        const hasMovedOrder = (route.orders || []).some((o: any) => {
+          const oId = String(o.id || '');
+          const oNum = String(orderId);
+          return oId === String(orderId) || oNum === String(orderId);
         });
 
-        if (!hasOrder) return route;
+        if (hasMovedOrder) {
+          const filteredOrders = (route.orders || []).filter((o: any) => {
+            const oId = String(o.id || '');
+            const oNum = String(o.orderNumber || '');
+            return oId !== String(orderId) && oNum !== String(orderId);
+          });
+          return {
+            ...route,
+            orders: filteredOrders,
+            stopsCount: filteredOrders.length
+          };
+        }
+        return route;
+      });
 
-        return {
-          ...route,
-          orders: route.orders.filter((o: any) => {
-            const oIdStr = o.id ? String(o.id) : '';
-            const oNumStr = o.orderNumber ? String(o.orderNumber) : '';
-            return (oIdStr !== targetIdStr) && (oNumStr !== targetIdStr);
-          }),
-          isOptimized: false,
-          totalDistance: 0,
-          totalDuration: 0
-        };
-      }).filter((route: any) => (route.orders || []).length > 0);
-
-      const next = {
+      // Сохраняем изменения (saveManualOverrides вызывается реактивно или требует явного вызова, 
+      // но обновление manualGroupId в данных уже достаточно для следующего рендера)
+      const nextState = {
         ...prev,
-        orders: updatedAllOrders,
+        orders: updatedOrders,
         routes: updatedRoutes
       };
-      saveManualOverrides(next.orders);
-      return next;
+      saveManualOverrides(nextState.orders); // Call saveManualOverrides here
+      return nextState;
     });
 
     toast.success(`Заказ перемещен в ${targetGroup.windowLabel}`, { icon: '' });
@@ -1537,39 +1571,80 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   // Функция для создания новой кастомной группы ( Phase 4.7 )
   const handleCreateCustomGroup = (orderId: string) => {
     const newManualId = `manual-${Date.now()}`;
+    console.log('[DND] Creating custom group for order:', orderId, 'New Group ID:', newManualId);
+
     updateExcelData((prev: any) => {
       if (!prev) return prev;
 
       const updatedOrders = (prev.orders || []).map((order: any) => {
+        const oId = String(order.id || '');
+        const oNum = String(order.orderNumber || '');
         const targetIdStr = String(orderId);
-        const orderIdStr = order.id ? String(order.id) : '';
-        const orderNumStr = order.orderNumber ? String(order.orderNumber) : '';
 
-        const isTargetMove = (orderIdStr === targetIdStr) || (orderNumStr === targetIdStr);
+        // Robust ID matching: handle 'order_' prefix if present in drag data but not in store
+        const normalizedTargetId = targetIdStr.replace(/^order_/, '');
+        const normalizedOId = oId.replace(/^order_/, '');
+
+        const isTargetMove = (normalizedOId === normalizedTargetId) || (oNum === normalizedTargetId) || (oId === targetIdStr);
 
         if (isTargetMove) {
+          // Определяем текущего курьера (если есть selectedCourier - используем его, иначе оставляем как есть)
+          // ВАЖНО: Если мы в режиме просмотра конкретного курьера, новая группа должна быть привязана к нему
+          let targetCourierId = order.courierId;
+          let targetCourier = order.courier;
+
+          if (selectedCourier && selectedCourier !== 'all' && !selectedCourier.startsWith('ID:0')) {
+            targetCourierId = selectedCourier;
+            // Пытаемся найти полный объект курьера
+            const foundCourier = (prev.couriers || []).find((c: any) =>
+              String(c._id) === String(selectedCourier) || String(c.id) === String(selectedCourier)
+            );
+            if (foundCourier) {
+              targetCourier = foundCourier;
+            }
+          }
+
           return {
             ...order,
             manualGroupId: newManualId,
-            // Сохраняем курьера, чтобы он остался в текущей колонке
-            courier: order.courier || selectedCourier
+            courierId: targetCourierId,
+            courier: targetCourier,
+            plannedTime: order.plannedTime || Date.now(), // Ensure valid time for grouping
+            isInRoute: false,
+            status: (order.status === 'Доставляется' || order.status === 'Исполнен') ? order.status : 'В работе'
           };
         }
         return order;
       });
 
+      // Remove from existing routes
       const updatedRoutes = (prev.routes || []).map((route: any) => {
-        const hasOrder = (route.orders || []).some((o: any) => String(o.id || o.orderNumber) === String(orderId));
-        if (!hasOrder) return route;
+        const hasOrder = (route.orders || []).some((o: any) => {
+          const oId = String(o.id || '');
+          const oNum = String(o.orderNumber || '');
+          const targetIdStr = String(orderId);
+          const normalizedTargetId = targetIdStr.replace(/^order_/, '');
+          const normalizedOId = oId.replace(/^order_/, '');
+          return (normalizedOId === normalizedTargetId) || (oNum === normalizedTargetId);
+        });
 
-        return {
-          ...route,
-          orders: (route.orders || []).filter((o: any) => String(o.id || o.orderNumber) !== String(orderId)),
-          isOptimized: false,
-          totalDistance: 0,
-          totalDuration: 0
-        };
-      }).filter((route: any) => route.orders.length > 0);
+        if (hasOrder) {
+          const filteredOrders = (route.orders || []).filter((o: any) => {
+            const oId = String(o.id || '');
+            const oNum = String(o.orderNumber || '');
+            const targetIdStr = String(orderId);
+            const normalizedTargetId = targetIdStr.replace(/^order_/, '');
+            const normalizedOId = oId.replace(/^order_/, '');
+            return (normalizedOId !== normalizedTargetId) && (oNum !== normalizedTargetId);
+          });
+          return {
+            ...route,
+            orders: filteredOrders,
+            stopsCount: filteredOrders.length
+          };
+        }
+        return route;
+      });
 
       const next = {
         ...prev,
@@ -2042,8 +2117,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                     </div>
 
                     <CourierTimeWindows
-                      courierId={selectedCourier || ''}
-                      courierName={(selectedCourier === 'ID:0' || selectedCourier?.startsWith('ID:0')) ? 'Не назначено' : (selectedCourier || '')}
+                      courierId={String(selectedCourier || '')}
+                      courierName={(String(selectedCourier) === 'ID:0' || String(selectedCourier).startsWith('ID:0')) ? 'Не назначено' : (String(selectedCourier) || '')}
                       orders={availableOrders}
                       isDark={isDark}
                       onJumpToGroup={handleJumpToGroup}
