@@ -26,6 +26,7 @@ import { googleApiCache } from '../../services/googleApiCache'
 import { getUkraineTrafficForOrders, calculateTotalTrafficDelay } from '../../utils/maps/ukraineTrafficAPI'
 import { lazy, Suspense } from 'react'
 import type { TourStep } from '../features/HelpTour'
+import { normalizeCourierName } from '../../utils/data/courierName'
 
 // Ленивая загрузка тяжелых компонентов
 const HelpModalCouriers = lazy(() => import('../modals/HelpModalCouriers').then(m => ({ default: m.HelpModalCouriers })))
@@ -175,21 +176,16 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     // 1. Из основного списка курьеров
     if (excelData?.couriers && Array.isArray(excelData.couriers)) {
       excelData.couriers.forEach((c: any) => {
-        if (c.name) courierNames.add(c.name)
+        const name = normalizeCourierName(c?.name)
+        if (name) courierNames.add(name)
       })
     }
 
     // 2. Из списка заказов (могут быть курьеры, которых нет в первом списке)
     if (excelData?.orders && Array.isArray(excelData.orders)) {
       excelData.orders.forEach((o: any) => {
-        if (o.courier) {
-          let name = o.courier
-          // Нормализуем ID:0
-          if (name === 'ID:0' || name.startsWith('ID:0')) {
-            name = 'Не назначено'
-          }
-          courierNames.add(name)
-        }
+        const name = normalizeCourierName(o?.courier)
+        if (name) courierNames.add(name)
       })
     }
 
@@ -1640,30 +1636,3 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
     </div>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

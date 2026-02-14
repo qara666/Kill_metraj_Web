@@ -11,6 +11,7 @@ import {
     BanknotesIcon,
     ChevronLeftIcon
 } from '@heroicons/react/24/outline'
+import { asNonEmptyString, isId0CourierName } from '../../utils/data/courierName'
 
 export const FinancialsManagement: React.FC = () => {
     const { excelData } = useExcelData()
@@ -25,14 +26,16 @@ export const FinancialsManagement: React.FC = () => {
         const names = new Set<string>()
         if (excelData?.orders) {
             excelData.orders.forEach((o: any) => {
-                if (o.courier && o.courier !== 'ID:0' && !o.courier.startsWith('ID:0')) {
-                    names.add(o.courier)
+                const courierName = asNonEmptyString(o?.courier)
+                if (courierName && !isId0CourierName(courierName)) {
+                    names.add(courierName)
                 }
             })
         }
         if (excelData?.couriers) {
             excelData.couriers.forEach((c: any) => {
-                if (c.name) names.add(c.name)
+                const courierName = asNonEmptyString(c?.name)
+                if (courierName) names.add(courierName)
             })
         }
         return Array.from(names).sort((a, b) => a.localeCompare(b, 'ru'))
