@@ -31,7 +31,7 @@ import { googleApiCache } from '../../services/googleApiCache'
 import { lazy, Suspense } from 'react'
 import { CourierTimeWindows } from './CourierTimeWindows'
 import { getUkraineTrafficForOrders, calculateTotalTrafficDelay } from '../../utils/maps/ukraineTrafficAPI'
-import { type TimeWindowGroup, formatTimeLabel } from '../../utils/route/routeCalculationHelpers'
+import { type TimeWindowGroup } from '../../utils/route/routeCalculationHelpers'
 
 // Ленивая загрузка тяжелых компонентов
 const HelpModalRoutes = lazy(() => import('../modals/HelpModalRoutes').then(m => ({ default: m.HelpModalRoutes })))
