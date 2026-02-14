@@ -1,17 +1,13 @@
 import React, { useState } from 'react';
 import { toast } from 'react-hot-toast';
-import { dashboardApiService } from '../../utils/api/dashboardApiService';
 import { format } from 'date-fns';
 import { ArrowPathIcon, CalendarIcon } from '@heroicons/react/24/outline';
 import { clsx } from 'clsx';
 import { useTheme } from '../../contexts/ThemeContext';
-import { useExcelData } from '../../contexts/ExcelDataContext';
 import { useAutoPlannerStore } from '../../stores/useAutoPlannerStore'; // Import Store
 
 export const DashboardApiSection: React.FC = () => {
     const { isDark } = useTheme();
-    const { setExcelData } = useExcelData();
-    const [isLoading, setIsLoading] = useState(false);
 
     // Store values
     const apiSyncStatus = useAutoPlannerStore(s => s.apiSyncStatus);
@@ -21,6 +17,7 @@ export const DashboardApiSection: React.FC = () => {
     const setApiAutoRefreshEnabled = useAutoPlannerStore(s => s.setApiAutoRefreshEnabled);
     const apiLastSyncTime = useAutoPlannerStore(s => s.apiLastSyncTime);
     const apiNextSyncTime = useAutoPlannerStore(s => s.apiNextSyncTime);
+    const triggerApiManualSync = useAutoPlannerStore(s => s.triggerApiManualSync);
 
     // Initial selectedDate state removal, use apiDateShift instead
     const selectedDate = apiDateShift;
@@ -54,59 +51,12 @@ export const DashboardApiSection: React.FC = () => {
         return () => clearInterval(interval);
     }, [apiNextSyncTime, apiAutoRefreshEnabled]);
 
-    const handleFetchData = async (isSilent = false, forceRefresh = false) => {
+    const handleSync = () => {
         if (!selectedDate) {
-            if (!isSilent) toast.error('Выберите дату');
+            toast.error('Выберите дату');
             return;
         }
-
-        if (!isSilent) setIsLoading(true);
-        const dateInApiFormat = dashboardApiService.convertDateToApiFormat(selectedDate);
-        let toastId: string | undefined;
-
-        if (!isSilent) {
-            toastId = toast.loading(`Загрузка данных за ${dateInApiFormat}...`);
-        }
-
-        try {
-            console.log(`🚀 ${isSilent ? 'Авто-запрос' : 'Запрос'} данных дашборда за ${dateInApiFormat}`);
-            const response = await dashboardApiService.fetchDataForDate({
-                date: dateInApiFormat,
-                force: forceRefresh
-            });
-
-            if (response.success && response.data) {
-                const ordersCount = response.data.orders?.length || 0;
-
-                // Update context directly
-                setExcelData(response.data);
-
-                if (!isSilent) {
-                    toast.success(`Успешно загружено ${ordersCount} заказов!`, { id: toastId });
-                } else {
-                    console.log(`✅ Автообновление успешно: ${ordersCount} заказов`);
-                }
-            } else {
-                throw new Error(response.error || 'Неизвестная ошибка API');
-            }
-        } catch (error: any) {
-
-            console.error('❌ Ошибка загрузки дашборда:', error);
-            if (!isSilent) {
-                const errorMessage = error.response?.data?.error || error.message || 'Ошибка загрузки';
-                const errorDetails = error.response?.data?.details;
-
-                toast.error(
-                    <div>
-                        <p className="font-bold">{errorMessage}</p>
-                        {errorDetails && <p className="text-xs mt-1 opacity-80">{JSON.stringify(errorDetails)}</p>}
-                    </div>,
-                    { id: toastId, duration: 5000 }
-                );
-            }
-        } finally {
-            if (!isSilent) setIsLoading(false);
-        }
+        triggerApiManualSync();
     };
 
     // Toggle handler
@@ -137,7 +87,7 @@ export const DashboardApiSection: React.FC = () => {
                         'p-3 rounded-2xl shadow-inner transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3',
                         isDark ? 'bg-blue-900/30 text-blue-400' : 'bg-blue-50 text-blue-600'
                     )}>
-                        <ArrowPathIcon className={clsx("w-6 h-6", (isLoading || apiSyncStatus === 'syncing') && "animate-spin")} />
+                        <ArrowPathIcon className={clsx("w-6 h-6", (apiSyncStatus === 'syncing') && "animate-spin")} />
                     </div>
                     <div>
                         <h3 className={clsx(
@@ -159,12 +109,12 @@ export const DashboardApiSection: React.FC = () => {
                                         След: {timeLeft}
                                     </span>
                                     <button
-                                        onClick={() => handleFetchData(false, true)}
-                                        disabled={isLoading || apiSyncStatus === 'syncing'}
+                                        onClick={handleSync}
+                                        disabled={apiSyncStatus === 'syncing'}
                                         className="hover:scale-110 active:rotate-180 transition-all duration-300"
                                         title="Обновить сейчас"
                                     >
-                                        <ArrowPathIcon className={clsx("w-3 h-3 text-blue-400", (isLoading || apiSyncStatus === 'syncing') && "animate-spin")} />
+                                        <ArrowPathIcon className={clsx("w-3 h-3 text-blue-400", (apiSyncStatus === 'syncing') && "animate-spin")} />
                                     </button>
                                 </div>
                             )}
@@ -219,14 +169,14 @@ export const DashboardApiSection: React.FC = () => {
                     </div>
 
                     <button
-                        onClick={() => handleFetchData(false, true)}
-                        disabled={isLoading || apiSyncStatus === 'syncing'}
+                        onClick={handleSync}
+                        disabled={apiSyncStatus === 'syncing'}
                         className={clsx(
                             'btn btn-primary flex items-center gap-2 whitespace-nowrap min-w-[140px] justify-center px-6 py-2.5 rounded-2xl font-bold transform transition-all duration-200 active:scale-95 shadow-xl',
-                            (isLoading || apiSyncStatus === 'syncing') && 'opacity-70 cursor-not-allowed grayscale'
+                            (apiSyncStatus === 'syncing') && 'opacity-70 cursor-not-allowed grayscale'
                         )}
                     >
-                        {isLoading || apiSyncStatus === 'syncing' ? (
+                        {apiSyncStatus === 'syncing' ? (
                             <>
                                 <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>

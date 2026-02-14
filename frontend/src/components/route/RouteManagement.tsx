@@ -31,7 +31,7 @@ import { googleApiCache } from '../../services/googleApiCache'
 import { lazy, Suspense } from 'react'
 import { CourierTimeWindows } from './CourierTimeWindows'
 import { getUkraineTrafficForOrders, calculateTotalTrafficDelay } from '../../utils/maps/ukraineTrafficAPI'
-import { type TimeWindowGroup } from '../../utils/route/routeCalculationHelpers'
+import { type TimeWindowGroup, formatTimeLabel } from '../../utils/route/routeCalculationHelpers'
 
 // Ленивая загрузка тяжелых компонентов
 const HelpModalRoutes = lazy(() => import('../modals/HelpModalRoutes').then(m => ({ default: m.HelpModalRoutes })))
@@ -59,6 +59,8 @@ interface Order {
   plannedTime?: string
   paymentMethod?: string
   manualGroupId?: string
+  deadlineAt?: number | null
+  handoverAt?: number | null
   status?: string
   statusTimings?: {
     assembledAt?: number;
@@ -223,7 +225,7 @@ const CourierListItem = memo(({
 })
 
 export const RouteManagement: React.FC<RouteManagementProps> = () => {
-  const { excelData, updateExcelData } = useExcelData()
+  const { excelData, updateExcelData, saveManualOverrides } = useExcelData()
   const { isDark } = useTheme()
   const [selectedCourier, setSelectedCourier] = useState<string | null>(null)
   const [isCalculating, setIsCalculating] = useState(false)
@@ -395,7 +397,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         }
 
         grouped[courierName].push({
-          id: order.id || `order_${order.orderNumber || Math.random()}`,
+          id: order.id ? String(order.id) : `order_${order.orderNumber || Date.now()}`,
           orderNumber: order.orderNumber || 'N/A',
           address: order.address,
           courier: courierName, // Use the normalized name
@@ -405,6 +407,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           plannedTime: order.plannedTime || '',
           paymentMethod: order.paymentMethod || '', // Добавляем способ оплаты
           manualGroupId: order.manualGroupId,      // Phase 4.7
+          deadlineAt: order.deadlineAt,            // IMPORTANT: For grouping logic
+          handoverAt: order.handoverAt,            // For grouping logic
           status: order.status,                    // Ensure status is passed
           statusTimings: order.statusTimings,      // Pass status timings
           raw: order,                              // Pass full raw object for access to extra fields
@@ -1454,25 +1458,38 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       if (!prev) return prev;
 
       // Если это авто-группа, нам нужно превратить её в ручную для стабильности
-      const isAutoGroup = !targetGroup.id.startsWith('manual-');
-      const manualIdForTarget = isAutoGroup ? `manual-${Date.now()}` : targetGroup.id;
+      const manualIdForTarget = targetGroup.manualGroupId || `${Date.now()}`;
 
       // 1. Обновляем метаданные в списке всех заказов
       const updatedAllOrders = (prev.orders || []).map((order: any) => {
-        const currentOrderId = String(order.id || order.orderNumber);
-        const targetId = String(orderId);
+        const targetIdStr = String(orderId);
+        const orderIdStr = order.id ? String(order.id) : '';
+        const orderNumStr = order.orderNumber ? String(order.orderNumber) : '';
+
+        const isTargetMove = (orderIdStr === targetIdStr) || (orderNumStr === targetIdStr);
 
         // Перемещаемый заказ
-        if (currentOrderId === targetId) {
+        if (isTargetMove) {
+          // Находим объект курьера для стабильности данных
+          const targetCourier = prev.couriers?.find((c: any) => (c._id || c.id) === targetGroup.courierId);
+
           return {
             ...order,
             manualGroupId: manualIdForTarget,
-            plannedTime: targetGroup.windowStart,
-            courier: targetGroup.courierName
+            deadlineAt: targetGroup.windowStart,
+            plannedTime: formatTimeLabel(targetGroup.windowStart),
+            // ВАЖНО: Используем полный объект курьера, если нашли
+            courier: targetCourier || { _id: targetGroup.courierId, name: targetGroup.courierName }
           };
         }
-        // Заказы, которые УЖЕ были в этой авто-группе (чтобы они не разлетелись)
-        if (isAutoGroup && targetGroup.orders.some(o => String(o.id || o.orderNumber) === currentOrderId)) {
+        // Заказы, которые УЖЕ были в этой группе (чтобы они не разлетелись, если это превращение в ручную группу)
+        const isFromSameTargetGroup = (targetGroup.orders || []).some(o => {
+          const oIdStr = o.id ? String(o.id) : '';
+          const oNumStr = o.orderNumber ? String(o.orderNumber) : '';
+          return (oIdStr === orderIdStr && oIdStr !== '') || (oNumStr === orderNumStr && oNumStr !== '');
+        });
+
+        if (isFromSameTargetGroup) {
           return {
             ...order,
             manualGroupId: manualIdForTarget
@@ -1483,23 +1500,35 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
       // 2. Очищаем старые маршруты
       const updatedRoutes = (prev.routes || []).map((route: any) => {
-        const hasOrder = route.orders.some((o: any) => String(o.id || o.orderNumber) === String(orderId));
+        const targetIdStr = String(orderId);
+        const hasOrder = (route.orders || []).some((o: any) => {
+          const oIdStr = o.id ? String(o.id) : '';
+          const oNumStr = o.orderNumber ? String(o.orderNumber) : '';
+          return (oIdStr === targetIdStr) || (oNumStr === targetIdStr);
+        });
+
         if (!hasOrder) return route;
 
         return {
           ...route,
-          orders: route.orders.filter((o: any) => String(o.id || o.orderNumber) !== String(orderId)),
+          orders: route.orders.filter((o: any) => {
+            const oIdStr = o.id ? String(o.id) : '';
+            const oNumStr = o.orderNumber ? String(o.orderNumber) : '';
+            return (oIdStr !== targetIdStr) && (oNumStr !== targetIdStr);
+          }),
           isOptimized: false,
           totalDistance: 0,
           totalDuration: 0
         };
-      }).filter((route: any) => route.orders.length > 0);
+      }).filter((route: any) => (route.orders || []).length > 0);
 
-      return {
+      const next = {
         ...prev,
         orders: updatedAllOrders,
         routes: updatedRoutes
       };
+      saveManualOverrides(next.orders);
+      return next;
     });
 
     toast.success(`Заказ перемещен в ${targetGroup.windowLabel}`, { icon: '' });
@@ -1512,34 +1541,43 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       if (!prev) return prev;
 
       const updatedOrders = (prev.orders || []).map((order: any) => {
-        if (order.id === orderId) {
+        const targetIdStr = String(orderId);
+        const orderIdStr = order.id ? String(order.id) : '';
+        const orderNumStr = order.orderNumber ? String(order.orderNumber) : '';
+
+        const isTargetMove = (orderIdStr === targetIdStr) || (orderNumStr === targetIdStr);
+
+        if (isTargetMove) {
           return {
             ...order,
             manualGroupId: newManualId,
-            courier: selectedCourier
+            // Сохраняем курьера, чтобы он остался в текущей колонке
+            courier: order.courier || selectedCourier
           };
         }
         return order;
       });
 
       const updatedRoutes = (prev.routes || []).map((route: any) => {
-        const hasOrder = route.orders.some((o: any) => o.id === orderId);
+        const hasOrder = (route.orders || []).some((o: any) => String(o.id || o.orderNumber) === String(orderId));
         if (!hasOrder) return route;
 
         return {
           ...route,
-          orders: route.orders.filter((o: any) => o.id !== orderId),
+          orders: (route.orders || []).filter((o: any) => String(o.id || o.orderNumber) !== String(orderId)),
           isOptimized: false,
           totalDistance: 0,
           totalDuration: 0
         };
       }).filter((route: any) => route.orders.length > 0);
 
-      return {
+      const next = {
         ...prev,
         orders: updatedOrders,
         routes: updatedRoutes
       };
+      saveManualOverrides(next.orders);
+      return next;
     });
 
     toast.success('Создана новая группа', { icon: '➕' });
@@ -1890,7 +1928,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   </div>
                 </div>
 
-                <div className="flex-1 min-h-[300px] overflow-y-auto pr-2 custom-scrollbar" style={{ height: 'calc(100vh - 420px)' }}>
+                <div className="flex-1 min-h-[400px] overflow-y-auto pr-2 custom-scrollbar" style={{ maxHeight: '600px' }}>
                   {filteredCouriers.length === 0 ? (
                     <div className="text-center py-10 h-full flex flex-col items-center justify-center">
                       <TruckIcon className="w-10 h-10 mx-auto text-gray-300 mb-2 opacity-50" />
@@ -2081,10 +2119,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                           </div>
                         </div>
 
-                        <div className="h-[600px] w-full" data-tour="order-list">
+                        <div className="h-[600px] w-full overflow-y-auto pr-2 custom-scrollbar" data-tour="order-list">
                           {availableOrders.length > 0 ? (
                             <div className="animate-in fade-in duration-700">
-                              <div style={{ height: 600 }}>
+                              <div>
                                 <OrderList
                                   orders={availableOrders}
                                   isDark={isDark}

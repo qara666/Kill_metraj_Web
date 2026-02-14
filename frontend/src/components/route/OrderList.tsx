@@ -88,6 +88,7 @@ const OrderItem = memo(({
                 draggable
                 onDragStart={(e) => {
                     e.dataTransfer.setData('orderId', order.id);
+                    e.dataTransfer.setData('text/plain', order.id); // SOTA fallback
                     e.dataTransfer.effectAllowed = 'move';
                 }}
                 className={clsx(

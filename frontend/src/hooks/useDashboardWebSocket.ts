@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useRef, useCallback } from 'react';
+import { toast } from 'react-hot-toast';
 import { useAutoPlannerStore } from '../stores/useAutoPlannerStore';
 import { socketService } from '../services/socketService';
 import { ProcessedExcelData } from '../types';
@@ -29,144 +30,128 @@ export const useDashboardWebSocket = ({
     onDataLoaded,
     enabled = false
 }: DashboardWebSocketParams) => {
-    // Use stable selectors for Zustand
+    // Selectors
     const setApiLastSyncTime = useAutoPlannerStore(s => s.setApiLastSyncTime);
     const setApiNextSyncTime = useAutoPlannerStore(s => s.setApiNextSyncTime);
     const setApiSyncStatus = useAutoPlannerStore(s => s.setApiSyncStatus);
     const setApiSyncError = useAutoPlannerStore(s => s.setApiSyncError);
     const apiManualSyncTrigger = useAutoPlannerStore(s => s.apiManualSyncTrigger);
     const apiAutoRefreshEnabled = useAutoPlannerStore(s => s.apiAutoRefreshEnabled);
-
-    // Filters and settings
     const apiDateShift = useAutoPlannerStore(s => s.apiDateShift);
-    const apiTimeDeliveryBeg = useAutoPlannerStore(s => s.apiTimeDeliveryBeg);
-    const apiTimeDeliveryEnd = useAutoPlannerStore(s => s.apiTimeDeliveryEnd);
-    const apiTimeFilterEnabled = useAutoPlannerStore(s => s.apiTimeFilterEnabled);
     const apiDepartmentId = useAutoPlannerStore(s => s.apiDepartmentId);
 
+    // Refs for stable logic
     const isConnectedRef = useRef(false);
     const lastProcessedTriggerRef = useRef<number | null>(null);
-    const intervalRef = useRef<any>(null);
     const lastFetchTimeRef = useRef<number>(0);
-
-    // Use ref to store latest callback to avoid re-connecting when callback changes
     const onDataLoadedRef = useRef(onDataLoaded);
+    const intervalRef = useRef<any>(null);
+
+    // Keep state refs updated for the async fetch function to avoid dependency cycles
+    const stateRef = useRef({
+        apiDateShift,
+        apiDepartmentId,
+        apiManualSyncTrigger
+    });
+
+    useEffect(() => {
+        stateRef.current = { apiDateShift, apiDepartmentId, apiManualSyncTrigger };
+    }, [apiDateShift, apiDepartmentId, apiManualSyncTrigger]);
+
     useEffect(() => {
         onDataLoadedRef.current = onDataLoaded;
     }, [onDataLoaded]);
 
     /**
-     * Fetch latest data from REST API (fallback or manual trigger)
+     * Core fetch function - stable reference
      */
-    const fetchLatestData = useCallback(async () => {
-        // Simple throttle: prevent fetching more than once every 2 seconds
+    const fetchLatestData = useCallback(async (options: { isManual?: boolean } = {}) => {
+        const { isManual = false } = options;
         const now = Date.now();
+
+        // Throttle manual/auto requests
         if (now - lastFetchTimeRef.current < 2000) {
             logger.info('Skipping fetch (throttled)');
             return;
         }
         lastFetchTimeRef.current = now;
 
+        const { apiDateShift: dateShift, apiDepartmentId: deptId } = stateRef.current;
+        const dateStr = dateShift || formatDateForApi(new Date());
+        const apiDate = dashboardApiService.convertDateToApiFormat(dateStr);
+
         setApiSyncStatus('syncing');
         setApiSyncError(null);
 
+        let toastId: string | undefined;
+        if (isManual) {
+            toastId = toast.loading(`Обновление данных за ${apiDate}...`);
+        }
+
         try {
-            logger.info(' Fetching latest dashboard data from REST API...');
-
-            // Use dashboardApiService which handles date conversion and consistent fetching
-            const dateStr = apiDateShift || formatDateForApi(new Date());
-
-            // Convert to DD.MM.YYYY required by API service
-            const apiDate = dashboardApiService.convertDateToApiFormat(dateStr);
-
             logger.info(` Fetching dashboard for ${apiDate} (force=true)`);
-
             const response = await dashboardApiService.fetchDataForDate({
                 date: apiDate,
-                force: true // Force refresh to ensure sync with FastOperator
+                divisionId: deptId ? String(deptId) : 'all',
+                force: true
             });
 
             if (response.success && response.data) {
-                logger.info(` Loaded dashboard data via Service (${response.data.orders?.length || 0} orders)`);
+                const ordersCount = response.data.orders?.length || 0;
+                logger.info(` Loaded dashboard data (${ordersCount} orders)`);
 
                 setApiLastSyncTime(Date.now());
                 setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);
                 setApiSyncStatus('idle');
                 setApiSyncError(null);
 
+                if (isManual) {
+                    toast.success(`Данные обновлены! Загружено ${ordersCount} заказов.`, { id: toastId });
+                }
+
                 if (onDataLoadedRef.current) {
                     onDataLoadedRef.current(response.data);
                 }
             } else {
-                throw new Error(response.error || 'Failed to fetch data via Service');
+                throw new Error(response.error || 'Failed to fetch data');
             }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
-            logger.error(' Failed to fetch latest dashboard data:', error);
+            logger.error(' Failed to fetch latest data:', error);
 
-            setApiSyncStatus('error');
-            setApiSyncError(errorMessage);
+            // Silent error for background updates - keep 'idle' but log the failure
+            setApiSyncStatus(isManual ? 'error' : 'idle');
+            if (isManual) {
+                setApiSyncError(errorMessage);
+                toast.error(`Ошибка: ${errorMessage}`, { id: toastId });
+            }
+
+            // Ensure timer resets even on failure so it retries later
+            setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);
         }
-    }, [
-        setApiLastSyncTime,
-        setApiNextSyncTime,
-        setApiSyncStatus,
-        setApiSyncError,
-        apiDateShift,
-        apiTimeDeliveryBeg,
-        apiTimeDeliveryEnd,
-        apiTimeFilterEnabled,
-        apiDepartmentId
-    ]);
+    }, [setApiLastSyncTime, setApiNextSyncTime, setApiSyncStatus, setApiSyncError]);
 
-    /**
-     * Handle WebSocket dashboard updates
-     */
-    const handleDashboardUpdate = useCallback((update: {
-        data: any;
-        timestamp: string;
-        status: number;
-    }) => {
-        logger.info(' Received dashboard update via WebSocket', {
-            timestamp: update.timestamp,
-            status: update.status
-        });
-
+    const handleDashboardUpdate = useCallback((update: any) => {
+        logger.info(' Received dashboard update via WebSocket');
         setApiLastSyncTime(Date.now());
         setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);
         setApiSyncStatus('idle');
         setApiSyncError(null);
-
         if (onDataLoadedRef.current && update.data) {
             onDataLoadedRef.current(update.data);
         }
     }, [setApiLastSyncTime, setApiNextSyncTime, setApiSyncStatus, setApiSyncError]);
 
-    /**
-     * Connect to WebSocket server
-     */
     const connectWebSocket = useCallback(() => {
-        if (isConnectedRef.current) {
-            logger.info('WebSocket already connected');
-            return;
-        }
-
+        if (isConnectedRef.current) return;
         const token = localStorage.getItem('km_access_token');
-        if (!token) {
-            logger.warn('No auth token found, cannot connect to WebSocket');
-            return;
-        }
+        if (!token) return;
 
-        logger.info(' Connecting to WebSocket server...');
-
+        logger.info(' Connecting to WebSocket...');
         socketService.connect(token);
-
-        // Listen for dashboard updates
         socketService.onDashboardUpdate(handleDashboardUpdate);
 
-        // Listen for connection events
         socketService.on('connected', () => {
-            logger.info(' WebSocket connected successfully');
             isConnectedRef.current = true;
             setApiSyncStatus('idle');
             setApiSyncError(null);
@@ -175,80 +160,44 @@ export const useDashboardWebSocket = ({
         socketService.on('disconnected', (reason: string) => {
             logger.warn(' WebSocket disconnected:', reason);
             isConnectedRef.current = false;
-            setApiSyncStatus('error');
-            setApiSyncError(`WebSocket отключен: ${reason}`);
         });
-
-        socketService.on('reconnected', (attemptNumber: number) => {
-            logger.info(` WebSocket reconnected after ${attemptNumber} attempts`);
-            isConnectedRef.current = true;
-            setApiSyncStatus('idle');
-            setApiSyncError(null);
-        });
-
-        socketService.on('max_reconnect_attempts', () => {
-            logger.error(' Max WebSocket reconnection attempts reached');
-            setApiSyncStatus('error');
-            setApiSyncError('Не удалось подключиться к серверу');
-        });
-
     }, [handleDashboardUpdate, setApiSyncStatus, setApiSyncError]);
 
-    /**
-     * Disconnect from WebSocket server
-     */
     const disconnectWebSocket = useCallback(() => {
-        if (!isConnectedRef.current) {
-            return;
-        }
-
-        logger.info(' Disconnecting from WebSocket server...');
+        if (!isConnectedRef.current) return;
         socketService.disconnect();
         isConnectedRef.current = false;
     }, []);
 
-    // Manual sync trigger listener
+    // Effect for manual triggers
     useEffect(() => {
         if (apiManualSyncTrigger && apiManualSyncTrigger !== lastProcessedTriggerRef.current) {
             lastProcessedTriggerRef.current = apiManualSyncTrigger;
-            logger.info(' Manual sync trigger detected, fetching latest data...');
-            fetchLatestData();
+            fetchLatestData({ isManual: true });
         }
     }, [apiManualSyncTrigger, fetchLatestData]);
 
-    // Connect/disconnect based on enabled state and handle periodic refresh
+    // Main lifecycle effect - stable dependencies
     useEffect(() => {
         if (!enabled || !apiAutoRefreshEnabled) {
             disconnectWebSocket();
-            if (intervalRef.current) {
-                clearInterval(intervalRef.current);
-                intervalRef.current = null;
-            }
+            if (intervalRef.current) clearInterval(intervalRef.current);
             return;
         }
 
-        // Connect to WebSocket
         connectWebSocket();
+        fetchLatestData(); // Initial load
 
-        // Perform initial fetch
-        fetchLatestData();
-
-        // Setup periodic refresh as a fallback
         if (intervalRef.current) clearInterval(intervalRef.current);
         intervalRef.current = setInterval(() => {
-            logger.info(' Periodic background refresh triggered (10 min)');
             fetchLatestData();
         }, REFRESH_INTERVAL_MS);
 
-        // Cleanup on unmount
         return () => {
             disconnectWebSocket();
-            if (intervalRef.current) {
-                clearInterval(intervalRef.current);
-                intervalRef.current = null;
-            }
+            if (intervalRef.current) clearInterval(intervalRef.current);
         };
-    }, [enabled, apiAutoRefreshEnabled, connectWebSocket, disconnectWebSocket, fetchLatestData]);
+    }, [enabled, apiAutoRefreshEnabled, apiDateShift, apiDepartmentId, connectWebSocket, disconnectWebSocket, fetchLatestData]);
 
     return {
         fetchLatestData,

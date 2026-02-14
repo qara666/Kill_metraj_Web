@@ -41,6 +41,9 @@ export const mergeExcelData = (newData: any, existingData: any): ProcessedExcelD
                 isSelected: existingOrder.isSelected,  // Сохраняем выделение
                 isInRoute: existingOrder.isInRoute,    // Сохраняем принадлежность маршруту
                 handoverAt: existingOrder.handoverAt,  // Сохраняем уже записанное время
+                manualGroupId: existingOrder.manualGroupId, // Сохраняем ручную группу
+                deadlineAt: existingOrder.deadlineAt,       // Сохраняем дедлайн
+                plannedTime: existingOrder.plannedTime,     // Сохраняем плановое время
 
                 // Финансовые состояния (Phase 5)
                 settledDate: existingOrder.settledDate,
@@ -214,6 +217,9 @@ export const syncDashboardData = (newData: any, existingData: any): ProcessedExc
                 id: existing.id,
                 isSelected: existing.isSelected,
                 isInRoute: existing.isInRoute,
+                manualGroupId: existing.manualGroupId, // Preserve manual grouping
+                deadlineAt: existing.deadlineAt,       // Preserve overrides
+                plannedTime: existing.plannedTime,     // Preserve overrides
                 // Финансовые состояния
                 settledDate: existing.settledDate,
                 settledAmount: existing.settledAmount,
