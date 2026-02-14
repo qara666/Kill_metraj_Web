@@ -122,25 +122,25 @@ export function CourierTimeWindows({
                             />
                         </div>
                     </div>
-
-                    <div className="flex items-center gap-3 ml-auto lg:ml-0">
+                    {/* SOTA Action Hub */}
+                    <div className="flex items-center gap-2.5 relative z-10">
                         <button
                             onClick={() => {
                                 timeGroups.forEach(g => onCalculateRoute && onCalculateRoute(g));
                             }}
                             className={clsx(
-                                'group px-6 py-3.5 rounded-2xl flex items-center gap-3 text-xs font-black uppercase tracking-[0.2em] transition-all active:scale-95 shadow-2xl border relative overflow-hidden',
+                                'group px-6 py-3 rounded-xl flex items-center gap-2.5 text-[10px] font-black uppercase tracking-[0.15em] transition-all active:scale-95 shadow-lg border',
                                 isDark
-                                    ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500'
+                                    ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500 hover:shadow-blue-500/20'
                                     : 'bg-slate-900 border-slate-800 text-white hover:bg-slate-800'
                             )}
                         >
-                            <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 -translate-x-full group-hover:animate-shimmer" />
-                            <RocketLaunchIcon className="w-5 h-5 transition-transform group-hover:scale-110 group-hover:-translate-y-0.5" />
-                            <span>План Всё</span>
+                            <RocketLaunchIcon className="w-4 h-4 group-hover:rotate-12 transition-transform" />
+                            <span>Маршрут все заказы</span>
                         </button>
                     </div>
                 </div>
+
             </div>
 
             {/* Time Window Groups - Responsive Futuristic Grid */}
@@ -161,3 +161,4 @@ export function CourierTimeWindows({
     );
 }
 
+export default CourierTimeWindows;
