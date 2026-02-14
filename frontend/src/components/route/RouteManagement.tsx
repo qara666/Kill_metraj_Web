@@ -32,6 +32,9 @@ import { lazy, Suspense } from 'react'
 import { CourierTimeWindows } from './CourierTimeWindows'
 import { getUkraineTrafficForOrders, calculateTotalTrafficDelay } from '../../utils/maps/ukraineTrafficAPI'
 import { type TimeWindowGroup } from '../../utils/route/routeCalculationHelpers'
+import { SmartAddressCorrectionModal } from '../modals/SmartAddressCorrectionModal'
+import { BatchAddressCorrectionPanel } from './BatchAddressCorrectionPanel'
+import { useSmartAddressCorrection } from '../../hooks/useSmartAddressCorrection'
 
 // Ленивая загрузка тяжелых компонентов
 const HelpModalRoutes = lazy(() => import('../modals/HelpModalRoutes').then(m => ({ default: m.HelpModalRoutes })))
@@ -58,6 +61,7 @@ interface Order {
   routeOrder?: number
   plannedTime?: string
   paymentMethod?: string
+  coords?: { lat: number; lng: number }
   manualGroupId?: string
   deadlineAt?: number | null
   handoverAt?: number | null
@@ -266,6 +270,44 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   // Disambiguation modal state for choosing among multiple in-sector candidates
   const [disambModal, setDisambModal] = useState<{ open: boolean; title: string; options: Array<{ label: string; distanceMeters?: number; res: any }> } | null>(null)
   const disambResolver = useRef<(choice: any | null) => void>()
+
+  // Smart Address Correction
+  const [showCorrectionModal, setShowCorrectionModal] = useState(false)
+  const [showBatchPanel, setShowBatchPanel] = useState(false)
+  const [currentProblem, setCurrentProblem] = useState<any>(null)
+  const [problemOrders, setProblemOrders] = useState<any[]>([])
+  const [routeToRecalculate, setRouteToRecalculate] = useState<Route | null>(null)
+
+  const { validateOrders, applyCorrection, applyBatchCorrections, applyManualEdit } = useSmartAddressCorrection({
+    updateExcelData,
+    onCorrectionComplete: useCallback(() => {
+      // Trigger route recalculation if needed
+      if (routeToRecalculate) {
+        setTimeout(() => {
+          calculateRouteDistance(routeToRecalculate)
+          setRouteToRecalculate(null)
+        }, 500)
+      }
+
+      // If there are more problems in single mode, show next
+      if (showCorrectionModal && problemOrders.length > 1 && currentProblem) {
+        const remaining = problemOrders.filter(p => p.order.id !== currentProblem.order.id)
+        setProblemOrders(remaining)
+        if (remaining.length > 0) {
+          setCurrentProblem(remaining[0])
+          // Modal stays open, content updates
+        } else {
+          setShowCorrectionModal(false)
+          setCurrentProblem(null)
+        }
+      } else {
+        setShowCorrectionModal(false)
+        setShowBatchPanel(false)
+        setProblemOrders([])
+        setCurrentProblem(null)
+      }
+    }, [routeToRecalculate, problemOrders, currentProblem, showCorrectionModal])
+  })
 
   // Состояния для системы помощи
   const [showHelpModal, setShowHelpModal] = useState(false)
@@ -1254,7 +1296,23 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           const allPoints2 = [originRes!.geometry.location, ...waypointResList.map(r => r!.geometry.location), destinationRes!.geometry.location]
           const stillOutside = allPoints2.some((pt: any) => !isInsideSector(pt))
           if (stillOutside) {
-            toast.error('Некоторые точки маршрута находятся вне выбранного хаба или сектора города. Проверьте адреса.')
+            // Smart Address Correction Integration
+            const problems = await validateOrders(route.orders)
+
+            if (problems.length > 0) {
+              setProblemOrders(problems)
+              setRouteToRecalculate(route)
+
+              if (problems.length === 1) {
+                setCurrentProblem(problems[0])
+                setShowCorrectionModal(true)
+              } else {
+                setShowBatchPanel(true)
+              }
+            } else {
+              toast.error('Некоторые точки маршрута находятся вне выбранного хаба или сектора города. Проверьте адреса.')
+            }
+
             setIsCalculating(false)
             return
           }
@@ -2867,6 +2925,41 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         }
 
       </>
+
+      {/* Smart Address Correction Modals */}
+      {showCorrectionModal && currentProblem && (
+        <SmartAddressCorrectionModal
+          order={currentProblem.order}
+          validationResult={currentProblem.validationResult}
+          isDark={isDark}
+          onApplyCorrection={(suggestion) => applyCorrection(currentProblem.order, suggestion)}
+          onManualEdit={(newAddress) => {
+            applyManualEdit(currentProblem.order, newAddress)
+          }}
+          onSkip={() => setShowCorrectionModal(false)}
+          onClose={() => setShowCorrectionModal(false)}
+        />
+      )}
+
+      {showBatchPanel && problemOrders.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-2xl">
+            <BatchAddressCorrectionPanel
+              problemOrders={problemOrders}
+              isDark={isDark}
+              onAutoCorrectAll={applyBatchCorrections}
+              onReviewManually={() => {
+                if (problemOrders.length > 0) {
+                  setCurrentProblem(problemOrders[0])
+                  setShowBatchPanel(false)
+                  setShowCorrectionModal(true)
+                }
+              }}
+              onClose={() => setShowBatchPanel(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
