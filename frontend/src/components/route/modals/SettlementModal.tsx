@@ -128,6 +128,11 @@ export function SettlementModal({
             }
 
             updateExcelData((prev: any) => {
+                const sessionId = `settle-${Date.now()}`;
+                const totalExpected = expectedSumBySelection;
+                const totalReceived = cashReceived;
+                const totalDifference = difference;
+
                 const updatedOrders = prev.orders.map((order: any) => {
                     const orderId = String(order.id || order.orderNumber);
                     if (selectedOrderIds.has(orderId)) {
@@ -136,12 +141,21 @@ export function SettlementModal({
                             status: 'Исполнен',
                             settlementNote: notes,
                             settledAmount: orderAmounts[orderId],
-                            settledDate: new Date().toISOString()
+                            settledDate: new Date().toISOString(),
+                            settlementSessionId: sessionId,
+                            sessionTotalReceived: totalReceived,
+                            sessionTotalDifference: totalDifference,
+                            sessionTotalExpected: totalExpected
                         };
                     }
                     return order;
                 });
-                return { ...prev, orders: updatedOrders };
+                const next = { ...prev, orders: updatedOrders };
+                const excelDataCtx = (window as any).excelDataContext;
+                if (excelDataCtx && excelDataCtx.saveManualOverrides) {
+                    excelDataCtx.saveManualOverrides(next.orders);
+                }
+                return next;
             });
 
             toast.success(`Расчет выполнен!`, { duration: 3000 });

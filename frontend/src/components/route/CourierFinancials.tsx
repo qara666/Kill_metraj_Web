@@ -6,7 +6,9 @@ import {
     BanknotesIcon,
     GlobeAltIcon,
     ClockIcon,
-    ArrowsRightLeftIcon
+    ArrowsRightLeftIcon,
+    CheckBadgeIcon,
+    ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 import type { Order } from '../../types';
 import { SettlementModal } from './modals/SettlementModal';
@@ -292,15 +294,29 @@ export function CourierFinancials({
             String(o.address || '').toLowerCase().includes(historySearchTerm.toLowerCase())
         );
 
-        // Group by settledDate (rounded to seconds or just unique timestamps)
-        const groups: Record<string, Order[]> = {};
+        // Group by settlementSessionId (primary) or settledDate (fallback)
+        const groups: Record<string, { orders: Order[], stats?: any }> = {};
         filtered.forEach(order => {
-            const dateStr = order.settledDate || 'Unknown';
-            if (!groups[dateStr]) groups[dateStr] = [];
-            groups[dateStr].push(order);
+            const sessionId = (order as any).settlementSessionId || order.settledDate || 'Unknown';
+            if (!groups[sessionId]) {
+                groups[sessionId] = {
+                    orders: [],
+                    stats: {
+                        received: (order as any).sessionTotalReceived,
+                        expected: (order as any).sessionTotalExpected,
+                        difference: (order as any).sessionTotalDifference,
+                        date: order.settledDate
+                    }
+                };
+            }
+            groups[sessionId].orders.push(order);
         });
 
-        return Object.entries(groups).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
+        return Object.entries(groups).sort((a, b) => {
+            const dateA = new Date(a[1].stats?.date || a[0]).getTime();
+            const dateB = new Date(b[1].stats?.date || b[0]).getTime();
+            return dateB - dateA;
+        });
     }, [summary, historySearchTerm]);
 
 
@@ -408,6 +424,7 @@ export function CourierFinancials({
                     </div>
                 </div>
             </div>
+
 
             {/* Financial Overview Main Card */}
             <div className={clsx(
@@ -564,58 +581,124 @@ export function CourierFinancials({
                                     <p className="text-xs font-black uppercase tracking-widest">История пуста</p>
                                 </div>
                             ) : (
-                                groupedHistory.map(([date, orders]) => (
-                                    <div key={date} className="space-y-3">
-                                        <div className="flex items-center gap-3 px-4">
-                                            <div className="h-px flex-1 bg-current opacity-5" />
-                                            <span className="text-[9px] font-black uppercase tracking-[0.2em] opacity-30">
-                                                Расчет {new Date(date).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                                            </span>
-                                            <div className="h-px flex-1 bg-current opacity-5" />
-                                        </div>
-                                        <div className="space-y-3">
-                                            {orders.map((order, idx) => (
-                                                <div
-                                                    key={order.id || idx}
-                                                    className={clsx(
-                                                        'p-6 rounded-[36px] border flex items-center justify-between transition-all group',
-                                                        isDark ? 'bg-black/20 border-white/5 hover:bg-black/40' : 'bg-[#f8faff] border-gray-100/50 hover:bg-white hover:shadow-2xl hover:shadow-blue-500/10'
-                                                    )}
-                                                >
-                                                    <div className="flex-1 min-w-0 mr-8">
-                                                        <div className="flex items-center gap-3 mb-3">
-                                                            <span className={clsx(
-                                                                "text-[10px] font-black px-2.5 py-1 rounded-xl opacity-40",
-                                                                isDark ? "bg-gray-800" : "bg-gray-100"
-                                                            )}>
-                                                                #{order.orderNumber}
-                                                            </span>
-                                                            <span className={clsx(
-                                                                "text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-xl bg-emerald-500/10 text-emerald-500"
-                                                            )}>
-                                                                Оплачено
-                                                            </span>
+                                (groupedHistory as any[]).map(([sessionId, group]: [string, any]) => {
+                                    const { orders, stats } = group;
+                                    const hasStats = stats && stats.received !== undefined;
+
+                                    return (
+                                        <div key={sessionId} className="group/session animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both">
+                                            {/* Session Header Stats - REDESIGNED PREMIUM POD */}
+                                            <div className={clsx(
+                                                "p-8 rounded-[40px] border relative overflow-hidden transition-all duration-500 hover:scale-[1.01] hover:shadow-2xl",
+                                                isDark ? "bg-white/[0.03] border-white/5 hover:bg-white/[0.05]" : "bg-white border-gray-100 hover:border-blue-100 shadow-sm"
+                                            )}>
+                                                {/* Discrepancy Indicator bar */}
+                                                {hasStats && stats.difference !== 0 && (
+                                                    <div className={clsx(
+                                                        "absolute top-0 left-10 right-10 h-1 blur-sm rounded-b-full opacity-50",
+                                                        stats.difference > 0 ? "bg-emerald-500" : "bg-red-500"
+                                                    )} />
+                                                )}
+
+                                                <div className="flex flex-col lg:flex-row items-center justify-between gap-10">
+                                                    <div className="flex items-center gap-6">
+                                                        <div className={clsx(
+                                                            "w-16 h-16 rounded-3xl flex items-center justify-center shadow-xl transition-transform group-hover/session:rotate-3",
+                                                            isDark ? "bg-blue-600/20 text-blue-400" : "bg-blue-500 text-white shadow-blue-500/20"
+                                                        )}>
+                                                            <BanknotesIcon className="w-8 h-8" />
                                                         </div>
-                                                        <p className={clsx('text-sm font-bold leading-relaxed', isDark ? 'text-gray-300' : 'text-gray-800')} title={order.address}>
-                                                            {order.address}
-                                                        </p>
+                                                        <div>
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40">Расчет смены</h4>
+                                                                {hasStats && stats.difference === 0 && (
+                                                                    <div className="px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-1">
+                                                                        <CheckBadgeIcon className="w-3 h-3 text-emerald-500" />
+                                                                        <span className="text-[8px] font-black text-emerald-500 uppercase">Идеально</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <p className="text-xl font-black tracking-tight tabular-nums">
+                                                                {stats?.date ? new Date(stats.date).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Неизвестно'}
+                                                            </p>
+                                                        </div>
                                                     </div>
 
-                                                    <div className="text-right">
-                                                        <p className={clsx('text-xl font-black tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>
-                                                            {formatCurrency((order as any).settledAmount || order.amount)}
-                                                        </p>
-                                                        {order.settlementNote && (
-                                                            <p className="text-[10px] font-bold opacity-30 italic mt-1 max-w-[200px] truncate">
-                                                                {order.settlementNote}
-                                                            </p>
-                                                        )}
-                                                    </div>
+                                                    {hasStats && (
+                                                        <div className="flex flex-wrap items-center justify-center lg:justify-end gap-12">
+                                                            <div className="text-center lg:text-right">
+                                                                <p className="text-[10px] font-black uppercase tracking-widest opacity-30 mb-2">Сдано</p>
+                                                                <p className="text-3xl font-black tracking-tighter text-blue-500 tabular-nums">{formatCurrency(stats.received)}</p>
+                                                            </div>
+                                                            <div className="hidden sm:block w-[1px] h-10 bg-gray-500/10" />
+                                                            <div className="text-center lg:text-right">
+                                                                <p className="text-[10px] font-black uppercase tracking-widest opacity-30 mb-2">Ожидалось</p>
+                                                                <p className="text-xl font-black tracking-tighter opacity-40 tabular-nums">{formatCurrency(stats.expected)}</p>
+                                                            </div>
+                                                            <div className="hidden sm:block w-[1px] h-10 bg-gray-500/10" />
+                                                            <div className="text-center lg:text-right">
+                                                                <p className="text-[10px] font-black uppercase tracking-widest opacity-30 mb-2">Расхождение</p>
+                                                                <div className={clsx(
+                                                                    "text-2xl font-black tracking-tighter flex items-center gap-2 justify-center lg:justify-end tabular-nums",
+                                                                    stats.difference > 0 ? "text-emerald-500" : stats.difference < 0 ? "text-red-500" : "opacity-20"
+                                                                )}>
+                                                                    {stats.difference !== 0 && (
+                                                                        stats.difference > 0
+                                                                            ? <CheckBadgeIcon className="w-5 h-5" />
+                                                                            : <ExclamationTriangleIcon className="w-5 h-5" />
+                                                                    )}
+                                                                    <span>{stats.difference > 0 ? '+' : ''}{formatCurrency(stats.difference)}</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            ))}
+                                            </div>
+
+                                            <div className="space-y-3 pl-4">
+                                                {orders.map((order: Order, idx: number) => (
+                                                    <div
+                                                        key={order.id || idx}
+                                                        className={clsx(
+                                                            'p-5 rounded-[28px] border flex items-center justify-between transition-all group',
+                                                            isDark ? 'bg-black/20 border-white/5 hover:bg-black/40' : 'bg-[#f8faff] border-gray-100/50 hover:bg-white hover:shadow-xl hover:shadow-blue-500/5'
+                                                        )}
+                                                    >
+                                                        <div className="flex-1 min-w-0 mr-8">
+                                                            <div className="flex items-center gap-3 mb-2">
+                                                                <span className={clsx(
+                                                                    "text-[10px] font-black px-2.5 py-1 rounded-xl opacity-40",
+                                                                    isDark ? "bg-gray-800" : "bg-gray-100"
+                                                                )}>
+                                                                    #{order.orderNumber}
+                                                                </span>
+                                                                <span className={clsx(
+                                                                    "text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-500"
+                                                                )}>
+                                                                    Оплачено
+                                                                </span>
+                                                            </div>
+                                                            <p className={clsx('text-xs font-bold leading-relaxed opacity-70 truncate', isDark ? 'text-gray-300' : 'text-gray-800')} title={order.address}>
+                                                                {order.address}
+                                                            </p>
+                                                        </div>
+
+                                                        <div className="text-right">
+                                                            <p className={clsx('text-lg font-black tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>
+                                                                {formatCurrency((order as any).settledAmount || order.amount)}
+                                                            </p>
+                                                            {order.settlementNote && (
+                                                                <p className="text-[9px] font-bold opacity-30 italic mt-0.5 max-w-[150px] truncate">
+                                                                    {order.settlementNote}
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))
+                                    );
+                                })
                             )
                         ) : (
                             activeOrders.length === 0 ? (
@@ -700,6 +783,6 @@ export function CourierFinancials({
                     fetchFinancialSummary={fetchFinancialSummary}
                 />
             )}
-        </div >
+        </div>
     );
 }

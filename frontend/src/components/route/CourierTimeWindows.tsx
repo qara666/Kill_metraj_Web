@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { ClockIcon } from '@heroicons/react/24/outline';
+import { ClockIcon, RocketLaunchIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import type { Order } from '../../types';
 import { TimeWindowGroupCard } from './TimeWindowGroupCard';
 import { groupOrdersByTimeWindow, type TimeWindowGroup } from '../../utils/route/routeCalculationHelpers';
@@ -35,17 +35,22 @@ export function CourierTimeWindows({
     if (!timeGroups || timeGroups.length === 0) {
         return (
             <div className={clsx(
-                'text-center py-8 rounded-lg border-2 border-dashed',
-                isDark ? 'border-gray-700 text-gray-500' : 'border-gray-200 text-gray-400'
+                'text-center py-12 rounded-2xl border-2 border-dashed transition-all',
+                isDark ? 'border-slate-800 bg-slate-900/40 text-slate-500' : 'border-slate-200 bg-slate-50 text-slate-400'
             )}>
-                <p className="text-sm font-medium">Нет заказов для группировки</p>
+                <SparklesIcon className="w-8 h-8 mx-auto mb-3 opacity-20" />
+                <p className="text-sm font-bold uppercase tracking-widest opacity-40">Нет заказов для группировки</p>
             </div>
         );
     }
 
+    // Calculate Global Health
+    const readyGroups = timeGroups.filter(g => g.orders.every(o => o.status === 'Собран' || o.status === 'Исполнен')).length;
+    const progress = (readyGroups / timeGroups.length) * 100;
+
     return (
         <div
-            className="space-y-4"
+            className="space-y-5"
             onDragOver={(e) => {
                 if (onCreateCustomGroup) {
                     e.preventDefault();
@@ -61,31 +66,85 @@ export function CourierTimeWindows({
                 }
             }}
         >
-            {/* Enhanced Header - More Subtle and Premium */}
+            {/* SOTA Header - Futuristic Status Bar */}
             <div className={clsx(
-                'flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all duration-300',
+                'relative flex flex-col lg:flex-row items-center justify-between gap-6 px-6 py-5 rounded-[2rem] border transition-all duration-700 shadow-2xl',
                 isDark
-                    ? 'bg-gray-800/30 border-white/5 hover:bg-gray-800/50'
-                    : 'bg-white/40 border-gray-200/50 hover:bg-white/60 shadow-sm'
-            )} style={{ backdropFilter: 'blur(10px)' }}>
-                <div className={clsx(
-                    'p-2 rounded-xl transition-colors duration-300',
-                    isDark ? 'bg-blue-500/10 text-blue-400' : 'bg-blue-50 text-blue-600'
-                )}>
-                    <ClockIcon className="w-5 h-5" />
+                    ? 'bg-slate-900/60 border-white/5 shadow-black/40'
+                    : 'bg-white/90 border-blue-50 shadow-blue-500/10'
+            )}>
+                {/* Visual Accent Layer */}
+                <div className="absolute top-0 right-0 w-64 h-full bg-gradient-to-l from-blue-500/5 to-transparent pointer-events-none" />
+
+                <div className="flex items-center gap-5 relative z-10 w-full lg:w-auto">
+                    <div className={clsx(
+                        'w-14 h-14 rounded-2xl flex items-center justify-center border transition-all duration-700 shadow-xl',
+                        isDark ? 'bg-blue-600/20 text-blue-400 border-blue-500/20' : 'bg-blue-600 text-white border-blue-500'
+                    )}>
+                        <ClockIcon className="w-7 h-7" />
+                    </div>
+                    <div>
+                        <div className="flex items-center gap-3">
+                            <span className={clsx('text-[11px] font-black uppercase tracking-[0.3em] opacity-40', isDark ? 'text-blue-400' : 'text-slate-500')}>
+                                ГРУППИРОВКА ПО ВРЕМЕНИ
+                            </span>
+                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">SOTA v2.0</span>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-4 mt-1">
+                            <h2 className={clsx('text-2xl font-black tracking-tight', isDark ? 'text-white' : 'text-slate-900')}>
+                                {timeGroups.length} {timeGroups.length === 1 ? 'Группа' : (timeGroups.length < 5 ? 'Группы' : 'Групп')}
+                            </h2>
+                            <div className="h-4 w-[1px] bg-slate-400/20" />
+                            <div className="flex items-center gap-2">
+                                <SparklesIcon className="w-4 h-4 text-amber-500 opacity-60" />
+                                <span className="text-xs font-bold opacity-40 uppercase tracking-wider">
+                                    {orders.length} {orders.length === 1 ? 'заказ' : 'заказов'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div>
-                    <h3 className={clsx('text-[11px] font-black uppercase tracking-[0.2em] opacity-80', isDark ? 'text-gray-300' : 'text-gray-500')}>
-                        Группировка по времени
-                    </h3>
-                    <p className={clsx('text-xs font-bold mt-0.5', isDark ? 'text-white' : 'text-gray-900')}>
-                        {timeGroups.length} {timeGroups.length === 1 ? 'активная группа' : timeGroups.length < 5 ? 'активные группы' : 'активных групп'}
-                    </p>
+
+                {/* SOTA Global Health & Action Hub */}
+                <div className="flex items-center gap-6 w-full lg:w-auto">
+                    <div className="hidden sm:flex flex-col gap-1.5 w-40">
+                        <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest opacity-30">
+                            <span>Готовность</span>
+                            <span className="text-blue-500">{Math.round(progress)}%</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden p-[1px]">
+                            <div
+                                className="h-full bg-gradient-to-r from-blue-600 to-emerald-500 transition-all duration-1000 shadow-[0_0_12px_rgba(59,130,246,0.5)] rounded-full"
+                                style={{ width: `${progress}%` }}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 ml-auto lg:ml-0">
+                        <button
+                            onClick={() => {
+                                timeGroups.forEach(g => onCalculateRoute && onCalculateRoute(g));
+                            }}
+                            className={clsx(
+                                'group px-6 py-3.5 rounded-2xl flex items-center gap-3 text-xs font-black uppercase tracking-[0.2em] transition-all active:scale-95 shadow-2xl border relative overflow-hidden',
+                                isDark
+                                    ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500'
+                                    : 'bg-slate-900 border-slate-800 text-white hover:bg-slate-800'
+                            )}
+                        >
+                            <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 -translate-x-full group-hover:animate-shimmer" />
+                            <RocketLaunchIcon className="w-5 h-5 transition-transform group-hover:scale-110 group-hover:-translate-y-0.5" />
+                            <span>План Всё</span>
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            {/* Time Window Groups - Grid Layout */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Time Window Groups - Responsive Futuristic Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 animate-in fade-in duration-700">
                 {timeGroups.map((group) => (
                     <TimeWindowGroupCard
                         key={group.id}
@@ -101,3 +160,4 @@ export function CourierTimeWindows({
         </div>
     );
 }
+

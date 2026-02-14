@@ -18,6 +18,7 @@ interface ExcelDataContextType {
   clearExcelData: () => void
   updateRouteData: (routes: any[]) => void
   updateOrderPaymentMethod: (orderNumber: string, newPaymentMethod: string) => void
+  saveManualOverrides: (orders: any[]) => void
 }
 
 const ExcelDataContext = createContext<ExcelDataContextType | undefined>(undefined)
@@ -54,8 +55,22 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
               if (response.ok) {
                 const json = await response.json();
                 if (json.success && json.data) {
-                  const mapped = applyCourierVehicleMap(json.data);
-                  console.log(' Данные загружены с сервера');
+                  const serverData = json.data;
+                  // Hybrid Sync: Merge server data with local manual overrides
+                  const localOverrides = localStorage.getItem('km_manual_overrides');
+                  if (localOverrides && serverData.orders) {
+                    const overrides = JSON.parse(localOverrides);
+                    serverData.orders = serverData.orders.map((o: any) => {
+                      const id = String(o.id || o.orderNumber);
+                      if (overrides[id]) {
+                        return { ...o, ...overrides[id] };
+                      }
+                      return o;
+                    });
+                  }
+
+                  const mapped = applyCourierVehicleMap(serverData);
+                  console.log(' Данные загружены с сервера (Hybrid Sync)');
                   setExcelDataState(mapped);
                   return;
                 }
@@ -229,14 +244,35 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     toast.success(`Способ оплаты изменен на ${newPaymentMethod}`, { duration: 2000 });
   }, [updateExcelData])
 
+  const saveManualOverrides = useCallback((orders: any[]) => {
+    try {
+      const overrides: Record<string, any> = {};
+      orders.forEach(o => {
+        if (o.manualGroupId || o.deadlineAt) {
+          const id = String(o.id || o.orderNumber);
+          overrides[id] = {
+            manualGroupId: o.manualGroupId,
+            deadlineAt: o.deadlineAt,
+            plannedTime: o.plannedTime,
+            courier: o.courier
+          };
+        }
+      });
+      localStorage.setItem('km_manual_overrides', JSON.stringify(overrides));
+    } catch (e) {
+      console.warn('Error saving overrides:', e);
+    }
+  }, []);
+
   const contextValue = useMemo(() => ({
     excelData,
     setExcelData,
     updateExcelData,
     clearExcelData,
     updateRouteData,
-    updateOrderPaymentMethod
-  }), [excelData, setExcelData, updateExcelData, clearExcelData, updateRouteData, updateOrderPaymentMethod]);
+    updateOrderPaymentMethod,
+    saveManualOverrides
+  }), [excelData, setExcelData, updateExcelData, clearExcelData, updateRouteData, updateOrderPaymentMethod, saveManualOverrides]);
 
   // Handle unsaved changes on refresh/close
   useEffect(() => {
