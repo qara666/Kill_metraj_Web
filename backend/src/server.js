@@ -85,6 +85,10 @@ app.get('/health', (req, res) => {
 const swaggerRoutes = require('./routes/swaggerRoutes');
 app.use('/api/swagger', swaggerRoutes);
 
+// Delivery zones routes
+const deliveryZoneRoutes = require('./routes/deliveryZoneRoutes');
+app.use('/api/delivery-zones', deliveryZoneRoutes);
+
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({
