@@ -1,5 +1,6 @@
 import { ProcessedExcelData, Order } from '../../types';
 import { DashboardOrderResponse, DashboardApiResponse } from '../../types/DashboardApiTypes';
+import { asNonEmptyString, isId0CourierName } from './courierName';
 
 /**
  * Преобразование данных Dashboard API в формат ProcessedExcelData
@@ -31,8 +32,10 @@ export const transformDashboardData = (
 
     // Преобразование курьеров
     apiData.couriers.forEach((swaggerCourier) => {
+        const courierName = asNonEmptyString((swaggerCourier as any)?.name);
+
         // Пропускаем "ID:0", так как это техническое обозначение неназначенного заказа в API
-        if (swaggerCourier.name === 'ID:0' || swaggerCourier.name.startsWith('ID:0')) return;
+        if (isId0CourierName(courierName)) return;
 
         // Если в будущем API добавит дату курьеру, мы сможем фильтровать здесь
 
@@ -47,7 +50,7 @@ export const transformDashboardData = (
         }
 
         couriers.push({
-            name: swaggerCourier.name,
+            name: courierName,
             isActive: swaggerCourier.isActive,
             vehicleType: vehicleType,
         });
@@ -189,7 +192,7 @@ const transformDashboardOrder = (swaggerOrder: DashboardOrderResponse, baseDate:
         handoverAt, // Добавлено (Phase 4.4)
         plannedTime: deadlineStr || 'Без времени',
         deliveryZone: swaggerOrder.deliveryZone,
-        courier: (swaggerOrder.courier && (swaggerOrder.courier === 'ID:0' || swaggerOrder.courier.startsWith('ID:0'))) ? 'Не назначено' : swaggerOrder.courier,
+        courier: (swaggerOrder.courier && isId0CourierName(swaggerOrder.courier)) ? 'Не назначено' : asNonEmptyString(swaggerOrder.courier),
         amount: swaggerOrder.amount,
         paymentMethod: swaggerOrder.paymentMethod,
         status: swaggerOrder.status,

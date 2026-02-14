@@ -35,6 +35,7 @@ import { type TimeWindowGroup } from '../../utils/route/routeCalculationHelpers'
 import { SmartAddressCorrectionModal } from '../modals/SmartAddressCorrectionModal'
 import { BatchAddressCorrectionPanel } from './BatchAddressCorrectionPanel'
 import { useSmartAddressCorrection } from '../../hooks/useSmartAddressCorrection'
+import { isId0CourierName, normalizeCourierName } from '../../utils/data/courierName'
 
 // Ленивая загрузка тяжелых компонентов
 const HelpModalRoutes = lazy(() => import('../modals/HelpModalRoutes').then(m => ({ default: m.HelpModalRoutes })))
@@ -111,7 +112,7 @@ const CourierListItem = memo(({
   totalOrdersCount: number
   isDark: boolean
 }) => {
-  const isUnassigned = String(courierName) === 'Не назначено' || String(courierName) === 'ID:0' || String(courierName).startsWith('ID:0');
+  const isUnassigned = courierName === 'Не назначено' || isId0CourierName(courierName)
   const progress = totalOrdersCount > 0 ? (deliveredOrdersCount / totalOrdersCount) * 100 : 0
   const isFinished = totalOrdersCount > 0 && deliveredOrdersCount === totalOrdersCount
   const isOnRoute = totalOrdersCount > 0 && deliveredOrdersCount < totalOrdersCount && deliveredOrdersCount > 0
@@ -428,11 +429,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
     excelData.orders.forEach((order: any) => {
       if (order.address) {
-        let courierName = order.courier || 'Не назначено'
-        // Force rename if it slipped through
-        if (String(courierName) === 'ID:0' || String(courierName).startsWith('ID:0') || !courierName) {
-          courierName = 'Не назначено'
-        }
+        const courierName = normalizeCourierName(order?.courier) || 'Не назначено'
 
         if (!grouped[courierName]) {
           grouped[courierName] = []
@@ -538,14 +535,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     // Из основного списка курьеров в excelData (чтобы видеть даже тех, у кого нет заказов)
     if (excelData?.couriers && Array.isArray(excelData.couriers)) {
       excelData.couriers.forEach((c: any) => {
-        let name = c.name
-        if (name) {
-          // Нормализуем ID:0 в Не назначено
-          if (name === 'ID:0' || name.startsWith('ID:0')) {
-            name = 'Не назначено'
-          }
-          courierNames.add(name)
-        }
+        const name = normalizeCourierName(c?.name)
+        if (name) courierNames.add(name)
       })
     }
 
@@ -1601,7 +1592,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           const filteredOrders = (route.orders || []).filter((o: any) => {
             const oId = String(o.id || '');
             const oNum = String(o.orderNumber || '');
-            return oId !== String(orderId) && oNum !== String(orderId);
+            const targetIdStr = String(orderId);
+            const normalizedTargetId = targetIdStr.replace(/^order_/, '');
+            const normalizedOId = oId.replace(/^order_/, '');
+            return (normalizedOId === normalizedTargetId) || (oNum === normalizedTargetId);
           });
           return {
             ...route,
@@ -1651,7 +1645,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           let targetCourierId = order.courierId;
           let targetCourier = order.courier;
 
-          if (selectedCourier && selectedCourier !== 'all' && !selectedCourier.startsWith('ID:0')) {
+          if (selectedCourier && selectedCourier !== 'all' && !isId0CourierName(selectedCourier)) {
             targetCourierId = selectedCourier;
             // Пытаемся найти полный объект курьера
             const foundCourier = (prev.couriers || []).find((c: any) =>
@@ -2134,7 +2128,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                       <div>
                         <div className="flex items-center gap-3 mb-1">
                           <h2 className={clsx('text-3xl font-black tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>
-                            {(selectedCourier === 'ID:0' || selectedCourier?.startsWith('ID:0')) ? 'Не назначено' : selectedCourier}
+                            {isId0CourierName(selectedCourier) ? 'Не назначено' : selectedCourier}
                           </h2>
                           <div className={clsx(
                             "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1",
@@ -2176,7 +2170,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
                     <CourierTimeWindows
                       courierId={String(selectedCourier || '')}
-                      courierName={(String(selectedCourier) === 'ID:0' || String(selectedCourier).startsWith('ID:0')) ? 'Не назначено' : (String(selectedCourier) || '')}
+                      courierName={isId0CourierName(selectedCourier) ? 'Не назначено' : (String(selectedCourier) || '')}
                       orders={availableOrders}
                       isDark={isDark}
                       onJumpToGroup={handleJumpToGroup}
@@ -2909,58 +2903,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   },
                   {
                     id: 'route-list',
-                    title: '️ Список маршрутов',
-                    content: ` Здесь отображаются все созданные маршруты.
- Доступные действия:
-️ Открыть в Google Maps - просмотр маршрута
- Пересчитать - обновить расстояние и время
-️ Удалить - удалить маршрут`,
-                    target: '[data-tour="route-list"]',
-                    position: 'top'
-                  }
-                ]}
-              />
-            </Suspense>
-          )
-        }
-
-      </>
-
-      {/* Smart Address Correction Modals */}
-      {showCorrectionModal && currentProblem && (
-        <SmartAddressCorrectionModal
-          order={currentProblem.order}
-          validationResult={currentProblem.validationResult}
-          isDark={isDark}
-          onApplyCorrection={(suggestion) => applyCorrection(currentProblem.order, suggestion)}
-          onManualEdit={(newAddress) => {
-            applyManualEdit(currentProblem.order, newAddress)
-          }}
-          onSkip={() => setShowCorrectionModal(false)}
-          onClose={() => setShowCorrectionModal(false)}
-        />
-      )}
-
-      {showBatchPanel && problemOrders.length > 0 && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-2xl">
-            <BatchAddressCorrectionPanel
-              problemOrders={problemOrders}
-              isDark={isDark}
-              onAutoCorrectAll={applyBatchCorrections}
-              onReviewManually={() => {
-                if (problemOrders.length > 0) {
-                  setCurrentProblem(problemOrders[0])
-                  setShowBatchPanel(false)
-                  setShowCorrectionModal(true)
-                }
-              }}
-              onClose={() => setShowBatchPanel(false)}
-            />
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
+                    title: ' Созданные маршруты',
+                    content: ` Вы можете редактировать и пересчитывать маршруты в списке.
+• Нажмите на маршрут, чтобы открыть его
+• Нажмите на кнопку "Рассчитать" для пересчета
+• Нажмите на кнопку "Удалить

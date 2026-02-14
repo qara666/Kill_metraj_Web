@@ -163,7 +163,7 @@ export const CourierScheduleModal: React.FC<CourierScheduleModalProps> = React.m
                         isDark ? 'border-gray-700' : 'border-gray-200'
                     )}>
                         <h3 className={clsx('text-lg font-semibold', isDark ? 'text-white' : 'text-gray-900')}>
-                            {editingSchedule.courierId.startsWith('courier_') ? 'Добавить график' : 'Редактировать график'}
+                            {String(editingSchedule.courierId || '').startsWith('courier_') ? 'Добавить график' : 'Редактировать график'}
                         </h3>
                         <button onClick={() => setEditingSchedule(null)} className={clsx('text-2xl hover:opacity-70', isDark ? 'text-gray-400' : 'text-gray-600')}>×</button>
                     </div>
