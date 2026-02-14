@@ -4,7 +4,7 @@
  */
 
 import { useCallback, useEffect } from 'react';
-import { getAddressZoneValidator, type AddressSuggestion, type ValidationResult } from '../../services/addressZoneValidator';
+import { getAddressZoneValidator, type AddressSuggestion, type ValidationResult } from '../services/addressZoneValidator';
 import toast from 'react-hot-toast';
 
 interface Order {
