@@ -8,7 +8,8 @@ import {
     UserIcon,
     TruckIcon,
     MagnifyingGlassIcon,
-    BanknotesIcon
+    BanknotesIcon,
+    ChevronLeftIcon
 } from '@heroicons/react/24/outline'
 
 export const FinancialsManagement: React.FC = () => {
@@ -53,11 +54,12 @@ export const FinancialsManagement: React.FC = () => {
     }, [couriers, courierFilter, searchTerm, getCourierVehicleType])
 
     return (
-        <div className="flex h-[calc(100vh-120px)] gap-6">
+        <div className="flex flex-col md:flex-row h-[calc(100vh-120px)] md:gap-6 gap-0 relative">
             {/* Sidebar: Courier List */}
             <div className={clsx(
-                "w-80 flex flex-col rounded-2xl border-2 overflow-hidden",
-                isDark ? "bg-gray-900/50 border-gray-800" : "bg-white border-gray-100 shadow-xl"
+                "w-full md:w-80 flex-col rounded-2xl border-2 overflow-hidden transition-all duration-300",
+                isDark ? "bg-gray-900/50 border-gray-800" : "bg-white border-gray-100 shadow-xl",
+                selectedCourier ? "hidden md:flex" : "flex h-full"
             )}>
                 <div className="p-4 border-b-2 border-inherit">
                     <div className="flex items-center gap-2 mb-4">
@@ -146,14 +148,30 @@ export const FinancialsManagement: React.FC = () => {
             </div>
 
             {/* Main Content: Financials */}
-            <div className="flex-1 overflow-y-auto">
+            <div className={clsx(
+                "flex-1 overflow-y-auto w-full h-full",
+                !selectedCourier ? "hidden md:block" : "block"
+            )}>
                 {selectedCourier ? (
-                    <CourierFinancials
-                        courierId={selectedCourier}
-                        courierName={selectedCourier}
-                        divisionId={user?.divisionId || 'all'}
-                        isDark={isDark}
-                    />
+                    <div className="h-full flex flex-col">
+                        <button
+                            onClick={() => setSelectedCourier(null)}
+                            className={clsx(
+                                "md:hidden mb-4 flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-bold transition-all w-full",
+                                isDark ? "bg-gray-800 text-white hover:bg-gray-700" : "bg-white text-gray-700 hover:bg-gray-50 shadow-sm border"
+                            )}
+                        >
+                            <ChevronLeftIcon className="w-4 h-4" />
+                            <span>Назад к списку</span>
+                        </button>
+
+                        <CourierFinancials
+                            courierId={selectedCourier}
+                            courierName={selectedCourier}
+                            divisionId={user?.divisionId || 'all'}
+                            isDark={isDark}
+                        />
+                    </div>
                 ) : (
                     <div className={clsx(
                         "h-full flex flex-col items-center justify-center rounded-2xl border-2 border-dashed",
