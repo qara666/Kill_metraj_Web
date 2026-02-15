@@ -140,82 +140,104 @@ const CourierListItem = memo(({
         <div className="flex items-center gap-4 relative z-10">
           <div className="relative">
             <div className={clsx(
-              'w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-500',
+              'w-11 h-11 rounded-xl flex items-center justify-center',
               isSelected
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/40'
-                : isDark ? 'bg-gray-800 text-gray-500' : 'bg-gray-100 text-gray-400',
-              'group-hover/item:scale-110 group-hover/item:rotate-6'
+                ? (isDark ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white')
+                : isUnassigned
+                  ? (isDark ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-600')
+                  : vehicleType === 'car'
+                    ? (isDark ? 'bg-green-600/20 text-green-400' : 'bg-green-100 text-green-600')
+                    : (isDark ? 'bg-orange-600/20 text-orange-400' : 'bg-orange-100 text-orange-600')
             )}>
-              {isUnassigned ? (
-                <InboxIcon className="h-6 w-6" />
-              ) : vehicleType === 'car' ? (
-                <TruckIcon className="h-6 w-6" />
-              ) : (
-                <TruckIcon className="h-6 w-6" />
-              )}
+              <TruckIcon className="w-5 h-5" />
             </div>
-            {!isUnassigned && (
+            {(isOnRoute || isFinished) && (
               <div className={clsx(
-                "absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-4 flex items-center justify-center",
-                isDark ? "border-[#1a1c1e]" : "border-white",
-                isFinished ? "bg-emerald-500" : isOnRoute ? "bg-blue-500 animate-pulse" : "bg-gray-400"
+                'absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2',
+                isDark ? 'border-gray-800' : 'border-white',
+                isFinished ? 'bg-green-500' : 'bg-blue-500'
               )} />
             )}
           </div>
 
           <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-2 mb-1">
-              <span className={clsx(
-                "font-black text-sm tracking-tight truncate transition-colors",
-                isSelected
-                  ? isDark ? 'text-white' : 'text-gray-900'
-                  : isDark ? 'text-gray-400' : 'text-gray-600'
-              )}>
-                {courierName === 'ID:0' ? 'Не назначено' : courierName}
-              </span>
-              {!isUnassigned && (
-                <span className={clsx(
-                  'text-[8px] px-1.5 py-0.5 rounded-lg font-black tracking-widest uppercase flex-shrink-0',
-                  vehicleType === 'car'
-                    ? (isDark ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-emerald-50 text-emerald-700 border border-emerald-100')
-                    : (isDark ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' : 'bg-orange-50 text-orange-700 border border-orange-100')
-                )}>
-                  {vehicleType === 'car' ? 'Авто' : 'Moto'}
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className={clsx(
-                'text-[10px] font-bold transition-colors flex items-center gap-1.5',
-                isSelected
-                  ? isDark ? 'text-blue-400' : 'text-blue-600'
-                  : isDark ? 'text-gray-600' : 'text-gray-400'
-              )}>
-                <span className="opacity-50 tracking-widest uppercase text-[9px] font-black">Заказы:</span>
-                <span className="font-black text-[11px]">{availableOrdersCount}</span>
-              </div>
-              {totalOrdersCount > 0 && (
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-black opacity-30 italic">{Math.round(progress)}%</span>
-                </div>
-              )}
-            </div>
-
-            {!isUnassigned && (
-              <div className="mt-2 h-1 w-full bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
-                <div
-                  className={clsx(
-                    "h-full transition-all duration-1000 ease-out",
-                    isFinished ? "bg-emerald-500" : "bg-blue-500"
+                  <h4 className={clsx(
+                    'text-sm font-black truncate',
+                    isSelected
+                      ? (isDark ? 'text-blue-100' : 'text-blue-700')
+                      : isUnassigned
+                        ? (isDark ? 'text-amber-200' : 'text-amber-700')
+                        : (isDark ? 'text-gray-200' : 'text-gray-800')
+                  )}>
+                    {courierName}
+                  </h4>
+                  {vehicleType !== 'car' && !isUnassigned && (
+                    <span className={clsx(
+                      'px-2 py-0.5 text-[8px] rounded-lg font-black uppercase tracking-widest',
+                      isDark ? 'bg-orange-500/20 text-orange-400' : 'bg-orange-100 text-orange-600'
+                    )}>МОТО</span>
                   )}
-                  style={{ width: `${progress}%` }}
-                />
+                </div>
+
+                <div className="flex items-center gap-2 mt-1">
+                  <div className={clsx(
+                    'text-[10px] font-bold opacity-70',
+                    isDark ? 'text-gray-300' : 'text-gray-500'
+                  )}>
+                    {deliveredOrdersCount}/{totalOrdersCount} доставлено
+                  </div>
+                  <div className={clsx(
+                    'text-[10px] font-bold',
+                    isDark ? 'text-gray-300/50' : 'text-gray-400'
+                  )}>•</div>
+                  <div className={clsx(
+                    'text-[10px] font-black',
+                    isDark ? 'text-blue-300' : 'text-blue-600'
+                  )}>
+                    {availableOrdersCount} доступно
+                  </div>
+                </div>
               </div>
-            )}
+
+              <div className="flex flex-col items-end gap-2">
+                <div className="text-right">
+                  <div className={clsx(
+                    'text-xs font-black leading-none',
+                    isSelected
+                      ? (isDark ? 'text-blue-200' : 'text-blue-700')
+                      : (isDark ? 'text-gray-200' : 'text-gray-700')
+                  )}>
+                    {Math.round(progress)}%
+                  </div>
+                  <div className={clsx(
+                    'text-[9px] font-bold opacity-60',
+                    isDark ? 'text-gray-400' : 'text-gray-500'
+                  )}>
+                    {isFinished ? 'Готов' : isOnRoute ? 'В пути' : 'Свободен'}
+                  </div>
+                </div>
+
+                <div className={clsx(
+                  'w-14 h-1.5 rounded-full overflow-hidden',
+                  isDark ? 'bg-white/5' : 'bg-gray-100'
+                )}>
+                  <div
+                    className={clsx(
+                      'h-full rounded-full transition-all duration-700',
+                      isFinished ? 'bg-green-500' : isOnRoute ? 'bg-blue-500' : 'bg-gray-300'
+                    )}
+                    style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
+        {/* Background glow */}
         {isSelected && (
           <div className={clsx(
             'absolute inset-0 opacity-10 pointer-events-none transition-opacity duration-500',
@@ -2868,43 +2890,33 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 steps={[
                   {
                     id: 'courier-select',
-                    title: ' Выбор курьера',
-                    content: ` Начните с выбора курьера из списка слева.
- Что делать:
-1. Найдите нужного курьера в списке
-2. Кликните на карточку курьера
-3. После выбора вы увидите доступные заказы справа
- Подсказка: Используйте фильтры "Все", "Авто" или "Мото" для быстрого поиска нужного типа курьера.`,
+                    title: 'Выбор курьера',
+                    content: `Начните с выбора курьера из списка слева.
+
+Что делать:
+1) Найдите нужного курьера в списке
+2) Кликните на карточку курьера
+3) После выбора вы увидите доступные заказы справа
+
+Подсказка: используйте фильтры "Все", "Авто" или "Мото" для быстрого поиска нужного типа курьера.`,
                     target: '[data-tour="courier-select"]',
                     position: 'right'
                   },
                   {
                     id: 'order-select',
-                    title: ' Выбор заказов',
-                    content: `️ Кликните на заказы, чтобы добавить их в маршрут.
- Как это работает:
+                    title: 'Выбор заказов',
+                    content: `Кликните на заказы, чтобы добавить их в маршрут.
+
+Как это работает:
 • Порядок выбора = порядок доставки
 • Выбранные заказы подсвечиваются синим
 • Используйте кнопки ↑ и ↓ для изменения порядка
-️ Заказы, уже находящиеся в других маршрутах, нельзя выбрать.`,
+
+Заказы, уже находящиеся в других маршрутах, нельзя выбрать.`,
                     target: '[data-tour="order-select"]',
                     position: 'left'
                   },
                   {
                     id: 'create-route',
-                    title: ' Создание маршрута',
-                    content: ` После выбора заказов нажмите кнопку "Создать маршрут".
-️ Что происходит:
-1. Система создает новый маршрут
-2. Автоматически рассчитывает расстояние
-3. Маршрут появляется в списке внизу`,
-                    target: '[data-tour="create-route"]',
-                    position: 'top'
-                  },
-                  {
-                    id: 'route-list',
-                    title: ' Созданные маршруты',
-                    content: ` Вы можете редактировать и пересчитывать маршруты в списке.
-• Нажмите на маршрут, чтобы открыть его
-• Нажмите на кнопку "Рассчитать" для пересчета
-• Нажмите на кнопку "Удалить
+                    title: 'Создание маршрута',
+                    content: `После выбора заказов нажмите кнопку "Марш
