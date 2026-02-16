@@ -682,7 +682,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [selectedOrdersOrder, setSelectedOrdersOrder] = useState<string[]>([])
 
   // --- Виртуализация с динамической высотой ---
-  const availableListRef = useRef<any>(null)
+
 
 
   const availableOrders = useMemo(() => {
@@ -1493,23 +1493,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     setShowAddressEditModal(true)
   }
 
-  // Функция для перехода к группе заказов
-  const handleJumpToGroup = useCallback((group: TimeWindowGroup) => {
-    if (!availableListRef.current) return
-    const firstOrderId = group.orders[0]?.id
-    if (!firstOrderId) return
-
-    const index = availableOrders.findIndex(o => o.id === firstOrderId)
-    if (index !== -1) {
-      availableListRef.current.scrollToItem(index, 'start')
-      // Визуальная подсветка или тост (опционально)
-      toast.success(`Переход к группе: ${group.windowLabel}`, {
-        icon: '',
-        duration: 2000
-      })
-    }
-  }, [availableOrders])
-
 
   // Функция для перемещения заказа в другую временную группу ( Phase 4.7 )
   // Функция для перемещения заказа в другую временную группу ( Phase 4.7 )
@@ -2185,7 +2168,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                       courierName={isId0CourierName(selectedCourier) ? 'Не назначено' : (String(selectedCourier) || '')}
                       orders={availableOrders}
                       isDark={isDark}
-                      onJumpToGroup={handleJumpToGroup}
                       onOrderMoved={handleMoveOrderToGroup}
                       onCreateCustomGroup={handleCreateCustomGroup}
                       onCalculateRoute={async (group) => {
