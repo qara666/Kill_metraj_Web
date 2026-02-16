@@ -655,7 +655,8 @@ async function setupDashboardListener() {
             // Fetch correctly filtered/merged data for this specific user
             const result = await GetDashboardDataQuery.execute({
               divisionId: user.role === 'admin' ? 'all' : user.divisionId,
-              user
+              user,
+              date: notification.targetDate
             });
 
             if (result) {
