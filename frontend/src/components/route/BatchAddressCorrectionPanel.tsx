@@ -8,8 +8,8 @@ import {
     ChevronRightIcon,
 } from '@heroicons/react/24/outline';
 import type { Order } from '../../types';
-import type { ValidationResult, AddressSuggestion } from '../../services/addressZoneValidator';
-import { getAddressZoneValidator } from '../../services/addressZoneValidator';
+import type { ValidationResult, AddressSuggestion } from '@/services/addressZoneValidator';
+import { getAddressZoneValidator } from '@/services/addressZoneValidator';
 
 interface BatchAddressCorrectionPanelProps {
     problemOrders: Array<{ order: Order; validationResult: ValidationResult }>;

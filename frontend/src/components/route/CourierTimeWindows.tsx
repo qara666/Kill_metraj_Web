@@ -1,4 +1,5 @@
 import clsx from 'clsx';
+import { memo, useMemo } from 'react';
 import { ClockIcon, RocketLaunchIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import type { Order } from '../../types';
 import { TimeWindowGroupCard } from './TimeWindowGroupCard';
@@ -14,10 +15,9 @@ interface CourierTimeWindowsProps {
     onOrderMoved?: (orderId: string, targetGroup: TimeWindowGroup) => void;
     onCreateCustomGroup?: (orderId: string) => void;
     onCalculateRoute?: (group: TimeWindowGroup) => void;
-    onJumpToGroup?: (group: TimeWindowGroup) => void;
 }
 
-export function CourierTimeWindows({
+export const CourierTimeWindows = memo(({
     courierId,
     courierName,
     orders,
@@ -27,10 +27,20 @@ export function CourierTimeWindows({
     onOrderMoved,
     onCreateCustomGroup,
     onCalculateRoute,
-    onJumpToGroup,
-}: CourierTimeWindowsProps) {
-    // Группируем заказы по временным окнам
-    const timeGroups = groupOrdersByTimeWindow(orders, courierId, courierName);
+}: CourierTimeWindowsProps) => {
+    // Группируем заказы по временным окнам - Memoized
+    const timeGroups = useMemo(() => {
+        return groupOrdersByTimeWindow(orders, courierId, courierName);
+    }, [orders, courierId, courierName]);
+
+    const stats = useMemo(() => {
+        if (!timeGroups || timeGroups.length === 0) return { readyGroups: 0, progress: 0 };
+        const readyCount = timeGroups.filter(g => g.orders.every(o => o.status === 'Собран' || o.status === 'Исполнен')).length;
+        return {
+            readyGroups: readyCount,
+            progress: (readyCount / timeGroups.length) * 100
+        };
+    }, [timeGroups]);
 
     if (!timeGroups || timeGroups.length === 0) {
         return (
@@ -43,10 +53,6 @@ export function CourierTimeWindows({
             </div>
         );
     }
-
-    // Calculate Global Health
-    const readyGroups = timeGroups.filter(g => g.orders.every(o => o.status === 'Собран' || o.status === 'Исполнен')).length;
-    const progress = (readyGroups / timeGroups.length) * 100;
 
     return (
         <div
@@ -68,10 +74,10 @@ export function CourierTimeWindows({
         >
             {/* SOTA Header - Futuristic Status Bar */}
             <div className={clsx(
-                'relative flex flex-col lg:flex-row items-center justify-between gap-6 px-6 py-5 rounded-[2rem] border transition-all duration-700 shadow-2xl',
+                'relative flex flex-col lg:flex-row items-center justify-between gap-6 px-6 py-5 rounded-[2rem] border transition-all duration-300 shadow-xl',
                 isDark
                     ? 'bg-slate-900/60 border-white/5 shadow-black/40'
-                    : 'bg-white/90 border-blue-50 shadow-blue-500/10'
+                    : 'bg-white/90 border-blue-50 shadow-blue-500/5'
             )}>
                 {/* Visual Accent Layer */}
                 <div className="absolute top-0 right-0 w-64 h-full bg-gradient-to-l from-blue-500/5 to-transparent pointer-events-none" />
@@ -89,7 +95,7 @@ export function CourierTimeWindows({
                                 ГРУППИРОВКА ПО ВРЕМЕНИ
                             </span>
                             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                                 <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">SOTA v2.0</span>
                             </div>
                         </div>
@@ -113,16 +119,15 @@ export function CourierTimeWindows({
                     <div className="hidden sm:flex flex-col gap-1.5 w-40">
                         <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest opacity-30">
                             <span>Готовность</span>
-                            <span className="text-blue-500">{Math.round(progress)}%</span>
+                            <span className="text-blue-500">{Math.round(stats.progress)}%</span>
                         </div>
                         <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden p-[1px]">
                             <div
                                 className="h-full bg-gradient-to-r from-blue-600 to-emerald-500 transition-all duration-1000 shadow-[0_0_12px_rgba(59,130,246,0.5)] rounded-full"
-                                style={{ width: `${progress}%` }}
+                                style={{ width: `${stats.progress}%` }}
                             />
                         </div>
                     </div>
-                    {/* SOTA Action Hub */}
                     <div className="flex items-center gap-2.5 relative z-10">
                         <button
                             onClick={() => {
@@ -131,8 +136,8 @@ export function CourierTimeWindows({
                             className={clsx(
                                 'group px-6 py-3 rounded-xl flex items-center gap-2.5 text-[10px] font-black uppercase tracking-[0.15em] transition-all active:scale-95 shadow-lg border',
                                 isDark
-                                    ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500 hover:shadow-blue-500/20'
-                                    : 'bg-slate-900 border-slate-800 text-white hover:bg-slate-800'
+                                    ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500 shadow-blue-900/20'
+                                    : 'bg-slate-900 border-slate-800 text-white hover:bg-slate-800 shadow-slate-200'
                             )}
                         >
                             <RocketLaunchIcon className="w-4 h-4 group-hover:rotate-12 transition-transform" />
@@ -153,12 +158,11 @@ export function CourierTimeWindows({
                         isCalculating={isCalculating && calculatingGroupId === group.id}
                         onOrderMoved={onOrderMoved}
                         onCalculateRoute={onCalculateRoute}
-                        onJumpToGroup={onJumpToGroup}
                     />
                 ))}
             </div>
         </div>
     );
-}
+})
 
 export default CourierTimeWindows;

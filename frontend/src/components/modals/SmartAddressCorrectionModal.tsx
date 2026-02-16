@@ -9,8 +9,8 @@ import {
     ClockIcon,
 } from '@heroicons/react/24/outline';
 import type { Order } from '../../types';
-import type { AddressSuggestion, ValidationResult } from '../../services/addressZoneValidator';
-import { getAddressZoneValidator } from '../../services/addressZoneValidator';
+import type { AddressSuggestion, ValidationResult } from '@/services/addressZoneValidator';
+import { getAddressZoneValidator } from '@/services/addressZoneValidator';
 
 interface SmartAddressCorrectionModalProps {
     order: Order;

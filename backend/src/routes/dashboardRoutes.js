@@ -191,6 +191,7 @@ router.post('/dashboard/fetch', async (req, res) => {
         const apiKey = process.env.EXTERNAL_API_KEY || 'killmetraj_secret_key_2024';
         const params = {
             top: '2000',
+            dateShift: targetDateStr, // Crucial for Yaposhka historical data
             timeDeliveryBeg: `${targetDateStr} 00:00:00`,
             timeDeliveryEnd: `${targetDateStr} 23:59:59`
         };
