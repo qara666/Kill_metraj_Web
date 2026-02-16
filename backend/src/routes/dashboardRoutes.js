@@ -161,8 +161,13 @@ router.post('/dashboard/fetch', async (req, res) => {
             }
         }
 
+        const { date, divisionId: requestDivisionId, force = false } = req.body || {};
+        if (!date) {
+            return res.status(422).json({ success: false, error: 'Дата обязательна' });
+        }
+
         const divisionId = user.role === 'admin' ? (requestDivisionId || user.divisionId || 'all') : user.divisionId;
-        const targetDateStr = date.trim();
+        const targetDateStr = String(date).trim();
 
         let targetDateISO;
         let targetDateLegacy;
