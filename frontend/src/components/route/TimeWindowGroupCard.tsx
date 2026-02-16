@@ -88,21 +88,21 @@ export const TimeWindowGroupCard = memo(({
             case 'overdue':
                 return {
                     border: 'border-rose-500/50',
-                    glow: 'shadow-[0_0_20px_rgba(244,63,94,0.15)]',
+                    glow: 'shadow-[0_0_40px_rgba(244,63,94,0.2)] animate-pulse-slow',
                     mesh: 'from-rose-500/10 via-transparent to-transparent',
                     accent: 'text-rose-500'
                 };
             case 'critical':
                 return {
                     border: 'border-orange-500/50',
-                    glow: 'shadow-[0_0_15px_rgba(245,158,11,0.15)]',
+                    glow: 'shadow-[0_0_30px_rgba(245,158,11,0.2)] animate-pulse-slow',
                     mesh: 'from-orange-500/10 via-transparent to-transparent',
                     accent: 'text-orange-500'
                 };
             case 'high':
                 return {
                     border: 'border-amber-500/40',
-                    glow: 'shadow-[0_0_15px_rgba(217,119,6,0.05)]',
+                    glow: 'shadow-[0_0_20px_rgba(217,119,6,0.1)]',
                     mesh: 'from-amber-500/5 via-transparent to-transparent',
                     accent: 'text-amber-500'
                 };
@@ -149,11 +149,11 @@ export const TimeWindowGroupCard = memo(({
                 }
             }}
             className={clsx(
-                'rounded-[1.25rem] border backdrop-blur-2xl transition-all duration-300 relative overflow-hidden group/card',
+                'rounded-[1.25rem] border backdrop-blur-2xl transition-all duration-500 relative overflow-hidden group/card',
                 theme.border,
                 theme.glow,
                 isDark ? 'bg-slate-900/80 shadow-black/20' : 'bg-white/80 shadow-slate-200/50',
-                isDragOver && (isDark ? 'ring-2 ring-blue-500 bg-blue-900/30 font-bold' : 'ring-2 ring-blue-400 bg-blue-50/80 font-bold')
+                isDragOver && (isDark ? 'ring-2 ring-blue-500 bg-blue-900/30' : 'ring-2 ring-blue-400 bg-blue-50/80')
             )}
         >
             {/* Mesh Gradient Background Layer */}
@@ -165,8 +165,8 @@ export const TimeWindowGroupCard = memo(({
             {/* Header - Simplified and Clean */}
             <div
                 className={clsx(
-                    'relative p-3.5 cursor-pointer transition-colors duration-200',
-                    isDark ? 'hover:bg-white/[0.04]' : 'hover:bg-slate-50/60'
+                    'relative p-3.5 cursor-pointer transition-all duration-300',
+                    isDark ? 'hover:bg-white/[0.04]' : 'hover:bg-slate-50/80'
                 )}
                 onClick={() => setIsExpanded(!isExpanded)}
             >
@@ -257,10 +257,10 @@ export const TimeWindowGroupCard = memo(({
                                         e.dataTransfer.effectAllowed = 'move';
                                     }}
                                     className={clsx(
-                                        'px-3 py-2.5 relative rounded-xl flex flex-col gap-1.5 transition-all duration-200 cursor-grab active:cursor-grabbing border border-transparent hover:shadow-md',
+                                        'px-3 py-2.5 relative rounded-xl flex flex-col gap-1.5 transition-all duration-500 cursor-grab active:cursor-grabbing border border-transparent hover:shadow-lg active:scale-[0.98]',
                                         isDark
-                                            ? 'bg-slate-800/40 hover:bg-slate-800/70 hover:border-white/10'
-                                            : 'bg-white hover:bg-slate-50 shadow-sm border-slate-100',
+                                            ? 'bg-slate-800/40 hover:bg-slate-800/80 hover:border-white/10'
+                                            : 'bg-white hover:bg-blue-50/50 hover:border-blue-100 shadow-sm border-slate-100',
                                         isReady && (isDark ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-emerald-50/80 border-emerald-100')
                                     )}
                                 >

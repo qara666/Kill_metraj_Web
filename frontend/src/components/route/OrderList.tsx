@@ -8,7 +8,6 @@ import {
     ChevronDownIcon,
     ClockIcon
 } from '@heroicons/react/24/outline';
-import { FixedSizeList as List } from 'react-window';
 
 // Types
 interface Order {
@@ -44,6 +43,7 @@ interface OrderListProps {
     isInRoute?: boolean;
     listHeight?: number;
     listRef?: any;
+    setSize?: (id: string, index: number, size: number) => void;
 }
 
 // OrderItem Component
@@ -56,7 +56,9 @@ const OrderItem = memo(({
     onMoveDown,
     isInRoute,
     isDark,
-    style
+    style,
+    setSize,
+    index
 }: {
     order: Order
     isSelected: boolean
@@ -67,20 +69,31 @@ const OrderItem = memo(({
     isInRoute: boolean
     isDark: boolean
     style?: React.CSSProperties
+    setSize?: (id: string, index: number, size: number) => void;
+    index?: number
 }) => {
+    const rowRef = React.useRef<HTMLDivElement>(null);
+
+    React.useEffect(() => {
+        if (setSize && index !== undefined && rowRef.current) {
+            setSize(order.id, index, rowRef.current.getBoundingClientRect().height + 8); // +8 for margin/padding
+        }
+    }, [setSize, index, order.address, order.id]);
+
     return (
-        <div style={style} className="px-1">
+        <div style={style} className="pr-1">
             <div
+                ref={rowRef}
                 onClick={() => onSelect(order.id)}
                 draggable
                 onDragStart={(e) => {
                     e.dataTransfer.setData('orderId', order.id);
-                    e.dataTransfer.setData('text/plain', order.id);
+                    e.dataTransfer.setData('text/plain', order.id); // SOTA fallback
                     e.dataTransfer.effectAllowed = 'move';
                 }}
                 className={clsx(
-                    'p-3 rounded-xl border-2 transition-all duration-300 ease-in-out relative overflow-hidden mb-2 h-full',
-                    'hover:shadow-md',
+                    'p-3 rounded-xl border-2 transition-all duration-300 ease-in-out transform relative overflow-hidden mb-2',
+                    'hover:shadow-lg active:scale-[0.98]',
                     isSelected
                         ? isDark
                             ? 'bg-blue-500/10 border-blue-500 shadow-blue-500/20 cursor-pointer'
@@ -91,7 +104,7 @@ const OrderItem = memo(({
                                 : 'bg-gray-50 border-gray-100 cursor-not-allowed grayscale opacity-60'
                             : isDark
                                 ? 'bg-gray-800/60 border-gray-700 hover:bg-gray-700/80 hover:border-gray-500 cursor-pointer'
-                                : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-blue-100 cursor-pointer shadow-sm hover:shadow-md'
+                                : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-blue-200 cursor-pointer shadow-sm hover:shadow-md'
                 )}
             >
                 {/* Aging Background */}
@@ -106,11 +119,11 @@ const OrderItem = memo(({
                     return null;
                 })()}
 
-                <div className="flex items-start gap-3">
+                <div className="flex items-start gap-4">
                     {/* Selection Index / Status Icon */}
                     {(isSelected || isInRoute || order.status === 'Собран' || order.status === 'Доставляется' || order.status === 'Исполнен') && (
                         <div className={clsx(
-                            'flex-shrink-0 w-7 h-7 rounded-sm flex items-center justify-center text-[10px] font-black transition-all',
+                            'flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-black transition-all',
                             isSelected
                                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
                                 : order.status === 'Исполнен'
@@ -122,56 +135,66 @@ const OrderItem = memo(({
                                             : 'bg-gray-500/20 text-gray-500'
                         )}>
                             {isSelected ? selectionOrder : (
-                                order.status === 'Исполнен' ? <CheckCircleIcon className="w-4 h-4" /> :
-                                    order.status === 'Доставляется' ? <TruckIcon className="w-4 h-4" /> :
-                                        order.status === 'Собран' ? <InboxIcon className="w-4 h-4" /> :
-                                            <CheckCircleIcon className="w-4 h-4" />
+                                order.status === 'Исполнен' ? <CheckCircleIcon className="w-5 h-5" /> :
+                                    order.status === 'Доставляется' ? <TruckIcon className="w-5 h-5" /> :
+                                        order.status === 'Собран' ? <InboxIcon className="w-5 h-5" /> :
+                                            <CheckCircleIcon className="w-5 h-5" />
                             )}
                         </div>
                     )}
 
                     <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-1 mb-0.5">
+                        <div className="flex items-center justify-between gap-2 mb-1">
                             <span className={clsx(
-                                'font-black text-xs tracking-tight',
+                                'font-extrabold text-base tracking-tight',
                                 isDark ? 'text-white' : 'text-gray-900'
                             )}>
                                 #{order.orderNumber}
                             </span>
                             <div className="flex items-center gap-1">
                                 {isSelected && onMoveUp && onMoveDown && (
-                                    <div className="flex items-center bg-blue-100 dark:bg-blue-900/40 rounded-md p-0.5">
+                                    <div className="flex items-center bg-blue-100 dark:bg-blue-900/40 rounded-lg p-0.5">
                                         <button
                                             onClick={(e) => { e.stopPropagation(); onMoveUp(order.id); }}
                                             disabled={selectionOrder === 1}
-                                            className="p-0.5 hover:bg-blue-200 dark:hover:bg-blue-800 rounded transition-colors disabled:opacity-30"
+                                            className="p-1 hover:bg-blue-200 dark:hover:bg-blue-800 rounded-md transition-colors disabled:opacity-30"
                                         >
-                                            <ChevronUpIcon className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                                            <ChevronUpIcon className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                                         </button>
                                         <button
                                             onClick={(e) => { e.stopPropagation(); onMoveDown(order.id); }}
                                             disabled={selectionOrder === 0}
-                                            className="p-0.5 hover:bg-blue-200 dark:hover:bg-blue-800 rounded transition-colors disabled:opacity-30"
+                                            className="p-1 hover:bg-blue-200 dark:hover:bg-blue-800 rounded-md transition-colors disabled:opacity-30"
                                         >
-                                            <ChevronDownIcon className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                                            <ChevronDownIcon className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                                         </button>
                                     </div>
                                 )}
                             </div>
                         </div>
 
-                        <p className={clsx('text-[10px] leading-tight mb-1 font-bold truncate', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                        <p className={clsx('text-sm leading-snug mb-2 font-medium', isDark ? 'text-gray-300' : 'text-gray-600')}>
                             {order.address}
                         </p>
 
-                        <div className="flex items-center gap-2 text-[10px]">
+                        <div className="flex items-center gap-3 text-xs">
                             <div className={clsx(
-                                'font-black px-1.5 py-0.5 rounded flex items-center gap-1',
-                                isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-500'
+                                'font-bold px-2 py-0.5 rounded flex items-center gap-1.5',
+                                isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
                             )}>
-                                <ClockIcon className="w-3 h-3" />
+                                <ClockIcon className="w-3.5 h-3.5" />
                                 {order.plannedTime || '—'}
                             </div>
+                            {order.paymentMethod && (
+                                <span className={clsx(
+                                    "px-2 py-0.5 rounded font-bold uppercase text-[10px] tracking-wider",
+                                    order.paymentMethod.toLowerCase().includes('налич') || order.paymentMethod.toLowerCase().includes('cash')
+                                        ? (isDark ? "bg-green-900/30 text-green-400" : "bg-green-100 text-green-700")
+                                        : (isDark ? "bg-purple-900/30 text-purple-400" : "bg-purple-100 text-purple-700")
+                                )}>
+                                    {order.paymentMethod}
+                                </span>
+                            )}
                             <span className={clsx('font-black ml-auto', isDark ? 'text-white' : 'text-gray-900')}>
                                 {order.amount} ₴
                             </span>
@@ -189,9 +212,9 @@ const OrderItem = memo(({
         prev.isInRoute === next.isInRoute &&
         prev.isDark === next.isDark &&
         prev.style === next.style &&
+        prev.index === next.index &&
         prev.order.status === next.order.status &&
-        prev.order.orderNumber === next.order.orderNumber &&
-        prev.order.address === next.order.address
+        prev.order.orderNumber === next.order.orderNumber
     );
 });
 
@@ -204,8 +227,7 @@ export const OrderList = memo(({
     onMoveUp,
     onMoveDown,
     isInRoute = false,
-    listHeight = 600,
-    listRef
+    setSize
 }: OrderListProps) => {
 
     const selectionOrderMap = useMemo(() => {
@@ -216,29 +238,6 @@ export const OrderList = memo(({
         });
         return map;
     }, [selectedOrdersOrder]);
-
-    const Row = ({ index, style }: { index: number; style: React.CSSProperties }) => {
-        const order = orders[index];
-        if (!order) return null;
-
-        const isSelected = selectedOrders.has(order.id);
-        const selectionIndex = isSelected ? (selectionOrderMap.get(order.id) || 0) : 0;
-
-        return (
-            <OrderItem
-                order={order}
-                isDark={isDark}
-                isSelected={isSelected}
-                selectionOrder={selectionIndex}
-                onSelect={(id) => onSelectOrder(id, false)}
-                onMoveUp={onMoveUp}
-                onMoveDown={onMoveDown}
-                isInRoute={isInRoute}
-                style={style}
-            />
-        );
-    };
-
     if (orders.length === 0) {
         return (
             <div className={clsx("text-center py-8", isDark ? "text-gray-500" : "text-gray-400")}>
@@ -247,18 +246,28 @@ export const OrderList = memo(({
         );
     }
 
-    const ITEM_HEIGHT = 86; // Approximate fixed height for compact order item
-
     return (
-        <List
-            ref={listRef}
-            height={listHeight}
-            itemCount={orders.length}
-            itemSize={ITEM_HEIGHT}
-            width="100%"
-            className="custom-scrollbar"
-        >
-            {Row}
-        </List>
+        <div className="space-y-3 p-1">
+            {orders.map((order, index) => {
+                const isSelected = selectedOrders.has(order.id);
+                const selectionIndex = isSelected ? (selectionOrderMap.get(order.id) || 0) : 0;
+
+                return (
+                    <OrderItem
+                        key={order.id}
+                        index={index}
+                        order={order}
+                        isDark={isDark}
+                        isSelected={isSelected}
+                        selectionOrder={selectionIndex}
+                        onSelect={(id) => onSelectOrder(id, false)}
+                        onMoveUp={onMoveUp}
+                        onMoveDown={onMoveDown}
+                        isInRoute={isInRoute}
+                        setSize={setSize}
+                    />
+                );
+            })}
+        </div>
     );
 });
