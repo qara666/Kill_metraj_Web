@@ -50,7 +50,7 @@ export class GeocodingService {
    * Геокодирование адреса
    */
   static async geocodeAddress(
-    address: string, 
+    address: string,
     options: GeocodingOptions = {}
   ): Promise<GeocodingResult> {
     if (!this.geocoder) {
@@ -73,6 +73,7 @@ export class GeocodingService {
     return new Promise((resolve) => {
       const request: any = {
         address: address,
+        region: 'ua', // Force Ukraine region bias
         ...options
       }
 
@@ -121,8 +122,8 @@ export class GeocodingService {
    * Обратное геокодирование (координаты -> адрес)
    */
   static async reverseGeocode(
-    lat: number, 
-    lng: number, 
+    lat: number,
+    lng: number,
     options: GeocodingOptions = {}
   ): Promise<GeocodingResult> {
     if (!this.geocoder) {
@@ -218,21 +219,32 @@ export class GeocodingService {
   static async geocodeAndCleanAddress(address: string, options: GeocodingOptions = {}): Promise<GeocodingResult> {
     // Сначала пытаемся геокодировать исходный адрес
     let result = await this.geocodeAddress(address, options)
-    
+
     if (result.success) {
       return result
     }
 
     // Если не получилось, пробуем очищенный адрес
-    const cleanedAddress = address
+    let cleanedAddress = address
       .replace(/,\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
       .replace(/,\s*\d+\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
+      // Удаляем почтовые индексы (5 цифр), так как они часто путают геокодер если устарели
+      .replace(/\b\d{5}\b/g, '')
       .trim()
 
+    // Убираем лишние запятые после удаления
+    cleanedAddress = cleanedAddress.replace(/,\s*,/g, ',').replace(/,$/, '').trim()
+
+    // Если нет упоминания Киева, добавляем его (так как проект для Киева)
+    if (!/киев|kyiv|kiev/i.test(cleanedAddress)) {
+      cleanedAddress += ', Киев'
+    }
+
     if (cleanedAddress !== address) {
+      // console.log(`Geocoding with cleaned address: "${cleanedAddress}"`)
       result = await this.geocodeAddress(cleanedAddress, options)
       if (result.success) {
-        result.warnings = [...(result.warnings || []), 'Адрес был автоматически очищен от лишней информации']
+        result.warnings = [...(result.warnings || []), 'Адрес был автоматически очищен для поиска']
       }
     }
 
@@ -243,22 +255,22 @@ export class GeocodingService {
    * Пакетное геокодирование нескольких адресов
    */
   static async geocodeAddresses(
-    addresses: string[], 
+    addresses: string[],
     options: GeocodingOptions = {},
     delayMs: number = 100
   ): Promise<GeocodingResult[]> {
     const results: GeocodingResult[] = []
-    
+
     for (let i = 0; i < addresses.length; i++) {
       const result = await this.geocodeAddress(addresses[i], options)
       results.push(result)
-      
+
       // Добавляем задержку между запросами для избежания превышения лимитов
       if (i < addresses.length - 1) {
         await new Promise(resolve => setTimeout(resolve, delayMs))
       }
     }
-    
+
     return results
   }
 }

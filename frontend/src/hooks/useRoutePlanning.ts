@@ -39,8 +39,8 @@ export const useRoutePlanning = (
     maxRouteDurationMin: number = 480,
     maxRouteDistanceKm: number = 100,
     maxOrdersPerCourier: number = 50,
-    defaultStartAddress: string = 'г. Киев, ул. Большая Васильковская, 100', // Default fallback
-    defaultEndAddress: string = 'г. Киев, ул. Большая Васильковская, 100',   // Default fallback
+    defaultStartAddress: string = '', // Default fallback
+    defaultEndAddress: string = '',   // Default fallback
     setPlannedRoutes: (routes: any[]) => void,
     setErrorMsg: (msg: string | null) => void,
     setPlanTrafficImpact: (impact: any) => void,
@@ -111,14 +111,35 @@ export const useRoutePlanning = (
                 maxDistanceBetweenOrdersKm: settings.maxDistanceBetweenOrdersKm || 15
             })
 
-            const startAddr = defaultStartAddress.trim() || 'г. Киев, ул. Большая Васильковская, 100'
-            const endAddr = defaultEndAddress.trim() || 'г. Киев, ул. Большая Васильковская, 100'
+            const startAddr = defaultStartAddress.trim()
+            const endAddr = defaultEndAddress.trim()
+
+            if (!startAddr || !endAddr) {
+                setErrorMsg('Не задан адрес старта или финиша. Пожалуйста, настройте адреса в Админ-панели или выберите хаб (если в KML есть маркер Базы).')
+                setIsPlanning(false)
+                setOptimizationProgress(null)
+                return
+            }
 
             const checkChainFeasible = async (chain: any[], includeStartEnd: boolean = true) => {
                 const gmaps = window.google.maps
                 const directionsService = new gmaps.DirectionsService()
-                const origin = includeStartEnd ? startAddr : chain[0].address
-                const destination = includeStartEnd ? endAddr : chain[chain.length - 1].address
+
+                let origin: any = includeStartEnd ? startAddr : chain[0].address
+                let destination: any = includeStartEnd ? endAddr : chain[chain.length - 1].address
+
+                // Try to use cached coordinates for start/end to ensure consistency with our geocoder
+                if (includeStartEnd) {
+                    const startCoords = routeOptimizationCache.getCoordinates(startAddr)
+                    if (startCoords) {
+                        origin = new gmaps.LatLng(startCoords.lat, startCoords.lng)
+                    }
+                    const endCoords = routeOptimizationCache.getCoordinates(endAddr)
+                    if (endCoords) {
+                        destination = new gmaps.LatLng(endCoords.lat, endCoords.lng)
+                    }
+                }
+
                 const waypoints = includeStartEnd
                     ? chain.map(n => ({ location: n.address, stopover: true }))
                     : chain.slice(1, -1).map(n => ({ location: n.address, stopover: true }))
@@ -181,6 +202,25 @@ export const useRoutePlanning = (
                     })
                 }
             }
+
+            // Explicitly geocode start/end addresses to ensure they are cached and valid
+            // This is critical for DirectionsService to work correctly with ambiguous addresses
+            await (async () => {
+                if (startAddr && !routeOptimizationCache.getCoordinates(startAddr)) {
+                    console.log('Geocoding start address:', startAddr)
+                    const res = await GeocodingService.geocodeAndCleanAddress(startAddr, { region: 'ua' })
+                    if (res.success && res.latitude && res.longitude) {
+                        routeOptimizationCache.setCoordinates(startAddr, { lat: res.latitude, lng: res.longitude })
+                    }
+                }
+                if (endAddr && !routeOptimizationCache.getCoordinates(endAddr)) {
+                    console.log('Geocoding end address:', endAddr)
+                    const res = await GeocodingService.geocodeAndCleanAddress(endAddr, { region: 'ua' })
+                    if (res.success && res.latitude && res.longitude) {
+                        routeOptimizationCache.setCoordinates(endAddr, { lat: res.latitude, lng: res.longitude })
+                    }
+                }
+            })()
 
             const depotCoords = routeOptimizationCache.getCoordinates(startAddr)
             const mode = getPresetMode()
