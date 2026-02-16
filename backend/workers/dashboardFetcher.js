@@ -47,7 +47,7 @@ class DashboardFetcher {
         this.pool = new Pool(poolConfig);
 
         // Configuration
-        this.fetchInterval = parseInt(process.env.DASHBOARD_FETCH_INTERVAL || '300000'); // 5 min
+        this.fetchInterval = parseInt(process.env.DASHBOARD_FETCH_INTERVAL || '900000'); // 15 min
         this.maxRetries = parseInt(process.env.DASHBOARD_MAX_RETRIES || '5');
         this.baseBackoff = parseInt(process.env.DASHBOARD_BASE_BACKOFF || '5000');
         this.apiUrl = process.env.EXTERNAL_API_URL || 'http://app.yaposhka.kh.ua:4999/api/v1/dashboard';
@@ -654,7 +654,6 @@ class DashboardFetcher {
                 try {
                     const params = {
                         top: isGlobal ? 2000 : this.topCount,
-                        dateShift: this.formatDate(targetDate), // Crucial for Yaposhka historical data
                         timeDeliveryBeg: this.formatDate(targetDate, '00:00:00'),
                         timeDeliveryEnd: this.formatDate(targetDate, '23:59:59')
                     };

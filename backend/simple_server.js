@@ -563,28 +563,6 @@ async function ensureDivisionIdColumn() {
 }
 
 /**
- * Manual migration to ensure manual_order_overrides table exists
- */
-async function ensureManualOverridesTable() {
-  try {
-    logger.info('DB Check: Ensuring manual_order_overrides table exists...');
-    await sequelize.query(`
-      CREATE TABLE IF NOT EXISTS manual_order_overrides (
-        order_number TEXT PRIMARY KEY,
-        payment_method TEXT NOT NULL,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-      );
-    `);
-    logger.info('DB Check: manual_order_overrides table verified/created successfully');
-  } catch (err) {
-    logger.error('DB Check: Error creating manual_order_overrides table', {
-      error: err.message,
-      stack: err.stack
-    });
-  }
-}
-
-/**
  * Ensure database indexes exist for performance
  */
 async function ensureIndexes() {
@@ -677,8 +655,7 @@ async function setupDashboardListener() {
             // Fetch correctly filtered/merged data for this specific user
             const result = await GetDashboardDataQuery.execute({
               divisionId: user.role === 'admin' ? 'all' : user.divisionId,
-              user,
-              date: notification.targetDate
+              user
             });
 
             if (result) {

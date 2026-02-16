@@ -186,8 +186,8 @@ export class AddressZoneValidator {
      * Получает исторические адреса клиента (заглушка, будет реализовано с бэкендом)
      */
     private async getHistoricalAddresses(
-        _phone: string,
-        _currentCoords: Coordinates
+        phone: string,
+        currentCoords: Coordinates
     ): Promise<AddressSuggestion[]> {
         // TODO: Реализовать запрос к бэкенду
         // const response = await fetch(`/api/customers/${phone}/addresses`);
