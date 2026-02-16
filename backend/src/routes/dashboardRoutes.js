@@ -161,15 +161,25 @@ router.post('/dashboard/fetch', async (req, res) => {
             }
         }
 
-        const { date, divisionId: requestDivisionId, force = false } = req.body;
-        if (!date || !/^\d{2}\.\d{2}\.\d{4}$/.test(date)) {
-            return res.status(422).json({ success: false, error: 'Неверный формат даты' });
-        }
-
         const divisionId = user.role === 'admin' ? (requestDivisionId || user.divisionId || 'all') : user.divisionId;
         const targetDateStr = date.trim();
-        const [d, m, y] = targetDateStr.split('.');
-        const targetDateISO = `${y}-${m}-${d}`;
+
+        let targetDateISO;
+        let targetDateLegacy;
+
+        if (/^\d{4}-\d{2}-\d{2}$/.test(targetDateStr)) {
+            targetDateISO = targetDateStr;
+            const [y, m, d] = targetDateStr.split('-');
+            targetDateLegacy = `${d}.${m}.${y}`;
+        } else if (/^\d{2}\.\d{2}\.\d{4}$/.test(targetDateStr)) {
+            targetDateLegacy = targetDateStr;
+            const [d, m, y] = targetDateStr.split('.');
+            targetDateISO = `${y}-${m}-${d}`;
+        } else {
+            logger.warn(`❌ [FETCH] Invalid date format received: ${targetDateStr}`);
+            return res.status(422).json({ success: false, error: 'Неверный формат даты. Ожидается DD.MM.YYYY или YYYY-MM-DD' });
+        }
+
         const isGlobal = (divisionId === 'all');
 
         logger.info(`📅 Fetch request: date=${targetDateStr}, divisionId=${divisionId}, isGlobal=${isGlobal}, user=${user.username}`);
@@ -191,7 +201,7 @@ router.post('/dashboard/fetch', async (req, res) => {
         const apiKey = process.env.EXTERNAL_API_KEY || 'killmetraj_secret_key_2024';
 
         // Sanitize dateShift (it must be dd.mm.yyyy)
-        const sanitizedDateStr = targetDateStr.trim().replace(/-/g, '.');
+        const sanitizedDateStr = targetDateLegacy;
 
         const params = {
             top: '2000',

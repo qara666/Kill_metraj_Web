@@ -24,7 +24,7 @@ interface DashboardWebSocketParams {
     enabled?: boolean;
 }
 
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const REFRESH_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
 
 export const useDashboardWebSocket = ({
     onDataLoaded,
