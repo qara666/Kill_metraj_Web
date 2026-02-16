@@ -372,6 +372,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   useEffect(() => {
     if (selectedHubs.length === 0) return
     const settings = localStorageUtils.getAllSettings()
+
+    // Если пользователь явно задал адреса в настройках, уважаем их и не перетираем данными из KML
+    if (settings.defaultStartAddress && settings.defaultStartAddress.trim() !== '') {
+      return
+    }
+
     if (!settings.kmlData?.markers) return
 
     // Берем первый выбранный хаб для определения базы
