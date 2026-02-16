@@ -99,10 +99,11 @@ class GetDashboardDataQuery {
                 const divisions = await sequelize.query(
                     `SELECT DISTINCT division_id FROM api_dashboard_cache 
                      WHERE status_code = 200 
-                     AND target_date = :targetDateISO`,
+                     AND (target_date = :targetDate OR target_date = :targetDateISO)`,
                     {
                         replacements: {
-                            targetDateISO
+                            targetDate,
+                            targetDateISO: targetDateISO || targetDate
                         },
                         type: sequelize.QueryTypes.SELECT
                     }
@@ -151,12 +152,13 @@ class GetDashboardDataQuery {
                     const result = await sequelize.query(
                         `SELECT * FROM api_dashboard_cache 
                          WHERE status_code = 200 
-                         AND target_date = :targetDateISO
+                         AND (target_date = :targetDate OR target_date = :targetDateISO)
                          AND division_id = :divId
                          ORDER BY created_at DESC NULLS LAST LIMIT 1`,
                         {
                             replacements: {
-                                targetDateISO,
+                                targetDate,
+                                targetDateISO: targetDateISO || targetDate,
                                 divId
                             },
                             type: sequelize.QueryTypes.SELECT
@@ -223,12 +225,13 @@ class GetDashboardDataQuery {
             const results = await this.withRetry(() => sequelize.query(
                 `SELECT * FROM api_dashboard_cache 
                  WHERE status_code = 200 
-                 AND target_date = :targetDateISO
+                 AND (target_date = :targetDate OR target_date = :targetDateISO)
                  AND division_id = :divisionId
                  ORDER BY created_at DESC NULLS LAST LIMIT 1`,
                 {
                     replacements: {
-                        targetDateISO,
+                        targetDate,
+                        targetDateISO: targetDateISO || targetDate,
                         divisionId: String(divisionId)
                     },
                     type: sequelize.QueryTypes.SELECT

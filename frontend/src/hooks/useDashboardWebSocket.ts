@@ -24,7 +24,7 @@ interface DashboardWebSocketParams {
     enabled?: boolean;
 }
 
-const REFRESH_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
+const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 export const useDashboardWebSocket = ({
     onDataLoaded,
@@ -77,14 +77,8 @@ export const useDashboardWebSocket = ({
         lastFetchTimeRef.current = now;
 
         const { apiDateShift: dateShift, apiDepartmentId: deptId } = stateRef.current;
-
-        // Ensure we have a valid date string in DD.MM.YYYY format
-        let apiDate: string;
-        if (dateShift) {
-            apiDate = dashboardApiService.convertDateToApiFormat(dateShift);
-        } else {
-            apiDate = formatDateForApi(new Date());
-        }
+        const dateStr = dateShift || formatDateForApi(new Date());
+        const apiDate = dashboardApiService.convertDateToApiFormat(dateStr);
 
         setApiSyncStatus('syncing');
         setApiSyncError(null);

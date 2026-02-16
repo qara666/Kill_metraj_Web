@@ -161,30 +161,15 @@ router.post('/dashboard/fetch', async (req, res) => {
             }
         }
 
-        const { date, divisionId: requestDivisionId, force = false } = req.body || {};
-        if (!date) {
-            return res.status(422).json({ success: false, error: 'Дата обязательна' });
+        const { date, divisionId: requestDivisionId, force = false } = req.body;
+        if (!date || !/^\d{2}\.\d{2}\.\d{4}$/.test(date)) {
+            return res.status(422).json({ success: false, error: 'Неверный формат даты' });
         }
 
         const divisionId = user.role === 'admin' ? (requestDivisionId || user.divisionId || 'all') : user.divisionId;
-        const targetDateStr = String(date).trim();
-
-        let targetDateISO;
-        let targetDateLegacy;
-
-        if (/^\d{4}-\d{2}-\d{2}$/.test(targetDateStr)) {
-            targetDateISO = targetDateStr;
-            const [y, m, d] = targetDateStr.split('-');
-            targetDateLegacy = `${d}.${m}.${y}`;
-        } else if (/^\d{2}\.\d{2}\.\d{4}$/.test(targetDateStr)) {
-            targetDateLegacy = targetDateStr;
-            const [d, m, y] = targetDateStr.split('.');
-            targetDateISO = `${y}-${m}-${d}`;
-        } else {
-            logger.warn(`❌ [FETCH] Invalid date format received: ${targetDateStr}`);
-            return res.status(422).json({ success: false, error: 'Неверный формат даты. Ожидается DD.MM.YYYY или YYYY-MM-DD' });
-        }
-
+        const targetDateStr = date.trim();
+        const [d, m, y] = targetDateStr.split('.');
+        const targetDateISO = `${y}-${m}-${d}`;
         const isGlobal = (divisionId === 'all');
 
         logger.info(`📅 Fetch request: date=${targetDateStr}, divisionId=${divisionId}, isGlobal=${isGlobal}, user=${user.username}`);
@@ -204,51 +189,24 @@ router.post('/dashboard/fetch', async (req, res) => {
         // 2. Fetch from External API
         const apiUrl = process.env.EXTERNAL_API_URL || 'http://app.yaposhka.kh.ua:4999/api/v1/dashboard';
         const apiKey = process.env.EXTERNAL_API_KEY || 'killmetraj_secret_key_2024';
-
-        // Sanitize dateShift (it must be dd.mm.yyyy)
-        const sanitizedDateStr = targetDateLegacy;
-
         const params = {
             top: '2000',
-            dateShift: sanitizedDateStr, // Crucial for Yaposhka historical data
-            timeDeliveryBeg: `${sanitizedDateStr} 00:00:00`,
-            timeDeliveryEnd: `${sanitizedDateStr} 23:59:59`
+            timeDeliveryBeg: `${targetDateStr} 00:00:00`,
+            timeDeliveryEnd: `${targetDateStr} 23:59:59`
         };
         if (!isGlobal) params.departmentId = divisionId;
 
-        logger.info(`🚀 [FETCH] External API Call:`, {
-            url: apiUrl,
-            method: 'GET',
-            params: params,
-            usingApiKey: !!apiKey,
-            apiKeyPrefix: apiKey ? `${apiKey.substring(0, 4)}...` : 'NONE'
-        });
-
+        logger.info(`🚀 API Call: ${apiUrl} (dept=${params.departmentId || 'GLOBAL'})`);
         const response = await axios.get(apiUrl, {
-            headers: {
-                'x-api-key': apiKey,
-                'Accept': 'application/json',
-                'User-Agent': 'KillMetraj-Backend/1.0'
-            },
+            headers: { 'x-api-key': apiKey, 'Accept': 'application/json' },
             params: params,
             timeout: 30000
         });
 
         const responseData = response.data;
-        logger.info(`📦 [FETCH] External API Response:`, {
-            status: response.status,
-            orderCount: responseData?.orders?.length || 0,
-            courierCount: responseData?.couriers?.length || 0,
-            hasData: !!responseData
-        });
-
-        if (!responseData || !responseData.orders || responseData.orders.length === 0) {
-            logger.warn(`⚠️ [FETCH] No orders returned from API for ${sanitizedDateStr}`);
-            return res.json({
-                success: true,
-                data: { orders: [], couriers: responseData?.couriers || [] },
-                message: 'Данные отсутствуют во внешней системе на выбранную дату'
-            });
+        if (!responseData || !responseData.orders) {
+            logger.warn(`⚠️ Empty response from API for ${targetDateStr}`);
+            return res.json({ success: true, data: { orders: [], couriers: [] }, message: 'Данные отсутствуют' });
         }
 
         // 3. Process and Split Data
