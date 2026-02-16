@@ -15,7 +15,6 @@ interface CourierTimeWindowsProps {
     onOrderMoved?: (orderId: string, targetGroup: TimeWindowGroup) => void;
     onCreateCustomGroup?: (orderId: string) => void;
     onCalculateRoute?: (group: TimeWindowGroup) => void;
-    onJumpToGroup?: (group: TimeWindowGroup) => void;
 }
 
 export const CourierTimeWindows = memo(({
@@ -28,7 +27,6 @@ export const CourierTimeWindows = memo(({
     onOrderMoved,
     onCreateCustomGroup,
     onCalculateRoute,
-    onJumpToGroup,
 }: CourierTimeWindowsProps) => {
     // Группируем заказы по временным окнам - Memoized
     const timeGroups = useMemo(() => {
@@ -76,7 +74,7 @@ export const CourierTimeWindows = memo(({
         >
             {/* SOTA Header - Futuristic Status Bar */}
             <div className={clsx(
-                'relative flex flex-col lg:flex-row items-center justify-between gap-6 px-6 py-5 rounded-[2rem] border transition-all duration-700 shadow-2xl',
+                'relative flex flex-col lg:flex-row items-center justify-between gap-6 px-6 py-5 rounded-[2rem] border transition-all duration-200 shadow-md',
                 isDark
                     ? 'bg-slate-900/60 border-white/5 shadow-black/40'
                     : 'bg-white/90 border-blue-50 shadow-blue-500/10'
@@ -86,7 +84,7 @@ export const CourierTimeWindows = memo(({
 
                 <div className="flex items-center gap-5 relative z-10 w-full lg:w-auto">
                     <div className={clsx(
-                        'w-14 h-14 rounded-2xl flex items-center justify-center border transition-all duration-700 shadow-xl',
+                        'w-14 h-14 rounded-2xl flex items-center justify-center border transition-all duration-200 shadow-md',
                         isDark ? 'bg-blue-600/20 text-blue-400 border-blue-500/20' : 'bg-blue-600 text-white border-blue-500'
                     )}>
                         <ClockIcon className="w-7 h-7" />
@@ -125,7 +123,7 @@ export const CourierTimeWindows = memo(({
                         </div>
                         <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden p-[1px]">
                             <div
-                                className="h-full bg-gradient-to-r from-blue-600 to-emerald-500 transition-all duration-1000 shadow-[0_0_12px_rgba(59,130,246,0.5)] rounded-full"
+                                className="h-full bg-gradient-to-r from-blue-600 to-emerald-500 transition-all duration-300 shadow-sm rounded-full"
                                 style={{ width: `${stats.progress}%` }}
                             />
                         </div>
@@ -136,9 +134,9 @@ export const CourierTimeWindows = memo(({
                                 timeGroups.forEach(g => onCalculateRoute && onCalculateRoute(g));
                             }}
                             className={clsx(
-                                'group px-6 py-3 rounded-xl flex items-center gap-2.5 text-[10px] font-black uppercase tracking-[0.15em] transition-all active:scale-95 shadow-lg border',
+                                'group px-6 py-3 rounded-xl flex items-center gap-2.5 text-[10px] font-black uppercase tracking-[0.15em] transition-all active:scale-[0.98] shadow-md border',
                                 isDark
-                                    ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500 hover:shadow-blue-500/20'
+                                    ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500 hover:shadow-sm'
                                     : 'bg-slate-900 border-slate-800 text-white hover:bg-slate-800'
                             )}
                         >
@@ -151,7 +149,7 @@ export const CourierTimeWindows = memo(({
             </div>
 
             {/* Time Window Groups - Responsive Futuristic Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 animate-in fade-in duration-700">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {timeGroups.map((group) => (
                     <TimeWindowGroupCard
                         key={group.id}
@@ -160,7 +158,6 @@ export const CourierTimeWindows = memo(({
                         isCalculating={isCalculating && calculatingGroupId === group.id}
                         onOrderMoved={onOrderMoved}
                         onCalculateRoute={onCalculateRoute}
-                        onJumpToGroup={onJumpToGroup}
                     />
                 ))}
             </div>
