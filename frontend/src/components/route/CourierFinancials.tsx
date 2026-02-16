@@ -712,8 +712,8 @@ export function CourierFinancials({
                                         key={order.id || idx}
                                         style={{ animationDelay: `${idx * 50}ms` }}
                                         className={clsx(
-                                            'p-6 rounded-[36px] border flex items-center justify-between transition-all group animate-in slide-in-from-bottom-2 duration-500 fill-mode-both',
-                                            isDark ? 'bg-black/20 border-white/5 hover:bg-black/40' : 'bg-[#f8faff] border-gray-100/50 hover:bg-white hover:shadow-2xl hover:shadow-blue-500/10'
+                                            'p-6 rounded-[36px] border flex items-center justify-between transition-all group animate-in slide-in-from-bottom-2 duration-300 fill-mode-both',
+                                            isDark ? 'bg-black/20 border-white/5 hover:bg-black/40' : 'bg-[#f8faff] border-gray-100/50 hover:bg-white hover:shadow-md hover:shadow-blue-500/5'
                                         )}
                                     >
                                         <div className="flex-1 min-w-0 mr-8">
