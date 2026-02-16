@@ -189,25 +189,51 @@ router.post('/dashboard/fetch', async (req, res) => {
         // 2. Fetch from External API
         const apiUrl = process.env.EXTERNAL_API_URL || 'http://app.yaposhka.kh.ua:4999/api/v1/dashboard';
         const apiKey = process.env.EXTERNAL_API_KEY || 'killmetraj_secret_key_2024';
+
+        // Sanitize dateShift (it must be dd.mm.yyyy)
+        const sanitizedDateStr = targetDateStr.trim().replace(/-/g, '.');
+
         const params = {
             top: '2000',
-            dateShift: targetDateStr, // Crucial for Yaposhka historical data
-            timeDeliveryBeg: `${targetDateStr} 00:00:00`,
-            timeDeliveryEnd: `${targetDateStr} 23:59:59`
+            dateShift: sanitizedDateStr, // Crucial for Yaposhka historical data
+            timeDeliveryBeg: `${sanitizedDateStr} 00:00:00`,
+            timeDeliveryEnd: `${sanitizedDateStr} 23:59:59`
         };
         if (!isGlobal) params.departmentId = divisionId;
 
-        logger.info(`🚀 API Call: ${apiUrl} (dept=${params.departmentId || 'GLOBAL'})`);
+        logger.info(`🚀 [FETCH] External API Call:`, {
+            url: apiUrl,
+            method: 'GET',
+            params: params,
+            usingApiKey: !!apiKey,
+            apiKeyPrefix: apiKey ? `${apiKey.substring(0, 4)}...` : 'NONE'
+        });
+
         const response = await axios.get(apiUrl, {
-            headers: { 'x-api-key': apiKey, 'Accept': 'application/json' },
+            headers: {
+                'x-api-key': apiKey,
+                'Accept': 'application/json',
+                'User-Agent': 'KillMetraj-Backend/1.0'
+            },
             params: params,
             timeout: 30000
         });
 
         const responseData = response.data;
-        if (!responseData || !responseData.orders) {
-            logger.warn(`⚠️ Empty response from API for ${targetDateStr}`);
-            return res.json({ success: true, data: { orders: [], couriers: [] }, message: 'Данные отсутствуют' });
+        logger.info(`📦 [FETCH] External API Response:`, {
+            status: response.status,
+            orderCount: responseData?.orders?.length || 0,
+            courierCount: responseData?.couriers?.length || 0,
+            hasData: !!responseData
+        });
+
+        if (!responseData || !responseData.orders || responseData.orders.length === 0) {
+            logger.warn(`⚠️ [FETCH] No orders returned from API for ${sanitizedDateStr}`);
+            return res.json({
+                success: true,
+                data: { orders: [], couriers: responseData?.couriers || [] },
+                message: 'Данные отсутствуют во внешней системе на выбранную дату'
+            });
         }
 
         // 3. Process and Split Data
