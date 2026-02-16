@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
-import { FixedSizeList as List } from 'react-window'
 import { OrderList } from './OrderList'
 import {
   MapIcon,
@@ -123,19 +122,19 @@ const CourierListItem = memo(({
       <button
         onClick={() => onSelect(courierName)}
         className={clsx(
-          'w-full text-left p-3 rounded-xl border-2 transition-all duration-200 mb-2',
+          'w-full text-left p-3 rounded-xl border-2 transition-all duration-200 transform mb-2',
           'relative overflow-hidden',
           isSelected
             ? (isDark
-              ? 'bg-blue-600/10 border-blue-500 shadow-md shadow-blue-500/5'
-              : 'bg-[#f0f7ff] border-blue-500 shadow-sm shadow-blue-500/5')
+              ? 'bg-blue-600/10 border-blue-500 shadow-lg shadow-blue-500/10'
+              : 'bg-[#f0f7ff] border-blue-500 shadow-md shadow-blue-500/5')
             : isUnassigned
               ? (isDark
-                ? 'bg-amber-500/10 border-amber-500/20'
-                : 'bg-amber-50 border-amber-100')
+                ? 'bg-amber-500/10 border-amber-500/30'
+                : 'bg-amber-50 border-amber-200')
               : (isDark
-                ? 'bg-black/20 border-white/[0.03] hover:border-white/10 opacity-90 hover:opacity-100'
-                : 'bg-white border-gray-100 hover:border-blue-100 shadow-sm opacity-90 hover:opacity-100')
+                ? 'bg-black/20 border-white/[0.03] hover:border-white/10 opacity-70 hover:opacity-100'
+                : 'bg-white border-gray-100/80 hover:border-blue-200 shadow-sm opacity-60 hover:opacity-100')
         )}
       >
         <div className="flex items-center gap-3.5 relative z-10">
@@ -683,7 +682,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [selectedOrdersOrder, setSelectedOrdersOrder] = useState<string[]>([])
 
   // --- Виртуализация с динамической высотой ---
-
+  const availableListRef = useRef<any>(null)
 
 
   const availableOrders = useMemo(() => {
@@ -739,29 +738,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       return newSet
     })
   }, [selectedCourier, isOrderInExistingRoute, orderSearchTerm])
-
-  // Courier Row for virtualization
-  const CourierRow = useCallback(({ index, style }: { index: number, style: React.CSSProperties }) => {
-    const courierName = filteredCouriers[index]
-    if (!courierName) return null
-    const metric = getCourierMetrics(courierName)
-    const vehicleType = getCourierVehicleType(courierName)
-
-    return (
-      <div style={style}>
-        <CourierListItem
-          courierName={courierName}
-          vehicleType={vehicleType}
-          isSelected={selectedCourier === courierName}
-          onSelect={handleCourierSelect}
-          availableOrdersCount={metric.available}
-          deliveredOrdersCount={metric.delivered}
-          totalOrdersCount={metric.total}
-          isDark={isDark}
-        />
-      </div>
-    )
-  }, [filteredCouriers, selectedCourier, handleCourierSelect, isDark, getCourierMetrics, getCourierVehicleType])
 
   // Функции для изменения порядка выбранных заказов
   const moveOrderUp = useCallback((orderId: string) => {
@@ -1517,7 +1493,22 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     setShowAddressEditModal(true)
   }
 
+  // Функция для перехода к группе заказов
+  const handleJumpToGroup = useCallback((group: TimeWindowGroup) => {
+    if (!availableListRef.current) return
+    const firstOrderId = group.orders[0]?.id
+    if (!firstOrderId) return
 
+    const index = availableOrders.findIndex(o => o.id === firstOrderId)
+    if (index !== -1) {
+      availableListRef.current.scrollToItem(index, 'start')
+      // Визуальная подсветка или тост (опционально)
+      toast.success(`Переход к группе: ${group.windowLabel}`, {
+        icon: '',
+        duration: 2000
+      })
+    }
+  }, [availableOrders])
 
 
   // Функция для перемещения заказа в другую временную группу ( Phase 4.7 )
@@ -2076,22 +2067,32 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   </div>
                 </div>
 
-                <div className="flex-1 min-h-[400px]">
+                <div className="flex-1 min-h-[400px] overflow-y-auto pr-2 custom-scrollbar" style={{ maxHeight: '600px' }}>
                   {filteredCouriers.length === 0 ? (
                     <div className="text-center py-10 h-full flex flex-col items-center justify-center">
                       <TruckIcon className="w-10 h-10 mx-auto text-gray-300 mb-2 opacity-50" />
                       <p className="text-xs text-gray-400 font-bold uppercase tracking-widest px-4">Список пуст</p>
                     </div>
                   ) : (
-                    <List
-                      height={600}
-                      itemCount={filteredCouriers.length}
-                      itemSize={72}
-                      width="100%"
-                      className="custom-scrollbar"
-                    >
-                      {CourierRow}
-                    </List>
+                    <div className="space-y-2">
+                      {filteredCouriers.map((courierName) => {
+                        const metric = getCourierMetrics(courierName)
+                        const vehicleType = getCourierVehicleType(courierName)
+                        return (
+                          <CourierListItem
+                            key={courierName}
+                            courierName={courierName}
+                            vehicleType={vehicleType}
+                            isSelected={selectedCourier === courierName}
+                            onSelect={handleCourierSelect}
+                            availableOrdersCount={metric.available}
+                            deliveredOrdersCount={metric.delivered}
+                            totalOrdersCount={metric.total}
+                            isDark={isDark}
+                          />
+                        )
+                      })}
+                    </div>
                   )}
                 </div>
               </div>
@@ -2184,7 +2185,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                       courierName={isId0CourierName(selectedCourier) ? 'Не назначено' : (String(selectedCourier) || '')}
                       orders={availableOrders}
                       isDark={isDark}
-
+                      onJumpToGroup={handleJumpToGroup}
                       onOrderMoved={handleMoveOrderToGroup}
                       onCreateCustomGroup={handleCreateCustomGroup}
                       onCalculateRoute={async (group) => {
@@ -2257,20 +2258,21 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                           </div>
                         </div>
 
-                        <div className="h-[600px] w-full" data-tour="order-list">
+                        <div className="h-[600px] w-full overflow-y-auto pr-2 custom-scrollbar" data-tour="order-list">
                           {availableOrders.length > 0 ? (
-                            <div className="animate-in fade-in duration-700 h-full">
-                              <OrderList
-                                orders={availableOrders}
-                                isDark={isDark}
-                                selectedOrders={selectedOrders}
-                                selectedOrdersOrder={selectedOrdersOrder}
-                                onSelectOrder={(id: string, multi: boolean) => handleOrderSelect(id, multi)}
-                                onMoveUp={moveOrderUp}
-                                onMoveDown={moveOrderDown}
-                                isInRoute={false}
-                                listHeight={600}
-                              />
+                            <div className="animate-in fade-in duration-700">
+                              <div>
+                                <OrderList
+                                  orders={availableOrders}
+                                  isDark={isDark}
+                                  selectedOrders={selectedOrders}
+                                  selectedOrdersOrder={selectedOrdersOrder}
+                                  onSelectOrder={(id: string, multi: boolean) => handleOrderSelect(id, multi)}
+                                  onMoveUp={moveOrderUp}
+                                  onMoveDown={moveOrderDown}
+                                  isInRoute={false}
+                                />
+                              </div>
                             </div>
                           ) : (
                             <div className="text-center py-20 opacity-30 italic">Список пуст</div>
@@ -2284,14 +2286,15 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                   Уже в маршрутах ({ordersInRoutes.length})
                                 </span>
                               </div>
-                              <OrderList
-                                orders={ordersInRoutes}
-                                isDark={isDark}
-                                selectedOrders={new Set()} // No selection in this list
-                                onSelectOrder={() => { }}
-                                isInRoute={true}
-                                listHeight={300}
-                              />
+                              <div style={{ height: 300 }}>
+                                <OrderList
+                                  orders={ordersInRoutes}
+                                  isDark={isDark}
+                                  selectedOrders={new Set()} // No selection in this list
+                                  onSelectOrder={() => { }}
+                                  isInRoute={true}
+                                />
+                              </div>
                             </div>
                           )}
                         </div>

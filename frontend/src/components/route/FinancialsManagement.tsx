@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useCallback } from 'react'
-import { FixedSizeList as List } from 'react-window'
 import { useExcelData } from '../../contexts/ExcelDataContext'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useAuth } from '../../contexts/AuthContext'
@@ -109,54 +108,44 @@ export const FinancialsManagement: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-hidden p-4">
+                {/* List of Couriers */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-2">
                     {filteredCouriers.length === 0 ? (
                         <div className="text-center py-8">
                             <p className="text-sm text-gray-500">Курьеры не найдены</p>
                         </div>
                     ) : (
-                        <List
-                            height={400} // This container will be flex-1 so height only matters for the initial sizing or scroll area
-                            itemCount={filteredCouriers.length}
-                            itemSize={72}
-                            width="100%"
-                            className="custom-scrollbar"
-                        >
-                            {({ index, style }: { index: number, style: React.CSSProperties }) => {
-                                const name = filteredCouriers[index]
-                                const type = getCourierVehicleType(name)
-                                const isSelected = selectedCourier === name
-                                return (
-                                    <div style={style} className="pb-2 pr-1">
-                                        <button
-                                            key={name}
-                                            onClick={() => setSelectedCourier(name)}
-                                            className={clsx(
-                                                "w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all",
-                                                isSelected
-                                                    ? isDark ? "bg-blue-500/10 border-blue-500" : "bg-blue-50 border-blue-500 shadow-md"
-                                                    : isDark ? "bg-gray-800/50 border-transparent hover:border-gray-700" : "bg-white border-transparent hover:border-blue-200 shadow-sm"
-                                            )}
-                                        >
-                                            <div className={clsx(
-                                                "p-2 rounded-lg",
-                                                isSelected ? "bg-blue-500 text-white" : isDark ? "bg-gray-700 text-gray-400" : "bg-gray-100 text-gray-400"
-                                            )}>
-                                                {type === 'car' ? <TruckIcon className="w-5 h-5" /> : <UserIcon className="w-5 h-5" />}
-                                            </div>
-                                            <div className="text-left overflow-hidden">
-                                                <p className={clsx("font-bold text-sm truncate", isDark ? "text-white" : "text-gray-900")}>
-                                                    {name}
-                                                </p>
-                                                <p className="text-[10px] text-gray-500 uppercase font-black">
-                                                    {type === 'car' ? 'Автомобиль' : 'Мотоцикл'}
-                                                </p>
-                                            </div>
-                                        </button>
+                        filteredCouriers.map((name) => {
+                            const type = getCourierVehicleType(name)
+                            const isSelected = selectedCourier === name
+                            return (
+                                <button
+                                    key={name}
+                                    onClick={() => setSelectedCourier(name)}
+                                    className={clsx(
+                                        "w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all",
+                                        isSelected
+                                            ? isDark ? "bg-blue-500/10 border-blue-500" : "bg-blue-50 border-blue-500 shadow-md"
+                                            : isDark ? "bg-gray-800/50 border-transparent hover:border-gray-700" : "bg-white border-transparent hover:border-blue-200 shadow-sm"
+                                    )}
+                                >
+                                    <div className={clsx(
+                                        "p-2 rounded-lg",
+                                        isSelected ? "bg-blue-500 text-white" : isDark ? "bg-gray-700 text-gray-400" : "bg-gray-100 text-gray-400"
+                                    )}>
+                                        {type === 'car' ? <TruckIcon className="w-5 h-5" /> : <UserIcon className="w-5 h-5" />}
                                     </div>
-                                )
-                            }}
-                        </List>
+                                    <div className="text-left overflow-hidden">
+                                        <p className={clsx("font-bold text-sm truncate", isDark ? "text-white" : "text-gray-900")}>
+                                            {name}
+                                        </p>
+                                        <p className="text-[10px] text-gray-500 uppercase font-black">
+                                            {type === 'car' ? 'Автомобиль' : 'Мотоцикл'}
+                                        </p>
+                                    </div>
+                                </button>
+                            )
+                        })
                     )}
                 </div>
             </div>

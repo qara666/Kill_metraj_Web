@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { StatsCard } from '../shared/StatsCard';
 import {
     DocumentArrowUpIcon,
@@ -15,30 +15,16 @@ interface AutoPlannerStatsProps {
 export const AutoPlannerStats: React.FC<AutoPlannerStatsProps> = React.memo(({ excelData, routes }) => {
     if (!excelData) return null;
 
-    const { ordersCount, geocodedCount } = useMemo(() => {
-        const orders = excelData.orders || [];
-        return {
-            ordersCount: orders.length,
-            geocodedCount: orders.filter((o: any) => o.coords).length
-        };
-    }, [excelData]);
+    const ordersCount = excelData.orders?.length || 0;
+    const geocodedCount = excelData.orders?.filter((o: any) => o.coords).length || 0;
 
-    const { avgTime, avgDistance } = useMemo(() => {
-        if (routes.length === 0) return { avgTime: 0, avgDistance: '0' };
+    const avgTime = routes.length > 0
+        ? Math.round(routes.reduce((sum, r) => sum + (parseFloat(r.totalDurationMin) || 0), 0) / routes.length)
+        : 0;
 
-        let totalTime = 0;
-        let totalDist = 0;
-
-        routes.forEach(r => {
-            totalTime += (parseFloat(r.totalDurationMin) || 0);
-            totalDist += (parseFloat(r.totalDistanceKm) || 0);
-        });
-
-        return {
-            avgTime: Math.round(totalTime / routes.length),
-            avgDistance: (totalDist / routes.length).toFixed(1)
-        };
-    }, [routes]);
+    const avgDistance = routes.length > 0
+        ? (routes.reduce((sum, r) => sum + (parseFloat(r.totalDistanceKm) || 0), 0) / routes.length).toFixed(1)
+        : '0';
 
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">

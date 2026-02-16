@@ -15,6 +15,7 @@ interface CourierTimeWindowsProps {
     onOrderMoved?: (orderId: string, targetGroup: TimeWindowGroup) => void;
     onCreateCustomGroup?: (orderId: string) => void;
     onCalculateRoute?: (group: TimeWindowGroup) => void;
+    onJumpToGroup?: (group: TimeWindowGroup) => void;
 }
 
 export const CourierTimeWindows = memo(({
@@ -27,6 +28,7 @@ export const CourierTimeWindows = memo(({
     onOrderMoved,
     onCreateCustomGroup,
     onCalculateRoute,
+    onJumpToGroup,
 }: CourierTimeWindowsProps) => {
     // Группируем заказы по временным окнам - Memoized
     const timeGroups = useMemo(() => {
@@ -74,10 +76,10 @@ export const CourierTimeWindows = memo(({
         >
             {/* SOTA Header - Futuristic Status Bar */}
             <div className={clsx(
-                'relative flex flex-col lg:flex-row items-center justify-between gap-6 px-6 py-5 rounded-[2rem] border transition-all duration-300 shadow-xl',
+                'relative flex flex-col lg:flex-row items-center justify-between gap-6 px-6 py-5 rounded-[2rem] border transition-all duration-700 shadow-2xl',
                 isDark
                     ? 'bg-slate-900/60 border-white/5 shadow-black/40'
-                    : 'bg-white/90 border-blue-50 shadow-blue-500/5'
+                    : 'bg-white/90 border-blue-50 shadow-blue-500/10'
             )}>
                 {/* Visual Accent Layer */}
                 <div className="absolute top-0 right-0 w-64 h-full bg-gradient-to-l from-blue-500/5 to-transparent pointer-events-none" />
@@ -95,7 +97,7 @@ export const CourierTimeWindows = memo(({
                                 ГРУППИРОВКА ПО ВРЕМЕНИ
                             </span>
                             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                                 <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">SOTA v2.0</span>
                             </div>
                         </div>
@@ -136,8 +138,8 @@ export const CourierTimeWindows = memo(({
                             className={clsx(
                                 'group px-6 py-3 rounded-xl flex items-center gap-2.5 text-[10px] font-black uppercase tracking-[0.15em] transition-all active:scale-95 shadow-lg border',
                                 isDark
-                                    ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500 shadow-blue-900/20'
-                                    : 'bg-slate-900 border-slate-800 text-white hover:bg-slate-800 shadow-slate-200'
+                                    ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500 hover:shadow-blue-500/20'
+                                    : 'bg-slate-900 border-slate-800 text-white hover:bg-slate-800'
                             )}
                         >
                             <RocketLaunchIcon className="w-4 h-4 group-hover:rotate-12 transition-transform" />
@@ -158,6 +160,7 @@ export const CourierTimeWindows = memo(({
                         isCalculating={isCalculating && calculatingGroupId === group.id}
                         onOrderMoved={onOrderMoved}
                         onCalculateRoute={onCalculateRoute}
+                        onJumpToGroup={onJumpToGroup}
                     />
                 ))}
             </div>
