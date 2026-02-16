@@ -586,10 +586,10 @@ export function CourierFinancials({
                                     const hasStats = stats && stats.received !== undefined;
 
                                     return (
-                                        <div key={sessionId} className="group/session animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both">
+                                        <div key={sessionId} className="group/session animate-in fade-in slide-in-from-bottom-2 duration-300 fill-mode-both">
                                             {/* Session Header Stats - REDESIGNED PREMIUM POD */}
                                             <div className={clsx(
-                                                "p-8 rounded-[40px] border relative overflow-hidden transition-all duration-500 hover:scale-[1.01] hover:shadow-2xl",
+                                                "p-8 rounded-[40px] border relative overflow-hidden transition-all duration-200 hover:scale-[1.005] hover:shadow-lg",
                                                 isDark ? "bg-white/[0.03] border-white/5 hover:bg-white/[0.05]" : "bg-white border-gray-100 hover:border-blue-100 shadow-sm"
                                             )}>
                                                 {/* Discrepancy Indicator bar */}

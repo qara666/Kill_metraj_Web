@@ -218,7 +218,7 @@ const CourierListItem = memo(({
                 )}>
                   <div
                     className={clsx(
-                      'h-full rounded-full transition-all duration-700',
+                      'h-full rounded-full transition-all duration-300',
                       isFinished ? 'bg-green-500' : isOnRoute ? 'bg-blue-500' : 'bg-gray-300/50'
                     )}
                     style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
@@ -233,7 +233,7 @@ const CourierListItem = memo(({
       {/* Background glow */}
       {isSelected && (
         <div className={clsx(
-          'absolute inset-0 opacity-10 pointer-events-none transition-opacity duration-500',
+          'absolute inset-0 opacity-10 pointer-events-none transition-opacity duration-300',
           isDark ? 'bg-gradient-to-br from-blue-500 to-transparent' : 'bg-gradient-to-br from-blue-100 to-transparent'
         )} />
       )}
@@ -1970,7 +1970,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         {/* Основная рабочая область: Сайдбар + Дашборд */}
         <div className="flex flex-col lg:flex-row gap-8 items-start mb-12 relative min-h-[100px]">
           {/* Левая панель: Выбор курьера */}
-          <div className="w-full lg:w-[420px] lg:sticky lg:top-8 animate-in slide-in-from-left-8 duration-700" data-tour="courier-select">
+          <div className="w-full lg:w-[420px] lg:sticky lg:top-8" data-tour="courier-select">
             <div className={clsx(
               'rounded-3xl shadow-xl border-2 p-6 overflow-hidden relative',
               isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100 shadow-blue-500/5'
@@ -2018,7 +2018,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                     )}>
                       <span className="text-[14px] font-black leading-none mb-1 text-blue-500">{fleetStats.active}</span>
                       <span className="text-[7px] font-black uppercase tracking-widest text-blue-500/50">В пути</span>
-                      <div className="absolute bottom-0 left-0 h-[2px] bg-blue-500 opacity-20 transition-all duration-1000" style={{ width: `${fleetStats.progress}%` }} />
+                      <div className="absolute bottom-0 left-0 h-[2px] bg-blue-500 opacity-20 transition-all duration-300" style={{ width: `${fleetStats.progress}%` }} />
                     </div>
                     <div className={clsx(
                       "p-3 rounded-2xl border flex flex-col items-center justify-center transition-all",
@@ -2103,7 +2103,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           <div className="flex-1 min-w-0 w-full">
             {!selectedCourier ? (
               <div className={clsx(
-                "flex flex-col items-center justify-center p-12 lg:p-24 rounded-[3rem] border-4 border-dashed transition-colors duration-500",
+                "flex flex-col items-center justify-center p-12 lg:p-24 rounded-[3rem] border-4 border-dashed transition-colors duration-200",
                 isDark ? "bg-gray-800/20 border-gray-700/50" : "bg-gray-50 border-gray-200"
               )}>
                 <div className={clsx(
@@ -2120,7 +2120,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 </p>
               </div>
             ) : (
-              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="space-y-6">
 
                 {/* Хедер выбранного курьера */}
                 <div className={clsx(
@@ -2260,7 +2260,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
                         <div className="h-[600px] w-full overflow-y-auto pr-2 custom-scrollbar" data-tour="order-list">
                           {availableOrders.length > 0 ? (
-                            <div className="animate-in fade-in duration-700">
+                            <div>
                               <div>
                                 <OrderList
                                   orders={availableOrders}
@@ -2308,7 +2308,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         </div>
 
         {/* Нижняя часть: Созданные маршруты */}
-        <div className="mt-12 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-300">
+        <div className="mt-12">
           <div className={clsx(
             'rounded-[3rem] shadow-2xl border-2 p-10 overflow-hidden relative',
             isDark ? 'bg-gray-800 border-gray-700 shadow-black/40' : 'bg-white border-blue-50 shadow-blue-500/5'
@@ -2388,14 +2388,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
                     return (
                       <div key={route.id} className={clsx(
-                        'group rounded-[2.5rem] border-2 p-8 transition-all duration-500 relative overflow-hidden',
+                        'group rounded-[2.5rem] border-2 p-8 transition-all duration-200 relative overflow-hidden',
                         isDark
                           ? 'bg-gray-800/40 border-gray-700 hover:border-blue-500/50 hover:bg-gray-800/80 shadow-black/20'
                           : 'bg-white border-blue-50 shadow-blue-500/5 hover:shadow-2xl hover:border-blue-400'
                       )}>
                         {/* Линия-акцент */}
                         <div className={clsx(
-                          "absolute top-0 left-0 w-2 h-full transition-all duration-500",
+                          "absolute top-0 left-0 w-2 h-full transition-all duration-200",
                           courierVehicle === 'car' ? "bg-green-500/50" : "bg-orange-500/50",
                           "group-hover:w-4"
                         )}></div>
@@ -2526,7 +2526,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                   e.dataTransfer.effectAllowed = 'move';
                                 }}
                                 className={clsx(
-                                  "flex items-start justify-between p-4 rounded-2xl transition-all duration-300",
+                                  "flex items-start justify-between p-4 rounded-2xl transition-all duration-200",
                                   isDark ? "hover:bg-gray-700/30" : "hover:bg-gray-50",
                                   "cursor-grab active:cursor-grabbing"
                                 )}
@@ -2566,7 +2566,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                     <div className={clsx(
                                       'truncate text-sm font-medium',
                                       isDark ? 'text-gray-400' : 'text-gray-600',
-                                      hasAddressIssues && 'text-red-500 animate-pulse'
+                                      hasAddressIssues && 'text-red-500'
                                     )} title={order.address}>{order.address}</div>
                                     {metaBadge}
                                   </div>
@@ -2616,7 +2616,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                   "flex items-center gap-2 px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest",
                                   isDark ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-green-50 text-green-700 border border-green-100 shadow-sm"
                                 )}>
-                                  <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
+                                  <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
                                   Оптимизирован
                                 </div>
                               )}

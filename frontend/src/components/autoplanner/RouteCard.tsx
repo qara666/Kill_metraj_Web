@@ -46,22 +46,22 @@ export const RouteCard: React.FC<RouteCardProps> = React.memo(({
     return (
         <div
             className={clsx(
-                'rounded-3xl p-6 border-2 transition-all duration-300 transform hover:scale-[1.02] relative overflow-hidden',
+                'rounded-3xl p-6 border-2 transition-all duration-200 transform hover:scale-[1.005] relative overflow-hidden',
                 isSelected
                     ? (isDark
                         ? (isUnassigned
-                            ? 'border-yellow-500 bg-gradient-to-br from-yellow-900/40 via-orange-900/30 to-red-900/40 ring-4 ring-yellow-500/50 shadow-2xl'
-                            : 'border-blue-500 bg-gradient-to-br from-blue-900/40 via-indigo-900/30 to-purple-900/40 ring-4 ring-blue-500/50 shadow-2xl')
+                            ? 'border-yellow-500 bg-gradient-to-br from-yellow-900/40 via-orange-900/30 to-red-900/40 ring-4 ring-yellow-500/50 shadow-lg'
+                            : 'border-blue-500 bg-gradient-to-br from-blue-900/40 via-indigo-900/30 to-purple-900/40 ring-4 ring-blue-500/50 shadow-lg')
                         : (isUnassigned
-                            ? 'border-yellow-500 bg-gradient-to-br from-yellow-50 via-orange-50 to-red-50 ring-4 ring-yellow-500/30 shadow-2xl'
-                            : 'border-blue-500 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 ring-4 ring-blue-500/30 shadow-2xl'))
+                            ? 'border-yellow-500 bg-gradient-to-br from-yellow-50 via-orange-50 to-red-50 ring-4 ring-yellow-500/30 shadow-lg'
+                            : 'border-blue-500 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 ring-4 ring-blue-500/30 shadow-lg'))
                     : (isDark
                         ? (isUnassigned
-                            ? 'border-yellow-700/50 bg-gradient-to-br from-yellow-900/40 to-orange-900/40 hover:border-yellow-600 hover:shadow-xl'
-                            : 'border-gray-700/50 bg-gradient-to-br from-gray-800/60 to-gray-900/60 hover:border-gray-600 hover:shadow-xl')
+                            ? 'border-yellow-700/50 bg-gradient-to-br from-yellow-900/40 to-orange-900/40 hover:border-yellow-600 hover:shadow-md'
+                            : 'border-gray-700/50 bg-gradient-to-br from-gray-800/60 to-gray-900/60 hover:border-gray-600 hover:shadow-md')
                         : (isUnassigned
-                            ? 'border-yellow-200 bg-gradient-to-br from-yellow-50/50 to-orange-50/50 hover:border-yellow-400 hover:shadow-xl'
-                            : 'border-gray-200 bg-gradient-to-br from-white to-gray-50/50 hover:border-blue-300 hover:shadow-xl'))
+                            ? 'border-yellow-200 bg-gradient-to-br from-yellow-50/50 to-orange-50/50 hover:border-yellow-400 hover:shadow-md'
+                            : 'border-gray-200 bg-gradient-to-br from-white to-gray-50/50 hover:border-blue-300 hover:shadow-md'))
             )}
         >
             <div className={clsx(

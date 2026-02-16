@@ -79,7 +79,7 @@ export const TimeWindowGroupCard = memo(({
         const isReady = readinessStatus === 'ready';
         if (isReady) return {
             border: isDark ? 'border-emerald-500/40' : 'border-emerald-300',
-            glow: 'shadow-[0_0_30px_rgba(16,185,129,0.15)]',
+            glow: 'shadow-md shadow-emerald-500/10',
             mesh: 'from-emerald-500/10 via-transparent to-transparent',
             accent: 'text-emerald-500'
         };
@@ -87,22 +87,22 @@ export const TimeWindowGroupCard = memo(({
         switch (urgency) {
             case 'overdue':
                 return {
-                    border: 'border-rose-500/50',
-                    glow: 'shadow-[0_0_40px_rgba(244,63,94,0.2)] animate-pulse-slow',
+                    border: 'border-rose-500/40',
+                    glow: 'shadow-md shadow-rose-500/10',
                     mesh: 'from-rose-500/10 via-transparent to-transparent',
                     accent: 'text-rose-500'
                 };
             case 'critical':
                 return {
-                    border: 'border-orange-500/50',
-                    glow: 'shadow-[0_0_30px_rgba(245,158,11,0.2)] animate-pulse-slow',
+                    border: 'border-orange-500/40',
+                    glow: 'shadow-md shadow-orange-500/10',
                     mesh: 'from-orange-500/10 via-transparent to-transparent',
                     accent: 'text-orange-500'
                 };
             case 'high':
                 return {
-                    border: 'border-amber-500/40',
-                    glow: 'shadow-[0_0_20px_rgba(217,119,6,0.1)]',
+                    border: 'border-amber-500/30',
+                    glow: 'shadow-sm shadow-amber-500/5',
                     mesh: 'from-amber-500/5 via-transparent to-transparent',
                     accent: 'text-amber-500'
                 };
@@ -149,7 +149,7 @@ export const TimeWindowGroupCard = memo(({
                 }
             }}
             className={clsx(
-                'rounded-[1.25rem] border backdrop-blur-2xl transition-all duration-500 relative overflow-hidden group/card',
+                'rounded-[1.25rem] border backdrop-blur-2xl transition-all duration-200 relative overflow-hidden group/card',
                 theme.border,
                 theme.glow,
                 isDark ? 'bg-slate-900/80 shadow-black/20' : 'bg-white/80 shadow-slate-200/50',
@@ -158,14 +158,14 @@ export const TimeWindowGroupCard = memo(({
         >
             {/* Mesh Gradient Background Layer */}
             <div className={clsx(
-                'absolute inset-0 bg-gradient-to-br opacity-40 pointer-events-none transition-opacity duration-700',
+                'absolute inset-0 bg-gradient-to-br opacity-30 pointer-events-none transition-opacity duration-300',
                 theme.mesh
             )} />
 
             {/* Header - Simplified and Clean */}
             <div
                 className={clsx(
-                    'relative p-3.5 cursor-pointer transition-all duration-300',
+                    'relative p-3.5 cursor-pointer transition-all duration-200',
                     isDark ? 'hover:bg-white/[0.04]' : 'hover:bg-slate-50/80'
                 )}
                 onClick={() => setIsExpanded(!isExpanded)}
@@ -174,22 +174,22 @@ export const TimeWindowGroupCard = memo(({
                     <div className="flex items-center gap-3 min-w-0">
                         {/* Time Badge */}
                         <div className={clsx(
-                            'px-4 py-2 rounded-2xl flex items-center gap-2.5 text-xs font-black tracking-tighter tabular-nums border shadow-sm transition-all duration-700',
+                            'px-4 py-2 rounded-2xl flex items-center gap-2.5 text-xs font-black tracking-tighter tabular-nums border shadow-sm transition-all duration-300',
                             hasTime
-                                ? (isDark ? 'bg-blue-600/10 text-blue-400 border-blue-500/20' : 'bg-blue-600 text-white border-blue-500 shadow-lg shadow-blue-500/20')
+                                ? (isDark ? 'bg-blue-600/10 text-blue-400 border-blue-500/20' : 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-500/10')
                                 : (isDark ? 'bg-slate-800 text-slate-500 border-slate-700' : 'bg-slate-100 text-slate-400 border-slate-200')
                         )}>
-                            <ClockIcon className={clsx("w-4 h-4", urgency !== 'normal' && 'animate-pulse')} />
+                            <ClockIcon className="w-4 h-4" />
                             <span>{group.windowLabel}</span>
                         </div>
                     </div>
 
                     <div className={clsx(
-                        'p-2 rounded-xl transition-all duration-500',
+                        'p-2 rounded-xl transition-all duration-200',
                         isDark ? 'bg-white/5' : 'bg-slate-100',
                         isExpanded && (isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-500 text-white')
                     )}>
-                        <ChevronDownIcon className={clsx('w-4 h-4 transition-transform duration-500', isExpanded ? 'rotate-180' : 'rotate-0')} />
+                        <ChevronDownIcon className={clsx('w-4 h-4 transition-transform duration-200', isExpanded ? 'rotate-180' : 'rotate-0')} />
                     </div>
                 </div>
 
@@ -202,13 +202,13 @@ export const TimeWindowGroupCard = memo(({
                         </div>
                         {preparingOrders.length > 0 && (
                             <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 shadow-sm">
-                                <ArrowPathIcon className="w-3.5 h-3.5 text-amber-500 animate-spin-slow" />
+                                <ArrowPathIcon className="w-3.5 h-3.5 text-amber-500" />
                                 <span className="text-[10px] font-black text-amber-500">{preparingOrders.length}</span>
                             </div>
                         )}
                         {geoConflict && (
                             <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-rose-500/10 border border-rose-500/20 group/hint relative shadow-sm">
-                                <ExclamationTriangleIcon className="w-4 h-4 text-rose-500 animate-pulse" />
+                                <ExclamationTriangleIcon className="w-4 h-4 text-rose-500" />
                                 <div className="absolute left-0 bottom-full mb-3 px-2 py-1.5 rounded-xl bg-slate-900/95 backdrop-blur-md text-[9px] font-black text-white whitespace-nowrap opacity-0 group-hover/hint:opacity-100 transition-all duration-300 pointer-events-none z-50 shadow-2xl border border-white/10">
                                     РАССТОЯНИЕ: {geoConflict.value.toFixed(1)} км
                                 </div>
@@ -237,7 +237,7 @@ export const TimeWindowGroupCard = memo(({
             {/* Expanded List - Professional Layout */}
             {isExpanded && (
                 <div className={clsx(
-                    'border-t border-dashed transition-all duration-500 animate-in fade-in slide-in-from-top-2',
+                    'border-t border-dashed transition-all duration-200',
                     isDark ? 'border-white/5' : 'border-slate-200'
                 )}>
                     <div className="p-1.5 max-h-[300px] overflow-y-auto custom-scrollbar space-y-1.5">
@@ -257,7 +257,7 @@ export const TimeWindowGroupCard = memo(({
                                         e.dataTransfer.effectAllowed = 'move';
                                     }}
                                     className={clsx(
-                                        'px-3 py-2.5 relative rounded-xl flex flex-col gap-1.5 transition-all duration-500 cursor-grab active:cursor-grabbing border border-transparent hover:shadow-lg active:scale-[0.98]',
+                                        'px-3 py-2.5 relative rounded-xl flex flex-col gap-1.5 transition-all duration-200 cursor-grab active:cursor-grabbing border border-transparent hover:shadow-md active:scale-[0.99]',
                                         isDark
                                             ? 'bg-slate-800/40 hover:bg-slate-800/80 hover:border-white/10'
                                             : 'bg-white hover:bg-blue-50/50 hover:border-blue-100 shadow-sm border-slate-100',
@@ -277,7 +277,7 @@ export const TimeWindowGroupCard = memo(({
 
                                         <div className="flex items-center gap-2">
                                             <div className={clsx(
-                                                'px-1.5 py-0.5 rounded-md text-[9px] font-black tabular-nums border transition-all duration-500',
+                                                'px-1.5 py-0.5 rounded-md text-[9px] font-black tabular-nums border transition-all duration-200',
                                                 isDark ? 'bg-white/5 border-white/5 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-500'
                                             )}>
                                                 {formatTimeLabel(getPlannedTime(order) || 0)}
@@ -296,7 +296,7 @@ export const TimeWindowGroupCard = memo(({
 
                                     {/* BOTTOM ROW: FULL ADDRESS (SOTA FIX - NO TRUNCATION) */}
                                     <div className={clsx(
-                                        'text-[10px] font-bold leading-snug break-words whitespace-normal border-l-2 pl-2.5 py-0.5 transition-all duration-500',
+                                        'text-[10px] font-bold leading-snug break-words whitespace-normal border-l-2 pl-2.5 py-0.5 transition-all duration-200',
                                         isDark ? 'text-slate-300 border-white/10' : 'text-slate-600 border-blue-100'
                                     )}>
                                         {order.address}
@@ -311,7 +311,7 @@ export const TimeWindowGroupCard = memo(({
                             disabled={isCalculating}
                             onClick={() => onCalculateRoute && onCalculateRoute(group)}
                             className={clsx(
-                                'w-full py-2 rounded-xl flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] transition-all duration-300 active:scale-[0.97] border shadow-lg',
+                                'w-full py-2 rounded-xl flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] transition-all duration-200 active:scale-[0.98] border shadow-md',
                                 isDark
                                     ? 'bg-blue-600 text-white border-blue-500 hover:bg-blue-500 shadow-blue-900/40'
                                     : 'bg-slate-900 text-white border-slate-800 hover:bg-slate-800 shadow-slate-200'
