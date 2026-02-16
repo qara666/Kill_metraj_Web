@@ -77,8 +77,14 @@ export const useDashboardWebSocket = ({
         lastFetchTimeRef.current = now;
 
         const { apiDateShift: dateShift, apiDepartmentId: deptId } = stateRef.current;
-        const dateStr = dateShift || formatDateForApi(new Date());
-        const apiDate = dashboardApiService.convertDateToApiFormat(dateStr);
+
+        // Ensure we have a valid date string in DD.MM.YYYY format
+        let apiDate: string;
+        if (dateShift) {
+            apiDate = dashboardApiService.convertDateToApiFormat(dateShift);
+        } else {
+            apiDate = formatDateForApi(new Date());
+        }
 
         setApiSyncStatus('syncing');
         setApiSyncError(null);

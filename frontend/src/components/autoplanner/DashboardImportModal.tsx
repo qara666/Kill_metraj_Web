@@ -51,13 +51,13 @@ export const DashboardImportModal: React.FC<DashboardImportModalProps> = ({
     // Инициализация с текущей датой и временем
     const [dateTimeDeliveryBeg, setDateTimeDeliveryBeg] = useState(() => {
         const now = new Date();
-        now.setHours(11, 0, 0, 0);
+        now.setHours(0, 0, 0, 0);
         return formatDateTimeForInput(now);
     });
 
     const [dateTimeDeliveryEnd, setDateTimeDeliveryEnd] = useState(() => {
         const now = new Date();
-        now.setHours(23, 0, 0, 0);
+        now.setHours(23, 59, 59, 999);
         return formatDateTimeForInput(now);
     });
 
