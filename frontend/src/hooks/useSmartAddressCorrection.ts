@@ -3,8 +3,8 @@
  * Этот файл содержит логику для автоматической проверки и исправления адресов вне зон доставки
  */
 
-import { useCallback, useEffect } from 'react';
-import { getAddressZoneValidator, type AddressSuggestion, type ValidationResult } from '../services/addressZoneValidator';
+import { useCallback } from 'react';
+import { getAddressZoneValidator, type AddressSuggestion, type ValidationResult } from '@/services/addressZoneValidator';
 import toast from 'react-hot-toast';
 
 interface Order {

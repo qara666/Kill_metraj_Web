@@ -654,6 +654,7 @@ class DashboardFetcher {
                 try {
                     const params = {
                         top: isGlobal ? 2000 : this.topCount,
+                        dateShift: this.formatDate(targetDate), // Crucial for Yaposhka historical data
                         timeDeliveryBeg: this.formatDate(targetDate, '00:00:00'),
                         timeDeliveryEnd: this.formatDate(targetDate, '23:59:59')
                     };

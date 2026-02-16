@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
+import { FixedSizeList as List } from 'react-window'
 import { OrderList } from './OrderList'
 import {
   MapIcon,
@@ -122,27 +123,27 @@ const CourierListItem = memo(({
       <button
         onClick={() => onSelect(courierName)}
         className={clsx(
-          'w-full text-left p-3.5 rounded-2xl border-2 transition-all duration-300 transform mb-2.5',
+          'w-full text-left p-3 rounded-xl border-2 transition-all duration-200 mb-2',
           'relative overflow-hidden',
           isSelected
             ? (isDark
-              ? 'bg-blue-600/10 border-blue-500 shadow-[0_8px_32px_-8px_rgba(59,130,246,0.3)] scale-[1.02]'
-              : 'bg-[#f0f7ff] border-blue-500 shadow-lg shadow-blue-500/10 scale-[1.02]')
+              ? 'bg-blue-600/10 border-blue-500 shadow-md shadow-blue-500/5'
+              : 'bg-[#f0f7ff] border-blue-500 shadow-sm shadow-blue-500/5')
             : isUnassigned
               ? (isDark
-                ? 'bg-amber-500/10 border-amber-500/30 opacity-90 shadow-none grayscale-0'
-                : 'bg-amber-50 border-amber-200 opacity-90 shadow-sm grayscale-0')
+                ? 'bg-amber-500/10 border-amber-500/20'
+                : 'bg-amber-50 border-amber-100')
               : (isDark
-                ? 'bg-black/20 border-white/[0.03] hover:border-white/10 opacity-60 hover:opacity-100'
-                : 'bg-white border-gray-100/80 hover:border-blue-200 shadow-sm opacity-50 hover:opacity-100')
+                ? 'bg-black/20 border-white/[0.03] hover:border-white/10 opacity-90 hover:opacity-100'
+                : 'bg-white border-gray-100 hover:border-blue-100 shadow-sm opacity-90 hover:opacity-100')
         )}
       >
-        <div className="flex items-center gap-4 relative z-10">
-          <div className="relative">
+        <div className="flex items-center gap-3.5 relative z-10">
+          <div className="relative shrink-0">
             <div className={clsx(
-              'w-11 h-11 rounded-xl flex items-center justify-center',
+              'w-10 h-10 rounded-xl flex items-center justify-center transition-colors',
               isSelected
-                ? (isDark ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white')
+                ? 'bg-blue-600 text-white'
                 : isUnassigned
                   ? (isDark ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-600')
                   : vehicleType === 'car'
@@ -153,7 +154,7 @@ const CourierListItem = memo(({
             </div>
             {(isOnRoute || isFinished) && (
               <div className={clsx(
-                'absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2',
+                'absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2',
                 isDark ? 'border-gray-800' : 'border-white',
                 isFinished ? 'bg-green-500' : 'bg-blue-500'
               )} />
@@ -165,7 +166,7 @@ const CourierListItem = memo(({
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h4 className={clsx(
-                    'text-sm font-black truncate',
+                    'text-sm font-black truncate leading-tight',
                     isSelected
                       ? (isDark ? 'text-blue-100' : 'text-blue-700')
                       : isUnassigned
@@ -176,36 +177,28 @@ const CourierListItem = memo(({
                   </h4>
                   {vehicleType !== 'car' && !isUnassigned && (
                     <span className={clsx(
-                      'px-2 py-0.5 text-[8px] rounded-lg font-black uppercase tracking-widest',
+                      'px-1.5 py-0.5 text-[7px] rounded-md font-black uppercase tracking-widest',
                       isDark ? 'bg-orange-500/20 text-orange-400' : 'bg-orange-100 text-orange-600'
                     )}>МОТО</span>
                   )}
                 </div>
 
-                <div className="flex items-center gap-2 mt-1">
-                  <div className={clsx(
-                    'text-[10px] font-bold opacity-70',
-                    isDark ? 'text-gray-300' : 'text-gray-500'
-                  )}>
-                    {deliveredOrdersCount}/{totalOrdersCount} доставлено
-                  </div>
-                  <div className={clsx(
-                    'text-[10px] font-bold',
-                    isDark ? 'text-gray-300/50' : 'text-gray-400'
-                  )}>•</div>
-                  <div className={clsx(
-                    'text-[10px] font-black',
-                    isDark ? 'text-blue-300' : 'text-blue-600'
-                  )}>
-                    {availableOrdersCount} доступно
-                  </div>
+                <div className={clsx(
+                  'text-[10px] font-bold mt-0.5 flex items-center gap-2',
+                  isDark ? 'text-gray-400' : 'text-gray-500'
+                )}>
+                  <span className={clsx(totalOrdersCount > 0 ? (isDark ? 'text-blue-400/80' : 'text-blue-600/80') : '')}>
+                    {totalOrdersCount > 0
+                      ? `${deliveredOrdersCount}/${totalOrdersCount} доставлено`
+                      : `${availableOrdersCount} заказов`}
+                  </span>
                 </div>
               </div>
 
-              <div className="flex flex-col items-end gap-2">
+              <div className="flex flex-col items-end gap-1.5 shrink-0">
                 <div className="text-right">
                   <div className={clsx(
-                    'text-xs font-black leading-none',
+                    'text-[11px] font-black leading-none',
                     isSelected
                       ? (isDark ? 'text-blue-200' : 'text-blue-700')
                       : (isDark ? 'text-gray-200' : 'text-gray-700')
@@ -213,7 +206,7 @@ const CourierListItem = memo(({
                     {Math.round(progress)}%
                   </div>
                   <div className={clsx(
-                    'text-[9px] font-bold opacity-60',
+                    'text-[8px] font-bold uppercase tracking-tighter opacity-50 mt-0.5',
                     isDark ? 'text-gray-400' : 'text-gray-500'
                   )}>
                     {isFinished ? 'Готов' : isOnRoute ? 'В пути' : 'Свободен'}
@@ -221,13 +214,13 @@ const CourierListItem = memo(({
                 </div>
 
                 <div className={clsx(
-                  'w-14 h-1.5 rounded-full overflow-hidden',
+                  'w-12 h-1 rounded-full overflow-hidden p-[1px]',
                   isDark ? 'bg-white/5' : 'bg-gray-100'
                 )}>
                   <div
                     className={clsx(
                       'h-full rounded-full transition-all duration-700',
-                      isFinished ? 'bg-green-500' : isOnRoute ? 'bg-blue-500' : 'bg-gray-300'
+                      isFinished ? 'bg-green-500' : isOnRoute ? 'bg-blue-500' : 'bg-gray-300/50'
                     )}
                     style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
                   />
@@ -236,17 +229,15 @@ const CourierListItem = memo(({
             </div>
           </div>
         </div>
-
-        {/* Background glow */}
-        {isSelected && (
-          <div className={clsx(
-            'absolute inset-0 opacity-10 pointer-events-none transition-opacity duration-500',
-            isDark ? 'bg-gradient-to-br from-blue-500 to-transparent' : 'bg-gradient-to-br from-blue-100 to-transparent'
-          )} />
-        )}
       </button>
 
-      {/* Hover Actions Removed per user request */}
+      {/* Background glow */}
+      {isSelected && (
+        <div className={clsx(
+          'absolute inset-0 opacity-10 pointer-events-none transition-opacity duration-500',
+          isDark ? 'bg-gradient-to-br from-blue-500 to-transparent' : 'bg-gradient-to-br from-blue-100 to-transparent'
+        )} />
+      )}
     </div>
   )
 })
@@ -692,7 +683,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [selectedOrdersOrder, setSelectedOrdersOrder] = useState<string[]>([])
 
   // --- Виртуализация с динамической высотой ---
-  const availableListRef = useRef<any>(null)
+
 
 
   const availableOrders = useMemo(() => {
@@ -748,6 +739,29 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       return newSet
     })
   }, [selectedCourier, isOrderInExistingRoute, orderSearchTerm])
+
+  // Courier Row for virtualization
+  const CourierRow = useCallback(({ index, style }: { index: number, style: React.CSSProperties }) => {
+    const courierName = filteredCouriers[index]
+    if (!courierName) return null
+    const metric = getCourierMetrics(courierName)
+    const vehicleType = getCourierVehicleType(courierName)
+
+    return (
+      <div style={style}>
+        <CourierListItem
+          courierName={courierName}
+          vehicleType={vehicleType}
+          isSelected={selectedCourier === courierName}
+          onSelect={handleCourierSelect}
+          availableOrdersCount={metric.available}
+          deliveredOrdersCount={metric.delivered}
+          totalOrdersCount={metric.total}
+          isDark={isDark}
+        />
+      </div>
+    )
+  }, [filteredCouriers, selectedCourier, handleCourierSelect, isDark, getCourierMetrics, getCourierVehicleType])
 
   // Функции для изменения порядка выбранных заказов
   const moveOrderUp = useCallback((orderId: string) => {
@@ -1503,28 +1517,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     setShowAddressEditModal(true)
   }
 
-  // Функция для перехода к группе заказов
-  const handleJumpToGroup = (group: TimeWindowGroup) => {
-    if (!availableListRef.current) return
-    const firstOrderId = group.orders[0]?.id
-    if (!firstOrderId) return
 
-    const index = availableOrders.findIndex(o => o.id === firstOrderId)
-    if (index !== -1) {
-      availableListRef.current.scrollToItem(index, 'start')
-      // Визуальная подсветка или тост (опционально)
-      toast.success(`Переход к группе: ${group.windowLabel}`, {
-        icon: '',
-        duration: 2000
-      })
-    }
-  }
 
 
   // Функция для перемещения заказа в другую временную группу ( Phase 4.7 )
   // Функция для перемещения заказа в другую временную группу ( Phase 4.7 )
   // Функция для перемещения заказа в другую временную группу (Force Move / SOTA v2.0)
-  const handleMoveOrderToGroup = (orderId: string, targetGroup: TimeWindowGroup) => {
+  const handleMoveOrderToGroup = useCallback((orderId: string, targetGroup: TimeWindowGroup) => {
     console.log('[DND] Force Move logic triggered for order:', orderId, 'to group:', targetGroup.id);
 
     updateExcelData((prev: any) => {
@@ -1579,7 +1578,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             // FORCE OVERRIDES / ЖЕСТКОЕ ПРИСВОЕНИЕ
             manualGroupId: targetManualId,
             courierId: targetCourierId,       // Явно меняем курьера
-            courier: targetCourier,           // Обновляем объект курьера
+            courier: targetCourier.name || targetGroup.courierName,           // Исправлено: передаем имя как строку
             plannedTime: targetGroup.windowStart, // Синхронизируем время
             deadlineAt: targetGroup.windowStart,
             isInRoute: false,                 // Сбрасываем флаг маршрута
@@ -1617,7 +1616,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             const targetIdStr = String(orderId);
             const normalizedTargetId = targetIdStr.replace(/^order_/, '');
             const normalizedOId = oId.replace(/^order_/, '');
-            return (normalizedOId === normalizedTargetId) || (oNum === normalizedTargetId);
+            return (normalizedOId !== normalizedTargetId) && (oNum !== normalizedTargetId);
           });
           return {
             ...route,
@@ -1640,10 +1639,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     });
 
     toast.success(`Заказ перемещен в ${targetGroup.windowLabel}`, { icon: '' });
-  }
+  }, [updateExcelData])
 
   // Функция для создания новой кастомной группы ( Phase 4.7 )
-  const handleCreateCustomGroup = (orderId: string) => {
+  const handleCreateCustomGroup = useCallback((orderId: string) => {
     const newManualId = `manual-${Date.now()}`;
     console.log('[DND] Creating custom group for order:', orderId, 'New Group ID:', newManualId);
 
@@ -1682,7 +1681,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             ...order,
             manualGroupId: newManualId,
             courierId: targetCourierId,
-            courier: targetCourier,
+            courier: (targetCourier && typeof targetCourier === 'object') ? (targetCourier.name || targetCourier) : targetCourier, // Исправлено: передаем имя как строку
             plannedTime: order.plannedTime || Date.now(), // Ensure valid time for grouping
             isInRoute: false,
             status: (order.status === 'Доставляется' || order.status === 'Исполнен') ? order.status : 'В работе'
@@ -1730,7 +1729,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     });
 
     toast.success('Создана новая группа', { icon: '➕' });
-  }
+  }, [updateExcelData, selectedCourier])
 
   // Функция для сохранения измененного адреса
   const handleAddressUpdate = (newAddress: string) => {
@@ -2077,32 +2076,22 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   </div>
                 </div>
 
-                <div className="flex-1 min-h-[400px] overflow-y-auto pr-2 custom-scrollbar" style={{ maxHeight: '600px' }}>
+                <div className="flex-1 min-h-[400px]">
                   {filteredCouriers.length === 0 ? (
                     <div className="text-center py-10 h-full flex flex-col items-center justify-center">
                       <TruckIcon className="w-10 h-10 mx-auto text-gray-300 mb-2 opacity-50" />
                       <p className="text-xs text-gray-400 font-bold uppercase tracking-widest px-4">Список пуст</p>
                     </div>
                   ) : (
-                    <div className="space-y-2">
-                      {filteredCouriers.map((courierName) => {
-                        const metric = getCourierMetrics(courierName)
-                        const vehicleType = getCourierVehicleType(courierName)
-                        return (
-                          <CourierListItem
-                            key={courierName}
-                            courierName={courierName}
-                            vehicleType={vehicleType}
-                            isSelected={selectedCourier === courierName}
-                            onSelect={handleCourierSelect}
-                            availableOrdersCount={metric.available}
-                            deliveredOrdersCount={metric.delivered}
-                            totalOrdersCount={metric.total}
-                            isDark={isDark}
-                          />
-                        )
-                      })}
-                    </div>
+                    <List
+                      height={600}
+                      itemCount={filteredCouriers.length}
+                      itemSize={72}
+                      width="100%"
+                      className="custom-scrollbar"
+                    >
+                      {CourierRow}
+                    </List>
                   )}
                 </div>
               </div>
@@ -2195,7 +2184,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                       courierName={isId0CourierName(selectedCourier) ? 'Не назначено' : (String(selectedCourier) || '')}
                       orders={availableOrders}
                       isDark={isDark}
-                      onJumpToGroup={handleJumpToGroup}
+
                       onOrderMoved={handleMoveOrderToGroup}
                       onCreateCustomGroup={handleCreateCustomGroup}
                       onCalculateRoute={async (group) => {
@@ -2268,21 +2257,20 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                           </div>
                         </div>
 
-                        <div className="h-[600px] w-full overflow-y-auto pr-2 custom-scrollbar" data-tour="order-list">
+                        <div className="h-[600px] w-full" data-tour="order-list">
                           {availableOrders.length > 0 ? (
-                            <div className="animate-in fade-in duration-700">
-                              <div>
-                                <OrderList
-                                  orders={availableOrders}
-                                  isDark={isDark}
-                                  selectedOrders={selectedOrders}
-                                  selectedOrdersOrder={selectedOrdersOrder}
-                                  onSelectOrder={(id: string, multi: boolean) => handleOrderSelect(id, multi)}
-                                  onMoveUp={moveOrderUp}
-                                  onMoveDown={moveOrderDown}
-                                  isInRoute={false}
-                                />
-                              </div>
+                            <div className="animate-in fade-in duration-700 h-full">
+                              <OrderList
+                                orders={availableOrders}
+                                isDark={isDark}
+                                selectedOrders={selectedOrders}
+                                selectedOrdersOrder={selectedOrdersOrder}
+                                onSelectOrder={(id: string, multi: boolean) => handleOrderSelect(id, multi)}
+                                onMoveUp={moveOrderUp}
+                                onMoveDown={moveOrderDown}
+                                isInRoute={false}
+                                listHeight={600}
+                              />
                             </div>
                           ) : (
                             <div className="text-center py-20 opacity-30 italic">Список пуст</div>
@@ -2296,15 +2284,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                   Уже в маршрутах ({ordersInRoutes.length})
                                 </span>
                               </div>
-                              <div style={{ height: 300 }}>
-                                <OrderList
-                                  orders={ordersInRoutes}
-                                  isDark={isDark}
-                                  selectedOrders={new Set()} // No selection in this list
-                                  onSelectOrder={() => { }}
-                                  isInRoute={true}
-                                />
-                              </div>
+                              <OrderList
+                                orders={ordersInRoutes}
+                                isDark={isDark}
+                                selectedOrders={new Set()} // No selection in this list
+                                onSelectOrder={() => { }}
+                                isInRoute={true}
+                                listHeight={300}
+                              />
                             </div>
                           )}
                         </div>
@@ -2919,4 +2906,63 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   {
                     id: 'create-route',
                     title: 'Создание маршрута',
-                    content: `После выбора заказов нажмите кнопку «Марш
+                    content: `После выбора заказов нажмите кнопку «Маршрутизация» для расчета оптимального пути.`,
+                    target: '[data-tour="create-route"]',
+                    position: 'top'
+                  },
+                  {
+                    id: 'route-list',
+                    title: 'Список маршрутов',
+                    content: `Здесь отображаются все созданные маршруты.
+Доступные действия:
+🗺️ Открыть в Google Maps - просмотр маршрута
+🔄 Пересчитать - обновить расстояние и время
+🗑️ Удалить - удалить маршрут`,
+                    target: '[data-tour="route-list"]',
+                    position: 'top'
+                  }
+                ]}
+              />
+            </Suspense>
+          )
+        }
+
+      </>
+
+      {/* Smart Address Correction Modals */}
+      {showCorrectionModal && currentProblem && (
+        <SmartAddressCorrectionModal
+          order={currentProblem.order}
+          validationResult={currentProblem.validationResult}
+          isDark={isDark}
+          onApplyCorrection={(suggestion) => applyCorrection(currentProblem.order, suggestion)}
+          onManualEdit={(newAddress) => {
+            applyManualEdit(currentProblem.order, newAddress)
+          }}
+          onSkip={() => setShowCorrectionModal(false)}
+          onClose={() => setShowCorrectionModal(false)}
+        />
+      )}
+
+      {showBatchPanel && problemOrders.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-2xl">
+            <BatchAddressCorrectionPanel
+              problemOrders={problemOrders}
+              isDark={isDark}
+              onAutoCorrectAll={applyBatchCorrections}
+              onReviewManually={() => {
+                if (problemOrders.length > 0) {
+                  setCurrentProblem(problemOrders[0])
+                  setShowBatchPanel(false)
+                  setShowCorrectionModal(true)
+                }
+              }}
+              onClose={() => setShowBatchPanel(false)}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

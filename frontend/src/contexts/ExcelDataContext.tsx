@@ -308,56 +308,74 @@ function normalizeCourierName(name: string | null | undefined): string {
  * Optimizes the data by mapping vehicle types and ensuring required structures.
  * Memoized via useMemo in the provider.
  */
+/**
+ * Optimizes the data by mapping vehicle types and ensuring required structures.
+ * O(N) complexity where N is the number of orders + number of couriers.
+ */
 function applyCourierVehicleMap(data: any): any {
   if (!data) return data;
   try {
     const rawMap = localStorageUtils.getCourierVehicleMap()
-    // Create a normalized version of the map for lookup
-    const map: Record<string, string> = {};
-    Object.keys(rawMap).forEach(name => {
-      map[normalizeCourierName(name)] = rawMap[name];
+    // Pre-normalize the vehicle map for O(1) lookups
+    const vehicleTypeLookup = new Map<string, string>();
+    Object.entries(rawMap).forEach(([name, type]) => {
+      vehicleTypeLookup.set(normalizeCourierName(name), type as string);
     });
 
-    const orders = Array.isArray(data.orders) ? data.orders : []
-    const couriers = Array.isArray(data.couriers) ? [...data.couriers] : []
-    const courierNamesInList = new Set(couriers.map(c => c.name || c._id || c.id));
+    const orders = Array.isArray(data.orders) ? data.orders : [];
+    const couriers = Array.isArray(data.couriers) ? [...data.couriers] : [];
 
-    // 1. Process Couriers from orders (efficiently)
-    for (let i = 0; i < orders.length; i++) {
-      const c = orders[i].courier;
-      if (c) {
-        const cName = typeof c === 'string' ? c : (c.name || c._id || c.id);
-        const normalizedCName = normalizeCourierName(cName);
+    // Create a Set of normalized courier names already in the list for O(1) checks
+    const existingCourierNames = new Set<string>();
+    couriers.forEach(c => {
+      const name = c.name || c._id || c.id;
+      if (name) existingCourierNames.add(normalizeCourierName(name));
+    });
 
-        if (cName && !Array.from(courierNamesInList).some(n => normalizeCourierName(n) === normalizedCName)) {
-          const cId = typeof c === 'string' ? c : (c._id || c.id || cName);
-          couriers.push({
-            _id: cId,
-            id: cId,
-            name: cName,
-            vehicleType: 'car'
-          });
-          courierNamesInList.add(cName);
-        }
+    // 1. Efficiently identify missing couriers from orders
+    const newCouriersToAdd: any[] = [];
+    for (const order of orders) {
+      const c = order.courier;
+      if (!c) continue;
+
+      const cName = typeof c === 'string' ? c : (c.name || c._id || c.id);
+      if (!cName) continue;
+
+      const normalizedName = normalizeCourierName(cName);
+      if (!existingCourierNames.has(normalizedName)) {
+        const cId = typeof c === 'string' ? c : (c._id || c.id || cName);
+        newCouriersToAdd.push({
+          _id: cId,
+          id: cId,
+          name: cName,
+          vehicleType: 'car'
+        });
+        existingCourierNames.add(normalizedName);
       }
     }
 
-    // 2. Map vehicle types once
+    // Add missing couriers to the list in one go
+    if (newCouriersToAdd.length > 0) {
+      couriers.push(...newCouriersToAdd);
+    }
+
+    // 2. Map vehicle types in a single pass
     const processedCouriers = couriers.map((c: any) => {
       const normalizedName = normalizeCourierName(c.name);
-      const mappedType = map[normalizedName];
+      const mappedType = vehicleTypeLookup.get(normalizedName);
+
       if (mappedType && mappedType !== c.vehicleType) {
         return { ...c, vehicleType: mappedType };
       }
       return c.vehicleType ? c : { ...c, vehicleType: 'car' };
     });
 
-    // 3. Process Payment Methods (if missing)
-    let paymentMethods = Array.isArray(data.paymentMethods) ? data.paymentMethods : []
+    // 3. Efficiently process Payment Methods
+    let paymentMethods = Array.isArray(data.paymentMethods) ? data.paymentMethods : [];
     if (paymentMethods.length === 0 && orders.length > 0) {
       const uniqueMethods = new Set<string>();
-      for (let i = 0; i < orders.length; i++) {
-        if (orders[i].paymentMethod) uniqueMethods.add(orders[i].paymentMethod);
+      for (const order of orders) {
+        if (order.paymentMethod) uniqueMethods.add(order.paymentMethod);
       }
       paymentMethods = Array.from(uniqueMethods).map(method => ({
         id: method,
@@ -372,7 +390,7 @@ function applyCourierVehicleMap(data: any): any {
       couriers: processedCouriers,
       paymentMethods,
       errors: Array.isArray(data.errors) ? data.errors : []
-    }
+    };
   } catch (e) {
     console.error('CRITICAL ERROR in applyCourierVehicleMap:', e);
     return data;
