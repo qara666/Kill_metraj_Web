@@ -1,6 +1,7 @@
 // Компонент подсказок для элементов интерфейса
 
 import React, { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import { useTheme } from '../../contexts/ThemeContext'
 import { InformationCircleIcon } from '@heroicons/react/24/outline'
@@ -35,7 +36,6 @@ export const Tooltip: React.FC<TooltipProps> = ({
     }
     timeoutRef.current = setTimeout(() => {
       setIsVisible(true)
-      updateTooltipPosition()
     }, delay)
   }
 
@@ -138,7 +138,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
         {!showIcon && children}
       </div>
 
-      {isVisible && (
+      {isVisible && createPortal(
         <div
           ref={tooltipRef}
           className={clsx(
@@ -164,9 +164,11 @@ export const Tooltip: React.FC<TooltipProps> = ({
               isDark ? 'bg-gray-800 border-gray-700' : 'bg-gray-900'
             )}
           />
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )
 }
+
 
