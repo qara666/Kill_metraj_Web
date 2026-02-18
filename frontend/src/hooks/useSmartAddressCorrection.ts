@@ -31,6 +31,7 @@ export function useSmartAddressCorrection({ updateExcelData, onCorrectionComplet
 
         for (const order of orders) {
             if (order.coords) {
+                // Валидатор уже синхронизирован с зонами в RouteManagement
                 const result = await validator.validateAddress(
                     order.address,
                     order.coords,
