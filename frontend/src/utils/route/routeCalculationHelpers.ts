@@ -273,17 +273,15 @@ export function groupOrdersByTimeWindow(
         // 2. Handover-based группы (для заказов в доставке)
         else if (item.order.status === 'Доставляется' || item.order.status === 'В пути') {
             const handoverTime = item.order.statusTimings?.deliveringAt || item.order.handoverAt;
+            // Группируем их отдельно, логика ниже
             if (handoverTime) {
-                // Округляем до 15-минутного окна для группировки
-                const windowKey = Math.floor(handoverTime / (15 * 60 * 1000));
-                const groupKey = `handover-${courierId}-${windowKey}`;
-
-                if (!handoverGroupsMap.has(groupKey)) {
-                    handoverGroupsMap.set(groupKey, []);
+                // Добавляем во временное хранилище для последующей кластеризации
+                const key = `temp-handover`;
+                if (!handoverGroupsMap.has(key)) {
+                    handoverGroupsMap.set(key, []);
                 }
-                handoverGroupsMap.get(groupKey)!.push(item.order);
+                handoverGroupsMap.get(key)!.push(item.order);
             } else {
-                // Если нет времени передачи, используем обычную логику
                 ordersForAuto.push(item);
             }
         }
@@ -298,36 +296,75 @@ export function groupOrdersByTimeWindow(
         groups.push(createManualGroup(courierId, courierName, mOrders, mgId));
     });
 
-    // 2. Создаем группы для handover-based заказов (НОВОЕ)
-    handoverGroupsMap.forEach((hOrders, groupKey) => {
-        const handoverTimes = hOrders
-            .map(o => o.statusTimings?.deliveringAt || o.handoverAt)
-            .filter((t): t is number => !!t);
+    // 2. Создаем группы для handover-based заказов (НОВОЕ: Кластеризация по окну 15 мин)
+    const allHandoverOrders = handoverGroupsMap.get('temp-handover') || [];
+    if (allHandoverOrders.length > 0) {
+        // Сортируем по времени передачи
+        allHandoverOrders.sort((a, b) => {
+            const tA = a.statusTimings?.deliveringAt || a.handoverAt || 0;
+            const tB = b.statusTimings?.deliveringAt || b.handoverAt || 0;
+            return tA - tB;
+        });
 
-        if (handoverTimes.length === 0) return;
+        const HANDOVER_WINDOW_MS = 15 * 60 * 1000;
+        let currentHandoverGroup: Order[] = [];
+        let groupStartTime = 0;
 
-        const minHandover = Math.min(...handoverTimes);
-        const maxHandover = Math.max(...handoverTimes);
-        const plannedTimes = hOrders.map(o => getPlannedTime(o)).filter((t): t is number => !!t);
-        const minPlanned = plannedTimes.length > 0 ? Math.min(...plannedTimes) : minHandover;
-        const maxPlanned = plannedTimes.length > 0 ? Math.max(...plannedTimes) : maxHandover;
+        allHandoverOrders.forEach((order) => {
+            const time = order.statusTimings?.deliveringAt || order.handoverAt || 0;
 
-        const group: TimeWindowGroup = {
-            id: groupKey,
-            courierId,
-            courierName,
-            windowStart: minPlanned,
-            windowEnd: maxPlanned,
-            windowLabel: formatTimeRange(minPlanned, maxPlanned),
-            orders: hOrders,
-            isReadyForCalculation: true,
-            arrivalStart: minHandover,
-            arrivalEnd: maxHandover,
-            splitReason: 'Маршрут' // Помечаем как реальный маршрут
-        };
-        updatePredictedDeparture(group);
-        groups.push(group);
-    });
+            if (currentHandoverGroup.length === 0) {
+                currentHandoverGroup.push(order);
+                groupStartTime = time;
+            } else {
+                // Если заказ укладывается в 15 минут от НАЧАЛА группы -> добавляем
+                // (Или можно сделать скользящее окно: time - prevTime < 15min. 
+                // Но обычно логичнее группировать "волну" целиком от первого заказа)
+                if (time - groupStartTime <= HANDOVER_WINDOW_MS) {
+                    currentHandoverGroup.push(order);
+                } else {
+                    // Закрываем текущую группу и создаем новую
+                    createHandoverGroup(currentHandoverGroup);
+                    currentHandoverGroup = [order];
+                    groupStartTime = time;
+                }
+            }
+        });
+        // Закрываем последнюю группу
+        if (currentHandoverGroup.length > 0) {
+            createHandoverGroup(currentHandoverGroup);
+        }
+
+        function createHandoverGroup(hOrders: Order[]) {
+            const handoverTimes = hOrders
+                .map(o => o.statusTimings?.deliveringAt || o.handoverAt)
+                .filter((t): t is number => !!t);
+
+            if (handoverTimes.length === 0) return;
+
+            const minHandover = Math.min(...handoverTimes);
+            const maxHandover = Math.max(...handoverTimes);
+            const plannedTimes = hOrders.map(o => getPlannedTime(o)).filter((t): t is number => !!t);
+            const minPlanned = plannedTimes.length > 0 ? Math.min(...plannedTimes) : minHandover;
+            const maxPlanned = plannedTimes.length > 0 ? Math.max(...plannedTimes) : maxHandover;
+
+            const group: TimeWindowGroup = {
+                id: `handover-${courierId}-${minHandover}`,
+                courierId,
+                courierName,
+                windowStart: minPlanned,
+                windowEnd: maxPlanned,
+                windowLabel: formatTimeRange(minPlanned, maxPlanned),
+                orders: hOrders,
+                isReadyForCalculation: true,
+                arrivalStart: minHandover,
+                arrivalEnd: maxHandover,
+                splitReason: 'Маршрут'
+            };
+            updatePredictedDeparture(group);
+            groups.push(group);
+        }
+    }
 
     // 3. Группируем автоматические заказы (существующая логика)
     let currentGroup: TimeWindowGroup | null = null;

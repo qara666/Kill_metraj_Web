@@ -183,7 +183,7 @@ const OrderItem = memo(({
                                 isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
                             )}>
                                 <ClockIcon className="w-3.5 h-3.5" />
-                                {order.plannedTime || '—'}
+                                {(order.plannedTime && order.plannedTime !== '00:00' && order.plannedTime !== '00:00:00' && order.plannedTime !== 'Без времени') ? order.plannedTime : '—'}
                             </div>
                             {order.paymentMethod && (
                                 <span className={clsx(

@@ -235,9 +235,20 @@ export class GeocodingService {
     // Убираем лишние запятые после удаления
     cleanedAddress = cleanedAddress.replace(/,\s*,/g, ',').replace(/,$/, '').trim()
 
-    // Если нет упоминания Киева, добавляем его (так как проект для Киева)
-    if (!/киев|kyiv|kiev/i.test(cleanedAddress)) {
-      cleanedAddress += ', Киев'
+    // Если нет упоминания Киева или Киевской области, добавляем область (так как проект для Киевского региона)
+    const hasKyiv = /киев|kyiv|kiev/i.test(cleanedAddress);
+    const hasOblast = /область|oblast/i.test(cleanedAddress);
+
+    if (!hasKyiv && !hasOblast) {
+      cleanedAddress += ', Киевская область, Украина'
+    } else if (hasKyiv && !hasOblast && !/\bкиев\b/i.test(cleanedAddress)) {
+      // Если есть упоминание "Киев" но не как отдельный город (например в составе области), 
+      // или если это просто "Киев" — в данном случае мы доверяем что там уже есть город.
+      // Но если это спутник (Вишневое), то "Киев" там быть не должно если мы хотим точности.
+      // В geocodeAndCleanAddress мы пока просто добавим Украину для точности если её нет.
+      if (!/украина|ukraine|україна/i.test(cleanedAddress)) {
+        cleanedAddress += ', Украина'
+      }
     }
 
     if (cleanedAddress !== address) {

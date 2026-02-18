@@ -146,23 +146,24 @@ const transformDashboardOrder = (swaggerOrder: DashboardOrderResponse, baseDate:
     const isTimeEmpty = (t?: string) => {
         if (!t) return true;
         const trimmed = t.trim();
-        return trimmed === '00:00' || trimmed === '00:00:00' || trimmed === '0:00' || trimmed === '';
+        // Treat any variant of zero time as empty
+        return /^0?0:00(:00)?$/.test(trimmed) || trimmed === '';
     };
 
     // Парсинг времени готовности на кухне
     const readyAtSource = parseTimeToTimestamp(baseDate, swaggerOrder.kitchenTime);
 
     // Парсинг дедлайна доставки. 
-    // Приоритет: deliverBy (SLA), затем plannedTime. Игнорируем 00:00.
+    // Приоритет: plannedTime, затем deliverBy (SLA). Игнорируем 00:00.
     let deadlineAt = null;
     let deadlineStr = '';
 
-    if (!isTimeEmpty(swaggerOrder.deliverBy)) {
-        deadlineAt = parseTimeToTimestamp(baseDate, swaggerOrder.deliverBy);
-        deadlineStr = swaggerOrder.deliverBy;
-    } else if (!isTimeEmpty(swaggerOrder.plannedTime)) {
+    if (!isTimeEmpty(swaggerOrder.plannedTime)) {
         deadlineAt = parseTimeToTimestamp(baseDate, swaggerOrder.plannedTime);
         deadlineStr = swaggerOrder.plannedTime;
+    } else if (!isTimeEmpty(swaggerOrder.deliverBy)) {
+        deadlineAt = parseTimeToTimestamp(baseDate, swaggerOrder.deliverBy);
+        deadlineStr = swaggerOrder.deliverBy;
     }
 
     // Если все еще пусто — пробуем получить хоть что-то (даже 00:00) или вычисляем дефолт
@@ -172,9 +173,10 @@ const transformDashboardOrder = (swaggerOrder: DashboardOrderResponse, baseDate:
         deadlineStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     }
 
-    // FINAL FAIL-SAFE: Если в итоге получилось "00:00", заменяем на "Без времени"
-    if (deadlineStr === '00:00' || deadlineStr === '00:00:00') {
+    // FINAL FAIL-SAFE: Якщо в результаті вийшло нульове або порожнє час — замінюємо
+    if (!deadlineStr || /^0?0:00(:00)?$/.test(deadlineStr.trim())) {
         deadlineStr = 'Без времени';
+        deadlineAt = null;
     }
 
     // Извлечение времени перехода в доставку (Phase 4.4)

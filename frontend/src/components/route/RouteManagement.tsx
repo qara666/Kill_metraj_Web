@@ -35,6 +35,7 @@ import { type TimeWindowGroup } from '../../utils/route/routeCalculationHelpers'
 import { SmartAddressCorrectionModal } from '../modals/SmartAddressCorrectionModal'
 import { BatchAddressCorrectionPanel } from './BatchAddressCorrectionPanel'
 import { useSmartAddressCorrection } from '../../hooks/useSmartAddressCorrection'
+import { getAddressZoneValidator } from '../../services/addressZoneValidator'
 import { isId0CourierName, normalizeCourierName } from '../../utils/data/courierName'
 
 // Ленивая загрузка тяжелых компонентов
@@ -245,6 +246,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const { excelData, updateExcelData, saveManualOverrides } = useExcelData()
   const { isDark } = useTheme()
   const [selectedCourier, setSelectedCourier] = useState<string | null>(null)
+
   const [isCalculating, setIsCalculating] = useState(false)
   const [startAddress, setStartAddress] = useState('')
   const [endAddress, setEndAddress] = useState('')
@@ -321,6 +323,37 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       }
     }, [routeToRecalculate, problemOrders, currentProblem, showCorrectionModal])
   })
+
+  // Синхронизация AddressZoneValidator с KML данными и фильтрами
+  useEffect(() => {
+    const settings = localStorageUtils.getAllSettings()
+    if (settings.kmlData?.polygons) {
+      const v = getAddressZoneValidator()
+
+      let polygonsToSync = settings.kmlData.polygons
+
+      // Если выбраны конкретные хабы или зоны, ограничиваем валидатор ими
+      if (selectedHubs.length > 0) {
+        polygonsToSync = polygonsToSync.filter((p: any) => selectedHubs.includes(p.folderName))
+      }
+
+      if (selectedZones.length > 0) {
+        polygonsToSync = polygonsToSync.filter((p: any) => {
+          const zoneKey = `${p.folderName}:${p.name}`
+          return selectedZones.includes(zoneKey)
+        })
+      }
+
+      const zones = polygonsToSync.map((p: any) => ({
+        id: `${p.folderName}:${p.name}`,
+        name: p.name,
+        polygon: p.path,
+        hub: settings.kmlData.markers?.find((m: any) => m.folderName === p.folderName)
+      }))
+
+      v.setZones(zones)
+    }
+  }, [selectedHubs, selectedZones, googleMapsReady])
 
   // Состояния для системы помощи
   const [showHelpModal, setShowHelpModal] = useState(false)
@@ -900,10 +933,18 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     if (!address) return address
 
     // Удаляем информацию после номера дома (подъезд, этаж, подвал и т.д.)
-    const cleaned = address
+    let cleaned = address
       .replace(/,\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
       .replace(/,\s*\d+\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
       .trim()
+
+    // Убираем ведущий "Київ," или "Киев," если он идёт первым токеном —
+    // это часто ошибочный префикс из CRM (адрес реально в области).
+    // Мы удаляем его только если в адресе нет явного указания на область,
+    // чтобы не сломать настоящие киевские адреса.
+    // Пример: "Київ, вул. Лесі Українки, 74в" → "вул. Лесі Українки, 74в"
+    // (потом cleanAddressForRoute добавит "Київська область, Україна")
+    cleaned = cleaned.replace(/^(Київ|Киев|Kyiv|Kiev)\s*,\s*/i, '')
 
     return cleaned
   }
@@ -923,8 +964,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     const { city, country } = getSelectedCity()
     if (!city) return base
     const hasCity = lower.includes(city.toLowerCase())
+    const hasRegion = lower.includes('область') || lower.includes('oblast')
     const hasCountry = lower.includes('украина') || lower.includes('україна') || lower.includes('ukraine') || lower.includes(country.toLowerCase())
-    if (!hasCity && !hasCountry) return `${base}, ${city}, ${country}`
+
+    // Для Киева используем область, чтобы не перебивать спутники (Вишневое и т.д.)
+    const cityOrRegion = city === 'Киев' ? 'Киевская область' : city
+
+    if (!hasCity && !hasRegion && !hasCountry) return `${base}, ${cityOrRegion}, ${country}`
     if (!hasCountry) return `${base}, ${country}`
     return base
   }, [getSelectedCity])
@@ -990,6 +1036,15 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           })
         }
         return true // Если нет КМЛ ограничений — валидно
+      }
+
+      // Проверка попадания в ЛЮБУЮ зону KML (для приоритезации при геокодировании)
+      const checkAnyKmlZone = (latLng: any) => {
+        if (!settings.kmlData?.polygons) return false
+        return settings.kmlData.polygons.some((p: any) => {
+          const poly = new window.google.maps.Polygon({ paths: p.path })
+          return window.google.maps.geometry.poly.containsLocation(latLng, poly)
+        })
       }
 
       // Полигон сектора для containsLocation (используем checkInside вместо прямого полигона)
@@ -1102,6 +1157,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           } catch { }
         }
 
+        // ПРИОРИТЕТ: Попадание в любую зону KML (глобальное исправление для Вишневого и т.д.)
+        if (checkAnyKmlZone(candidate.geometry.location)) {
+          score += 500 // Сильный бонус для зон KML
+        }
+
         return score
       }
 
@@ -1155,6 +1215,37 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             if (fix && fix.geometry?.location_type === 'ROOFTOP') best = fix
           }
         }
+
+        // МУЛЬТИ-СТРАТЕГИЯ: если лучший результат не ROOFTOP и не в KML-зоне,
+        // пробуем дополнительные стратегии геокодирования
+        if (best?.geometry?.location_type !== 'ROOFTOP' && !checkAnyKmlZone(best?.geometry?.location)) {
+          // Стратегия 1: добавляем названия населённых пунктов из KML-папок
+          const kmlTowns: string[] = []
+          if (settings.kmlData?.polygons) {
+            settings.kmlData.polygons.forEach((p: any) => {
+              if (p.folderName && !kmlTowns.includes(p.folderName)) kmlTowns.push(p.folderName)
+              if (p.name && !kmlTowns.includes(p.name)) kmlTowns.push(p.name)
+            })
+          }
+          for (const town of kmlTowns.slice(0, 5)) {
+            // Пропускаем если уже содержится в адресе
+            if (address.toLowerCase().includes(town.toLowerCase())) continue
+            // eslint-disable-next-line no-await-in-loop
+            const townRes: any = await googleApiCache.geocode({ ...request, address: `${address}, ${town}` })
+            if (townRes && townRes.length > 0) {
+              const insideTown = townRes.filter((r: any) => checkAnyKmlZone(r.geometry.location))
+              if (insideTown.length > 0) {
+                const candidate = insideTown[0]
+                // Проверяем что номер дома совпадает
+                if (!expectedHouse || (candidate.formatted_address || '').toLowerCase().includes(expectedHouse.toLowerCase())) {
+                  best = candidate
+                  break
+                }
+              }
+            }
+          }
+        }
+
         return best
       }
 
@@ -1205,6 +1296,59 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             }
           }
         }
+
+        // ═══════════════════════════════════════════════════════════════
+        // ИСЧЕРПЫВАЮЩИЙ ПОИСК ПО KML-ЗОНАМ:
+        // Если адрес всё ещё не найден внутри сектора, пробуем явно
+        // добавить название каждого населённого пункта из KML-папок
+        // + варианты с областью. Это решает кейс:
+        //   "вул. Лесі Українки, 74в" → ищем с "Вишневе", "Київська область"
+        // ═══════════════════════════════════════════════════════════════
+        if (inside.length === 0 && settings.kmlData?.polygons) {
+          // Собираем уникальные названия населённых пунктов из KML
+          const kmlTowns = new Set<string>()
+          settings.kmlData.polygons.forEach((p: any) => {
+            if (p.folderName) kmlTowns.add(p.folderName)
+            if (p.name) kmlTowns.add(p.name)
+          })
+
+          // Области для перебора (Київська, Харківська и т.д.)
+          const oblastVariants = [
+            'Київська область', 'Kyivska oblast',
+            'Харківська область', 'Одеська область', 'Полтавська область'
+          ]
+
+          // Базовый адрес без города (уже очищен cleanAddress)
+          const baseAddr = cleanAddress(rawAddress)
+
+          const searchVariants: string[] = []
+          // Вариант 1: адрес + каждый населённый пункт из KML
+          kmlTowns.forEach(town => {
+            searchVariants.push(`${baseAddr}, ${town}`)
+            searchVariants.push(`${baseAddr}, ${town}, Київська область, Україна`)
+          })
+          // Вариант 2: адрес + область без города
+          oblastVariants.forEach(oblast => {
+            searchVariants.push(`${baseAddr}, ${oblast}, Україна`)
+          })
+
+          for (const variant of searchVariants) {
+            // eslint-disable-next-line no-await-in-loop
+            const varRes: any = await googleApiCache.geocode({ ...request, address: variant })
+            if (varRes && varRes.length > 0) {
+              const insideVar = varRes.filter((r: any) => isInsideSector(r.geometry.location))
+              if (insideVar.length > 0) {
+                inside = insideVar
+                break
+              }
+              // Если не в секторе, но в любой KML-зоне — тоже берём как запасной
+              const anyZone = varRes.filter((r: any) => checkAnyKmlZone(r.geometry.location))
+              if (anyZone.length > 0 && inside.length === 0) {
+                inside = anyZone // запасной вариант, продолжаем искать лучше
+              }
+            }
+          }
+        }
         if (inside.length === 0) return null
         const refPoint = hintPoint || null
         const expectedHouse = extractHouseNumber(rawAddress)
@@ -1233,19 +1377,79 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         return best
       }
 
+      // Вспомогательная функция: вычисляем центроид набора точек
+      const computeCentroid = (points: any[]): any | null => {
+        const valid = points.filter(Boolean)
+        if (valid.length === 0) return null
+        let sumLat = 0, sumLng = 0
+        valid.forEach((p: any) => {
+          sumLat += p.lat ? p.lat() : p.lat
+          sumLng += p.lng ? p.lng() : p.lng
+        })
+        return new window.google.maps.LatLng(sumLat / valid.length, sumLng / valid.length)
+      }
+
+      // Вспомогательная функция: расстояние между двумя LatLng (метры)
+      const distBetween = (a: any, b: any): number => {
+        try { return window.google.maps.geometry.spherical.computeDistanceBetween(a, b) } catch { return Infinity }
+      }
+
       // Разрешаем координаты для всех точек маршрута
       let originRes = await geocodeWithSector(route.startAddress)
       const waypointResList: Array<any | null> = []
       let prevPoint = originRes?.geometry?.location || null
       for (const order of route.orders) {
-        // подсказка: тянуть к центроиду сектора
-        // теперь используем предыдущую точку маршрута для приоритета близости
+        // Используем предыдущую точку маршрута для приоритета близости
         // eslint-disable-next-line no-await-in-loop
         const res = await geocodeWithSector(order.address, prevPoint)
         waypointResList.push(res)
         if (res?.geometry?.location) prevPoint = res.geometry.location
       }
       let destinationRes = await geocodeWithSector(route.endAddress, prevPoint)
+
+      // ═══════════════════════════════════════════════════════════════
+      // ДЕТЕКТОР ВЫБРОСОВ: если одна точка сильно отличается от остальных
+      // — это признак неправильного геокодирования (например, ул. Леси
+      // Украинки нашлась в другом городе). Перегеокодируем выброс строго
+      // внутри KML-зон.
+      // ═══════════════════════════════════════════════════════════════
+      const OUTLIER_THRESHOLD_M = 50_000 // 50 км — явный выброс
+      const allResolved: Array<{ res: any; label: string; rawAddr: string }> = [
+        { res: originRes, label: 'Стартовый адрес', rawAddr: route.startAddress },
+        ...waypointResList.map((r, i) => ({ res: r, label: `Заказ #${route.orders[i].orderNumber}`, rawAddr: route.orders[i].address })),
+        { res: destinationRes, label: 'Конечный адрес', rawAddr: route.endAddress }
+      ]
+
+      const resolvedLocs = allResolved.map(x => x.res?.geometry?.location).filter(Boolean)
+      if (resolvedLocs.length >= 3) {
+        const centroid = computeCentroid(resolvedLocs)
+        if (centroid) {
+          for (let i = 0; i < allResolved.length; i++) {
+            const item = allResolved[i]
+            if (!item.res?.geometry?.location) continue
+            const d = distBetween(item.res.geometry.location, centroid)
+            if (d > OUTLIER_THRESHOLD_M) {
+              // Пересчитываем центроид без этой точки
+              const otherLocs = resolvedLocs.filter((_, j) => j !== i)
+              const centroidWithout = computeCentroid(otherLocs)
+              const dWithout = centroidWithout ? distBetween(item.res.geometry.location, centroidWithout) : d
+              if (dWithout > OUTLIER_THRESHOLD_M) {
+                // Точка — выброс. Пробуем перегеокодировать строго внутри KML
+                // eslint-disable-next-line no-await-in-loop
+                const fix = await geocodeInsideOnly(item.rawAddr, centroidWithout)
+                if (fix) {
+                  toast(`⚠️ Адрес "${item.label}" скорректирован — первоначальный результат был слишком далеко от маршрута.`, { duration: 5000 })
+                  if (i === 0) originRes = fix
+                  else if (i === allResolved.length - 1) destinationRes = fix
+                  else waypointResList[i - 1] = fix
+                  // Обновляем локацию в массиве для следующих итераций
+                  resolvedLocs[i] = fix.geometry.location
+                }
+              }
+            }
+          }
+        }
+      }
       // Подготовим метаинформацию для визуальной верификации
       const buildMeta = (res: any, raw: string) => {
         if (!res) return null
@@ -1323,10 +1527,16 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             if (fix) destinationRes = fix
           }
 
-          // Повторная валидация
-          const allPoints2 = [originRes!.geometry.location, ...waypointResList.map(r => r!.geometry.location), destinationRes!.geometry.location]
-          const stillOutside = allPoints2.some((pt: any) => !isInsideSector(pt))
-          if (stillOutside) {
+          // Повторная валидация с деталями
+          const pointsToCheck = [
+            { name: 'Стартовый адрес', addr: route.startAddress, res: originRes },
+            ...waypointResList.map((r, i) => ({ name: `Заказ #${route.orders[i].orderNumber}`, addr: route.orders[i].address, res: r })),
+            { name: 'Конечный адрес', addr: route.endAddress, res: destinationRes }
+          ]
+
+          const outsidePoints = pointsToCheck.filter(p => p.res && !isInsideSector(p.res.geometry.location))
+
+          if (outsidePoints.length > 0) {
             // Smart Address Correction Integration
             const problems = await validateOrders(route.orders)
 
@@ -1341,7 +1551,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 setShowBatchPanel(true)
               }
             } else {
-              toast.error('Некоторые точки маршрута находятся вне выбранного хаба или сектора города. Проверьте адреса.')
+              const names = outsidePoints.map(p => p.name).join(', ')
+              const hubsDesc = selectedHubs.length > 0 ? ` в хабах: ${selectedHubs.join(', ')}` : ''
+              toast.error(`Точки вне зоны${hubsDesc}: ${names}. Проверьте адреса.`, { duration: 5000 })
             }
 
             setIsCalculating(false)
@@ -2556,7 +2768,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                         'font-black text-sm tracking-tight',
                                         isDark ? 'text-gray-100' : 'text-gray-900'
                                       )}>#{order.orderNumber}</span>
-                                      {order.plannedTime && (
+                                      {order.plannedTime && order.plannedTime !== '00:00' && order.plannedTime !== '00:00:00' && order.plannedTime !== 'Без времени' && (
                                         <span className={clsx(
                                           'px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider',
                                           isDark ? 'bg-purple-600/20 text-purple-300' : 'bg-purple-50 text-purple-700 border border-purple-100'
