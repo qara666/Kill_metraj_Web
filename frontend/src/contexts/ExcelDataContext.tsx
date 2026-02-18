@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback, useMemo } from 'react'
 import { localStorageUtils } from '../utils/ui/localStorage'
 import { toast } from 'react-hot-toast'
+import { normalizeCourierName } from '../utils/data/courierName'
 
 interface ExcelData {
   orders: any[]
@@ -299,10 +300,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
 }
 
 // Helpers
-function normalizeCourierName(name: string | null | undefined): string {
-  if (!name) return '';
-  return name.trim().toLowerCase().replace(/\s+/g, ' ');
-}
+// (Local normalizeCourierName removed, using global one from ../utils/data/courierName)
 
 /**
  * Optimizes the data by mapping vehicle types and ensuring required structures.
@@ -313,9 +311,9 @@ function applyCourierVehicleMap(data: any): any {
   try {
     const rawMap = localStorageUtils.getCourierVehicleMap()
     // Create a normalized version of the map for lookup
-    const map: Record<string, string> = {};
+    const bruteNormalizedMap: Record<string, string> = {};
     Object.keys(rawMap).forEach(name => {
-      map[normalizeCourierName(name)] = rawMap[name];
+      bruteNormalizedMap[normalizeCourierName(name).toLowerCase()] = rawMap[name];
     });
 
     const orders = Array.isArray(data.orders) ? data.orders : []
@@ -329,7 +327,7 @@ function applyCourierVehicleMap(data: any): any {
         const cName = typeof c === 'string' ? c : (c.name || c._id || c.id);
         const normalizedCName = normalizeCourierName(cName);
 
-        if (cName && !Array.from(courierNamesInList).some(n => normalizeCourierName(n) === normalizedCName)) {
+        if (cName && !Array.from(courierNamesInList).some(n => normalizeCourierName(n).toLowerCase() === normalizedCName.toLowerCase())) {
           const cId = typeof c === 'string' ? c : (c._id || c.id || cName);
           couriers.push({
             _id: cId,
@@ -344,8 +342,8 @@ function applyCourierVehicleMap(data: any): any {
 
     // 2. Map vehicle types once
     const processedCouriers = couriers.map((c: any) => {
-      const normalizedName = normalizeCourierName(c.name);
-      const mappedType = map[normalizedName];
+      const normalizedName = normalizeCourierName(c.name).toLowerCase();
+      const mappedType = bruteNormalizedMap[normalizedName];
       if (mappedType && mappedType !== c.vehicleType) {
         return { ...c, vehicleType: mappedType };
       }
