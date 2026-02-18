@@ -240,8 +240,8 @@ export class GeocodingService {
     const hasOblast = /область|oblast/i.test(cleanedAddress);
 
     if (!hasKyiv && !hasOblast) {
-      cleanedAddress += ', Киевская область, Украина'
-    } else if (hasKyiv && !hasOblast && !/\bкиев\b/i.test(cleanedAddress)) {
+      cleanedAddress += ', Киев, Украина'
+    } else if (hasKyiv && !hasOblast) {
       // Если есть упоминание "Киев" но не как отдельный город (например в составе области), 
       // или если это просто "Киев" — в данном случае мы доверяем что там уже есть город.
       // Но если это спутник (Вишневое), то "Киев" там быть не должно если мы хотим точности.

@@ -14,6 +14,7 @@ import {
   ExclamationTriangleIcon,
   QuestionMarkCircleIcon
 } from '@heroicons/react/24/outline'
+import { getOrdersUkSuffix } from '../../utils/route/routeCalculationHelpers'
 import { useExcelData } from '../../contexts/ExcelDataContext'
 import { useTheme } from '../../contexts/ThemeContext'
 import { googleMapsLoader } from '../../utils/maps/googleMapsLoader'
@@ -1045,26 +1046,35 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                           isDark ? 'bg-blue-800/50' : 'bg-blue-200'
                         )}>
                           <TruckIcon className={clsx(
-                            'h-5 w-5',
                             isDark ? 'text-blue-300' : 'text-blue-600'
                           )} />
                         </div>
                         <span className={clsx(
                           'text-sm font-semibold',
                           isDark ? 'text-blue-200' : 'text-blue-800'
-                        )}>Заказы</span>
+                        )}>Замовлення</span>
                       </div>
                       <div className="text-center">
                         <p className={clsx(
                           'text-xs mb-1',
                           isDark ? 'text-blue-300/70' : 'text-blue-600/70'
-                        )}>В маршрутах</p>
-                        <p className={clsx(
-                          'text-2xl font-bold',
-                          isDark ? 'text-blue-300' : 'text-blue-700'
+                        )}>У маршрутах</p>
+                        <div className={clsx(
+                          'flex items-baseline justify-center gap-1.5'
                         )}>
-                          {calculateCourierOrdersInRoutes(courier.name)}
-                        </p>
+                          <p className={clsx(
+                            'text-2xl font-bold',
+                            isDark ? 'text-blue-300' : 'text-blue-700'
+                          )}>
+                            {calculateCourierOrdersInRoutes(courier.name)}
+                          </p>
+                          <span className={clsx(
+                            'text-[10px] font-bold uppercase tracking-wider opacity-60',
+                            isDark ? 'text-blue-400' : 'text-blue-600'
+                          )}>
+                            {getOrdersUkSuffix(calculateCourierOrdersInRoutes(courier.name))}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
@@ -1085,14 +1095,13 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                           isDark ? 'bg-green-800/50' : 'bg-green-200'
                         )}>
                           <MapPinIcon className={clsx(
-                            'h-5 w-5',
                             isDark ? 'text-green-300' : 'text-green-600'
                           )} />
                         </div>
                         <span className={clsx(
                           'text-sm font-semibold',
                           isDark ? 'text-green-200' : 'text-green-800'
-                        )}>Пробег</span>
+                        )}>Пробіг</span>
                       </div>
                       {(() => {
                         const distanceDetails = calculateCourierDistanceDetails(courier.name)
@@ -1101,7 +1110,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                             <p className={clsx(
                               'text-xs mb-1',
                               isDark ? 'text-green-300/70' : 'text-green-600/70'
-                            )}>Общий пробег</p>
+                            )}>Загальний пробіг</p>
                             <p className={clsx(
                               'text-2xl font-bold',
                               isDark ? 'text-green-300' : 'text-green-700'
@@ -1113,7 +1122,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                                 'text-xs mt-1',
                                 isDark ? 'text-green-300/60' : 'text-green-600/60'
                               )}>
-                                +{distanceDetails.additionalDistance.toFixed(1)} км дополнительное расстояние
+                                +{distanceDetails.additionalDistance.toFixed(1)} км додаткова відстань
                               </p>
                             )}
                           </div>
