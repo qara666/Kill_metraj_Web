@@ -1040,25 +1040,18 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData 
                         ? 'bg-gradient-to-br from-blue-900/30 to-blue-800/20 border border-blue-700/50'
                         : 'bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200'
                     )}>
-                      <div className="flex items-center justify-center space-x-2 mb-2">
+                      <div className="flex items-center justify-center mb-4">
                         <div className={clsx(
-                          'p-2 rounded-lg',
-                          isDark ? 'bg-blue-800/50' : 'bg-blue-200'
+                          'p-3 rounded-2xl',
+                          isDark ? 'bg-blue-800/30' : 'bg-blue-100'
                         )}>
                           <TruckIcon className={clsx(
-                            isDark ? 'text-blue-300' : 'text-blue-600'
+                            'w-6 h-6',
+                            isDark ? 'text-blue-300/80' : 'text-blue-600/80'
                           )} />
                         </div>
-                        <span className={clsx(
-                          'text-sm font-semibold',
-                          isDark ? 'text-blue-200' : 'text-blue-800'
-                        )}>Замовлення</span>
                       </div>
                       <div className="text-center">
-                        <p className={clsx(
-                          'text-xs mb-1',
-                          isDark ? 'text-blue-300/70' : 'text-blue-600/70'
-                        )}>У маршрутах</p>
                         <div className={clsx(
                           'flex items-baseline justify-center gap-1.5'
                         )}>
