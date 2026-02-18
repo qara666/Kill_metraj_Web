@@ -1,4 +1,5 @@
 import { ProcessedExcelData } from '../../types';
+import { normalizeCourierName } from './courierName';
 
 /**
  * Объединяет новые данные Excel/Dashboard API с существующими, избегая дубликатов.
@@ -108,12 +109,16 @@ export const mergeExcelData = (newData: any, existingData: any): ProcessedExcelD
 
     // 2. Добавляем новые
     newCouriers.forEach((newCourier: any) => {
+        const normalizedNewName = normalizeCourierName(newCourier.name);
         const isDuplicate = existingCouriers.some((existingCourier: any) =>
-            existingCourier.name === newCourier.name
+            normalizeCourierName(existingCourier.name) === normalizedNewName
         );
 
-        if (!isDuplicate) {
-            mergedCouriers.push(newCourier);
+        if (!isDuplicate && normalizedNewName) {
+            mergedCouriers.push({
+                ...newCourier,
+                name: normalizedNewName
+            });
             addedCouriers++;
         }
     });
@@ -233,10 +238,19 @@ export const syncDashboardData = (newData: any, existingData: any): ProcessedExc
 
     console.log(`[syncDashboardData] Synced: ${syncedOrders.length} orders (Replaced previous ${existingData.orders?.length || 0})`);
 
+    // Дедупликация курьеров при синхронизации
+    const uniqueCouriersMap = new Map();
+    (newData.couriers || []).forEach((c: any) => {
+        const name = normalizeCourierName(c.name);
+        if (name && !uniqueCouriersMap.has(name)) {
+            uniqueCouriersMap.set(name, { ...c, name });
+        }
+    });
+
     return {
         ...newData,
         orders: syncedOrders,
         routes: existingRoutes, // Сохраняем маршруты
-        couriers: newData.couriers || [], // Обновляем список курьеров полностью
+        couriers: Array.from(uniqueCouriersMap.values()), // Обновляем список курьеров полностью и дедуплицируем
     };
 };

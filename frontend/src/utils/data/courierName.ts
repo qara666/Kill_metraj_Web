@@ -17,7 +17,7 @@ export function isId0CourierName(value: unknown): boolean {
 }
 
 export function normalizeCourierName(value: unknown): string {
-  const name = asNonEmptyString(value)
+  const name = asNonEmptyString(value).trim()
   if (!name) return ''
   return isId0CourierName(name) ? 'Не назначено' : name
 }
