@@ -545,33 +545,55 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
   // Объединяем курьеров из всех источников: из заказов и из общего списка курьеров (если есть)
   const couriers = useMemo(() => {
-    const courierNames = new Set<string>()
+    // Используем Map (lowercase -> original) для дедупликации без учета регистра
+    const courierMap = new Map<string, string>()
 
     // Из уже сгруппированных по заказам
-    Object.keys(courierOrders).forEach(name => courierNames.add(name))
+    Object.keys(courierOrders).forEach(name => {
+      const norm = normalizeCourierName(name)
+      const key = norm.toLowerCase()
+      if (key && !courierMap.has(key)) {
+        courierMap.set(key, norm)
+      }
+    })
 
     // Из основного списка курьеров в excelData (чтобы видеть даже тех, у кого нет заказов)
     if (excelData?.couriers && Array.isArray(excelData.couriers)) {
       excelData.couriers.forEach((c: any) => {
-        const name = normalizeCourierName(c?.name)
-        if (name) courierNames.add(name)
+        const norm = normalizeCourierName(c?.name)
+        const key = norm.toLowerCase()
+        if (key && !courierMap.has(key)) {
+          courierMap.set(key, norm)
+        }
       })
     }
 
-    return Array.from(courierNames)
+    return Array.from(courierMap.values())
   }, [courierOrders, excelData?.couriers])
 
   // Определяем тип транспорта курьера
   const getCourierVehicleType = (courierName: string) => {
+    const normName = normalizeCourierName(courierName).toLowerCase()
+
+    // 1. Проверяем в настройках (карта имен -> транспорт)
     const settings = localStorageUtils.getAllSettings()
-    if (settings.courierVehicleMap && settings.courierVehicleMap[courierName]) {
-      return settings.courierVehicleMap[courierName]
+    if (settings.courierVehicleMap) {
+      // Ищем в карте с приведением ключей к нижнему регистру
+      const mappedEntry = Object.entries(settings.courierVehicleMap).find(([name]) =>
+        normalizeCourierName(name).toLowerCase() === normName
+      )
+      if (mappedEntry) return mappedEntry[1]
     }
-    if (!excelData?.couriers || !Array.isArray(excelData.couriers)) {
-      return 'car'
+
+    // 2. Проверяем в списке курьеров (уже нормализованных в ExcelDataContext)
+    if (excelData?.couriers && Array.isArray(excelData.couriers)) {
+      const courier = excelData.couriers.find((c: any) =>
+        normalizeCourierName(c.name).toLowerCase() === normName
+      )
+      if (courier?.vehicleType) return courier.vehicleType
     }
-    const courier = excelData.couriers.find((c: any) => c.name === courierName)
-    return courier?.vehicleType || 'car'
+
+    return 'car'
   }
 
   const handleCourierSelect = useCallback((courierName: string) => {

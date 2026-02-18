@@ -89,11 +89,15 @@ export const mergeExcelData = (newData: any, existingData: any): ProcessedExcelD
     const newCouriers = Array.isArray(newData.couriers) ? newData.couriers : [];
 
     const newCouriersMap = new Map();
-    newCouriers.forEach((c: any) => newCouriersMap.set(c.name, c));
+    newCouriers.forEach((c: any) => {
+        const key = normalizeCourierName(c.name).toLowerCase();
+        if (key) newCouriersMap.set(key, c);
+    });
 
     // 1. Обновляем и сохраняем существующие
     const mergedCouriers = existingCouriers.map((existingCourier: any) => {
-        const newCourier = newCouriersMap.get(existingCourier.name);
+        const key = normalizeCourierName(existingCourier.name).toLowerCase();
+        const newCourier = key ? newCouriersMap.get(key) : null;
         if (newCourier) {
             // Merge updates
             return {
@@ -111,7 +115,7 @@ export const mergeExcelData = (newData: any, existingData: any): ProcessedExcelD
     newCouriers.forEach((newCourier: any) => {
         const normalizedNewName = normalizeCourierName(newCourier.name);
         const isDuplicate = existingCouriers.some((existingCourier: any) =>
-            normalizeCourierName(existingCourier.name) === normalizedNewName
+            normalizeCourierName(existingCourier.name).toLowerCase() === normalizedNewName.toLowerCase()
         );
 
         if (!isDuplicate && normalizedNewName) {
@@ -242,8 +246,9 @@ export const syncDashboardData = (newData: any, existingData: any): ProcessedExc
     const uniqueCouriersMap = new Map();
     (newData.couriers || []).forEach((c: any) => {
         const name = normalizeCourierName(c.name);
-        if (name && !uniqueCouriersMap.has(name)) {
-            uniqueCouriersMap.set(name, { ...c, name });
+        const key = name.toLowerCase();
+        if (name && !uniqueCouriersMap.has(key)) {
+            uniqueCouriersMap.set(key, { ...c, name });
         }
     });
 
