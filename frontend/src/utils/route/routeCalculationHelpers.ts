@@ -646,8 +646,9 @@ export function createCourierStatus(
     };
 }
 
+
 /**
- * Возвращает правильное окончание для слова "заказ"
+ * Возвращает правильное окончание для слова "заказ" (Русский)
  */
 export function getOrdersEnding(count: number): string {
     const lastDigit = count % 10;
@@ -666,6 +667,28 @@ export function getOrdersEnding(count: number): string {
     }
 
     return 'ов';
+}
+
+/**
+ * Повертає правильну форму слова "замовлення" (Українська)
+ */
+export function getOrdersUkSuffix(count: number): string {
+    const lastDigit = count % 10;
+    const lastTwoDigits = count % 100;
+
+    if (lastTwoDigits >= 11 && lastTwoDigits <= 14) {
+        return 'замовлень';
+    }
+
+    if (lastDigit === 1) {
+        return 'замовлення';
+    }
+
+    if (lastDigit >= 2 && lastDigit <= 4) {
+        return 'замовлення';
+    }
+
+    return 'замовлень';
 }
 
 /**

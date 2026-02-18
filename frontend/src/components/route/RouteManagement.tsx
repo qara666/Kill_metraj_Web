@@ -967,8 +967,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     const hasRegion = lower.includes('область') || lower.includes('oblast')
     const hasCountry = lower.includes('украина') || lower.includes('україна') || lower.includes('ukraine') || lower.includes(country.toLowerCase())
 
-    // Для Киева используем область, чтобы не перебивать спутники (Вишневое и т.д.)
-    const cityOrRegion = city === 'Киев' ? 'Киевская область' : city
+    // Для Киева используем "Киев", чтобы обеспечить точность в центре.
+    // Спутники (Вишневое и т.д.) будут найдены через geocodeInsideOnly (исчерпывающий поиск).
+    const cityOrRegion = city
 
     if (!hasCity && !hasRegion && !hasCountry) return `${base}, ${cityOrRegion}, ${country}`
     if (!hasCountry) return `${base}, ${country}`
