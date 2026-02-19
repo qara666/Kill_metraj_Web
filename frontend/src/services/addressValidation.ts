@@ -1,3 +1,5 @@
+import { STREET_RENAMES } from '../utils/data/addressUtils'
+
 /**
  * Сервис для валидации адресов и обнаружения аномалий в маршрутах
  */
@@ -156,6 +158,13 @@ export class AddressValidationService {
 
     // Определение уверенности в геокодировании
     if (result.geocodingConfidence === 'unknown') {
+      // Geocoding 2.0: Check if using historical rename
+      const usesRename = STREET_RENAMES.some(([oldName]) => oldName.test(trimmedAddress))
+      if (usesRename) {
+        qualityScore += 10 // Bonus for recognized historical name
+        result.suggestions.push('Обнаружено историческое название улицы — Geocoding 2.0 применит автоматическое переименование')
+      }
+
       if (qualityScore >= 80) {
         result.geocodingConfidence = 'high'
       } else if (qualityScore >= 60) {
@@ -483,8 +492,8 @@ export class AddressValidationService {
     if (!address) return address
 
     return address
-      .replace(/,\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
-      .replace(/,\s*\d+\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
+      .replace(/(?:,|\s)\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис|вход|дом|корп|секция|литера).*$/i, '')
+      .replace(/(?:,|\s)\s*\d+\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис|вход|дом|корп|секция|литера).*$/i, '')
       .replace(/\s+/g, ' ')
       .trim()
   }

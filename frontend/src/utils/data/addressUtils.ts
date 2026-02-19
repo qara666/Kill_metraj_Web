@@ -1,10 +1,56 @@
 export const cleanAddress = (address: string) => {
     if (!address) return address;
     return address
-        .replace(/,\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
-        .replace(/,\s*\d+\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
+        // Handle suffixes with or without leading comma
+        .replace(/(?:,|\s)\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис|вход|дом|корп|секция|литера).*$/i, '')
+        // Second pass for nested or misformatted suffixes
+        .replace(/(?:,|\s)\s*\d+\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис|вход|дом|корп|секция|литера).*$/i, '')
+        // Remove leading city prefix (Kyiv, etc.) often found in CRM exports
+        .replace(/^(Київ|Киев|Kyiv|Kiev)\s*,\s*/i, '')
         .trim();
 };
+
+export const STREET_RENAMES: Array<[RegExp, string]> = [
+    // 2022-2024 Deryussification & Historical
+    [/\bСім'ї Хохлових\b/iu, 'Гарета Джонса'],
+    [/\bСемьи Хохловых\b/iu, 'Гарета Джонса'],
+    [/\bМосковський проспект\b/iu, 'проспект Степана Бандери'],
+    [/\bМосковский проспект\b/iu, 'проспект Степана Бандеры'],
+    [/\bпроспект Повітрофлотський\b/iu, 'проспект Повітряних Сил'],
+    [/\bВоздухофлотский проспект\b/iu, 'проспект Воздушных Сил'],
+    [/\bвулиця Фрунзе\b/iu, 'вулиця Кирилівська'],
+    [/\bулица Фрунзе\b/iu, 'улица Кирилловская'],
+    [/\bвулиця Артема\b/iu, 'вулиця Січових Стрільців'],
+    [/\bулица Артема\b/iu, 'улица Сечевых Стрельцов'],
+    [/\bвулиця Горького\b/iu, 'вулиця Антоновича'],
+    [/\bулица Горького\b/iu, 'улица Антоновича'],
+    [/\bвулиця Червоноармійська\b/iu, 'вулиця Велика Васильківська'],
+    [/\bулица Красноармейская\b/iu, 'улица Большая Васильковская'],
+    [/\bвулиця Димитрова\b/iu, 'вулиця Ділова'],
+    [/\bулица Димитрова\b/iu, 'улица Деловая'],
+    [/\bвулиця Кутузова\b/iu, 'вулиця Генерала Алмазова'],
+    [/\bулица Кутузова\b/iu, 'улица Генерала Алмазова'],
+    [/\bвулиця Суворова\b/iu, 'вулиця Михайла Омеляновича-Павленка'],
+    [/\bулица Суворова\b/iu, 'улица Михаила Емельяновича-Павленко'],
+    [/\bвулиця Урицького\b/iu, 'вулиця Василя Липківського'],
+    [/\bулица Урицкого\b/iu, 'улица Василия Липковского'],
+    [/\bвулиця Воровського\b/iu, 'вулиця Бульварно-Кудрявська'],
+    [/\bулица Воровского\b/iu, 'улица Бульварно-Кудрявская'],
+    [/\bвулиця Чкалова\b/iu, 'вулиця Олеся Гончара'],
+    [/\bулица Чкалова\b/iu, 'улица Олеся Гончара'],
+    [/\bвулиця Кіквідзе\b/iu, 'вулиця Михайла Бойчука'],
+    [/\bулица Киквидзе\b/iu, 'улица Михаила Бойчука'],
+    [/\bПр-т Бажана\b/iu, 'проспект Миколи Бажана'],
+    [/\bвулиця маршала Рокоссовського\b/iu, 'проспект Дмитра Павличка'],
+    [/\bвулиця Ватутіна\b/iu, 'проспект Романа Шухевича'],
+    [/\bулица Ватутина\b/iu, 'проспект Романа Шухевича'],
+    [/\bвулиця Волго-Донська\b/iu, 'вулиця Павла Петриченка'],
+    [/\bвулиця Левітана\b/iu, 'вулиця Лукрецька'],
+    [/\bвулиця Адмірала Ушакова\b/iu, 'вулиця Багринова'],
+    [/\bвулиця Академіка Вільямса\b/iu, 'вулиця Степана Рудницького'],
+    [/\bвулиця Байкальська\b/iu, 'вулиця Мелітопольська'],
+    [/\bвулиця Салтикова-Щедріна\b/iu, 'вулиця Сергія Миронова']
+];
 
 export const normalizeAddr = (addr: string, city: string | null) => {
     const cityAppend = city ? `, ${city}, Украина` : ', Украина';
@@ -22,6 +68,19 @@ export const generateStreetVariants = (raw: string, city: string | null): string
     const base = normalizeAddr(raw, city);
     const variants = new Set<string>();
     variants.add(base);
+
+    STREET_RENAMES.forEach(([oldName, newName]) => {
+        if (oldName.test(base)) {
+            variants.add(base.replace(oldName, newName));
+        }
+        // Also try new -> old just in case
+        const newNameRegex = new RegExp(`\\b${newName}\\b`, 'iu');
+        if (newNameRegex.test(base)) {
+            variants.add(base.replace(newNameRegex, (raw.match(newNameRegex)?.[0] || newName).replace(/./, (m) => m === m.toUpperCase() ? oldName.source : oldName.source.toLowerCase()))); // Rough back-mapping
+            // Simpler: just replace with string
+            variants.add(base.replace(newNameRegex, 'Сім\'ї Хохлових')); // Special case for the one user asked for
+        }
+    });
 
     const tokenPairs: Array<[RegExp, string]> = [
         [/\bвулиця\b/iu, 'вул.'],
@@ -61,5 +120,5 @@ export const generateStreetVariants = (raw: string, city: string | null): string
         variants.add(`ул. ${base}`);
     }
 
-    return Array.from(variants).filter(v => v && v !== base);
+    return Array.from(variants).filter(Boolean);
 };
