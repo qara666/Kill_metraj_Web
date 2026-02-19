@@ -19,7 +19,6 @@ async function getSummary(courierId, divisionId, targetDate) {
         SELECT payload FROM api_dashboard_cache 
         WHERE division_id = $1 
         AND target_date = $2 
-        ORDER BY created_at DESC NULLS LAST 
         LIMIT 1
     `;
     const cacheResult = await pool.query(cacheQuery, [divisionId, dateStr]);

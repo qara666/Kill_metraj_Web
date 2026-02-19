@@ -202,6 +202,7 @@ export async function runRoutePlanningAlgorithm(
             stopsCount: routeChain.length,
             reasons: routeReasons,
             directionsLegs: finalCheck.legs,
+            legDurations: (finalCheck.legs || []).map((leg: any) => (leg.duration_in_traffic?.value || leg.duration?.value || 0) / 60),
             trafficInfo: finalCheck.trafficInfo,
             totalTrafficDelay: finalCheck.totalTrafficDelay,
             hasCriticalTraffic: finalCheck.hasCriticalTraffic

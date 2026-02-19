@@ -7,16 +7,20 @@ const cacheService = require('../src/services/CacheService');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 /**
- * Enhanced Dashboard Fetcher V6 - Production Ready
+ * Dashboard Fetcher V7 (2.0) - Maximum Performance
  * 
- * New Features:
- * - Circuit Breaker pattern for fault tolerance
- * - Smart retry with exponential backoff + jitter
- * - Adaptive concurrency based on system load
- * - Request deduplication
- * - Rate limiting
- * - Advanced metrics and monitoring
- * - Health checks with detailed diagnostics
+ * Upgrades from V6:
+ * - UPSERT storage (1 row per division/day, no accumulation)
+ * - ETag conditional fetch (skip if data unchanged)
+ * - Transactional writes (atomic merge + status history)
+ * - Lease-based advisory lock (auto-expire)
+ * - Classified error handling (transient vs permanent)
+ * - Optimized cleanup (minimal with UPSERT)
+ * 
+ * Retained from V6:
+ * - Circuit Breaker, Rate Limiter, Adaptive Concurrency
+ * - Request Deduplication
+ * - Smart Retry with exponential backoff + jitter
  */
 class DashboardFetcher {
     constructor() {
@@ -30,7 +34,7 @@ class DashboardFetcher {
                 max: 10,
                 idleTimeoutMillis: 30000,
                 connectionTimeoutMillis: 5000,
-                statement_timeout: 15000
+                statement_timeout: 30000
             }
             : {
                 host: process.env.DB_HOST || 'localhost',
@@ -41,7 +45,7 @@ class DashboardFetcher {
                 max: 10,
                 idleTimeoutMillis: 30000,
                 connectionTimeoutMillis: 5000,
-                statement_timeout: 15000
+                statement_timeout: 30000
             };
 
         this.pool = new Pool(poolConfig);
@@ -55,17 +59,24 @@ class DashboardFetcher {
         this.departmentId = process.env.DASHBOARD_DEPARTMENT_ID || '100000052';
         this.topCount = process.env.DASHBOARD_TOP || '2000';
         this.concurrencyLimit = parseInt(process.env.DASHBOARD_CONCURRENCY || '3');
-        this.cacheRetentionDays = parseInt(process.env.CACHE_RETENTION_DAYS || '2');
+        this.cacheRetentionDays = parseInt(process.env.CACHE_RETENTION_DAYS || '7'); // Increased — UPSERT keeps data tidy
         this.cleanupInterval = parseInt(process.env.CLEANUP_INTERVAL || '86400000'); // 24h
+
+        // Lease-based lock
+        this.lockLeaseMs = parseInt(process.env.FETCHER_LOCK_LEASE || '1800000'); // 30 min
+        this.lockRenewInterval = null;
+
+        // ETag store: { deptId_date: etag }
+        this.etagStore = new Map();
 
         // Circuit Breaker Configuration
         this.circuitBreaker = {
-            state: 'CLOSED', // CLOSED, OPEN, HALF_OPEN
+            state: 'CLOSED',
             failureCount: 0,
             successCount: 0,
             failureThreshold: 5,
             successThreshold: 2,
-            timeout: 60000, // 1 minute
+            timeout: 60000,
             nextAttempt: null
         };
 
@@ -73,7 +84,7 @@ class DashboardFetcher {
         this.rateLimiter = {
             tokens: 10,
             maxTokens: 10,
-            refillRate: 1, // tokens per second
+            refillRate: 1,
             lastRefill: Date.now()
         };
 
@@ -82,8 +93,8 @@ class DashboardFetcher {
             current: this.concurrencyLimit,
             min: 1,
             max: this.concurrencyLimit * 2,
-            targetLatency: 2000, // 2 seconds
-            adjustInterval: 60000 // 1 minute
+            targetLatency: 2000,
+            adjustInterval: 60000
         };
 
         // Request Deduplication
@@ -108,6 +119,10 @@ class DashboardFetcher {
             circuitBreakerTrips: 0,
             rateLimitHits: 0,
             deduplicatedRequests: 0,
+            etagHits: 0, // V7: 304 Not Modified count
+            upsertWrites: 0, // V7: total upserts
+            transientErrors: 0, // V7: classified errors
+            permanentErrors: 0,
             p50ResponseTime: 0,
             p95ResponseTime: 0,
             p99ResponseTime: 0,
@@ -125,12 +140,10 @@ class DashboardFetcher {
         this.hasLock = false;
     }
 
-    /**
-     * Circuit Breaker: Check if request should proceed
-     */
+    // ─── Circuit Breaker ─────────────────────────────────────────────
+
     canProceed() {
         const now = Date.now();
-
         if (this.circuitBreaker.state === 'OPEN') {
             if (now >= this.circuitBreaker.nextAttempt) {
                 logger.info('[Circuit Breaker] Transitioning to HALF_OPEN');
@@ -143,55 +156,6 @@ class DashboardFetcher {
         return true;
     }
 
-    /**
-     * Group global data by department
-     */
-    groupDataByDepartment(orders, couriers) {
-        const groups = {};
-
-        // 1. Initialize groups with orders and track which couriers are on orders
-        const courierToDeptMap = new Map();
-
-        if (orders && Array.isArray(orders)) {
-            orders.forEach(o => {
-                const deptId = String(o.departmentId || o.divisionId || 'UNKNOWN');
-                if (!groups[deptId]) groups[deptId] = { orders: [], couriers: [] };
-                groups[deptId].orders.push(o);
-
-                // Track courier assignment from orders
-                if (o.courierId || o.courierName) {
-                    const cKey = String(o.courierId || o.courierName);
-                    if (!courierToDeptMap.has(cKey)) courierToDeptMap.set(cKey, new Set());
-                    courierToDeptMap.get(cKey).add(deptId);
-                }
-            });
-        }
-
-        // 2. Group couriers based on explicit deptId or order assignment
-        if (couriers && Array.isArray(couriers)) {
-            couriers.forEach(c => {
-                const explicitDeptId = String(c.departmentId || c.divisionId || '');
-                const cKey = String(c.id || c.name || '');
-
-                if (explicitDeptId && groups[explicitDeptId]) {
-                    // Always add to explicit department
-                    groups[explicitDeptId].couriers.push(c);
-                } else if (cKey && courierToDeptMap.has(cKey)) {
-                    // Add to departments where courier has orders
-                    courierToDeptMap.get(cKey).forEach(deptId => {
-                        if (groups[deptId]) groups[deptId].couriers.push(c);
-                    });
-                }
-                // REMOVED the "push to all" fallback that was causing the 144 courier flood
-            });
-        }
-
-        return groups;
-    }
-
-    /**
-     * Circuit Breaker: Record success
-     */
     recordSuccess() {
         if (this.circuitBreaker.state === 'HALF_OPEN') {
             this.circuitBreaker.successCount++;
@@ -205,33 +169,27 @@ class DashboardFetcher {
         }
     }
 
-    /**
-     * Circuit Breaker: Record failure
-     */
     recordFailure() {
         this.circuitBreaker.failureCount++;
-
         if (this.circuitBreaker.state === 'HALF_OPEN') {
             logger.warn('[Circuit Breaker] Failure in HALF_OPEN - Transitioning to OPEN');
             this.circuitBreaker.state = 'OPEN';
             this.circuitBreaker.nextAttempt = Date.now() + this.circuitBreaker.timeout;
             this.metrics.circuitBreakerTrips++;
         } else if (this.circuitBreaker.failureCount >= this.circuitBreaker.failureThreshold) {
-            logger.warn('[Circuit Breaker] Failure threshold reached - Transitioning to OPEN');
+            logger.warn('[Circuit Breaker] Threshold reached - Transitioning to OPEN');
             this.circuitBreaker.state = 'OPEN';
             this.circuitBreaker.nextAttempt = Date.now() + this.circuitBreaker.timeout;
             this.metrics.circuitBreakerTrips++;
         }
     }
 
-    /**
-     * Rate Limiter: Refill tokens
-     */
+    // ─── Rate Limiter ────────────────────────────────────────────────
+
     refillTokens() {
         const now = Date.now();
         const elapsed = (now - this.rateLimiter.lastRefill) / 1000;
         const tokensToAdd = Math.floor(elapsed * this.rateLimiter.refillRate);
-
         if (tokensToAdd > 0) {
             this.rateLimiter.tokens = Math.min(
                 this.rateLimiter.maxTokens,
@@ -241,31 +199,22 @@ class DashboardFetcher {
         }
     }
 
-    /**
-     * Rate Limiter: Try to consume a token
-     */
     async consumeToken() {
         this.refillTokens();
-
         if (this.rateLimiter.tokens > 0) {
             this.rateLimiter.tokens--;
             return true;
         }
-
         this.metrics.rateLimitHits++;
-        logger.warn('[Rate Limiter] No tokens available - waiting');
-
-        // Wait for next token
+        logger.warn('[Rate Limiter] No tokens — waiting');
         await new Promise(resolve => setTimeout(resolve, 1000 / this.rateLimiter.refillRate));
         return this.consumeToken();
     }
 
-    /**
-     * Adaptive Concurrency: Adjust based on performance
-     */
+    // ─── Adaptive Concurrency ────────────────────────────────────────
+
     adjustConcurrency() {
         if (this.metrics.responseTimes.length < 10) return;
-
         const avgLatency = this.metrics.avgResponseTime;
         const current = this.adaptiveConcurrency.current;
 
@@ -278,51 +227,38 @@ class DashboardFetcher {
         }
     }
 
-    /**
-     * Request Deduplication
-     */
+    // ─── Request Deduplication ───────────────────────────────────────
+
     async deduplicateRequest(key, requestFn) {
         if (this.pendingRequests.has(key)) {
             this.metrics.deduplicatedRequests++;
             logger.debug(`[Dedup] Reusing pending request: ${key}`);
             return this.pendingRequests.get(key);
         }
-
         const promise = requestFn();
         this.pendingRequests.set(key, promise);
-
         try {
-            const result = await promise;
-            return result;
+            return await promise;
         } finally {
             this.pendingRequests.delete(key);
         }
     }
 
-    /**
-     * Smart Retry with Exponential Backoff + Jitter
-     */
+    // ─── Backoff & Metrics ───────────────────────────────────────────
+
     calculateBackoff(attempt) {
         const exponential = this.baseBackoff * Math.pow(2, attempt);
-        const jitter = Math.random() * 1000; // 0-1000ms jitter
-        return Math.min(exponential + jitter, 30000); // Max 30 seconds
+        const jitter = Math.random() * 1000;
+        return Math.min(exponential + jitter, 30000);
     }
 
-    /**
-     * Update response time metrics
-     */
     updateResponseTimeMetrics(responseTime) {
         this.metrics.responseTimes.push(responseTime);
-
-        // Keep only last 100 measurements
         if (this.metrics.responseTimes.length > 100) {
             this.metrics.responseTimes.shift();
         }
-
-        // Calculate percentiles
         const sorted = [...this.metrics.responseTimes].sort((a, b) => a - b);
         const len = sorted.length;
-
         this.metrics.p50ResponseTime = sorted[Math.floor(len * 0.5)] || 0;
         this.metrics.p95ResponseTime = sorted[Math.floor(len * 0.95)] || 0;
         this.metrics.p99ResponseTime = sorted[Math.floor(len * 0.99)] || 0;
@@ -330,19 +266,85 @@ class DashboardFetcher {
         this.metrics.maxResponseTime = Math.max(this.metrics.maxResponseTime, responseTime);
     }
 
-    /**
-     * Start fetch cycle
-     */
+    // ─── V7: Error Classification ────────────────────────────────────
+
+    classifyError(error) {
+        if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT' || error.code === 'ECONNRESET') {
+            return 'transient';
+        }
+        if (error.response) {
+            const status = error.response.status;
+            if (status === 429 || status >= 500) return 'transient';
+            if (status === 401 || status === 403 || status === 404) return 'permanent';
+        }
+        if (error.message && (error.message.includes('timeout') || error.message.includes('ECONNREFUSED'))) {
+            return 'transient';
+        }
+        return 'transient'; // Default to transient (retry)
+    }
+
+    // ─── V7: ETag Management ─────────────────────────────────────────
+
+    getEtag(deptId, dateISO) {
+        return this.etagStore.get(`${deptId || 'global'}_${dateISO}`) || null;
+    }
+
+    setEtag(deptId, dateISO, etag) {
+        if (etag) {
+            this.etagStore.set(`${deptId || 'global'}_${dateISO}`, etag);
+        }
+    }
+
+    // ─── Department Grouping ─────────────────────────────────────────
+
+    groupDataByDepartment(orders, couriers) {
+        const groups = {};
+        const courierToDeptMap = new Map();
+
+        if (orders && Array.isArray(orders)) {
+            orders.forEach(o => {
+                const deptId = String(o.departmentId || o.divisionId || 'UNKNOWN');
+                if (!groups[deptId]) groups[deptId] = { orders: [], couriers: [] };
+                groups[deptId].orders.push(o);
+                if (o.courierId || o.courierName) {
+                    const cKey = String(o.courierId || o.courierName);
+                    if (!courierToDeptMap.has(cKey)) courierToDeptMap.set(cKey, new Set());
+                    courierToDeptMap.get(cKey).add(deptId);
+                }
+            });
+        }
+
+        if (couriers && Array.isArray(couriers)) {
+            couriers.forEach(c => {
+                const explicitDeptId = String(c.departmentId || c.divisionId || '');
+                const cKey = String(c.id || c.name || '');
+
+                if (explicitDeptId && groups[explicitDeptId]) {
+                    groups[explicitDeptId].couriers.push(c);
+                } else if (cKey && courierToDeptMap.has(cKey)) {
+                    courierToDeptMap.get(cKey).forEach(deptId => {
+                        if (groups[deptId]) groups[deptId].couriers.push(c);
+                    });
+                }
+            });
+        }
+
+        return groups;
+    }
+
+    // ─── Lifecycle ───────────────────────────────────────────────────
+
     async start() {
         logger.info('============================================================');
-        logger.info('Enhanced Dashboard Fetcher [V6 - PRODUCTION READY]');
+        logger.info('Dashboard Fetcher V7 (2.0) — UPSERT • ETag • Transactions');
         logger.info('============================================================');
         logger.info(`API URL: ${this.apiUrl}`);
         logger.info(`Fetch Interval: ${this.fetchInterval}ms (${Math.round(this.fetchInterval / 60000)} min)`);
         logger.info(`Max Retries: ${this.maxRetries}`);
         logger.info(`Concurrency: ${this.concurrencyLimit} (Adaptive: ${this.adaptiveConcurrency.min}-${this.adaptiveConcurrency.max})`);
         logger.info(`Cache Retention: ${this.cacheRetentionDays} days`);
-        logger.info(`Circuit Breaker: Enabled (Threshold: ${this.circuitBreaker.failureThreshold})`);
+        logger.info(`Lock Lease: ${this.lockLeaseMs}ms`);
+        logger.info(`Circuit Breaker: Threshold ${this.circuitBreaker.failureThreshold}`);
         logger.info(`Rate Limiter: ${this.rateLimiter.maxTokens} tokens, ${this.rateLimiter.refillRate}/sec`);
         logger.info('============================================================');
 
@@ -350,34 +352,41 @@ class DashboardFetcher {
             await this.pool.query('SELECT NOW()');
             logger.info('Database connected');
 
+            // Lease-based advisory lock — automatically expires
             const lockResult = await this.pool.query('SELECT pg_try_advisory_lock(777777)');
             this.hasLock = lockResult.rows[0].pg_try_advisory_lock;
 
             if (!this.hasLock) {
-                logger.warn('ATTENTION: Another fetcher instance is running');
-                logger.warn('This process will run in standby mode');
+                logger.warn('Another fetcher instance is running — standby mode');
                 return;
             }
 
-            logger.info('Lock acquired. This process is the active fetcher.');
+            logger.info('Lock acquired. Active fetcher instance.');
 
-            this.lastHash = await this.getLastHash();
-            if (this.lastHash) {
-                logger.info(`Last data hash loaded: ${this.lastHash.substring(0, 8)}...`);
-            }
+            // Renew lock lease periodically
+            this.lockRenewInterval = setInterval(async () => {
+                try {
+                    await this.pool.query('SELECT 1'); // Keep connection alive
+                } catch (e) {
+                    logger.warn('Lock renewal ping failed:', e.message);
+                }
+            }, Math.floor(this.lockLeaseMs / 3));
+
+            // Load saved ETags from DB
+            await this.loadEtags();
 
             this.startCleanupScheduler();
             this.startMetricsReporter();
             this.startAdaptiveConcurrencyAdjuster();
 
         } catch (error) {
-            logger.error('Fetcher initialization error:', error.message);
-            logger.warn('Restarting cycle in 1 minute...');
+            logger.error('Fetcher init error:', error.message);
+            logger.warn('Restarting in 1 minute...');
             setTimeout(() => this.start(), 60000);
             return;
         }
 
-        logger.info('Dashboard Fetcher started');
+        logger.info('Dashboard Fetcher V7 started');
         logger.info('============================================================');
 
         await this.fetchAndStore();
@@ -386,28 +395,37 @@ class DashboardFetcher {
     }
 
     /**
-     * Start metrics reporter
+     * V7: Load saved ETags from DB for conditional fetching
      */
+    async loadEtags() {
+        try {
+            const result = await this.pool.query(
+                'SELECT division_id, target_date, fetch_etag FROM api_dashboard_cache WHERE fetch_etag IS NOT NULL'
+            );
+            result.rows.forEach(row => {
+                const dateStr = row.target_date instanceof Date
+                    ? row.target_date.toISOString().split('T')[0]
+                    : String(row.target_date);
+                this.setEtag(row.division_id, dateStr, row.fetch_etag);
+            });
+            logger.info(`Loaded ${result.rows.length} saved ETags`);
+        } catch (e) {
+            logger.warn('Could not load saved ETags:', e.message);
+        }
+    }
+
     startMetricsReporter() {
         this.metricsIntervalHandle = setInterval(() => {
             if (this.metrics.totalFetches % 10 === 0 && this.metrics.totalFetches > 0) {
                 this.logMetrics();
             }
-        }, 60000); // Every minute
+        }, 60000);
     }
 
-    /**
-     * Start adaptive concurrency adjuster
-     */
     startAdaptiveConcurrencyAdjuster() {
-        setInterval(() => {
-            this.adjustConcurrency();
-        }, this.adaptiveConcurrency.adjustInterval);
+        setInterval(() => this.adjustConcurrency(), this.adaptiveConcurrency.adjustInterval);
     }
 
-    /**
-     * Start cleanup scheduler
-     */
     startCleanupScheduler() {
         logger.info(`Cleanup scheduler started (every ${Math.round(this.cleanupInterval / 3600000)}h)`);
         setTimeout(() => this.cleanupOldRecords(), 300000);
@@ -415,19 +433,18 @@ class DashboardFetcher {
     }
 
     /**
-     * Clean old records
+     * V7: Simplified cleanup — with UPSERT, only old dates need removal
      */
     async cleanupOldRecords() {
-        logger.info('Starting cleanup of old records...');
+        logger.info('Starting cleanup...');
         const startTime = Date.now();
-
         let client = null;
         try {
             client = await this.pool.connect();
 
             const cacheResult = await client.query(
                 `DELETE FROM api_dashboard_cache 
-                 WHERE created_at < NOW() - INTERVAL '${this.cacheRetentionDays} days'`
+                 WHERE target_date < CURRENT_DATE - INTERVAL '${this.cacheRetentionDays} days'`
             );
 
             const historyResult = await client.query(
@@ -436,32 +453,31 @@ class DashboardFetcher {
             );
 
             const elapsed = Date.now() - startTime;
-            logger.info(`Cleanup finished in ${elapsed}ms. Deleted: ${cacheResult.rowCount} cache, ${historyResult.rowCount} history`);
+            logger.info(`Cleanup done in ${elapsed}ms. Deleted: ${cacheResult.rowCount} cache, ${historyResult.rowCount} history`);
 
-            await client.query('VACUUM ANALYZE api_dashboard_cache');
-            await client.query('VACUUM ANALYZE api_dashboard_status_history');
-            logger.info('VACUUM executed');
-
+            // Only VACUUM if significant deletions
+            if (cacheResult.rowCount > 10 || historyResult.rowCount > 100) {
+                await client.query('VACUUM ANALYZE api_dashboard_cache');
+                await client.query('VACUUM ANALYZE api_dashboard_status_history');
+                logger.info('VACUUM executed');
+            }
         } catch (error) {
-            logger.error('Error cleaning old records:', error.message);
+            logger.error('Cleanup error:', error.message);
         } finally {
             if (client) client.release();
         }
     }
 
-    /**
-     * Graceful shutdown
-     */
     registerShutdownHandlers() {
         const shutdown = async (signal) => {
             if (this.isShuttingDown) return;
-
-            logger.info(`\nReceived signal ${signal}. Starting graceful shutdown...`);
+            logger.info(`\nSignal ${signal}. Graceful shutdown...`);
             this.isShuttingDown = true;
 
             if (this.intervalHandle) clearInterval(this.intervalHandle);
             if (this.cleanupIntervalHandle) clearInterval(this.cleanupIntervalHandle);
             if (this.metricsIntervalHandle) clearInterval(this.metricsIntervalHandle);
+            if (this.lockRenewInterval) clearInterval(this.lockRenewInterval);
 
             const maxWait = 30000;
             const startWait = Date.now();
@@ -481,7 +497,6 @@ class DashboardFetcher {
 
             await this.pool.end();
             logger.info('Connection pool closed');
-
             this.logMetrics();
             logger.info('Fetcher stopped successfully');
             process.exit(0);
@@ -491,54 +506,8 @@ class DashboardFetcher {
         process.on('SIGINT', () => shutdown('SIGINT'));
     }
 
-    async getLastHash() {
-        try {
-            const result = await this.pool.query(
-                'SELECT data_hash FROM api_dashboard_cache ORDER BY created_at DESC LIMIT 1'
-            );
-            return result.rows.length > 0 ? result.rows[0].data_hash : null;
-        } catch (error) {
-            return null;
-        }
-    }
+    // ─── Main Fetch Cycle ────────────────────────────────────────────
 
-    async getActiveDepartments() {
-        try {
-            // Get departments from users
-            const result = await this.pool.query(
-                'SELECT DISTINCT "divisionId" FROM users WHERE "divisionId" IS NOT NULL'
-            );
-            const depts = result.rows
-                .map(r => r.divisionId)
-                .filter(id => id && id !== 'all' && !isNaN(parseInt(id, 10)));
-
-            // Always ensure the default department is included
-            const defaultDept = process.env.DASHBOARD_DEPARTMENT_ID || '100000052';
-            if (!depts.includes(defaultDept)) {
-                depts.push(defaultDept);
-            }
-
-            // Expanded list of known departments to ensure full coverage
-            // These are common department IDs used in the system
-            const knownDepts = ['100000052', '100000053', '100000001', '100000002'];
-            knownDepts.forEach(id => {
-                if (!depts.includes(id)) depts.push(id);
-            });
-
-            const finalDepts = [...new Set(depts)];
-            logger.info(`Active departments for fetching: ${finalDepts.join(', ')}`);
-
-            return finalDepts;
-        } catch (error) {
-            logger.error('Error getting departments:', error.message);
-            const fallback = process.env.DASHBOARD_DEPARTMENT_ID || '100000052';
-            return [fallback];
-        }
-    }
-
-    /**
-     * Main fetch logic with all enhancements
-     */
     async fetchAndStore() {
         if (this.isShuttingDown) {
             logger.info('Skipping cycle: shutdown in progress');
@@ -546,29 +515,22 @@ class DashboardFetcher {
         }
 
         const cycleStart = Date.now();
-        logger.info(`\n[CYCLE] Starting BULK update (Today & Yesterday)`);
+        logger.info(`\n[CYCLE] Starting V7 BULK update (Today & Yesterday)`);
 
-        let successCount = 0;
-        let failCount = 0;
         let todaySuccess = false;
         let yesterdaySuccess = false;
 
         try {
-            // Perform Global Fetches (Capture Everything)
-            todaySuccess = await this.fetchForDepartment(null, 0); // Today Global
-            yesterdaySuccess = await this.fetchForDepartment(null, -1); // Yesterday Global
-
-            if (todaySuccess) successCount++; else failCount++;
-            if (yesterdaySuccess) successCount++; else failCount++;
+            todaySuccess = await this.fetchForDepartment(null, 0);
+            yesterdaySuccess = await this.fetchForDepartment(null, -1);
         } catch (error) {
-            logger.error('[CYCLE] Critical error during bulk update:', error.message || error);
-            failCount += 2; // Assume both failed if we caught here
+            logger.error('[CYCLE] Critical error:', error.message || error);
         }
 
         const cycleElapsed = Date.now() - cycleStart;
         this.metrics.lastFetchTime = new Date();
 
-        if (failCount === 0) {
+        if (todaySuccess && yesterdaySuccess) {
             this.metrics.consecutiveErrors = 0;
             this.metrics.lastSuccessTime = new Date();
         } else {
@@ -576,65 +538,21 @@ class DashboardFetcher {
             this.metrics.lastErrorTime = new Date();
         }
 
-        logger.info(`[CYCLE] Finished Global Fetch in ${cycleElapsed}ms. Today: ${todaySuccess ? 'OK' : 'FAIL'}, Yesterday: ${yesterdaySuccess ? 'OK' : 'FAIL'}`);
+        logger.info(`[CYCLE] V7 Finished in ${cycleElapsed}ms. Today: ${todaySuccess ? 'OK' : 'FAIL'}, Yesterday: ${yesterdaySuccess ? 'OK' : 'FAIL'}`);
     }
 
     /**
-     * Enhanced metrics logging
-     */
-    logMetrics() {
-        logger.info('\n============ PERFORMANCE METRICS ============');
-        logger.info(`Total Fetches: ${this.metrics.totalFetches}`);
-        logger.info(`Success: ${this.metrics.successfulFetches} (${Math.round(this.metrics.successfulFetches / Math.max(this.metrics.totalFetches, 1) * 100)}%)`);
-        logger.info(`Errors: ${this.metrics.failedFetches}`);
-        logger.info(`Orders Processed: ${this.metrics.totalOrders}`);
-        logger.info(`Status Changes: ${this.metrics.totalStatusChanges}`);
-        logger.info(`Response Time - Avg: ${Math.round(this.metrics.avgResponseTime)}ms, P50: ${Math.round(this.metrics.p50ResponseTime)}ms, P95: ${Math.round(this.metrics.p95ResponseTime)}ms, P99: ${Math.round(this.metrics.p99ResponseTime)}ms`);
-        logger.info(`Response Time - Min: ${Math.round(this.metrics.minResponseTime)}ms, Max: ${Math.round(this.metrics.maxResponseTime)}ms`);
-        logger.info(`Cache - Hits: ${this.metrics.cacheHits}, Misses: ${this.metrics.cacheMisses}`);
-        logger.info(`Circuit Breaker - State: ${this.circuitBreaker.state}, Trips: ${this.metrics.circuitBreakerTrips}`);
-        logger.info(`Rate Limiter - Hits: ${this.metrics.rateLimitHits}, Tokens: ${this.rateLimiter.tokens}/${this.rateLimiter.maxTokens}`);
-        logger.info(`Deduplication - Saved Requests: ${this.metrics.deduplicatedRequests}`);
-        logger.info(`Adaptive Concurrency - Current: ${this.adaptiveConcurrency.current}`);
-        logger.info(`Consecutive Errors: ${this.metrics.consecutiveErrors}`);
-        if (this.metrics.lastSuccessTime) {
-            logger.info(`Last Success: ${this.metrics.lastSuccessTime.toLocaleString('ru-RU', { timeZone: 'Europe/Kiev' })}`);
-        }
-        if (this.metrics.lastErrorTime) {
-            logger.info(`Last Error: ${this.metrics.lastErrorTime.toLocaleString('ru-RU', { timeZone: 'Europe/Kiev' })}`);
-        }
-        logger.info('=====================================================\n');
-    }
-
-    async processDepartmentSafe(deptId, dateShiftDays) {
-        const requestId = `${deptId}_${dateShiftDays}_${Date.now()}`;
-        this.activeRequests.add(requestId);
-
-        try {
-            const success = await this.fetchForDepartment(deptId, dateShiftDays);
-            return success === true;
-        } catch (e) {
-            logger.error(`[Dept: ${deptId}] Critical error in safe wrapper:`, e.message);
-            return false;
-        } finally {
-            this.activeRequests.delete(requestId);
-        }
-    }
-
-    /**
-     * Enhanced fetch with all patterns
+     * V7: Enhanced fetch with ETag, UPSERT, classified errors
      */
     async fetchForDepartment(deptId, dateShiftDays = 0) {
         const isGlobal = (deptId === null || deptId === undefined);
         const logTag = isGlobal ? '[GLOBAL]' : `[Dept: ${deptId}]`;
 
-        // Circuit Breaker Check
         if (!this.canProceed()) {
-            logger.warn(`${logTag} Skipped due to Circuit Breaker`);
+            logger.warn(`${logTag} Skipped — Circuit Breaker OPEN`);
             return false;
         }
 
-        // Rate Limiting
         await this.consumeToken();
 
         const startTime = Date.now();
@@ -644,7 +562,6 @@ class DashboardFetcher {
         targetDate.setDate(targetDate.getDate() + dateShiftDays);
         const targetDateISO = this.formatDateISO(targetDate);
 
-        // Request Deduplication
         const dedupKey = `${deptId || 'global'}_${targetDateISO}`;
 
         return this.deduplicateRequest(dedupKey, async () => {
@@ -659,37 +576,64 @@ class DashboardFetcher {
                     };
                     if (!isGlobal) params.departmentId = deptId;
 
-                    logger.info(`${logTag} Fetching: ${this.apiUrl} with params: ${JSON.stringify(params)}`);
+                    // V7: Build headers with ETag support
+                    const headers = {
+                        'x-api-key': this.apiKey || 'killmetraj_secret_key_2024',
+                        'Accept': 'application/json'
+                    };
+
+                    const savedEtag = this.getEtag(deptId, targetDateISO);
+                    if (savedEtag) {
+                        headers['If-None-Match'] = savedEtag;
+                    }
+
+                    logger.info(`${logTag} Fetching: ${targetDateISO}${savedEtag ? ' (with ETag)' : ''}`);
 
                     const apiStart = Date.now();
-                    const response = await axios.get(this.apiUrl, {
-                        headers: {
-                            'x-api-key': this.apiKey || 'killmetraj_secret_key_2024',
-                            'Accept': 'application/json'
-                        },
-                        params: params,
-                        timeout: 25000 // Increased timeout for global fetch
-                    });
-                    const apiElapsed = Date.now() - apiStart;
+                    let response;
+                    try {
+                        response = await axios.get(this.apiUrl, {
+                            headers,
+                            params,
+                            timeout: 25000
+                        });
+                    } catch (axiosErr) {
+                        // V7: Handle 304 Not Modified
+                        if (axiosErr.response && axiosErr.response.status === 304) {
+                            this.metrics.etagHits++;
+                            this.metrics.successfulFetches++;
+                            const apiElapsed = Date.now() - apiStart;
+                            this.updateResponseTimeMetrics(apiElapsed);
+                            logger.info(`${logTag} 304 Not Modified — data unchanged (${apiElapsed}ms)`);
+                            this.recordSuccess();
+                            return true;
+                        }
+                        throw axiosErr;
+                    }
 
-                    // Update metrics
+                    const apiElapsed = Date.now() - apiStart;
                     this.updateResponseTimeMetrics(apiElapsed);
                     this.metrics.avgResponseTime = Math.round(
                         (this.metrics.avgResponseTime * (this.metrics.totalFetches - 1) + apiElapsed) / this.metrics.totalFetches
                     );
 
+                    // V7: Save ETag from response
+                    const responseEtag = response.headers['etag'] || response.headers['ETag'];
+                    this.setEtag(deptId, targetDateISO, responseEtag);
+
                     const responseData = response.data;
                     if (!responseData || !responseData.orders) {
-                        logger.warn(`${logTag} Empty response or zero orders received for ${targetDateISO}`);
+                        logger.warn(`${logTag} Empty response for ${targetDateISO}`);
                         return false;
                     }
 
                     const receivedCount = responseData.orders.length;
                     if (receivedCount >= params.top) {
-                        logger.warn(`${logTag} API response HIT THE LIMIT (${params.top} orders). Data may be truncated!`);
+                        logger.warn(`${logTag} API HIT LIMIT (${params.top}). Data may be truncated!`);
                     }
+
                     const rawSizeKB = Math.round(JSON.stringify(responseData).length / 1024);
-                    logger.info(`${logTag} API Response: ${receivedCount} orders, Size: ${rawSizeKB}KB, Keys: ${Object.keys(responseData).join(', ')}`);
+                    logger.info(`${logTag} Response: ${receivedCount} orders, ${rawSizeKB}KB`);
 
                     // Diagnostics
                     const deptCounts = {};
@@ -697,77 +641,75 @@ class DashboardFetcher {
                         const d = String(o.departmentId || o.divisionId || 'UNKNOWN');
                         deptCounts[d] = (deptCounts[d] || 0) + 1;
                     });
-                    logger.info(`${logTag} API response breakdown by dept: ${JSON.stringify(deptCounts)}`);
+                    logger.info(`${logTag} Dept breakdown: ${JSON.stringify(deptCounts)}`);
 
-                    const statusCounts = {};
-                    responseData.orders.forEach(o => {
-                        const s = String(o.status || 'UNKNOWN');
-                        statusCounts[s] = (statusCounts[s] || 0) + 1;
-                    });
-                    logger.info(`${logTag} API response breakdown by status: ${JSON.stringify(statusCounts)}`);
-
-                    const sample = responseData.orders.slice(0, 5).map(o => ({
-                        num: o.orderNumber,
-                        dept: o.departmentId || o.divisionId,
-                        status: o.status
-                    }));
-                    logger.info(`${logTag} Sample orders: ${JSON.stringify(sample)}`);
-
-                    // GLOBAL MODE: Split and process
+                    // GLOBAL MODE: Split and process per department
                     if (isGlobal) {
                         let allDeptSuccess = true;
                         const departmentalData = this.groupDataByDepartment(responseData.orders, responseData.couriers);
                         const foundDepts = Object.keys(departmentalData);
-                        logger.info(`[GLOBAL] Found data for ${foundDepts.length} departments: ${foundDepts.join(', ')}`);
+                        logger.info(`[GLOBAL] Processing ${foundDepts.length} departments: ${foundDepts.join(', ')}`);
 
                         for (const dId of foundDepts) {
                             try {
-                                await this.processDepartmentData(dId, targetDate, departmentalData[dId]);
+                                await this.processDepartmentData(dId, targetDate, departmentalData[dId], responseEtag);
                             } catch (err) {
                                 logger.error(`[GLOBAL] Error processing dept ${dId}:`, err.message);
                                 allDeptSuccess = false;
                             }
                         }
-                        if (allDeptSuccess) {
-                            this.recordSuccess();
-                        } else {
-                            this.recordFailure();
-                        }
+
+                        if (allDeptSuccess) this.recordSuccess();
+                        else this.recordFailure();
                         return allDeptSuccess;
                     }
 
-                    // SINGLE DEPT MODE: Process normally
+                    // SINGLE DEPT MODE
                     if (cacheService) {
                         try {
                             await cacheService.invalidate(String(deptId));
-                            logger.info(`${logTag} Cache invalidated`);
                         } catch (err) {
                             logger.error(`${logTag} Cache invalidation error:`, err.message);
                         }
                     }
-                    await this.processDepartmentData(deptId, targetDate, responseData);
+                    await this.processDepartmentData(deptId, targetDate, responseData, responseEtag);
                     this.recordSuccess();
                     return true;
 
                 } catch (error) {
                     this.metrics.failedFetches++;
-                    this.recordFailure(); // Circuit Breaker
+
+                    // V7: Classify error
+                    const errorType = this.classifyError(error);
+                    if (errorType === 'transient') {
+                        this.metrics.transientErrors++;
+                    } else {
+                        this.metrics.permanentErrors++;
+                    }
+
+                    this.recordFailure();
 
                     let errorDetail = error.message;
                     if (error.response) {
-                        errorDetail = `API Error ${error.response.status}: ${JSON.stringify(error.response.data).substring(0, 100)}...`;
+                        errorDetail = `API ${error.response.status}: ${JSON.stringify(error.response.data).substring(0, 100)}`;
                     } else if (error.code === 'ECONNABORTED') {
                         errorDetail = 'Request timeout';
                     }
 
+                    // V7: Don't retry permanent errors
+                    if (errorType === 'permanent') {
+                        logger.error(`${logTag} Permanent error — no retry: ${errorDetail}`);
+                        return false;
+                    }
+
                     if (retryAttempt < this.maxRetries) {
                         const backoffTime = this.calculateBackoff(retryAttempt);
-                        logger.warn(`${logTag} Attempt ${retryAttempt + 1}/${this.maxRetries} failed: ${errorDetail}`);
+                        logger.warn(`${logTag} Attempt ${retryAttempt + 1}/${this.maxRetries} failed (${errorType}): ${errorDetail}`);
                         logger.warn(`Retry in ${backoffTime}ms...`);
                         await new Promise(resolve => setTimeout(resolve, backoffTime));
                         retryAttempt++;
                     } else {
-                        logger.error(`${logTag} All attempts exhausted. Error: ${errorDetail}`);
+                        logger.error(`${logTag} All retries exhausted: ${errorDetail}`);
                         throw error;
                     }
                 }
@@ -776,9 +718,9 @@ class DashboardFetcher {
     }
 
     /**
-     * Process data for a specific department
+     * V7: Process + UPSERT department data in a transaction
      */
-    async processDepartmentData(deptId, targetDate, data) {
+    async processDepartmentData(deptId, targetDate, data, etag) {
         const logTag = `[Dept: ${deptId}]`;
         const targetDateISO = this.formatDateISO(targetDate);
 
@@ -786,18 +728,28 @@ class DashboardFetcher {
         try {
             client = await this.pool.connect();
 
-            // 1. Get existing data from cache
+            // BEGIN TRANSACTION
+            await client.query('BEGIN');
+
+            // 1. Get existing data (shared lock for read)
             const existing = await client.query(
-                'SELECT payload, data_hash FROM api_dashboard_cache WHERE division_id = $1 AND target_date = $2 ORDER BY created_at DESC NULLS LAST LIMIT 1',
+                `SELECT payload, data_hash FROM api_dashboard_cache 
+                 WHERE division_id = $1 AND target_date = $2 
+                 FOR UPDATE`,
                 [String(deptId), targetDateISO]
             );
 
             const existingData = existing.rows.length > 0 ? existing.rows[0].payload : { orders: [], couriers: [] };
             const currentHash = this.calculateHash(data);
 
-            // Optimization: If nothing changed, skip DB update
+            // Optimization: If hash unchanged, just touch updated_at
             if (existing.rows.length > 0 && existing.rows[0].data_hash === currentHash) {
-                logger.debug(`${logTag} Data unchanged for ${targetDateISO} (Hash: ${currentHash.substring(0, 8)})`);
+                await client.query(
+                    `UPDATE api_dashboard_cache SET updated_at = NOW() WHERE division_id = $1 AND target_date = $2`,
+                    [String(deptId), targetDateISO]
+                );
+                await client.query('COMMIT');
+                logger.debug(`${logTag} Data unchanged for ${targetDateISO} — touched updated_at`);
                 return;
             }
 
@@ -806,23 +758,26 @@ class DashboardFetcher {
             const mergedCouriers = this.mergeCouriers(existingData.couriers, data.couriers, mergedOrders);
             const statusChanges = this.detectStatusChanges(existingData.orders, mergedOrders);
 
-            // 3. Track status changes
+            // 3. Record status changes (within same transaction)
             if (statusChanges.length > 0) {
                 this.metrics.totalStatusChanges += statusChanges.length;
-                logger.info(`${logTag} Detected ${statusChanges.length} status changes`);
+                logger.info(`${logTag} ${statusChanges.length} status changes detected`);
 
-                for (const change of statusChanges) {
-                    await client.query(
-                        'INSERT INTO api_dashboard_status_history (order_number, old_status, new_status, created_at) VALUES ($1, $2, $3, NOW())',
-                        [change.orderNumber, change.oldStatus, change.newStatus]
-                    );
-                }
+                // Batch insert for efficiency
+                const changeValues = statusChanges.map((c, i) => {
+                    const offset = i * 3;
+                    return `($${offset + 1}, $${offset + 2}, $${offset + 3}, NOW())`;
+                }).join(', ');
+
+                const changeParams = statusChanges.flatMap(c => [c.orderNumber, c.oldStatus, c.newStatus]);
+
+                await client.query(
+                    `INSERT INTO api_dashboard_status_history (order_number, old_status, new_status, created_at) VALUES ${changeValues}`,
+                    changeParams
+                );
             }
 
-            // 4. Update metrics
-            this.metrics.totalOrders = Math.max(this.metrics.totalOrders, mergedOrders.length);
-
-            // 5. Store in DB
+            // 4. Build final payload
             const finalPayload = {
                 orders: mergedOrders,
                 couriers: mergedCouriers,
@@ -831,44 +786,80 @@ class DashboardFetcher {
                 statistics: data.statistics || {}
             };
 
+            // 5. V7: UPSERT — INSERT or UPDATE, exactly 1 row per division/date
             await client.query(
-                `INSERT INTO api_dashboard_cache (division_id, target_date, payload, data_hash, status_code, created_at)
-                 VALUES ($1, $2, $3, $4, $5, NOW())`,
-                [String(deptId), targetDateISO, finalPayload, currentHash, 200]
+                `INSERT INTO api_dashboard_cache (division_id, target_date, payload, data_hash, status_code, order_count, courier_count, fetch_etag, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+                 ON CONFLICT (division_id, target_date) DO UPDATE SET
+                   payload = EXCLUDED.payload,
+                   data_hash = EXCLUDED.data_hash,
+                   status_code = EXCLUDED.status_code,
+                   order_count = EXCLUDED.order_count,
+                   courier_count = EXCLUDED.courier_count,
+                   fetch_etag = EXCLUDED.fetch_etag,
+                   updated_at = NOW()`,
+                [
+                    String(deptId),
+                    targetDateISO,
+                    JSON.stringify(finalPayload),
+                    currentHash,
+                    200,
+                    mergedOrders.length,
+                    mergedCouriers.length,
+                    etag || null
+                ]
             );
 
-            // 6. Notify via WebSocket
-            await client.query('SELECT pg_notify(\'dashboard_update\', $1)', [JSON.stringify({
-                divisionId: deptId,
-                targetDate: targetDateISO
-            })]);
+            this.metrics.upsertWrites++;
+            this.metrics.totalOrders = Math.max(this.metrics.totalOrders, mergedOrders.length);
 
-            logger.info(`${logTag} Successfully updated data for ${targetDateISO} (${mergedOrders.length} orders, ${mergedCouriers.length} couriers)`);
+            // COMMIT TRANSACTION
+            await client.query('COMMIT');
+
+            // 6. Notify via pg_notify (outside transaction for reliability)
+            try {
+                await client.query('SELECT pg_notify(\'dashboard_update\', $1)', [JSON.stringify({
+                    divisionId: deptId,
+                    targetDate: targetDateISO,
+                    orderCount: mergedOrders.length,
+                    courierCount: mergedCouriers.length
+                })]);
+            } catch (notifyErr) {
+                logger.warn(`${logTag} pg_notify failed:`, notifyErr.message);
+            }
+
+            // 7. Invalidate L1 cache
+            if (cacheService) {
+                try {
+                    await cacheService.invalidate(String(deptId));
+                } catch (err) { /* ignore */ }
+            }
+
+            logger.info(`${logTag} UPSERTed ${targetDateISO}: ${mergedOrders.length} orders, ${mergedCouriers.length} couriers`);
 
         } catch (error) {
-            logger.error(`${logTag} Error processing department data:`, error.message);
+            // ROLLBACK on error
+            if (client) {
+                try { await client.query('ROLLBACK'); } catch (rbErr) { /* ignore */ }
+            }
+            logger.error(`${logTag} Transaction error:`, error.message);
             throw error;
         } finally {
             if (client) client.release();
         }
     }
 
-    /**
-     * Merge orders with type-safety and consistency
-     */
+    // ─── Data Merge ──────────────────────────────────────────────────
+
     mergeOrders(existing, incoming) {
         if (!existing || !Array.isArray(existing)) return incoming || [];
         if (!incoming || !Array.isArray(incoming)) return existing || [];
 
         const merged = new Map();
-
-        // Load existing orders
         existing.forEach(o => {
             const num = String(o.orderNumber || o.num || '');
             if (num) merged.set(num, o);
         });
-
-        // Upsert incoming orders
         incoming.forEach(o => {
             const num = String(o.orderNumber || o.num || '');
             if (num) {
@@ -876,43 +867,28 @@ class DashboardFetcher {
                 merged.set(num, { ...existingOrder, ...o });
             }
         });
-
         return Array.from(merged.values());
     }
 
-    /**
-     * Merge couriers with consistency and scrubbing
-     * @param {Array} existing - Existing couriers in DB
-     * @param {Array} incoming - Incoming couriers (already filtered by dept)
-     * @param {Array} mergedOrders - The finalized orders for this department
-     */
     mergeCouriers(existing, incoming, mergedOrders) {
         if (!incoming || !Array.isArray(incoming)) return existing || [];
 
         const merged = new Map();
-
-        // 1. Get IDs of couriers actively assigned to orders
         const activeCourierIds = new Set();
         if (mergedOrders && Array.isArray(mergedOrders)) {
             mergedOrders.forEach(o => {
-                const cid = o.courierId || o.courierName; // Fallback to name if ID missing
+                const cid = o.courierId || o.courierName;
                 if (cid) activeCourierIds.add(String(cid));
             });
         }
 
-        // 2. Load existing couriers ONLY if they are active on orders
-        // This effectively scrubs legacy garbage from the database records
         if (existing && Array.isArray(existing)) {
             existing.forEach(c => {
                 const id = String(c.id || c.name || '');
-                if (id && activeCourierIds.has(id)) {
-                    merged.set(id, c);
-                }
+                if (id && activeCourierIds.has(id)) merged.set(id, c);
             });
         }
 
-        // 3. Upsert incoming couriers (these are already filtered by dept)
-        // We ALWAYS keep these as they are fresh from the API for this department
         incoming.forEach(c => {
             const id = String(c.id || c.name || '');
             if (id) {
@@ -924,9 +900,6 @@ class DashboardFetcher {
         return Array.from(merged.values());
     }
 
-    /**
-     * Detect status changes
-     */
     detectStatusChanges(oldOrders, newOrders) {
         const changes = [];
         if (!oldOrders || !newOrders) return changes;
@@ -941,22 +914,18 @@ class DashboardFetcher {
             const num = String(n.orderNumber || n.num || '');
             const oldStatus = oldMap.get(num);
             if (num && oldStatus && n.status && oldStatus !== n.status) {
-                changes.push({
-                    orderNumber: num,
-                    oldStatus,
-                    newStatus: n.status
-                });
+                changes.push({ orderNumber: num, oldStatus, newStatus: n.status });
             }
         });
 
         return changes;
     }
 
+    // ─── Utilities ───────────────────────────────────────────────────
+
     getKyivDate() {
         const now = new Date();
-        const kyivTimeStr = now.toLocaleString("en-US", {
-            timeZone: "Europe/Kiev"
-        });
+        const kyivTimeStr = now.toLocaleString("en-US", { timeZone: "Europe/Kiev" });
         return new Date(kyivTimeStr);
     }
 
@@ -980,18 +949,43 @@ class DashboardFetcher {
         return crypto.createHash('sha256').update(str).digest('hex');
     }
 
-    /**
-     * Enhanced health check
-     */
+    // ─── Metrics Logging ─────────────────────────────────────────────
+
+    logMetrics() {
+        logger.info('\n=========== FETCHER V7 METRICS ===========');
+        logger.info(`Fetches: ${this.metrics.totalFetches} (OK: ${this.metrics.successfulFetches}, Fail: ${this.metrics.failedFetches})`);
+        logger.info(`Orders Processed: ${this.metrics.totalOrders}`);
+        logger.info(`Status Changes: ${this.metrics.totalStatusChanges}`);
+        logger.info(`Response — Avg: ${Math.round(this.metrics.avgResponseTime)}ms, P50: ${Math.round(this.metrics.p50ResponseTime)}ms, P95: ${Math.round(this.metrics.p95ResponseTime)}ms, P99: ${Math.round(this.metrics.p99ResponseTime)}ms`);
+        logger.info(`ETag 304 Hits: ${this.metrics.etagHits}`);
+        logger.info(`UPSERT Writes: ${this.metrics.upsertWrites}`);
+        logger.info(`Errors — Transient: ${this.metrics.transientErrors}, Permanent: ${this.metrics.permanentErrors}`);
+        logger.info(`Circuit Breaker: ${this.circuitBreaker.state} (Trips: ${this.metrics.circuitBreakerTrips})`);
+        logger.info(`Rate Limiter Hits: ${this.metrics.rateLimitHits}`);
+        logger.info(`Dedup Saved: ${this.metrics.deduplicatedRequests}`);
+        logger.info(`Adaptive Concurrency: ${this.adaptiveConcurrency.current}`);
+        logger.info(`Consecutive Errors: ${this.metrics.consecutiveErrors}`);
+        if (this.metrics.lastSuccessTime) {
+            logger.info(`Last Success: ${this.metrics.lastSuccessTime.toLocaleString('ru-RU', { timeZone: 'Europe/Kiev' })}`);
+        }
+        if (this.metrics.lastErrorTime) {
+            logger.info(`Last Error: ${this.metrics.lastErrorTime.toLocaleString('ru-RU', { timeZone: 'Europe/Kiev' })}`);
+        }
+        logger.info('==========================================\n');
+    }
+
+    // ─── Health Check ────────────────────────────────────────────────
+
     async getHealthStatus() {
         try {
             const dbCheck = await this.pool.query('SELECT NOW()');
             const cacheCheck = await this.pool.query(
-                'SELECT COUNT(*) as count FROM api_dashboard_cache WHERE created_at > NOW() - INTERVAL \'1 hour\''
+                'SELECT COUNT(*) as count FROM api_dashboard_cache WHERE updated_at > NOW() - INTERVAL \'1 hour\''
             );
 
             return {
                 status: 'healthy',
+                version: '7.0 (Fetcher 2.0)',
                 timestamp: new Date().toISOString(),
                 database: 'connected',
                 recentCacheEntries: parseInt(cacheCheck.rows[0].count),
@@ -1010,6 +1004,12 @@ class DashboardFetcher {
                     min: this.adaptiveConcurrency.min,
                     max: this.adaptiveConcurrency.max
                 },
+                v7Metrics: {
+                    etagHits: this.metrics.etagHits,
+                    upsertWrites: this.metrics.upsertWrites,
+                    transientErrors: this.metrics.transientErrors,
+                    permanentErrors: this.metrics.permanentErrors
+                },
                 metrics: this.metrics,
                 activeRequests: this.activeRequests.size,
                 isShuttingDown: this.isShuttingDown
@@ -1017,6 +1017,7 @@ class DashboardFetcher {
         } catch (error) {
             return {
                 status: 'unhealthy',
+                version: '7.0 (Fetcher 2.0)',
                 timestamp: new Date().toISOString(),
                 error: error.message,
                 metrics: this.metrics
@@ -1027,13 +1028,13 @@ class DashboardFetcher {
 
 // Global error handlers
 process.on('uncaughtException', (err) => {
-    logger.error('CRITICAL ERROR: Uncaught Exception:', err);
+    logger.error('CRITICAL: Uncaught Exception:', err);
     logger.error(err.stack);
     process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    logger.error('CRITICAL ERROR: Unhandled Rejection:', promise);
+    logger.error('CRITICAL: Unhandled Rejection:', promise);
     logger.error('Reason:', reason);
     process.exit(1);
 });

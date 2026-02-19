@@ -72,7 +72,7 @@ export function getTimeWindowBounds(
 }
 
 // Константы для группировки
-const PROXIMITY_MINUTES = 20;            // Увеличили с 10 до 20 для уменьшения дробления
+const PROXIMITY_MINUTES = 20;            // Установили строго 20 минут по запросу юзера
 const MAX_DELIVERY_SPAN_MINUTES = 60;   // Максимальный разброс доставки в одной группе
 
 /**
@@ -306,7 +306,7 @@ export function groupOrdersByTimeWindow(
             return tA - tB;
         });
 
-        const HANDOVER_WINDOW_MS = 15 * 60 * 1000;
+        const HANDOVER_WINDOW_MS = 20 * 60 * 1000; // Установили строго 20 минут (Phase 4.9)
         let currentHandoverGroup: Order[] = [];
         let groupStartTime = 0;
 

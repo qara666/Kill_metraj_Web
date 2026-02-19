@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { clsx } from 'clsx';
 import { useExcelData } from '../../contexts/ExcelDataContext';
 import { toast } from 'react-hot-toast';
@@ -14,6 +14,7 @@ import type { Order } from '../../types';
 import { SettlementModal } from './modals/SettlementModal';
 import { RevenueProgressBar } from './financials/RevenueProgressBar';
 import { PaymentMethodCard } from './financials/PaymentMethodCard';
+import html2pdf from 'html2pdf.js';
 
 interface CourierFinancialsProps {
     courierId: string;
@@ -81,6 +82,13 @@ export function CourierFinancials({
     const [notes, setNotes] = useState('');
     const [historySearchTerm, setHistorySearchTerm] = useState('');
 
+    // For Expandable General Report Sessions
+    const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
+    const [isPdfExporting, setIsPdfExporting] = useState(false);
+
+    // For PDF Export
+    const reportRef = useRef<HTMLDivElement>(null);
+
     const { excelData, updateOrderPaymentMethod, updateExcelData } = useExcelData();
 
     useEffect(() => {
@@ -131,7 +139,7 @@ export function CourierFinancials({
                 startTime: new Date().toISOString(),
                 totalOrders: courierOrders.length,
                 completedOrders: courierOrders.filter((o: any) =>
-                    o.status === 'Исполнен' || o.status === 'Доставлен' || o.status === 'Доставляется'
+                    o.status === 'Исполнен' || o.status === 'Доставлено' || o.status === 'Выдано'
                 ).length,
                 cashOrders: { count: 0, totalAmount: 0, orders: [] },
                 cardOrders: { count: 0, totalAmount: 0, orders: [] },
@@ -142,7 +150,7 @@ export function CourierFinancials({
         };
 
         courierOrders.forEach((order: any) => {
-            const isValidForFinancials = order.status !== 'Отменен' && order.status !== 'Возврат';
+            const isValidForFinancials = order.status === 'Исполнен' || order.status === 'Доставлено' || order.status === 'Выдано';
 
             if (order.settledDate) {
                 summary.historyOrders.push({
@@ -381,6 +389,36 @@ export function CourierFinancials({
         toast.success('Отчет скопирован в буфер обмена');
     };
 
+    const handleDownloadPDF = async () => {
+        if (!reportRef.current) {
+            toast.error('Не удалось найти отчет для экспорта.');
+            return;
+        }
+
+        toast.loading('Генерация PDF...', { id: 'pdf-toast' });
+        setIsPdfExporting(true);
+
+        // Allow React a tick to render the expanded layouts
+        setTimeout(() => {
+            const opt = {
+                margin: 10,
+                filename: `Отчет_Курьер_${courierName}_${new Date().toISOString().split('T')[0]}.pdf`,
+                image: { type: 'jpeg' as const, quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const }
+            };
+
+            html2pdf().set(opt).from(reportRef.current!).save().then(() => {
+                toast.success('PDF успешно скачан', { id: 'pdf-toast' });
+            }).catch((err: any) => {
+                console.error(err);
+                toast.error('Ошибка генерации PDF', { id: 'pdf-toast' });
+            }).finally(() => {
+                setIsPdfExporting(false);
+            });
+        }, 100);
+    };
+
     const handleSwitchPaymentMethod = async (orderNumber: string, currentMethod: string) => {
         const newMethod = currentMethod.toLowerCase().includes('налич') || currentMethod.toLowerCase().includes('cash') ? 'Онлайн' : 'Наличные';
 
@@ -395,6 +433,17 @@ export function CourierFinancials({
             setSwitchingOrderId(null);
         }
     };
+
+    // Calculate cashToCollect explicitly for "Исполнен" cash orders. 
+    // Wait, the user wants "К сдаче (Наличные)" to be the sum of exactly what's completed.
+    const completedCashOrders = useMemo(() => {
+        if (!summary) return [];
+        return summary.currentShift.cashOrders.orders.filter((o: any) => o.status === 'Исполнен');
+    }, [summary]);
+
+    const cashToCollect = useMemo(() => {
+        return completedCashOrders.reduce((sum, o: any) => sum + (parseFloat(o.effectiveAmount) || parseFloat(o.amount) || 0), 0);
+    }, [completedCashOrders]);
 
 
     if (loading) {
@@ -420,9 +469,7 @@ export function CourierFinancials({
     }
 
     const { currentShift } = summary;
-    const cashToCollect = currentShift.cashOrders.totalAmount;
     const courierInitial = courierName.charAt(0).toUpperCase();
-
 
     return (
         <div className="space-y-6 animate-in fade-in duration-700 max-w-6xl mx-auto">
@@ -449,15 +496,17 @@ export function CourierFinancials({
                 </div>
 
                 <div className="flex items-center gap-6">
-                    <button
-                        onClick={handleCopyReport}
-                        className={clsx(
-                            'px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all hover:scale-105 active:scale-95 border no-print',
-                            isDark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white' : 'bg-[#f8faff] border-gray-100 text-gray-400 hover:text-blue-600'
-                        )}
-                    >
-                        Копировать отчет
-                    </button>
+                    <div className="flex flex-col gap-2">
+                        <button
+                            onClick={handleCopyReport}
+                            className={clsx(
+                                'px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all hover:scale-105 border no-print',
+                                isDark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white' : 'bg-[#f8faff] border-gray-100 text-gray-400 hover:text-blue-600'
+                            )}
+                        >
+                            Копировать отчет
+                        </button>
+                    </div>
                     <div className="text-right">
                         <p className={clsx('text-[10px] font-black uppercase tracking-widest opacity-30 mb-1', isDark ? 'text-gray-400' : 'text-gray-500')}>
                             Выполнено
@@ -614,10 +663,28 @@ export function CourierFinancials({
                     </div>
                 )}
 
+                {activeTab === 'general' && (
+                    <div className="px-4 flex justify-end">
+                        <button
+                            onClick={handleDownloadPDF}
+                            disabled={isPdfExporting}
+                            className={clsx(
+                                'px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all hover:scale-105 active:scale-95 border no-print relative overflow-hidden flex items-center gap-2',
+                                isDark ? 'bg-[#5175f0] border-[#5175f0]/50 text-white shadow-lg shadow-[#5175f0]/20' : 'bg-[#5175f0] border-transparent text-white shadow-lg shadow-[#5175f0]/20 hover:shadow-[#5175f0]/40'
+                            )}
+                        >
+                            {isPdfExporting ? (
+                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            ) : null}
+                            <span>{isPdfExporting ? 'ГЕНЕРАЦИЯ...' : 'СКАЧАТЬ PDF'}</span>
+                        </button>
+                    </div>
+                )}
+
                 <div className={clsx(
                     'rounded-[56px] border overflow-hidden p-8 transition-all min-h-[400px]',
                     isDark ? 'bg-gray-900/60 border-white/5' : 'bg-white shadow-blue-500/5 border-gray-100'
-                )}>
+                )} ref={activeTab === 'general' ? reportRef : undefined}>
                     <div className="space-y-6">
                         {activeTab === 'general' ? (
                             groupedGeneralHistory.length === 0 ? (
@@ -684,6 +751,82 @@ export function CourierFinancials({
                                                     )}
                                                 </div>
                                             </div>
+
+                                            {/* Expandable Order Details aligned with the session container style */}
+                                            {group.orders && group.orders.length > 0 && (
+                                                <div className="mt-2.5">
+                                                    <button
+                                                        onClick={() => {
+                                                            const newSet = new Set(expandedSessions);
+                                                            if (newSet.has(sessionId)) newSet.delete(sessionId);
+                                                            else newSet.add(sessionId);
+                                                            setExpandedSessions(newSet);
+                                                        }}
+                                                        className={clsx(
+                                                            "w-full py-3 rounded-2xl flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] transition-all no-print",
+                                                            isDark ? "bg-gray-900 text-gray-500 hover:text-white border border-white/5" : "bg-gray-50 text-gray-400 hover:text-blue-500 border border-gray-100"
+                                                        )}
+                                                    >
+                                                        {expandedSessions.has(sessionId) ? 'Скрыть детализацию' : 'Показать заказы'}
+                                                    </button>
+
+                                                    {/* The container is forced open if `isPdfExporting` is active */}
+                                                    {(isPdfExporting || expandedSessions.has(sessionId)) && (
+                                                        <div className={clsx("space-y-3 pl-4 mt-4", !isPdfExporting && "animate-in slide-in-from-top-2 fade-in duration-300")}>
+                                                            {group.orders.map((order: Order, idx: number) => (
+                                                                <div
+                                                                    key={order.id || idx}
+                                                                    className={clsx(
+                                                                        'p-5 rounded-[28px] border flex items-center justify-between group',
+                                                                        !isPdfExporting && 'transition-all',
+                                                                        isDark ? 'bg-black/20 border-white/5 hover:bg-black/40' : 'bg-[#f8faff] border-gray-100/50 hover:bg-white hover:shadow-xl hover:shadow-blue-500/5'
+                                                                    )}
+                                                                >
+                                                                    <div className="flex-1 min-w-0 mr-8">
+                                                                        <div className="flex items-center gap-3 mb-2">
+                                                                            <span className={clsx(
+                                                                                "text-[10px] font-black px-2.5 py-1 rounded-xl opacity-40",
+                                                                                isDark ? "bg-gray-800" : "bg-gray-100"
+                                                                            )}>
+                                                                                #{order.orderNumber}
+                                                                            </span>
+                                                                            {order.untakenChange && (
+                                                                                <span className="text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-lg bg-red-500/10 text-red-500" title={`Возвращено ${order.originalChangeAmount || 0}₴ сдачей`}>
+                                                                                    -{(order as any).originalChangeAmount || 0}₴ (БЕЗ СДАЧИ)
+                                                                                </span>
+                                                                            )}
+                                                                            <span className={clsx(
+                                                                                "text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-500"
+                                                                            )}>
+                                                                                Оплачено
+                                                                            </span>
+                                                                        </div>
+                                                                        <p className={clsx('text-xs font-bold leading-relaxed opacity-70 whitespace-normal break-words', isDark ? 'text-gray-300' : 'text-gray-800')} title={order.address}>
+                                                                            {order.address}
+                                                                        </p>
+                                                                    </div>
+
+                                                                    <div className="text-right">
+                                                                        <p className={clsx('text-lg font-black tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>
+                                                                            {formatCurrency((order as any).settledAmount || order.amount)}
+                                                                        </p>
+                                                                        {(order as any).changeAmount > 0 && (
+                                                                            <p className="text-[10px] font-bold opacity-30 mt-0.5">
+                                                                                Сдача: {(order as any).changeAmount}₴
+                                                                            </p>
+                                                                        )}
+                                                                        {order.settlementNote && (
+                                                                            <p className="text-[9px] font-bold opacity-30 italic mt-0.5 max-w-[150px] whitespace-normal break-words">
+                                                                                {order.settlementNote}
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     );
                                 })
@@ -774,7 +917,8 @@ export function CourierFinancials({
                                                     <div
                                                         key={order.id || idx}
                                                         className={clsx(
-                                                            'p-5 rounded-[28px] border flex items-center justify-between transition-all group',
+                                                            'p-5 rounded-[28px] border flex items-center justify-between group',
+                                                            !isPdfExporting && 'transition-all',
                                                             isDark ? 'bg-black/20 border-white/5 hover:bg-black/40' : 'bg-[#f8faff] border-gray-100/50 hover:bg-white hover:shadow-xl hover:shadow-blue-500/5'
                                                         )}
                                                     >
@@ -787,8 +931,8 @@ export function CourierFinancials({
                                                                     #{order.orderNumber}
                                                                 </span>
                                                                 {order.untakenChange && (
-                                                                    <span className="text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-lg bg-red-500/10 text-red-500">
-                                                                        БЕЗ СДАЧИ
+                                                                    <span className="text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-lg bg-red-500/10 text-red-500" title={`Возвращено ${order.originalChangeAmount || 0}₴ сдачей`}>
+                                                                        -{(order as any).originalChangeAmount || 0}₴ (БЕЗ СДАЧИ)
                                                                     </span>
                                                                 )}
                                                                 <span className={clsx(
@@ -797,7 +941,7 @@ export function CourierFinancials({
                                                                     Оплачено
                                                                 </span>
                                                             </div>
-                                                            <p className={clsx('text-xs font-bold leading-relaxed opacity-70 truncate', isDark ? 'text-gray-300' : 'text-gray-800')} title={order.address}>
+                                                            <p className={clsx('text-xs font-bold leading-relaxed opacity-70 whitespace-normal break-words', isDark ? 'text-gray-300' : 'text-gray-800')} title={order.address}>
                                                                 {order.address}
                                                             </p>
                                                         </div>
@@ -812,7 +956,7 @@ export function CourierFinancials({
                                                                 </p>
                                                             )}
                                                             {order.settlementNote && (
-                                                                <p className="text-[9px] font-bold opacity-30 italic mt-0.5 max-w-[150px] truncate">
+                                                                <p className="text-[9px] font-bold opacity-30 italic mt-0.5 max-w-[150px] whitespace-normal break-words">
                                                                     {order.settlementNote}
                                                                 </p>
                                                             )}
@@ -904,7 +1048,7 @@ export function CourierFinancials({
             {showSettlementModal && (
                 <SettlementModal
                     courierName={courierName}
-                    orders={currentShift.cashOrders.orders}
+                    orders={completedCashOrders}
                     isDark={isDark}
                     onClose={() => setShowSettlementModal(false)}
                     updateExcelData={updateExcelData}

@@ -73,20 +73,29 @@ export function SettlementModal({
             }, 0);
     }, [orders, selectedOrderIds, orderAmounts, untakenChanges]);
 
-    // Refined effective sum calculation
+    // STRICT Extected sum calculation (Ignoring "Без сдачи" toggles for the expected total)
     const currentExpectedSum = useMemo(() => {
         let total = 0;
         orders.forEach((o: any) => {
             const id = String(o.id || o.orderNumber);
             if (!selectedOrderIds.has(id)) return;
 
-            // If user manually edited orderAmounts[id], we use that.
-            // If not, we use effectiveAmount but subtract change if "untaken"
+            // Use the original effective amount or amount, ignoring manual subtractions so the "Expected" stays static
+            const val = parseFloat(o.effectiveAmount) || parseFloat(o.amount) || 0;
+            total += val;
+        });
+        return total;
+    }, [orders, selectedOrderIds]);
+
+    // RECEIVED sum calculation (Respecting "Без сдачи" toggles from orderAmounts)
+    const autoReceivedSum = useMemo(() => {
+        let total = 0;
+        orders.forEach((o: any) => {
+            const id = String(o.id || o.orderNumber);
+            if (!selectedOrderIds.has(id)) return;
+
             const val = parseFloat(orderAmounts[id] || '0');
             total += isNaN(val) ? 0 : val;
-
-            // If untakenChanges has this ID, we need to subtract the change amount from the default effective amount
-            // actually, it's easier to just adjust 'orderAmounts' when clicking the checkbox.
         });
         return total;
     }, [orders, selectedOrderIds, orderAmounts]);
@@ -122,9 +131,9 @@ export function SettlementModal({
 
     useEffect(() => {
         if (!isManualTotalOverride) {
-            setManualTotal(currentExpectedSum.toString());
+            setManualTotal(autoReceivedSum.toString());
         }
-    }, [currentExpectedSum, isManualTotalOverride]);
+    }, [autoReceivedSum, isManualTotalOverride]);
 
     const filteredOrders = useMemo(() => {
         if (!searchQuery) return orders;
@@ -137,7 +146,7 @@ export function SettlementModal({
 
     const handleExactCash = () => {
         setIsManualTotalOverride(false);
-        setManualTotal(currentExpectedSum.toString());
+        setManualTotal(autoReceivedSum.toString());
     };
 
     const toggleOrder = (id: string) => {
@@ -295,22 +304,22 @@ export function SettlementModal({
                                             key={idx}
                                             onClick={() => toggleOrder(orderId)}
                                             className={clsx(
-                                                'flex items-center justify-between p-3 rounded-[1.25rem] border-2 transition-all cursor-pointer group',
+                                                'flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-[1.25rem] border-2 transition-all cursor-pointer group gap-3',
                                                 isSelected
                                                     ? (isDark ? 'bg-blue-500/10 border-blue-500/30' : 'bg-[#f0f7ff] border-blue-100')
                                                     : (isDark ? 'bg-black/10 border-white/5 opacity-40 hover:opacity-100' : 'bg-[#fcfdff] border-gray-50 opacity-40 hover:opacity-100')
                                             )}
                                         >
-                                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                                            <div className="flex items-center gap-3 min-w-0 flex-1 w-full sm:w-auto">
                                                 <div className={clsx(
-                                                    'w-7 h-7 rounded-lg border-2 flex items-center justify-center transition-all',
+                                                    'w-7 h-7 shrink-0 rounded-lg border-2 flex items-center justify-center transition-all',
                                                     isSelected ? 'bg-blue-500 border-blue-500 text-white' : (isDark ? 'border-gray-700' : 'border-gray-200')
                                                 )}>
                                                     <CheckCircleIcon className={clsx("w-4 h-4 transition-transform", isSelected ? "scale-100" : "scale-0")} />
                                                 </div>
-                                                <div className="min-w-0 flex-1">
-                                                    <div className="flex items-center gap-2 mb-0.5">
-                                                        <p className="text-xs font-black tracking-tight truncate">
+                                                <div className="min-w-0 flex-1 flex flex-col justify-center">
+                                                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                                                        <p className="text-xs font-black tracking-tight break-words">
                                                             #{order.orderNumber}
                                                         </p>
                                                         {parseFloat(order.changeAmount || 0) > 0 && (
@@ -318,7 +327,7 @@ export function SettlementModal({
                                                                 onClick={(e) => toggleUntakenChange(orderId, e)}
                                                                 title={untakenChanges.has(orderId) ? "Сдача возвращена в расчет" : "Сдачу не брал (вычесть из суммы)"}
                                                                 className={clsx(
-                                                                    "px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest border transition-all",
+                                                                    "px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest border transition-all whitespace-normal break-words text-left leading-tight",
                                                                     untakenChanges.has(orderId)
                                                                         ? "bg-red-500 text-white border-red-500"
                                                                         : "bg-amber-500/10 text-amber-600 border-amber-500/20 hover:bg-amber-500/20"
@@ -328,13 +337,13 @@ export function SettlementModal({
                                                             </button>
                                                         )}
                                                     </div>
-                                                    <p className="text-[8px] font-black opacity-20 truncate uppercase tracking-widest">
+                                                    <p className="text-[9px] font-bold opacity-60 uppercase tracking-widest leading-relaxed whitespace-normal break-words">
                                                         {order.address}
                                                     </p>
                                                 </div>
                                             </div>
 
-                                            <div className="ml-3" onClick={e => e.stopPropagation()}>
+                                            <div className="shrink-0 w-full sm:w-auto sm:ml-3 flex justify-end" onClick={e => e.stopPropagation()}>
                                                 <div className={clsx(
                                                     "flex items-center rounded-lg px-2 py-1 border transition-all",
                                                     isSelected
@@ -347,7 +356,7 @@ export function SettlementModal({
                                                         value={orderAmounts[orderId]}
                                                         onChange={(e) => handleOrderAmountChange(orderId, e.target.value)}
                                                         className={clsx(
-                                                            'w-12 text-right text-[11px] font-black bg-transparent outline-none',
+                                                            'w-14 text-right text-[11px] font-black bg-transparent outline-none',
                                                             isSelected ? 'text-blue-500' : 'text-gray-400'
                                                         )}
                                                     />

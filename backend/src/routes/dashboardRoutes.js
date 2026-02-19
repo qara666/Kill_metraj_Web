@@ -1,5 +1,6 @@
 const { authenticateToken, authorize, auditLog } = require('../middleware/auth');
 const { DashboardState, sequelize } = require('../models');
+const crypto = require('crypto');
 
 const axios = require('axios');
 const express = require('express');
@@ -177,12 +178,15 @@ router.post('/dashboard/fetch', async (req, res) => {
         // 1. Initial Cache Check (Skip if force=true)
         if (!force && !isGlobal) {
             const cached = await sequelize.query(
-                `SELECT payload FROM api_dashboard_cache WHERE status_code = 200 AND division_id = :divId AND target_date = :targetDate ORDER BY created_at DESC LIMIT 1`,
+                `SELECT payload FROM api_dashboard_cache 
+                 WHERE status_code = 200 AND division_id = :divId AND target_date = :targetDate 
+                 LIMIT 1`,
                 { replacements: { divId: String(divisionId), targetDate: targetDateISO }, type: sequelize.QueryTypes.SELECT }
             );
             if (cached.length > 0) {
                 logger.debug(`✅ Cache hit for ${divisionId}`);
-                return res.json({ success: true, data: typeof cached[0].payload === 'string' ? JSON.parse(cached[0].payload) : cached[0].payload, fromCache: true });
+                const payload = typeof cached[0].payload === 'string' ? JSON.parse(cached[0].payload) : cached[0].payload;
+                return res.json({ success: true, data: payload, fromCache: true });
             }
         }
 
@@ -210,16 +214,49 @@ router.post('/dashboard/fetch', async (req, res) => {
         }
 
         // 3. Process and Split Data
-        const crypto = require('crypto');
         const processAndCache = async (deptId, deptData) => {
             const payload = { ...deptData, orders: deptData.orders || [], couriers: deptData.couriers || [] };
             const dataHash = crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+            const orderCount = payload.orders.length;
+            const courierCount = payload.couriers.length;
 
+            // V2: UPSERT pattern matching the fetcher worker
             await sequelize.query(
-                `INSERT INTO api_dashboard_cache (payload, data_hash, status_code, division_id, target_date)
-                 VALUES (:payload, :dataHash, 200, :divisionId, :targetDate)`,
-                { replacements: { payload: JSON.stringify(payload), dataHash, divisionId: String(deptId), targetDate: targetDateISO } }
+                `INSERT INTO api_dashboard_cache (payload, data_hash, status_code, division_id, target_date, order_count, courier_count, updated_at)
+                 VALUES (:payload, :dataHash, 200, :divisionId, :targetDate, :orderCount, :courierCount, NOW())
+                 ON CONFLICT (division_id, target_date) DO UPDATE SET
+                   payload = EXCLUDED.payload,
+                   data_hash = EXCLUDED.data_hash,
+                   status_code = EXCLUDED.status_code,
+                   order_count = EXCLUDED.order_count,
+                   courier_count = EXCLUDED.courier_count,
+                   updated_at = NOW()`,
+                {
+                    replacements: {
+                        payload: JSON.stringify(payload),
+                        dataHash,
+                        divisionId: String(deptId),
+                        targetDate: targetDateISO,
+                        orderCount,
+                        courierCount
+                    }
+                }
             );
+
+            // Notify WebSocket clients via PG Notify (consistent with fetcher)
+            await sequelize.query('SELECT pg_notify(\'dashboard_update\', :notifyData)', {
+                replacements: {
+                    notifyData: JSON.stringify({
+                        divisionId: deptId,
+                        targetDate: targetDateISO,
+                        orderCount,
+                        courierCount,
+                        source: 'on_demand_fetch'
+                    })
+                },
+                type: sequelize.QueryTypes.SELECT
+            });
+
             return payload;
         };
 

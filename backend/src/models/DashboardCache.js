@@ -1,6 +1,12 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 
+/**
+ * DashboardCache V2
+ * 
+ * Key change: UNIQUE(division_id, target_date) enables UPSERT pattern.
+ * Only 1 row per division per day — no accumulation, no cleanup needed.
+ */
 const DashboardCache = sequelize.define('DashboardCache', {
     id: {
         type: DataTypes.INTEGER,
@@ -27,18 +33,36 @@ const DashboardCache = sequelize.define('DashboardCache', {
         type: DataTypes.TEXT,
         allowNull: true
     },
+    target_date: {
+        type: DataTypes.DATEONLY,
+        allowNull: true
+    },
     created_at: {
         type: DataTypes.DATE,
         defaultValue: DataTypes.NOW,
         allowNull: true
     },
-    target_date: {
-        type: DataTypes.DATEONLY,
+    // V2 columns
+    updated_at: {
+        type: DataTypes.DATE,
+        defaultValue: DataTypes.NOW,
+        allowNull: true
+    },
+    order_count: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0
+    },
+    courier_count: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0
+    },
+    fetch_etag: {
+        type: DataTypes.TEXT,
         allowNull: true
     }
 }, {
-    tableName: 'api_dashboard_cache', // Explicit table name to match legacy SQL
-    timestamps: false, // We use created_at manually
+    tableName: 'api_dashboard_cache',
+    timestamps: false,
     indexes: [
         {
             name: 'idx_dashboard_cache_created_at',
@@ -49,8 +73,9 @@ const DashboardCache = sequelize.define('DashboardCache', {
             fields: ['data_hash']
         },
         {
-            name: 'idx_dashboard_cache_target_date',
-            fields: ['target_date']
+            name: 'idx_dashboard_cache_div_date',
+            unique: true,
+            fields: ['division_id', 'target_date']
         }
     ]
 });

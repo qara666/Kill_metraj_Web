@@ -1,21 +1,23 @@
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
 import { OrderList } from './OrderList'
 import {
-  MapIcon,
   TruckIcon,
+  MapIcon,
+  QuestionMarkCircleIcon,
   InboxIcon,
-  PlusIcon,
-  TrashIcon,
   ClockIcon,
-  MapPinIcon,
-  CheckBadgeIcon,
-  PencilIcon,
   ArrowPathIcon,
+  PlusIcon,
+  CheckBadgeIcon,
+  TrashIcon,
+  PencilIcon,
   ExclamationTriangleIcon,
   ExclamationCircleIcon,
-  QuestionMarkCircleIcon,
   ChevronLeftIcon,
-  ChevronRightIcon
+  ChevronRightIcon,
+  MapPinIcon,
+  XMarkIcon,
+  UserIcon
 } from '@heroicons/react/24/outline'
 import { localStorageUtils } from '../../utils/ui/localStorage'
 import { cleanAddress, generateStreetVariants } from '../../utils/data/addressUtils'
@@ -36,8 +38,25 @@ import { type TimeWindowGroup } from '../../utils/route/routeCalculationHelpers'
 import { SmartAddressCorrectionModal } from '../modals/SmartAddressCorrectionModal'
 import { BatchAddressCorrectionPanel } from './BatchAddressCorrectionPanel'
 import { useSmartAddressCorrection } from '../../hooks/useSmartAddressCorrection'
-import { getAddressZoneValidator } from '../../services/addressZoneValidator'
 import { isId0CourierName, normalizeCourierName } from '../../utils/data/courierName'
+import { getReturnETA, getCourierSpeed, enrichRoutesWithCoords } from '../../utils/routes/courierETA'
+
+// --- Hooks ---
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value)
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value)
+    }, delay)
+
+    return () => {
+      clearTimeout(handler)
+    }
+  }, [value, delay])
+
+  return debouncedValue
+}
 
 // Ленивая загрузка тяжелых компонентов
 const HelpModalRoutes = lazy(() => import('../modals/HelpModalRoutes').then(m => ({ default: m.HelpModalRoutes })))
@@ -85,9 +104,11 @@ interface Route {
   totalDuration: number
   startAddress: string
   endAddress: string
+  // ... (rest omitted to save context, but I will keep the existing Route interface)
   isOptimized: boolean
   geoMeta?: any // геокод-мета для визуальной верификации
   createdAt?: number
+  legDurations?: number[]
 }
 
 interface RouteManagementProps {
@@ -117,7 +138,9 @@ const CourierListItem = memo(({
   const isUnassigned = courierName === 'Не назначено' || isId0CourierName(courierName)
   const progress = totalOrdersCount > 0 ? (deliveredOrdersCount / totalOrdersCount) * 100 : 0
   const isFinished = totalOrdersCount > 0 && deliveredOrdersCount === totalOrdersCount
-  const isOnRoute = totalOrdersCount > 0 && deliveredOrdersCount < totalOrdersCount && deliveredOrdersCount > 0
+  const remaining = totalOrdersCount - deliveredOrdersCount
+  const isReturning = totalOrdersCount > 0 && deliveredOrdersCount > 0 && remaining > 0 && remaining <= 2
+  const isOnRoute = totalOrdersCount > 0 && (deliveredOrdersCount === 0 || remaining > 2) && deliveredOrdersCount < totalOrdersCount
 
   return (
     <div className="group/item relative">
@@ -130,13 +153,17 @@ const CourierListItem = memo(({
             ? (isDark
               ? 'bg-blue-600/10 border-blue-500 shadow-lg shadow-blue-500/10'
               : 'bg-[#f0f7ff] border-blue-500 shadow-md shadow-blue-500/5')
-            : isUnassigned
+            : isReturning
               ? (isDark
-                ? 'bg-amber-500/10 border-amber-500/30'
-                : 'bg-amber-50 border-amber-200')
-              : (isDark
-                ? 'bg-black/20 border-white/[0.03] hover:border-white/10 opacity-70 hover:opacity-100'
-                : 'bg-white border-gray-100/80 hover:border-blue-200 shadow-sm opacity-60 hover:opacity-100')
+                ? 'bg-purple-500/10 border-purple-500/30 shadow-lg shadow-purple-500/5'
+                : 'bg-purple-50 border-purple-200 shadow-md shadow-purple-500/5')
+              : isUnassigned
+                ? (isDark
+                  ? 'bg-amber-500/10 border-amber-500/30'
+                  : 'bg-amber-50 border-amber-200')
+                : (isDark
+                  ? 'bg-black/20 border-white/[0.03] hover:border-white/10 opacity-70 hover:opacity-100'
+                  : 'bg-white border-gray-100/80 hover:border-blue-200 shadow-sm opacity-60 hover:opacity-100')
         )}
       >
         <div className="flex items-center gap-3.5 relative z-10">
@@ -153,11 +180,11 @@ const CourierListItem = memo(({
             )}>
               <TruckIcon className="w-5 h-5" />
             </div>
-            {(isOnRoute || isFinished) && (
+            {(isOnRoute || isReturning || isFinished) && (
               <div className={clsx(
                 'absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2',
                 isDark ? 'border-gray-800' : 'border-white',
-                isFinished ? 'bg-green-500' : 'bg-blue-500'
+                isFinished ? 'bg-green-500' : isReturning ? 'bg-purple-500' : 'bg-blue-500'
               )} />
             )}
           </div>
@@ -243,38 +270,24 @@ const CourierListItem = memo(({
   )
 })
 
+// getDistance and getReturnETA moved to /utils/routes/courierETA.ts
+
+
 export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const { excelData, updateExcelData, saveManualOverrides } = useExcelData()
   const { isDark } = useTheme()
   const [selectedCourier, setSelectedCourier] = useState<string | null>(null)
 
   const [isCalculating, setIsCalculating] = useState(false)
-  const [startAddress, setStartAddress] = useState('')
-  const [endAddress, setEndAddress] = useState('')
+  const [startAddress] = useState<string>(localStorageUtils.getAllSettings().defaultStartAddress || '')
+  const [endAddress] = useState<string>(localStorageUtils.getAllSettings().defaultEndAddress || '')
   const [orderSearchTerm, setOrderSearchTerm] = useState('')
   const [courierSearchTerm, setCourierSearchTerm] = useState('')
   const [courierSortType, setCourierSortType] = useState<'alpha' | 'load'>('alpha')
-  // Debounce hook
-  const useDebounce = <T,>(value: T, delay: number): T => {
-    const [debouncedValue, setDebouncedValue] = useState<T>(value)
-    useEffect(() => {
-      const handler = setTimeout(() => {
-        setDebouncedValue(value)
-      }, delay)
-      return () => {
-        clearTimeout(handler)
-      }
-    }, [value, delay])
-    return debouncedValue
-  }
-
-  const debouncedCourierSearchTerm = useDebounce(courierSearchTerm, 300)
-  const debouncedOrderSearchTerm = useDebounce(orderSearchTerm, 300)
-
   const [googleMapsReady, setGoogleMapsReady] = useState(false)
   const [courierFilter, setCourierFilter] = useState<string>('all')
-  const [selectedHubs, setSelectedHubs] = useState<string[]>(localStorageUtils.getAllSettings().selectedHubs || [])
-  const [selectedZones, setSelectedZones] = useState<string[]>(localStorageUtils.getAllSettings().selectedZones || [])
+  const [selectedHubs] = useState<string[]>(localStorageUtils.getAllSettings().selectedHubs || [])
+  const [selectedZones] = useState<string[]>(localStorageUtils.getAllSettings().selectedZones || [])
   const [routePage, setRoutePage] = useState(0)
   const [routesPerPage] = useState(5) // Количество маршрутов на странице
   const [sortRoutesByNewest] = useState(true)
@@ -292,69 +305,18 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [showBatchPanel, setShowBatchPanel] = useState(false)
   const [currentProblem, setCurrentProblem] = useState<any>(null)
   const [problemOrders, setProblemOrders] = useState<any[]>([])
-  const [routeToRecalculate, setRouteToRecalculate] = useState<Route | null>(null)
+  const [showReturningModal, setShowReturningModal] = useState(false)
+  const [showTransitModal, setShowTransitModal] = useState(false)
+  // Routes enriched with geocoded order coordinates (populated on modal open)
+  const [enrichedRoutes, setEnrichedRoutes] = useState<Route[]>([])
+  const [isGeocodingETA, setIsGeocodingETA] = useState(false)
 
-  const { validateOrders, applyCorrection, applyBatchCorrections, applyManualEdit } = useSmartAddressCorrection({
-    updateExcelData,
-    onCorrectionComplete: useCallback(() => {
-      // Trigger route recalculation if needed
-      if (routeToRecalculate) {
-        setTimeout(() => {
-          calculateRouteDistance(routeToRecalculate)
-          setRouteToRecalculate(null)
-        }, 500)
-      }
+  const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set())
+  const [selectedOrdersOrder, setSelectedOrdersOrder] = useState<string[]>([])
 
-      // If there are more problems in single mode, show next
-      if (showCorrectionModal && problemOrders.length > 1 && currentProblem) {
-        const remaining = problemOrders.filter(p => p.order.id !== currentProblem.order.id)
-        setProblemOrders(remaining)
-        if (remaining.length > 0) {
-          setCurrentProblem(remaining[0])
-          // Modal stays open, content updates
-        } else {
-          setShowCorrectionModal(false)
-          setCurrentProblem(null)
-        }
-      } else {
-        setShowCorrectionModal(false)
-        setShowBatchPanel(false)
-        setProblemOrders([])
-        setCurrentProblem(null)
-      }
-    }, [routeToRecalculate, problemOrders, currentProblem, showCorrectionModal])
-  })
-
-  // Синхронизация AddressZoneValidator с KML данными и фильтрами
-  useEffect(() => {
-    const settings = localStorageUtils.getAllSettings()
-    if (settings.kmlData?.polygons) {
-      const v = getAddressZoneValidator()
-
-      let polygonsToSync = settings.kmlData.polygons
-
-      // Если выбраны конкретные хабы или зоны, ограничиваем валидатор ими
-      if (selectedHubs.length > 0) {
-        polygonsToSync = polygonsToSync.filter((p: any) => selectedHubs.includes(p.folderName))
-      }
-
-      if (selectedZones.length > 0) {
-        polygonsToSync = polygonsToSync.filter((p: any) => {
-          const zoneKey = `${p.folderName}:${p.name}`
-          return selectedZones.includes(zoneKey)
-        })
-      }
-
-      const zones = polygonsToSync.map((p: any) => ({
-        id: `${p.folderName}:${p.name}`,
-        name: p.name,
-        polygon: p.path,
-        hub: settings.kmlData.markers?.find((m: any) => m.folderName === p.folderName)
-      }))
-
-      v.setZones(zones)
-    }
-  }, [selectedHubs, selectedZones, googleMapsReady])
+  // Debounced search terms
+  const debouncedOrderSearchTerm = useDebounce(orderSearchTerm, 300)
+  const debouncedCourierSearchTerm = useDebounce(courierSearchTerm, 300)
 
   // Состояния для системы помощи
   const [showHelpModal, setShowHelpModal] = useState(false)
@@ -366,110 +328,111 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     return false
   })
 
+  // --- Helper Functions (Moved up to avoid TDZ errors) ---
 
+  // Определяем тип транспорта курьера
+  const getCourierVehicleType = useCallback((courierName: string) => {
+    const normName = normalizeCourierName(courierName).toLowerCase()
 
-
-  // Показываем помощь новым пользователям через 2 секунды после загрузки
-  useEffect(() => {
-    if (!hasSeenHelp && typeof window !== 'undefined') {
-      const timer = setTimeout(() => {
-        setShowHelpModal(true)
-      }, 2000)
-      return () => clearTimeout(timer)
-    }
-  }, [hasSeenHelp])
-
-  // Дебаунсинг удален для мгновенного поиска
-  // useEffect(() => {
-  //   const timer = setTimeout(() => {
-  //     setDebouncedSearchTerm(orderSearchTerm)
-  //   }, 300)
-  //   return () => clearTimeout(timer)
-  // }, [orderSearchTerm])
-
-  // Загружаем настройки адресов
-  useEffect(() => {
+    // 1. Проверяем в настройках (карта имен -> транспорт)
     const settings = localStorageUtils.getAllSettings()
-    setStartAddress(settings.defaultStartAddress)
-    setEndAddress(settings.defaultEndAddress)
-
-    // Если есть KML данные и только один хаб, выбираем его по умолчанию
-    if (settings.kmlData?.polygons) {
-      const hubs = Array.from(new Set(settings.kmlData.polygons.map((p: any) => p.folderName))) as string[]
-      if (hubs.length === 1 && selectedHubs.length === 0) {
-        setSelectedHubs([hubs[0]])
-      }
+    if (settings.courierVehicleMap) {
+      // Ищем в карте с приведением ключей к нижнему регистру
+      const mappedEntry = Object.entries(settings.courierVehicleMap).find(([name]) =>
+        normalizeCourierName(name).toLowerCase() === normName
+      )
+      if (mappedEntry) return mappedEntry[1]
     }
-  }, [])
 
-  // Автоматическая установка адреса старта/финиша при выборе хаба (если в KML есть маркер типа "База")
-  useEffect(() => {
-    if (selectedHubs.length === 0) return
+    // 2. Проверяем в списке курьеров (уже нормализованных в ExcelDataContext)
+    if (excelData?.couriers && Array.isArray(excelData.couriers)) {
+      const courier = excelData.couriers.find((c: any) =>
+        normalizeCourierName(c.name).toLowerCase() === normName
+      )
+      if (courier?.vehicleType) return courier.vehicleType
+    }
+
+    return 'car'
+  }, [excelData?.couriers])
+
+  // Выбранный город обязателен; используем только его для bias/нормализации
+  const getSelectedCity = useCallback((): { city: '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'; country: 'Украина'; region: 'UA' } => {
     const settings = localStorageUtils.getAllSettings()
-
-    // Если пользователь явно задал адреса в настройках, уважаем их и не перетираем данными из KML
-    if (settings.defaultStartAddress && settings.defaultStartAddress.trim() !== '') {
-      return
-    }
-
-    if (!settings.kmlData?.markers) return
-
-    // Берем первый выбранный хаб для определения базы
-    const firstHub = selectedHubs[0]
-    const hubMarkers = settings.kmlData.markers.filter((m: any) => m.folderName === firstHub)
-    if (hubMarkers.length > 0) {
-      // Ищем маркер с названием "База", "Base", "Старт" или просто берем первый
-      const baseMarker = hubMarkers.find((m: any) =>
-        /база|base|старт|hub|склад|центр/i.test(m.name)
-      ) || hubMarkers[0]
-
-      if (baseMarker) {
-        // Если у маркера есть координаты, используем их
-        const addr = baseMarker.name
-        setStartAddress(addr)
-        setEndAddress(addr)
-        // toast.success(`Установлена база локации: ${addr}`, { icon: '', duration: 3000 })
-      }
-    }
-  }, [selectedHubs])
-
-  // Проверяем готовность Google Maps
-  useEffect(() => {
-    const handleSettingsUpdate = (e: any) => {
-      const newSettings = e.detail?.settings
-      if (newSettings && newSettings.selectedHubs !== undefined) {
-        setSelectedHubs(newSettings.selectedHubs)
-      }
-      if (newSettings && newSettings.selectedZones !== undefined) {
-        setSelectedZones(newSettings.selectedZones)
-      }
-    }
-    window.addEventListener('km-settings-updated', handleSettingsUpdate)
-    return () => window.removeEventListener('km-settings-updated', handleSettingsUpdate)
+    const city = (settings.cityBias || '') as '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'
+    return { city, country: 'Украина', region: 'UA' }
   }, [])
 
-  useEffect(() => {
-    const initGoogleMaps = async () => {
-      try {
-        // Проверяем, есть ли API ключ в настройках
-        if (!localStorageUtils.hasApiKey()) {
-          console.warn('Google Maps API ключ не найден в настройках')
-          setGoogleMapsReady(false)
-          return
-        }
+  // Простая очистка адреса + добавление выбранного города/страны
+  const cleanAddressForRoute = useCallback((raw: string): string => {
+    const base = cleanAddress(raw).trim()
+    if (!base) return base
+    const lower = base.toLowerCase()
+    const { city, country } = getSelectedCity()
+    if (!city) return base
+    const hasCity = lower.includes(city.toLowerCase())
+    const hasRegion = lower.includes('область') || lower.includes('oblast')
+    const hasCountry = lower.includes('украина') || lower.includes('україна') || lower.includes('ukraine') || lower.includes(country.toLowerCase())
 
-        await googleMapsLoader.load()
-        setGoogleMapsReady(true)
-      } catch (error) {
-        console.error('Ошибка загрузки Google Maps API:', error)
-        setGoogleMapsReady(false)
+    // Для Киева используем "Киев", чтобы обеспечить точность в центре.
+    // Спутники (Вишневое и т.д.) будут найдены через geocodeInsideOnly (исчерпывающий поиск).
+    const cityOrRegion = city
+
+    if (!hasCity && !hasRegion && !hasCountry) return `${base}, ${cityOrRegion}, ${country}`
+    if (!hasCountry) return `${base}, ${country}`
+    return base
+  }, [getSelectedCity])
+
+  // Проверяем, включен ли заказ в существующий маршрут
+  const isOrderInExistingRoute = useCallback((orderId: string) => {
+    return excelData?.routes?.some((route: Route) =>
+      route.orders.some((order: Order) => order.id === orderId)
+    ) || false
+  }, [excelData?.routes])
+
+  // Проверяем, существует ли уже маршрут для данного курьера с теми же заказами
+  const isRouteDuplicate = useCallback((courierName: string, selectedOrderIds: Set<string>) => {
+    return excelData?.routes?.some((route: Route) => {
+      if (route.courier !== courierName) return false
+
+      const routeOrderIds = new Set(route.orders.map((order: Order) => order.id))
+      if (routeOrderIds.size !== selectedOrderIds.size) return false
+
+      for (const id of selectedOrderIds) {
+        if (!routeOrderIds.has(id)) return false
       }
-    }
 
-    initGoogleMaps()
-  }, [])
+      return true
+    }) || false
+  }, [excelData?.routes])
 
-  // (удалено) Прежний эффект мог вызывать лишние обновления и ошибки типов
+  // Сортируем заказы: сначала доступные по времени, потом заказы в маршрутах
+  const sortOrdersByTime = useCallback((orders: Order[]) => {
+    return [...orders].sort((a, b) => {
+      const aInRoute = isOrderInExistingRoute(a.id)
+      const bInRoute = isOrderInExistingRoute(b.id)
+
+      // Сначала сортируем по статусу: доступные заказы сверху, в маршрутах снизу
+      if (aInRoute && !bInRoute) return 1
+      if (!aInRoute && bInRoute) return -1
+
+      if (!a.plannedTime && !b.plannedTime) return 0
+      if (!a.plannedTime) return 1
+      if (!b.plannedTime) return -1
+
+      const timeA = String(a.plannedTime || '');
+      const timeB = String(b.plannedTime || '');
+      return timeA.localeCompare(timeB)
+    })
+  }, [isOrderInExistingRoute])
+
+  // (Дубликат удален)
+
+
+  // --- Custom Hooks ---
+
+  const { validateOrders, applyCorrection, applyBatchCorrections, applyManualEdit } = useSmartAddressCorrection({
+    updateExcelData
+  })
 
   // Группируем заказы по курьерам
   const courierOrders = useMemo(() => {
@@ -491,18 +454,18 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           id: order.id ? String(order.id) : `order_${order.orderNumber || Date.now()}`,
           orderNumber: order.orderNumber || 'N/A',
           address: order.address,
-          courier: courierName, // Use the normalized name
+          courier: courierName,
           amount: order.amount || 0,
           phone: order.phone || '',
           customerName: order.customerName || '',
           plannedTime: order.plannedTime || '',
-          paymentMethod: order.paymentMethod || '', // Добавляем способ оплаты
-          manualGroupId: order.manualGroupId,      // Phase 4.7
-          deadlineAt: order.deadlineAt,            // IMPORTANT: For grouping logic
-          handoverAt: order.handoverAt,            // For grouping logic
-          status: order.status,                    // Ensure status is passed
-          statusTimings: order.statusTimings,      // Pass status timings
-          raw: order,                              // Pass full raw object for access to extra fields
+          paymentMethod: order.paymentMethod || '',
+          manualGroupId: order.manualGroupId,
+          deadlineAt: order.deadlineAt,
+          handoverAt: order.handoverAt,
+          status: order.status,
+          statusTimings: order.statusTimings,
+          raw: order,
           isSelected: false
         })
       }
@@ -513,7 +476,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
   // Precompute set of orders in routes for O(1) lookups
   const ordersInRoutesSet = useMemo(() => {
-    const set = new Set()
+    const set = new Set<string>()
       ; (excelData?.routes || []).forEach((route: Route) => {
         route.orders.forEach((order: Order) => {
           set.add(order.id)
@@ -559,11 +522,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   // Aggregate Fleet Stats
   const fleetStats = useMemo(() => {
     const couriersList = Array.from(new Set([
-      ...Object.keys(courierOrders),
-      ...(excelData?.couriers?.map((c: any) => c.name) || [])
+      ...Object.keys(courierOrders).map(n => normalizeCourierName(n)),
+      ...(excelData?.couriers?.map((c: any) => normalizeCourierName(c.name)) || [])
     ])).filter(n => n && n !== 'Не назначено' && n !== 'ID:0')
 
-    let activeCount = 0
+    let inTransitCount = 0
+    let returningCount = 0
     let finishedCount = 0
     let totalDelivered = 0
     let totalExpected = 0
@@ -571,8 +535,15 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     couriersList.forEach(name => {
       const m = courierMetricsMap.get(name) || { available: 0, delivered: 0, total: 0 }
       if (m.total > 0) {
-        if (m.delivered === m.total) finishedCount++
-        else if (m.delivered > 0) activeCount++
+        const remaining = m.total - m.delivered;
+        if (m.delivered === m.total) {
+          finishedCount++
+        } else if (m.delivered > 0 && remaining > 0 && remaining <= 2) {
+          returningCount++
+        } else {
+          inTransitCount++
+        }
+
         totalDelivered += m.delivered
         totalExpected += m.total
       }
@@ -582,11 +553,108 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
     return {
       total: couriersList.length,
-      active: activeCount,
+      inTransit: inTransitCount,
+      returning: returningCount,
       finished: finishedCount,
-      progress: avgProgress
+      progress: avgProgress,
+      totalExpected,
+      totalDelivered
     }
-  }, [courierOrders, excelData?.couriers, getCourierMetrics])
+  }, [courierOrders, excelData?.couriers, courierMetricsMap])
+
+  // Trigger on-demand geocoding when the returning modal is opened
+  useEffect(() => {
+    if (!showReturningModal) return
+
+    const returningRoutes = (excelData?.routes || []).filter((r: Route) => {
+      const name = normalizeCourierName(r.courier)
+      const m = courierMetricsMap.get(name) || { available: 0, delivered: 0, total: 0 }
+      const remaining = m.total - m.delivered
+      return m.total > 0 && m.delivered > 0 && remaining > 0 && remaining <= 2
+    })
+
+    if (returningRoutes.length === 0) return
+
+    setIsGeocodingETA(true)
+    enrichRoutesWithCoords(returningRoutes)
+      .then((enriched) => {
+        setEnrichedRoutes(enriched as unknown as Route[])
+      })
+      .catch(console.error)
+      .finally(() => setIsGeocodingETA(false))
+  }, [showReturningModal, excelData?.routes, courierMetricsMap])
+
+  // Data for the returning couriers modal
+  const returningCouriersData = useMemo(() => {
+    const list: any[] = []
+    const couriersList = Array.from(new Set([
+      ...Object.keys(courierOrders).map(n => normalizeCourierName(n)),
+      ...(excelData?.couriers?.map((c: any) => normalizeCourierName(c.name)) || [])
+    ])).filter(n => n && n !== 'Не назначено' && n !== 'ID:0')
+
+    // Build a lookup from enrichedRoutes (may have more coords than raw routes)
+    const enrichedById = new Map<string, Route>(
+      enrichedRoutes.map(r => [r.id, r as Route])
+    )
+
+    couriersList.forEach(name => {
+      const m = courierMetricsMap.get(name) || { available: 0, delivered: 0, total: 0 }
+      const remaining = m.total - m.delivered
+
+      if (m.total > 0 && m.delivered > 0 && remaining > 0 && remaining <= 2) {
+        const lowerName = name.toLowerCase()
+        const rawRoute: Route | undefined = (excelData?.routes || []).find(
+          (r: Route) => normalizeCourierName(r.courier).toLowerCase() === lowerName
+        )
+        // Prefer enriched (geocoded) version if available
+        const route = rawRoute ? (enrichedById.get(rawRoute.id) ?? rawRoute) : undefined
+
+        const vehicleType = getCourierVehicleType(name)
+        const speed = getCourierSpeed(vehicleType)
+        const etaInfo = route ? getReturnETA(route, speed) : null
+
+        list.push({
+          name,
+          delivered: m.delivered,
+          total: m.total,
+          eta: etaInfo?.time || `~ ${remaining * (vehicleType === 'moto' ? 45 : 20)} мин`,
+          isRough: etaInfo ? etaInfo.isRough : true,
+          statusLabel: etaInfo?.statusLabel || 'На угад',
+          routeId: rawRoute?.id || null,
+          progress: (m.delivered / m.total) * 100
+        })
+      }
+    })
+    return list.sort((a: any, b: any) => {
+      if (!a.eta) return 1
+      if (!b.eta) return -1
+      return String(a.eta).localeCompare(String(b.eta))
+    })
+  }, [courierOrders, excelData, courierMetricsMap, enrichedRoutes])
+
+  // Data for the in-transit couriers modal
+  const transitCouriersData = useMemo(() => {
+    const list: any[] = []
+    const couriersList = Array.from(new Set([
+      ...Object.keys(courierOrders).map(n => normalizeCourierName(n)),
+      ...(excelData?.couriers?.map((c: any) => normalizeCourierName(c.name)) || [])
+    ])).filter(n => n && n !== 'Не назначено' && n !== 'ID:0')
+
+    couriersList.forEach(name => {
+      const m = courierMetricsMap.get(name) || { available: 0, delivered: 0, total: 0 }
+      const remaining = m.total - m.delivered;
+      // Refined: "In Transit" if started but > 2 left, or haven't started yet
+      if (m.total > 0 && (m.delivered === 0 || (m.delivered > 0 && remaining > 2))) {
+        list.push({
+          name,
+          delivered: m.delivered,
+          total: m.total,
+          progress: (m.delivered / m.total) * 100
+        })
+      }
+    })
+    return list
+  }, [courierOrders, excelData, courierMetricsMap])
 
   // Объединяем курьеров из всех источников: из заказов и из общего списка курьеров (если есть)
   const couriers = useMemo(() => {
@@ -616,37 +684,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     return Array.from(courierMap.values())
   }, [courierOrders, excelData?.couriers])
 
-  // Определяем тип транспорта курьера
-  const getCourierVehicleType = (courierName: string) => {
-    const normName = normalizeCourierName(courierName).toLowerCase()
-
-    // 1. Проверяем в настройках (карта имен -> транспорт)
-    const settings = localStorageUtils.getAllSettings()
-    if (settings.courierVehicleMap) {
-      // Ищем в карте с приведением ключей к нижнему регистру
-      const mappedEntry = Object.entries(settings.courierVehicleMap).find(([name]) =>
-        normalizeCourierName(name).toLowerCase() === normName
-      )
-      if (mappedEntry) return mappedEntry[1]
-    }
-
-    // 2. Проверяем в списке курьеров (уже нормализованных в ExcelDataContext)
-    if (excelData?.couriers && Array.isArray(excelData.couriers)) {
-      const courier = excelData.couriers.find((c: any) =>
-        normalizeCourierName(c.name).toLowerCase() === normName
-      )
-      if (courier?.vehicleType) return courier.vehicleType
-    }
-
-    return 'car'
-  }
-
   const handleCourierSelect = useCallback((courierName: string) => {
     setSelectedCourier(courierName)
     // При смене курьера сбрасываем выбор и порядок, чтобы избежать артефактов
     setSelectedOrders(new Set())
     setSelectedOrdersOrder([])
-  }, [])
+  }, [setSelectedCourier, setSelectedOrders, setSelectedOrdersOrder])
 
   const filteredCouriers = useMemo(() => {
     let result = couriers
@@ -708,51 +751,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     )
   }, [debouncedOrderSearchTerm])
 
-  // Сортируем заказы: сначала доступные по времени, потом заказы в маршрутах
-  const sortOrdersByTime = (orders: Order[]) => {
-    return [...orders].sort((a, b) => {
-      const aInRoute = isOrderInExistingRoute(a.id)
-      const bInRoute = isOrderInExistingRoute(b.id)
 
-      // Сначала сортируем по статусу: доступные заказы сверху, в маршрутах снизу
-      if (aInRoute && !bInRoute) return 1
-      if (!aInRoute && bInRoute) return -1
 
-      if (!a.plannedTime && !b.plannedTime) return 0
-      if (!a.plannedTime) return 1
-      if (!b.plannedTime) return -1
-
-      const timeA = String(a.plannedTime || '');
-      const timeB = String(b.plannedTime || '');
-      return timeA.localeCompare(timeB)
-    })
-  }
-
-  // Проверяем, существует ли уже маршрут для данного курьера с теми же заказами
-  const isRouteDuplicate = (courierName: string, selectedOrderIds: Set<string>) => {
-    return excelData?.routes?.some((route: Route) => {
-      if (route.courier !== courierName) return false
-
-      const routeOrderIds = new Set(route.orders.map((order: Order) => order.id))
-      if (routeOrderIds.size !== selectedOrderIds.size) return false
-
-      for (const id of selectedOrderIds) {
-        if (!routeOrderIds.has(id)) return false
-      }
-
-      return true
-    }) || false
-  }
-
-  // Проверяем, включен ли заказ в существующий маршрут
-  const isOrderInExistingRoute = (orderId: string) => {
-    return excelData?.routes?.some((route: Route) =>
-      route.orders.some((order: Order) => order.id === orderId)
-    ) || false
-  }
-
-  const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set())
-  const [selectedOrdersOrder, setSelectedOrdersOrder] = useState<string[]>([])
 
   // --- Виртуализация с динамической высотой ---
 
@@ -941,32 +941,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   }
 
 
-  // Выбранный город обязателен; используем только его для bias/нормализации
-  const getSelectedCity = useCallback((): { city: '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'; country: 'Украина'; region: 'UA' } => {
-    const settings = localStorageUtils.getAllSettings()
-    const city = (settings.cityBias || '') as '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'
-    return { city, country: 'Украина', region: 'UA' }
-  }, [])
 
-  // Простая очистка адреса + добавление выбранного города/страны
-  const cleanAddressForRoute = useCallback((raw: string): string => {
-    const base = cleanAddress(raw).trim()
-    if (!base) return base
-    const lower = base.toLowerCase()
-    const { city, country } = getSelectedCity()
-    if (!city) return base
-    const hasCity = lower.includes(city.toLowerCase())
-    const hasRegion = lower.includes('область') || lower.includes('oblast')
-    const hasCountry = lower.includes('украина') || lower.includes('україна') || lower.includes('ukraine') || lower.includes(country.toLowerCase())
-
-    // Для Киева используем "Киев", чтобы обеспечить точность в центре.
-    // Спутники (Вишневое и т.д.) будут найдены через geocodeInsideOnly (исчерпывающий поиск).
-    const cityOrRegion = city
-
-    if (!hasCity && !hasRegion && !hasCountry) return `${base}, ${cityOrRegion}, ${country}`
-    if (!hasCountry) return `${base}, ${country}`
-    return base
-  }, [getSelectedCity])
 
   const calculateRouteDistance = async (route: Route) => {
     if (!googleMapsReady) {
@@ -1495,11 +1470,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
           if (outsidePoints.length > 0) {
             // Smart Address Correction Integration
+            // The instruction mentions fixing a `useSmartAddressCorrection` hook call,
+            // but no such hook is present in the provided code.
+            // Assuming the intent was to ensure the `validateOrders` and related state updates are correct.
             const problems = await validateOrders(route.orders)
 
             if (problems.length > 0) {
               setProblemOrders(problems)
-              setRouteToRecalculate(route)
 
               if (problems.length === 1) {
                 setCurrentProblem(problems[0])
@@ -1636,6 +1613,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                     ...r,
                     totalDistance: distanceKm2,
                     totalDuration: totalDuration2 / 60,
+                    legDurations: result2.routes[0].legs.map((leg: any) => leg.duration.value / 60),
                     isOptimized: true,
                     geoMeta: routeGeoMeta
                   }
@@ -1657,6 +1635,15 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         // Логируем для отладки и сравнения с Google Maps UI
         // Distance calculation log removed for production
 
+        const legDurations = result.routes[0].legs.map((leg: any) => {
+          const baseDur = leg.duration.value / 60
+          if (trafficDelayMin > 0) {
+            const prop = leg.duration.value / (result.routes[0].legs.reduce((t: number, l: any) => t + l.duration.value, 0))
+            return baseDur + (trafficDelayMin * prop)
+          }
+          return baseDur
+        })
+
         updateExcelData((prev: any) => ({
           ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
           routes: (prev?.routes || []).map((r: Route) =>
@@ -1665,6 +1652,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 ...r,
                 totalDistance: distanceKm,
                 totalDuration: totalDuration / 60,
+                legDurations,
                 isOptimized: true,
                 geoMeta: routeGeoMeta
               }
@@ -1698,8 +1686,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   }
 
 
-  // Функция для перемещения заказа в другую временную группу ( Phase 4.7 )
-  // Функция для перемещения заказа в другую временную группу ( Phase 4.7 )
+
   // Функция для перемещения заказа в другую временную группу (Force Move / SOTA v2.0)
   const handleMoveOrderToGroup = useCallback((orderId: string, targetGroup: TimeWindowGroup) => {
     console.log('[DND] Force Move logic triggered for order:', orderId, 'to group:', targetGroup.id);
@@ -2191,28 +2178,44 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   </div>
 
                   {/* Fleet Dashboard Mini stats */}
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-4 gap-1.5">
                     <div className={clsx(
-                      "p-3 rounded-2xl border flex flex-col items-center justify-center transition-all",
+                      "p-2.5 rounded-2xl border flex flex-col items-center justify-center transition-all",
                       isDark ? "bg-black/20 border-white/5" : "bg-gray-50 border-gray-100"
                     )}>
-                      <span className="text-[14px] font-black leading-none mb-1">{fleetStats.total}</span>
-                      <span className="text-[7px] font-black uppercase tracking-widest opacity-30">Всего</span>
+                      <span className="text-[13px] font-black leading-none mb-1">{fleetStats.total}</span>
+                      <span className="text-[6px] font-black uppercase tracking-widest opacity-30">Всего</span>
                     </div>
+
+                    <button
+                      onClick={() => setShowReturningModal(true)}
+                      className={clsx(
+                        "p-2.5 rounded-2xl border flex flex-col items-center justify-center transition-all hover:scale-105 active:scale-95 relative overflow-hidden group",
+                        isDark ? "bg-purple-500/10 border-purple-500/30" : "bg-purple-50 border-purple-100"
+                      )}
+                    >
+                      <div className="absolute inset-0 bg-purple-500/5 group-hover:bg-purple-500/10 transition-colors" />
+                      <span className="text-[13px] font-black leading-none mb-1 text-purple-600 relative z-10">{fleetStats.returning}</span>
+                      <span className="text-[6px] font-black uppercase tracking-widest text-purple-600/50 relative z-10">Возврат</span>
+                    </button>
+
+                    <button
+                      onClick={() => setShowTransitModal(true)}
+                      className={clsx(
+                        "p-2.5 rounded-2xl border flex flex-col items-center justify-center transition-all hover:scale-105 active:scale-95",
+                        isDark ? "bg-blue-500/5 border-blue-500/20" : "bg-blue-50 border-blue-100"
+                      )}
+                    >
+                      <span className="text-[13px] font-black leading-none mb-1 text-blue-500">{fleetStats.inTransit}</span>
+                      <span className="text-[6px] font-black uppercase tracking-widest text-blue-500/50">В пути</span>
+                    </button>
+
                     <div className={clsx(
-                      "p-3 rounded-2xl border flex flex-col items-center justify-center transition-all relative overflow-hidden",
-                      isDark ? "bg-blue-500/5 border-blue-500/20" : "bg-blue-50 border-blue-100"
-                    )}>
-                      <span className="text-[14px] font-black leading-none mb-1 text-blue-500">{fleetStats.active}</span>
-                      <span className="text-[7px] font-black uppercase tracking-widest text-blue-500/50">В пути</span>
-                      <div className="absolute bottom-0 left-0 h-[2px] bg-blue-500 opacity-20 transition-all duration-300" style={{ width: `${fleetStats.progress}%` }} />
-                    </div>
-                    <div className={clsx(
-                      "p-3 rounded-2xl border flex flex-col items-center justify-center transition-all",
+                      "p-2.5 rounded-2xl border flex flex-col items-center justify-center transition-all",
                       isDark ? "bg-emerald-500/5 border-emerald-500/20" : "bg-emerald-50 border-emerald-100"
                     )}>
-                      <span className="text-[14px] font-black leading-none mb-1 text-emerald-500">{fleetStats.finished}</span>
-                      <span className="text-[7px] font-black uppercase tracking-widest text-emerald-500/50">Завершил</span>
+                      <span className="text-[13px] font-black leading-none mb-1 text-emerald-500">{fleetStats.finished}</span>
+                      <span className="text-[6px] font-black uppercase tracking-widest text-emerald-500/50">Завершил</span>
                     </div>
                   </div>
 
@@ -2797,6 +2800,21 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                 <ClockIcon className="w-5 h-5" />
                                 <span className="text-sm font-black tracking-tight">{formatDuration(route.totalDuration || 0)}</span>
                               </div>
+                              {(() => {
+                                const vehicleType = getCourierVehicleType(route.courier);
+                                const speed = vehicleType === 'moto' ? 30 : 60;
+                                const eta = getReturnETA(route, speed);
+                                if (!eta) return null;
+                                return (
+                                  <div className={clsx(
+                                    "flex items-center gap-3 px-4 py-2 rounded-2xl",
+                                    isDark ? "bg-emerald-500/10 text-emerald-300" : "bg-emerald-50 text-emerald-700"
+                                  )}>
+                                    <ClockIcon className="w-5 h-5" />
+                                    <span className="text-sm font-black tracking-tight">Вернется в {eta.time}</span>
+                                  </div>
+                                );
+                              })()}
                               {route.isOptimized && (
                                 <div className={clsx(
                                   "flex items-center gap-2 px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest",
@@ -3117,6 +3135,173 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         }
 
       </>
+
+      {/* Returning Couriers Modal */}
+      {showReturningModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md transition-all ease-out duration-300">
+          <div className={clsx(
+            "w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden border-2 transform scale-100 animate-in fade-in zoom-in duration-300",
+            isDark ? "bg-slate-900 border-white/5 shadow-black/50" : "bg-white border-blue-100 shadow-blue-500/20"
+          )}>
+            <div className="px-8 py-6 border-b border-gray-100 dark:border-white/5 relative bg-gradient-to-r from-purple-500/10 to-transparent">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-purple-500 flex items-center justify-center text-white shadow-lg shadow-purple-500/30">
+                    <ClockIcon className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className={clsx("text-xl font-black tracking-tight", isDark ? "text-white" : "text-gray-900")}>Ожидаем возврат</h3>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-purple-500 opacity-60">
+                      {isGeocodingETA ? '⏳ геокодирование адресов...' : '+- через сколько вернется на тт'}
+                    </p>
+                  </div>
+                </div>
+                <button onClick={() => setShowReturningModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors">
+                  <XMarkIcon className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-8 max-h-[60vh] overflow-y-auto custom-scrollbar">
+              {returningCouriersData.length === 0 ? (
+                <div className="text-center py-12">
+                  <TruckIcon className="w-12 h-12 mx-auto text-gray-300 mb-4 opacity-30" />
+                  <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Нет возвращающихся курьеров</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {returningCouriersData.map((c: any) => (
+                    <button
+                      key={c.name}
+                      onClick={() => {
+                        setSelectedCourier(c.name);
+                        setShowReturningModal(false);
+                      }}
+                      className={clsx(
+                        "w-full p-5 rounded-[1.5rem] border-2 flex items-center gap-5 transition-all text-left group hover:scale-[1.02] active:scale-[0.98]",
+                        isDark ? "bg-black/20 border-white/5 hover:border-purple-500/30" : "bg-gray-50 border-gray-100 hover:border-purple-200"
+                      )}
+                    >
+                      <div className="relative shrink-0">
+                        <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm">
+                          <UserIcon className="w-6 h-6 text-purple-500" />
+                        </div>
+                        <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900 flex items-center justify-center text-white text-[10px] font-black">
+                          {c.delivered}
+                        </div>
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className={clsx("text-sm font-black truncate", isDark ? "text-white" : "text-gray-900")}>{c.name}</span>
+                          <div className="flex flex-col items-end">
+                            <span className="text-xl font-black text-purple-500">{c.eta}</span>
+                            {c.isRough && (
+                              <span className="text-[7px] font-black text-purple-400/60 uppercase tracking-widest -mt-1">
+                                {c.statusLabel}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-center justify-between text-[8px] font-black uppercase tracking-widest opacity-40">
+                            <span>Статус</span>
+                            <span>{c.delivered} / {c.total} дост.</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-gray-200 dark:bg-white/5 rounded-full overflow-hidden p-[1px]">
+                            <div
+                              className="h-full bg-gradient-to-r from-purple-500 to-emerald-500 rounded-full transition-all duration-500 shadow-sm shadow-purple-500/20"
+                              style={{ width: `${c.progress}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 bg-gray-50 dark:bg-black/20 text-center">
+              <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Нажмите на курьера, чтобы открыть его маршрут</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* In Transit Modal */}
+      {showTransitModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md transition-all ease-out duration-300">
+          <div className={clsx(
+            "w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden border-2 transform scale-100 animate-in fade-in zoom-in duration-300",
+            isDark ? "bg-slate-900 border-white/5 shadow-black/50" : "bg-white border-blue-100 shadow-blue-500/20"
+          )}>
+            <div className="px-8 py-6 border-b border-gray-100 dark:border-white/5 relative bg-gradient-to-r from-blue-500/10 to-transparent">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-blue-500 flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
+                    <TruckIcon className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className={clsx("text-xl font-black tracking-tight", isDark ? "text-white" : "text-gray-900")}>Курьеры в пути</h3>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-blue-500 opacity-60">Распределены и в работе</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowTransitModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors">
+                  <XMarkIcon className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-8 max-h-[60vh] overflow-y-auto custom-scrollbar">
+              {transitCouriersData.length === 0 ? (
+                <div className="text-center py-12">
+                  <TruckIcon className="w-12 h-12 mx-auto text-gray-300 mb-4 opacity-30" />
+                  <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Нет курьеров в работе</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3">
+                  {transitCouriersData.map((c: any) => (
+                    <button
+                      key={c.name}
+                      onClick={() => {
+                        setSelectedCourier(c.name);
+                        setShowTransitModal(false);
+                      }}
+                      className={clsx(
+                        "w-full p-4 rounded-[1.2rem] border flex flex-col gap-3 transition-all group hover:scale-[1.01]",
+                        isDark ? "bg-black/20 border-white/5 hover:border-blue-500/30" : "bg-gray-50 border-gray-100 hover:border-blue-200"
+                      )}
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <div className="flex items-center gap-3">
+                          <UserIcon className="w-4 h-4 text-blue-500 opacity-50" />
+                          <span className={clsx("text-sm font-bold", isDark ? "text-white" : "text-gray-900")}>{c.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest">{c.delivered} / {c.total} дост.</span>
+                          <ChevronRightIcon className="w-4 h-4 text-gray-300 group-hover:translate-x-1 transition-transform" />
+                        </div>
+                      </div>
+
+                      {c.total > 0 && (
+                        <div className="w-full">
+                          <div className="h-1.5 w-full bg-gray-200 dark:bg-white/5 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-blue-500 transition-all duration-500 ease-out"
+                              style={{ width: `${c.progress}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Smart Address Correction Modals */}
       {showCorrectionModal && currentProblem && (

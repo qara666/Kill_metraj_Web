@@ -99,6 +99,7 @@ export interface Route {
   routeEfficiency?: number;
   totalTrafficDelay?: number;
   hasCriticalTraffic?: boolean;
+  legDurations?: number[];
 }
 
 export interface ProcessedOrder {
