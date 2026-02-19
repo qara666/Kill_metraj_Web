@@ -479,6 +479,7 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
     await ensureStatusHistoryTable();
     await ensureDivisionIdColumn();
     await ensureManualOverridesTable();
+    await ensureDashboardCacheV2();
     await ensureIndexes();
 
     // Start Kafka CDC Consumer if enabled
@@ -583,6 +584,75 @@ async function ensureManualOverridesTable() {
     logger.info('DB Check: manual_order_overrides table verified/created successfully');
   } catch (err) {
     logger.error('DB Check: Error creating manual_order_overrides table', {
+      error: err.message,
+      stack: err.stack
+    });
+  }
+}
+
+/**
+ * DB 2.0: Migrate api_dashboard_cache to V2 schema
+ * - Add updated_at, order_count, courier_count, fetch_etag columns
+ * - Add UNIQUE(division_id, target_date) constraint
+ * - Deduplicate existing rows (keep newest per division/date)
+ */
+async function ensureDashboardCacheV2() {
+  try {
+    logger.info('DB Check: Migrating api_dashboard_cache to V2...');
+
+    // 1. Add new columns if missing
+    await sequelize.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='api_dashboard_cache' AND column_name='updated_at') THEN
+          ALTER TABLE api_dashboard_cache ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='api_dashboard_cache' AND column_name='order_count') THEN
+          ALTER TABLE api_dashboard_cache ADD COLUMN order_count INTEGER DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='api_dashboard_cache' AND column_name='courier_count') THEN
+          ALTER TABLE api_dashboard_cache ADD COLUMN courier_count INTEGER DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='api_dashboard_cache' AND column_name='fetch_etag') THEN
+          ALTER TABLE api_dashboard_cache ADD COLUMN fetch_etag TEXT;
+        END IF;
+      END
+      $$;
+    `);
+
+    // 2. Deduplicate: keep only the newest row per division_id + target_date
+    await sequelize.query(`
+      DELETE FROM api_dashboard_cache a
+      USING api_dashboard_cache b
+      WHERE a.id < b.id
+        AND a.division_id IS NOT DISTINCT FROM b.division_id
+        AND a.target_date IS NOT DISTINCT FROM b.target_date;
+    `);
+
+    // 3. Add unique constraint if missing
+    await sequelize.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'uq_dashboard_cache_div_date'
+        ) THEN
+          ALTER TABLE api_dashboard_cache
+            ADD CONSTRAINT uq_dashboard_cache_div_date UNIQUE (division_id, target_date);
+        END IF;
+      END
+      $$;
+    `);
+
+    // 4. Add composite index for fast lookups
+    await sequelize.query(`
+      CREATE INDEX IF NOT EXISTS idx_dashboard_cache_div_date
+      ON api_dashboard_cache (division_id, target_date);
+    `);
+
+    logger.info('DB Check: Dashboard cache V2 migration complete');
+  } catch (err) {
+    logger.error('DB Check: Error migrating dashboard cache to V2', {
       error: err.message,
       stack: err.stack
     });

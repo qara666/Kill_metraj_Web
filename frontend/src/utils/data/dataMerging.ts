@@ -220,15 +220,28 @@ export const syncDashboardData = (newData: any, existingData: any): ProcessedExc
     const syncedOrders = newOrders.map((newOrder: any) => {
         const existing = existingOrdersMap.get(newOrder.orderNumber);
         if (existing) {
+            const isNowCompleted = (newOrder.status === 'Исполнен' || newOrder.status === 'Доставлено');
+            const wasCompleted = (existing.status === 'Исполнен' || existing.status === 'Доставлено');
+
+            const statusTimings = {
+                ...(existing.statusTimings || {}),
+                ...(newOrder.statusTimings || {})
+            };
+
+            if (isNowCompleted && !wasCompleted && !statusTimings.completedAt) {
+                statusTimings.completedAt = Date.now();
+            }
+
             return {
                 ...existing,
                 ...newOrder,
                 id: existing.id,
                 isSelected: existing.isSelected,
                 isInRoute: existing.isInRoute,
-                manualGroupId: existing.manualGroupId, // Preserve manual grouping
-                deadlineAt: existing.deadlineAt,       // Preserve overrides
-                plannedTime: existing.plannedTime,     // Preserve overrides
+                manualGroupId: existing.manualGroupId,
+                deadlineAt: existing.deadlineAt,
+                plannedTime: existing.plannedTime,
+                statusTimings,
                 // Финансовые состояния
                 settledDate: existing.settledDate,
                 settledAmount: existing.settledAmount,
@@ -252,12 +265,27 @@ export const syncDashboardData = (newData: any, existingData: any): ProcessedExc
         }
     });
 
-    const existingRoutes = Array.isArray(existingData.routes) ? existingData.routes : [];
+    // ОБНОВЛЯЕМ ЗАКАЗЫ ВНУТРИ МАРШРУТОВ
+    // (Это критично для корректного расчета ETA возврата)
+    const syncedOrdersMap = new Map();
+    syncedOrders.forEach((o: any) => syncedOrdersMap.set(o.orderNumber, o));
+
+    const existingRoutes = (existingData.routes || []).map((route: any) => {
+        const updatedRouteOrders = (route.orders || []).map((ro: any) => {
+            const synced = syncedOrdersMap.get(ro.orderNumber);
+            return synced ? { ...ro, ...synced } : ro;
+        });
+
+        return {
+            ...route,
+            orders: updatedRouteOrders
+        };
+    });
 
     return {
         ...newData,
         orders: syncedOrders,
-        routes: existingRoutes, // Сохраняем маршруты при обычном обновлении
-        couriers: Array.from(uniqueCouriersMap.values()), // Обновляем список курьеров полностью и дедуплицируем
+        routes: existingRoutes, // Обновленные маршруты
+        couriers: Array.from(uniqueCouriersMap.values()),
     };
 };
