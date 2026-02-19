@@ -25,6 +25,7 @@ import { toast } from 'react-hot-toast'
 import { AddressEditModal } from '../modals/AddressEditModal'
 import { Tooltip } from '../shared/Tooltip'
 import { googleApiCache } from '../../services/googleApiCache'
+import { GeocodingService } from '../../services/geocodingService'
 import { getUkraineTrafficForOrders, calculateTotalTrafficDelay } from '../../utils/maps/ukraineTrafficAPI'
 import { normalizeCourierName } from '../../utils/data/courierName'
 
@@ -388,14 +389,45 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
         }
       }
 
-      const waypoints = route.orders.map((order: any) => ({
-        location: order.address,
-        stopover: true
-      }))
+      const waypoints = []
+
+      // Явное геокодирование всех точек маршрута для избежания "центра области"
+      for (const order of route.orders) {
+        const geoResult = await GeocodingService.geocodeAndCleanAddress(order.address)
+        if (geoResult.success && geoResult.latitude && geoResult.longitude) {
+          waypoints.push({
+            location: { lat: geoResult.latitude, lng: geoResult.longitude },
+            stopover: true
+          })
+        } else {
+          // Fallback если геокодинг не сработал (хотя geocodeAndCleanAddress очень старается)
+          waypoints.push({
+            location: order.address,
+            stopover: true
+          })
+        }
+      }
+
+      // Также геокодируем старт и финиш
+      let origin: any = route.startAddress
+      if (typeof route.startAddress === 'string') {
+        const startGeo = await GeocodingService.geocodeAndCleanAddress(route.startAddress)
+        if (startGeo.success && startGeo.latitude && startGeo.longitude) {
+          origin = { lat: startGeo.latitude, lng: startGeo.longitude }
+        }
+      }
+
+      let destination: any = route.endAddress
+      if (typeof route.endAddress === 'string') {
+        const endGeo = await GeocodingService.geocodeAndCleanAddress(route.endAddress)
+        if (endGeo.success && endGeo.latitude && endGeo.longitude) {
+          destination = { lat: endGeo.latitude, lng: endGeo.longitude }
+        }
+      }
 
       const request = {
-        origin: route.startAddress,
-        destination: route.endAddress,
+        origin: origin,
+        destination: destination,
         waypoints: waypoints,
         travelMode: window.google.maps.TravelMode.DRIVING,
         optimizeWaypoints: false,

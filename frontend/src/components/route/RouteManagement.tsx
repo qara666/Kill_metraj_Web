@@ -521,28 +521,39 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     return set
   }, [excelData?.routes])
 
-  // Функция для получения метрик курьера
-  const getCourierMetrics = useCallback((courierName: string) => {
-    const allOrders = courierOrders[courierName] || []
+  // Функция для получения метрик курьера (Optimized with Memoization)
+  const courierMetricsMap = useMemo(() => {
+    const map = new Map<string, { available: number; delivered: number; total: number }>()
 
-    let available = 0
-    let delivered = 0
+    const allCouriers = new Set([
+      ...Object.keys(courierOrders),
+      ...(excelData?.couriers?.map((c: any) => c.name) || [])
+    ])
 
-    allOrders.forEach(order => {
-      if (!ordersInRoutesSet.has(order.id)) {
-        available++
+    allCouriers.forEach(name => {
+      if (!name) return
+      const orders = courierOrders[name] || []
+      let available = 0
+      let delivered = 0
+
+      for (const order of orders) {
+        if (!ordersInRoutesSet.has(order.id)) {
+          available++
+        }
+        if (order.status === 'Доставлено' || order.status === 'Исполнен') {
+          delivered++
+        }
       }
-      if (order.status === 'Доставлено' || order.status === 'Исполнен') {
-        delivered++
-      }
+
+      map.set(name, { available, delivered, total: orders.length })
     })
 
-    return {
-      available,
-      delivered,
-      total: allOrders.length
-    }
-  }, [courierOrders, ordersInRoutesSet])
+    return map
+  }, [courierOrders, ordersInRoutesSet, excelData?.couriers])
+
+  const getCourierMetrics = useCallback((courierName: string) => {
+    return courierMetricsMap.get(courierName) || { available: 0, delivered: 0, total: 0 }
+  }, [courierMetricsMap])
 
   // Aggregate Fleet Stats
   const fleetStats = useMemo(() => {
@@ -557,7 +568,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     let totalExpected = 0
 
     couriersList.forEach(name => {
-      const m = getCourierMetrics(name)
+      const m = courierMetricsMap.get(name) || { available: 0, delivered: 0, total: 0 }
       if (m.total > 0) {
         if (m.delivered === m.total) finishedCount++
         else if (m.delivered > 0) activeCount++
@@ -1017,23 +1028,38 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       const cityCtx = getSelectedCity()
 
       // Логика секторов: Используем Хабы из KML
-      let hubPolygons = []
+      // OPTIMIZATION: Instantiate Polygons ONCE outside the loop to prevent massive GC churn
+      // This fixes the "lag/freeze" issue on weak devices
+      let cachedHubPolygons: { folderName: string; name: string; googlePoly: any }[] = []
       if (selectedHubs.length > 0 && settings.kmlData?.polygons) {
-        hubPolygons = settings.kmlData.polygons.filter((p: any) => selectedHubs.includes(p.folderName))
+        const rawPolys = settings.kmlData.polygons.filter((p: any) => selectedHubs.includes(p.folderName))
+        cachedHubPolygons = rawPolys.map((p: any) => ({
+          ...p,
+          googlePoly: new window.google.maps.Polygon({ paths: p.path })
+        }))
+      }
+
+      // Pre-cache ALL KML polygons for checkAnyKmlZone
+      let cachedAllKmlPolygons: { folderName: string; name: string; googlePoly: any }[] = []
+      if (settings.kmlData?.polygons) {
+        cachedAllKmlPolygons = settings.kmlData.polygons.map((p: any) => ({
+          ...p,
+          googlePoly: new window.google.maps.Polygon({ paths: p.path })
+        }))
       }
 
       // Для проверки вхождения используем все ПОЛИГОНЫ хаба (с учетом фильтра зон)
       const checkInside = (latLng: any) => {
-        if (hubPolygons.length > 0) {
-          return hubPolygons.some((p: any) => {
+        if (cachedHubPolygons.length > 0) {
+          return cachedHubPolygons.some((p: any) => {
             // Если выбраны конкретные зоны, проверяем только их
             if (selectedZones.length > 0) {
               const zoneKey = `${p.folderName}:${p.name}`
               if (!selectedZones.includes(zoneKey)) return false
             }
 
-            const poly = new window.google.maps.Polygon({ paths: p.path })
-            return window.google.maps.geometry.poly.containsLocation(latLng, poly)
+            // Use CACHED polygon instance
+            return window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)
           })
         }
         return true // Если нет КМЛ ограничений — валидно
@@ -1041,10 +1067,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
       // Проверка попадания в ЛЮБУЮ зону KML (для приоритезации при геокодировании)
       const checkAnyKmlZone = (latLng: any) => {
-        if (!settings.kmlData?.polygons) return false
-        return settings.kmlData.polygons.some((p: any) => {
-          const poly = new window.google.maps.Polygon({ paths: p.path })
-          return window.google.maps.geometry.poly.containsLocation(latLng, poly)
+        if (cachedAllKmlPolygons.length === 0) return false
+        return cachedAllKmlPolygons.some((p: any) => {
+          // Use CACHED polygon instance
+          return window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)
         })
       }
 
@@ -1179,7 +1205,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         const expectedHouse = extractHouseNumber(rawAddress)
         const expectedPostal = extractPostal(rawAddress)
         const refPoint = hintPoint || null
-        const hasRestriction = hubPolygons.length > 0
+        const hasRestriction = cachedHubPolygons.length > 0
         const inside = hasRestriction
           ? results.filter((r: any) => isInsideSector(r.geometry.location))
           : []
@@ -1252,7 +1278,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
       // Повторная попытка: возвращает ЛУЧШЕГО кандидата ТОЛЬКО внутри полигона (если нет — null)
       const geocodeInsideOnly = async (rawAddress: string, hintPoint?: any): Promise<any | null> => {
-        const hasRestriction = hubPolygons.length > 0
+        const hasRestriction = cachedHubPolygons.length > 0
         if (!hasRestriction) return null
         const address = cleanAddressForRoute(rawAddress)
         const request: any = {
@@ -1498,7 +1524,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       }
 
       // Проверка попадания в сектор (если есть) + повторная попытка для внешних точек
-      if (hubPolygons.length > 0) {
+      if (cachedHubPolygons.length > 0) {
         const all = [originRes, ...waypointResList, destinationRes]
 
         let anyOutside = false
@@ -1596,7 +1622,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       if (result) {
         // Если заданы Хабы или Сектора — проверяем попадание всех точек
         const city = cityCtx.city
-        if ((hubPolygons.length > 0 || (city && settings.citySectors && settings.citySectors[city] && settings.citySectors[city].length >= 3)) && window.google?.maps?.geometry?.poly) {
+        if ((cachedHubPolygons.length > 0 || (city && settings.citySectors && settings.citySectors[city] && settings.citySectors[city].length >= 3)) && window.google?.maps?.geometry?.poly) {
           try {
             const legs = result.routes[0].legs
             const points: any[] = []
