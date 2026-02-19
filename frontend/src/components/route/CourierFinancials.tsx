@@ -158,10 +158,35 @@ export function CourierFinancials({
             const amount = parseFloat(order.amount || order.totalAmount || 0);
             const changeAmount = parseFloat(order.changeAmount || 0);
             const paymentMethod = (order.paymentMethod || '').toLowerCase();
-            const isCash = paymentMethod.includes('готівка') ||
+
+            // IMPORTANT: Check "безготівка" (cashless) BEFORE "готівка" (cash)
+            // because "безготівка" contains the substring "готівка"
+            const isOnline =
+                paymentMethod.includes('безготівка') ||
+                paymentMethod.includes('онлайн') ||
+                paymentMethod.includes('online') ||
+                paymentMethod.includes('liqpay') ||
+                paymentMethod.includes('site') ||
+                paymentMethod.includes('сайт') ||
+                paymentMethod.includes('qr') ||
+                paymentMethod.includes('портмоне') ||
+                paymentMethod.includes('переказ') ||
+                paymentMethod.includes('перевод');
+
+            const isCard =
+                paymentMethod.includes('карт') ||
+                paymentMethod.includes('card') ||
+                paymentMethod.includes('терминал') ||
+                paymentMethod.includes('terminal') ||
+                paymentMethod.includes('pos');
+
+            const isCash = !isOnline && !isCard && (
+                paymentMethod.includes('готівка') ||
                 paymentMethod.includes('наличные') ||
+                paymentMethod.includes('налич') ||
                 paymentMethod === 'cash' ||
-                paymentMethod === '';
+                paymentMethod === ''
+            );
 
             const effectiveAmount = isCash ? (amount + changeAmount) : amount;
 
@@ -173,29 +198,18 @@ export function CourierFinancials({
                 effectiveAmount
             };
 
-            if (isCash) {
-                summary.currentShift.cashOrders.count++;
-                summary.currentShift.cashOrders.totalAmount += effectiveAmount;
-                summary.currentShift.cashOrders.orders.push(orderData);
-            } else if (
-                paymentMethod.includes('карт') ||
-                paymentMethod.includes('card') ||
-                paymentMethod.includes('терминал') ||
-                paymentMethod.includes('terminal')
-            ) {
-                summary.currentShift.cardOrders.count++;
-                summary.currentShift.cardOrders.totalAmount += amount;
-                summary.currentShift.cardOrders.orders.push(orderData);
-            } else if (
-                paymentMethod.includes('онлайн') ||
-                paymentMethod.includes('online') ||
-                paymentMethod.includes('liqpay') ||
-                paymentMethod.includes('site') ||
-                paymentMethod.includes('сайт')
-            ) {
+            if (isOnline) {
                 summary.currentShift.onlineOrders.count++;
                 summary.currentShift.onlineOrders.totalAmount += amount;
                 summary.currentShift.onlineOrders.orders.push(orderData);
+            } else if (isCard) {
+                summary.currentShift.cardOrders.count++;
+                summary.currentShift.cardOrders.totalAmount += amount;
+                summary.currentShift.cardOrders.orders.push(orderData);
+            } else if (isCash) {
+                summary.currentShift.cashOrders.count++;
+                summary.currentShift.cashOrders.totalAmount += effectiveAmount;
+                summary.currentShift.cashOrders.orders.push(orderData);
             }
         });
 

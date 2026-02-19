@@ -18,6 +18,7 @@ import {
   ChevronRightIcon
 } from '@heroicons/react/24/outline'
 import { localStorageUtils } from '../../utils/ui/localStorage'
+import { cleanAddress, generateStreetVariants } from '../../utils/data/addressUtils'
 import { googleMapsLoader } from '../../utils/maps/googleMapsLoader'
 import { useExcelData } from '../../contexts/ExcelDataContext'
 import { useTheme } from '../../contexts/ThemeContext'
@@ -939,26 +940,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     }, 100)
   }
 
-  // Функция для очистки адреса от лишней информации
-  const cleanAddress = (address: string) => {
-    if (!address) return address
-
-    // Удаляем информацию после номера дома (подъезд, этаж, подвал и т.д.)
-    let cleaned = address
-      .replace(/,\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
-      .replace(/,\s*\d+\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
-      .trim()
-
-    // Убираем ведущий "Київ," или "Киев," если он идёт первым токеном —
-    // это часто ошибочный префикс из CRM (адрес реально в области).
-    // Мы удаляем его только если в адресе нет явного указания на область,
-    // чтобы не сломать настоящие киевские адреса.
-    // Пример: "Київ, вул. Лесі Українки, 74в" → "вул. Лесі Українки, 74в"
-    // (потом cleanAddressForRoute добавит "Київська область, Україна")
-    cleaned = cleaned.replace(/^(Київ|Киев|Kyiv|Kiev)\s*,\s*/i, '')
-
-    return cleaned
-  }
 
   // Выбранный город обязателен; используем только его для bias/нормализации
   const getSelectedCity = useCallback((): { city: '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'; country: 'Украина'; region: 'UA' } => {
@@ -1039,39 +1020,72 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         }))
       }
 
+      // --- Geocoding 2.0: Spatial Optimizations ---
+      const buildBounds = (paths: any[]) => {
+        const bounds = new window.google.maps.LatLngBounds()
+        paths.forEach(p => {
+          if (Array.isArray(p)) p.forEach(pt => bounds.extend(pt))
+          else bounds.extend(p)
+        })
+        return bounds
+      }
+
       // Pre-cache ALL KML polygons for checkAnyKmlZone
-      let cachedAllKmlPolygons: { folderName: string; name: string; googlePoly: any }[] = []
+      let cachedAllKmlPolygons: { folderName: string; name: string; googlePoly: any; bounds: any }[] = []
       if (settings.kmlData?.polygons) {
         cachedAllKmlPolygons = settings.kmlData.polygons.map((p: any) => ({
           ...p,
-          googlePoly: new window.google.maps.Polygon({ paths: p.path })
+          googlePoly: new window.google.maps.Polygon({ paths: p.path }),
+          bounds: buildBounds(p.path)
         }))
       }
 
+      // Memoization caches for current calculation session
+      const checkInsideMemo = new Map<string, boolean>()
+      const checkAnyMemo = new Map<string, boolean>()
+
       // Для проверки вхождения используем все ПОЛИГОНЫ хаба (с учетом фильтра зон)
       const checkInside = (latLng: any) => {
+        if (!latLng) return false
+        const key = `${latLng.lat()},${latLng.lng()}`
+        if (checkInsideMemo.has(key)) return checkInsideMemo.get(key)!
+
+        let result = true
         if (cachedHubPolygons.length > 0) {
-          return cachedHubPolygons.some((p: any) => {
+          result = cachedHubPolygons.some((p: any) => {
             // Если выбраны конкретные зоны, проверяем только их
             if (selectedZones.length > 0) {
               const zoneKey = `${p.folderName}:${p.name}`
               if (!selectedZones.includes(zoneKey)) return false
             }
 
-            // Use CACHED polygon instance
-            return window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)
+            // Geocoding 2.0: Bounding Box Pre-filter
+            if (p.bounds && !p.bounds.contains(latLng)) return false
+
+            // Прямое вхождение (строгое)
+            if (window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)) return true
+
+            // Fallback: проверка "на границе" с допуском ~50м (0.0005 градуса)
+            return window.google.maps.geometry.poly.isLocationOnEdge(latLng, p.googlePoly, 0.0005)
           })
         }
-        return true // Если нет КМЛ ограничений — валидно
+        checkInsideMemo.set(key, result)
+        return result
       }
 
       // Проверка попадания в ЛЮБУЮ зону KML (для приоритезации при геокодировании)
       const checkAnyKmlZone = (latLng: any) => {
-        if (cachedAllKmlPolygons.length === 0) return false
-        return cachedAllKmlPolygons.some((p: any) => {
-          // Use CACHED polygon instance
+        if (!latLng || cachedAllKmlPolygons.length === 0) return false
+        const key = `${latLng.lat()},${latLng.lng()}`
+        if (checkAnyMemo.has(key)) return checkAnyMemo.get(key)!
+
+        const result = cachedAllKmlPolygons.some((p: any) => {
+          // Bounding Box Pre-filter
+          if (p.bounds && !p.bounds.contains(latLng)) return false
           return window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)
         })
+        checkAnyMemo.set(key, result)
+        return result
       }
 
       // Полигон сектора для containsLocation (используем checkInside вместо прямого полигона)
@@ -1091,55 +1105,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         return m ? m[0] : null
       }
 
-      // Генерируем альтернативные варианты записи улицы (сокращения/языковые формы/дефисы)
-      const generateStreetVariants = (raw: string): string[] => {
-        const base = cleanAddressForRoute(raw)
-        const variants = new Set<string>()
-        variants.add(base)
-        const replaceTokens = (
-          str: string,
-          from: RegExp,
-          to: string
-        ) => str.replace(from, to)
-
-        const tokenPairs: Array<[RegExp, string]> = [
-          [/\bвулиця\b/iu, 'вул.'],
-          [/\bвул\.?\b/iu, 'вулиця'],
-          [/\bулица\b/iu, 'ул.'],
-          [/\bул\.?\b/iu, 'улица'],
-          [/\bпровулок\b/iu, 'пров.'],
-          [/\bпров\.?\b/iu, 'провулок'],
-          [/\bпроспект\b/iu, 'просп.'],
-          [/\bпросп\.?\b/iu, 'проспект'],
-          [/\bлиния\b/iu, 'лінія'],
-          [/\bлінія\b/iu, 'лін.'],
-          [/\bлін\.?\b/iu, 'лінія']
-        ]
-        tokenPairs.forEach(([from, to]) => {
-          try { variants.add(replaceTokens(base, from, to)) } catch { }
-        })
-
-        // Нормализация номера линии: 1-а ↔ 1а ↔ 1
-        const lineForms = [
-          base.replace(/\b(\d+)-(а|я)\b/iu, '$1$2'),
-          base.replace(/\b(\d+)\s*(а|я)\b/iu, '$1-$2'),
-          base.replace(/\b(\d+)-?(а|я)\b/iu, '$1'),
-          base.replace(/\bперша\b/iu, '1-а'),
-          base.replace(/\bпервая\b/iu, '1-я')
-        ]
-        lineForms.forEach(v => variants.add(v))
-
-        // Если указано 
-        //   "1 лінія" или "1 линия" без префикса типа улицы — добавим префиксы
-        if (/\b(лінія|линия)\b/iu.test(base) && !/\b(вулиця|вул\.|улица|ул\.)\b/iu.test(base)) {
-          variants.add(`вулиця ${base}`)
-          variants.add(`вул. ${base}`)
-          variants.add(`улица ${base}`)
-          variants.add(`ул. ${base}`)
-        }
-
-        return Array.from(variants).filter(v => v && v !== base)
-      }
 
       // Общая оценка кандидата: приоритет внутри сектора, наличие street_number и ROOFTOP
       const scoreCandidate = (candidate: any, opts: { refPoint?: any; expectedHouse?: string | null; expectedPostal?: string | null; inside: boolean }): number => {
@@ -1194,46 +1159,60 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
       // Геокодирование адреса с учетом сектора и region/componentRestrictions
       const geocodeWithSector = async (rawAddress: string, hintPoint?: any): Promise<any | null> => {
-        const address = cleanAddressForRoute(rawAddress)
-        const request: any = {
-          address,
-          region: cityCtx.region,
-          componentRestrictions: { country: 'ua' }
-        }
-        const results: any = await googleApiCache.geocode(request)
-        if (!results || results.length === 0) return null
         const expectedHouse = extractHouseNumber(rawAddress)
         const expectedPostal = extractPostal(rawAddress)
         const refPoint = hintPoint || null
         const hasRestriction = cachedHubPolygons.length > 0
-        const inside = hasRestriction
-          ? results.filter((r: any) => isInsideSector(r.geometry.location))
-          : []
-        const pool = (inside.length > 0 ? inside : results)
-        let best = pool[0]
-        let bestScore = scoreCandidate(best, { refPoint, expectedHouse, expectedPostal, inside: hasRestriction ? isInsideSector(best.geometry.location) : true })
-        for (let i = 1; i < pool.length; i++) {
-          const cand = pool[i]
-          const candScore = scoreCandidate(cand, { refPoint, expectedHouse, expectedPostal, inside: hasRestriction ? isInsideSector(cand.geometry.location) : true })
-          if (candScore > bestScore) { best = cand; bestScore = candScore }
-        }
-        // если мы выбрали снаружи, а есть варианты внутри, попробуем лучшего внутри
-        if (hasRestriction && inside.length > 0 && !isInsideSector(best.geometry.location)) {
-          let bestIn = inside[0]
-          let bestInScore = scoreCandidate(bestIn, { refPoint, expectedHouse, expectedPostal, inside: true })
-          for (let i = 1; i < inside.length; i++) {
-            const s = scoreCandidate(inside[i], { refPoint, expectedHouse, expectedPostal, inside: true })
-            if (s > bestInScore) { bestIn = inside[i]; bestInScore = s }
+
+        // Geocoding 2.0: Smart Permutations Search
+        const searchVariants = generateStreetVariants(rawAddress, cityCtx.city)
+        let candidatesByVariant: any[] = []
+
+        for (const variant of searchVariants) {
+          const request = {
+            address: variant,
+            region: cityCtx.region,
+            componentRestrictions: { country: 'ua' }
           }
-          best = bestIn
+          // eslint-disable-next-line no-await-in-loop
+          const res: any = await googleApiCache.geocode(request)
+          if (res && res.length > 0) {
+            candidatesByVariant = [...candidatesByVariant, ...res]
+            // If we found a ROOFTOP inside KML, we can stop early
+            const bestFound = res.find((r: any) =>
+              r.geometry?.location_type === 'ROOFTOP' &&
+              (!hasRestriction || isInsideSector(r.geometry.location))
+            )
+            if (bestFound) break
+          }
         }
 
-        // Если нет ROOFTOP, попробуем уточнить корпус/секцию и повторить строго внутри сектора
+        if (candidatesByVariant.length === 0) return null
+
+        // Scoring all found candidates
+        let best = candidatesByVariant[0]
+        let bestScore = scoreCandidate(best, {
+          refPoint,
+          expectedHouse,
+          expectedPostal,
+          inside: hasRestriction ? isInsideSector(best.geometry.location) : true
+        })
+
+        for (let i = 1; i < candidatesByVariant.length; i++) {
+          const cand = candidatesByVariant[i]
+          const isIns = hasRestriction ? isInsideSector(cand.geometry.location) : true
+          const candScore = scoreCandidate(cand, { refPoint, expectedHouse, expectedPostal, inside: isIns })
+          if (candScore > bestScore) {
+            best = cand
+            bestScore = candScore
+          }
+        }
+
+        // Если нет ROOFTOP, попробуем уточнить корпус/секцию
         const tryRefine = () => {
           const m = rawAddress.match(/\b(корп(?:ус)?|к|секция|литера)\s*([\w-]+)/i)
           if (!m) return null
-          const refined = `${address}, ${m[1]} ${m[2]}`
-          return refined
+          return `${cleanAddressForRoute(rawAddress)}, ${m[1]} ${m[2]}`
         }
         if (best?.geometry?.location_type !== 'ROOFTOP') {
           const refinedAddr = tryRefine()
@@ -1243,65 +1222,33 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           }
         }
 
-        // МУЛЬТИ-СТРАТЕГИЯ: если лучший результат не ROOFTOP и не в KML-зоне,
-        // пробуем дополнительные стратегии геокодирования
-        if (best?.geometry?.location_type !== 'ROOFTOP' && !checkAnyKmlZone(best?.geometry?.location)) {
-          // Стратегия 1: добавляем названия населённых пунктов из KML-папок
-          const kmlTowns: string[] = []
-          if (settings.kmlData?.polygons) {
-            settings.kmlData.polygons.forEach((p: any) => {
-              if (p.folderName && !kmlTowns.includes(p.folderName)) kmlTowns.push(p.folderName)
-              if (p.name && !kmlTowns.includes(p.name)) kmlTowns.push(p.name)
-            })
-          }
-          for (const town of kmlTowns.slice(0, 5)) {
-            // Пропускаем если уже содержится в адресе
-            if (address.toLowerCase().includes(town.toLowerCase())) continue
-            // eslint-disable-next-line no-await-in-loop
-            const townRes: any = await googleApiCache.geocode({ ...request, address: `${address}, ${town}` })
-            if (townRes && townRes.length > 0) {
-              const insideTown = townRes.filter((r: any) => checkAnyKmlZone(r.geometry.location))
-              if (insideTown.length > 0) {
-                const candidate = insideTown[0]
-                // Проверяем что номер дома совпадает
-                if (!expectedHouse || (candidate.formatted_address || '').toLowerCase().includes(expectedHouse.toLowerCase())) {
-                  best = candidate
-                  break
-                }
-              }
-            }
-          }
-        }
-
         return best
       }
+
 
       // Повторная попытка: возвращает ЛУЧШЕГО кандидата ТОЛЬКО внутри полигона (если нет — null)
       const geocodeInsideOnly = async (rawAddress: string, hintPoint?: any): Promise<any | null> => {
         const hasRestriction = cachedHubPolygons.length > 0
         if (!hasRestriction) return null
-        const address = cleanAddressForRoute(rawAddress)
         const request: any = {
-          address,
+          address: rawAddress,
           region: cityCtx.region,
           componentRestrictions: { country: 'ua' }
         }
-        const results: any = await googleApiCache.geocode(request)
-        let gathered = results
-        if (!gathered || gathered.length === 0) gathered = []
-        let inside = gathered.filter((r: any) => isInsideSector(r.geometry.location))
-        // Если внутри сектора кандидатов нет — пробуем альтернативные формы улицы
-        if (inside.length === 0) {
-          const alts = generateStreetVariants(rawAddress)
-          for (const alt of alts) {
-            // eslint-disable-next-line no-await-in-loop
-            const altRes: any = await googleApiCache.geocode({ ...request, address: alt })
-            if (altRes && altRes.length > 0) {
-              const insideAlt = altRes.filter((r: any) => isInsideSector(r.geometry.location))
-              if (insideAlt.length > 0) { inside = insideAlt; break }
-            }
-          }
+
+        let candidates: any[] = []
+        const variants = generateStreetVariants(rawAddress, cityCtx.city)
+
+        for (const variant of variants) {
+          // eslint-disable-next-line no-await-in-loop
+          const res: any = await googleApiCache.geocode({ ...request, address: variant })
+          if (res && res.length > 0) candidates = [...candidates, ...res]
         }
+
+        if (candidates.length === 0) return null
+
+        let inside = candidates.filter((r: any) => isInsideSector(r.geometry.location))
+
         // Если всё ещё нет — при наличии подсказки (предыдущая точка) получаем sublocality и пробуем с ней
         if (inside.length === 0 && hintPoint) {
           const rev: any = await googleApiCache.geocode({ location: hintPoint })
@@ -1314,7 +1261,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
               return null
             })()
             if (sub) {
-              const withSub = `${address}, ${sub}`
+              const withSub = `${cleanAddressForRoute(rawAddress)}, ${sub}`
               const subRes: any = await googleApiCache.geocode({ ...request, address: withSub })
               if (subRes && subRes.length > 0) {
                 const insideSub = subRes.filter((r: any) => isInsideSector(r.geometry.location))
@@ -1324,70 +1271,52 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           }
         }
 
-        // ═══════════════════════════════════════════════════════════════
         // ИСЧЕРПЫВАЮЩИЙ ПОИСК ПО KML-ЗОНАМ:
-        // Если адрес всё ещё не найден внутри сектора, пробуем явно
-        // добавить название каждого населённого пункта из KML-папок
-        // + варианты с областью. Это решает кейс:
-        //   "вул. Лесі Українки, 74в" → ищем с "Вишневе", "Київська область"
-        // ═══════════════════════════════════════════════════════════════
         if (inside.length === 0 && settings.kmlData?.polygons) {
-          // Собираем уникальные названия населённых пунктов из KML
           const kmlTowns = new Set<string>()
           settings.kmlData.polygons.forEach((p: any) => {
             if (p.folderName) kmlTowns.add(p.folderName)
             if (p.name) kmlTowns.add(p.name)
           })
 
-          // Области для перебора (Київська, Харківська и т.д.)
-          const oblastVariants = [
-            'Київська область', 'Kyivska oblast',
-            'Харківська область', 'Одеська область', 'Полтавська область'
-          ]
-
-          // Базовый адрес без города (уже очищен cleanAddress)
+          const oblastVariants = ['Київська область', 'Kyivska oblast']
           const baseAddr = cleanAddress(rawAddress)
-
           const searchVariants: string[] = []
-          // Вариант 1: адрес + каждый населённый пункт из KML
+
           kmlTowns.forEach(town => {
             searchVariants.push(`${baseAddr}, ${town}`)
             searchVariants.push(`${baseAddr}, ${town}, Київська область, Україна`)
           })
-          // Вариант 2: адрес + область без города
           oblastVariants.forEach(oblast => {
             searchVariants.push(`${baseAddr}, ${oblast}, Україна`)
           })
 
-          for (const variant of searchVariants) {
+          for (const v of searchVariants) {
             // eslint-disable-next-line no-await-in-loop
-            const varRes: any = await googleApiCache.geocode({ ...request, address: variant })
+            const varRes: any = await googleApiCache.geocode({ ...request, address: v })
             if (varRes && varRes.length > 0) {
               const insideVar = varRes.filter((r: any) => isInsideSector(r.geometry.location))
               if (insideVar.length > 0) {
                 inside = insideVar
                 break
               }
-              // Если не в секторе, но в любой KML-зоне — тоже берём как запасной
-              const anyZone = varRes.filter((r: any) => checkAnyKmlZone(r.geometry.location))
-              if (anyZone.length > 0 && inside.length === 0) {
-                inside = anyZone // запасной вариант, продолжаем искать лучше
-              }
             }
           }
         }
+
         if (inside.length === 0) return null
+
         const refPoint = hintPoint || null
         const expectedHouse = extractHouseNumber(rawAddress)
         const expectedPostal = extractPostal(rawAddress)
+
         let best = inside[0]
         let bestScore = scoreCandidate(best, { refPoint, expectedHouse, expectedPostal, inside: true })
         for (let i = 1; i < inside.length; i++) {
-          const cand = inside[i]
-          const candScore = scoreCandidate(cand, { refPoint, expectedHouse, expectedPostal, inside: true })
-          if (candScore > bestScore) { best = cand; bestScore = candScore }
+          const s = scoreCandidate(inside[i], { refPoint, expectedHouse, expectedPostal, inside: true })
+          if (s > bestScore) { best = inside[i]; bestScore = s }
         }
-        // If multiple viable options exist and no strong winner, ask the user
+
         if (inside.length > 1) {
           const withDistances = inside.map((r: any) => {
             let d
