@@ -17,6 +17,8 @@ export interface GeocodingResult {
   placeId?: string
   error?: string
   warnings?: string[]
+  locationType?: string
+  types?: string[]
 }
 
 export interface GeocodingOptions {
@@ -86,6 +88,8 @@ export class GeocodingService {
             latitude: result.geometry.location.lat(),
             longitude: result.geometry.location.lng(),
             placeId: result.place_id,
+            locationType: result.geometry.location_type,
+            types: result.types,
             warnings: []
           }
 
@@ -157,7 +161,9 @@ export class GeocodingService {
             formattedAddress: result.formatted_address,
             latitude: lat,
             longitude: lng,
-            placeId: result.place_id
+            placeId: result.place_id,
+            locationType: result.geometry.location_type,
+            types: result.types
           }
 
           this.cache.set(cacheKey, geocodingResult)
@@ -220,32 +226,43 @@ export class GeocodingService {
     // Сначала пытаемся геокодировать исходный адрес
     let result = await this.geocodeAddress(address, options)
 
-    if (result.success) {
+    // Если результат найден, но это ОБЛАСТЬ (регион), а не точный адрес - считаем это ошибкой (раздутие километража)
+    const isRegionCenter = result.success && (
+      (result.locationType === 'APPROXIMATE' || result.locationType === 'GEOMETRIC_CENTER') &&
+      result.types?.includes('administrative_area_level_1') // Киевская область
+    );
+
+    if (result.success && !isRegionCenter) {
       return result
     }
 
-    // Если не получилось, пробуем очищенный адрес
+    // Если не получилось или это центр области, пробуем очищенный адрес
     let cleanedAddress = address
       .replace(/,\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
       .replace(/,\s*\d+\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
-      // Удаляем почтовые индексы (5 цифр), так как они часто путают геокодер если устарели
+      // Удаляем почтовые индексы (5 цифр)
       .replace(/\b\d{5}\b/g, '')
       .trim()
+
+    // Удаляем "Киевская область" и другие вариации, которые могут сбивать поиск в центр области
+    cleanedAddress = cleanedAddress
+      .replace(/киевская область|kyiv oblast|kiev oblast/gi, '')
+      .replace(/,\s*,/g, ',') // fix double commas
+      .trim();
 
     // Убираем лишние запятые после удаления
     cleanedAddress = cleanedAddress.replace(/,\s*,/g, ',').replace(/,$/, '').trim()
 
-    // Если нет упоминания Киева или Киевской области, добавляем область (так как проект для Киевского региона)
+    // Если нет упоминания Киева, добавляем (приоритет Киева)
+    // Но если есть пригород (Вишневое и т.д.), то не добавляем Киев, а добавляем Украину
     const hasKyiv = /киев|kyiv|kiev/i.test(cleanedAddress);
-    const hasOblast = /область|oblast/i.test(cleanedAddress);
 
-    if (!hasKyiv && !hasOblast) {
+    // Список городов-спутников (KML зон), чтобы не добавлять "Киев" к "Вишневое"
+    const hasSatelliteCity = /вишневое|vishneve|вышгород|vyshhorod|ирпень|irpin|буча|bucha|бровары|brovary|бортничи|bortnychi|коцюбинское|kotsiubynske|софиевская борщаговка|sofiyivska borshchahivka/i.test(cleanedAddress);
+
+    if (!hasKyiv && !hasSatelliteCity) {
       cleanedAddress += ', Киев, Украина'
-    } else if (hasKyiv && !hasOblast) {
-      // Если есть упоминание "Киев" но не как отдельный город (например в составе области), 
-      // или если это просто "Киев" — в данном случае мы доверяем что там уже есть город.
-      // Но если это спутник (Вишневое), то "Киев" там быть не должно если мы хотим точности.
-      // В geocodeAndCleanAddress мы пока просто добавим Украину для точности если её нет.
+    } else {
       if (!/украина|ukraine|україна/i.test(cleanedAddress)) {
         cleanedAddress += ', Украина'
       }
@@ -254,6 +271,19 @@ export class GeocodingService {
     if (cleanedAddress !== address) {
       // console.log(`Geocoding with cleaned address: "${cleanedAddress}"`)
       result = await this.geocodeAddress(cleanedAddress, options)
+
+      // Если и очищенный адрес вернул регион, пробуем жестко добавить Киев (если это не спутник)
+      const isCleanedRegionCenter = result.success && (
+        (result.locationType === 'APPROXIMATE' || result.locationType === 'GEOMETRIC_CENTER') &&
+        result.types?.includes('administrative_area_level_1')
+      );
+
+      if (isCleanedRegionCenter && !hasKyiv && !hasSatelliteCity) {
+        cleanedAddress = address.replace(/киевская область|kyiv oblast|kiev oblast/gi, '').trim(); // Reset to almost original
+        cleanedAddress += ', Киев, Украина'; // Force Kiev
+        result = await this.geocodeAddress(cleanedAddress, options);
+      }
+
       if (result.success) {
         result.warnings = [...(result.warnings || []), 'Адрес был автоматически очищен для поиска']
       }
