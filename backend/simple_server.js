@@ -563,6 +563,33 @@ async function ensureDivisionIdColumn() {
 }
 
 /**
+ * Manual migration to ensure manual_order_overrides table exists
+ */
+async function ensureManualOverridesTable() {
+  try {
+    logger.info('DB Check: Ensuring manual_order_overrides table exists...');
+    await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS manual_order_overrides (
+        id SERIAL PRIMARY KEY,
+        order_number TEXT NOT NULL UNIQUE,
+        field_name TEXT NOT NULL,
+        override_value TEXT,
+        original_value TEXT,
+        updated_by TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+    logger.info('DB Check: manual_order_overrides table verified/created successfully');
+  } catch (err) {
+    logger.error('DB Check: Error creating manual_order_overrides table', {
+      error: err.message,
+      stack: err.stack
+    });
+  }
+}
+
+/**
  * Ensure database indexes exist for performance
  */
 async function ensureIndexes() {
