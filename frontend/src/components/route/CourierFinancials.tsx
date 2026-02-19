@@ -163,7 +163,7 @@ export function CourierFinancials({
                 paymentMethod === 'cash' ||
                 paymentMethod === '';
 
-            const effectiveAmount = isCash ? Math.max(amount, changeAmount) : amount;
+            const effectiveAmount = isCash ? (amount + changeAmount) : amount;
 
             const orderData: Order = {
                 ...order,
