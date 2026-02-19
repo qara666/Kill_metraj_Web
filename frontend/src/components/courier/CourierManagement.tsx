@@ -12,21 +12,19 @@ import {
   XMarkIcon,
   MapIcon,
   ClockIcon,
-  ArrowPathIcon,
+
   ExclamationTriangleIcon
 } from '@heroicons/react/24/outline'
 import { CourierCard } from './CourierCard'
 import { useExcelData } from '../../contexts/ExcelDataContext'
 import { useTheme } from '../../contexts/ThemeContext'
-import { googleMapsLoader } from '../../utils/maps/googleMapsLoader'
+
 import { clsx } from 'clsx'
 import { AddressValidationService } from '../../services/addressValidation'
 import { toast } from 'react-hot-toast'
 import { AddressEditModal } from '../modals/AddressEditModal'
 import { Tooltip } from '../shared/Tooltip'
-import { googleApiCache } from '../../services/googleApiCache'
-import { GeocodingService } from '../../services/geocodingService'
-import { getUkraineTrafficForOrders, calculateTotalTrafficDelay } from '../../utils/maps/ukraineTrafficAPI'
+
 import { normalizeCourierName } from '../../utils/data/courierName'
 
 // Ленивая загрузка тяжелых компонентов
@@ -69,7 +67,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
   const [selectedCourierForDistance, setSelectedCourierForDistance] = useState<Courier | null>(null)
   const [showAddressEditModal, setShowAddressEditModal] = useState(false)
   const [editingOrder, setEditingOrder] = useState<any | null>(null)
-  const [recalculatingRouteId, setRecalculatingRouteId] = useState<string | null>(null)
+
 
   const [hasSeenHelp, setHasSeenHelp] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -287,18 +285,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
     setEditingOrder(null)
   }
 
-  const handleRecalculateRoute = async (route: any) => {
-    const anomalyCheck = AddressValidationService.checkRouteAnomalies(route)
 
-    if (anomalyCheck.hasAnomalies && anomalyCheck.errors.length > 0) {
-      console.error('Route errors:', anomalyCheck.errors)
-      return
-    }
-
-    if (anomalyCheck.warnings.length > 0) {
-      console.warn('Route warnings:', anomalyCheck.warnings)
-    }
-  }
 
   const openRouteInGoogleMaps = (route: any) => {
     if (!route || !route.orders || route.orders.length === 0) {
@@ -368,157 +355,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
     setShowDistanceModal(true)
   }
 
-  const recalculateCourierRoute = async (route: any) => {
-    setRecalculatingRouteId(route.id)
 
-    try {
-      const anomalyCheck = AddressValidationService.checkRouteAnomalies(route)
-
-      if (anomalyCheck.hasAnomalies && anomalyCheck.errors.length > 0) {
-        const errorMessage = `Виявлено помилки у маршруті:\n${anomalyCheck.errors.join('\n')}\n\nПерерахунок неможливий. Виправте помилки в адресах.`
-        toast.error(errorMessage)
-        return
-      }
-
-      if (!window.google || !window.google.maps) {
-        try {
-          await googleMapsLoader.load()
-        } catch (error) {
-          toast.error('Помилка завантаження Google Maps API.')
-          return
-        }
-      }
-
-      const waypoints = []
-
-      // Явное геокодирование всех точек маршрута для избежания "центра области"
-      for (const order of route.orders) {
-        const geoResult = await GeocodingService.geocodeAndCleanAddress(order.address)
-        if (geoResult.success && geoResult.latitude && geoResult.longitude) {
-          waypoints.push({
-            location: { lat: geoResult.latitude, lng: geoResult.longitude },
-            stopover: true
-          })
-        } else {
-          // Fallback если геокодинг не сработал (хотя geocodeAndCleanAddress очень старается)
-          waypoints.push({
-            location: order.address,
-            stopover: true
-          })
-        }
-      }
-
-      // Также геокодируем старт и финиш
-      let origin: any = route.startAddress
-      if (typeof route.startAddress === 'string') {
-        const startGeo = await GeocodingService.geocodeAndCleanAddress(route.startAddress)
-        if (startGeo.success && startGeo.latitude && startGeo.longitude) {
-          origin = { lat: startGeo.latitude, lng: startGeo.longitude }
-        }
-      }
-
-      let destination: any = route.endAddress
-      if (typeof route.endAddress === 'string') {
-        const endGeo = await GeocodingService.geocodeAndCleanAddress(route.endAddress)
-        if (endGeo.success && endGeo.latitude && endGeo.longitude) {
-          destination = { lat: endGeo.latitude, lng: endGeo.longitude }
-        }
-      }
-
-      const request = {
-        origin: origin,
-        destination: destination,
-        waypoints: waypoints,
-        travelMode: window.google.maps.TravelMode.DRIVING,
-        optimizeWaypoints: false,
-        unitSystem: window.google.maps.UnitSystem.METRIC,
-        avoidHighways: false,
-        avoidTolls: false,
-        avoidFerries: false,
-        drivingOptions: {
-          departureTime: new Date(),
-          trafficModel: window.google.maps.TrafficModel.BEST_GUESS
-        }
-      }
-
-      const result = await googleApiCache.getDirections(request)
-      if (!result) {
-        toast.error('Помилка при перерахунку маршруту')
-        return
-      }
-
-      const totalDistanceMeters = result.routes[0].legs.reduce((sum: number, leg: any) => {
-        if (leg.distance && typeof leg.distance.value === 'number') return sum + leg.distance.value;
-        return sum;
-      }, 0);
-      const totalDurationSec = result.routes[0].legs.reduce((sum: number, leg: any) => {
-        if (leg.duration && typeof leg.duration.value === 'number') return sum + leg.duration.value;
-        return sum;
-      }, 0);
-
-      let adjustedDurationSec = totalDurationSec
-      let trafficDelayMin = 0
-      const settings = localStorageUtils.getAllSettings()
-      const mapboxToken = settings.mapboxToken || localStorage.getItem('km_mapbox_token')
-
-      if (mapboxToken && route.orders.length >= 1) {
-        try {
-          const chainForTraffic = route.orders.map((o: any) => ({
-            ...o,
-            coords: o.coords || (o.raw?.coords)
-          })).filter((o: any) => o.coords)
-
-          if (chainForTraffic.length >= 1) {
-            const trafficInfo = await getUkraineTrafficForOrders(chainForTraffic as any, mapboxToken)
-            if (trafficInfo.length > 0) {
-              trafficDelayMin = calculateTotalTrafficDelay(trafficInfo)
-
-              const courierObj = couriers.find(c => c.name === route.courier)
-              if (route.vehicleType === 'motorcycle' || (courierObj && courierObj.vehicleType === 'motorcycle')) {
-                trafficDelayMin = trafficDelayMin * 0.5
-              }
-
-              adjustedDurationSec += (trafficDelayMin * 60)
-            }
-          }
-        } catch (err) {
-          console.warn('Traffic calculation failed:', err)
-        }
-      }
-
-      const updatedRoute = {
-        ...route,
-        totalDistance: Math.round(totalDistanceMeters / 1000 * 10) / 10,
-        totalDuration: Math.round(adjustedDurationSec / 60),
-        isOptimized: true,
-        lastCalculated: new Date().toISOString()
-      }
-
-      if (contextData?.routes) {
-        const updatedRoutes = contextData.routes.map((r: any) => r.id === route.id ? updatedRoute : r)
-        updateRouteData(updatedRoutes)
-      }
-
-      try {
-        const savedData = JSON.parse(localStorage.getItem('km_dashboard_processed_data') || '{}')
-        if (savedData.routes) {
-          const updatedRoutes = savedData.routes.map((r: any) => r.id === route.id ? updatedRoute : r)
-          savedData.routes = updatedRoutes
-          localStorage.setItem('km_dashboard_processed_data', JSON.stringify(savedData))
-        }
-      } catch (error) {
-        console.error('Ошибка сохранения маршрута:', error)
-      }
-
-      toast.success(`Маршрут кур'єра ${route.courier} перераховано: ${updatedRoute.totalDistance}км, ${updatedRoute.totalDuration}хв`)
-
-    } catch (error) {
-      console.error('Ошибка пересчета маршрута:', error)
-      toast.error('Помилка при перерахунку маршруту')
-    } finally {
-      setRecalculatingRouteId(null)
-    }
-  }
 
   return (
     <div className="space-y-6">
@@ -890,22 +727,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
                                     >
                                       <MapIcon className="h-4 w-4" />
                                     </button>
-                                    <button
-                                      onClick={() => recalculateCourierRoute(route)}
-                                      disabled={recalculatingRouteId === route.id}
-                                      className={clsx(
-                                        'p-2 rounded-lg transition-all duration-200',
-                                        recalculatingRouteId === route.id
-                                          ? 'text-green-600 bg-green-50 cursor-wait'
-                                          : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
-                                      )}
-                                      title={recalculatingRouteId === route.id ? "Перераховується..." : "Перерахувати маршрут"}
-                                    >
-                                      <ArrowPathIcon className={clsx(
-                                        'h-4 w-4',
-                                        recalculatingRouteId === route.id && 'animate-spin'
-                                      )} />
-                                    </button>
+
                                     <button
                                       onClick={() => deleteRoute(route.id)}
                                       className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200"
@@ -944,13 +766,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
                                   <div className="mt-4">
                                     <div className="flex items-center justify-between mb-2">
                                       <h6 className="text-sm font-medium text-gray-700">Замовлення у маршруті:</h6>
-                                      <button
-                                        onClick={() => handleRecalculateRoute(route)}
-                                        className="p-1 rounded text-green-600 hover:text-green-800 hover:bg-green-50 transition-colors"
-                                        title="Перерахувати маршрут"
-                                      >
-                                        <ArrowPathIcon className="h-4 w-4" />
-                                      </button>
+
                                     </div>
                                     <div className="space-y-1">
                                       {route.orders.map((order: any, orderIndex: number) => (

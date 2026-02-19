@@ -52,6 +52,9 @@ export function SettlementModal({
         return initial;
     });
 
+    // Track "Untaken Change" (сдачу не брал) state per order
+    const [untakenChanges, setUntakenChanges] = useState<Set<string>>(new Set());
+
     // Manual TOTAL amount state
     const [manualTotal, setManualTotal] = useState<string>('0');
     const [isManualTotalOverride, setIsManualTotalOverride] = useState(false);
@@ -61,16 +64,67 @@ export function SettlementModal({
             .filter((o: any) => selectedOrderIds.has(String(o.id || o.orderNumber)))
             .reduce((sum: number, o: any) => {
                 const id = String(o.id || o.orderNumber);
-                const val = parseFloat(orderAmounts[id] || '0');
-                return sum + (isNaN(val) ? 0 : val);
+                const baseAmount = parseFloat(orderAmounts[id] || '0');
+
+                return sum + (isNaN(baseAmount) ? 0 : baseAmount) + (untakenChanges.has(id) ? 0 : 0);
+                // Wait, orderAmounts[id] already includes changeAmount in initial state. 
+                // Let's refine: orderAmounts should probably be just the BASE amount, 
+                // but currently it's initialized with effectiveAmount.
             }, 0);
+    }, [orders, selectedOrderIds, orderAmounts, untakenChanges]);
+
+    // Refined effective sum calculation
+    const currentExpectedSum = useMemo(() => {
+        let total = 0;
+        orders.forEach((o: any) => {
+            const id = String(o.id || o.orderNumber);
+            if (!selectedOrderIds.has(id)) return;
+
+            // If user manually edited orderAmounts[id], we use that.
+            // If not, we use effectiveAmount but subtract change if "untaken"
+            const val = parseFloat(orderAmounts[id] || '0');
+            total += isNaN(val) ? 0 : val;
+
+            // If untakenChanges has this ID, we need to subtract the change amount from the default effective amount
+            // actually, it's easier to just adjust 'orderAmounts' when clicking the checkbox.
+        });
+        return total;
     }, [orders, selectedOrderIds, orderAmounts]);
+
+    const toggleUntakenChange = (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        const order = orders.find((o: any) => String(o.id || o.orderNumber) === id);
+        if (!order) return;
+
+        const changeVal = parseFloat(order.changeAmount || 0);
+        if (changeVal === 0) return;
+
+        const newSet = new Set(untakenChanges);
+        const isNowUntaken = !newSet.has(id);
+
+        if (isNowUntaken) {
+            newSet.add(id);
+            // Subtract change from order amount
+            setOrderAmounts(prev => ({
+                ...prev,
+                [id]: (parseFloat(prev[id]) - changeVal).toString()
+            }));
+        } else {
+            newSet.delete(id);
+            // Add change back to order amount
+            setOrderAmounts(prev => ({
+                ...prev,
+                [id]: (parseFloat(prev[id]) + changeVal).toString()
+            }));
+        }
+        setUntakenChanges(newSet);
+    };
 
     useEffect(() => {
         if (!isManualTotalOverride) {
-            setManualTotal(expectedSumBySelection.toString());
+            setManualTotal(currentExpectedSum.toString());
         }
-    }, [expectedSumBySelection, isManualTotalOverride]);
+    }, [currentExpectedSum, isManualTotalOverride]);
 
     const filteredOrders = useMemo(() => {
         if (!searchQuery) return orders;
@@ -83,7 +137,7 @@ export function SettlementModal({
 
     const handleExactCash = () => {
         setIsManualTotalOverride(false);
-        setManualTotal(expectedSumBySelection.toString());
+        setManualTotal(currentExpectedSum.toString());
     };
 
     const toggleOrder = (id: string) => {
@@ -129,23 +183,28 @@ export function SettlementModal({
 
             updateExcelData((prev: any) => {
                 const sessionId = `settle-${Date.now()}`;
-                const totalExpected = expectedSumBySelection;
+                const totalExpected = currentExpectedSum;
                 const totalReceived = cashReceived;
                 const totalDifference = difference;
 
                 const updatedOrders = prev.orders.map((order: any) => {
                     const orderId = String(order.id || order.orderNumber);
                     if (selectedOrderIds.has(orderId)) {
+                        const isUntaken = untakenChanges.has(orderId);
+                        const baseNote = isUntaken ? 'СДАЧУ НЕ БРАЛ. ' : '';
+
                         return {
                             ...order,
                             status: 'Исполнен',
-                            settlementNote: notes,
+                            settlementNote: baseNote + notes,
                             settledAmount: orderAmounts[orderId],
                             settledDate: new Date().toISOString(),
                             settlementSessionId: sessionId,
                             sessionTotalReceived: totalReceived,
                             sessionTotalDifference: totalDifference,
-                            sessionTotalExpected: totalExpected
+                            sessionTotalExpected: totalExpected,
+                            untakenChange: isUntaken,
+                            originalChangeAmount: order.changeAmount
                         };
                     }
                     return order;
@@ -168,7 +227,7 @@ export function SettlementModal({
         }
     };
 
-    const difference = (parseFloat(manualTotal) || 0) - expectedSumBySelection;
+    const difference = (parseFloat(manualTotal) || 0) - currentExpectedSum;
 
     return (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center z-[100] animate-in fade-in duration-300 p-4">
@@ -250,9 +309,25 @@ export function SettlementModal({
                                                     <CheckCircleIcon className={clsx("w-4 h-4 transition-transform", isSelected ? "scale-100" : "scale-0")} />
                                                 </div>
                                                 <div className="min-w-0 flex-1">
-                                                    <p className="text-xs font-black tracking-tight mb-0.5 truncate">
-                                                        #{order.orderNumber}
-                                                    </p>
+                                                    <div className="flex items-center gap-2 mb-0.5">
+                                                        <p className="text-xs font-black tracking-tight truncate">
+                                                            #{order.orderNumber}
+                                                        </p>
+                                                        {parseFloat(order.changeAmount || 0) > 0 && (
+                                                            <button
+                                                                onClick={(e) => toggleUntakenChange(orderId, e)}
+                                                                title={untakenChanges.has(orderId) ? "Сдача возвращена в расчет" : "Сдачу не брал (вычесть из суммы)"}
+                                                                className={clsx(
+                                                                    "px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest border transition-all",
+                                                                    untakenChanges.has(orderId)
+                                                                        ? "bg-red-500 text-white border-red-500"
+                                                                        : "bg-amber-500/10 text-amber-600 border-amber-500/20 hover:bg-amber-500/20"
+                                                                )}
+                                                            >
+                                                                {untakenChanges.has(orderId) ? "БЕЗ СДАЧИ" : `Сдача: ${order.changeAmount}₴`}
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                     <p className="text-[8px] font-black opacity-20 truncate uppercase tracking-widest">
                                                         {order.address}
                                                     </p>

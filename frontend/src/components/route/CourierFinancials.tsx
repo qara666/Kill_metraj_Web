@@ -76,7 +76,7 @@ export function CourierFinancials({
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showSettlementModal, setShowSettlementModal] = useState(false);
-    const [activeTab, setActiveTab] = useState<'cash' | 'online' | 'history'>('cash');
+    const [activeTab, setActiveTab] = useState<'cash' | 'online' | 'history' | 'general'>('cash');
     const [switchingOrderId, setSwitchingOrderId] = useState<string | null>(null);
     const [notes, setNotes] = useState('');
     const [historySearchTerm, setHistorySearchTerm] = useState('');
@@ -319,6 +319,36 @@ export function CourierFinancials({
         });
     }, [summary, historySearchTerm]);
 
+    const groupedGeneralHistory = useMemo(() => {
+        if (!excelData?.orders) return [];
+
+        const allSettledOrders = excelData.orders.filter((o: any) => o.settledDate && o.settlementSessionId);
+
+        const groups: Record<string, { orders: Order[], stats?: any, courierName: string }> = {};
+        allSettledOrders.forEach((order: any) => {
+            const sessionId = order.settlementSessionId;
+            if (!groups[sessionId]) {
+                groups[sessionId] = {
+                    courierName: order.courierName || (typeof order.courier === 'object' ? order.courier.name : order.courier),
+                    orders: [],
+                    stats: {
+                        received: order.sessionTotalReceived,
+                        expected: order.sessionTotalExpected,
+                        difference: order.sessionTotalDifference,
+                        date: order.settledDate
+                    }
+                };
+            }
+            groups[sessionId].orders.push(order);
+        });
+
+        return Object.entries(groups).sort((a, b) => {
+            const dateA = new Date(a[1].stats?.date || a[0]).getTime();
+            const dateB = new Date(b[1].stats?.date || b[0]).getTime();
+            return dateB - dateA;
+        });
+    }, [excelData]);
+
 
     const handleCopyReport = () => {
         if (!summary) return;
@@ -522,7 +552,7 @@ export function CourierFinancials({
             <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 px-4">
                     <h3 className={clsx('text-2xl font-black tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>
-                        Детализация заказов
+                        {activeTab === 'general' ? 'Общий финансовый отчет' : 'Детализация заказов'}
                     </h3>
 
                     {/* Minimalist Tabs */}
@@ -530,7 +560,7 @@ export function CourierFinancials({
                         "p-1.5 rounded-2xl flex gap-1",
                         isDark ? "bg-gray-900" : "bg-white shadow-sm border border-gray-100"
                     )}>
-                        {(['cash', 'online', 'history'] as const).map((tab) => (
+                        {(['cash', 'online', 'history', 'general'] as const).map((tab) => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
@@ -543,7 +573,8 @@ export function CourierFinancials({
                             >
                                 {tab === 'cash' ? `Наличные (${currentShift.cashOrders.count})` :
                                     tab === 'online' ? `Онлайн (${currentShift.onlineOrders.count})` :
-                                        `История (${summary.historyOrders.length})`}
+                                        tab === 'history' ? `История (${summary.historyOrders.length})` :
+                                            `Общий отчет`}
                             </button>
                         ))}
                     </div>
@@ -574,7 +605,76 @@ export function CourierFinancials({
                     isDark ? 'bg-gray-900/60 border-white/5' : 'bg-white shadow-blue-500/5 border-gray-100'
                 )}>
                     <div className="space-y-6">
-                        {activeTab === 'history' ? (
+                        {activeTab === 'general' ? (
+                            groupedGeneralHistory.length === 0 ? (
+                                <div className="py-32 flex flex-col items-center justify-center opacity-20">
+                                    <GlobeAltIcon className="w-16 h-16 mb-6" />
+                                    <p className="text-xs font-black uppercase tracking-widest">Общая история пуста</p>
+                                </div>
+                            ) : (
+                                (groupedGeneralHistory as any[]).map(([sessionId, group]: [string, any]) => {
+                                    const { stats, courierName: sCourierName } = group;
+                                    const hasStats = stats && stats.received !== undefined;
+
+                                    return (
+                                        <div key={sessionId} className="group/session animate-in fade-in slide-in-from-bottom-2 duration-300 fill-mode-both border-b border-white/5 pb-8 last:border-0 last:pb-0">
+                                            <div className="flex items-center gap-2 mb-4">
+                                                <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1 bg-blue-500/10 text-blue-500 rounded-lg">
+                                                    {sCourierName}
+                                                </span>
+                                            </div>
+                                            {/* Shared Session UI */}
+                                            <div className={clsx(
+                                                "p-8 rounded-[40px] border relative overflow-hidden transition-all duration-200 hover:scale-[1.005] hover:shadow-lg",
+                                                isDark ? "bg-white/[0.03] border-white/5 hover:bg-white/[0.05]" : "bg-white border-gray-100 hover:border-blue-100 shadow-sm"
+                                            )}>
+                                                {hasStats && stats.difference !== 0 && (
+                                                    <div className={clsx(
+                                                        "absolute top-0 left-10 right-10 h-1 blur-sm rounded-b-full opacity-50",
+                                                        stats.difference > 0 ? "bg-emerald-500" : "bg-red-500"
+                                                    )} />
+                                                )}
+                                                <div className="flex flex-col lg:flex-row items-center justify-between gap-10">
+                                                    <div className="flex items-center gap-6">
+                                                        <div className={clsx(
+                                                            "w-16 h-16 rounded-3xl flex items-center justify-center shadow-xl transition-transform",
+                                                            isDark ? "bg-blue-600/20 text-blue-400" : "bg-blue-500 text-white shadow-blue-500/20"
+                                                        )}>
+                                                            <BanknotesIcon className="w-8 h-8" />
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40">Расчет</h4>
+                                                            </div>
+                                                            <p className="text-xl font-black tracking-tight tabular-nums">
+                                                                {stats?.date ? new Date(stats.date).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Неизвестно'}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    {hasStats && (
+                                                        <div className="flex flex-wrap items-center justify-center lg:justify-end gap-12">
+                                                            <div className="text-center lg:text-right">
+                                                                <p className="text-[10px] font-black uppercase tracking-widest opacity-30 mb-2">Сдано</p>
+                                                                <p className="text-3xl font-black tracking-tighter text-blue-500 tabular-nums">{formatCurrency(stats.received)}</p>
+                                                            </div>
+                                                            <div className="text-center lg:text-right">
+                                                                <p className="text-[10px] font-black uppercase tracking-widest opacity-30 mb-2">Расхождение</p>
+                                                                <div className={clsx(
+                                                                    "text-2xl font-black tracking-tighter flex items-center gap-2 justify-center lg:justify-end tabular-nums",
+                                                                    stats.difference > 0 ? "text-emerald-500" : stats.difference < 0 ? "text-red-500" : "opacity-20"
+                                                                )}>
+                                                                    <span>{stats.difference > 0 ? '+' : ''}{formatCurrency(stats.difference)}</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )
+                        ) : activeTab === 'history' ? (
                             groupedHistory.length === 0 ? (
                                 <div className="py-32 flex flex-col items-center justify-center opacity-20">
                                     <ClockIcon className="w-16 h-16 mb-6" />
@@ -672,6 +772,11 @@ export function CourierFinancials({
                                                                 )}>
                                                                     #{order.orderNumber}
                                                                 </span>
+                                                                {order.untakenChange && (
+                                                                    <span className="text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-lg bg-red-500/10 text-red-500">
+                                                                        БЕЗ СДАЧИ
+                                                                    </span>
+                                                                )}
                                                                 <span className={clsx(
                                                                     "text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-500"
                                                                 )}>
@@ -687,6 +792,11 @@ export function CourierFinancials({
                                                             <p className={clsx('text-lg font-black tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>
                                                                 {formatCurrency((order as any).settledAmount || order.amount)}
                                                             </p>
+                                                            {(order as any).changeAmount > 0 && (
+                                                                <p className="text-[10px] font-bold opacity-30 mt-0.5">
+                                                                    Сдача: {(order as any).changeAmount}₴
+                                                                </p>
+                                                            )}
                                                             {order.settlementNote && (
                                                                 <p className="text-[9px] font-bold opacity-30 italic mt-0.5 max-w-[150px] truncate">
                                                                     {order.settlementNote}
@@ -745,6 +855,11 @@ export function CourierFinancials({
                                                 )}>
                                                     {formatCurrency((order as any).settledAmount || (order as any).effectiveAmount || order.amount)}
                                                 </p>
+                                                {activeTab === 'cash' && (order as any).changeAmount > 0 && (
+                                                    <p className="text-[10px] font-bold opacity-30 mt-1">
+                                                        Сдача: {(order as any).changeAmount}₴
+                                                    </p>
+                                                )}
                                             </div>
 
                                             <button
