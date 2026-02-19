@@ -138,6 +138,13 @@ export const AutoPlanner: React.FC = () => {
         enabled: true
     });
 
+    // Очищаем маршруты, если данные полностью сброшены
+    useEffect(() => {
+        if (!excelData) {
+            setPlannedRoutes([]);
+        }
+    }, [excelData, setPlannedRoutes]);
+
     const trafficState = useTrafficManagement(maxStopsPerRoute, maxRouteDurationMin, maxRouteDistanceKm)
     const {
         trafficSnapshot,

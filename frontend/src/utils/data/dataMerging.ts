@@ -208,7 +208,7 @@ export const syncDashboardData = (newData: any, existingData: any): ProcessedExc
     if (!existingData) return newData;
 
     const newOrders = Array.isArray(newData.orders) ? newData.orders : [];
-    const existingRoutes = Array.isArray(existingData.routes) ? existingData.routes : [];
+
 
     // В отличие от mergeExcelData, здесь мы ПРИНИМАЕМ новый список заказов как основу
     // Мы не добавляем к старому списку, а ЗАМЕНЯЕМ его.
@@ -252,10 +252,12 @@ export const syncDashboardData = (newData: any, existingData: any): ProcessedExc
         }
     });
 
+    const existingRoutes = Array.isArray(existingData.routes) ? existingData.routes : [];
+
     return {
         ...newData,
         orders: syncedOrders,
-        routes: existingRoutes, // Сохраняем маршруты
+        routes: existingRoutes, // Сохраняем маршруты при обычном обновлении
         couriers: Array.from(uniqueCouriersMap.values()), // Обновляем список курьеров полностью и дедуплицируем
     };
 };

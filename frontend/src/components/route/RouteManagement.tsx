@@ -1432,7 +1432,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         waypointResList.push(res)
         if (res?.geometry?.location) prevPoint = res.geometry.location
       }
-      let destinationRes = await geocodeWithSector(route.endAddress, prevPoint)
+      let destinationRes = (route.endAddress === route.startAddress)
+        ? originRes
+        : await geocodeWithSector(route.endAddress, prevPoint)
 
       // ═══════════════════════════════════════════════════════════════
       // ДЕТЕКТОР ВЫБРОСОВ: если одна точка сильно отличается от остальных
@@ -1505,13 +1507,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           hubName: zoneInfo?.hubName || null
         }
       }
-      const routeGeoMeta: any = {
-        origin: buildMeta(originRes, route.startAddress),
-        destination: buildMeta(destinationRes, route.endAddress),
-        waypoints: route.orders.map((o, i) => buildMeta(waypointResList[i], o.address))
-      }
-
-
       // Валидация
       const unresolved: string[] = []
       if (!originRes) unresolved.push('стартовый адрес')
@@ -1554,6 +1549,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             if (fix) destinationRes = fix
           }
 
+
+          // Final sync for identical addresses to ensure perfect round-trip
+          if (route.startAddress === route.endAddress) {
+            destinationRes = originRes;
+          }
+
           // Повторная валидация с деталями
           const pointsToCheck = [
             { name: 'Стартовый адрес', addr: route.startAddress, res: originRes },
@@ -1561,7 +1562,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             { name: 'Конечный адрес', addr: route.endAddress, res: destinationRes }
           ]
 
-          const outsidePoints = pointsToCheck.filter(p => p.res && !isInsideSector(p.res.geometry.location))
+          const outsidePoints = pointsToCheck.filter((p: any) => p.res && !isInsideSector(p.res.geometry.location))
 
           if (outsidePoints.length > 0) {
             // Smart Address Correction Integration
@@ -1587,6 +1588,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             return
           }
         }
+      }
+
+      // Подготовим метаинформацию для визуальной верификации (после всех коррекций)
+      const routeGeoMeta: any = {
+        origin: buildMeta(originRes, route.startAddress),
+        destination: buildMeta(destinationRes, route.endAddress),
+        waypoints: route.orders.map((o, i) => buildMeta(waypointResList[i], o.address))
       }
 
       // Формируем запрос: приоритет placeId, иначе formatted_address
