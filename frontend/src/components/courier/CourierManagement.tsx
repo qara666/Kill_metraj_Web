@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react'
 import { localStorageUtils } from '../../utils/ui/localStorage'
 import {
-  PlusIcon,
-  PencilIcon,
-  TrashIcon,
   UserIcon,
   TruckIcon,
   MapPinIcon,
@@ -12,17 +9,15 @@ import {
   XMarkIcon,
   MapIcon,
   ClockIcon,
-
-  ExclamationTriangleIcon
+  PlusIcon,
+  TrashIcon
 } from '@heroicons/react/24/outline'
+import { clsx } from 'clsx'
 import { CourierCard } from './CourierCard'
 import { useExcelData } from '../../contexts/ExcelDataContext'
 import { useTheme } from '../../contexts/ThemeContext'
 
-import { clsx } from 'clsx'
-import { AddressValidationService } from '../../services/addressValidation'
 import { toast } from 'react-hot-toast'
-import { AddressEditModal } from '../modals/AddressEditModal'
 import { Tooltip } from '../shared/Tooltip'
 
 import { normalizeCourierName } from '../../utils/data/courierName'
@@ -65,8 +60,6 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
   const [routeToDelete, setRouteToDelete] = useState<any | null>(null)
   const [showDistanceModal, setShowDistanceModal] = useState(false)
   const [selectedCourierForDistance, setSelectedCourierForDistance] = useState<Courier | null>(null)
-  const [showAddressEditModal, setShowAddressEditModal] = useState(false)
-  const [editingOrder, setEditingOrder] = useState<any | null>(null)
 
 
   const [hasSeenHelp, setHasSeenHelp] = useState(() => {
@@ -239,51 +232,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
     return contextData.routes.filter((r: any) => normalizeCourierName(r.courier) === normalizeCourierName(courierName))
   }
 
-  const handleEditAddress = (order: any) => {
-    setEditingOrder(order)
-    setShowAddressEditModal(true)
-  }
 
-  const handleSaveAddress = (newAddress: string) => {
-    if (!editingOrder) return
-
-    const updatedOrder = { ...editingOrder, address: newAddress }
-
-    if (contextData?.routes) {
-      const updatedRoutes = contextData.routes.map((route: any) => {
-        const orderIndex = route.orders.findIndex((order: any) => order.id === editingOrder.id)
-
-        if (orderIndex !== -1) {
-          const updatedRouteOrders = [...route.orders]
-          updatedRouteOrders[orderIndex] = updatedOrder
-
-          return {
-            ...route,
-            orders: updatedRouteOrders,
-            isOptimized: false,
-            totalDistance: 0,
-            totalDuration: 0
-          }
-        }
-        return route
-      })
-
-      updateRouteData(updatedRoutes)
-
-      try {
-        const savedData = JSON.parse(localStorage.getItem('km_dashboard_processed_data') || '{}')
-        if (savedData.routes) {
-          savedData.routes = updatedRoutes
-          localStorage.setItem('km_dashboard_processed_data', JSON.stringify(savedData))
-        }
-      } catch (error) {
-        console.error('Ошибка сохранения данных:', error)
-      }
-    }
-
-    setShowAddressEditModal(false)
-    setEditingOrder(null)
-  }
 
 
 
@@ -779,13 +728,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
                                           {order.customerName && (
                                             <span className="text-gray-400 text-xs">({order.customerName})</span>
                                           )}
-                                          <button
-                                            onClick={() => handleEditAddress(order)}
-                                            className="p-1 rounded text-blue-600 hover:text-blue-800 hover:bg-blue-50"
-                                            title="Редагувати адресу"
-                                          >
-                                            <PencilIcon className="h-4 w-4" />
-                                          </button>
+                                          {/* Address editing removed as requested */}
                                         </div>
                                       ))}
                                     </div>
@@ -811,45 +754,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
                                       </div>
                                     </div>
 
-                                    {/* Отображение аномалий маршрута */}
-                                    {(() => {
-                                      const anomalyCheck = AddressValidationService.checkRouteAnomalies(route)
-                                      if (!anomalyCheck || (!anomalyCheck.hasAnomalies && anomalyCheck.warnings.length === 0)) {
-                                        return null
-                                      }
-
-                                      return (
-                                        <div className="mt-2 space-y-1">
-                                          {anomalyCheck.errors.length > 0 && (
-                                            <div className="text-xs p-2 rounded bg-red-50 text-red-700 border border-red-200">
-                                              <div className="flex items-center space-x-1">
-                                                <ExclamationTriangleIcon className="h-3 w-3" />
-                                                <span className="font-medium">Помилки:</span>
-                                              </div>
-                                              <ul className="ml-4 mt-1">
-                                                {anomalyCheck.errors.map((error: any, index: number) => (
-                                                  <li key={index}>• {error}</li>
-                                                ))}
-                                              </ul>
-                                            </div>
-                                          )}
-
-                                          {anomalyCheck.warnings.length > 0 && (
-                                            <div className="text-xs p-2 rounded bg-yellow-50 text-yellow-700 border border-yellow-200">
-                                              <div className="flex items-center space-x-1">
-                                                <ExclamationTriangleIcon className="h-3 w-3" />
-                                                <span className="font-medium">Попередження:</span>
-                                              </div>
-                                              <ul className="ml-4 mt-1">
-                                                {anomalyCheck.warnings.map((warning: any, index: number) => (
-                                                  <li key={index}>• {warning}</li>
-                                                ))}
-                                              </ul>
-                                            </div>
-                                          )}
-                                        </div>
-                                      )
-                                    })()}
+                                    {/* Warnings block hidden as requested */}
                                   </div>
                                 )}
                               </div>
@@ -912,18 +817,6 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
         </div>
       )}
 
-      {/* Модальное окно редактирования адреса */}
-      {showAddressEditModal && editingOrder && (
-        <AddressEditModal
-          isOpen={showAddressEditModal}
-          onClose={() => setShowAddressEditModal(false)}
-          onSave={handleSaveAddress}
-          currentAddress={editingOrder.address}
-          orderNumber={editingOrder.orderNumber}
-          customerName={editingOrder.customerName}
-          isDark={isDark}
-        />
-      )}
 
       {/* Help Modal */}
       {showHelpModal && (

@@ -4,10 +4,12 @@ import { format } from 'date-fns';
 import { ArrowPathIcon, CalendarIcon } from '@heroicons/react/24/outline';
 import { clsx } from 'clsx';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useExcelData } from '../../contexts/ExcelDataContext';
 import { useAutoPlannerStore } from '../../stores/useAutoPlannerStore'; // Import Store
 
 export const DashboardApiSection: React.FC = () => {
     const { isDark } = useTheme();
+    const { clearExcelData } = useExcelData();
 
     // Store values
     const apiSyncStatus = useAutoPlannerStore(s => s.apiSyncStatus);
@@ -67,6 +69,12 @@ export const DashboardApiSection: React.FC = () => {
             return;
         }
         setApiAutoRefreshEnabled(!apiAutoRefreshEnabled);
+    };
+
+    const handleDateChange = (date: string) => {
+        // Clear old data immediately to prevent layering/confusion while loading
+        clearExcelData();
+        setSelectedDate(date);
     };
 
     return (
@@ -160,7 +168,7 @@ export const DashboardApiSection: React.FC = () => {
                         <input
                             type="date"
                             value={selectedDate}
-                            onChange={(e) => setSelectedDate(e.target.value)}
+                            onChange={(e) => handleDateChange(e.target.value)}
                             className={clsx(
                                 'input pl-10 w-full sm:w-48 rounded-2xl font-bold transition-all duration-300',
                                 isDark ? 'bg-gray-800/40 border-white/5 text-white hover:bg-gray-800/60 focus:bg-gray-800/80 outline-none' : 'bg-white border-gray-200 text-gray-900 hover:border-blue-300'
