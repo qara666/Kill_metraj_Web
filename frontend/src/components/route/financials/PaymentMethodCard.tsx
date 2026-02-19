@@ -1,5 +1,6 @@
 import { clsx } from 'clsx';
 import React from 'react';
+import { getOrdersUkSuffix } from '../../../utils/route/routeCalculationHelpers';
 
 interface PaymentMethodCardProps {
     label: string;
@@ -77,7 +78,7 @@ export function PaymentMethodCard({
                     {formatCurrency(amount)}
                 </div>
                 <div className={clsx("text-[10px] font-bold uppercase tracking-widest opacity-40", isDark ? "text-gray-400" : "text-gray-500")}>
-                    {orderCount} ЗАКАЗА
+                    {orderCount} {getOrdersUkSuffix(orderCount).toUpperCase()}
                 </div>
             </div>
 
