@@ -501,7 +501,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         }
 
         grouped[courierName].push({
-          id: order.id ? String(order.id) : `order_${order.orderNumber || Date.now()}`,
+          id: order.id ? String(order.id) : String(order.orderNumber),
           orderNumber: order.orderNumber || 'N/A',
           address: order.address,
           courier: courierName,
