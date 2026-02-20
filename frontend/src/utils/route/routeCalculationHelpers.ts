@@ -96,11 +96,11 @@ function createNewGroup(
     order: Order,
     planned: number,
     arrival: number,
-    index: number,
+    _index: number,
     splitReason?: string
 ): TimeWindowGroup {
     const group: TimeWindowGroup = {
-        id: `group-${courierId}-${index}-${planned}`,
+        id: `group-${courierId}-${order.id}-${planned}`,
         courierId,
         courierName,
         windowStart: planned,
@@ -349,7 +349,7 @@ export function groupOrdersByTimeWindow(
             const maxPlanned = plannedTimes.length > 0 ? Math.max(...plannedTimes) : maxHandover;
 
             const group: TimeWindowGroup = {
-                id: `handover-${courierId}-${minHandover}`,
+                id: `handover-${courierId}-${hOrders[0].id}`,
                 courierId,
                 courierName,
                 windowStart: minPlanned,
