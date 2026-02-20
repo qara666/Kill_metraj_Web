@@ -8,7 +8,8 @@ import {
     ClockIcon,
     ArrowsRightLeftIcon,
     CheckBadgeIcon,
-    ExclamationTriangleIcon
+    ExclamationTriangleIcon,
+    XMarkIcon
 } from '@heroicons/react/24/outline';
 import type { Order } from '../../types';
 import { SettlementModal } from './modals/SettlementModal';
@@ -43,6 +44,11 @@ interface FinancialSummary {
             orders: Order[];
         };
         onlineOrders: {
+            count: number;
+            totalAmount: number;
+            orders: Order[];
+        };
+        refusedOrders: {
             count: number;
             totalAmount: number;
             orders: Order[];
@@ -125,6 +131,7 @@ export function CourierFinancials({
                     cashOrders: { count: 0, totalAmount: 0, orders: [] },
                     cardOrders: { count: 0, totalAmount: 0, orders: [] },
                     onlineOrders: { count: 0, totalAmount: 0, orders: [] },
+                    refusedOrders: { count: 0, totalAmount: 0, orders: [] },
                     totalExpected: 0
                 },
                 historyOrders: []
@@ -144,6 +151,7 @@ export function CourierFinancials({
                 cashOrders: { count: 0, totalAmount: 0, orders: [] },
                 cardOrders: { count: 0, totalAmount: 0, orders: [] },
                 onlineOrders: { count: 0, totalAmount: 0, orders: [] },
+                refusedOrders: { count: 0, totalAmount: 0, orders: [] },
                 totalExpected: 0
             },
             historyOrders: []
@@ -196,7 +204,9 @@ export function CourierFinancials({
                 paymentMethod === ''
             );
 
-            const effectiveAmount = isCash ? (amount + changeAmount) : amount;
+            const isRefused = paymentMethod.includes('отказ');
+
+            const effectiveAmount = isRefused ? changeAmount : (isCash ? (amount + changeAmount) : amount);
 
             const orderData: Order = {
                 ...order,
@@ -218,6 +228,10 @@ export function CourierFinancials({
                 summary.currentShift.cashOrders.count++;
                 summary.currentShift.cashOrders.totalAmount += effectiveAmount;
                 summary.currentShift.cashOrders.orders.push(orderData);
+            } else if (isRefused) {
+                summary.currentShift.refusedOrders.count++;
+                summary.currentShift.refusedOrders.totalAmount += 0;
+                summary.currentShift.refusedOrders.orders.push(orderData);
             }
         });
 
@@ -420,7 +434,12 @@ export function CourierFinancials({
     };
 
     const handleSwitchPaymentMethod = async (orderNumber: string, currentMethod: string) => {
-        const newMethod = currentMethod.toLowerCase().includes('налич') || currentMethod.toLowerCase().includes('cash') ? 'Онлайн' : 'Наличные';
+        const lowerMethod = currentMethod.toLowerCase();
+        const isCash = lowerMethod.includes('налич') ||
+            lowerMethod.includes('cash') ||
+            lowerMethod.includes('готівка');
+
+        const newMethod = isCash ? 'Онлайн' : 'Наличные';
 
         setSwitchingOrderId(orderNumber);
         try {
@@ -434,15 +453,35 @@ export function CourierFinancials({
         }
     };
 
+    const handleRefuseOrder = async (orderNumber: string) => {
+        setSwitchingOrderId(orderNumber);
+        try {
+            updateOrderPaymentMethod(orderNumber, 'Отказ');
+            await fetchFinancialSummary();
+            toast.success('Заказ отмечен как отказ');
+        } catch (err) {
+            console.error('Error refusing order:', err);
+            toast.error('Ошибка при отмене заказа');
+        } finally {
+            setSwitchingOrderId(null);
+        }
+    };
+
     // Calculate cashToCollect explicitly for "Исполнен" cash orders. 
     // Wait, the user wants "К сдаче (Наличные)" to be the sum of exactly what's completed.
     const completedCashOrders = useMemo(() => {
         if (!summary) return [];
-        return summary.currentShift.cashOrders.orders.filter((o: any) => o.status === 'Исполнен');
+        return [
+            ...summary.currentShift.cashOrders.orders,
+            ...(summary.currentShift as any).refusedOrders.orders
+        ].filter((o: any) => o.status === 'Исполнен');
     }, [summary]);
 
     const cashToCollect = useMemo(() => {
-        return completedCashOrders.reduce((sum, o: any) => sum + (parseFloat(o.effectiveAmount) || parseFloat(o.amount) || 0), 0);
+        return completedCashOrders.reduce((sum, o: any) => {
+            const val = (o.effectiveAmount !== undefined && o.effectiveAmount !== null) ? o.effectiveAmount : o.amount;
+            return sum + (parseFloat(val) || 0);
+        }, 0);
     }, [completedCashOrders]);
 
 
@@ -867,7 +906,7 @@ export function CourierFinancials({
                                                         </div>
                                                         <div>
                                                             <div className="flex items-center gap-2 mb-1">
-                                                                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40">Расчет смены</h4>
+                                                                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40">Расчет</h4>
                                                                 {hasStats && stats.difference === 0 && (
                                                                     <div className="px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-1">
                                                                         <CheckBadgeIcon className="w-3 h-3 text-emerald-500" />
@@ -998,6 +1037,12 @@ export function CourierFinancials({
                                                 )}>
                                                     {order.status || 'ВЫПОЛНЯЕТСЯ'}
                                                 </span>
+                                                {(order as any).paymentMethodOverridden && (
+                                                    <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-xl bg-orange-500/10 text-orange-500 border border-orange-500/20 flex items-center gap-1">
+                                                        <ArrowsRightLeftIcon className="w-2.5 h-2.5" />
+                                                        Смена оплаты
+                                                    </span>
+                                                )}
                                             </div>
                                             <p className={clsx('text-sm font-bold leading-relaxed', isDark ? 'text-gray-300' : 'text-gray-800')} title={order.address}>
                                                 {order.address}
@@ -1020,21 +1065,35 @@ export function CourierFinancials({
                                                 )}
                                             </div>
 
-                                            <button
-                                                onClick={() => handleSwitchPaymentMethod(String(order.orderNumber), String((order as any).paymentMethod || ''))}
-                                                disabled={switchingOrderId === String(order.id || order.orderNumber)}
-                                                className={clsx(
-                                                    'p-4 rounded-[20px] transition-all opacity-0 group-hover:opacity-100 border no-print relative overflow-hidden',
-                                                    isDark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white' : 'bg-white border-gray-100 text-gray-500 hover:text-blue-600 hover:shadow-xl hover:shadow-blue-500/10'
-                                                )}
-                                                title="Сменить способ оплаты"
-                                            >
-                                                {switchingOrderId === order.orderNumber ? (
-                                                    <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                                ) : (
-                                                    <ArrowsRightLeftIcon className="w-5 h-5" />
-                                                )}
-                                            </button>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => handleSwitchPaymentMethod(String(order.orderNumber), String((order as any).paymentMethod || ''))}
+                                                    disabled={switchingOrderId === String(order.id || order.orderNumber)}
+                                                    className={clsx(
+                                                        'p-4 rounded-[20px] transition-all opacity-0 group-hover:opacity-100 border no-print relative overflow-hidden',
+                                                        isDark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white' : 'bg-white border-gray-100 text-gray-500 hover:text-blue-600 hover:shadow-xl hover:shadow-blue-500/10'
+                                                    )}
+                                                    title="Сменить способ оплаты"
+                                                >
+                                                    {switchingOrderId === order.orderNumber ? (
+                                                        <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                                    ) : (
+                                                        <ArrowsRightLeftIcon className="w-5 h-5" />
+                                                    )}
+                                                </button>
+
+                                                <button
+                                                    onClick={() => handleRefuseOrder(String(order.orderNumber))}
+                                                    disabled={switchingOrderId === String(order.id || order.orderNumber)}
+                                                    className={clsx(
+                                                        'p-4 rounded-[20px] transition-all opacity-0 group-hover:opacity-100 border no-print relative overflow-hidden',
+                                                        isDark ? 'bg-red-900/10 border-red-900/30 text-red-500/60 hover:text-red-500' : 'bg-red-50 border-red-100 text-red-400 hover:text-red-600 hover:shadow-xl hover:shadow-red-500/10'
+                                                    )}
+                                                    title="Отказаться от заказа (Не в расчет)"
+                                                >
+                                                    <XMarkIcon className="w-5 h-5" />
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 ))

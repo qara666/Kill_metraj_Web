@@ -47,7 +47,7 @@ export function SettlementModal({
         const initial: Record<string, string> = {};
         orders.forEach((o: any) => {
             const id = String(o.id || o.orderNumber);
-            initial[id] = String(o.effectiveAmount || o.amount || 0);
+            initial[id] = String(o.effectiveAmount ?? o.amount ?? 0);
         });
         return initial;
     });
@@ -81,8 +81,8 @@ export function SettlementModal({
             if (!selectedOrderIds.has(id)) return;
 
             // Use the original effective amount or amount, ignoring manual subtractions so the "Expected" stays static
-            const val = parseFloat(o.effectiveAmount) || parseFloat(o.amount) || 0;
-            total += val;
+            const val = o.effectiveAmount ?? o.amount ?? 0;
+            total += parseFloat(String(val)) || 0;
         });
         return total;
     }, [orders, selectedOrderIds]);
@@ -336,6 +336,11 @@ export function SettlementModal({
                                                                 {untakenChanges.has(orderId) ? "БЕЗ СДАЧИ" : `Сдача: ${order.changeAmount}₴`}
                                                             </button>
                                                         )}
+                                                        {String(order.paymentMethod || '').toLowerCase().includes('отказ') && (
+                                                            <span className="px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest bg-red-500 text-white border border-red-500">
+                                                                ОТКАЗ
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <p className="text-[9px] font-bold opacity-60 uppercase tracking-widest leading-relaxed whitespace-normal break-words">
                                                         {order.address}
@@ -491,6 +496,6 @@ export function SettlementModal({
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 }
