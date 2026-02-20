@@ -10,6 +10,11 @@ export const getPaymentMethodBadgeProps = (method: string, isDark: boolean): Pay
   let bgColorClass = ''
   let textColorClass = ''
 
+  if (lowerMethod.includes('отказ')) {
+    text = 'ОТКАЗ'
+    bgColorClass = isDark ? 'bg-red-600/20' : 'bg-red-100'
+    textColorClass = isDark ? 'text-red-300' : 'text-red-800'
+  }
   // IMPORTANT: Check Безготівка/Онлайн BEFORE Готівка
   // because "безготівка" contains substring "готівка"
   if (lowerMethod.includes('безготівка') || lowerMethod.includes('qr') || lowerMethod.includes('портмоне') || lowerMethod.includes('liqpay') || lowerMethod.includes('онлайн') || lowerMethod.includes('online') || lowerMethod.includes('перевод') || lowerMethod.includes('переказ') || lowerMethod.includes('сайт') || lowerMethod.includes('site')) {

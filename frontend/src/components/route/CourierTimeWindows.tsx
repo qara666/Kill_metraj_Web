@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { memo, useMemo } from 'react';
-import { ClockIcon, RocketLaunchIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { SparklesIcon } from '@heroicons/react/24/outline';
 import type { Order } from '../../types';
 import { TimeWindowGroupCard } from './TimeWindowGroupCard';
 import { groupOrdersByTimeWindow, type TimeWindowGroup } from '../../utils/route/routeCalculationHelpers';
@@ -15,6 +15,7 @@ interface CourierTimeWindowsProps {
     onOrderMoved?: (orderId: string, targetGroup: TimeWindowGroup) => void;
     onCreateCustomGroup?: (orderId: string) => void;
     onCalculateRoute?: (group: TimeWindowGroup) => void;
+    onCalculateAllRoutes?: () => void;
 }
 
 export const CourierTimeWindows = memo(({
@@ -27,36 +28,27 @@ export const CourierTimeWindows = memo(({
     onOrderMoved,
     onCreateCustomGroup,
     onCalculateRoute,
+    onCalculateAllRoutes,
 }: CourierTimeWindowsProps) => {
-    // Группируем заказы по временным окнам - Memoized
     const timeGroups = useMemo(() => {
         return groupOrdersByTimeWindow(orders, courierId, courierName);
     }, [orders, courierId, courierName]);
 
-    const stats = useMemo(() => {
-        if (!timeGroups || timeGroups.length === 0) return { readyGroups: 0, progress: 0 };
-        const readyCount = timeGroups.filter(g => g.orders.every(o => o.status === 'Собран' || o.status === 'Исполнен')).length;
-        return {
-            readyGroups: readyCount,
-            progress: (readyCount / timeGroups.length) * 100
-        };
-    }, [timeGroups]);
-
     if (!timeGroups || timeGroups.length === 0) {
         return (
             <div className={clsx(
-                'text-center py-12 rounded-2xl border-2 border-dashed transition-all',
+                'text-center py-6 rounded-2xl border-2 border-dashed transition-all',
                 isDark ? 'border-slate-800 bg-slate-900/40 text-slate-500' : 'border-slate-200 bg-slate-50 text-slate-400'
             )}>
-                <SparklesIcon className="w-8 h-8 mx-auto mb-3 opacity-20" />
-                <p className="text-sm font-bold uppercase tracking-widest opacity-40">Нет заказов для группировки</p>
+                <SparklesIcon className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                <p className="text-[10px] font-bold uppercase tracking-widest opacity-40">Нет доступных временных окон</p>
             </div>
         );
     }
 
     return (
         <div
-            className="space-y-5"
+            className="space-y-4"
             onDragOver={(e) => {
                 if (onCreateCustomGroup) {
                     e.preventDefault();
@@ -72,83 +64,34 @@ export const CourierTimeWindows = memo(({
                 }
             }}
         >
-            {/* SOTA Header - Futuristic Status Bar */}
-            <div className={clsx(
-                'relative flex flex-col lg:flex-row items-center justify-between gap-6 px-6 py-5 rounded-[2rem] border transition-all duration-200 shadow-md',
-                isDark
-                    ? 'bg-slate-900/60 border-white/5 shadow-black/40'
-                    : 'bg-white/90 border-blue-50 shadow-blue-500/10'
-            )}>
-                {/* Visual Accent Layer */}
-                <div className="absolute top-0 right-0 w-64 h-full bg-gradient-to-l from-blue-500/5 to-transparent pointer-events-none" />
-
-                <div className="flex items-center gap-5 relative z-10 w-full lg:w-auto">
-                    <div className={clsx(
-                        'w-14 h-14 rounded-2xl flex items-center justify-center border transition-all duration-200 shadow-md',
-                        isDark ? 'bg-blue-600/20 text-blue-400 border-blue-500/20' : 'bg-blue-600 text-white border-blue-500'
-                    )}>
-                        <ClockIcon className="w-7 h-7" />
-                    </div>
-                    <div>
-                        <div className="flex items-center gap-3">
-                            <span className={clsx('text-[11px] font-black uppercase tracking-[0.3em] opacity-40', isDark ? 'text-blue-400' : 'text-slate-500')}>
-                                ГРУППИРОВКА ПО ВРЕМЕНИ
-                            </span>
-                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">SOTA v2.0</span>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-4 mt-1">
-                            <h2 className={clsx('text-2xl font-black tracking-tight', isDark ? 'text-white' : 'text-slate-900')}>
-                                {timeGroups.length} {timeGroups.length === 1 ? 'Группа' : (timeGroups.length < 5 ? 'Группы' : 'Групп')}
-                            </h2>
-                            <div className="h-4 w-[1px] bg-slate-400/20" />
-                            <div className="flex items-center gap-2">
-                                <SparklesIcon className="w-4 h-4 text-amber-500 opacity-60" />
-                                <span className="text-xs font-bold opacity-40 uppercase tracking-wider">
-                                    {orders.length} {orders.length === 1 ? 'заказ' : 'заказов'}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
+            <div className="flex items-center justify-between mb-2 px-2">
+                <div className="flex items-center gap-2">
+                    <span className={clsx("text-xs font-black uppercase tracking-widest", isDark ? "text-slate-400" : "text-slate-500")}>
+                        {timeGroups.length} маршрута
+                    </span>
+                    <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                    <span className={clsx("text-xs font-black opacity-40", isDark ? "text-slate-500" : "text-slate-400")}>
+                        {orders.length} заказов
+                    </span>
                 </div>
 
-                {/* SOTA Global Health & Action Hub */}
-                <div className="flex items-center gap-6 w-full lg:w-auto">
-                    <div className="hidden sm:flex flex-col gap-1.5 w-40">
-                        <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest opacity-30">
-                            <span>Готовность</span>
-                            <span className="text-blue-500">{Math.round(stats.progress)}%</span>
-                        </div>
-                        <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden p-[1px]">
-                            <div
-                                className="h-full bg-gradient-to-r from-blue-600 to-emerald-500 transition-all duration-300 shadow-sm rounded-full"
-                                style={{ width: `${stats.progress}%` }}
-                            />
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2.5 relative z-10">
-                        <button
-                            onClick={() => {
-                                timeGroups.forEach(g => onCalculateRoute && onCalculateRoute(g));
-                            }}
-                            className={clsx(
-                                'group px-6 py-3 rounded-xl flex items-center gap-2.5 text-[10px] font-black uppercase tracking-[0.15em] transition-all active:scale-[0.98] shadow-md border',
-                                isDark
-                                    ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500 hover:shadow-sm'
-                                    : 'bg-slate-900 border-slate-800 text-white hover:bg-slate-800'
-                            )}
-                        >
-                            <RocketLaunchIcon className="w-4 h-4 group-hover:rotate-12 transition-transform" />
-                            <span>Маршрут все заказы</span>
-                        </button>
-                    </div>
-                </div>
-
+                {onCalculateAllRoutes && (
+                    <button
+                        onClick={onCalculateAllRoutes}
+                        disabled={isCalculating}
+                        className={clsx(
+                            "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                            isDark
+                                ? "bg-blue-600/20 text-blue-400 hover:bg-blue-600/30"
+                                : "bg-blue-50 text-blue-600 hover:bg-blue-100 shadow-sm"
+                        )}
+                    >
+                        В маршрут все
+                    </button>
+                )}
             </div>
 
-            {/* Time Window Groups - Responsive Futuristic Grid */}
+            {/* Strict Grid for performance */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {timeGroups.map((group) => (
                     <TimeWindowGroupCard
@@ -163,6 +106,6 @@ export const CourierTimeWindows = memo(({
             </div>
         </div>
     );
-})
+});
 
 export default CourierTimeWindows;

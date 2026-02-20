@@ -236,7 +236,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     updateExcelData(prev => {
       const updatedOrders = prev.orders.map(order => {
         if (order.orderNumber === orderNumber) {
-          return { ...order, paymentMethod: newPaymentMethod };
+          return { ...order, paymentMethod: newPaymentMethod, paymentMethodOverridden: true };
         }
         return order;
       });

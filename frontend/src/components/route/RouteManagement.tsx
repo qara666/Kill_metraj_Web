@@ -33,8 +33,9 @@ import { Tooltip } from '../shared/Tooltip'
 import { googleApiCache } from '../../services/googleApiCache'
 import { lazy, Suspense } from 'react'
 import { CourierTimeWindows } from './CourierTimeWindows'
+import { GridOrderCard } from './GridOrderCard'
 import { getUkraineTrafficForOrders, calculateTotalTrafficDelay } from '../../utils/maps/ukraineTrafficAPI'
-import { type TimeWindowGroup } from '../../utils/route/routeCalculationHelpers'
+import { type TimeWindowGroup, groupOrdersByTimeWindow } from '../../utils/route/routeCalculationHelpers'
 import { SmartAddressCorrectionModal } from '../modals/SmartAddressCorrectionModal'
 import { BatchAddressCorrectionPanel } from './BatchAddressCorrectionPanel'
 import { useSmartAddressCorrection } from '../../hooks/useSmartAddressCorrection'
@@ -111,6 +112,7 @@ interface Route {
   legDurations?: number[]
 }
 
+
 interface RouteManagementProps {
   excelData?: any
 }
@@ -141,6 +143,54 @@ const CourierListItem = memo(({
   const remaining = totalOrdersCount - deliveredOrdersCount
   const isReturning = totalOrdersCount > 0 && deliveredOrdersCount > 0 && remaining > 0 && remaining <= 2
   const isOnRoute = totalOrdersCount > 0 && (deliveredOrdersCount === 0 || remaining > 2) && deliveredOrdersCount < totalOrdersCount
+
+  if (isUnassigned) {
+    return (
+      <div className="group/item relative mb-2">
+        <button
+          onClick={() => onSelect(courierName)}
+          className={clsx(
+            'w-full text-left p-4 rounded-2xl border-2 transition-all duration-200 transform',
+            'relative overflow-hidden',
+            isSelected
+              ? (isDark
+                ? 'bg-blue-600/20 border-blue-500 shadow-lg shadow-blue-500/10'
+                : 'bg-blue-50/80 border-blue-500 shadow-md shadow-blue-500/5')
+              : (isDark
+                ? 'bg-blue-500/5 border-blue-500/20 hover:border-blue-500/40'
+                : 'bg-blue-50/30 border-blue-100 hover:border-blue-300')
+          )}
+        >
+          <div className="flex items-center gap-4 relative z-10">
+            <div className={clsx(
+              'w-12 h-12 rounded-xl flex flex-shrink-0 items-center justify-center transition-colors',
+              isSelected
+                ? 'bg-blue-500 text-white shadow-md shadow-blue-500/30'
+                : (isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-600')
+            )}>
+              <TruckIcon className="w-6 h-6" />
+            </div>
+            <div className="flex flex-col">
+              <span className={clsx(
+                'text-base font-black',
+                isSelected
+                  ? (isDark ? 'text-white' : 'text-blue-900')
+                  : (isDark ? 'text-blue-300' : 'text-blue-700')
+              )}>
+                Не назначено
+              </span>
+              <span className={clsx(
+                'text-[11px] font-bold mt-0.5',
+                isDark ? 'text-blue-400/60' : 'text-blue-600/60'
+              )}>
+                {totalOrdersCount} заказов
+              </span>
+            </div>
+          </div>
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="group/item relative">
@@ -813,27 +863,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   }, [selectedCourier, isOrderInExistingRoute, orderSearchTerm])
 
   // Функции для изменения порядка выбранных заказов
-  const moveOrderUp = useCallback((orderId: string) => {
-    const currentIndex = selectedOrdersOrder.indexOf(orderId)
-    if (currentIndex > 0) {
-      const newOrder = [...selectedOrdersOrder]
-        ;[newOrder[currentIndex - 1], newOrder[currentIndex]] = [newOrder[currentIndex], newOrder[currentIndex - 1]]
-      // На всякий случай устраняем дубликаты
-      const seen = new Set<string>()
-      setSelectedOrdersOrder(newOrder.filter(id => (seen.has(id) ? false : (seen.add(id), true))))
-    }
-  }, [selectedOrdersOrder])
-
-  const moveOrderDown = useCallback((orderId: string) => {
-    const currentIndex = selectedOrdersOrder.indexOf(orderId)
-    if (currentIndex < selectedOrdersOrder.length - 1) {
-      const newOrder = [...selectedOrdersOrder]
-        ;[newOrder[currentIndex], newOrder[currentIndex + 1]] = [newOrder[currentIndex + 1], newOrder[currentIndex]]
-      const seen = new Set<string>()
-      setSelectedOrdersOrder(newOrder.filter(id => (seen.has(id) ? false : (seen.add(id), true))))
-    }
-  }, [selectedOrdersOrder])
-
   // При виртуализации ручная подгрузка не требуется; функция удалена
 
   const createRoute = async (ordersOverride?: Order[] | any, courierOverride?: string) => {
@@ -1859,11 +1888,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       const updatedRoutes = (prev.routes || []).map((route: any) => {
         const hasOrder = (route.orders || []).some((o: any) => {
           const oId = String(o.id || '');
-          const oNum = String(o.orderNumber || '');
-          const targetIdStr = String(orderId);
-          const normalizedTargetId = targetIdStr.replace(/^order_/, '');
-          const normalizedOId = oId.replace(/^order_/, '');
-          return (normalizedOId === normalizedTargetId) || (oNum === normalizedTargetId);
+          const oNum = String(orderId);
+          return (oId === String(orderId) || oNum === String(orderId));
         });
 
         if (hasOrder) {
@@ -2027,7 +2053,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     return rounded.toFixed(1).replace('.', ',')
   }
 
-  // Функция для перевода состояний геокодирования на русский
   const translateLocationType = (locationType: string): string => {
     const translations: Record<string, string> = {
       'ROOFTOP': 'Точный адрес до метра',
@@ -2038,6 +2063,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     }
     return translations[locationType] || locationType
   }
+
+
 
 
 
@@ -2357,35 +2384,48 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 {/* Смарт-группы и Список ручного выбора */}
                 <div className="space-y-6">
                   {/* Смарт-группы в виде горизонтальной ленты */}
-                  <div className={clsx(
-                    "rounded-3xl p-6 border-2 transition-all",
-                    isDark ? "bg-gray-800/40 border-gray-700 hover:border-gray-600" : "bg-white shadow-blue-500/5 border-blue-50 hover:border-blue-100"
-                  )}>
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className={clsx("p-2 rounded-xl", isDark ? "bg-blue-500/10 text-blue-400" : "bg-blue-50 text-blue-600")}>
-                        <ClockIcon className="w-5 h-5" />
+                  {selectedCourier !== 'Не назначено' && !isId0CourierName(selectedCourier) && (
+                    <div className={clsx(
+                      "rounded-3xl p-6 border-2 transition-all",
+                      isDark ? "bg-gray-800/40 border-gray-700 hover:border-gray-600" : "bg-white shadow-blue-500/5 border-blue-50 hover:border-blue-100"
+                    )}>
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className={clsx("p-2 rounded-xl", isDark ? "bg-blue-500/10 text-blue-400" : "bg-blue-50 text-blue-600")}>
+                          <ClockIcon className="w-5 h-5" />
+                        </div>
+                        <h4 className={clsx("text-sm font-black uppercase tracking-widest", isDark ? "text-gray-300" : "text-gray-700")}>
+                          Сгруппировано по времени
+                        </h4>
                       </div>
-                      <h4 className={clsx("text-sm font-black uppercase tracking-widest", isDark ? "text-gray-300" : "text-gray-700")}>
-                        Сгруппировано по времени
-                      </h4>
-                    </div>
 
-                    <CourierTimeWindows
-                      courierId={String(selectedCourier || '')}
-                      courierName={isId0CourierName(selectedCourier) ? 'Не назначено' : (String(selectedCourier) || '')}
-                      orders={availableOrders}
-                      isDark={isDark}
-                      onOrderMoved={handleMoveOrderToGroup}
-                      onCreateCustomGroup={handleCreateCustomGroup}
-                      onCalculateRoute={async (group) => {
-                        const groupOrderIds = group.orders.map(o => o.id);
-                        setSelectedOrders(new Set(groupOrderIds));
-                        setSelectedOrdersOrder(groupOrderIds);
-                        // Автоматически создаем маршрут сразу без уведомления
-                        createRoute(group.orders);
-                      }}
-                    />
-                  </div>
+                      <CourierTimeWindows
+                        courierId={String(selectedCourier || '')}
+                        courierName={isId0CourierName(selectedCourier) ? 'Не назначено' : (String(selectedCourier) || '')}
+                        orders={availableOrders}
+                        isDark={isDark}
+                        onOrderMoved={handleMoveOrderToGroup}
+                        onCreateCustomGroup={handleCreateCustomGroup}
+                        onCalculateRoute={async (group) => {
+                          const groupOrderIds = group.orders.map(o => o.id);
+                          setSelectedOrders(new Set(groupOrderIds));
+                          setSelectedOrdersOrder(groupOrderIds);
+                          // Автоматически создаем маршрут сразу без уведомления
+                          createRoute(group.orders);
+                        }}
+                        onCalculateAllRoutes={async () => {
+                          const groups = groupOrdersByTimeWindow(
+                            availableOrders,
+                            String(selectedCourier || ''),
+                            isId0CourierName(selectedCourier) ? 'Не назначено' : (String(selectedCourier) || '')
+                          );
+                          // Calculate a route sequentially for each time window block
+                          for (const group of groups) {
+                            await createRoute(group.orders);
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
 
                   {/* Список ручного выбора (на всю ширину) */}
                   <div className="flex flex-col gap-6" data-tour="order-select">
@@ -2449,19 +2489,16 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
                         <div className="h-[600px] w-full overflow-y-auto pr-2 custom-scrollbar" data-tour="order-list">
                           {availableOrders.length > 0 ? (
-                            <div>
-                              <div>
-                                <OrderList
-                                  orders={availableOrders}
+                            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4 pb-4">
+                              {availableOrders.map((order: Order) => (
+                                <GridOrderCard
+                                  key={order.id}
+                                  order={order}
                                   isDark={isDark}
-                                  selectedOrders={selectedOrders}
-                                  selectedOrdersOrder={selectedOrdersOrder}
-                                  onSelectOrder={(id: string, multi: boolean) => handleOrderSelect(id, multi)}
-                                  onMoveUp={moveOrderUp}
-                                  onMoveDown={moveOrderDown}
-                                  isInRoute={false}
+                                  isSelected={selectedOrders.has(order.id)}
+                                  onSelect={(id) => handleOrderSelect(id, false)}
                                 />
-                              </div>
+                              ))}
                             </div>
                           ) : (
                             <div className="text-center py-20 opacity-30 italic">Список пуст</div>
@@ -2670,6 +2707,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
                         <div className="space-y-4">
                           {route.orders.map((order: Order, index: number) => {
+
+
                             const meta = (route as any).geoMeta?.waypoints?.[index]
                             const metaBadge = meta ? (
                               <div className="mt-2 flex items-center flex-wrap gap-2 text-[10px] font-black uppercase tracking-widest">
@@ -2800,30 +2839,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                 <ClockIcon className="w-5 h-5" />
                                 <span className="text-sm font-black tracking-tight">{formatDuration(route.totalDuration || 0)}</span>
                               </div>
-                              {(() => {
-                                const vehicleType = getCourierVehicleType(route.courier);
-                                const speed = vehicleType === 'moto' ? 30 : 60;
-                                const eta = getReturnETA(route, speed);
-                                if (!eta) return null;
-                                return (
-                                  <div className={clsx(
-                                    "flex items-center gap-3 px-4 py-2 rounded-2xl",
-                                    isDark ? "bg-emerald-500/10 text-emerald-300" : "bg-emerald-50 text-emerald-700"
-                                  )}>
-                                    <ClockIcon className="w-5 h-5" />
-                                    <span className="text-sm font-black tracking-tight">Вернется в {eta.time}</span>
-                                  </div>
-                                );
-                              })()}
-                              {route.isOptimized && (
-                                <div className={clsx(
-                                  "flex items-center gap-2 px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest",
-                                  isDark ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-green-50 text-green-700 border border-green-100 shadow-sm"
-                                )}>
-                                  <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
-                                  Оптимизирован
-                                </div>
-                              )}
+                              {/* Removed 'Вернется в' and 'Оптимизирован' blocks as they clutter the interface */}
 
                               {anomalyCheck && (
                                 <div className="flex flex-wrap gap-2 ml-auto">
