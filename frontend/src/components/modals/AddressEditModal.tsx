@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { 
-  XMarkIcon, 
-  MapPinIcon, 
+import {
+  XMarkIcon,
+  MapPinIcon,
   ExclamationTriangleIcon,
   CheckCircleIcon,
   ArrowPathIcon,
@@ -20,6 +20,8 @@ interface AddressEditModalProps {
   customerName?: string
   isDark?: boolean
 }
+
+import { createPortal } from 'react-dom'
 
 export const AddressEditModal: React.FC<AddressEditModalProps> = ({
   isOpen,
@@ -65,9 +67,9 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
         region: 'UA',
         language: 'uk'
       })
-      
+
       setGeocodingResult(result)
-      
+
       if (result.success) {
         setEditedAddress(result.formattedAddress)
       }
@@ -105,37 +107,35 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
 
   if (!isOpen) return null
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+  return createPortal(
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] animate-in fade-in duration-300">
       <div className={clsx(
-        'rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto',
-        isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+        'rounded-2xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col border',
+        'animate-in zoom-in-95 duration-300',
+        isDark ? 'bg-gray-800 border-white/10' : 'bg-white border-gray-200'
       )}>
         {/* Header */}
         <div className={clsx(
-          'px-6 py-4 border-b',
-          isDark ? 'border-gray-700' : 'border-gray-200'
+          'px-6 py-4 border-b shrink-0',
+          isDark ? 'border-gray-700 bg-gray-800/50' : 'border-gray-100 bg-gray-50'
         )}>
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <div className={clsx(
-                'p-2 rounded-lg',
-                isDark ? 'bg-blue-900/50' : 'bg-blue-100'
+                'p-2 rounded-xl',
+                isDark ? 'bg-blue-900/40 text-blue-400' : 'bg-blue-50 text-blue-600'
               )}>
-                <MapPinIcon className={clsx(
-                  'h-6 w-6',
-                  isDark ? 'text-blue-400' : 'text-blue-600'
-                )} />
+                <MapPinIcon className="h-6 w-6" />
               </div>
               <div>
                 <h3 className={clsx(
-                  'text-lg font-semibold',
-                  isDark ? 'text-gray-100' : 'text-gray-900'
+                  'text-lg font-black tracking-tight',
+                  isDark ? 'text-white' : 'text-gray-900'
                 )}>
                   Редактирование адреса
                 </h3>
                 <p className={clsx(
-                  'text-sm',
+                  'text-[10px] font-black uppercase tracking-widest opacity-60',
                   isDark ? 'text-gray-400' : 'text-gray-500'
                 )}>
                   Заказ #{orderNumber} {customerName && `(${customerName})`}
@@ -145,10 +145,10 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
             <button
               onClick={handleCancel}
               className={clsx(
-                'p-2 rounded-lg transition-colors',
-                isDark 
-                  ? 'text-gray-400 hover:text-gray-300 hover:bg-gray-700' 
-                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                'p-2 rounded-xl transition-all hover:scale-110 active:scale-95',
+                isDark
+                  ? 'text-gray-400 hover:text-white hover:bg-white/5'
+                  : 'text-gray-400 hover:text-gray-900 hover:bg-gray-100'
               )}
             >
               <XMarkIcon className="h-6 w-6" />
@@ -157,32 +157,32 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="px-6 py-4 space-y-6">
+        <div className="px-6 py-4 space-y-6 overflow-y-auto custom-scrollbar flex-1">
           {/* Current Address */}
-          <div>
+          <div className="space-y-2">
             <label className={clsx(
-              'block text-sm font-medium mb-2',
-              isDark ? 'text-gray-300' : 'text-gray-700'
+              'text-[10px] font-black uppercase tracking-widest block opacity-60 px-1',
+              isDark ? 'text-gray-400' : 'text-gray-500'
             )}>
               Текущий адрес
             </label>
             <div className={clsx(
-              'p-3 rounded-lg border',
-              isDark ? 'bg-gray-700 border-gray-600 text-gray-300' : 'bg-gray-50 border-gray-200 text-gray-600'
+              'p-4 rounded-xl border border-dashed text-sm font-bold',
+              isDark ? 'bg-white/5 border-white/10 text-gray-300' : 'bg-gray-50 border-gray-200 text-gray-600'
             )}>
               {currentAddress}
             </div>
           </div>
 
           {/* New Address Input */}
-          <div>
+          <div className="space-y-2">
             <label className={clsx(
-              'block text-sm font-medium mb-2',
-              isDark ? 'text-gray-300' : 'text-gray-700'
+              'text-[10px] font-black uppercase tracking-widest block opacity-60 px-1',
+              isDark ? 'text-gray-400' : 'text-gray-500'
             )}>
               Новый адрес
             </label>
-            <div className="flex space-x-2">
+            <div className="flex gap-2">
               <input
                 type="text"
                 value={editedAddress}
@@ -190,30 +190,28 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
                 onKeyPress={handleKeyPress}
                 placeholder="Введите новый адрес..."
                 className={clsx(
-                  'flex-1 px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors',
-                  isDark 
-                    ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
-                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
+                  'flex-1 px-4 py-3 border-2 rounded-xl text-sm font-bold outline-none transition-all',
+                  isDark
+                    ? 'bg-gray-700 border-white/5 text-white placeholder-gray-500 focus:border-blue-500/50 focus:bg-gray-700/50'
+                    : 'bg-white border-gray-100 text-gray-900 placeholder-gray-400 focus:border-blue-400 focus:bg-blue-50/20'
                 )}
               />
               <button
                 onClick={handleGeocode}
                 disabled={!editedAddress.trim() || isGeocoding}
                 className={clsx(
-                  'px-4 py-3 rounded-lg font-medium transition-all duration-200 flex items-center space-x-2',
+                  'px-6 py-3 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20',
                   isGeocoding || !editedAddress.trim()
-                    ? isDark 
-                      ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
+                    ? isDark
+                      ? 'bg-gray-700 text-gray-500 cursor-not-allowed opacity-50'
                       : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : isDark
-                      ? 'bg-blue-600 text-white hover:bg-blue-700'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'
                 )}
               >
                 {isGeocoding ? (
-                  <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                  <ArrowPathIcon className="h-4 w-4 animate-spin" />
                 ) : (
-                  <MagnifyingGlassIcon className="h-5 w-5" />
+                  <MagnifyingGlassIcon className="h-4 w-4" />
                 )}
                 <span>{isGeocoding ? 'Поиск...' : 'Найти'}</span>
               </button>
@@ -222,174 +220,138 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
 
           {/* Validation Results */}
           {validationResult && (
-            <div className="space-y-3">
+            <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
               {/* Errors */}
               {validationResult.errors.length > 0 && (
                 <div className={clsx(
-                  'p-4 rounded-lg border-l-4',
-                  isDark ? 'bg-red-900/20 border-red-500' : 'bg-red-50 border-red-500'
+                  'p-4 rounded-xl border-2',
+                  isDark ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-red-50 border-red-100 text-red-600'
                 )}>
                   <div className="flex items-center space-x-2 mb-2">
-                    <ExclamationTriangleIcon className={clsx(
-                      'h-5 w-5',
-                      isDark ? 'text-red-400' : 'text-red-600'
-                    )} />
-                    <span className={clsx(
-                      'font-medium',
-                      isDark ? 'text-red-300' : 'text-red-800'
-                    )}>
+                    <ExclamationTriangleIcon className="h-5 w-5" />
+                    <span className="text-xs font-black uppercase tracking-widest">
                       Ошибки в адресе
                     </span>
                   </div>
-                  <ul className={clsx(
-                    'text-sm space-y-1',
-                    isDark ? 'text-red-300' : 'text-red-700'
-                  )}>
+                  <ul className="text-xs font-bold space-y-1 pl-7 opacity-80">
                     {validationResult.errors.map((error, index) => (
                       <li key={index}>• {error}</li>
                     ))}
                   </ul>
                 </div>
               )}
-
-              {/* Warnings hidden in this modal per requirements */}
-
-              {/* Suggestions hidden in this modal per requirements */}
             </div>
           )}
 
           {/* Geocoding Results */}
           {geocodingResult && (
             <div className={clsx(
-              'p-4 rounded-lg border-l-4',
-              geocodingResult.success 
-                ? isDark ? 'bg-green-900/20 border-green-500' : 'bg-green-50 border-green-500'
-                : isDark ? 'bg-red-900/20 border-red-500' : 'bg-red-50 border-red-500'
+              'p-4 rounded-xl border-2 animate-in fade-in slide-in-from-top-2 duration-300',
+              geocodingResult.success
+                ? isDark ? 'bg-green-500/10 border-green-500/20 text-green-400' : 'bg-green-50 border-green-100 text-green-600'
+                : isDark ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-red-50 border-red-100 text-red-600'
             )}>
               <div className="flex items-center space-x-2 mb-2">
                 {geocodingResult.success ? (
-                  <CheckCircleIcon className={clsx(
-                    'h-5 w-5',
-                    isDark ? 'text-green-400' : 'text-green-600'
-                  )} />
+                  <CheckCircleIcon className="h-5 w-5" />
                 ) : (
-                  <ExclamationTriangleIcon className={clsx(
-                    'h-5 w-5',
-                    isDark ? 'text-red-400' : 'text-red-600'
-                  )} />
+                  <ExclamationTriangleIcon className="h-5 w-5" />
                 )}
-                <span className={clsx(
-                  'font-medium',
-                  geocodingResult.success 
-                    ? isDark ? 'text-green-300' : 'text-green-800'
-                    : isDark ? 'text-red-300' : 'text-red-800'
-                )}>
+                <span className="text-xs font-black uppercase tracking-widest">
                   {geocodingResult.success ? 'Адрес найден' : 'Ошибка поиска'}
                 </span>
               </div>
-              
-              {geocodingResult.success ? (
-                <div className="space-y-2">
-                  <p className={clsx(
-                    'text-sm',
-                    isDark ? 'text-green-300' : 'text-green-700'
-                  )}>
-                    <strong>Найденный адрес:</strong> {geocodingResult.formattedAddress}
-                  </p>
-                  {geocodingResult.warnings && geocodingResult.warnings.length > 0 && (
-                    <div className={clsx(
-                      'text-sm',
-                      isDark ? 'text-yellow-300' : 'text-yellow-700'
-                    )}>
-                      <strong>Предупреждения:</strong>
-                      <ul className="ml-4 space-y-1">
-                        {geocodingResult.warnings.map((warning, index) => (
-                          <li key={index}>• {warning}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p className={clsx(
-                  'text-sm',
-                  isDark ? 'text-red-300' : 'text-red-700'
-                )}>
-                  {geocodingResult.error}
-                </p>
-              )}
+
+              <div className="pl-7 space-y-2">
+                {geocodingResult.success ? (
+                  <>
+                    <p className="text-sm font-bold break-words">{geocodingResult.formattedAddress}</p>
+                    {geocodingResult.warnings && geocodingResult.warnings.length > 0 && (
+                      <div className={clsx(
+                        'text-[10px] font-black uppercase tracking-widest opacity-80 mt-2',
+                        isDark ? 'text-amber-400' : 'text-amber-600'
+                      )}>
+                        Предупреждения:
+                        <ul className="mt-1 space-y-1 list-none lowercase first-letter:uppercase">
+                          {geocodingResult.warnings.map((warning, index) => (
+                            <li key={index}>• {warning}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm font-bold">{geocodingResult.error}</p>
+                )}
+              </div>
             </div>
           )}
 
-          {/* Google Maps Integration */}
-          <div>
-            <label className={clsx(
-              'block text-sm font-medium mb-2',
-              isDark ? 'text-gray-300' : 'text-gray-700'
-            )}>
-              Выбор адреса на карте
-            </label>
-            <div className={clsx(
-              'p-4 rounded-lg border h-64',
-              isDark ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
-            )}>
-              {/* Google Maps будет интегрирован здесь */}
-              <div className="flex items-center justify-center h-full">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const query = encodeURIComponent(editedAddress)
-                    window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank')
-                  }}
-                  className={clsx(
-                    'px-4 py-2 rounded-lg font-medium transition-colors flex items-center space-x-2',
-                    isDark 
-                      ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
-                  )}
-                >
+          {/* Map Link */}
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                const query = encodeURIComponent(editedAddress)
+                window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank')
+              }}
+              className={clsx(
+                'w-full p-4 rounded-xl border-2 transition-all group flex items-center justify-between',
+                isDark
+                  ? 'bg-white/5 border-white/5 hover:border-blue-500/50 hover:bg-blue-500/5'
+                  : 'bg-gray-50 border-gray-100 hover:border-blue-300 hover:bg-blue-50/30'
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <div className={clsx(
+                  "p-2 rounded-lg flex items-center justify-center",
+                  isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-600 text-white"
+                )}>
                   <MapPinIcon className="h-5 w-5" />
-                  <span>Открыть в Google Maps</span>
-                </button>
+                </div>
+                <div className="text-left">
+                  <p className={clsx("text-sm font-black", isDark ? "text-white" : "text-gray-900")}>Открыть в Google Maps</p>
+                  <p className={clsx("text-[10px] font-bold opacity-50", isDark ? "text-gray-400" : "text-gray-500")}>проверить местоположение вручную</p>
+                </div>
               </div>
-            </div>
+              <ArrowPathIcon className="h-4 w-4 text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </button>
           </div>
         </div>
 
         {/* Footer */}
         <div className={clsx(
-          'px-6 py-4 border-t flex justify-end space-x-3',
-          isDark ? 'border-gray-700' : 'border-gray-200'
+          'px-6 py-4 border-t flex justify-end gap-3 shrink-0',
+          isDark ? 'border-gray-700 bg-gray-800/50' : 'border-gray-100 bg-gray-50'
         )}>
           <button
             onClick={handleCancel}
             className={clsx(
-              'px-4 py-2 text-sm font-medium rounded-lg transition-colors',
-              isDark 
-                ? 'text-gray-300 bg-gray-700 hover:bg-gray-600' 
-                : 'text-gray-700 bg-gray-100 hover:bg-gray-200'
+              'px-6 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all',
+              isDark
+                ? 'text-gray-400 bg-gray-700 hover:text-white hover:bg-gray-600'
+                : 'text-gray-500 bg-white border border-gray-200 hover:bg-gray-50 hover:text-gray-700'
             )}
           >
             Отмена
           </button>
           <button
             onClick={handleSave}
-              disabled={!editedAddress.trim() || (validationResult ? !validationResult.isValid : false)}
-              className={clsx(
-                'px-4 py-2 text-sm font-medium rounded-lg transition-colors',
-                !editedAddress.trim() || (validationResult ? !validationResult.isValid : false)
-                ? isDark 
-                  ? 'text-gray-500 bg-gray-700 cursor-not-allowed' 
+            disabled={!editedAddress.trim() || (validationResult ? !validationResult.isValid : false)}
+            className={clsx(
+              'px-8 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-xl',
+              !editedAddress.trim() || (validationResult ? !validationResult.isValid : false)
+                ? isDark
+                  ? 'text-gray-500 bg-gray-700 cursor-not-allowed grayscale'
                   : 'text-gray-400 bg-gray-100 cursor-not-allowed'
-                : isDark
-                  ? 'text-white bg-blue-600 hover:bg-blue-700'
-                  : 'text-white bg-blue-600 hover:bg-blue-700'
+                : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/20 active:scale-95'
             )}
           >
             Сохранить адрес
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

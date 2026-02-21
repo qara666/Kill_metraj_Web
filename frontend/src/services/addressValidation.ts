@@ -185,7 +185,7 @@ export class AddressValidationService {
    */
   static checkInKmlSectors(lat: number, lng: number, kmlData: any, hubNames?: string[], zoneNames?: string[]): { zoneName: string; hubName: string } | null {
     if (!kmlData || !kmlData.polygons || !Array.isArray(kmlData.polygons)) return null
-    if (typeof window === 'undefined' || !window.google || !window.google.maps) return null
+    if (typeof window === 'undefined' || !window.google || !window.google.maps || !window.google.maps.Polygon || !window.google.maps.geometry) return null
 
     const point = new window.google.maps.LatLng(lat, lng)
 

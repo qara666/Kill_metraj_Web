@@ -4,7 +4,9 @@
  */
 
 import { useCallback } from 'react';
+export { type AddressSuggestion, type ValidationResult } from '@/services/addressZoneValidator';
 import { getAddressZoneValidator, type AddressSuggestion, type ValidationResult } from '@/services/addressZoneValidator';
+
 import toast from 'react-hot-toast';
 
 interface Order {
@@ -129,11 +131,30 @@ export function useSmartAddressCorrection({ updateExcelData, onCorrectionComplet
         onCorrectionComplete?.();
     }, [updateExcelData, onCorrectionComplete]);
 
+    /**
+     * Пытается автоматически разрешить неоднозначность адреса (disambiguation)
+     * на основе контекста зон маршрута (SOTA 4.2)
+     */
+    const resolveAddressBias = useCallback(async (order: Order, preferredZones: any[], options: { contextCoords?: any[]; primaryCity?: string } = {}) => {
+        const { bestMatch, alternatives } = await validator.findBestMatchInZones(order.address, preferredZones, {
+            contextCoords: options.contextCoords || (order.coords ? [order.coords] : []),
+            primaryCity: options.primaryCity
+        });
+
+        if (bestMatch && bestMatch.confidence >= 90) {
+            applyCorrection(order, bestMatch);
+            return { success: true, bestMatch, alternatives };
+        }
+
+        return { success: false, bestMatch, alternatives };
+    }, [validator, applyCorrection]);
+
     return {
         validateOrders,
         applyCorrection,
         applyBatchCorrections,
         applyManualEdit,
+        resolveAddressBias,
         validator,
     };
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { OrderList } from './OrderList'
 import {
   TruckIcon,
@@ -36,11 +37,12 @@ import { getUkraineTrafficForOrders, calculateTotalTrafficDelay } from '../../ut
 import { type TimeWindowGroup, groupOrdersByTimeWindow, formatTimeLabel } from '../../utils/route/routeCalculationHelpers'
 import { SmartAddressCorrectionModal } from '../modals/SmartAddressCorrectionModal'
 import { BatchAddressCorrectionPanel } from './BatchAddressCorrectionPanel'
-import { useSmartAddressCorrection } from '../../hooks/useSmartAddressCorrection'
+import { type AddressSuggestion, useSmartAddressCorrection } from '../../hooks/useSmartAddressCorrection'
 import { isId0CourierName, normalizeCourierName } from '../../utils/data/courierName'
 import { getReturnETA, getAccurateReturnETA, getCourierSpeed, enrichRoutesWithCoords } from '../../utils/routes/courierETA'
 import { ReturningCouriersModal } from './modals/ReturningCouriersModal'
 import { TransitCouriersModal } from './modals/TransitCouriersModal'
+import { type DeliveryZone, calculateDistance } from '../../utils/geoUtils'
 
 // --- Hooks ---
 function useDebounce<T>(value: T, delay: number): T {
@@ -346,7 +348,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [showAddressEditModal, setShowAddressEditModal] = useState(false)
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [routeAnomalies, setRouteAnomalies] = useState<Map<string, RouteAnomalyCheck>>(new Map())
-  // Disambiguation modal state for choosing among multiple in-sector candidates
+
+  // SOTA 4.2: Disambiguation modal state
+  const [disambiguationData, setDisambiguationData] = useState<{
+    order: Order;
+    alternatives: AddressSuggestion[];
+    targetGroup: TimeWindowGroup;
+  } | null>(null);
+  const [showDisambiguationModal, setShowDisambiguationModal] = useState(false);
   const [disambModal, setDisambModal] = useState<{ open: boolean; title: string; options: Array<{ label: string; distanceMeters?: number; res: any }> } | null>(null)
   const disambResolver = useRef<(choice: any | null) => void>()
 
@@ -480,9 +489,23 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
   // --- Custom Hooks ---
 
-  const { validateOrders, applyCorrection, applyBatchCorrections, applyManualEdit } = useSmartAddressCorrection({
+  const { validateOrders, applyCorrection, applyBatchCorrections, applyManualEdit, resolveAddressBias, validator } = useSmartAddressCorrection({
     updateExcelData
   })
+
+  // SOTA 4.0: Синхронизируем валидатор с зонами KML из настроек
+  useEffect(() => {
+    const settings = localStorageUtils.getAllSettings()
+    if (settings.kmlData?.polygons) {
+      const zones: DeliveryZone[] = settings.kmlData.polygons.map((p: any) => ({
+        id: p.id || p.name,
+        name: p.name,
+        polygon: p.points,
+        hub: p.center
+      }));
+      validator.setZones(zones);
+    }
+  }, [validator]);
 
   // Группируем заказы по курьерам
   const courierOrders = useMemo(() => {
@@ -1058,7 +1081,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       // OPTIMIZATION: Instantiate Polygons ONCE outside the loop to prevent massive GC churn
       // This fixes the "lag/freeze" issue on weak devices
       let cachedHubPolygons: { folderName: string; name: string; googlePoly: any }[] = []
-      if (selectedHubs.length > 0 && settings.kmlData?.polygons) {
+      if (selectedHubs.length > 0 && settings.kmlData?.polygons && window.google?.maps?.Polygon) {
         const rawPolys = settings.kmlData.polygons.filter((p: any) => selectedHubs.includes(p.folderName))
         cachedHubPolygons = rawPolys.map((p: any) => ({
           ...p,
@@ -1078,7 +1101,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
       // Pre-cache ALL KML polygons for checkAnyKmlZone
       let cachedAllKmlPolygons: { folderName: string; name: string; googlePoly: any; bounds: any }[] = []
-      if (settings.kmlData?.polygons) {
+      if (settings.kmlData?.polygons && window.google?.maps?.Polygon) {
         cachedAllKmlPolygons = settings.kmlData.polygons.map((p: any) => ({
           ...p,
           googlePoly: new window.google.maps.Polygon({ paths: p.path }),
@@ -1119,14 +1142,38 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         return result
       }
 
-      // Проверка попадания в ЛЮБУЮ зону KML (для приоритезации при геокодировании)
-      const checkAnyKmlZone = (latLng: any) => {
-        if (!latLng || cachedAllKmlPolygons.length === 0) return false
-        const key = `${latLng.lat()},${latLng.lng()}`
-        if (checkAnyMemo.has(key)) return checkAnyMemo.get(key)!
 
+      // Helper: identify technical/auto-unloading zones by name
+      const isTechnicalKmlZone = (p: any): boolean => {
+        const n = (p.name || p.folderName || '').toLowerCase()
+        return n.includes('авторозвантаження') ||
+          n.includes('авторазгрузка') ||
+          n.includes('разгрузка') ||
+          n.includes('склад') ||
+          n.includes('depot')
+      }
+
+      // Checks if a latLng is inside ANY non-technical (real delivery) KML zone
+      const checkDeliveryKmlZone = (latLng: any) => {
+        if (!latLng || cachedAllKmlPolygons.length === 0) return false
+        const key = `D:${latLng.lat()},${latLng.lng()}`
+        if (checkAnyMemo.has(key)) return checkAnyMemo.get(key)!
         const result = cachedAllKmlPolygons.some((p: any) => {
-          // Bounding Box Pre-filter
+          if (isTechnicalKmlZone(p)) return false // skip technical zones
+          if (p.bounds && !p.bounds.contains(latLng)) return false
+          return window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)
+        })
+        checkAnyMemo.set(key, result)
+        return result
+      }
+
+      // Checks if a latLng is inside a TECHNICAL (auto-unloading) KML zone
+      const checkTechnicalKmlZone = (latLng: any) => {
+        if (!latLng || cachedAllKmlPolygons.length === 0) return false
+        const key = `T:${latLng.lat()},${latLng.lng()}`
+        if (checkAnyMemo.has(key)) return checkAnyMemo.get(key)!
+        const result = cachedAllKmlPolygons.some((p: any) => {
+          if (!isTechnicalKmlZone(p)) return false // only technical zones
           if (p.bounds && !p.bounds.contains(latLng)) return false
           return window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)
         })
@@ -1195,9 +1242,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           } catch { }
         }
 
-        // ПРИОРИТЕТ: Попадание в любую зону KML (глобальное исправление для Вишневого и т.д.)
-        if (checkAnyKmlZone(candidate.geometry.location)) {
-          score += 500 // Сильный бонус для зон KML
+        // SOTA 4.3: Delivery-zone bonus / Technical-zone hard penalty
+        // Delivery zone = strong signal → +500
+        // Technical zone (авторозвантаження) = hard penalty → -400
+        // These two are mutually exclusive (a point can't be in both simultaneously)
+        if (checkDeliveryKmlZone(candidate.geometry.location)) {
+          score += 500
+        } else if (checkTechnicalKmlZone(candidate.geometry.location)) {
+          score -= 400 // NEVER select an auto-unloading zone over a non-zone result
         }
 
         return score
@@ -1759,8 +1811,70 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
 
   // Функция для перемещения заказа в другую временную группу (Force Move / SOTA v2.0)
-  const handleMoveOrderToGroup = useCallback((orderId: string, targetGroup: TimeWindowGroup) => {
+  const handleMoveOrderToGroup = useCallback(async (orderId: string, targetGroup: TimeWindowGroup) => {
     console.log('[DND] Force Move logic triggered for order:', orderId, 'to group:', targetGroup.id);
+
+    // SOTA 4.0: Context-Aware Geocoding & Disambiguation
+    // Если заказ перемещается в группу, попробуем проверить его на "прыжки" в другие города
+    const settings = localStorageUtils.getAllSettings();
+    const currentOrders = excelData?.orders || [];
+    const movedOrder = currentOrders.find((o: any) => String(o.id) === String(orderId) || String(o.orderNumber) === String(orderId));
+
+    if (movedOrder && settings.kmlData?.polygons) {
+      const zones: DeliveryZone[] = settings.kmlData.polygons.map((p: any) => ({
+        id: p.id || p.name,
+        name: p.name,
+        polygon: p.points,
+        hub: p.center
+      }));
+
+      // Если заказ перемещается к конкретному курьеру, мы можем считать его зоны "предпочтительными"
+      // Но для простоты сейчас проверяем все зоны KML
+      const cityCtx = getSelectedCity();
+      const disambResult = await resolveAddressBias(movedOrder, zones, {
+        primaryCity: cityCtx.city,
+        contextCoords: targetGroup.orders.filter(o => o.coords).map(o => o.coords!)
+      });
+
+      if (disambResult.alternatives.length > 1 || (disambResult.alternatives.length === 1 && !disambResult.success)) {
+        // Если есть альтернативы, или единственный результат попал в техническую зону
+        setDisambiguationData({
+          order: movedOrder,
+          alternatives: disambResult.alternatives,
+          targetGroup
+        });
+        setShowDisambiguationModal(true);
+        return; // Прерываем выполнение, ждем выбора пользователя
+      }
+
+      if (disambResult.success) {
+        console.log('[SOTA 4.2] Order address disambiguated automatically based on context:', cityCtx.city);
+      }
+
+      // Проверка на аномальное расстояние (>10км от центра группы)
+      const groupOrders = targetGroup.orders || [];
+      if (movedOrder.coords && groupOrders.length > 0) {
+        let isTooFar = false;
+        for (const other of groupOrders) {
+          if (other.coords) {
+            const dist = calculateDistance(movedOrder.coords, other.coords);
+            if (dist > 10000) { // 10km
+              isTooFar = true;
+              break;
+            }
+          }
+        }
+
+        if (isTooFar) {
+          toast(() => (
+            <div className="flex flex-col gap-1">
+              <span className="font-bold text-red-500">⚠ Далекий адрес!</span>
+              <span className="text-xs">Заказ #{movedOrder.orderNumber} находится более чем в 10км от группы.</span>
+            </div>
+          ), { duration: 6000 });
+        }
+      }
+    }
 
     updateExcelData((prev: any) => {
       if (!prev) return prev;
@@ -2133,6 +2247,100 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   }
 
 
+
+  // SOTA 4.2 Disambiguation Portal — placed here (not inline in JSX) to avoid Babel parse error
+  const disambiguationPortal = (showDisambiguationModal && disambiguationData)
+    ? createPortal(
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md transition-all duration-300 animate-in fade-in">
+        <div className={clsx(
+          "w-full max-w-xl rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 duration-300",
+          isDark ? "bg-gray-900 border-white/10" : "bg-white border-gray-200"
+        )}>
+          <div className={clsx("px-6 py-4 flex items-center gap-3 border-b", isDark ? "bg-gray-800/50 border-white/5" : "bg-gray-50 border-gray-100")}>
+            <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center">
+              <QuestionMarkCircleIcon className="w-6 h-6 text-blue-500" />
+            </div>
+            <div className="flex-1">
+              <h3 className={clsx("text-lg font-black uppercase tracking-tight", isDark ? "text-white" : "text-gray-900")}>Уточнение адреса</h3>
+              <p className={clsx("text-xs font-bold opacity-60", isDark ? "text-gray-400" : "text-gray-500")}>
+                Найдено несколько совпадений для заказа #{disambiguationData.order.orderNumber}
+              </p>
+            </div>
+            <button onClick={() => setShowDisambiguationModal(false)} className={clsx("p-2 rounded-xl transition-colors", isDark ? "hover:bg-white/10 text-gray-400" : "hover:bg-gray-100 text-gray-500")}>
+              <TrashIcon className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
+            <div className={clsx("p-4 rounded-xl space-y-2 border-l-4 border-blue-500", isDark ? "bg-white/5" : "bg-blue-50/50")}>
+              <label className={clsx("text-[10px] font-black uppercase tracking-widest block", isDark ? "text-blue-400" : "text-blue-600")}>Оригинальный адрес</label>
+              <p className={clsx("text-sm font-bold", isDark ? "text-gray-300" : "text-gray-800")}>{disambiguationData.order.address}</p>
+            </div>
+            <div className="space-y-3">
+              <label className={clsx("text-[10px] font-black uppercase tracking-widest block px-1", isDark ? "text-gray-400" : "text-gray-500")}>Выберите правильный вариант:</label>
+              {disambiguationData.alternatives.map((alt: any, idx: number) => {
+                const isTechnical = alt.zone?.name.toLowerCase().includes('авторозвантаження') || alt.zone?.name.toLowerCase().includes('разгрузка');
+                return (
+                  <button
+                    key={idx}
+                    onClick={async () => {
+                      applyCorrection(disambiguationData.order, alt);
+                      updateExcelData((prev: any) => {
+                        if (!prev) return prev;
+                        const updatedOrders = (prev.orders || []).map((o: any) => {
+                          const oId = String(o.id || o.orderNumber);
+                          const dId = String(disambiguationData.order.id || disambiguationData.order.orderNumber);
+                          if (oId === dId) {
+                            return { ...o, address: alt.address, coords: alt.coords, manualGroupId: disambiguationData.targetGroup.id, courier: disambiguationData.targetGroup.courierName, plannedTime: disambiguationData.targetGroup.windowLabel, correctedBy: 'manual_disambiguation' };
+                          }
+                          return o;
+                        });
+                        return { ...prev, orders: updatedOrders };
+                      });
+                      setShowDisambiguationModal(false);
+                      toast.success('✅ Адрес уточнен и заказ перемещен');
+                    }}
+                    className={clsx("w-full text-left p-4 rounded-xl border-2 transition-all group relative",
+                      isDark ? "bg-gray-800/50 border-white/5 hover:border-blue-500/50 hover:bg-blue-500/5" : "bg-white border-gray-100 hover:border-blue-400 hover:bg-blue-50/30")}
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className={clsx("w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-sm",
+                        isTechnical ? (isDark ? "bg-amber-500/20 text-amber-500" : "bg-amber-100 text-amber-600") : (isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-100 text-blue-600"))}>
+                        {isTechnical ? <ExclamationTriangleIcon className="w-5 h-5" /> : <MapPinIcon className="w-5 h-5" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className={clsx("text-sm font-black mb-1 break-words", isDark ? "text-white" : "text-gray-900")}>{alt.address}</div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={clsx("text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter",
+                            isTechnical ? (isDark ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" : "bg-amber-50 text-amber-600 border border-amber-200") : (isDark ? "bg-blue-500/20 text-blue-400 border border-blue-500/30" : "bg-blue-50 text-blue-600 border border-blue-200"))}>
+                            {alt.zone?.name || 'Вне зоны'}
+                          </span>
+                          <span className={clsx("text-[10px] font-bold opacity-60", isDark ? "text-gray-400" : "text-gray-500")}>{alt.reason}</span>
+                        </div>
+                      </div>
+                      <div className={clsx("opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-8 h-8 rounded-full shadow-md", isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-500 text-white")}>
+                        <PlusIcon className="w-4 h-4" />
+                      </div>
+                    </div>
+                    {isTechnical && (
+                      <div className={clsx("absolute -top-2 -right-2 px-2 py-0.5 rounded-md text-[8px] font-black uppercase text-white shadow-lg", "bg-gradient-to-r from-amber-500 to-orange-600 animate-pulse z-10")}>
+                        ТЕХНИЧЕСКАЯ ЗОНА
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className={clsx("px-6 py-4 border-t flex justify-end gap-3", isDark ? "bg-gray-800/30 border-white/5" : "bg-gray-50/50 border-gray-100")}>
+            <button onClick={() => setShowDisambiguationModal(false)} className={clsx("px-4 py-2 text-xs font-black uppercase tracking-widest rounded-xl transition-all", isDark ? "text-gray-400 hover:text-white hover:bg-white/10" : "text-gray-500 hover:text-gray-900 hover:bg-gray-100")}>
+              Закрыть
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )
+    : null
 
   return (
     <div className="space-y-6">
@@ -3251,6 +3459,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           </div>
         </div>
       )}
+
+      {/* SOTA 4.2: Disambiguation Modal */}
+      {disambiguationPortal}
     </div>
   )
 }

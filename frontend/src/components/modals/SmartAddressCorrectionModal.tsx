@@ -22,6 +22,8 @@ interface SmartAddressCorrectionModalProps {
     onClose: () => void;
 }
 
+import { createPortal } from 'react-dom';
+
 export const SmartAddressCorrectionModal: React.FC<SmartAddressCorrectionModalProps> = ({
     order,
     validationResult,
@@ -66,11 +68,11 @@ export const SmartAddressCorrectionModal: React.FC<SmartAddressCorrectionModalPr
         return { text: 'Низкая', color: 'bg-orange-500' };
     };
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+    return createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
             <div
                 className={clsx(
-                    'relative w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-3xl shadow-2xl border-2',
+                    'relative w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-3xl shadow-2xl border-2 animate-in zoom-in-95 duration-300',
                     isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'
                 )}
             >
@@ -316,6 +318,7 @@ export const SmartAddressCorrectionModal: React.FC<SmartAddressCorrectionModalPr
                     </div>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
