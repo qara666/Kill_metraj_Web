@@ -287,16 +287,14 @@ export const geocodeDashboardOrders = async (
     const geocodedOrders = await Promise.all(
         orders.map(async (order) => {
             try {
-                const result = await geocodingService.geocodeAddress(order.address, {
-                    preferredCity: 'Київ', // Можно настроить
-                    strictMode: false,
-                });
+                // SOTA 4.0: Используем geocodeAndCleanAddress для лучшей очистки и привязки к региону
+                const result = await geocodingService.geocodeAndCleanAddress(order.address);
 
-                if (result.success && result.coordinates) {
+                if (result.success && result.latitude && result.longitude) {
                     successCount++;
                     return {
                         ...order,
-                        coords: result.coordinates,
+                        coords: { lat: result.latitude, lng: result.longitude },
                     };
                 } else {
                     failCount++;
