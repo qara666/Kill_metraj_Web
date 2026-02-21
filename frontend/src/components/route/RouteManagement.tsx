@@ -500,7 +500,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       const zones: DeliveryZone[] = settings.kmlData.polygons.map((p: any) => ({
         id: p.id || p.name,
         name: p.name,
-        polygon: p.points,
+        polygon: p.path || p.points, // SOTA 4.6: Robust mapping
         hub: p.center
       }));
       validator.setZones(zones);
@@ -1109,9 +1109,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         }))
       }
 
-      // Memoization caches for current calculation session
+      // Memoization cache for sector checks
       const checkInsideMemo = new Map<string, boolean>()
-      const checkAnyMemo = new Map<string, boolean>()
 
       // Для проверки вхождения используем все ПОЛИГОНЫ хаба (с учетом фильтра зон)
       const checkInside = (latLng: any) => {
@@ -1142,43 +1141,32 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         return result
       }
 
-
-      // Helper: identify technical/auto-unloading zones by name
-      const isTechnicalKmlZone = (p: any): boolean => {
-        const n = (p.name || p.folderName || '').toLowerCase()
+      // SOTA 4.5: split zone checking into delivery vs technical
+      // A point inside a delivery zone gets a strong bonus;
+      // a point inside a technical/auto-unloading zone gets a hard penalty.
+      const _isTechZoneName = (name: string, folder: string) => {
+        const n = `${name} ${folder}`.toLowerCase()
         return n.includes('авторозвантаження') ||
-          n.includes('авторазгрузка') ||
-          n.includes('разгрузка') ||
+          n.includes('авторазгруз') ||
+          n.includes('разгруз') ||
           n.includes('склад') ||
           n.includes('depot')
       }
-
-      // Checks if a latLng is inside ANY non-technical (real delivery) KML zone
       const checkDeliveryKmlZone = (latLng: any) => {
         if (!latLng || cachedAllKmlPolygons.length === 0) return false
-        const key = `D:${latLng.lat()},${latLng.lng()}`
-        if (checkAnyMemo.has(key)) return checkAnyMemo.get(key)!
-        const result = cachedAllKmlPolygons.some((p: any) => {
-          if (isTechnicalKmlZone(p)) return false // skip technical zones
+        return cachedAllKmlPolygons.some((p: any) => {
+          if (_isTechZoneName(p.name || '', p.folderName || '')) return false
           if (p.bounds && !p.bounds.contains(latLng)) return false
           return window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)
         })
-        checkAnyMemo.set(key, result)
-        return result
       }
-
-      // Checks if a latLng is inside a TECHNICAL (auto-unloading) KML zone
       const checkTechnicalKmlZone = (latLng: any) => {
         if (!latLng || cachedAllKmlPolygons.length === 0) return false
-        const key = `T:${latLng.lat()},${latLng.lng()}`
-        if (checkAnyMemo.has(key)) return checkAnyMemo.get(key)!
-        const result = cachedAllKmlPolygons.some((p: any) => {
-          if (!isTechnicalKmlZone(p)) return false // only technical zones
+        return cachedAllKmlPolygons.some((p: any) => {
+          if (!_isTechZoneName(p.name || '', p.folderName || '')) return false
           if (p.bounds && !p.bounds.contains(latLng)) return false
           return window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)
         })
-        checkAnyMemo.set(key, result)
-        return result
       }
 
       // Полигон сектора для containsLocation (используем checkInside вместо прямого полигона)
@@ -1242,14 +1230,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           } catch { }
         }
 
-        // SOTA 4.3: Delivery-zone bonus / Technical-zone hard penalty
-        // Delivery zone = strong signal → +500
-        // Technical zone (авторозвантаження) = hard penalty → -400
-        // These two are mutually exclusive (a point can't be in both simultaneously)
-        if (checkDeliveryKmlZone(candidate.geometry.location)) {
+        // SOTA 4.5: delivery zones get strong bonus, technical zones get hard penalty.
+        // Before: ALL zones (including авторозвантаження) gave +500 → technical zones won.
+        // Now: only real delivery zones give +500; technical zones give -400.
+        const loc = candidate.geometry.location
+        if (checkDeliveryKmlZone(loc)) {
           score += 500
-        } else if (checkTechnicalKmlZone(candidate.geometry.location)) {
-          score -= 400 // NEVER select an auto-unloading zone over a non-zone result
+        } else if (checkTechnicalKmlZone(loc)) {
+          score -= 400
         }
 
         return score
@@ -1276,10 +1264,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           const res: any = await googleApiCache.geocode(request)
           if (res && res.length > 0) {
             candidatesByVariant = [...candidatesByVariant, ...res]
-            // If we found a ROOFTOP inside KML, we can stop early
+            // SOTA 4.5: early-exit only for ROOFTOP in delivery zone (never in technical/auto-unloading)
             const bestFound = res.find((r: any) =>
               r.geometry?.location_type === 'ROOFTOP' &&
-              (!hasRestriction || isInsideSector(r.geometry.location))
+              (!hasRestriction || isInsideSector(r.geometry.location)) &&
+              !checkTechnicalKmlZone(r.geometry.location)
             )
             if (bestFound) break
           }
@@ -1317,6 +1306,28 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           if (refinedAddr) {
             const fix = await geocodeInsideOnly(refinedAddr, refPoint)
             if (fix && fix.geometry?.location_type === 'ROOFTOP') best = fix
+          }
+        }
+
+        // SOTA 4.5: Post-process — if the scoring winner is in a technical/auto-unloading zone,
+        // discard it and use the best non-technical alternative instead.
+        if (best && checkTechnicalKmlZone(best.geometry.location)) {
+          console.warn(`[SOTA 4.5] Winner "${best.formatted_address}" is in a technical zone — trying non-technical fallback`)
+          let fallback: any = null
+          let fallbackScore = -Infinity
+          for (const cand of candidatesByVariant) {
+            if (checkTechnicalKmlZone(cand.geometry.location)) continue
+            const isIns = hasRestriction ? isInsideSector(cand.geometry.location) : true
+            const s = scoreCandidate(cand, { refPoint, expectedHouse, expectedPostal, inside: isIns })
+            if (s > fallbackScore) { fallbackScore = s; fallback = cand }
+          }
+          if (fallback) {
+            console.log(`[SOTA 4.5] Fallback: "${fallback.formatted_address}" score=${fallbackScore}`)
+            best = fallback
+          } else {
+            // No non-technical result at all — flag for user disambiguation
+            console.warn(`[SOTA 4.5] No non-technical fallback found — flagging for user review`)
+            best._needsDisambiguation = true
           }
         }
 
@@ -1824,31 +1835,36 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       const zones: DeliveryZone[] = settings.kmlData.polygons.map((p: any) => ({
         id: p.id || p.name,
         name: p.name,
-        polygon: p.points,
+        polygon: p.path || p.points, // SOTA 4.6: Robust mapping
         hub: p.center
       }));
 
       // Если заказ перемещается к конкретному курьеру, мы можем считать его зоны "предпочтительными"
       // Но для простоты сейчас проверяем все зоны KML
       const cityCtx = getSelectedCity();
-      const disambResult = await resolveAddressBias(movedOrder, zones, {
-        primaryCity: cityCtx.city,
-        contextCoords: targetGroup.orders.filter(o => o.coords).map(o => o.coords!)
-      });
-
-      if (disambResult.alternatives.length > 1 || (disambResult.alternatives.length === 1 && !disambResult.success)) {
-        // Если есть альтернативы, или единственный результат попал в техническую зону
-        setDisambiguationData({
-          order: movedOrder,
-          alternatives: disambResult.alternatives,
-          targetGroup
+      try {
+        const disambResult = await resolveAddressBias(movedOrder, zones, {
+          primaryCity: cityCtx.city,
+          contextCoords: targetGroup.orders.filter(o => o.coords).map(o => o.coords!)
         });
-        setShowDisambiguationModal(true);
-        return; // Прерываем выполнение, ждем выбора пользователя
-      }
 
-      if (disambResult.success) {
-        console.log('[SOTA 4.2] Order address disambiguated automatically based on context:', cityCtx.city);
+        if (disambResult.alternatives.length > 1 || (disambResult.alternatives.length === 1 && !disambResult.success)) {
+          // Если есть альтернативы, или единственный результат попал в техническую зону
+          setDisambiguationData({
+            order: movedOrder,
+            alternatives: disambResult.alternatives,
+            targetGroup
+          });
+          setShowDisambiguationModal(true);
+          return; // Прерываем выполнение, ждем выбора пользователя
+        }
+
+        if (disambResult.success) {
+          console.log('[SOTA 4.2] Order address disambiguated automatically based on context:', cityCtx.city);
+        }
+      } catch (e) {
+        console.error('[DND] Error during address bias resolution:', e);
+        // We continue anyway, as moving the order is more important than the bias check
       }
 
       // Проверка на аномальное расстояние (>10км от центра группы)
