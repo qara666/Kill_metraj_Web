@@ -270,8 +270,8 @@ export function groupOrdersByTimeWindow(
             }
             manualGroupsMap.get(item.order.manualGroupId)!.push(item.order);
         }
-        // 2. Handover-based группы (для заказов в доставке)
-        else if (item.order.status === 'Доставляется' || item.order.status === 'В пути') {
+        // 2. Handover-based группы (SOTA 3.1: консолидация собранных, доставляемых и исполненных)
+        else if (item.order.status === 'Доставляется' || item.order.status === 'В пути' || item.order.status === 'Исполнен' || item.order.status === 'Собран') {
             // Группируем их отдельно, логика ниже
             // Добавляем во временное хранилище для последующей кластеризации
             const key = `temp-handover`;
@@ -301,24 +301,21 @@ export function groupOrdersByTimeWindow(
             return tA - tB;
         });
 
-        const HANDOVER_WINDOW_MS = 60 * 60 * 1000; // Увеличено до 60 минут (было 20) для консолидации маршрутов
+        const HANDOVER_WINDOW_MS = 60 * 60 * 1000; // SOTA 3.1: 60 minutes wave window for better consolidation
         let currentHandoverGroup: Order[] = [];
         let groupStartTime = 0;
 
         allHandoverOrders.forEach((order) => {
-            const time = order.statusTimings?.deliveringAt || order.handoverAt || getPlannedTime(order) || 0;
+            const time = order.statusTimings?.deliveringAt || order.handoverAt || (order.status === 'Собран' ? order.statusTimings?.assembledAt : null) || getPlannedTime(order) || 0;
 
             if (currentHandoverGroup.length === 0) {
                 currentHandoverGroup.push(order);
                 groupStartTime = time;
             } else {
-                // Если заказ укладывается в 15 минут от НАЧАЛА группы -> добавляем
-                // (Или можно сделать скользящее окно: time - prevTime < 15min. 
-                // Но обычно логичнее группировать "волну" целиком от первого заказа)
-                if (time - groupStartTime <= HANDOVER_WINDOW_MS) {
+                // SOTA 3.1: If part of the same 60-min wave, group them together
+                if (Math.abs(time - groupStartTime) <= HANDOVER_WINDOW_MS) {
                     currentHandoverGroup.push(order);
                 } else {
-                    // Закрываем текущую группу и создаем новую
                     createHandoverGroup(currentHandoverGroup);
                     currentHandoverGroup = [order];
                     groupStartTime = time;
