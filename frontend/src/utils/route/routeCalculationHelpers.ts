@@ -272,18 +272,13 @@ export function groupOrdersByTimeWindow(
         }
         // 2. Handover-based группы (для заказов в доставке)
         else if (item.order.status === 'Доставляется' || item.order.status === 'В пути') {
-            const handoverTime = item.order.statusTimings?.deliveringAt || item.order.handoverAt;
             // Группируем их отдельно, логика ниже
-            if (handoverTime) {
-                // Добавляем во временное хранилище для последующей кластеризации
-                const key = `temp-handover`;
-                if (!handoverGroupsMap.has(key)) {
-                    handoverGroupsMap.set(key, []);
-                }
-                handoverGroupsMap.get(key)!.push(item.order);
-            } else {
-                ordersForAuto.push(item);
+            // Добавляем во временное хранилище для последующей кластеризации
+            const key = `temp-handover`;
+            if (!handoverGroupsMap.has(key)) {
+                handoverGroupsMap.set(key, []);
             }
+            handoverGroupsMap.get(key)!.push(item.order);
         }
         // 3. Автоматическая группировка (для остальных)
         else {
@@ -306,12 +301,12 @@ export function groupOrdersByTimeWindow(
             return tA - tB;
         });
 
-        const HANDOVER_WINDOW_MS = 20 * 60 * 1000; // Установили строго 20 минут (Phase 4.9)
+        const HANDOVER_WINDOW_MS = 60 * 60 * 1000; // Увеличено до 60 минут (было 20) для консолидации маршрутов
         let currentHandoverGroup: Order[] = [];
         let groupStartTime = 0;
 
         allHandoverOrders.forEach((order) => {
-            const time = order.statusTimings?.deliveringAt || order.handoverAt || 0;
+            const time = order.statusTimings?.deliveringAt || order.handoverAt || getPlannedTime(order) || 0;
 
             if (currentHandoverGroup.length === 0) {
                 currentHandoverGroup.push(order);
@@ -337,7 +332,7 @@ export function groupOrdersByTimeWindow(
 
         function createHandoverGroup(hOrders: Order[]) {
             const handoverTimes = hOrders
-                .map(o => o.statusTimings?.deliveringAt || o.handoverAt)
+                .map(o => o.statusTimings?.deliveringAt || o.handoverAt || getPlannedTime(o))
                 .filter((t): t is number => !!t);
 
             if (handoverTimes.length === 0) return;
