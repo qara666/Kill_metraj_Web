@@ -15,9 +15,7 @@ import {
   ExclamationCircleIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-  MapPinIcon,
-  XMarkIcon,
-  UserIcon
+  MapPinIcon
 } from '@heroicons/react/24/outline'
 import { localStorageUtils } from '../../utils/ui/localStorage'
 import { cleanAddress, generateStreetVariants } from '../../utils/data/addressUtils'
@@ -40,7 +38,9 @@ import { SmartAddressCorrectionModal } from '../modals/SmartAddressCorrectionMod
 import { BatchAddressCorrectionPanel } from './BatchAddressCorrectionPanel'
 import { useSmartAddressCorrection } from '../../hooks/useSmartAddressCorrection'
 import { isId0CourierName, normalizeCourierName } from '../../utils/data/courierName'
-import { getReturnETA, getCourierSpeed, enrichRoutesWithCoords } from '../../utils/routes/courierETA'
+import { getReturnETA, getAccurateReturnETA, getCourierSpeed, enrichRoutesWithCoords } from '../../utils/routes/courierETA'
+import { ReturningCouriersModal } from './modals/ReturningCouriersModal'
+import { TransitCouriersModal } from './modals/TransitCouriersModal'
 
 // --- Hooks ---
 function useDebounce<T>(value: T, delay: number): T {
@@ -627,8 +627,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
     setIsGeocodingETA(true)
     enrichRoutesWithCoords(returningRoutes)
-      .then((enriched) => {
-        setEnrichedRoutes(enriched as unknown as Route[])
+      .then(async (enriched) => {
+        // После геокодирования запрашиваем точный расчет у Google для каждого маршрута
+        const processed = await Promise.all(enriched.map(async (r) => {
+          const accurate = await getAccurateReturnETA(r as any, startAddress)
+          return { ...r, accurateETA: accurate }
+        }))
+        setEnrichedRoutes(processed as unknown as Route[])
       })
       .catch(console.error)
       .finally(() => setIsGeocodingETA(false))
@@ -661,7 +666,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
         const vehicleType = getCourierVehicleType(name)
         const speed = getCourierSpeed(vehicleType)
-        const etaInfo = route ? getReturnETA(route, speed) : null
+
+        // Priority: 1. Accurate Google result, 2. Manual calculation using speed/distance
+        const accurateResult = (route as any)?.accurateETA
+        const etaInfo = accurateResult || (route ? getReturnETA(route, speed) : null)
 
         list.push({
           name,
@@ -3152,172 +3160,28 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
       </>
 
-      {/* Returning Couriers Modal */}
-      {showReturningModal && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md transition-all ease-out duration-300">
-          <div className={clsx(
-            "w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden border-2 transform scale-100 animate-in fade-in zoom-in duration-300",
-            isDark ? "bg-slate-900 border-white/5 shadow-black/50" : "bg-white border-blue-100 shadow-blue-500/20"
-          )}>
-            <div className="px-8 py-6 border-b border-gray-100 dark:border-white/5 relative bg-gradient-to-r from-purple-500/10 to-transparent">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-purple-500 flex items-center justify-center text-white shadow-lg shadow-purple-500/30">
-                    <ClockIcon className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className={clsx("text-xl font-black tracking-tight", isDark ? "text-white" : "text-gray-900")}>Ожидаем возврат</h3>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-purple-500 opacity-60">
-                      {isGeocodingETA ? '⏳ геокодирование адресов...' : '+- через сколько вернется на тт'}
-                    </p>
-                  </div>
-                </div>
-                <button onClick={() => setShowReturningModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors">
-                  <XMarkIcon className="w-6 h-6" />
-                </button>
-              </div>
-            </div>
+      <ReturningCouriersModal
+        show={showReturningModal}
+        onClose={() => setShowReturningModal(false)}
+        isDark={isDark}
+        data={returningCouriersData}
+        isGeocoding={isGeocodingETA}
+        onSelectCourier={(name) => {
+          setSelectedCourier(name);
+          setShowReturningModal(false);
+        }}
+      />
 
-            <div className="p-8 max-h-[60vh] overflow-y-auto custom-scrollbar">
-              {returningCouriersData.length === 0 ? (
-                <div className="text-center py-12">
-                  <TruckIcon className="w-12 h-12 mx-auto text-gray-300 mb-4 opacity-30" />
-                  <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Нет возвращающихся курьеров</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {returningCouriersData.map((c: any) => (
-                    <button
-                      key={c.name}
-                      onClick={() => {
-                        setSelectedCourier(c.name);
-                        setShowReturningModal(false);
-                      }}
-                      className={clsx(
-                        "w-full p-5 rounded-[1.5rem] border-2 flex items-center gap-5 transition-all text-left group hover:scale-[1.02] active:scale-[0.98]",
-                        isDark ? "bg-black/20 border-white/5 hover:border-purple-500/30" : "bg-gray-50 border-gray-100 hover:border-purple-200"
-                      )}
-                    >
-                      <div className="relative shrink-0">
-                        <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm">
-                          <UserIcon className="w-6 h-6 text-purple-500" />
-                        </div>
-                        <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900 flex items-center justify-center text-white text-[10px] font-black">
-                          {c.delivered}
-                        </div>
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className={clsx("text-sm font-black truncate", isDark ? "text-white" : "text-gray-900")}>{c.name}</span>
-                          <div className="flex flex-col items-end">
-                            <span className="text-xl font-black text-purple-500">{c.eta}</span>
-                            {c.isRough && (
-                              <span className="text-[7px] font-black text-purple-400/60 uppercase tracking-widest -mt-1">
-                                {c.statusLabel}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-1.5">
-                          <div className="flex items-center justify-between text-[8px] font-black uppercase tracking-widest opacity-40">
-                            <span>Статус</span>
-                            <span>{c.delivered} / {c.total} дост.</span>
-                          </div>
-                          <div className="h-1.5 w-full bg-gray-200 dark:bg-white/5 rounded-full overflow-hidden p-[1px]">
-                            <div
-                              className="h-full bg-gradient-to-r from-purple-500 to-emerald-500 rounded-full transition-all duration-500 shadow-sm shadow-purple-500/20"
-                              style={{ width: `${c.progress}%` }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="p-6 bg-gray-50 dark:bg-black/20 text-center">
-              <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Нажмите на курьера, чтобы открыть его маршрут</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* In Transit Modal */}
-      {showTransitModal && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md transition-all ease-out duration-300">
-          <div className={clsx(
-            "w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden border-2 transform scale-100 animate-in fade-in zoom-in duration-300",
-            isDark ? "bg-slate-900 border-white/5 shadow-black/50" : "bg-white border-blue-100 shadow-blue-500/20"
-          )}>
-            <div className="px-8 py-6 border-b border-gray-100 dark:border-white/5 relative bg-gradient-to-r from-blue-500/10 to-transparent">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-blue-500 flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
-                    <TruckIcon className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className={clsx("text-xl font-black tracking-tight", isDark ? "text-white" : "text-gray-900")}>Курьеры в пути</h3>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-blue-500 opacity-60">Распределены и в работе</p>
-                  </div>
-                </div>
-                <button onClick={() => setShowTransitModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors">
-                  <XMarkIcon className="w-6 h-6" />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-8 max-h-[60vh] overflow-y-auto custom-scrollbar">
-              {transitCouriersData.length === 0 ? (
-                <div className="text-center py-12">
-                  <TruckIcon className="w-12 h-12 mx-auto text-gray-300 mb-4 opacity-30" />
-                  <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Нет курьеров в работе</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-3">
-                  {transitCouriersData.map((c: any) => (
-                    <button
-                      key={c.name}
-                      onClick={() => {
-                        setSelectedCourier(c.name);
-                        setShowTransitModal(false);
-                      }}
-                      className={clsx(
-                        "w-full p-4 rounded-[1.2rem] border flex flex-col gap-3 transition-all group hover:scale-[1.01]",
-                        isDark ? "bg-black/20 border-white/5 hover:border-blue-500/30" : "bg-gray-50 border-gray-100 hover:border-blue-200"
-                      )}
-                    >
-                      <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center gap-3">
-                          <UserIcon className="w-4 h-4 text-blue-500 opacity-50" />
-                          <span className={clsx("text-sm font-bold", isDark ? "text-white" : "text-gray-900")}>{c.name}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest">{c.delivered} / {c.total} дост.</span>
-                          <ChevronRightIcon className="w-4 h-4 text-gray-300 group-hover:translate-x-1 transition-transform" />
-                        </div>
-                      </div>
-
-                      {c.total > 0 && (
-                        <div className="w-full">
-                          <div className="h-1.5 w-full bg-gray-200 dark:bg-white/5 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-blue-500 transition-all duration-500 ease-out"
-                              style={{ width: `${c.progress}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <TransitCouriersModal
+        show={showTransitModal}
+        onClose={() => setShowTransitModal(false)}
+        isDark={isDark}
+        data={transitCouriersData}
+        onSelectCourier={(name) => {
+          setSelectedCourier(name);
+          setShowTransitModal(false);
+        }}
+      />
 
       {/* Smart Address Correction Modals */}
       {showCorrectionModal && currentProblem && (

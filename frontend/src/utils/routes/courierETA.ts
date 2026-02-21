@@ -8,6 +8,7 @@
  */
 
 import { batchGeocode, GeoPoint } from '../maps/geocodeCache'
+import { googleApiCache } from '../../services/googleApiCache'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -162,6 +163,69 @@ export function getReturnETA(
         accuracy === 'high' ? 'Точный' : accuracy === 'medium' ? 'Средний' : 'На угад'
 
     return { time, isRough, statusLabel, accuracy }
+}
+
+/**
+ * Enhanced on-demand accuracy: Fetches real directions from Google
+ */
+export async function getAccurateReturnETA(
+    route: ETARoute,
+    defaultBase?: string
+): Promise<ETAResult | null> {
+    const orders = route.orders
+    if (!orders || orders.length === 0) return null
+
+    let lastCompletedTime = 0
+    let lastCompletedIndex = -1
+    let lastCoord: GeoPoint | null = null
+
+    orders.forEach((o, i) => {
+        const done = o.status === 'Исполнен' || o.status === 'Доставлено'
+        if (!done) return
+        if (o.statusTimings?.completedAt && o.statusTimings.completedAt > lastCompletedTime) {
+            lastCompletedTime = o.statusTimings.completedAt
+            lastCompletedIndex = i
+        } else if (i > lastCompletedIndex) {
+            lastCompletedIndex = i
+        }
+        if (o.coords) lastCoord = o.coords
+    })
+
+    const remaining = orders.slice(lastCompletedIndex + 1)
+    if (!lastCoord || remaining.some(o => !o.coords)) return getReturnETA(route)
+
+    try {
+        const request: any = {
+            origin: lastCoord,
+            destination: defaultBase || 'Kyiv, Ukraine', // Fallback base
+            waypoints: remaining.map(o => ({ location: o.coords, stopover: true })),
+            travelMode: window.google.maps.TravelMode.DRIVING,
+            drivingOptions: {
+                departureTime: new Date(),
+                trafficModel: 'best_guess'
+            }
+        }
+
+        const result = await googleApiCache.getDirections(request)
+        if (!result || !result.routes?.[0]?.legs) return getReturnETA(route)
+
+        const totalMins = result.routes[0].legs.reduce((sum: number, leg: any) => {
+            return sum + (leg.duration_in_traffic?.value || leg.duration.value) / 60
+        }, 0)
+
+        // Add 7 min per remaining stop for unloading
+        const finalMins = totalMins + (remaining.length * 7)
+
+        return {
+            time: minToTimeStr(finalMins, lastCompletedTime || Date.now()),
+            isRough: false,
+            statusLabel: 'Гугл',
+            accuracy: 'high'
+        }
+    } catch (e) {
+        console.error('getAccurateReturnETA error:', e)
+        return getReturnETA(route)
+    }
 }
 
 // ─── On-demand batch geocoding for returning couriers ────────────────────────
