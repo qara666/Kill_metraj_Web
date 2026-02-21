@@ -87,11 +87,14 @@ export const ReturningCouriersModal = memo(({
                                             <span className={clsx("text-sm font-black truncate", isDark ? "text-white" : "text-gray-900")}>{c.name}</span>
                                             <div className="flex flex-col items-end">
                                                 <span className="text-xl font-black text-purple-500">{c.eta}</span>
-                                                {c.isRough && (
-                                                    <span className="text-[7px] font-black text-purple-400/60 uppercase tracking-widest -mt-1">
-                                                        {c.statusLabel}
-                                                    </span>
-                                                )}
+                                                <span className={clsx(
+                                                    "text-[8px] font-black uppercase tracking-widest -mt-1",
+                                                    c.statusLabel === 'ГУГЛ' ? "text-emerald-500" :
+                                                        c.statusLabel === 'БАЗОВЫЙ' ? "text-blue-400" :
+                                                            "text-purple-400/60"
+                                                )}>
+                                                    {c.statusLabel}
+                                                </span>
                                             </div>
                                         </div>
                                         <div className="flex flex-col gap-1.5">

@@ -33,7 +33,7 @@ import { lazy, Suspense } from 'react'
 import { CourierTimeWindows } from './CourierTimeWindows'
 import { GridOrderCard } from './GridOrderCard'
 import { getUkraineTrafficForOrders, calculateTotalTrafficDelay } from '../../utils/maps/ukraineTrafficAPI'
-import { type TimeWindowGroup, groupOrdersByTimeWindow } from '../../utils/route/routeCalculationHelpers'
+import { type TimeWindowGroup, groupOrdersByTimeWindow, formatTimeLabel } from '../../utils/route/routeCalculationHelpers'
 import { SmartAddressCorrectionModal } from '../modals/SmartAddressCorrectionModal'
 import { BatchAddressCorrectionPanel } from './BatchAddressCorrectionPanel'
 import { useSmartAddressCorrection } from '../../hooks/useSmartAddressCorrection'
@@ -616,11 +616,32 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   useEffect(() => {
     if (!showReturningModal) return
 
-    const returningRoutes = (excelData?.routes || []).filter((r: Route) => {
-      const name = normalizeCourierName(r.courier)
+    const couriersList = Array.from(new Set([
+      ...Object.keys(courierOrders).map(n => normalizeCourierName(n)),
+      ...(excelData?.couriers?.map((c: any) => normalizeCourierName(c.name)) || [])
+    ])).filter(n => n && n !== 'Не назначено' && n !== 'ID:0')
+
+    const returningRoutes: any[] = []
+
+    couriersList.forEach(name => {
       const m = courierMetricsMap.get(name) || { available: 0, delivered: 0, total: 0 }
       const remaining = m.total - m.delivered
-      return m.total > 0 && m.delivered > 0 && remaining > 0 && remaining <= 2
+      if (m.total > 0 && m.delivered > 0 && remaining > 0 && remaining <= 2) {
+        // Find existing route or create virtual
+        const lowerName = name.toLowerCase()
+        const rawRoute = (excelData?.routes || []).find(
+          (r: Route) => normalizeCourierName(r.courier).toLowerCase() === lowerName
+        )
+        if (rawRoute) {
+          returningRoutes.push(rawRoute)
+        } else {
+          returningRoutes.push({
+            id: `virtual-${name}`,
+            courier: name,
+            orders: courierOrders[name] || []
+          })
+        }
+      }
     })
 
     if (returningRoutes.length === 0) return
@@ -637,7 +658,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       })
       .catch(console.error)
       .finally(() => setIsGeocodingETA(false))
-  }, [showReturningModal, excelData?.routes, courierMetricsMap])
+  }, [showReturningModal, excelData, courierOrders, courierMetricsMap, startAddress])
 
   // Data for the returning couriers modal
   const returningCouriersData = useMemo(() => {
@@ -658,18 +679,31 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
       if (m.total > 0 && m.delivered > 0 && remaining > 0 && remaining <= 2) {
         const lowerName = name.toLowerCase()
-        const rawRoute: Route | undefined = (excelData?.routes || []).find(
-          (r: Route) => normalizeCourierName(r.courier).toLowerCase() === lowerName
+        const routeIdx = (excelData?.routes || []).findIndex(
+          (r: Route) => {
+            const rName = normalizeCourierName(r.courier).toLowerCase();
+            return rName === lowerName || rName.includes(lowerName) || lowerName.includes(rName);
+          }
         )
-        // Prefer enriched (geocoded) version if available
-        const route = rawRoute ? (enrichedById.get(rawRoute.id) ?? rawRoute) : undefined
+
+        const rawRoute: Route | undefined = routeIdx !== -1 ? (excelData as any).routes[routeIdx] : undefined;
+        // Prefer enriched (geocoded) version if available. 
+        // SOTA 3.1: Also check for virtual route ID lookup
+        const virtualId = `virtual-${name}`
+        const route = rawRoute ? (enrichedById.get(rawRoute.id) ?? rawRoute) : (enrichedById.get(virtualId))
 
         const vehicleType = getCourierVehicleType(name)
         const speed = getCourierSpeed(vehicleType)
 
+        // If no formal route exists, create a virtual one from active orders
+        const finalRoute = route || {
+          courier: name,
+          orders: courierOrders[name] || []
+        };
+
         // Priority: 1. Accurate Google result, 2. Manual calculation using speed/distance
         const accurateResult = (route as any)?.accurateETA
-        const etaInfo = accurateResult || (route ? getReturnETA(route, speed) : null)
+        const etaInfo = accurateResult || getReturnETA(finalRoute as any, speed)
 
         list.push({
           name,
@@ -677,8 +711,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           total: m.total,
           eta: etaInfo?.time || `~ ${remaining * (vehicleType === 'moto' ? 45 : 20)} мин`,
           isRough: etaInfo ? etaInfo.isRough : true,
-          statusLabel: etaInfo?.statusLabel || 'На угад',
-          routeId: rawRoute?.id || null,
+          statusLabel: etaInfo?.statusLabel || 'ПРИМЕРНО',
+          routeId: (rawRoute as any)?.id || null,
           progress: (m.delivered / m.total) * 100
         })
       }
@@ -1781,7 +1815,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             manualGroupId: targetManualId,
             courierId: targetCourierId,       // Явно меняем курьера
             courier: targetCourier.name || targetGroup.courierName,           // Исправлено: передаем имя как строку
-            plannedTime: targetGroup.windowStart, // Синхронизируем время
+            plannedTime: formatTimeLabel(targetGroup.windowStart), // Синхронизируем время
             deadlineAt: targetGroup.windowStart,
             isInRoute: false,                 // Сбрасываем флаг маршрута
             status: (order.status === 'Доставляется' || order.status === 'Исполнен') ? order.status : 'В работе'
@@ -1794,7 +1828,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             ...order,
             manualGroupId: targetManualId,
             courierId: targetCourierId,
-            plannedTime: targetGroup.windowStart,
+            plannedTime: formatTimeLabel(targetGroup.windowStart),
             deadlineAt: targetGroup.windowStart
           };
         }

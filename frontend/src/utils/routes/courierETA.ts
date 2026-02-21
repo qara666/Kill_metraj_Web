@@ -70,9 +70,11 @@ function minToTimeStr(mins: number, refTime?: number): string {
             minute: '2-digit',
         })
     }
-    if (mins < 60) return `~ ${Math.round(mins)} мин`
-    const h = Math.floor(mins / 60)
-    const m = Math.round(mins % 60)
+    const roundedMins = Math.round(mins)
+    if (roundedMins < 1) return `Скоро`
+    if (roundedMins < 60) return `~ ${roundedMins} мин`
+    const h = Math.floor(roundedMins / 60)
+    const m = roundedMins % 60
     return `~ ${h} ч ${m} мин`
 }
 
@@ -160,7 +162,7 @@ export function getReturnETA(
     const time = minToTimeStr(remainingDuration, lastCompletedTime)
     const isRough = accuracy !== 'high'
     const statusLabel =
-        accuracy === 'high' ? 'Точный' : accuracy === 'medium' ? 'Средний' : 'На угад'
+        accuracy === 'high' ? 'ГУГЛ' : accuracy === 'medium' ? 'БАЗОВЫЙ' : 'ПРИМЕРНО'
 
     return { time, isRough, statusLabel, accuracy }
 }
@@ -219,7 +221,7 @@ export async function getAccurateReturnETA(
         return {
             time: minToTimeStr(finalMins, lastCompletedTime || Date.now()),
             isRough: false,
-            statusLabel: 'Гугл',
+            statusLabel: 'ГУГЛ',
             accuracy: 'high'
         }
     } catch (e) {
