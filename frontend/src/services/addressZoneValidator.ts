@@ -227,8 +227,7 @@ export class AddressZoneValidator {
 
     /**
      * Пытается найти лучший вариант адреса среди зон (Disambiguation)
-     * SOTA 4.3: Улучшенная система скоринга с экспоненциальным штрафом за расстояние
-     * и жёстким блокировщиком технических зон.
+     * SOTA 4.5: экспоненциальный штраф за расстояние + жёсткий блок технических зон
      */
     async findBestMatchInZones(
         address: string,
@@ -237,32 +236,32 @@ export class AddressZoneValidator {
     ): Promise<{ bestMatch: AddressSuggestion | null; alternatives: AddressSuggestion[] }> {
         if (!preferredZones || preferredZones.length === 0) return { bestMatch: null, alternatives: [] };
 
-        const allCandidates: { result: any; score: number; zone: DeliveryZone | null; debugInfo: string }[] = [];
         const routePoints = options.contextCoords || [];
 
-        // Helper: nearest distance from a point to any of the route's existing coords
-        const nearestRouteDistance = (coords: Coordinates): number => {
+        // nearest distance in meters from coords to any route point
+        const nearestRouteDist = (c: Coordinates): number => {
             if (routePoints.length === 0) return 0;
-            let minDist = Infinity;
+            let minD = Infinity;
             for (const pt of routePoints) {
-                const d = calculateDistance(coords, pt);
-                if (d < minDist) minDist = d;
+                const d = calculateDistance(c, pt);
+                if (d < minD) minD = d;
             }
-            return minDist; // in meters
+            return minD;
         };
 
-        // Helper: is this zone a technical/auto-unloading zone?
-        const isTechnicalZone = (zone: DeliveryZone | null): boolean => {
+        // checks if a zone name is a technical/auto-unloading zone
+        const isTech = (zone: DeliveryZone | null): boolean => {
             if (!zone) return false;
-            const name = zone.name.toLowerCase();
-            return name.includes('авторозвантаження') ||
-                name.includes('авторазгрузка') ||
-                name.includes('разгрузка') ||
-                name.includes('склад') ||
-                name.includes('depot');
+            const n = zone.name.toLowerCase();
+            return n.includes('авторозвантаження') || n.includes('авторазгруз') ||
+                n.includes('разгруз') || n.includes('склад') || n.includes('depot');
         };
 
-        // 1. Собираем кандидатов из разных вариантов поиска
+        const allCandidates: { result: any; score: number; zone: DeliveryZone | null; label: string }[] = [];
+
+        // Use centroid for API bounds biasing only (not for scoring)
+        const centroid = routePoints.length > 0 ? this.calculateCentroid(routePoints) : null;
+
         const searchVariants = [address];
         const cityNames = new Set<string>();
         preferredZones.forEach(z => {
@@ -270,13 +269,9 @@ export class AddressZoneValidator {
             if (z.name.toLowerCase().includes('харьков') || z.name.toLowerCase().includes('харків')) cityNames.add('Харьков');
         });
         cityNames.forEach(city => {
-            if (!address.toLowerCase().includes(city.toLowerCase())) {
+            if (!address.toLowerCase().includes(city.toLowerCase()))
                 searchVariants.push(`${address}, ${city}, Украина`);
-            }
         });
-
-        // Use the centroid only for biasing the geocoding API bounds request
-        const centroid = routePoints.length > 0 ? this.calculateCentroid(routePoints) : null;
 
         for (const variant of searchVariants) {
             const geocodingOptions = centroid ? { bounds: this.createBoundsAroundPoint(centroid, 30000) } : {};
@@ -289,88 +284,67 @@ export class AddressZoneValidator {
                 const matchedZone = this.zones.find(z => isPointInPolygon(coords, z.polygon));
 
                 let score = 0;
-                const debugParts: string[] = [];
+                const parts: string[] = [];
 
-                // ── Zone scoring ──────────────────────────────────────────────
-
+                // ── Zone scoring ─────────────────────────────────────────
                 if (matchedZone) {
-                    score += 80;
-                    debugParts.push('zone:+80');
-
-                    // Preferred zone bonus
-                    const isPreferred = preferredZones.some(pz => pz.id === matchedZone.id || pz.name === matchedZone.name);
-                    if (isPreferred) {
-                        score += 60;
-                        debugParts.push('preferred:+60');
-                    }
-
-                    // HARD BLOCKER for technical/auto-unloading zones
-                    // Penalty is so large that a technical zone can NEVER beat a proper zone
-                    if (isTechnicalZone(matchedZone)) {
-                        score -= 200;
-                        debugParts.push('technical:-200');
-                    }
-                }
-
-                // ── Geocoding accuracy bonus ──────────────────────────────────
-                if (result.locationType === 'ROOFTOP') {
-                    score += 40;
-                    debugParts.push('rooftop:+40');
-                } else if (result.locationType === 'RANGE_INTERPOLATED') {
-                    score += 20;
-                    debugParts.push('interpolated:+20');
-                }
-
-                // ── Proximity to route: exponential penalty ──────────────────
-                // Uses nearest neighbor (not centroid) so even spread-out routes work correctly.
-                if (routePoints.length > 0) {
-                    const distMeters = nearestRouteDistance(coords);
-                    const distKm = distMeters / 1000;
-
-                    if (distKm > 15) {
-                        // Hard outlier: >15km from the nearest point on the route
-                        score -= 150;
-                        debugParts.push(`outlier(${distKm.toFixed(1)}km):-150`);
-                    } else if (distKm > 3) {
-                        // Exponential penalty: grows fast once we're more than 3km away
-                        // At 5km: -22, at 8km: -58, at 12km: -108
-                        const penalty = Math.round(distKm * distKm * 1.5);
-                        score -= penalty;
-                        debugParts.push(`dist(${distKm.toFixed(1)}km):-${penalty}`);
+                    // Delivery zone bonus
+                    if (!isTech(matchedZone)) {
+                        score += 80;
+                        parts.push('zone:+80');
+                        const preferred = preferredZones.some(pz => pz.id === matchedZone.id || pz.name === matchedZone.name);
+                        if (preferred) { score += 60; parts.push('preferred:+60'); }
                     } else {
-                        // Within 3km: small linear deduction, irrelevant
-                        const penalty = Math.round(distKm * 2);
-                        score -= penalty;
-                        debugParts.push(`near(${distKm.toFixed(1)}km):-${penalty}`);
+                        // HARD BLOCK: technical zone is always the last choice
+                        score -= 250;
+                        parts.push('TECHNICALZONE:-250');
                     }
                 }
 
-                // ── City match bonus ──────────────────────────────────────────
-                if (options.primaryCity && result.formattedAddress.toLowerCase().includes(options.primaryCity.toLowerCase())) {
-                    score += 30;
-                    debugParts.push('city:+30');
+                // ── Geocoding accuracy ───────────────────────────────────
+                if (result.locationType === 'ROOFTOP') { score += 40; parts.push('rooftop:+40'); }
+                else if (result.locationType === 'RANGE_INTERPOLATED') { score += 20; parts.push('interpolated:+20'); }
+
+                // ── Route proximity: exponential (nearest neighbor, not centroid) ──
+                if (routePoints.length > 0) {
+                    const distKm = nearestRouteDist(coords) / 1000;
+                    if (distKm > 15) {
+                        score -= 200; parts.push(`OUTLIER(${distKm.toFixed(1)}km):-200`);
+                    } else if (distKm > 5) {
+                        // quadratic: 6km→-54, 10km→-150, 14km→-294
+                        const pen = Math.round(distKm * distKm * 1.5);
+                        score -= pen; parts.push(`far(${distKm.toFixed(1)}km):-${pen}`);
+                    } else if (distKm > 2) {
+                        const pen = Math.round(distKm * 5);
+                        score -= pen; parts.push(`mid(${distKm.toFixed(1)}km):-${pen}`);
+                    }
+                    // within 2km: no penalty
                 }
 
-                const debugInfo = `[${debugParts.join('|')}] = ${score}`;
-                console.debug(`[AddressZoneValidator] "${result.formattedAddress}" | Zone: ${matchedZone?.name || 'none'} | Score: ${debugInfo}`);
+                // ── City match ───────────────────────────────────────────
+                if (options.primaryCity && result.formattedAddress.toLowerCase().includes(options.primaryCity.toLowerCase())) {
+                    score += 30; parts.push('city:+30');
+                }
 
-                allCandidates.push({ result, score, zone: matchedZone || null, debugInfo });
+                const label = `[${parts.join('|')}]=${score}`;
+                console.debug(`[AddressZoneValidator] ${result.formattedAddress} | ${matchedZone?.name || 'no-zone'} | ${label}`);
+
+                allCandidates.push({ result, score, zone: matchedZone || null, label });
             }
         }
 
         if (allCandidates.length === 0) return { bestMatch: null, alternatives: [] };
 
-        // Sort by score descending
         allCandidates.sort((a, b) => b.score - a.score);
 
-        // Convert to AddressSuggestion array, filtering out very low quality results
+        // All non-technical candidates with positive scores
         const suggestions: AddressSuggestion[] = allCandidates
-            .filter(c => c.score > -50) // allow even slightly negative if it's the only option
+            .filter(c => c.score > -100 || allCandidates.every(x => x.score <= -100)) // keep at least something
             .map(c => ({
                 address: c.result.formattedAddress,
                 coords: { lat: c.result.latitude!, lng: c.result.longitude! },
-                confidence: Math.min(100, Math.max(0, c.score)),
-                reason: c.debugInfo,
+                confidence: Math.min(100, Math.max(0, c.score + 100)), // shift so 0 = score of -100
+                reason: c.label,
                 zone: c.zone!,
                 distanceFromOriginal: 0,
                 metadata: { source: 'similar_address' as const }
@@ -378,22 +352,22 @@ export class AddressZoneValidator {
 
         if (suggestions.length === 0) return { bestMatch: null, alternatives: [] };
 
-        const topCandidate = suggestions[0];
-        const isTopTechnical = isTechnicalZone(topCandidate.zone);
+        const top = allCandidates[0];
+        const isTopTech = isTech(top.zone);
 
-        // If top is a technical zone AND there are non-technical alternatives → force disambiguation
-        if (isTopTechnical) {
+        // If best is technical: show disambiguation so user can pick
+        if (isTopTech) {
             return { bestMatch: null, alternatives: suggestions };
         }
 
-        // If top and second are within 30 points of each other → show disambiguation to user
-        const runnerUp = suggestions[1];
-        if (runnerUp && Math.abs(topCandidate.confidence - runnerUp.confidence) <= 30) {
+        // If 2nd place is within 40 pts of 1st AND is in a different zone: ask user
+        const second = allCandidates[1];
+        if (second && (top.score - second.score) <= 40 && second.zone?.name !== top.zone?.name) {
             return { bestMatch: null, alternatives: suggestions };
         }
 
-        // Clear winner
-        return { bestMatch: topCandidate, alternatives: suggestions };
+        // Clear winner → auto-select silently
+        return { bestMatch: suggestions[0], alternatives: suggestions };
     }
 
     private calculateCentroid(coords: Coordinates[]): Coordinates {
