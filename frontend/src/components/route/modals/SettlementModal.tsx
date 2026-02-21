@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { CheckCircleIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { toast } from 'react-hot-toast';
+import { getPaymentMethodBadgeProps } from '../../../utils/data/paymentMethodHelper';
 
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('uk-UA', {
@@ -336,11 +337,22 @@ export function SettlementModal({
                                                                 {untakenChanges.has(orderId) ? "БЕЗ СДАЧИ" : `Сдача: ${order.changeAmount}₴`}
                                                             </button>
                                                         )}
-                                                        {String(order.paymentMethod || '').toLowerCase().includes('отказ') && (
-                                                            <span className="px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest bg-red-500 text-white border border-red-500">
-                                                                ОТКАЗ
-                                                            </span>
-                                                        )}
+                                                        {order.paymentMethod && (() => {
+                                                            const badgeProps = getPaymentMethodBadgeProps(order.paymentMethod, !!isDark);
+                                                            // Only show if it's a refusal for this modal's context, or show all if needed
+                                                            // Keep original logic: show only if it contains 'отказ'
+                                                            if (!order.paymentMethod.toLowerCase().includes('отказ')) return null;
+                                                            return (
+                                                                <span className={clsx(
+                                                                    "px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest border transition-all",
+                                                                    badgeProps.bgColorClass,
+                                                                    badgeProps.textColorClass,
+                                                                    "border-transparent"
+                                                                )}>
+                                                                    {badgeProps.text}
+                                                                </span>
+                                                            );
+                                                        })()}
                                                     </div>
                                                     <p className="text-[9px] font-bold opacity-60 uppercase tracking-widest leading-relaxed whitespace-normal break-words">
                                                         {order.address}

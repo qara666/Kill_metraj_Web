@@ -15,6 +15,7 @@ import type { Order } from '../../types';
 import { SettlementModal } from './modals/SettlementModal';
 import { RevenueProgressBar } from './financials/RevenueProgressBar';
 import { PaymentMethodCard } from './financials/PaymentMethodCard';
+import { getStatusBadgeProps } from '../../utils/data/statusBadgeHelper';
 import html2pdf from 'html2pdf.js';
 
 interface CourierFinancialsProps {
@@ -1031,12 +1032,18 @@ export function CourierFinancials({
                                                 )}>
                                                     #{order.orderNumber}
                                                 </span>
-                                                <span className={clsx(
-                                                    "text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-xl shadow-sm",
-                                                    order.status === 'Исполнен' ? 'bg-[#10b981]/10 text-[#10b981]' : 'bg-gray-500/10 text-gray-400'
-                                                )}>
-                                                    {order.status || 'ВЫПОЛНЯЕТСЯ'}
-                                                </span>
+                                                {(() => {
+                                                    const statusProps = getStatusBadgeProps(order.status || '', !!isDark);
+                                                    return (
+                                                        <span className={clsx(
+                                                            "text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-xl shadow-sm",
+                                                            statusProps.bgColorClass,
+                                                            statusProps.textColorClass
+                                                        )}>
+                                                            {statusProps.text}
+                                                        </span>
+                                                    );
+                                                })()}
                                                 {(order as any).paymentMethodOverridden && (
                                                     <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-xl bg-orange-500/10 text-orange-500 border border-orange-500/20 flex items-center gap-1">
                                                         <ArrowsRightLeftIcon className="w-2.5 h-2.5" />
