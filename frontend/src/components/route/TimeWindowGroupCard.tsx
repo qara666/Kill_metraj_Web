@@ -1,5 +1,6 @@
 import clsx from 'clsx';
 import { ClockIcon, ChevronDownIcon, CheckBadgeIcon, ArrowPathIcon, RocketLaunchIcon } from '@heroicons/react/24/outline';
+import { getStatusBadgeProps } from '../../utils/data/statusBadgeHelper';
 import { memo, useState, useMemo } from 'react';
 import { formatTimeLabel, type TimeWindowGroup } from '../../utils/route/routeCalculationHelpers';
 import { getPlannedTime } from '../../utils/data/timeUtils';
@@ -140,8 +141,8 @@ export const TimeWindowGroupCard = memo(({
             )}>
                 <div className="p-2 flex-1 overflow-y-auto max-h-[300px] custom-scrollbar space-y-1">
                     {group.orders.map((order: any, idx: number) => {
-                        const orderStatus = order.status || 'Новый';
-                        const isReady = orderStatus === 'Собран' || orderStatus === 'Исполнен';
+                        const statusProps = getStatusBadgeProps(order.status || '', isDark);
+                        const isReady = statusProps.text === 'СОБРАН' || statusProps.text === 'ИСПОЛНЕН';
 
                         return (
                             <div
@@ -161,7 +162,10 @@ export const TimeWindowGroupCard = memo(({
                                 <div className="flex items-center justify-between">
                                     <span className={clsx(
                                         'text-xs font-black tracking-widest',
-                                        isReady ? 'text-emerald-500' : 'text-blue-500'
+                                        isReady ? 'text-emerald-500' :
+                                            statusProps.text === 'ДОСТАВЛЯЕТСЯ' ? 'text-blue-500' :
+                                                statusProps.text === 'В РАБОТЕ' ? 'text-amber-500' :
+                                                    'text-slate-400'
                                     )}>
                                         #{order.orderNumber}
                                     </span>

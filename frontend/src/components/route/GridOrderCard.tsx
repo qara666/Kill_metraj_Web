@@ -4,6 +4,8 @@ import { CheckBadgeIcon, ClockIcon } from '@heroicons/react/24/outline';
 import type { Order } from '../../types';
 import { getPlannedTime } from '../../utils/data/timeUtils';
 import { formatTimeLabel } from '../../utils/route/routeCalculationHelpers';
+import { getStatusBadgeProps } from '../../utils/data/statusBadgeHelper';
+import { getPaymentMethodBadgeProps } from '../../utils/data/paymentMethodHelper';
 
 export const GridOrderCard = memo(({ order, isDark, isSelected, onSelect }: { order: Order, isDark: boolean, isSelected: boolean, onSelect: (id: string) => void }) => {
     const timeLabel = formatTimeLabel(getPlannedTime(order) || 0);
@@ -37,25 +39,31 @@ export const GridOrderCard = memo(({ order, isDark, isSelected, onSelect }: { or
                     </span>
                 )}
 
-                {order.status && (
-                    <span className={clsx(
-                        "text-[9px] font-black uppercase px-2 py-0.5 rounded-lg tracking-widest",
-                        isDark ? "bg-gray-700 text-gray-400" : "bg-gray-100 text-gray-500"
-                    )}>
-                        {order.status}
-                    </span>
-                )}
+                {order.status && (() => {
+                    const statusProps = getStatusBadgeProps(order.status, isDark);
+                    return (
+                        <span className={clsx(
+                            "text-[9px] font-black uppercase px-2 py-0.5 rounded-lg tracking-widest",
+                            statusProps.bgColorClass,
+                            statusProps.textColorClass
+                        )}>
+                            {statusProps.text}
+                        </span>
+                    );
+                })()}
 
-                {order.paymentMethod && (
-                    <span className={clsx(
-                        "px-2 py-0.5 rounded-lg font-black uppercase text-[9px] tracking-widest",
-                        order.paymentMethod.toLowerCase().includes('налич') || order.paymentMethod.toLowerCase().includes('cash')
-                            ? (isDark ? "bg-green-900/30 text-green-400" : "bg-green-100 text-green-700")
-                            : (isDark ? "bg-purple-900/30 text-purple-400" : "bg-purple-100 text-purple-700")
-                    )}>
-                        {order.paymentMethod}
-                    </span>
-                )}
+                {order.paymentMethod && (() => {
+                    const badgeProps = getPaymentMethodBadgeProps(order.paymentMethod, isDark);
+                    return (
+                        <span className={clsx(
+                            "px-2 py-0.5 rounded-lg font-black uppercase text-[9px] tracking-widest",
+                            badgeProps.bgColorClass,
+                            badgeProps.textColorClass
+                        )}>
+                            {badgeProps.text}
+                        </span>
+                    );
+                })()}
             </div>
 
             <p className={clsx("text-sm font-bold mb-4 line-clamp-2 leading-tight flex-1", isDark ? "text-gray-100" : "text-gray-900")} title={order.address}>

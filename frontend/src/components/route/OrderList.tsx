@@ -8,6 +8,8 @@ import {
     ChevronDownIcon,
     ClockIcon
 } from '@heroicons/react/24/outline';
+import { getStatusBadgeProps } from '../../utils/data/statusBadgeHelper';
+import { getPaymentMethodBadgeProps } from '../../utils/data/paymentMethodHelper';
 
 // Types
 interface Order {
@@ -121,27 +123,24 @@ const OrderItem = memo(({
 
                 <div className="flex items-start gap-4">
                     {/* Selection Index / Status Icon */}
-                    {(isSelected || isInRoute || order.status === 'Собран' || order.status === 'Доставляется' || order.status === 'Исполнен') && (
-                        <div className={clsx(
-                            'flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-black transition-all',
-                            isSelected
-                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-                                : order.status === 'Исполнен'
-                                    ? 'bg-green-500 text-white'
-                                    : order.status === 'Доставляется'
-                                        ? 'bg-orange-500 text-white'
-                                        : order.status === 'Собран'
-                                            ? 'bg-blue-500 text-white animate-bounce-slow'
-                                            : 'bg-gray-500/20 text-gray-500'
-                        )}>
-                            {isSelected ? selectionOrder : (
-                                order.status === 'Исполнен' ? <CheckCircleIcon className="w-5 h-5" /> :
-                                    order.status === 'Доставляется' ? <TruckIcon className="w-5 h-5" /> :
-                                        order.status === 'Собран' ? <InboxIcon className="w-5 h-5" /> :
-                                            <CheckCircleIcon className="w-5 h-5" />
-                            )}
-                        </div>
-                    )}
+                    {(isSelected || isInRoute || order.status) && (() => {
+                        const statusProps = getStatusBadgeProps(order.status || '', isDark);
+                        return (
+                            <div className={clsx(
+                                'flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-black transition-all',
+                                isSelected
+                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+                                    : `${statusProps.bgColorClass} ${statusProps.textColorClass}`
+                            )}>
+                                {isSelected ? selectionOrder : (
+                                    statusProps.text === 'ИСПОЛНЕН' ? <CheckCircleIcon className="w-5 h-5" /> :
+                                        statusProps.text === 'ДОСТАВЛЯЕТСЯ' ? <TruckIcon className="w-5 h-5" /> :
+                                            statusProps.text === 'СОБРАН' ? <InboxIcon className="w-5 h-5" /> :
+                                                <CheckCircleIcon className="w-5 h-5" />
+                                )}
+                            </div>
+                        );
+                    })()}
 
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 mb-1">
@@ -185,16 +184,18 @@ const OrderItem = memo(({
                                 <ClockIcon className="w-3.5 h-3.5" />
                                 {(order.plannedTime && order.plannedTime !== '00:00' && order.plannedTime !== '00:00:00' && order.plannedTime !== 'Без времени') ? order.plannedTime : '—'}
                             </div>
-                            {order.paymentMethod && (
-                                <span className={clsx(
-                                    "px-2 py-0.5 rounded font-bold uppercase text-[10px] tracking-wider",
-                                    order.paymentMethod.toLowerCase().includes('налич') || order.paymentMethod.toLowerCase().includes('cash')
-                                        ? (isDark ? "bg-green-900/30 text-green-400" : "bg-green-100 text-green-700")
-                                        : (isDark ? "bg-purple-900/30 text-purple-400" : "bg-purple-100 text-purple-700")
-                                )}>
-                                    {order.paymentMethod}
-                                </span>
-                            )}
+                            {order.paymentMethod && (() => {
+                                const badgeProps = getPaymentMethodBadgeProps(order.paymentMethod, isDark);
+                                return (
+                                    <span className={clsx(
+                                        "px-2 py-0.5 rounded font-bold uppercase text-[10px] tracking-wider",
+                                        badgeProps.bgColorClass,
+                                        badgeProps.textColorClass
+                                    )}>
+                                        {badgeProps.text}
+                                    </span>
+                                );
+                            })()}
                             <span className={clsx('font-black ml-auto', isDark ? 'text-white' : 'text-gray-900')}>
                                 {order.amount} ₴
                             </span>
