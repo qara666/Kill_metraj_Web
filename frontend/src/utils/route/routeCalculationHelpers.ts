@@ -291,71 +291,87 @@ export function groupOrdersByTimeWindow(
         groups.push(createManualGroup(courierId, courierName, mOrders, mgId));
     });
 
-    // 2. Создаем группы для handover-based заказов (НОВОЕ: Кластеризация по окну 15 мин)
-    const allHandoverOrders = handoverGroupsMap.get('temp-handover') || [];
-    if (allHandoverOrders.length > 0) {
-        // Сортируем по времени передачи
-        allHandoverOrders.sort((a, b) => {
-            const tA = a.statusTimings?.deliveringAt || a.handoverAt || 0;
-            const tB = b.statusTimings?.deliveringAt || b.handoverAt || 0;
+    // 2. Создаем группы для handover-based заказов
+    // FIX: Separate completed ('Исполнен') from active ('Доставляется', 'Собран', 'В пути')
+    // so that a fully-completed block can NEVER absorb new active deliveries.
+    const completedHandoverOrders = handoverGroupsMap.get('temp-handover')?.filter(
+        o => o.status === 'Исполнен'
+    ) || [];
+    const activeHandoverOrders = handoverGroupsMap.get('temp-handover')?.filter(
+        o => o.status !== 'Исполнен'
+    ) || [];
+
+    // FIX: Use 20-minute proximity to match same-trip (user rule: ≤20 min = same route)
+    const HANDOVER_WINDOW_MS = 20 * 60 * 1000;
+
+    function clusterHandoverOrders(hOrdersList: Order[], splitReasonLabel: string) {
+        if (hOrdersList.length === 0) return;
+
+        // Sort by actual delivery/handover timestamp
+        hOrdersList.sort((a, b) => {
+            const tA = a.statusTimings?.deliveringAt || a.statusTimings?.assembledAt || a.handoverAt || getPlannedTime(a) || 0;
+            const tB = b.statusTimings?.deliveringAt || b.statusTimings?.assembledAt || b.handoverAt || getPlannedTime(b) || 0;
             return tA - tB;
         });
 
-        const HANDOVER_WINDOW_MS = 60 * 60 * 1000; // SOTA 3.1: 60 minutes wave window for better consolidation
         let currentHandoverGroup: Order[] = [];
-        let groupStartTime = 0;
+        let groupEndTime = 0; // FIX: track the LAST order's time, not the first
 
-        allHandoverOrders.forEach((order) => {
-            const time = order.statusTimings?.deliveringAt || order.handoverAt || (order.status === 'Собран' ? order.statusTimings?.assembledAt : null) || getPlannedTime(order) || 0;
+        hOrdersList.forEach((order) => {
+            const time = order.statusTimings?.deliveringAt || order.statusTimings?.assembledAt || order.handoverAt || getPlannedTime(order) || 0;
 
             if (currentHandoverGroup.length === 0) {
                 currentHandoverGroup.push(order);
-                groupStartTime = time;
+                groupEndTime = time;
             } else {
-                // SOTA 3.1: If part of the same 60-min wave, group them together
-                if (Math.abs(time - groupStartTime) <= HANDOVER_WINDOW_MS) {
+                // FIX: Compare against groupEndTime (last order in group), not groupStartTime
+                // This ensures all orders within 20 min of each other chain into one block
+                if (time - groupEndTime <= HANDOVER_WINDOW_MS) {
                     currentHandoverGroup.push(order);
+                    if (time > groupEndTime) groupEndTime = time;
                 } else {
-                    createHandoverGroup(currentHandoverGroup);
+                    createHandoverGroup(currentHandoverGroup, splitReasonLabel);
                     currentHandoverGroup = [order];
-                    groupStartTime = time;
+                    groupEndTime = time;
                 }
             }
         });
-        // Закрываем последнюю группу
         if (currentHandoverGroup.length > 0) {
-            createHandoverGroup(currentHandoverGroup);
+            createHandoverGroup(currentHandoverGroup, splitReasonLabel);
         }
+    }
 
-        function createHandoverGroup(hOrders: Order[]) {
-            const handoverTimes = hOrders
-                .map(o => o.statusTimings?.deliveringAt || o.handoverAt || getPlannedTime(o))
-                .filter((t): t is number => !!t);
+    clusterHandoverOrders(completedHandoverOrders, 'Завершён');
+    clusterHandoverOrders(activeHandoverOrders, 'Маршрут');
 
-            if (handoverTimes.length === 0) return;
+    function createHandoverGroup(hOrders: Order[], splitReasonLabel: string = 'Маршрут') {
+        const handoverTimes = hOrders
+            .map(o => o.statusTimings?.deliveringAt || o.statusTimings?.assembledAt || o.handoverAt || getPlannedTime(o))
+            .filter((t): t is number => !!t);
 
-            const minHandover = Math.min(...handoverTimes);
-            const maxHandover = Math.max(...handoverTimes);
-            const plannedTimes = hOrders.map(o => getPlannedTime(o)).filter((t): t is number => !!t);
-            const minPlanned = plannedTimes.length > 0 ? Math.min(...plannedTimes) : minHandover;
-            const maxPlanned = plannedTimes.length > 0 ? Math.max(...plannedTimes) : maxHandover;
+        if (handoverTimes.length === 0) return;
 
-            const group: TimeWindowGroup = {
-                id: `handover-${courierId}-${hOrders[0].id}`,
-                courierId,
-                courierName,
-                windowStart: minPlanned,
-                windowEnd: maxPlanned,
-                windowLabel: formatTimeRange(minPlanned, maxPlanned),
-                orders: hOrders,
-                isReadyForCalculation: true,
-                arrivalStart: minHandover,
-                arrivalEnd: maxHandover,
-                splitReason: 'Маршрут'
-            };
-            updatePredictedDeparture(group);
-            groups.push(group);
-        }
+        const minHandover = Math.min(...handoverTimes);
+        const maxHandover = Math.max(...handoverTimes);
+        const plannedTimes = hOrders.map(o => getPlannedTime(o)).filter((t): t is number => !!t);
+        const minPlanned = plannedTimes.length > 0 ? Math.min(...plannedTimes) : minHandover;
+        const maxPlanned = plannedTimes.length > 0 ? Math.max(...plannedTimes) : maxHandover;
+
+        const group: TimeWindowGroup = {
+            id: `handover-${courierId}-${hOrders[0].id}`,
+            courierId,
+            courierName,
+            windowStart: minPlanned,
+            windowEnd: maxPlanned,
+            windowLabel: formatTimeRange(minPlanned, maxPlanned),
+            orders: hOrders,
+            isReadyForCalculation: true,
+            arrivalStart: minHandover,
+            arrivalEnd: maxHandover,
+            splitReason: splitReasonLabel
+        };
+        updatePredictedDeparture(group);
+        groups.push(group);
     }
 
     // 3. Группируем автоматические заказы (существующая логика)
@@ -377,7 +393,7 @@ export function groupOrdersByTimeWindow(
             const sameAddress = normalizeAddress(order.address) === normalizeAddress(currentGroup.orders[0].address);
 
             // ВАЖНО: Даже при одинаковом адресе, если разрыв по времени SLA > 90 мин 
-            // или разрыв по времени прихода > 60 мин — НЕ объединяем (разные смены/волны).
+            // или разрыв по времени прихода > 60 мин — НЕ объединяем (разные маршруты).
             const slaGapOk = Math.abs(planned - currentGroup.windowStart) <= 90 * 60 * 1000;
             const arrivalGapOk = (arrival - (currentGroup.arrivalEnd || 0)) <= 60 * 60 * 1000;
 

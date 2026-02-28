@@ -253,8 +253,8 @@ export class AddressZoneValidator {
         const isTech = (zone: DeliveryZone | null): boolean => {
             if (!zone) return false;
             const n = zone.name.toLowerCase();
-            return n.includes('авторозвантаження') || n.includes('авторазгруз') ||
-                n.includes('разгруз') || n.includes('склад') || n.includes('depot');
+            return n.includes('авторозвантаження') || n.includes('авторазгрузка') ||
+                n.includes('авторазгруз') || n.includes('разгруз') || n.includes('склад') || n.includes('depot');
         };
 
         const allCandidates: { result: any; score: number; zone: DeliveryZone | null; label: string }[] = [];
@@ -340,15 +340,21 @@ export class AddressZoneValidator {
         // All non-technical candidates with positive scores
         const suggestions: AddressSuggestion[] = allCandidates
             .filter(c => c.score > -100 || allCandidates.every(x => x.score <= -100)) // keep at least something
-            .map(c => ({
-                address: c.result.formattedAddress,
-                coords: { lat: c.result.latitude!, lng: c.result.longitude! },
-                confidence: Math.min(100, Math.max(0, c.score + 100)), // shift so 0 = score of -100
-                reason: c.label,
-                zone: c.zone!,
-                distanceFromOriginal: 0,
-                metadata: { source: 'similar_address' as const }
-            }));
+            .map(c => {
+                const coords = { lat: c.result.latitude!, lng: c.result.longitude! };
+                // SOTA 4.9: Calculate distance from original geocode variant or nearest context point
+                const displayDist = routePoints.length > 0 ? nearestRouteDist(coords) : 0;
+
+                return {
+                    address: c.result.formattedAddress,
+                    coords: coords,
+                    confidence: Math.min(100, Math.max(0, c.score + 100)), // shift so 0 = score of -100
+                    reason: c.label,
+                    zone: c.zone!,
+                    distanceFromOriginal: Math.round(displayDist),
+                    metadata: { source: 'similar_address' as const }
+                };
+            });
 
         if (suggestions.length === 0) return { bestMatch: null, alternatives: [] };
 

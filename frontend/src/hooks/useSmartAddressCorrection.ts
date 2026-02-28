@@ -57,7 +57,10 @@ export function useSmartAddressCorrection({ updateExcelData, onCorrectionComplet
             if (!prevData) return prevData;
 
             const updatedOrders = (prevData.orders || []).map((o: Order) => {
-                if (String(o.id) === String(order.id) || String(o.orderNumber) === String(order.orderNumber)) {
+                const matchById = order.id && String(o.id) === String(order.id);
+                const matchByOrderNumber = order.orderNumber && String(o.orderNumber) === String(order.orderNumber);
+
+                if (matchById || matchByOrderNumber) {
                     return {
                         ...o,
                         address: suggestion.address,
@@ -72,7 +75,6 @@ export function useSmartAddressCorrection({ updateExcelData, onCorrectionComplet
             return { ...prevData, orders: updatedOrders };
         });
 
-        toast.success(`✅ Адрес исправлен: ${suggestion.address}`);
         onCorrectionComplete?.();
     }, [updateExcelData, onCorrectionComplete]);
 
@@ -84,8 +86,11 @@ export function useSmartAddressCorrection({ updateExcelData, onCorrectionComplet
             if (!prevData) return prevData;
 
             const updatedOrders = (prevData.orders || []).map((o: Order) => {
-                const orderId = String(o.id || o.orderNumber);
-                const correction = corrections.get(orderId);
+                const oId = o.id ? String(o.id) : null;
+                const oNum = o.orderNumber ? String(o.orderNumber) : null;
+
+                // Try to find correction by ID first, then by Order Number
+                const correction = (oId && corrections.get(oId)) || (oNum && corrections.get(oNum));
 
                 if (correction) {
                     return {
@@ -114,7 +119,10 @@ export function useSmartAddressCorrection({ updateExcelData, onCorrectionComplet
             if (!prevData) return prevData;
 
             const updatedOrders = (prevData.orders || []).map((o: Order) => {
-                if (String(o.id) === String(order.id) || String(o.orderNumber) === String(order.orderNumber)) {
+                const matchById = order.id && String(o.id) === String(order.id);
+                const matchByOrderNumber = order.orderNumber && String(o.orderNumber) === String(order.orderNumber);
+
+                if (matchById || matchByOrderNumber) {
                     return {
                         ...o,
                         address: newAddress,
