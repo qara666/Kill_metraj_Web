@@ -1325,16 +1325,23 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
         if ((isSuspicious || !bestIsInside || candidatesByVariant.length < 2) && !hasActiveDirectHit) {
           console.log('[v5.20] triggering exhaustive search...');
-          const exhaustive = await researchExhaustive(rawAddress, refPoint);
+          // v5.29: Parallelize research and fallbacks
+          const [exhaustive, streetRes] = await Promise.all([
+            researchExhaustive(rawAddress, refPoint),
+            (async () => {
+              if (!isSuspicious) return [];
+              const streetOnly = cleanAddress(rawAddress).replace(/\s*\d+.*$/, '');
+              return googleApiCache.geocode({ address: `${streetOnly}, ${cityCtx.city}, ${cityCtx.region}`, region: 'ua' });
+            })()
+          ]);
+
           exhaustive.forEach(r => {
             const exists = candidatesByVariant.some(c => distBetween(c.geometry.location, r.geometry.location) < 100);
             if (!exists) candidatesByVariant.push(r);
           });
 
-          if (isSuspicious) {
-            const streetOnly = cleanAddress(rawAddress).replace(/\s*\d+.*$/, '');
-            const streetRes: any = await googleApiCache.geocode({ address: `${streetOnly}, ${cityCtx.city}, ${cityCtx.region}`, region: 'ua' });
-            if (streetRes) streetRes.forEach((r: any) => {
+          if (streetRes && streetRes.length > 0) {
+            streetRes.forEach((r: any) => {
               const exists = candidatesByVariant.some(c => distBetween(c.geometry.location, r.geometry.location) < 100);
               if (!exists) { (r as any)._isResearch = true; candidatesByVariant.push(r); }
             });
@@ -1531,10 +1538,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         let candidates: any[] = [];
         const variants = generateStreetVariants(rawAddress, cityCtx.city);
 
-        for (const variant of variants) {
-          const res: any = await googleApiCache.geocode({ ...request, address: variant });
+        // v5.29: Parallelize variant research
+        const variantResults = await Promise.all(variants.map(variant =>
+          googleApiCache.geocode({ ...request, address: variant })
+        ));
+        variantResults.forEach(res => {
           if (res && res.length > 0) candidates = [...candidates, ...res];
-        }
+        });
 
         // Если привязаны к городу и ничего нет — пробуем БЕЗ города (для областей)
         if (candidates.length === 0) {
@@ -1630,23 +1640,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       const waypointResList: Array<any | null> = new Array(route.orders.length).fill(null)
       const baseRefPoint = originRes?.geometry?.location || null
 
-      // v5.28: Increased chunk size from 5 to 10 for massive speedup
-      const CHUNK_SIZE = 10;
-      for (let i = 0; i < route.orders.length; i += CHUNK_SIZE) {
-        const chunk = route.orders.slice(i, i + CHUNK_SIZE);
-        const chunkPromises = chunk.map((order, idx) => {
-          // Pass the origin point as a consistent refPoint to all
-          return geocodeWithSector(order.address, baseRefPoint).then(res => {
-            waypointResList[i + idx] = res;
-          });
-        });
-        await Promise.all(chunkPromises);
-
-        // Optional tiny delay between chunks to remain entirely safe from OVER_QUERY_LIMIT
-        if (i + CHUNK_SIZE < route.orders.length) {
-          await new Promise(r => setTimeout(r, 50));
-        }
-      }
+      // v5.29: Global Queue in cache handles concurrency perfectly.
+      // We can now fire hundreds of requests at once without UI hangs or blocking.
+      const waypointPromises = route.orders.map((order) => {
+        return geocodeWithSector(order.address, baseRefPoint);
+      });
+      const results = await Promise.all(waypointPromises);
+      results.forEach((res, idx) => { waypointResList[idx] = res; });
 
       let prevPoint = waypointResList.length > 0
         ? (waypointResList[waypointResList.length - 1]?.geometry?.location || baseRefPoint)
@@ -2773,9 +2773,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                           // v5.28: TURBO Parallel Mass Routing
                           setIsCalculating(true);
                           try {
-                            const routePromises = groups.map(async (group, idx) => {
-                              // Tiny stagger to keep Google happy
-                              await new Promise(r => setTimeout(r, idx * 50));
+                            const routePromises = groups.map((group) => {
                               return createRoute(group.orders);
                             });
                             await Promise.all(routePromises);
