@@ -839,30 +839,79 @@ export const AdminPresets: React.FC = () => {
                                             onChange={(v) => setSettings({ ...settings, cityBias: v })}
                                         />
 
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div>
-                                                <label className={clsx('block text-xs font-bold mb-1.5 uppercase tracking-wide', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                                                    Адрес начала маршрута
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    value={settings.defaultStartAddress || ''}
-                                                    onChange={(e) => setSettings({ ...settings, defaultStartAddress: e.target.value })}
-                                                    placeholder="Например: Макеевская 7, Киев"
-                                                    className={clsx('w-full px-3 py-2 rounded-lg border text-sm', isDark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300')}
-                                                />
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <label className={clsx('block text-xs font-bold mb-1.5 uppercase tracking-wide', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                                                        Адрес начала маршрута
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={settings.defaultStartAddress || ''}
+                                                        onChange={(e) => setSettings({ ...settings, defaultStartAddress: e.target.value })}
+                                                        placeholder="Например: Макеевская 7, Киев"
+                                                        className={clsx('w-full px-3 py-2.5 rounded-xl border text-sm transition-all focus:ring-2', isDark ? 'bg-gray-900/50 border-gray-600 text-white focus:border-blue-500 focus:ring-blue-500/20' : 'bg-white border-gray-300 focus:border-blue-500 focus:ring-blue-500/20')}
+                                                    />
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Широта (Lat)</label>
+                                                        <input
+                                                            type="number" step="any"
+                                                            value={settings.defaultStartLat || ''}
+                                                            onChange={(e) => setSettings({ ...settings, defaultStartLat: parseFloat(e.target.value) || 0 })}
+                                                            placeholder="50.1234"
+                                                            className={clsx('w-full px-3 py-2 rounded-lg border text-xs font-mono', isDark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200')}
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Долгота (Lng)</label>
+                                                        <input
+                                                            type="number" step="any"
+                                                            value={settings.defaultStartLng || ''}
+                                                            onChange={(e) => setSettings({ ...settings, defaultStartLng: parseFloat(e.target.value) || 0 })}
+                                                            placeholder="30.1234"
+                                                            className={clsx('w-full px-3 py-2 rounded-lg border text-xs font-mono', isDark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200')}
+                                                        />
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <label className={clsx('block text-xs font-bold mb-1.5 uppercase tracking-wide', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                                                    Адрес окончания маршрута
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    value={settings.defaultEndAddress || ''}
-                                                    onChange={(e) => setSettings({ ...settings, defaultEndAddress: e.target.value })}
-                                                    placeholder="Например: Макеевская 7, Киев"
-                                                    className={clsx('w-full px-3 py-2 rounded-lg border text-sm', isDark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300')}
-                                                />
+
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <label className={clsx('block text-xs font-bold mb-1.5 uppercase tracking-wide', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                                                        Адрес окончания маршрута
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={settings.defaultEndAddress || ''}
+                                                        onChange={(e) => setSettings({ ...settings, defaultEndAddress: e.target.value })}
+                                                        placeholder="Например: Макеевская 7, Киев"
+                                                        className={clsx('w-full px-3 py-2.5 rounded-xl border text-sm transition-all focus:ring-2', isDark ? 'bg-gray-900/50 border-gray-600 text-white focus:border-blue-500 focus:ring-blue-500/20' : 'bg-white border-gray-300 focus:border-blue-500 focus:ring-blue-500/20')}
+                                                    />
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Широта (Lat)</label>
+                                                        <input
+                                                            type="number" step="any"
+                                                            value={settings.defaultEndLat || ''}
+                                                            onChange={(e) => setSettings({ ...settings, defaultEndLat: parseFloat(e.target.value) || 0 })}
+                                                            placeholder="50.1234"
+                                                            className={clsx('w-full px-3 py-2 rounded-lg border text-xs font-mono', isDark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200')}
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Долгота (Lng)</label>
+                                                        <input
+                                                            type="number" step="any"
+                                                            value={settings.defaultEndLng || ''}
+                                                            onChange={(e) => setSettings({ ...settings, defaultEndLng: parseFloat(e.target.value) || 0 })}
+                                                            placeholder="30.1234"
+                                                            className={clsx('w-full px-3 py-2 rounded-lg border text-xs font-mono', isDark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200')}
+                                                        />
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
 

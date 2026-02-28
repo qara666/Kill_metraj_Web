@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
-import { createPortal } from 'react-dom'
+import React, { useState, useEffect, useMemo, useCallback, memo, useRef, useDeferredValue } from 'react'
 import { OrderList } from './OrderList'
 import {
   TruckIcon,
@@ -15,8 +14,7 @@ import {
   ExclamationTriangleIcon,
   ExclamationCircleIcon,
   ChevronLeftIcon,
-  ChevronRightIcon,
-  MapPinIcon
+  ChevronRightIcon
 } from '@heroicons/react/24/outline'
 import { localStorageUtils } from '../../utils/ui/localStorage'
 import { cleanAddress, generateStreetVariants } from '../../utils/data/addressUtils'
@@ -37,29 +35,21 @@ import { getUkraineTrafficForOrders, calculateTotalTrafficDelay } from '../../ut
 import { type TimeWindowGroup, groupOrdersByTimeWindow, formatTimeLabel } from '../../utils/route/routeCalculationHelpers'
 import { SmartAddressCorrectionModal } from '../modals/SmartAddressCorrectionModal'
 import { BatchAddressCorrectionPanel } from './BatchAddressCorrectionPanel'
-import { type AddressSuggestion, useSmartAddressCorrection } from '../../hooks/useSmartAddressCorrection'
+import { useSmartAddressCorrection } from '../../hooks/useSmartAddressCorrection'
 import { isId0CourierName, normalizeCourierName } from '../../utils/data/courierName'
 import { getReturnETA, getAccurateReturnETA, getCourierSpeed, enrichRoutesWithCoords } from '../../utils/routes/courierETA'
 import { ReturningCouriersModal } from './modals/ReturningCouriersModal'
 import { TransitCouriersModal } from './modals/TransitCouriersModal'
 import { type DeliveryZone, calculateDistance } from '../../utils/geoUtils'
 
+// --- Helpers ---
+const formatDisplayDistance = (meters?: number) => {
+  if (meters === undefined) return undefined;
+  if (meters < 1000) return `${Math.round(meters)} м`;
+  return `${(meters / 1000).toFixed(1)} км`;
+};
+
 // --- Hooks ---
-function useDebounce<T>(value: T, delay: number): T {
-  const [debouncedValue, setDebouncedValue] = useState<T>(value)
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedValue(value)
-    }, delay)
-
-    return () => {
-      clearTimeout(handler)
-    }
-  }, [value, delay])
-
-  return debouncedValue
-}
 
 // Ленивая загрузка тяжелых компонентов
 const HelpModalRoutes = lazy(() => import('../modals/HelpModalRoutes').then(m => ({ default: m.HelpModalRoutes })))
@@ -349,15 +339,29 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [routeAnomalies, setRouteAnomalies] = useState<Map<string, RouteAnomalyCheck>>(new Map())
 
-  // SOTA 4.2: Disambiguation modal state
-  const [disambiguationData, setDisambiguationData] = useState<{
-    order: Order;
-    alternatives: AddressSuggestion[];
-    targetGroup: TimeWindowGroup;
-  } | null>(null);
-  const [showDisambiguationModal, setShowDisambiguationModal] = useState(false);
-  const [disambModal, setDisambModal] = useState<{ open: boolean; title: string; options: Array<{ label: string; distanceMeters?: number; res: any }> } | null>(null)
+  const [disambModal, setDisambModal] = useState<{ open: boolean; title: string; options: Array<{ label: string; distanceMeters?: number; mapsUrl?: string; zoneName?: string; res: any }> } | null>(null)
   const disambResolver = useRef<(choice: any | null) => void>()
+
+  // SOTA 5.0: Modal Queue Logic
+  const disambQueue = useRef<Array<{ title: string; options: any[]; resolve: (val: any) => void }>>([])
+  const isProcessingQueue = useRef(false)
+
+  const processDisambQueue = useCallback(async () => {
+    if (isProcessingQueue.current || disambQueue.current.length === 0) return
+    isProcessingQueue.current = true
+
+    while (disambQueue.current.length > 0) {
+      const next = disambQueue.current.shift()!
+      const choice = await new Promise(resolve => {
+        setDisambModal({ open: true, title: next.title, options: next.options })
+        disambResolver.current = resolve
+      })
+      setDisambModal(null)
+      next.resolve(choice)
+    }
+
+    isProcessingQueue.current = false
+  }, [])
 
   // Smart Address Correction
   const [showCorrectionModal, setShowCorrectionModal] = useState(false)
@@ -373,9 +377,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set())
   const [selectedOrdersOrder, setSelectedOrdersOrder] = useState<string[]>([])
 
-  // Debounced search terms
-  const debouncedOrderSearchTerm = useDebounce(orderSearchTerm, 300)
-  const debouncedCourierSearchTerm = useDebounce(courierSearchTerm, 300)
+  // v5.22: Deferred search terms for concurrent rendering (fluid UI)
+  const deferredOrderSearchTerm = useDeferredValue(orderSearchTerm)
+  const deferredCourierSearchTerm = useDeferredValue(courierSearchTerm)
 
   // Состояния для системы помощи
   const [showHelpModal, setShowHelpModal] = useState(false)
@@ -464,13 +468,111 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     }) || false
   }, [excelData?.routes])
 
+  // --- Geocoding Utilities (Component Level) ---
+  const extractHouseNumber = useCallback((raw: string): string | null => {
+    const m = raw.match(/\d+[\/\-\wа-яА-ЯёЁіІєЄґҐ]*/)
+    return m ? m[0] : null
+  }, [])
+
+  const extractPostal = useCallback((raw: string): string | null => {
+    const m = raw.match(/\b\d{5}\b/)
+    return m ? m[0] : null
+  }, [])
+
+  const buildBounds = useCallback((paths: any[]) => {
+    const bounds = new window.google.maps.LatLngBounds()
+    paths.forEach(p => {
+      if (Array.isArray(p)) p.forEach(pt => bounds.extend(pt))
+      else bounds.extend(p)
+    })
+    return bounds
+  }, [])
+
+  const settings = useMemo(() => localStorageUtils.getAllSettings(), [])
+
+  const cachedAllKmlPolygons = useMemo(() => {
+    if (!settings.kmlData?.polygons || !window.google?.maps?.Polygon) return []
+    return settings.kmlData.polygons.map((p: any) => ({
+      ...p,
+      googlePoly: new window.google.maps.Polygon({ paths: p.path }),
+      bounds: buildBounds(p.path)
+    }))
+  }, [settings.kmlData?.polygons, buildBounds])
+
+  const cachedHubPolygons = useMemo(() => {
+    if (selectedHubs.length === 0 || !settings.kmlData?.polygons || !window.google?.maps?.Polygon) return []
+    const rawPolys = settings.kmlData.polygons.filter((p: any) => selectedHubs.includes(p.folderName))
+    return rawPolys.map((p: any) => ({
+      ...p,
+      googlePoly: new window.google.maps.Polygon({ paths: p.path }),
+      bounds: buildBounds(p.path)
+    }))
+  }, [selectedHubs, settings.kmlData?.polygons, buildBounds])
+
+  const checkInside = useCallback((latLng: any) => {
+    if (!latLng || !window.google?.maps?.geometry) return false
+    if (cachedHubPolygons.length > 0) {
+      return cachedHubPolygons.some((p: any) => {
+        if (selectedZones.length > 0) {
+          const zoneKey = `${p.folderName}:${p.name}`
+          if (!selectedZones.includes(zoneKey)) return false
+        }
+        if (p.bounds && !p.bounds.contains(latLng)) return false
+        if (window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)) return true
+        return window.google.maps.geometry.poly.isLocationOnEdge(latLng, p.googlePoly, 0.0005)
+      })
+    }
+    return cachedAllKmlPolygons.some((p: any) => {
+      if (p.bounds && !p.bounds.contains(latLng)) return false
+      if (window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)) return true
+      return window.google.maps.geometry.poly.isLocationOnEdge(latLng, p.googlePoly, 0.0005)
+    })
+  }, [cachedHubPolygons, cachedAllKmlPolygons, selectedZones])
+
+  const isInsideSector = useCallback((loc: any) => checkInside(loc), [checkInside])
+
+  const _isTechZoneName = useCallback((name: string, folder: string) => {
+    const n = `${name} ${folder}`.toLowerCase()
+    return n.includes('авторозвантаження') ||
+      n.includes('авторазгруз') ||
+      n.includes('разгруз') ||
+      n.includes('склад') ||
+      n.includes('depot')
+  }, [])
+
+  const checkTechnicalKmlZone = useCallback((latLng: any) => {
+    if (!latLng || cachedAllKmlPolygons.length === 0) return false
+    return cachedAllKmlPolygons.some((p: any) => {
+      if (!_isTechZoneName(p.name || '', p.folderName || '')) return false
+      if (p.bounds && !p.bounds.contains(latLng)) return false
+      return window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)
+    })
+  }, [cachedAllKmlPolygons, _isTechZoneName])
+
+  const checkDeliveryKmlZone = useCallback((latLng: any) => {
+    if (!latLng || cachedAllKmlPolygons.length === 0) return false
+    return cachedAllKmlPolygons.some((p: any) => {
+      if (_isTechZoneName(p.name || '', p.folderName || '')) return false
+      if (p.bounds && !p.bounds.contains(latLng)) return false
+      return window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)
+    })
+  }, [cachedAllKmlPolygons, _isTechZoneName])
+
+  const [confirmAddresses, setConfirmAddresses] = useState<boolean>(() => {
+    const saved = localStorage.getItem('confirmAddresses');
+    return saved !== null ? JSON.parse(saved) : false;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('confirmAddresses', JSON.stringify(confirmAddresses));
+  }, [confirmAddresses]);
+
   // Сортируем заказы: сначала доступные по времени, потом заказы в маршрутах
   const sortOrdersByTime = useCallback((orders: Order[]) => {
     return [...orders].sort((a, b) => {
       const aInRoute = isOrderInExistingRoute(a.id)
       const bInRoute = isOrderInExistingRoute(b.id)
 
-      // Сначала сортируем по статусу: доступные заказы сверху, в маршрутах снизу
       if (aInRoute && !bInRoute) return 1
       if (!aInRoute && bInRoute) return -1
 
@@ -484,18 +586,15 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     })
   }, [isOrderInExistingRoute])
 
-  // (Дубликат удален)
-
-
   // --- Custom Hooks ---
 
-  const { validateOrders, applyCorrection, applyBatchCorrections, applyManualEdit, resolveAddressBias, validator } = useSmartAddressCorrection({
+  const { validateOrders, applyCorrection, applyBatchCorrections, applyManualEdit, validator } = useSmartAddressCorrection({
     updateExcelData
   })
 
   // SOTA 4.0: Синхронизируем валидатор с зонами KML из настроек
   useEffect(() => {
-    const settings = localStorageUtils.getAllSettings()
+    // `settings` is now a component-level memo
     if (settings.kmlData?.polygons) {
       const zones: DeliveryZone[] = settings.kmlData.polygons.map((p: any) => ({
         id: p.id || p.name,
@@ -505,7 +604,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       }));
       validator.setZones(zones);
     }
-  }, [validator]);
+  }, [validator, settings]); // Added settings as dependency
 
   // Группируем заказы по курьерам
   const courierOrders = useMemo(() => {
@@ -710,7 +809,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         )
 
         const rawRoute: Route | undefined = routeIdx !== -1 ? (excelData as any).routes[routeIdx] : undefined;
-        // Prefer enriched (geocoded) version if available. 
+        // Prefer enriched (geocoded) version if available.
         // SOTA 3.1: Also check for virtual route ID lookup
         const virtualId = `virtual-${name}`
         const route = rawRoute ? (enrichedById.get(rawRoute.id) ?? rawRoute) : (enrichedById.get(virtualId))
@@ -745,7 +844,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       if (!b.eta) return -1
       return String(a.eta).localeCompare(String(b.eta))
     })
-  }, [courierOrders, excelData, courierMetricsMap, enrichedRoutes])
+  }, [courierOrders, excelData, courierMetricsMap, enrichedRoutes, getCourierVehicleType])
 
   // Data for the in-transit couriers modal
   const transitCouriersData = useMemo(() => {
@@ -817,9 +916,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       })
     }
 
-    // Filter by search (debounced)
-    if (debouncedCourierSearchTerm) {
-      const term = debouncedCourierSearchTerm.toLowerCase()
+    // Filter by search (deferred)
+    if (deferredCourierSearchTerm) {
+      const term = deferredCourierSearchTerm.toLowerCase()
       result = result.filter(name => name.toLowerCase().includes(term))
     }
 
@@ -838,7 +937,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
       return a.localeCompare(b, 'ru');
     })
-  }, [couriers, courierFilter, debouncedCourierSearchTerm, courierSortType, getCourierMetrics])
+  }, [couriers, courierFilter, deferredCourierSearchTerm, courierSortType, getCourierMetrics, getCourierVehicleType])
 
 
 
@@ -856,15 +955,15 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
   // Функция для поиска заказов по номеру
   const searchOrders = useCallback((orders: Order[]) => {
-    if (!debouncedOrderSearchTerm.trim()) return orders
+    if (!deferredOrderSearchTerm.trim()) return orders
 
-    const searchTerm = debouncedOrderSearchTerm.toLowerCase().trim()
+    const searchTerm = deferredOrderSearchTerm.toLowerCase().trim()
     return orders.filter(order =>
       String(order.orderNumber).toLowerCase().includes(searchTerm) ||
       (order.customerName || '').toLowerCase().includes(searchTerm) ||
       (order.address || '').toLowerCase().includes(searchTerm)
     )
-  }, [debouncedOrderSearchTerm])
+  }, [deferredOrderSearchTerm])
 
 
 
@@ -881,7 +980,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     all = all.filter(o => (seen.has(o.id) ? false : (seen.add(o.id), true)))
 
     return all.filter(order => !isOrderInExistingRoute(order.id))
-  }, [selectedCourier, courierOrders, orderSearchTerm, excelData?.routes])
+  }, [selectedCourier, courierOrders, searchOrders, isOrderInExistingRoute, sortOrdersByTime])
 
   const ordersInRoutes = useMemo(() => {
     if (!selectedCourier) return []
@@ -891,7 +990,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     all = all.filter(o => (seen.has(o.id) ? false : (seen.add(o.id), true)))
 
     return all.filter(order => isOrderInExistingRoute(order.id))
-  }, [selectedCourier, courierOrders, orderSearchTerm, excelData?.routes])
+  }, [selectedCourier, courierOrders, searchOrders, isOrderInExistingRoute, sortOrdersByTime])
 
 
   const handleOrderSelect = useCallback((orderId: string, _multi?: boolean) => {
@@ -940,7 +1039,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
     // Требуем выбранный город в настройках
     {
-      const settings = localStorageUtils.getAllSettings()
+      // `settings` is now a component-level memo
       const cityBias = settings.cityBias || ''
       if (!cityBias) {
         toast.error('Выберите город во вкладке Настройки (Город для маршрутов).')
@@ -1005,13 +1104,17 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       createdAt: Date.now()
     }
 
+    // v5.22: Set isCalculating early to prevent UI hangs and multiple clicks
+    setIsCalculating(true)
+
     // Добавляем новый маршрут и синхронизируем курьера в списке всех заказов
     updateExcelData((prev: any) => {
       const currentOrders = prev?.orders || []
+      const orderIdsToUpdate = new Set(selectedOrdersList.map(so => String(so.id)))
+
       const updatedOrders = currentOrders.map((order: any) => {
         // Если ID заказа в списке создаваемого маршрута, обновляем его курьера
-        const isAssignedToThisRoute = selectedOrdersList.some(so => String(so.id) === String(order.id))
-        if (isAssignedToThisRoute) {
+        if (orderIdsToUpdate.has(String(order.id))) {
           return { ...order, courier: courier }
         }
         return order
@@ -1028,10 +1131,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     setSelectedOrders(new Set())
     setSelectedOrdersOrder([])
 
-    // Автоматически рассчитываем расстояние для нового маршрута
-    setTimeout(() => {
-      calculateRouteDistance(newRoute)
-    }, 100)
+    // Автоматически рассчитываем расстояние для нового маршрута, возвращаем Promise для секвенциальной обработки
+    return calculateRouteDistance(newRoute)
   }
 
 
@@ -1074,117 +1175,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
     try {
 
-      const settings = localStorageUtils.getAllSettings()
+      // `settings` is now a component-level memo
       const cityCtx = getSelectedCity()
 
-      // Логика секторов: Используем Хабы из KML
-      // OPTIMIZATION: Instantiate Polygons ONCE outside the loop to prevent massive GC churn
-      // This fixes the "lag/freeze" issue on weak devices
-      let cachedHubPolygons: { folderName: string; name: string; googlePoly: any }[] = []
-      if (selectedHubs.length > 0 && settings.kmlData?.polygons && window.google?.maps?.Polygon) {
-        const rawPolys = settings.kmlData.polygons.filter((p: any) => selectedHubs.includes(p.folderName))
-        cachedHubPolygons = rawPolys.map((p: any) => ({
-          ...p,
-          googlePoly: new window.google.maps.Polygon({ paths: p.path })
-        }))
-      }
-
-      // --- Geocoding 2.0: Spatial Optimizations ---
-      const buildBounds = (paths: any[]) => {
-        const bounds = new window.google.maps.LatLngBounds()
-        paths.forEach(p => {
-          if (Array.isArray(p)) p.forEach(pt => bounds.extend(pt))
-          else bounds.extend(p)
-        })
-        return bounds
-      }
-
-      // Pre-cache ALL KML polygons for checkAnyKmlZone
-      let cachedAllKmlPolygons: { folderName: string; name: string; googlePoly: any; bounds: any }[] = []
-      if (settings.kmlData?.polygons && window.google?.maps?.Polygon) {
-        cachedAllKmlPolygons = settings.kmlData.polygons.map((p: any) => ({
-          ...p,
-          googlePoly: new window.google.maps.Polygon({ paths: p.path }),
-          bounds: buildBounds(p.path)
-        }))
-      }
-
-      // Memoization cache for sector checks
-      const checkInsideMemo = new Map<string, boolean>()
-
-      // Для проверки вхождения используем все ПОЛИГОНЫ хаба (с учетом фильтра зон)
-      const checkInside = (latLng: any) => {
-        if (!latLng) return false
-        const key = `${latLng.lat()},${latLng.lng()}`
-        if (checkInsideMemo.has(key)) return checkInsideMemo.get(key)!
-
-        let result = true
-        if (cachedHubPolygons.length > 0) {
-          result = cachedHubPolygons.some((p: any) => {
-            // Если выбраны конкретные зоны, проверяем только их
-            if (selectedZones.length > 0) {
-              const zoneKey = `${p.folderName}:${p.name}`
-              if (!selectedZones.includes(zoneKey)) return false
-            }
-
-            // Geocoding 2.0: Bounding Box Pre-filter
-            if (p.bounds && !p.bounds.contains(latLng)) return false
-
-            // Прямое вхождение (строгое)
-            if (window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)) return true
-
-            // Fallback: проверка "на границе" с допуском ~50м (0.0005 градуса)
-            return window.google.maps.geometry.poly.isLocationOnEdge(latLng, p.googlePoly, 0.0005)
-          })
-        }
-        checkInsideMemo.set(key, result)
-        return result
-      }
-
-      // SOTA 4.5: split zone checking into delivery vs technical
-      // A point inside a delivery zone gets a strong bonus;
-      // a point inside a technical/auto-unloading zone gets a hard penalty.
-      const _isTechZoneName = (name: string, folder: string) => {
-        const n = `${name} ${folder}`.toLowerCase()
-        return n.includes('авторозвантаження') ||
-          n.includes('авторазгруз') ||
-          n.includes('разгруз') ||
-          n.includes('склад') ||
-          n.includes('depot')
-      }
-      const checkDeliveryKmlZone = (latLng: any) => {
-        if (!latLng || cachedAllKmlPolygons.length === 0) return false
-        return cachedAllKmlPolygons.some((p: any) => {
-          if (_isTechZoneName(p.name || '', p.folderName || '')) return false
-          if (p.bounds && !p.bounds.contains(latLng)) return false
-          return window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)
-        })
-      }
-      const checkTechnicalKmlZone = (latLng: any) => {
-        if (!latLng || cachedAllKmlPolygons.length === 0) return false
-        return cachedAllKmlPolygons.some((p: any) => {
-          if (!_isTechZoneName(p.name || '', p.folderName || '')) return false
-          if (p.bounds && !p.bounds.contains(latLng)) return false
-          return window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)
-        })
-      }
-
-      // Полигон сектора для containsLocation (используем checkInside вместо прямого полигона)
-      const isInsideSector = (loc: any) => checkInside(loc)
-
-      // Извлекаем предполагаемый номер дома из исходной строки (латиница/кириллица, буквы суффикса допустимы)
-      const extractHouseNumber = (raw: string): string | null => {
-        if (!raw) return null
-        const m = raw.match(/\b(\d+[\w\-]?)(?=\b|,|\s|$)/u)
-        return m ? m[1] : null
-      }
-
-      // Извлекаем индекс (UA 5 цифр)
-      const extractPostal = (raw: string): string | null => {
-        if (!raw) return null
-        const m = raw.match(/\b\d{5}\b/)
-        return m ? m[0] : null
-      }
+      // (Top-level utilities now used: isInsideSector, checkTechnicalKmlZone, _isTechZoneName, extractHouseNumber, extractPostal)
 
 
       // Общая оценка кандидата: приоритет внутри сектора, наличие street_number и ROOFTOP
@@ -1207,7 +1201,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         if (opts.expectedHouse) {
           const formatted = (candidate.formatted_address || '').toString().toLowerCase()
           if (formatted.includes(opts.expectedHouse.toLowerCase())) score += 120
-          if (streetNumComp && streetNumComp.long_name && streetNumComp.long_name.toLowerCase() === opts.expectedHouse.toLowerCase()) score += 100
+          if (streetNumComp && streetNumComp.long_name && streetNumComp.long_name.toLowerCase() === opts.expectedHouse.toLowerCase()) score += 300 // v5.17: Critical weight for house match
         }
         // совпадение почтового кода
         if (opts.expectedPostal) {
@@ -1237,7 +1231,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         if (checkDeliveryKmlZone(loc)) {
           score += 500
         } else if (checkTechnicalKmlZone(loc)) {
-          score -= 400
+          score -= 1000 // SOTA 5.4: Harder penalty for technical centers to prevent them from winning over real ROOFTOPs
         }
 
         return score
@@ -1249,26 +1243,22 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         const expectedPostal = extractPostal(rawAddress)
         const refPoint = hintPoint || null
         const hasRestriction = cachedHubPolygons.length > 0
+        const kmlLoaded = cachedAllKmlPolygons.length > 0
+        const zones = settings.kmlData?.polygons || [];
 
         // Geocoding 2.0: Smart Permutations Search
         const searchVariants = generateStreetVariants(rawAddress, cityCtx.city)
         let candidatesByVariant: any[] = []
 
         for (const variant of searchVariants) {
-          const request = {
-            address: variant,
-            region: cityCtx.region,
-            componentRestrictions: { country: 'ua' }
-          }
-          // eslint-disable-next-line no-await-in-loop
-          const res: any = await googleApiCache.geocode(request)
+          const res: any = await googleApiCache.geocode({ address: variant, region: cityCtx.region, componentRestrictions: { country: 'ua' } })
           if (res && res.length > 0) {
             candidatesByVariant = [...candidatesByVariant, ...res]
-            // SOTA 4.5: early-exit only for ROOFTOP in delivery zone (never in technical/auto-unloading)
             const bestFound = res.find((r: any) =>
               r.geometry?.location_type === 'ROOFTOP' &&
               (!hasRestriction || isInsideSector(r.geometry.location)) &&
-              !checkTechnicalKmlZone(r.geometry.location)
+              !checkTechnicalKmlZone(r.geometry.location) &&
+              (!kmlLoaded || checkDeliveryKmlZone(r.geometry.location))
             )
             if (bestFound) break
           }
@@ -1276,170 +1266,332 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
         if (candidatesByVariant.length === 0) return null
 
-        // Scoring all found candidates
+        // v5.20: Shared zone check helper - must match global checkInside logic perfectly
+        const findZoneForLoc = (loc: any, targetPolygons: any[]) => {
+          return targetPolygons.find((p: any) => {
+            try {
+              if (p.bounds && !p.bounds.contains(loc)) return false;
+              const poly = p.googlePoly || new window.google.maps.Polygon({ paths: p.path });
+              return window.google.maps.geometry.poly.containsLocation(loc, poly) ||
+                window.google.maps.geometry.poly.isLocationOnEdge(loc, poly, 0.0005);
+            } catch { return false; }
+          });
+        };
+
+        // currentActivePolygons removed (v5.19 use isInsideSector)
+        const inActiveZone = (loc: any) => isInsideSector(loc);
+
+        // Preliminary scoring to establish a baseline best
         let best = candidatesByVariant[0]
-        let bestScore = scoreCandidate(best, {
-          refPoint,
-          expectedHouse,
-          expectedPostal,
-          inside: hasRestriction ? isInsideSector(best.geometry.location) : true
-        })
-
+        let bestScore = scoreCandidate(best, { refPoint, expectedHouse, expectedPostal, inside: inActiveZone(best.geometry.location) })
         for (let i = 1; i < candidatesByVariant.length; i++) {
-          const cand = candidatesByVariant[i]
-          const isIns = hasRestriction ? isInsideSector(cand.geometry.location) : true
-          const candScore = scoreCandidate(cand, { refPoint, expectedHouse, expectedPostal, inside: isIns })
-          if (candScore > bestScore) {
-            best = cand
-            bestScore = candScore
-          }
+          const c = candidatesByVariant[i]
+          const s = scoreCandidate(c, { refPoint, expectedHouse, expectedPostal, inside: inActiveZone(c.geometry.location) })
+          if (s > bestScore) { best = c; bestScore = s; }
         }
 
-        // Если нет ROOFTOP, попробуем уточнить корпус/секцию
-        const tryRefine = () => {
-          const m = rawAddress.match(/\b(корп(?:ус)?|к|секция|литера)\s*([\w-]+)/i)
-          if (!m) return null
-          return `${cleanAddressForRoute(rawAddress)}, ${m[1]} ${m[2]}`
-        }
+        // Refinement for missing sections/buildings
         if (best?.geometry?.location_type !== 'ROOFTOP') {
-          const refinedAddr = tryRefine()
-          if (refinedAddr) {
-            const fix = await geocodeInsideOnly(refinedAddr, refPoint)
-            if (fix && fix.geometry?.location_type === 'ROOFTOP') best = fix
+          const m = rawAddress.match(/\b(корп(?:ус)?|к|секция|литера)\s*([\w-]+)/i)
+          if (m) {
+            const refined = `${cleanAddressForRoute(rawAddress)}, ${m[1]} ${m[2]}`;
+            const fixRes = await researchExhaustive(refined, refPoint);
+            if (fixRes.length > 0) {
+              fixRes.forEach(r => {
+                const exists = candidatesByVariant.some(c => distBetween(c.geometry.location, r.geometry.location) < 100);
+                if (!exists) candidatesByVariant.push(r);
+              });
+              const bestRefined = fixRes.find(r => r.geometry?.location_type === 'ROOFTOP');
+              if (bestRefined) best = bestRefined;
+            }
           }
         }
 
-        // SOTA 4.5: Post-process — if the scoring winner is in a technical/auto-unloading zone,
-        // discard it and use the best non-technical alternative instead.
-        if (best && checkTechnicalKmlZone(best.geometry.location)) {
-          console.warn(`[SOTA 4.5] Winner "${best.formatted_address}" is in a technical zone — trying non-technical fallback`)
-          let fallback: any = null
-          let fallbackScore = -Infinity
-          for (const cand of candidatesByVariant) {
-            if (checkTechnicalKmlZone(cand.geometry.location)) continue
-            const isIns = hasRestriction ? isInsideSector(cand.geometry.location) : true
-            const s = scoreCandidate(cand, { refPoint, expectedHouse, expectedPostal, inside: isIns })
-            if (s > fallbackScore) { fallbackScore = s; fallback = cand }
-          }
-          if (fallback) {
-            console.log(`[SOTA 4.5] Fallback: "${fallback.formatted_address}" score=${fallbackScore}`)
-            best = fallback
-          } else {
-            // No non-technical result at all — flag for user disambiguation
-            console.warn(`[SOTA 4.5] No non-technical fallback found — flagging for user review`)
-            best._needsDisambiguation = true
+        const winnerStreetNum = (best.address_components || []).find((c: any) => c.types?.includes('street_number'))?.long_name;
+        const houseMatchedExactly = !expectedHouse || (winnerStreetNum && winnerStreetNum.toLowerCase() === expectedHouse.toLowerCase());
+        const inTechZone = checkTechnicalKmlZone(best.geometry.location);
+        const bestInAnyZoneObject = findZoneForLoc(best.geometry.location, zones);
+        const bestInAnyZone = !!bestInAnyZoneObject;
+
+        const isSuspicious = !houseMatchedExactly || inTechZone || !bestInAnyZone;
+        const bestIsInside = kmlLoaded ? isInsideSector(best.geometry.location) : true;
+
+        // v5.20: Optimized Research trigger. Skip expensive extras if we have a direct hit in active zone.
+        const hasActiveDirectHit = candidatesByVariant.some(c =>
+          inActiveZone(c.geometry.location) &&
+          (c.geometry.location_type === 'ROOFTOP' || c.geometry.location_type === 'RANGE_INTERPOLATED') &&
+          (!expectedHouse || (c.address_components || []).some((comp: any) => comp.types.includes('street_number') && comp.long_name.toLowerCase() === expectedHouse.toLowerCase()))
+        );
+
+        if ((isSuspicious || !bestIsInside || candidatesByVariant.length < 2) && !hasActiveDirectHit) {
+          console.log('[v5.20] triggering exhaustive search...');
+          const exhaustive = await researchExhaustive(rawAddress, refPoint);
+          exhaustive.forEach(r => {
+            const exists = candidatesByVariant.some(c => distBetween(c.geometry.location, r.geometry.location) < 100);
+            if (!exists) candidatesByVariant.push(r);
+          });
+
+          if (isSuspicious) {
+            const streetOnly = cleanAddress(rawAddress).replace(/\s*\d+.*$/, '');
+            const streetRes: any = await googleApiCache.geocode({ address: `${streetOnly}, ${cityCtx.city}, ${cityCtx.region}`, region: 'ua' });
+            if (streetRes) streetRes.forEach((r: any) => {
+              const exists = candidatesByVariant.some(c => distBetween(c.geometry.location, r.geometry.location) < 100);
+              if (!exists) { (r as any)._isResearch = true; candidatesByVariant.push(r); }
+            });
           }
         }
 
-        return best
+        // v5.17: Final Pruning and Decision Logic
+        const prunedPool = candidatesByVariant.filter(c => {
+          // Rule 1: Must be in Ukraine
+          const isUA = (c.address_components || []).some((comp: any) => comp.short_name === 'UA' || comp.long_name === 'Україна');
+          if (!isUA) return false;
+
+          // Rule 2: No "trash" from distant cities (>60km from ref)
+          if (refPoint) {
+            try {
+              const d = distBetween(c.geometry.location, refPoint);
+              if (d > 60000) return false;
+            } catch { }
+          }
+          return true;
+        });
+
+        const finalPool = prunedPool.length > 0 ? prunedPool : candidatesByVariant;
+
+        // Final Scoring Pass
+        let finalBest = finalPool[0];
+        let finalBestScore = scoreCandidate(finalBest, { refPoint, expectedHouse, expectedPostal, inside: inActiveZone(finalBest.geometry.location) });
+        for (let i = 1; i < finalPool.length; i++) {
+          const c = finalPool[i];
+          const s = scoreCandidate(c, { refPoint, expectedHouse, expectedPostal, inside: inActiveZone(c.geometry.location) });
+          if (s > finalBestScore) { finalBest = c; finalBestScore = s; }
+        }
+
+        // v5.23: Street Similarity Filter - improved street extraction stripping prefixes (вул, пр, и т.д.)
+        const cleanRaw = cleanAddress(rawAddress).toLowerCase();
+
+        // v5.23: Advanced prefix stripping (вул., ул., пр., просп., и т.д.)
+        const prefixesRegex = /^(вул|ул|пр|просп|пр-т|проспект|пров|пер|пер-к|блв|бульвар|шосе|шоссе|набережна|набережная|пл|площа|площадь|київ|киев|украина|україна|ua)\.?\s+/i;
+        let streetFromRaw = cleanRaw.replace(prefixesRegex, '').replace(/\s*\d+.*$/, '').trim();
+        // If still starts with prefix (case without dot or space after dot)
+        streetFromRaw = streetFromRaw.replace(/^(вул|ул|пр|просп|пр-т|проспект|пров|пер|пер-к|блв|бульвар|шосе|шоссе|набережна|набережная|пл|площа|площадь)\.?/i, '').trim();
+
+        const filteredPool = finalPool.filter(c => {
+          const comps = c.address_components || [];
+          const streetComp = comps.find((comp: any) => comp.types.includes('route'))?.long_name?.toLowerCase() || '';
+          const formattedLower = (c.formatted_address || '').toLowerCase();
+
+          const hasStreetInAddress = formattedLower.includes(streetFromRaw);
+
+          // v5.24: Renamed Streets handling
+          const isFormattedMatch = formattedLower.includes(streetFromRaw);
+
+          if (streetFromRaw && !hasStreetInAddress && !streetComp.includes(streetFromRaw) && !isFormattedMatch) {
+            // If the street name is not present in the result at all (even in formatted string), it's likely trash
+            return false;
+          }
+
+          // v5.24: Extra-distant trash pruning (>25km from ref and outside any zone)
+          if (refPoint) {
+            try {
+              const d = distBetween(c.geometry.location, refPoint);
+              const inAnyZone = !!findZoneForLoc(c.geometry.location, zones);
+              if (d > 25000 && !inAnyZone) return false;
+            } catch { }
+          }
+
+          // If street name is completely different (no common words), prune it
+          if (streetFromRaw && streetComp) {
+            const wordsRaw = streetFromRaw.split(/\s+/).filter((w: string) => w.length > 2);
+            const wordsComp = streetComp.split(/\s+/).filter((wc: string) => wc.length > 2);
+            const hasOverlap = wordsRaw.some(wr => wordsComp.some((wc: string) => wc.includes(wr) || wr.includes(wc)));
+            if (!hasOverlap) return false;
+          }
+          return true;
+        });
+
+        const activePool = filteredPool.length > 0 ? filteredPool : [finalBest];
+
+        // Re-score the active pool
+        let finalWinner = activePool[0];
+        let finalWinnerScore = scoreCandidate(finalWinner, { refPoint, expectedHouse, expectedPostal, inside: inActiveZone(finalWinner.geometry.location) });
+        for (let i = 1; i < activePool.length; i++) {
+          const c = activePool[i];
+          const s = scoreCandidate(c, { refPoint, expectedHouse, expectedPostal, inside: inActiveZone(c.geometry.location) });
+          if (s > finalWinnerScore) { finalWinner = c; finalWinnerScore = s; }
+        }
+        finalBest = finalWinner;
+
+        const finalWinnerStreetNum = (finalBest.address_components || []).find((c: any) => c.types?.includes('street_number'))?.long_name;
+        const finalHouseMatched = !expectedHouse || (finalWinnerStreetNum && finalWinnerStreetNum.toLowerCase() === expectedHouse.toLowerCase());
+
+        // v5.22: Relaxed House Match - if street matches exactly and in active zone, we allow it to be 'silent'
+        const finalStreetComp = (finalBest.address_components || []).find((comp: any) => comp.types.includes('route'))?.long_name?.toLowerCase() || '';
+        const finalStreetMatched = streetFromRaw && (finalStreetComp.includes(streetFromRaw) || streetFromRaw.includes(finalStreetComp));
+        const finalInTechZone = checkTechnicalKmlZone(finalBest.geometry.location);
+        const finalInAnyZone = !!findZoneForLoc(finalBest.geometry.location, zones);
+        const finalIsRooftop = finalBest.geometry.location_type === 'ROOFTOP';
+        const finalHasHouseNum = (finalBest.address_components || []).some((c: any) => c.types?.includes('street_number'));
+
+        const hasCompetingRooftop = activePool.some(c =>
+          c !== finalBest && c.geometry?.location_type === 'ROOFTOP' && distBetween(finalBest.geometry.location, c.geometry.location) > 500
+        );
+        const hasScatteredAlternatives = activePool.some(c => distBetween(c.geometry.location, finalBest.geometry.location) > 2000);
+
+        const isSafeQualityWinner = finalIsRooftop && finalHasHouseNum && !hasCompetingRooftop && !finalInTechZone;
+
+        let finalTooFar = false;
+        if (refPoint) {
+          try {
+            const dt = window.google.maps.geometry.spherical.computeDistanceBetween(finalBest.geometry.location, refPoint);
+            if (dt > (hintPoint ? 20000 : 40000)) finalTooFar = true;
+          } catch { }
+        }
+
+        // v5.23: Ultimate Automation Rules (Universal Silent Fallback)
+        // Auto-select if:
+        // 1. Point is IN ACTIVE ZONE + (STREET MATCH OR HOUSE MATCH) + (Rooftop/Interpolated/Centroid) + NOT Tech Zone.
+        // 2. Point is PERFECT (Rooftop + Active Zone + House Match) + NOT Tech Zone.
+        // 3. There is only ONE candidate left after filtration and it is NOT in Tech Zone.
+        const isInSelectedZone = inActiveZone(finalBest.geometry.location);
+
+        // v5.23: We allow automatic selection of street centroids (GEOMETRIC_CENTER) if the street matches exactly and it's in an active zone.
+        const finalIsAcceptableType = finalIsRooftop ||
+          finalBest.geometry.location_type === 'RANGE_INTERPOLATED' ||
+          (finalStreetMatched && finalBest.geometry.location_type === 'GEOMETRIC_CENTER');
+
+        const isHighConfidenceInZone = (finalHouseMatched || finalStreetMatched) &&
+          isInSelectedZone && !finalInTechZone && finalIsAcceptableType;
+
+        const autoReady = (!confirmAddresses && !finalInTechZone) || isHighConfidenceInZone ||
+          (activePool.length === 1 && !finalInTechZone && !finalTooFar) ||
+          (isSafeQualityWinner && isInSelectedZone && !finalTooFar && activePool.length < 3);
+
+        if (autoReady) return finalBest;
+
+        // Modal Presentation
+        const modalReason = finalInTechZone ? 'ВНИМАНИЕ: Зона авторазгрузки!' :
+          !finalInAnyZone ? 'Адрес ВНЕ всех KML зон!' :
+            (hasRestriction && !inActiveZone(finalBest.geometry.location)) ? 'Адрес за пределами хаба' :
+              !finalHouseMatched ? `Дом ${expectedHouse} не найден (только ${finalWinnerStreetNum || 'без номера'})` :
+                hasScatteredAlternatives ? 'Варианты в разных местах' :
+                  finalTooFar ? 'Сильное отклонение от маршрута' :
+                    `Выберите верный вариант (${activePool.length})`;
+
+        const modalOptions = activePool.map((r: any) => {
+          let d: number | undefined;
+          let mapsUrl = '';
+          let zoneFound = null;
+          const loc = r.geometry.location; // Moved outside try
+          try {
+            if (refPoint) d = window.google.maps.geometry.spherical.computeDistanceBetween(loc, refPoint);
+            const lat = typeof loc.lat === 'function' ? loc.lat() : loc.lat;
+            const lng = typeof loc.lng === 'function' ? loc.lng() : loc.lng;
+            mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+            zoneFound = findZoneForLoc(loc, zones);
+          } catch { }
+          const isInActive = inActiveZone(loc);
+          return {
+            label: r.formatted_address || 'Кандидат',
+            distanceMeters: d,
+            mapsUrl,
+            zoneName: r._isResearch ? 'РЕЗУЛЬТАТ ПОИСКА (ЦЕНТР УЛИЦЫ)' : (!zoneFound ? '⚠ вне всех KML зон' : (!isInActive ? `⚠ ${zoneFound.name} (выкл)` : (checkTechnicalKmlZone(loc) ? `🛑 ${zoneFound.name} (АВТОРАЗГРУЗ)` : zoneFound.name))),
+            res: r
+          };
+        });
+
+        const seenUnique = new Set<string>();
+        const deduped = modalOptions.filter((opt: any) => {
+          const key = opt.res?.place_id || opt.label;
+          if (seenUnique.has(key)) return false;
+          seenUnique.add(key);
+          return true;
+        });
+
+        if (deduped.length === 0) return finalBest;
+
+        const choice: any = await new Promise(resolve => {
+          disambQueue.current.push({
+            title: `${modalReason}: "${rawAddress}". Выберите правильный вариант:`,
+            options: deduped,
+            resolve
+          });
+          processDisambQueue();
+        });
+        return choice || finalBest;
       }
 
 
-      // Повторная попытка: возвращает ЛУЧШЕГО кандидата ТОЛЬКО внутри полигона (если нет — null)
-      const geocodeInsideOnly = async (rawAddress: string, hintPoint?: any): Promise<any | null> => {
-        const hasRestriction = cachedHubPolygons.length > 0
-        if (!hasRestriction) return null
-        const request: any = {
-          address: rawAddress,
-          region: cityCtx.region,
-          componentRestrictions: { country: 'ua' }
-        }
-
-        let candidates: any[] = []
-        const variants = generateStreetVariants(rawAddress, cityCtx.city)
+      // v5.16: Исчерпывающий поиск по всем вариантам (пригороды, области итд)
+      const researchExhaustive = async (rawAddress: string, hintPoint?: any): Promise<any[]> => {
+        const request: any = { address: rawAddress, region: cityCtx.region, componentRestrictions: { country: 'ua' } };
+        let candidates: any[] = [];
+        const variants = generateStreetVariants(rawAddress, cityCtx.city);
 
         for (const variant of variants) {
-          // eslint-disable-next-line no-await-in-loop
-          const res: any = await googleApiCache.geocode({ ...request, address: variant })
-          if (res && res.length > 0) candidates = [...candidates, ...res]
+          const res: any = await googleApiCache.geocode({ ...request, address: variant });
+          if (res && res.length > 0) candidates = [...candidates, ...res];
         }
 
-        if (candidates.length === 0) return null
+        // Если привязаны к городу и ничего нет — пробуем БЕЗ города (для областей)
+        if (candidates.length === 0) {
+          const resNoCity: any = await googleApiCache.geocode({ address: cleanAddress(rawAddress), region: 'ua' });
+          if (resNoCity) candidates = [...candidates, ...resNoCity];
+        }
 
-        let inside = candidates.filter((r: any) => isInsideSector(r.geometry.location))
+        if (candidates.length === 0) return [];
 
-        // Если всё ещё нет — при наличии подсказки (предыдущая точка) получаем sublocality и пробуем с ней
-        if (inside.length === 0 && hintPoint) {
-          const rev: any = await googleApiCache.geocode({ location: hintPoint })
-          if (rev && rev.length > 0) {
-            const sub = (() => {
-              for (const r of rev) {
-                const comp = (r.address_components || []).find((c: any) => c.types?.includes('sublocality') || c.types?.includes('neighborhood'))
-                if (comp?.long_name) return comp.long_name
-              }
-              return null
-            })()
-            if (sub) {
-              const withSub = `${cleanAddressForRoute(rawAddress)}, ${sub}`
-              const subRes: any = await googleApiCache.geocode({ ...request, address: withSub })
-              if (subRes && subRes.length > 0) {
-                const insideSub = subRes.filter((r: any) => isInsideSector(r.geometry.location))
-                if (insideSub.length > 0) inside = insideSub
-              }
-            }
+        // Hint-based expansion (sublocalities)
+        if (hintPoint) {
+          const rev: any = await googleApiCache.geocode({ location: hintPoint });
+          const sub = (rev || []).find((r: any) => (r.address_components || []).some((c: any) => c.types?.includes('sublocality') || c.types?.includes('neighborhood')))
+            ?.address_components?.find((c: any) => c.types?.includes('sublocality') || c.types?.includes('neighborhood'))?.long_name;
+          if (sub) {
+            const subRes: any = await googleApiCache.geocode({ ...request, address: `${cleanAddress(rawAddress)}, ${sub}` });
+            if (subRes) candidates = [...candidates, ...subRes];
           }
         }
 
-        // ИСЧЕРПЫВАЮЩИЙ ПОИСК ПО KML-ЗОНАМ:
-        if (inside.length === 0 && settings.kmlData?.polygons) {
-          const kmlTowns = new Set<string>()
-          settings.kmlData.polygons.forEach((p: any) => {
-            if (p.folderName) kmlTowns.add(p.folderName)
-            if (p.name) kmlTowns.add(p.name)
-          })
-
-          const oblastVariants = ['Київська область', 'Kyivska oblast']
-          const baseAddr = cleanAddress(rawAddress)
-          const searchVariants: string[] = []
-
-          kmlTowns.forEach(town => {
-            searchVariants.push(`${baseAddr}, ${town}`)
-            searchVariants.push(`${baseAddr}, ${town}, Київська область, Україна`)
-          })
-          oblastVariants.forEach(oblast => {
-            searchVariants.push(`${baseAddr}, ${oblast}, Україна`)
-          })
-
-          for (const v of searchVariants) {
-            // eslint-disable-next-line no-await-in-loop
-            const varRes: any = await googleApiCache.geocode({ ...request, address: v })
-            if (varRes && varRes.length > 0) {
-              const insideVar = varRes.filter((r: any) => isInsideSector(r.geometry.location))
-              if (insideVar.length > 0) {
-                inside = insideVar
-                break
-              }
-            }
-          }
+        // Town-specific KML expansion
+        if (settings.kmlData?.polygons) {
+          const towns = new Set<string>();
+          settings.kmlData.polygons.forEach((p: any) => { if (p.folderName) towns.add(p.folderName); if (p.name) towns.add(p.name); });
+          await Promise.all(Array.from(towns).map(async town => {
+            const tr: any = await googleApiCache.geocode({ ...request, address: `${cleanAddress(rawAddress)}, ${town}` });
+            if (tr) candidates = [...candidates, ...tr];
+          }));
         }
 
-        if (inside.length === 0) return null
+        // Deduplicate before returning
+        const seen = new Set<string>();
+        return candidates.filter(c => {
+          const lat = typeof c.geometry.location.lat === 'function' ? c.geometry.location.lat() : c.geometry.location.lat;
+          const lng = typeof c.geometry.location.lng === 'function' ? c.geometry.location.lng() : c.geometry.location.lng;
+          const key = `${lat},${lng}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      }
 
-        const refPoint = hintPoint || null
-        const expectedHouse = extractHouseNumber(rawAddress)
-        const expectedPostal = extractPostal(rawAddress)
+      // v5.16: Legacy wrapper for single-result sector fallback
+      const geocodeInsideOnly = async (rawAddress: string, hintPoint?: any): Promise<any | null> => {
+        const candidates = await researchExhaustive(rawAddress, hintPoint);
+        const inside = candidates.filter(r => isInsideSector(r.geometry.location));
+        if (inside.length === 0) return null;
+        if (inside.length === 1) return inside[0];
 
-        let best = inside[0]
-        let bestScore = scoreCandidate(best, { refPoint, expectedHouse, expectedPostal, inside: true })
+        // Score them to find the best
+        const expectedHouse = extractHouseNumber(rawAddress);
+        const expectedPostal = extractPostal(rawAddress);
+        let best = inside[0];
+        let bestScore = scoreCandidate(best, { refPoint: hintPoint, expectedHouse, expectedPostal, inside: true });
         for (let i = 1; i < inside.length; i++) {
-          const s = scoreCandidate(inside[i], { refPoint, expectedHouse, expectedPostal, inside: true })
-          if (s > bestScore) { best = inside[i]; bestScore = s }
+          const s = scoreCandidate(inside[i], { refPoint: hintPoint, expectedHouse, expectedPostal, inside: true });
+          if (s > bestScore) { best = inside[i]; bestScore = s; }
         }
-
-        if (inside.length > 1) {
-          const withDistances = inside.map((r: any) => {
-            let d
-            try { if (refPoint) d = window.google.maps.geometry.spherical.computeDistanceBetween(r.geometry.location, refPoint) } catch { }
-            return { label: r.formatted_address || 'Кандидат', distanceMeters: d, res: r }
-          })
-          const choice: any = await new Promise(resolve => {
-            setDisambModal({ open: true, title: 'Выберите точный адрес', options: withDistances })
-            disambResolver.current = resolve
-          })
-          setDisambModal(null)
-          if (choice) return choice
-        }
-        return best
+        return best;
       }
 
       // Вспомогательная функция: вычисляем центроид набора точек
@@ -1448,10 +1600,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         if (valid.length === 0) return null
         let sumLat = 0, sumLng = 0
         valid.forEach((p: any) => {
-          sumLat += p.lat ? p.lat() : p.lat
-          sumLng += p.lng ? p.lng() : p.lng
+          sumLat += typeof p.lat === 'function' ? p.lat() : (p.lat || 0)
+          sumLng += typeof p.lng === 'function' ? p.lng() : (p.lng || 0)
         })
-        return new window.google.maps.LatLng(sumLat / valid.length, sumLng / valid.length)
+        return { lat: sumLat / valid.length, lng: sumLng / valid.length };
       }
 
       // Вспомогательная функция: расстояние между двумя LatLng (метры)
@@ -1459,20 +1611,54 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         try { return window.google.maps.geometry.spherical.computeDistanceBetween(a, b) } catch { return Infinity }
       }
 
-      // Разрешаем координаты для всех точек маршрута
-      let originRes = await geocodeWithSector(route.startAddress)
-      const waypointResList: Array<any | null> = []
-      let prevPoint = originRes?.geometry?.location || null
-      for (const order of route.orders) {
-        // Используем предыдущую точку маршрута для приоритета близости
-        // eslint-disable-next-line no-await-in-loop
-        const res = await geocodeWithSector(order.address, prevPoint)
-        waypointResList.push(res)
-        if (res?.geometry?.location) prevPoint = res.geometry.location
+      // SOTA 5.2: Use coordinate presets if available and address matches preset
+      const useStartCoords = settings.defaultStartAddress === route.startAddress && settings.defaultStartLat && settings.defaultStartLng
+      const useEndCoords = settings.defaultEndAddress === route.endAddress && settings.defaultEndLat && settings.defaultEndLng
+
+      // v5.24: Fix crash where window.google.maps.LatLng might be undefined
+      // We use object literals { lat, lng } which Google Maps API accepts interchangeably
+      const startCoord = (settings.defaultStartLat && settings.defaultStartLng)
+        ? { lat: Number(settings.defaultStartLat), lng: Number(settings.defaultStartLng) }
+        : null;
+
+      let originRes = (useStartCoords && startCoord)
+        ? { geometry: { location: startCoord }, formatted_address: route.startAddress }
+        : await geocodeWithSector(route.startAddress)
+
+      const waypointResList: Array<any | null> = new Array(route.orders.length).fill(null)
+      const baseRefPoint = originRes?.geometry?.location || null
+
+      // v5.26: Chunked concurrent geocoding for massive speedup
+      const CHUNK_SIZE = 5;
+      for (let i = 0; i < route.orders.length; i += CHUNK_SIZE) {
+        const chunk = route.orders.slice(i, i + CHUNK_SIZE);
+        const chunkPromises = chunk.map((order, idx) => {
+          // Pass the origin point as a consistent refPoint to all
+          return geocodeWithSector(order.address, baseRefPoint).then(res => {
+            waypointResList[i + idx] = res;
+          });
+        });
+        await Promise.all(chunkPromises);
+
+        // Optional tiny delay between chunks to remain entirely safe from OVER_QUERY_LIMIT
+        if (i + CHUNK_SIZE < route.orders.length) {
+          await new Promise(r => setTimeout(r, 100));
+        }
       }
+
+      let prevPoint = waypointResList.length > 0
+        ? (waypointResList[waypointResList.length - 1]?.geometry?.location || baseRefPoint)
+        : baseRefPoint;
+
+      const endCoord = (settings.defaultEndLat && settings.defaultEndLng)
+        ? { lat: Number(settings.defaultEndLat), lng: Number(settings.defaultEndLng) }
+        : null;
+
       let destinationRes = (route.endAddress === route.startAddress)
         ? originRes
-        : await geocodeWithSector(route.endAddress, prevPoint)
+        : (useEndCoords && endCoord
+          ? { geometry: { location: endCoord }, formatted_address: route.endAddress }
+          : await geocodeWithSector(route.endAddress, prevPoint))
 
       // ═══════════════════════════════════════════════════════════════
       // ДЕТЕКТОР ВЫБРОСОВ: если одна точка сильно отличается от остальных
@@ -1480,7 +1666,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       // Украинки нашлась в другом городе). Перегеокодируем выброс строго
       // внутри KML-зон.
       // ═══════════════════════════════════════════════════════════════
-      const OUTLIER_THRESHOLD_M = 50_000 // 50 км — явный выброс
+      const OUTLIER_THRESHOLD_M = 30_000 // 30 км — явный выброс
       const allResolved: Array<{ res: any; label: string; rawAddr: string }> = [
         { res: originRes, label: 'Стартовый адрес', rawAddr: route.startAddress },
         ...waypointResList.map((r, i) => ({ res: r, label: `Заказ #${route.orders[i].orderNumber}`, rawAddr: route.orders[i].address })),
@@ -1501,17 +1687,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
               const centroidWithout = computeCentroid(otherLocs)
               const dWithout = centroidWithout ? distBetween(item.res.geometry.location, centroidWithout) : d
               if (dWithout > OUTLIER_THRESHOLD_M) {
-                // Точка — выброс. Пробуем перегеокодировать строго внутри KML
-                // eslint-disable-next-line no-await-in-loop
-                const fix = await geocodeInsideOnly(item.rawAddr, centroidWithout)
-                if (fix) {
-                  toast(`⚠️ Адрес "${item.label}" скорректирован — первоначальный результат был слишком далеко от маршрута.`, { duration: 5000 })
-                  if (i === 0) originRes = fix
-                  else if (i === allResolved.length - 1) destinationRes = fix
-                  else waypointResList[i - 1] = fix
-                  // Обновляем локацию в массиве для следующих итераций
-                  resolvedLocs[i] = fix.geometry.location
-                }
+                // v5.11: Disabled auto-correction.
+                // We show a warning toast if suspicious, but NEVER overwrite the user's choice (manual or disambiguated).
+                toast(`⚠️ Внимание: точка "${item.label}" находится очень далеко (${formatDisplayDistance(dWithout)}). Проверьте правильность адреса.`, { duration: 6000 });
               }
             }
           }
@@ -1525,8 +1703,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         const postal = extractPostal(raw)
         const streetNumComp = comps.find((c: any) => c.types?.includes('street_number'))
         const postalComp = comps.find((c: any) => c.types?.includes('postal_code'))
-        const lat = res.geometry?.location?.lat ? res.geometry.location.lat() : undefined
-        const lng = res.geometry?.location?.lng ? res.geometry.location.lng() : undefined
+        const lat = typeof res.geometry?.location?.lat === 'function' ? res.geometry.location.lat() : res.geometry?.location?.lat
+        const lng = typeof res.geometry?.location?.lng === 'function' ? res.geometry.location.lng() : res.geometry?.location?.lng
 
         let zoneInfo = null
         if (lat !== undefined && lng !== undefined && settings.kmlData) {
@@ -1637,15 +1815,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         waypoints: route.orders.map((o, i) => buildMeta(waypointResList[i], o.address))
       }
 
-      // Формируем запрос: приоритет placeId, иначе formatted_address
-      const originLocation = originRes?.place_id
-        ? { placeId: originRes.place_id }
-        : (originRes?.formatted_address || cleanAddressForRoute(route.startAddress))
-      const destinationLocation = destinationRes?.place_id
-        ? { placeId: destinationRes.place_id }
-        : (destinationRes?.formatted_address || cleanAddressForRoute(route.endAddress))
+      // v5.11: Use exact LatLng for directions to ensure user choice in disambiguation modal is respected perfectly
+      const originLocation = originRes?.geometry?.location || (originRes?.place_id ? { placeId: originRes.place_id } : (originRes?.formatted_address || cleanAddressForRoute(route.startAddress)))
+      const destinationLocation = destinationRes?.geometry?.location || (destinationRes?.place_id ? { placeId: destinationRes.place_id } : (destinationRes?.formatted_address || cleanAddressForRoute(route.endAddress)))
       const waypointsLocations = waypointResList.map(r => ({
-        location: r?.place_id ? { placeId: r.place_id } : (r?.formatted_address || ''),
+        location: r?.geometry?.location || (r?.place_id ? { placeId: r.place_id } : (r?.formatted_address || '')),
         stopover: true
       }))
       const request = {
@@ -1668,26 +1842,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
       const result = await googleApiCache.getDirections(request)
       if (result) {
-        // Если заданы Хабы или Сектора — проверяем попадание всех точек
-        const city = cityCtx.city
-        if ((cachedHubPolygons.length > 0 || (city && settings.citySectors && settings.citySectors[city] && settings.citySectors[city].length >= 3)) && window.google?.maps?.geometry?.poly) {
-          try {
-            const legs = result.routes[0].legs
-            const points: any[] = []
-            if (legs.length > 0) {
-              points.push(legs[0].start_location)
-              legs.forEach((leg: any) => points.push(leg.end_location))
-            }
-            const outside = points.some((pt: any) => !checkInside(pt))
-            if (outside) {
-              toast.error('Точки маршрута находятся вне выбранного хаба или сектора города. Проверьте адреса.')
-              setIsCalculating(false)
-              return
-            }
-          } catch (e) {
-            // Если вдруг нет geometry, продолжаем без проверки
-          }
-        }
+        // v5.27: Removed redundant post-calculation `checkInside(legs.end_location)` check.
+        // Google Directions API snaps locations to the nearest road, which may fall slightly outside
+        // the strict polygon bounds, causing false "Outside Hub/Sector" errors for perfectly valid addresses.
+        // The true rooftop coordinates are already rigorously validated by `isInsideSector` during geocoding.
 
         // --- TRAFFIC ENHANCEMENT (NEW) ---
         let adjustedDuration = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
@@ -1825,69 +1983,27 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const handleMoveOrderToGroup = useCallback(async (orderId: string, targetGroup: TimeWindowGroup) => {
     console.log('[DND] Force Move logic triggered for order:', orderId, 'to group:', targetGroup.id);
 
-    // SOTA 4.0: Context-Aware Geocoding & Disambiguation
-    // Если заказ перемещается в группу, попробуем проверить его на "прыжки" в другие города
-    const settings = localStorageUtils.getAllSettings();
+    // v5.3: DND is instant — no async geocoding, no modals during drag.
+    // Only show a toast warning if coords available and the order is extremely far from the group.
     const currentOrders = excelData?.orders || [];
     const movedOrder = currentOrders.find((o: any) => String(o.id) === String(orderId) || String(o.orderNumber) === String(orderId));
 
-    if (movedOrder && settings.kmlData?.polygons) {
-      const zones: DeliveryZone[] = settings.kmlData.polygons.map((p: any) => ({
-        id: p.id || p.name,
-        name: p.name,
-        polygon: p.path || p.points, // SOTA 4.6: Robust mapping
-        hub: p.center
-      }));
-
-      // Если заказ перемещается к конкретному курьеру, мы можем считать его зоны "предпочтительными"
-      // Но для простоты сейчас проверяем все зоны KML
-      const cityCtx = getSelectedCity();
-      try {
-        const disambResult = await resolveAddressBias(movedOrder, zones, {
-          primaryCity: cityCtx.city,
-          contextCoords: targetGroup.orders.filter(o => o.coords).map(o => o.coords!)
+    if (movedOrder?.coords) {
+      const groupOrders = (targetGroup.orders || []).filter(o => o.coords);
+      if (groupOrders.length > 0) {
+        const nearest = groupOrders.reduce((best: any, o: any) => {
+          const d = calculateDistance(movedOrder.coords!, o.coords!);
+          return d < calculateDistance(movedOrder.coords!, best.coords!) ? o : best;
         });
-
-        if (disambResult.alternatives.length > 1 || (disambResult.alternatives.length === 1 && !disambResult.success)) {
-          // Если есть альтернативы, или единственный результат попал в техническую зону
-          setDisambiguationData({
-            order: movedOrder,
-            alternatives: disambResult.alternatives,
-            targetGroup
-          });
-          setShowDisambiguationModal(true);
-          return; // Прерываем выполнение, ждем выбора пользователя
-        }
-
-        if (disambResult.success) {
-          console.log('[SOTA 4.2] Order address disambiguated automatically based on context:', cityCtx.city);
-        }
-      } catch (e) {
-        console.error('[DND] Error during address bias resolution:', e);
-        // We continue anyway, as moving the order is more important than the bias check
-      }
-
-      // Проверка на аномальное расстояние (>10км от центра группы)
-      const groupOrders = targetGroup.orders || [];
-      if (movedOrder.coords && groupOrders.length > 0) {
-        let isTooFar = false;
-        for (const other of groupOrders) {
-          if (other.coords) {
-            const dist = calculateDistance(movedOrder.coords, other.coords);
-            if (dist > 10000) { // 10km
-              isTooFar = true;
-              break;
-            }
-          }
-        }
-
-        if (isTooFar) {
+        const dist = calculateDistance(movedOrder.coords, nearest.coords!);
+        const thresholdM = groupOrders.length === 1 ? 30000 : 15000; // 30km alone, 15km multi
+        if (dist > thresholdM) {
           toast(() => (
             <div className="flex flex-col gap-1">
-              <span className="font-bold text-red-500">⚠ Далекий адрес!</span>
-              <span className="text-xs">Заказ #{movedOrder.orderNumber} находится более чем в 10км от группы.</span>
+              <span className="font-bold text-amber-500">⚠ Далекий адрес!</span>
+              <span className="text-xs">#{movedOrder.orderNumber} — {Math.round(dist / 1000)} км от ближайшего заказа в группе.</span>
             </div>
-          ), { duration: 6000 });
+          ), { duration: 5000 });
         }
       }
     }
@@ -1922,8 +2038,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         const normalizedTargetId = targetIdStr.replace(/^order_/, '');
         const normalizedOId = oId.replace(/^order_/, '');
 
-        // Это перемещаемый заказ?
-        const isMovedOrder = (normalizedOId === normalizedTargetId) || (oNum === normalizedTargetId) || (oId === targetIdStr);
+        // SOTA 4.9: Support both internal ID and visual Order Number matching
+        const isMovedOrder = (oId === targetIdStr) || (oNum === targetIdStr) || (normalizedOId === normalizedTargetId) || (oNum === normalizedTargetId);
 
         if (isMovedOrder) {
           console.log('[DND] Matched Order:', oId, 'Moving to:', targetManualId);
@@ -1993,7 +2109,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         return route;
       });
 
-      // Сохраняем изменения (saveManualOverrides вызывается реактивно или требует явного вызова, 
+      // Сохраняем изменения (saveManualOverrides вызывается реактивно или требует явного вызова,
       // но обновление manualGroupId в данных уже достаточно для следующего рендера)
       const nextState = {
         ...prev,
@@ -2024,7 +2140,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         const normalizedTargetId = targetIdStr.replace(/^order_/, '');
         const normalizedOId = oId.replace(/^order_/, '');
 
-        const isTargetMove = (normalizedOId === normalizedTargetId) || (oNum === normalizedTargetId) || (oId === targetIdStr);
+        // SOTA 4.9: Support both internal ID and visual Order Number matching
+        const isTargetMove = (oId === targetIdStr) || (oNum === targetIdStr) || (normalizedOId === normalizedTargetId) || (oNum === normalizedTargetId);
 
         if (isTargetMove) {
           // Определяем текущего курьера (если есть selectedCourier - используем его, иначе оставляем как есть)
@@ -2185,19 +2302,30 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     }
 
     try {
-      // Предпочитаем placeId/форматированные адреса из geoMeta, чтобы совпадать с расчетом/сектором
       const base = 'https://www.google.com/maps/dir/?api=1'
       const meta: any = (route as any).geoMeta || {}
       const hasFullCoords = (m: any) => typeof m?.lat === 'number' && typeof m?.lng === 'number'
       const waypointsMeta: any[] = (meta.waypoints && Array.isArray(meta.waypoints)) ? meta.waypoints : []
       const missingCoords = !hasFullCoords(meta.origin) || !hasFullCoords(meta.destination) || waypointsMeta.some((w: any) => !hasFullCoords(w)) || waypointsMeta.length !== route.orders.length
-      if (missingCoords) {
-        toast.error('Чтобы открыть маршрут в Google Maps без искажений, сначала пересчитайте маршрут.')
-        return
+
+      let originStr: string
+      let destinationStr: string
+      let wpList: string[]
+
+      if (!missingCoords) {
+        // Prefer precise coords from last route calculation
+        originStr = `${meta.origin.lat},${meta.origin.lng}`
+        destinationStr = `${meta.destination.lat},${meta.destination.lng}`
+        wpList = waypointsMeta.map((w: any) => `${w.lat},${w.lng}`)
+      } else {
+        // v5.9: Fallback to address strings — always open, even without recalc
+        originStr = meta.origin?.formattedAddress || route.startAddress || ''
+        destinationStr = meta.destination?.formattedAddress || route.endAddress || ''
+        wpList = route.orders.map((o: any, i: number) =>
+          waypointsMeta[i]?.formattedAddress || o.address || ''
+        )
       }
-      const originStr = `${meta.origin.lat},${meta.origin.lng}`
-      const destinationStr = `${meta.destination.lat},${meta.destination.lng}`
-      const wpList = waypointsMeta.map((w: any) => `${w.lat},${w.lng}`)
+
       const origin = `origin=${encodeURIComponent(originStr)}`
       const destination = `destination=${encodeURIComponent(destinationStr)}`
       const waypoints = wpList.length > 0 ? `waypoints=${encodeURIComponent(wpList.join('|'))}` : ''
@@ -2264,102 +2392,38 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
 
 
-  // SOTA 4.2 Disambiguation Portal — placed here (not inline in JSX) to avoid Babel parse error
-  const disambiguationPortal = (showDisambiguationModal && disambiguationData)
-    ? createPortal(
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md transition-all duration-300 animate-in fade-in">
-        <div className={clsx(
-          "w-full max-w-xl rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 duration-300",
-          isDark ? "bg-gray-900 border-white/10" : "bg-white border-gray-200"
-        )}>
-          <div className={clsx("px-6 py-4 flex items-center gap-3 border-b", isDark ? "bg-gray-800/50 border-white/5" : "bg-gray-50 border-gray-100")}>
-            <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center">
-              <QuestionMarkCircleIcon className="w-6 h-6 text-blue-500" />
+  return (
+    <div className="space-y-6 relative">
+      {/* v5.22: Universal Loading Overlay */}
+      {isCalculating && (
+        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm transition-all duration-300">
+          <div className={clsx(
+            "p-10 rounded-[3rem] shadow-2xl flex flex-col items-center gap-6 animate-in zoom-in-90 duration-300",
+            isDark ? "bg-gray-900 border border-white/10" : "bg-white border border-gray-100"
+          )}>
+            <div className="relative">
+              <div className="w-20 h-20 rounded-3xl bg-blue-500/10 flex items-center justify-center">
+                <ArrowPathIcon className="w-10 h-10 text-blue-500 animate-spin" />
+              </div>
+              <div className="absolute -bottom-2 -right-2 w-8 h-8 rounded-xl bg-purple-500 flex items-center justify-center shadow-lg">
+                <MapIcon className="w-4 h-4 text-white" />
+              </div>
             </div>
-            <div className="flex-1">
-              <h3 className={clsx("text-lg font-black uppercase tracking-tight", isDark ? "text-white" : "text-gray-900")}>Уточнение адреса</h3>
-              <p className={clsx("text-xs font-bold opacity-60", isDark ? "text-gray-400" : "text-gray-500")}>
-                Найдено несколько совпадений для заказа #{disambiguationData.order.orderNumber}
+            <div className="text-center">
+              <h3 className={clsx("text-2xl font-black mb-1", isDark ? "text-white" : "text-gray-900")}>Расчет...</h3>
+              <p className={clsx("text-xs font-bold opacity-60 uppercase tracking-widest", isDark ? "text-blue-400" : "text-blue-600")}>
+                Оптимизация маршрута
               </p>
             </div>
-            <button onClick={() => setShowDisambiguationModal(false)} className={clsx("p-2 rounded-xl transition-colors", isDark ? "hover:bg-white/10 text-gray-400" : "hover:bg-gray-100 text-gray-500")}>
-              <TrashIcon className="w-5 h-5" />
-            </button>
-          </div>
-          <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
-            <div className={clsx("p-4 rounded-xl space-y-2 border-l-4 border-blue-500", isDark ? "bg-white/5" : "bg-blue-50/50")}>
-              <label className={clsx("text-[10px] font-black uppercase tracking-widest block", isDark ? "text-blue-400" : "text-blue-600")}>Оригинальный адрес</label>
-              <p className={clsx("text-sm font-bold", isDark ? "text-gray-300" : "text-gray-800")}>{disambiguationData.order.address}</p>
+            <div className="flex gap-2">
+              {[0, 1, 2].map(i => (
+                <div key={i} className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+              ))}
             </div>
-            <div className="space-y-3">
-              <label className={clsx("text-[10px] font-black uppercase tracking-widest block px-1", isDark ? "text-gray-400" : "text-gray-500")}>Выберите правильный вариант:</label>
-              {disambiguationData.alternatives.map((alt: any, idx: number) => {
-                const isTechnical = alt.zone?.name.toLowerCase().includes('авторозвантаження') || alt.zone?.name.toLowerCase().includes('разгрузка');
-                return (
-                  <button
-                    key={idx}
-                    onClick={async () => {
-                      applyCorrection(disambiguationData.order, alt);
-                      updateExcelData((prev: any) => {
-                        if (!prev) return prev;
-                        const updatedOrders = (prev.orders || []).map((o: any) => {
-                          const oId = String(o.id || o.orderNumber);
-                          const dId = String(disambiguationData.order.id || disambiguationData.order.orderNumber);
-                          if (oId === dId) {
-                            return { ...o, address: alt.address, coords: alt.coords, manualGroupId: disambiguationData.targetGroup.id, courier: disambiguationData.targetGroup.courierName, plannedTime: disambiguationData.targetGroup.windowLabel, correctedBy: 'manual_disambiguation' };
-                          }
-                          return o;
-                        });
-                        return { ...prev, orders: updatedOrders };
-                      });
-                      setShowDisambiguationModal(false);
-                      toast.success('✅ Адрес уточнен и заказ перемещен');
-                    }}
-                    className={clsx("w-full text-left p-4 rounded-xl border-2 transition-all group relative",
-                      isDark ? "bg-gray-800/50 border-white/5 hover:border-blue-500/50 hover:bg-blue-500/5" : "bg-white border-gray-100 hover:border-blue-400 hover:bg-blue-50/30")}
-                  >
-                    <div className="flex items-start gap-4">
-                      <div className={clsx("w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-sm",
-                        isTechnical ? (isDark ? "bg-amber-500/20 text-amber-500" : "bg-amber-100 text-amber-600") : (isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-100 text-blue-600"))}>
-                        {isTechnical ? <ExclamationTriangleIcon className="w-5 h-5" /> : <MapPinIcon className="w-5 h-5" />}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className={clsx("text-sm font-black mb-1 break-words", isDark ? "text-white" : "text-gray-900")}>{alt.address}</div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={clsx("text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter",
-                            isTechnical ? (isDark ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" : "bg-amber-50 text-amber-600 border border-amber-200") : (isDark ? "bg-blue-500/20 text-blue-400 border border-blue-500/30" : "bg-blue-50 text-blue-600 border border-blue-200"))}>
-                            {alt.zone?.name || 'Вне зоны'}
-                          </span>
-                          <span className={clsx("text-[10px] font-bold opacity-60", isDark ? "text-gray-400" : "text-gray-500")}>{alt.reason}</span>
-                        </div>
-                      </div>
-                      <div className={clsx("opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-8 h-8 rounded-full shadow-md", isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-500 text-white")}>
-                        <PlusIcon className="w-4 h-4" />
-                      </div>
-                    </div>
-                    {isTechnical && (
-                      <div className={clsx("absolute -top-2 -right-2 px-2 py-0.5 rounded-md text-[8px] font-black uppercase text-white shadow-lg", "bg-gradient-to-r from-amber-500 to-orange-600 animate-pulse z-10")}>
-                        ТЕХНИЧЕСКАЯ ЗОНА
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <div className={clsx("px-6 py-4 border-t flex justify-end gap-3", isDark ? "bg-gray-800/30 border-white/5" : "bg-gray-50/50 border-gray-100")}>
-            <button onClick={() => setShowDisambiguationModal(false)} className={clsx("px-4 py-2 text-xs font-black uppercase tracking-widest rounded-xl transition-all", isDark ? "text-gray-400 hover:text-white hover:bg-white/10" : "text-gray-500 hover:text-gray-900 hover:bg-gray-100")}>
-              Закрыть
-            </button>
           </div>
         </div>
-      </div>,
-      document.body
-    )
-    : null
+      )}
 
-  return (
-    <div className="space-y-6">
       {/* Header */}
       <div className={clsx(
         'rounded-3xl p-8 shadow-2xl border-2 overflow-hidden relative',
@@ -2662,6 +2726,25 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                         <h4 className={clsx("text-sm font-black uppercase tracking-widest", isDark ? "text-gray-300" : "text-gray-700")}>
                           Сгруппировано по времени
                         </h4>
+                        <div className="ml-auto flex items-center gap-2">
+                          <span className={clsx("text-[10px] font-bold uppercase tracking-tighter", isDark ? "text-gray-500" : "text-gray-400")}>
+                            {confirmAddresses ? 'Уточнять адреса' : 'Автовыбор (Silent)'}
+                          </span>
+                          <button
+                            onClick={() => setConfirmAddresses(!confirmAddresses)}
+                            className={clsx(
+                              "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none",
+                              confirmAddresses ? (isDark ? "bg-blue-600" : "bg-blue-500") : (isDark ? "bg-gray-700" : "bg-gray-200")
+                            )}
+                          >
+                            <span
+                              className={clsx(
+                                "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                                confirmAddresses ? "translate-x-6" : "translate-x-1"
+                              )}
+                            />
+                          </button>
+                        </div>
                       </div>
 
                       <CourierTimeWindows
@@ -3269,65 +3352,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           )
         }
 
-        {
-          disambModal && (
-            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
-              <div className={clsx(
-                'w-full max-w-lg rounded-[2.5rem] p-10 shadow-2xl transform animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto',
-                isDark ? 'bg-gray-800 border border-gray-700' : 'bg-white'
-              )}>
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="p-3 bg-blue-100 dark:bg-blue-900/20 rounded-2xl">
-                    <MapPinIcon className="w-8 h-8 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div>
-                    <h3 className={clsx("text-2xl font-black tracking-tight", isDark ? "text-white" : "text-gray-900")}>
-                      Уточните адрес
-                    </h3>
-                    <p className={clsx("text-sm font-bold opacity-50 uppercase tracking-widest", isDark ? "text-gray-400" : "text-gray-500")}>
-                      Найдены неоднозначности
-                    </p>
-                  </div>
-                </div>
 
-                <p className={clsx("text-sm mb-6 leading-relaxed", isDark ? "text-gray-400" : "text-gray-600")}>
-                  {disambModal.title}
-                </p>
-
-                <div className="space-y-3 mb-8">
-                  {disambModal.options.map((option, idx) => (
-                    <button
-                      key={idx}
-                      className={clsx(
-                        "w-full text-left p-5 rounded-3xl border-2 transition-all hover:scale-[1.02] shadow-sm hover:shadow-md",
-                        isDark
-                          ? "bg-gray-700/50 border-gray-600 hover:border-blue-500/50 hover:bg-gray-700 text-gray-200"
-                          : "bg-gray-50 border-gray-100 hover:bg-blue-50 hover:border-blue-300 text-gray-800 shadow-blue-500/5"
-                      )}
-                      onClick={() => handleDisambiguationResolve(option.res)}
-                    >
-                      <div className="font-black text-lg mb-1">{option.label}</div>
-                      {option.distanceMeters !== undefined && (
-                        <div className={clsx("text-xs font-bold opacity-60 uppercase", isDark ? "text-blue-400" : "text-blue-600")}>
-                          Дистанция: {Math.round(option.distanceMeters)} м
-                        </div>
-                      )}
-                    </button>
-                  ))}
-                  <button
-                    className={clsx(
-                      "w-full text-center p-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all mt-4",
-                      isDark ? "text-gray-500 hover:text-white" : "text-gray-400 hover:text-gray-900"
-                    )}
-                    onClick={() => handleDisambiguationResolve(null)}
-                  >
-                    Пропустить / Не использовать
-                  </button>
-                </div>
-              </div>
-            </div>
-          )
-        }
 
         {
           showHelpModal && (
@@ -3347,6 +3372,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             </Suspense>
           )
         }
+
 
         {
           showHelpTour && (
@@ -3416,68 +3442,186 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           )
         }
 
-      </>
 
-      <ReturningCouriersModal
-        show={showReturningModal}
-        onClose={() => setShowReturningModal(false)}
-        isDark={isDark}
-        data={returningCouriersData}
-        isGeocoding={isGeocodingETA}
-        onSelectCourier={(name) => {
-          setSelectedCourier(name);
-          setShowReturningModal(false);
-        }}
-      />
-
-      <TransitCouriersModal
-        show={showTransitModal}
-        onClose={() => setShowTransitModal(false)}
-        isDark={isDark}
-        data={transitCouriersData}
-        onSelectCourier={(name) => {
-          setSelectedCourier(name);
-          setShowTransitModal(false);
-        }}
-      />
-
-      {/* Smart Address Correction Modals */}
-      {showCorrectionModal && currentProblem && (
-        <SmartAddressCorrectionModal
-          order={currentProblem.order}
-          validationResult={currentProblem.validationResult}
+        <ReturningCouriersModal
+          show={showReturningModal}
+          onClose={() => setShowReturningModal(false)}
           isDark={isDark}
-          onApplyCorrection={(suggestion) => applyCorrection(currentProblem.order, suggestion)}
-          onManualEdit={(newAddress) => {
-            applyManualEdit(currentProblem.order, newAddress)
+          data={returningCouriersData}
+          isGeocoding={isGeocodingETA}
+          onSelectCourier={(name) => {
+            setSelectedCourier(name);
+            setShowReturningModal(false);
           }}
-          onSkip={() => setShowCorrectionModal(false)}
-          onClose={() => setShowCorrectionModal(false)}
         />
-      )}
 
-      {showBatchPanel && problemOrders.length > 0 && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-2xl">
-            <BatchAddressCorrectionPanel
-              problemOrders={problemOrders}
+        <TransitCouriersModal
+          show={showTransitModal}
+          onClose={() => setShowTransitModal(false)}
+          isDark={isDark}
+          data={transitCouriersData}
+          onSelectCourier={(name) => {
+            setSelectedCourier(name);
+            setShowTransitModal(false);
+          }}
+        />
+
+        {/* Smart Address Correction Modals */}
+        {
+          showCorrectionModal && currentProblem && (
+            <SmartAddressCorrectionModal
+              order={currentProblem.order}
+              validationResult={currentProblem.validationResult}
               isDark={isDark}
-              onAutoCorrectAll={applyBatchCorrections}
-              onReviewManually={() => {
-                if (problemOrders.length > 0) {
-                  setCurrentProblem(problemOrders[0])
-                  setShowBatchPanel(false)
-                  setShowCorrectionModal(true)
-                }
+              onApplyCorrection={(suggestion) => applyCorrection(currentProblem.order, suggestion)}
+              onManualEdit={(newAddress) => {
+                applyManualEdit(currentProblem.order, newAddress)
               }}
-              onClose={() => setShowBatchPanel(false)}
+              onSkip={() => setShowCorrectionModal(false)}
+              onClose={() => setShowCorrectionModal(false)}
             />
-          </div>
-        </div>
-      )}
+          )
+        }
 
-      {/* SOTA 4.2: Disambiguation Modal */}
-      {disambiguationPortal}
+        {
+          showBatchPanel && problemOrders.length > 0 && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <div className="w-full max-w-2xl">
+                <BatchAddressCorrectionPanel
+                  problemOrders={problemOrders}
+                  isDark={isDark}
+                  onAutoCorrectAll={applyBatchCorrections}
+                  onReviewManually={() => {
+                    if (problemOrders.length > 0) {
+                      setCurrentProblem(problemOrders[0])
+                      setShowBatchPanel(false)
+                      setShowCorrectionModal(true)
+                    }
+                  }}
+                  onClose={() => setShowBatchPanel(false)}
+                />
+              </div>
+            </div>
+          )
+        }
+
+        {/* SOTA 5.0: Disambiguation Modal Implementation */}
+        {
+          disambModal && disambModal.open && (
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md transition-all duration-300 animate-in fade-in">
+              <div className={clsx(
+                "w-full max-w-xl rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 duration-300",
+                isDark ? "bg-gray-900 border-white/10" : "bg-white border-gray-200"
+              )}>
+                <div className={clsx("px-6 py-4 flex items-center gap-3 border-b", isDark ? "bg-gray-800/50 border-white/5" : "bg-gray-50 border-gray-100")}>
+                  <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center">
+                    <QuestionMarkCircleIcon className="w-6 h-6 text-blue-500" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className={clsx("text-lg font-black uppercase tracking-tight", isDark ? "text-white" : "text-gray-900")}>Уточнение адреса</h3>
+                    <p className={clsx("text-xs font-bold opacity-60", isDark ? "text-gray-400" : "text-gray-500")}>
+                      {disambModal.title}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handleDisambiguationResolve(null)}
+                    className={clsx("p-2 rounded-xl transition-colors", isDark ? "hover:bg-white/10 text-gray-400" : "hover:bg-gray-100 text-gray-500")}
+                  >
+                    <TrashIcon className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="p-6 space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                  {disambModal.options.map((option, idx) => {
+                    const isTechnical = option.res?.zone?.name?.toLowerCase().includes('авторозвантаження') ||
+                      option.res?.zone?.name?.toLowerCase().includes('разгрузка') ||
+                      checkTechnicalKmlZone(option.res?.geometry?.location);
+
+                    return (
+                      <div key={idx} className="group relative">
+                        <button
+                          onClick={() => handleDisambiguationResolve(option.res)}
+                          className={clsx(
+                            "w-full p-4 rounded-xl border text-left transition-all relative overflow-hidden",
+                            isDark
+                              ? "bg-white/5 border-white/10 hover:border-blue-500/50 hover:bg-white/10"
+                              : "bg-gray-50 border-gray-100 hover:border-blue-400 hover:bg-white hover:shadow-lg"
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={clsx("text-sm font-bold", isDark ? "text-gray-200" : "text-gray-800")}>
+                                  {option.label}
+                                </span>
+                                {isTechnical && (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 font-black uppercase">ТЕХНИЧЕСКИЙ</span>
+                                )}
+                                {option.zoneName && (
+                                  <span className={clsx(
+                                    "text-[9px] px-1.5 py-0.5 rounded font-black uppercase",
+                                    isTechnical
+                                      ? "bg-amber-500/5 text-amber-600/70"
+                                      : "bg-blue-500/10 text-blue-500"
+                                  )}>
+                                    {option.zoneName}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-4 text-[10px] font-bold opacity-50">
+                                {option.distanceMeters !== undefined && (
+                                  <span>Дистанция: {formatDisplayDistance(option.distanceMeters)}</span>
+                                )}
+                                {option.res?.geometry?.location_type && (
+                                  <span>Тип: {translateLocationType(option.res.geometry.location_type)}</span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              {option.res?.geometry?.location && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const lat = typeof option.res.geometry.location.lat === 'function' ? option.res.geometry.location.lat() : option.res.geometry.location.lat;
+                                    const lng = typeof option.res.geometry.location.lng === 'function' ? option.res.geometry.location.lng() : option.res.geometry.location.lng;
+                                    window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank');
+                                  }}
+                                  className={clsx(
+                                    "flex items-center justify-center p-2 rounded-xl transition-all",
+                                    isDark
+                                      ? "bg-white/5 hover:bg-white/15 text-blue-400 border border-white/10"
+                                      : "bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-100"
+                                  )}
+                                  title="Посмотреть на карте"
+                                >
+                                  <MapIcon className="w-4 h-4" />
+                                </button>
+                              )}
+                              <ChevronRightIcon className="w-5 h-5 text-blue-500 transition-transform group-hover:translate-x-1" />
+                            </div>
+                          </div>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className={clsx("px-6 py-4 border-t flex justify-end", isDark ? "bg-gray-800/30 border-white/5" : "bg-gray-50/50 border-gray-100")}>
+                  <button
+                    onClick={() => handleDisambiguationResolve(null)}
+                    className={clsx(
+                      "px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all",
+                      isDark ? "text-gray-400 hover:text-white hover:bg-white/10" : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
+                    )}
+                  >
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+      </>
     </div>
-  )
-}
+  );
+};

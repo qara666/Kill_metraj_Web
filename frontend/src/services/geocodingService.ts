@@ -36,7 +36,7 @@ export class GeocodingService {
    * Инициализация геокодера
    */
   static initialize(): void {
-    if (typeof window !== 'undefined' && window.google && window.google.maps) {
+    if (typeof window !== 'undefined' && window.google && window.google.maps && window.google.maps.Geocoder) {
       this.geocoder = new window.google.maps.Geocoder()
     }
   }

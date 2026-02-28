@@ -37,10 +37,11 @@ class GoogleApiCache {
    */
   initialize(): void {
     if (typeof window !== 'undefined' && window.google && window.google.maps) {
-      if (!this.geocoderInstance) {
+      // SOTA 4.8: Explicit check for constructors to avoid "is not a constructor" race condition
+      if (!this.geocoderInstance && window.google.maps.Geocoder) {
         this.geocoderInstance = new window.google.maps.Geocoder()
       }
-      if (!this.directionsServiceInstance) {
+      if (!this.directionsServiceInstance && window.google.maps.DirectionsService) {
         this.directionsServiceInstance = new window.google.maps.DirectionsService()
       }
     }
@@ -51,27 +52,27 @@ class GoogleApiCache {
    */
   private makeGeocodeKey(request: GeocodeRequest): string {
     const parts: string[] = []
-    
+
     if (request.address) {
       parts.push(`addr:${request.address.trim().toLowerCase()}`)
     }
-    
+
     if (request.location) {
-      const lat = (typeof request.location.lat === 'function' 
-        ? (request.location.lat as () => number)() 
+      const lat = (typeof request.location.lat === 'function'
+        ? (request.location.lat as () => number)()
         : request.location.lat) as number | undefined
-      const lng = (typeof request.location.lng === 'function' 
-        ? (request.location.lng as () => number)() 
+      const lng = (typeof request.location.lng === 'function'
+        ? (request.location.lng as () => number)()
         : request.location.lng) as number | undefined
       if (lat !== undefined && lng !== undefined) {
         parts.push(`loc:${lat.toFixed(5)},${lng.toFixed(5)}`)
       }
     }
-    
+
     if (request.region) parts.push(`reg:${request.region}`)
     if (request.bounds) parts.push(`bounds:${JSON.stringify(request.bounds.toJSON?.() || request.bounds)}`)
     if (request.componentRestrictions) parts.push(`comp:${JSON.stringify(request.componentRestrictions)}`)
-    
+
     return parts.join('|')
   }
 
@@ -91,21 +92,21 @@ class GoogleApiCache {
       region: request.region,
       provideRouteAlternatives: request.provideRouteAlternatives
     }
-    
+
     if (request.waypoints && request.waypoints.length > 0) {
       normalized.waypoints = request.waypoints.map(w => ({
         location: this.normalizeLocation(w.location || w),
         stopover: w.stopover !== undefined ? w.stopover : true
       }))
     }
-    
+
     if (request.drivingOptions) {
       normalized.drivingOptions = {
         trafficModel: request.drivingOptions.trafficModel
         // departureTime не включаем в ключ, т.к. он меняется, но результат может быть одинаковым
       }
     }
-    
+
     return JSON.stringify(normalized)
   }
 
@@ -114,7 +115,7 @@ class GoogleApiCache {
    */
   private normalizeLocation(loc: any): any {
     if (!loc) return null
-    
+
     if (loc.placeId) return { placeId: loc.placeId }
     if (typeof loc === 'string') return loc.trim().toLowerCase()
     if (loc.lat && loc.lng) {
@@ -124,42 +125,52 @@ class GoogleApiCache {
         return { lat: lat.toFixed(5), lng: lng.toFixed(5) }
       }
     }
-    
+
     return loc
   }
 
+  private inFlightGeocode = new Map<string, Promise<any[]>>()
+
   /**
-   * Геокодирование адреса с кешированием
+   * Геокодирование адреса с кешированием и дедупликацией одновременных запросов
    */
   async geocode(request: GeocodeRequest): Promise<any[]> {
     this.initialize()
-    
+
     if (!this.geocoderInstance) {
       console.warn('Geocoder not initialized')
       return []
     }
-    
+
     const cacheKey = this.makeGeocodeKey(request)
-    
+
     if (this.geocodeCache.has(cacheKey)) {
       return this.geocodeCache.get(cacheKey) || []
     }
-    
-    return new Promise((resolve) => {
+
+    if (this.inFlightGeocode.has(cacheKey)) {
+      return this.inFlightGeocode.get(cacheKey)!
+    }
+
+    const promise = new Promise<any[]>((resolve) => {
       const apiRequest: any = {}
-      
+
       if (request.address) apiRequest.address = request.address
       if (request.location) apiRequest.location = request.location
       if (request.region) apiRequest.region = request.region
       if (request.bounds) apiRequest.bounds = request.bounds
       if (request.componentRestrictions) apiRequest.componentRestrictions = request.componentRestrictions
-      
+
       this.geocoderInstance.geocode(apiRequest, (results: any, status: any) => {
         const res = status === 'OK' ? (results || []) : []
         this.geocodeCache.set(cacheKey, res)
+        this.inFlightGeocode.delete(cacheKey)
         resolve(res)
       })
     })
+
+    this.inFlightGeocode.set(cacheKey, promise)
+    return promise
   }
 
   /**
@@ -167,18 +178,18 @@ class GoogleApiCache {
    */
   async getDirections(request: DirectionsRequest): Promise<any | null> {
     this.initialize()
-    
+
     if (!this.directionsServiceInstance) {
       console.warn('DirectionsService not initialized')
       return null
     }
-    
+
     const cacheKey = this.makeDirectionsKey(request)
-    
+
     if (this.directionsCache.has(cacheKey)) {
       return this.directionsCache.get(cacheKey) || null
     }
-    
+
     return new Promise((resolve) => {
       this.directionsServiceInstance.route(request, (result: any, status: any) => {
         if (status === window.google.maps.DirectionsStatus.OK && result) {
@@ -234,7 +245,7 @@ class GoogleApiCache {
       this.geocodeCache.clear()
       toKeep.forEach(([key, value]) => this.geocodeCache.set(key, value))
     }
-    
+
     if (this.directionsCache.size > maxDirections) {
       const entries = Array.from(this.directionsCache.entries())
       const toKeep = entries.slice(-maxDirections)
