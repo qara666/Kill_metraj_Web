@@ -132,7 +132,7 @@ class GoogleApiCache {
   private inFlightGeocode = new Map<string, Promise<any[]>>()
   private queue: Array<() => void> = []
   private activeCalls = 0
-  private readonly MAX_CONCURRENT_API_CALLS = 15
+  private readonly MAX_CONCURRENT_API_CALLS = 8
 
   /**
    * Управление очередью запросов для максимизации пропускной способности
@@ -163,6 +163,42 @@ class GoogleApiCache {
   }
 
   /**
+   * Выполнение действия с повторами при OVER_QUERY_LIMIT
+   */
+  private async executeWithRetry<T>(action: (resolve: (val: T) => void, reject: (err: any) => void) => void, name: string): Promise<T> {
+    let attempts = 0;
+    const maxAttempts = 5;
+
+    while (attempts < maxAttempts) {
+      try {
+        await this.acquireSlot();
+        return await new Promise<T>((resolve, reject) => {
+          action(
+            (val) => {
+              this.releaseSlot();
+              resolve(val);
+            },
+            (err) => {
+              this.releaseSlot();
+              reject(err);
+            }
+          );
+        });
+      } catch (error: any) {
+        if (error === 'OVER_QUERY_LIMIT' || error?.status === 'OVER_QUERY_LIMIT') {
+          attempts++;
+          const delay = Math.pow(2, attempts) * 500 + Math.random() * 100;
+          console.warn(`[GoogleApiCache] ${name} rate limit hit, retry ${attempts}/${maxAttempts} after ${Math.round(delay)}ms`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new Error(`${name} failed after ${maxAttempts} retries due to rate limits`);
+  }
+
+  /**
    * Геокодирование адреса с кешированием и глобальной очередью
    */
   async geocode(request: GeocodeRequest): Promise<any[]> {
@@ -184,9 +220,8 @@ class GoogleApiCache {
     }
 
     const promise = (async () => {
-      await this.acquireSlot()
       try {
-        return await new Promise<any[]>((resolve) => {
+        return await this.executeWithRetry<any[]>((resolve) => {
           const apiRequest: any = {}
           if (request.address) apiRequest.address = request.address
           if (request.location) apiRequest.location = request.location
@@ -195,13 +230,18 @@ class GoogleApiCache {
           if (request.componentRestrictions) apiRequest.componentRestrictions = request.componentRestrictions
 
           this.geocoderInstance.geocode(apiRequest, (results: any, status: any) => {
+            if (status === 'OVER_QUERY_LIMIT') {
+              this.activeCalls--; // Force early release because executeWithRetry will catch it via reject
+              return resolve(Promise.reject('OVER_QUERY_LIMIT') as any);
+            }
             const res = status === 'OK' ? (results || []) : []
             this.geocodeCache.set(cacheKey, res)
             resolve(res)
           })
-        })
+        }, `Geocode ${request.address || 'location'}`);
+      } catch (e) {
+        return [];
       } finally {
-        this.releaseSlot()
         this.inFlightGeocode.delete(cacheKey)
       }
     })()
@@ -227,10 +267,12 @@ class GoogleApiCache {
       return this.directionsCache.get(cacheKey) || null
     }
 
-    await this.acquireSlot()
     try {
-      return await new Promise((resolve) => {
+      return await this.executeWithRetry<any | null>((resolve) => {
         this.directionsServiceInstance.route(request, (result: any, status: any) => {
+          if (status === 'OVER_QUERY_LIMIT') {
+            return resolve(Promise.reject('OVER_QUERY_LIMIT') as any);
+          }
           if (status === window.google.maps.DirectionsStatus.OK && result) {
             this.directionsCache.set(cacheKey, result)
             resolve(result)
@@ -239,9 +281,9 @@ class GoogleApiCache {
             resolve(null)
           }
         })
-      })
-    } finally {
-      this.releaseSlot()
+      }, 'Directions');
+    } catch (e) {
+      return null;
     }
   }
 
