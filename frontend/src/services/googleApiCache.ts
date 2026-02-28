@@ -130,9 +130,40 @@ class GoogleApiCache {
   }
 
   private inFlightGeocode = new Map<string, Promise<any[]>>()
+  private queue: Array<() => void> = []
+  private activeCalls = 0
+  private readonly MAX_CONCURRENT_API_CALLS = 15
 
   /**
-   * Геокодирование адреса с кешированием и дедупликацией одновременных запросов
+   * Управление очередью запросов для максимизации пропускной способности
+   */
+  private async nextInQueue(): Promise<void> {
+    if (this.activeCalls < this.MAX_CONCURRENT_API_CALLS && this.queue.length > 0) {
+      const resolve = this.queue.shift()
+      if (resolve) {
+        this.activeCalls++
+        resolve()
+      }
+    }
+  }
+
+  private async acquireSlot(): Promise<void> {
+    if (this.activeCalls < this.MAX_CONCURRENT_API_CALLS) {
+      this.activeCalls++
+      return
+    }
+    return new Promise(resolve => {
+      this.queue.push(resolve)
+    })
+  }
+
+  private releaseSlot(): void {
+    this.activeCalls--
+    this.nextInQueue()
+  }
+
+  /**
+   * Геокодирование адреса с кешированием и глобальной очередью
    */
   async geocode(request: GeocodeRequest): Promise<any[]> {
     this.initialize()
@@ -152,29 +183,35 @@ class GoogleApiCache {
       return this.inFlightGeocode.get(cacheKey)!
     }
 
-    const promise = new Promise<any[]>((resolve) => {
-      const apiRequest: any = {}
+    const promise = (async () => {
+      await this.acquireSlot()
+      try {
+        return await new Promise<any[]>((resolve) => {
+          const apiRequest: any = {}
+          if (request.address) apiRequest.address = request.address
+          if (request.location) apiRequest.location = request.location
+          if (request.region) apiRequest.region = request.region
+          if (request.bounds) apiRequest.bounds = request.bounds
+          if (request.componentRestrictions) apiRequest.componentRestrictions = request.componentRestrictions
 
-      if (request.address) apiRequest.address = request.address
-      if (request.location) apiRequest.location = request.location
-      if (request.region) apiRequest.region = request.region
-      if (request.bounds) apiRequest.bounds = request.bounds
-      if (request.componentRestrictions) apiRequest.componentRestrictions = request.componentRestrictions
-
-      this.geocoderInstance.geocode(apiRequest, (results: any, status: any) => {
-        const res = status === 'OK' ? (results || []) : []
-        this.geocodeCache.set(cacheKey, res)
+          this.geocoderInstance.geocode(apiRequest, (results: any, status: any) => {
+            const res = status === 'OK' ? (results || []) : []
+            this.geocodeCache.set(cacheKey, res)
+            resolve(res)
+          })
+        })
+      } finally {
+        this.releaseSlot()
         this.inFlightGeocode.delete(cacheKey)
-        resolve(res)
-      })
-    })
+      }
+    })()
 
     this.inFlightGeocode.set(cacheKey, promise)
     return promise
   }
 
   /**
-   * Получение маршрута с кешированием
+   * Получение маршрута с кешированием и глобальной очередью
    */
   async getDirections(request: DirectionsRequest): Promise<any | null> {
     this.initialize()
@@ -190,17 +227,22 @@ class GoogleApiCache {
       return this.directionsCache.get(cacheKey) || null
     }
 
-    return new Promise((resolve) => {
-      this.directionsServiceInstance.route(request, (result: any, status: any) => {
-        if (status === window.google.maps.DirectionsStatus.OK && result) {
-          this.directionsCache.set(cacheKey, result)
-          resolve(result)
-        } else {
-          console.error('Directions API error:', status)
-          resolve(null)
-        }
+    await this.acquireSlot()
+    try {
+      return await new Promise((resolve) => {
+        this.directionsServiceInstance.route(request, (result: any, status: any) => {
+          if (status === window.google.maps.DirectionsStatus.OK && result) {
+            this.directionsCache.set(cacheKey, result)
+            resolve(result)
+          } else {
+            console.error('Directions API error:', status)
+            resolve(null)
+          }
+        })
       })
-    })
+    } finally {
+      this.releaseSlot()
+    }
   }
 
   /**
