@@ -1,6 +1,8 @@
 export const cleanAddress = (address: string) => {
     if (!address) return address;
     return address
+        // v5.28: Remove parentheses and content within them (e.g. "(Перемоги)")
+        .replace(/\(.*\)/g, ' ')
         // Handle suffixes with or without leading comma
         .replace(/(?:,|\s)\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис|вход|дом|корп|секция|литера).*$/i, '')
         // Second pass for nested or misformatted suffixes
@@ -12,6 +14,10 @@ export const cleanAddress = (address: string) => {
 
 export const STREET_RENAMES: Array<[RegExp, string]> = [
     // 2022-2024 Deryussification & Historical
+    [/\bБерестейський проспект\b/iu, 'проспект Перемоги'],
+    [/\bБерестейский проспект\b/iu, 'проспект Победы'],
+    [/\bпроспект Перемоги\b/iu, 'Берестейський проспект'],
+    [/\bпроспект Победы\b/iu, 'Берестейский проспект'],
     [/\bСім'ї Хохлових\b/iu, 'Гарета Джонса'],
     [/\bСемьи Хохловых\b/iu, 'Гарета Джонса'],
     [/\bМосковський проспект\b/iu, 'проспект Степана Бандери'],

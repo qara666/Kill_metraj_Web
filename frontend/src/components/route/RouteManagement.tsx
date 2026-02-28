@@ -1464,9 +1464,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         const isHighConfidenceInZone = (finalHouseMatched || finalStreetMatched) &&
           isInSelectedZone && !finalInTechZone && finalIsAcceptableType;
 
+        // v5.28: More aggressive silent fallback for street centroids in active zones
         const autoReady = (!confirmAddresses && !finalInTechZone) || isHighConfidenceInZone ||
           (activePool.length === 1 && !finalInTechZone && !finalTooFar) ||
-          (isSafeQualityWinner && isInSelectedZone && !finalTooFar && activePool.length < 3);
+          (isSafeQualityWinner && isInSelectedZone && !finalTooFar && activePool.length < 3) ||
+          (finalStreetMatched && isInSelectedZone && !finalInTechZone && finalBest.geometry.location_type === 'GEOMETRIC_CENTER');
 
         if (autoReady) return finalBest;
 
@@ -1628,8 +1630,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       const waypointResList: Array<any | null> = new Array(route.orders.length).fill(null)
       const baseRefPoint = originRes?.geometry?.location || null
 
-      // v5.26: Chunked concurrent geocoding for massive speedup
-      const CHUNK_SIZE = 5;
+      // v5.28: Increased chunk size from 5 to 10 for massive speedup
+      const CHUNK_SIZE = 10;
       for (let i = 0; i < route.orders.length; i += CHUNK_SIZE) {
         const chunk = route.orders.slice(i, i + CHUNK_SIZE);
         const chunkPromises = chunk.map((order, idx) => {
@@ -1642,7 +1644,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
         // Optional tiny delay between chunks to remain entirely safe from OVER_QUERY_LIMIT
         if (i + CHUNK_SIZE < route.orders.length) {
-          await new Promise(r => setTimeout(r, 100));
+          await new Promise(r => setTimeout(r, 50));
         }
       }
 
@@ -2767,9 +2769,18 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                             String(selectedCourier || ''),
                             isId0CourierName(selectedCourier) ? 'Не назначено' : (String(selectedCourier) || '')
                           );
-                          // Calculate a route sequentially for each time window block
-                          for (const group of groups) {
-                            await createRoute(group.orders);
+
+                          // v5.28: TURBO Parallel Mass Routing
+                          setIsCalculating(true);
+                          try {
+                            const routePromises = groups.map(async (group, idx) => {
+                              // Tiny stagger to keep Google happy
+                              await new Promise(r => setTimeout(r, idx * 50));
+                              return createRoute(group.orders);
+                            });
+                            await Promise.all(routePromises);
+                          } finally {
+                            setIsCalculating(false);
                           }
                         }}
                       />
