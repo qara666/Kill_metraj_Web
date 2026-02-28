@@ -1642,7 +1642,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
       // v5.29: Global Queue in cache handles concurrency perfectly.
       // We can now fire hundreds of requests at once without UI hangs or blocking.
-      const waypointPromises = route.orders.map((order) => {
+      // v5.30: Added tiny stagger to avoid immediate API "wall"
+      const waypointPromises = route.orders.map(async (order, idx) => {
+        if (idx > 0) await new Promise(r => setTimeout(r, idx * 10)); // 10ms stagger
         return geocodeWithSector(order.address, baseRefPoint);
       });
       const results = await Promise.all(waypointPromises);
