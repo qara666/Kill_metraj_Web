@@ -146,7 +146,7 @@ class DashboardFetcher {
         const now = Date.now();
         if (this.circuitBreaker.state === 'OPEN') {
             if (now >= this.circuitBreaker.nextAttempt) {
-                logger.info('[Circuit Breaker] Transitioning to HALF_OPEN');
+                logger.info('[Circuit Breaker] Переход в состояние HALF_OPEN');
                 this.circuitBreaker.state = 'HALF_OPEN';
                 this.circuitBreaker.successCount = 0;
                 return true;
@@ -160,7 +160,7 @@ class DashboardFetcher {
         if (this.circuitBreaker.state === 'HALF_OPEN') {
             this.circuitBreaker.successCount++;
             if (this.circuitBreaker.successCount >= this.circuitBreaker.successThreshold) {
-                logger.info('[Circuit Breaker] Transitioning to CLOSED');
+                logger.info('[Circuit Breaker] Переход в состояние CLOSED');
                 this.circuitBreaker.state = 'CLOSED';
                 this.circuitBreaker.failureCount = 0;
             }
@@ -172,12 +172,12 @@ class DashboardFetcher {
     recordFailure() {
         this.circuitBreaker.failureCount++;
         if (this.circuitBreaker.state === 'HALF_OPEN') {
-            logger.warn('[Circuit Breaker] Failure in HALF_OPEN - Transitioning to OPEN');
+            logger.warn('[Circuit Breaker] Ошибка в состоянии HALF_OPEN — переход в OPEN');
             this.circuitBreaker.state = 'OPEN';
             this.circuitBreaker.nextAttempt = Date.now() + this.circuitBreaker.timeout;
             this.metrics.circuitBreakerTrips++;
         } else if (this.circuitBreaker.failureCount >= this.circuitBreaker.failureThreshold) {
-            logger.warn('[Circuit Breaker] Threshold reached - Transitioning to OPEN');
+            logger.warn('[Circuit Breaker] Порог ошибок достигнут — переход в OPEN');
             this.circuitBreaker.state = 'OPEN';
             this.circuitBreaker.nextAttempt = Date.now() + this.circuitBreaker.timeout;
             this.metrics.circuitBreakerTrips++;
@@ -206,7 +206,7 @@ class DashboardFetcher {
             return true;
         }
         this.metrics.rateLimitHits++;
-        logger.warn('[Rate Limiter] No tokens — waiting');
+        logger.warn('[Rate Limiter] Нет доступных токенов — ожидание');
         await new Promise(resolve => setTimeout(resolve, 1000 / this.rateLimiter.refillRate));
         return this.consumeToken();
     }
@@ -220,10 +220,10 @@ class DashboardFetcher {
 
         if (avgLatency < this.adaptiveConcurrency.targetLatency && current < this.adaptiveConcurrency.max) {
             this.adaptiveConcurrency.current = Math.min(current + 1, this.adaptiveConcurrency.max);
-            logger.info(`[Adaptive Concurrency] Increased to ${this.adaptiveConcurrency.current}`);
+            logger.info(`[Adaptive Concurrency] Увеличено до ${this.adaptiveConcurrency.current}`);
         } else if (avgLatency > this.adaptiveConcurrency.targetLatency * 1.5 && current > this.adaptiveConcurrency.min) {
             this.adaptiveConcurrency.current = Math.max(current - 1, this.adaptiveConcurrency.min);
-            logger.info(`[Adaptive Concurrency] Decreased to ${this.adaptiveConcurrency.current}`);
+            logger.info(`[Adaptive Concurrency] Уменьшено до ${this.adaptiveConcurrency.current}`);
         }
     }
 
@@ -232,7 +232,7 @@ class DashboardFetcher {
     async deduplicateRequest(key, requestFn) {
         if (this.pendingRequests.has(key)) {
             this.metrics.deduplicatedRequests++;
-            logger.debug(`[Dedup] Reusing pending request: ${key}`);
+            logger.debug(`[Dedup] Использование существующего запроса: ${key}`);
             return this.pendingRequests.get(key);
         }
         const promise = requestFn();
@@ -339,29 +339,29 @@ class DashboardFetcher {
         logger.info('Dashboard Fetcher V7 (2.0) — UPSERT • ETag • Transactions');
         logger.info('============================================================');
         logger.info(`API URL: ${this.apiUrl}`);
-        logger.info(`Fetch Interval: ${this.fetchInterval}ms (${Math.round(this.fetchInterval / 60000)} min)`);
-        logger.info(`Max Retries: ${this.maxRetries}`);
-        logger.info(`Concurrency: ${this.concurrencyLimit} (Adaptive: ${this.adaptiveConcurrency.min}-${this.adaptiveConcurrency.max})`);
-        logger.info(`Cache Retention: ${this.cacheRetentionDays} days`);
-        logger.info(`Lock Lease: ${this.lockLeaseMs}ms`);
-        logger.info(`Circuit Breaker: Threshold ${this.circuitBreaker.failureThreshold}`);
-        logger.info(`Rate Limiter: ${this.rateLimiter.maxTokens} tokens, ${this.rateLimiter.refillRate}/sec`);
+        logger.info(`Интервал загрузки: ${this.fetchInterval}мс (${Math.round(this.fetchInterval / 60000)} мин)`);
+        logger.info(`Макс. попыток: ${this.maxRetries}`);
+        logger.info(`Параллельность: ${this.concurrencyLimit} (Адаптивно: ${this.adaptiveConcurrency.min}-${this.adaptiveConcurrency.max})`);
+        logger.info(`Хранение кэша: ${this.cacheRetentionDays} дней`);
+        logger.info(`Срок блокировки: ${this.lockLeaseMs}мс`);
+        logger.info(`Circuit Breaker: Порог ${this.circuitBreaker.failureThreshold}`);
+        logger.info(`Rate Limiter: ${this.rateLimiter.maxTokens} токенов, ${this.rateLimiter.refillRate}/сек`);
         logger.info('============================================================');
 
         try {
             await this.pool.query('SELECT NOW()');
-            logger.info('Database connected');
+            logger.info('База данных подключена');
 
             // Lease-based advisory lock — automatically expires
             const lockResult = await this.pool.query('SELECT pg_try_advisory_lock(777777)');
             this.hasLock = lockResult.rows[0].pg_try_advisory_lock;
 
             if (!this.hasLock) {
-                logger.warn('Another fetcher instance is running — standby mode');
+                logger.warn('Работает другой экземпляр загрузчика — режим ожидания');
                 return;
             }
 
-            logger.info('Lock acquired. Active fetcher instance.');
+            logger.info('Блокировка получена. Этот процесс является активным загрузчиком.');
 
             // Renew lock lease periodically
             this.lockRenewInterval = setInterval(async () => {
@@ -386,7 +386,7 @@ class DashboardFetcher {
             return;
         }
 
-        logger.info('Dashboard Fetcher V7 started');
+        logger.info('Загрузчик дашборда V7 запущен');
         logger.info('============================================================');
 
         await this.fetchAndStore();
@@ -408,7 +408,7 @@ class DashboardFetcher {
                     : String(row.target_date);
                 this.setEtag(row.division_id, dateStr, row.fetch_etag);
             });
-            logger.info(`Loaded ${result.rows.length} saved ETags`);
+            logger.info(`Загружено ${result.rows.length} ETags из БД`);
         } catch (e) {
             logger.warn('Could not load saved ETags:', e.message);
         }
@@ -427,7 +427,7 @@ class DashboardFetcher {
     }
 
     startCleanupScheduler() {
-        logger.info(`Cleanup scheduler started (every ${Math.round(this.cleanupInterval / 3600000)}h)`);
+        logger.info(`Планировщик очистки запущен (каждые ${Math.round(this.cleanupInterval / 3600000)}ч)`);
         setTimeout(() => this.cleanupOldRecords(), 300000);
         this.cleanupIntervalHandle = setInterval(() => this.cleanupOldRecords(), this.cleanupInterval);
     }
@@ -436,7 +436,7 @@ class DashboardFetcher {
      * V7: Simplified cleanup — with UPSERT, only old dates need removal
      */
     async cleanupOldRecords() {
-        logger.info('Starting cleanup...');
+        logger.info('Запуск очистки старых записей...');
         const startTime = Date.now();
         let client = null;
         try {
@@ -453,13 +453,13 @@ class DashboardFetcher {
             );
 
             const elapsed = Date.now() - startTime;
-            logger.info(`Cleanup done in ${elapsed}ms. Deleted: ${cacheResult.rowCount} cache, ${historyResult.rowCount} history`);
+            logger.info(`Очистка завершена за ${elapsed}мс. Удалено: ${cacheResult.rowCount} кэш, ${historyResult.rowCount} история`);
 
             // Only VACUUM if significant deletions
             if (cacheResult.rowCount > 10 || historyResult.rowCount > 100) {
                 await client.query('VACUUM ANALYZE api_dashboard_cache');
                 await client.query('VACUUM ANALYZE api_dashboard_status_history');
-                logger.info('VACUUM executed');
+                logger.info('VACUUM выполнен');
             }
         } catch (error) {
             logger.error('Cleanup error:', error.message);
@@ -471,7 +471,7 @@ class DashboardFetcher {
     registerShutdownHandlers() {
         const shutdown = async (signal) => {
             if (this.isShuttingDown) return;
-            logger.info(`\nSignal ${signal}. Graceful shutdown...`);
+            logger.info(`\nСигнал ${signal}. Плавное завершение работы...`);
             this.isShuttingDown = true;
 
             if (this.intervalHandle) clearInterval(this.intervalHandle);
@@ -482,23 +482,23 @@ class DashboardFetcher {
             const maxWait = 30000;
             const startWait = Date.now();
             while (this.activeRequests.size > 0 && (Date.now() - startWait) < maxWait) {
-                logger.info(`Waiting for ${this.activeRequests.size} active requests...`);
+                logger.info(`Ожидание завершения ${this.activeRequests.size} активных запросов...`);
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
 
             if (this.hasLock) {
                 try {
                     await this.pool.query('SELECT pg_advisory_unlock(777777)');
-                    logger.info('Lock released');
+                    logger.info('Блокировка снята');
                 } catch (e) {
                     logger.warn('Error releasing lock:', e.message);
                 }
             }
 
             await this.pool.end();
-            logger.info('Connection pool closed');
+            logger.info('Пул соединений закрыт');
             this.logMetrics();
-            logger.info('Fetcher stopped successfully');
+            logger.info('Загрузчик успешно остановлен');
             process.exit(0);
         };
 
@@ -510,12 +510,12 @@ class DashboardFetcher {
 
     async fetchAndStore() {
         if (this.isShuttingDown) {
-            logger.info('Skipping cycle: shutdown in progress');
+            logger.info('Пропуск цикла: выполняется завершение работы');
             return;
         }
 
         const cycleStart = Date.now();
-        logger.info(`\n[CYCLE] Starting V7 BULK update (Today & Yesterday)`);
+        logger.info(`\n[CYCLE] Запуск V7 BULK обновления (Сегодня и Вчера)`);
 
         let todaySuccess = false;
         let yesterdaySuccess = false;
@@ -538,7 +538,7 @@ class DashboardFetcher {
             this.metrics.lastErrorTime = new Date();
         }
 
-        logger.info(`[CYCLE] V7 Finished in ${cycleElapsed}ms. Today: ${todaySuccess ? 'OK' : 'FAIL'}, Yesterday: ${yesterdaySuccess ? 'OK' : 'FAIL'}`);
+        logger.info(`[CYCLE] V7 Завершено за ${cycleElapsed}мс. Сегодня: ${todaySuccess ? 'OK' : 'FAIL'}, Вчера: ${yesterdaySuccess ? 'OK' : 'FAIL'}`);
     }
 
     /**
@@ -549,7 +549,7 @@ class DashboardFetcher {
         const logTag = isGlobal ? '[GLOBAL]' : `[Dept: ${deptId}]`;
 
         if (!this.canProceed()) {
-            logger.warn(`${logTag} Skipped — Circuit Breaker OPEN`);
+            logger.warn(`${logTag} Пропущено — Circuit Breaker ОТКРЫТ`);
             return false;
         }
 
@@ -587,7 +587,7 @@ class DashboardFetcher {
                         headers['If-None-Match'] = savedEtag;
                     }
 
-                    logger.info(`${logTag} Fetching: ${targetDateISO}${savedEtag ? ' (with ETag)' : ''}`);
+                    logger.info(`${logTag} Загрузка: ${targetDateISO}${savedEtag ? ' (с ETag)' : ''}`);
 
                     const apiStart = Date.now();
                     let response;
@@ -604,7 +604,7 @@ class DashboardFetcher {
                             this.metrics.successfulFetches++;
                             const apiElapsed = Date.now() - apiStart;
                             this.updateResponseTimeMetrics(apiElapsed);
-                            logger.info(`${logTag} 304 Not Modified — data unchanged (${apiElapsed}ms)`);
+                            logger.info(`${logTag} 304 Not Modified — данные без изменений (${apiElapsed}мс)`);
                             this.recordSuccess();
                             return true;
                         }
@@ -623,17 +623,17 @@ class DashboardFetcher {
 
                     const responseData = response.data;
                     if (!responseData || !responseData.orders) {
-                        logger.warn(`${logTag} Empty response for ${targetDateISO}`);
+                        logger.warn(`${logTag} Пустой ответ для ${targetDateISO}`);
                         return false;
                     }
 
                     const receivedCount = responseData.orders.length;
                     if (receivedCount >= params.top) {
-                        logger.warn(`${logTag} API HIT LIMIT (${params.top}). Data may be truncated!`);
+                        logger.warn(`${logTag} ДОСТИГНУТ ЛИМИТ API (${params.top}). Данные могут быть обрезаны!`);
                     }
 
                     const rawSizeKB = Math.round(JSON.stringify(responseData).length / 1024);
-                    logger.info(`${logTag} Response: ${receivedCount} orders, ${rawSizeKB}KB`);
+                    logger.info(`${logTag} Ответ: ${receivedCount} заказов, ${rawSizeKB}КБ`);
 
                     // Diagnostics
                     const deptCounts = {};
@@ -641,14 +641,14 @@ class DashboardFetcher {
                         const d = String(o.departmentId || o.divisionId || 'UNKNOWN');
                         deptCounts[d] = (deptCounts[d] || 0) + 1;
                     });
-                    logger.info(`${logTag} Dept breakdown: ${JSON.stringify(deptCounts)}`);
+                    logger.info(`${logTag} Разбивка по подразделениям: ${JSON.stringify(deptCounts)}`);
 
                     // GLOBAL MODE: Split and process per department
                     if (isGlobal) {
                         let allDeptSuccess = true;
                         const departmentalData = this.groupDataByDepartment(responseData.orders, responseData.couriers);
                         const foundDepts = Object.keys(departmentalData);
-                        logger.info(`[GLOBAL] Processing ${foundDepts.length} departments: ${foundDepts.join(', ')}`);
+                        logger.info(`[GLOBAL] Обработка ${foundDepts.length} подразделений: ${foundDepts.join(', ')}`);
 
                         for (const dId of foundDepts) {
                             try {
@@ -749,7 +749,7 @@ class DashboardFetcher {
                     [String(deptId), targetDateISO]
                 );
                 await client.query('COMMIT');
-                logger.debug(`${logTag} Data unchanged for ${targetDateISO} — touched updated_at`);
+                logger.debug(`${logTag} Данные без изменений для ${targetDateISO} — обновлено время updated_at`);
                 return;
             }
 
@@ -761,7 +761,7 @@ class DashboardFetcher {
             // 3. Record status changes (within same transaction)
             if (statusChanges.length > 0) {
                 this.metrics.totalStatusChanges += statusChanges.length;
-                logger.info(`${logTag} ${statusChanges.length} status changes detected`);
+                logger.info(`${logTag} Обнаружено ${statusChanges.length} изменений статуса`);
 
                 // Batch insert for efficiency
                 const changeValues = statusChanges.map((c, i) => {

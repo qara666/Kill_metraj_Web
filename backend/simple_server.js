@@ -62,13 +62,13 @@ let grpcServer = null;
 
 // Global error handlers for better debugging on Render
 process.on('uncaughtException', (err) => {
-  logger.error('CRITICAL: Uncaught Exception', { error: err.message, stack: err.stack });
+  logger.error('КРИТИЧЕСКАЯ ОШИБКА: Необработанное исключение (Uncaught Exception)', { error: err.message, stack: err.stack });
   // Give some time for logs to flush before exiting
   setTimeout(() => process.exit(1), 1000);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  logger.error('CRITICAL: Unhandled Rejection', { reason: reason?.message || reason, stack: reason?.stack });
+  logger.error('КРИТИЧЕСКАЯ ОШИБКА: Необработанное отклонение промиса (Unhandled Rejection)', { reason: reason?.message || reason, stack: reason?.stack });
 });
 
 const cors = require('cors');
@@ -93,7 +93,7 @@ const corsOptions = {
       return callback(null, true);
     }
     // Log disallowed origins to help debugging
-    logger.warn('[CORS] Origin disallowed by Express:', { origin });
+    logger.warn('[CORS] Источник запрещен Express:', { origin });
     callback(null, false); // Don't throw error, just don't allow
   },
   credentials: true,
@@ -337,7 +337,7 @@ app.post('/api/admin/setup', async (req, res) => {
   }
 
   try {
-    logger.info('[SETUP] Running manual DB sync and admin check...');
+    logger.info('[SETUP] Запуск ручной синхронизации БД и проверки админа...');
     await syncDatabase();
 
     const { User } = require('./src/models');
@@ -354,11 +354,11 @@ app.post('/api/admin/setup', async (req, res) => {
 
     res.json({
       success: true,
-      message: created ? 'Administrator created' : 'Administrator already exists',
+      message: created ? 'Администратор создан' : 'Администратор уже существует',
       adminId: admin.id
     });
   } catch (error) {
-    logger.error('[SETUP] Failed:', error);
+    logger.error('[SETUP] Ошибка:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -441,17 +441,17 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
       });
 
       if (created) {
-        logger.info('SUCCESS: Administrator account created automatically.');
+        logger.info('УСПЕХ: Аккаунт администратора создан автоматически.');
       } else {
-        logger.info('INFO: Administrator account already exists.');
+        logger.info('ИНФО: Аккаунт администратора уже существует.');
         if (admin.divisionId !== 'all') {
           admin.divisionId = 'all';
           await admin.save();
-          logger.info('INFO: Administrator division updated to "all".');
+          logger.info('ИНФО: Подразделение администратора обновлено на "all".');
         }
       }
     } catch (createErr) {
-      logger.error('CRITICAL: Failed to check/create administrator', { error: createErr.message });
+      logger.error('КРИТИЧЕСКАЯ ОШИБКА: Не удалось проверить/создать администратора', { error: createErr.message });
     }
 
     // Diagnostics for adm_mak
@@ -461,14 +461,14 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
         if (diagUser.role !== 'user') {
           diagUser.role = 'user';
           await diagUser.save();
-          logger.info('User adm_mak demoted to user role as requested');
+          logger.info('Пользователь adm_mak понижен до роли user');
         }
-        logger.info(`User diagnostics [adm_mak]: role=${diagUser.role}, divisionId=${diagUser.divisionId}, isActive=${diagUser.isActive}`);
+        logger.info(`Диагностика пользователя [adm_mak]: role=${diagUser.role}, divisionId=${diagUser.divisionId}, isActive=${diagUser.isActive}`);
       } else {
-        logger.warn('User diagnostic [adm_mak]: NOT FOUND');
+        logger.warn('Диагностика пользователя [adm_mak]: НЕ НАЙДЕН');
       }
     } catch (diagErr) {
-      logger.error('User diagnostics failed:', diagErr.message);
+      logger.error('Ошибка диагностики пользователя:', diagErr.message);
     }
 
 
@@ -487,7 +487,7 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
       try {
         await dashboardConsumer.start();
       } catch (cdcError) {
-        logger.error('Failed to start Dashboard CDC Consumer', cdcError);
+        logger.error('Не удалось запустить Dashboard CDC Consumer', cdcError);
       }
     }
 
@@ -496,19 +496,19 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
       const DashboardFetcher = require('./workers/dashboardFetcher');
       const fetcher = new DashboardFetcher();
       fetcher.start();
-      logger.info('Dashboard Fetcher started within main process');
+      logger.info('Загрузчик дашборда запущен внутри основного процесса');
     } catch (fetcherError) {
-      logger.error('Failed to start Dashboard Fetcher', fetcherError);
+      logger.error('Не удалось запустить загрузчик дашборда', fetcherError);
     }
 
   } catch (dbError) {
-    logger.error('CRITICAL: Database initialization failed, but keeping server alive for logs', { error: dbError.message });
+    logger.error('КРИТИЧЕСКАЯ ОШИБКА: Ошибка инициализации базы данных, сервер продолжает работу для отображения логов', { error: dbError.message });
   }
 
   try {
     grpcServer = startGrpcServer(process.env.GRPC_PORT || '50051');
   } catch (grpcError) {
-    logger.error('Failed to start gRPC server', grpcError);
+    logger.error('Не удалось запустить gRPC сервер', grpcError);
   }
 });
 
