@@ -507,7 +507,7 @@ export const Settings: React.FC = () => {
                                       setValue('selectedHubs', current.filter((h: string) => h !== hub));
                                       // Также сбрасываем выбранные зоны этого хаба
                                       const currentZones = watch('selectedZones') || [];
-                                      setValue('selectedZones', currentZones.filter((z: string) => !z.startsWith(`${hub}:`)));
+                                      setValue('selectedZones', currentZones.filter((z: string) => !z.startsWith(`${hub.trim()}:`)));
                                     }
                                   }}
                                 />
@@ -583,7 +583,7 @@ export const Settings: React.FC = () => {
                           .filter((p: any) => !zoneSearchTerm || p.name.toLowerCase().includes(zoneSearchTerm.toLowerCase()) || p.folderName.toLowerCase().includes(zoneSearchTerm.toLowerCase()))
                           .sort((a: any, b: any) => a.name.localeCompare(b.name)) // Сортируем только по имени зоны
                           .map((zone: any) => {
-                            const zoneKey = `${zone.folderName}:${zone.name}`;
+                            const zoneKey = `${(zone.folderName || '').trim()}:${(zone.name || '').trim()}`;
                             const isSelected = watch('selectedZones')?.includes(zoneKey);
                             return (
                               <label key={zoneKey} className={clsx(

@@ -132,7 +132,7 @@ class GoogleApiCache {
   private inFlightGeocode = new Map<string, Promise<any[]>>()
   private queue: Array<() => void> = []
   private activeCalls = 0
-  private readonly MAX_CONCURRENT_API_CALLS = 8
+  private readonly MAX_CONCURRENT_API_CALLS = 20
 
   /**
    * Управление очередью запросов для максимизации пропускной способности
@@ -221,7 +221,7 @@ class GoogleApiCache {
 
     const promise = (async () => {
       try {
-        return await this.executeWithRetry<any[]>((resolve) => {
+        return await this.executeWithRetry<any[]>((resolve, reject) => {
           const apiRequest: any = {}
           if (request.address) apiRequest.address = request.address
           if (request.location) apiRequest.location = request.location
@@ -231,8 +231,7 @@ class GoogleApiCache {
 
           this.geocoderInstance.geocode(apiRequest, (results: any, status: any) => {
             if (status === 'OVER_QUERY_LIMIT') {
-              this.activeCalls--; // Force early release because executeWithRetry will catch it via reject
-              return resolve(Promise.reject('OVER_QUERY_LIMIT') as any);
+              return reject('OVER_QUERY_LIMIT');
             }
             const res = status === 'OK' ? (results || []) : []
             this.geocodeCache.set(cacheKey, res)
@@ -240,6 +239,7 @@ class GoogleApiCache {
           })
         }, `Geocode ${request.address || 'location'}`);
       } catch (e) {
+        if (e === 'OVER_QUERY_LIMIT') throw e; // Let executeWithRetry handle it
         return [];
       } finally {
         this.inFlightGeocode.delete(cacheKey)
@@ -268,10 +268,10 @@ class GoogleApiCache {
     }
 
     try {
-      return await this.executeWithRetry<any | null>((resolve) => {
+      return await this.executeWithRetry<any | null>((resolve, reject) => {
         this.directionsServiceInstance.route(request, (result: any, status: any) => {
           if (status === 'OVER_QUERY_LIMIT') {
-            return resolve(Promise.reject('OVER_QUERY_LIMIT') as any);
+            return reject('OVER_QUERY_LIMIT');
           }
           if (status === window.google.maps.DirectionsStatus.OK && result) {
             this.directionsCache.set(cacheKey, result)

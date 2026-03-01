@@ -14,7 +14,8 @@ export const GridOrderCard = memo(({ order, isDark, isSelected, onSelect }: { or
         <div
             onClick={() => onSelect(order.id)}
             className={clsx(
-                "p-5 rounded-2xl border-2 cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 relative overflow-hidden flex flex-col h-full",
+                "p-5 rounded-2xl border-2 cursor-pointer transition-all hover:shadow-md relative overflow-hidden flex flex-col h-full", // v5.48: removed translate-y for better performance
+                "contain-content", // v5.48: performance hint
                 isSelected
                     ? (isDark ? "bg-blue-500/10 border-blue-500 shadow-blue-500/20" : "bg-blue-50 border-blue-500 shadow-blue-500/10")
                     : (isDark ? "bg-gray-800/60 border-gray-700/50 hover:bg-gray-800" : "bg-white border-gray-100 hover:border-blue-100")

@@ -327,9 +327,23 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [courierSearchTerm, setCourierSearchTerm] = useState('')
   const [courierSortType, setCourierSortType] = useState<'alpha' | 'load'>('alpha')
   const [googleMapsReady, setGoogleMapsReady] = useState(false)
+  // SOTA 5.12: Reactive Settings Sync
+  // v5.41: Robust Normalization - trim all inputs to prevent mismatch
+  const [settings, setSettings] = useState<any>(localStorageUtils.getAllSettings())
+  const [selectedHubs, setSelectedHubs] = useState<string[]>(() => (settings.selectedHubs || []).map((h: string) => h.trim()))
+  const [selectedZones, setSelectedZones] = useState<string[]>(() => (settings.selectedZones || []).map((z: string) => z.trim()))
+
+  useEffect(() => {
+    const handleSettingsUpdate = () => {
+      const newSettings = localStorageUtils.getAllSettings()
+      setSettings(newSettings)
+      setSelectedHubs((newSettings.selectedHubs || []).map((h: string) => h.trim()))
+      setSelectedZones((newSettings.selectedZones || []).map((z: string) => z.trim()))
+    }
+    window.addEventListener('km-settings-updated', handleSettingsUpdate)
+    return () => window.removeEventListener('km-settings-updated', handleSettingsUpdate)
+  }, [])
   const [courierFilter, setCourierFilter] = useState<string>('all')
-  const [selectedHubs] = useState<string[]>(localStorageUtils.getAllSettings().selectedHubs || [])
-  const [selectedZones] = useState<string[]>(localStorageUtils.getAllSettings().selectedZones || [])
   const [routePage, setRoutePage] = useState(0)
   const [routesPerPage] = useState(5) // Количество маршрутов на странице
   const [sortRoutesByNewest] = useState(true)
@@ -488,7 +502,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     return bounds
   }, [])
 
-  const settings = useMemo(() => localStorageUtils.getAllSettings(), [])
 
   const cachedAllKmlPolygons = useMemo(() => {
     if (!settings.kmlData?.polygons || !window.google?.maps?.Polygon) return []
@@ -501,7 +514,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
   const cachedHubPolygons = useMemo(() => {
     if (selectedHubs.length === 0 || !settings.kmlData?.polygons || !window.google?.maps?.Polygon) return []
-    const rawPolys = settings.kmlData.polygons.filter((p: any) => selectedHubs.includes(p.folderName))
+    // v5.41: Case-insensitive and trimmed hub filtering
+    const rawPolys = settings.kmlData.polygons.filter((p: any) => {
+      const pFolder = (p.folderName || '').trim().toLowerCase();
+      return selectedHubs.some(sh => sh.trim().toLowerCase() === pFolder);
+    })
     return rawPolys.map((p: any) => ({
       ...p,
       googlePoly: new window.google.maps.Polygon({ paths: p.path }),
@@ -509,25 +526,39 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     }))
   }, [selectedHubs, settings.kmlData?.polygons, buildBounds])
 
-  const checkInside = useCallback((latLng: any) => {
-    if (!latLng || !window.google?.maps?.geometry) return false
-    if (cachedHubPolygons.length > 0) {
+  const checkInside = useCallback((latOrLatLng: any, lng?: number) => {
+    if (!window.google?.maps?.geometry?.poly || cachedAllKmlPolygons.length === 0) return false
+
+    // Normalize input to Google LatLng
+    let latLng: any;
+    if (typeof latOrLatLng === 'object' && latOrLatLng !== null) {
+      // It's already a LatLng or {lat, lng}
+      const lat = typeof latOrLatLng.lat === 'function' ? latOrLatLng.lat() : latOrLatLng.lat;
+      const lngVal = typeof latOrLatLng.lng === 'function' ? latOrLatLng.lng() : latOrLatLng.lng;
+      latLng = new window.google.maps.LatLng(lat, lngVal);
+    } else if (typeof latOrLatLng === 'number' && typeof lng === 'number') {
+      latLng = new window.google.maps.LatLng(latOrLatLng, lng);
+    } else {
+      return false;
+    }
+
+    if (selectedHubs.length > 0) {
       return cachedHubPolygons.some((p: any) => {
         if (selectedZones.length > 0) {
-          const zoneKey = `${p.folderName}:${p.name}`
+          const zoneKey = `${(p.folderName || '').trim()}:${(p.name || '').trim()}`
           if (!selectedZones.includes(zoneKey)) return false
         }
         if (p.bounds && !p.bounds.contains(latLng)) return false
         if (window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)) return true
-        return window.google.maps.geometry.poly.isLocationOnEdge(latLng, p.googlePoly, 0.0005)
+        return window.google.maps.geometry.poly.isLocationOnEdge(latLng, p.googlePoly, 0.001)
       })
     }
     return cachedAllKmlPolygons.some((p: any) => {
       if (p.bounds && !p.bounds.contains(latLng)) return false
       if (window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)) return true
-      return window.google.maps.geometry.poly.isLocationOnEdge(latLng, p.googlePoly, 0.0005)
+      return window.google.maps.geometry.poly.isLocationOnEdge(latLng, p.googlePoly, 0.001)
     })
-  }, [cachedHubPolygons, cachedAllKmlPolygons, selectedZones])
+  }, [cachedHubPolygons, cachedAllKmlPolygons, selectedZones, selectedHubs])
 
   const isInsideSector = useCallback((loc: any) => checkInside(loc), [checkInside])
 
@@ -1250,103 +1281,163 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         const searchVariants = generateStreetVariants(rawAddress, cityCtx.city)
         let candidatesByVariant: any[] = []
 
+        // v5.43: Perfect Hit Logic. Determines if a result is 100% reliable for instant exit.
+        const isPerfectHit = (r: any) => {
+          const lt = r.geometry?.location_type;
+          const comps = r.address_components || [];
+          const streetNum = comps.find((c: any) => c.types?.includes('street_number'))?.long_name;
+          const matchHouse = !expectedHouse || (streetNum && streetNum.toLowerCase() === expectedHouse.toLowerCase());
+          const matchStreet = (r.formatted_address || '').toLowerCase().includes(cityCtx.city.toLowerCase()); // Basic city check
+          const deliveryZone = checkDeliveryKmlZone(r.geometry.location);
+          const techZone = checkTechnicalKmlZone(r.geometry.location);
+          return (lt === 'ROOFTOP') && matchHouse && matchStreet && deliveryZone && !techZone;
+        };
+
         for (const variant of searchVariants) {
-          const res: any = await googleApiCache.geocode({ address: variant, region: cityCtx.region, componentRestrictions: { country: 'ua' } })
-          if (res && res.length > 0) {
-            candidatesByVariant = [...candidatesByVariant, ...res]
-            const bestFound = res.find((r: any) =>
-              r.geometry?.location_type === 'ROOFTOP' &&
-              (!hasRestriction || isInsideSector(r.geometry.location)) &&
-              !checkTechnicalKmlZone(r.geometry.location) &&
-              (!kmlLoaded || checkDeliveryKmlZone(r.geometry.location))
-            )
-            if (bestFound) break
+          try {
+            // v5.44: Relax parameters. Uppercase 'UA' and more lenient region usage.
+            const res: any = await googleApiCache.geocode({
+              address: variant,
+              region: 'UA', // v5.44: Use static region to avoid cityCtx mismatches
+              componentRestrictions: { country: 'UA' }
+            });
+
+            if (res && res.length > 0) {
+              candidatesByVariant = [...candidatesByVariant, ...res]
+              const bestFound = res.find((r: any) =>
+                (r.geometry?.location_type === 'ROOFTOP' || r.geometry?.location_type === 'RANGE_INTERPOLATED') &&
+                (!hasRestriction || isInsideSector(r.geometry.location)) &&
+                !checkTechnicalKmlZone(r.geometry.location) &&
+                (!kmlLoaded || checkDeliveryKmlZone(r.geometry.location))
+              )
+              // v5.45: Smart Early Exit. 
+              // Stop immediately on PERFECT hit. 
+              if (bestFound && isPerfectHit(bestFound)) break;
+              // In Silent Mode (confirmAddresses OFF), only stop if we have a GOOD hit (found in zone)
+              // AND it is NOT a technical zone (auto-unloading).
+              if (!confirmAddresses && bestFound && !checkTechnicalKmlZone(bestFound.geometry.location)) break;
+            }
+          } catch (e) {
+            console.error(`[v5.44] Geocode error for variant "${variant}":`, e);
           }
         }
+        if (candidatesByVariant.length === 0) {
+          // Proceed to exhaustive search if empty
+        }
 
-        if (candidatesByVariant.length === 0) return null
+        // v5.40: Coordinator Fix & Name Normalization. Strictly sync with checkInside logic.
+        const findZoneForLoc = (locInput: any, targetPolygons: any[]) => {
+          // Normalize input to Google LatLng
+          let loc: any;
+          if (typeof locInput.lat === 'function') {
+            loc = locInput;
+          } else {
+            loc = new window.google.maps.LatLng(locInput.lat, locInput.lng);
+          }
 
-        // v5.20: Shared zone check helper - must match global checkInside logic perfectly
-        const findZoneForLoc = (loc: any, targetPolygons: any[]) => {
+          // Tier 1: Check strictly ACTIVE polygons (selectedHubs AND selectedZones)
+          const activeMatch = cachedHubPolygons.find((p: any) => {
+            try {
+              if (selectedZones.length > 0) {
+                const zoneKey = `${(p.folderName || '').trim()}:${(p.name || '').trim()}`;
+                if (!selectedZones.includes(zoneKey)) return false;
+              }
+              if (p.bounds && !p.bounds.contains(loc)) return false;
+              const poly = p.googlePoly;
+              return window.google.maps.geometry.poly.containsLocation(loc, poly) ||
+                window.google.maps.geometry.poly.isLocationOnEdge(loc, poly, 0.001);
+            } catch { return false; }
+          });
+          if (activeMatch) return activeMatch;
+
+          // Tier 2: Check all polygons in selected Hubs (even if specific zone is not in selectedZones)
+          const hubMatch = cachedHubPolygons.find((p: any) => {
+            try {
+              if (p.bounds && !p.bounds.contains(loc)) return false;
+              const poly = p.googlePoly;
+              return window.google.maps.geometry.poly.containsLocation(loc, poly) ||
+                window.google.maps.geometry.poly.isLocationOnEdge(loc, poly, 0.001);
+            } catch { return false; }
+          });
+          if (hubMatch) return hubMatch;
+
+          // Tier 3: Check all polygons (full list) as final fallback
           return targetPolygons.find((p: any) => {
             try {
               if (p.bounds && !p.bounds.contains(loc)) return false;
               const poly = p.googlePoly || new window.google.maps.Polygon({ paths: p.path });
               return window.google.maps.geometry.poly.containsLocation(loc, poly) ||
-                window.google.maps.geometry.poly.isLocationOnEdge(loc, poly, 0.0005);
+                window.google.maps.geometry.poly.isLocationOnEdge(loc, poly, 0.001);
             } catch { return false; }
           });
         };
 
-        // currentActivePolygons removed (v5.19 use isInsideSector)
         const inActiveZone = (loc: any) => isInsideSector(loc);
 
         // Preliminary scoring to establish a baseline best
-        let best = candidatesByVariant[0]
-        let bestScore = scoreCandidate(best, { refPoint, expectedHouse, expectedPostal, inside: inActiveZone(best.geometry.location) })
-        for (let i = 1; i < candidatesByVariant.length; i++) {
-          const c = candidatesByVariant[i]
-          const s = scoreCandidate(c, { refPoint, expectedHouse, expectedPostal, inside: inActiveZone(c.geometry.location) })
-          if (s > bestScore) { best = c; bestScore = s; }
-        }
-
-        // Refinement for missing sections/buildings
-        if (best?.geometry?.location_type !== 'ROOFTOP') {
-          const m = rawAddress.match(/\b(корп(?:ус)?|к|секция|литера)\s*([\w-]+)/i)
-          if (m) {
-            const refined = `${cleanAddressForRoute(rawAddress)}, ${m[1]} ${m[2]}`;
-            const fixRes = await researchExhaustive(refined, refPoint);
-            if (fixRes.length > 0) {
-              fixRes.forEach(r => {
-                const exists = candidatesByVariant.some(c => distBetween(c.geometry.location, r.geometry.location) < 100);
-                if (!exists) candidatesByVariant.push(r);
-              });
-              const bestRefined = fixRes.find(r => r.geometry?.location_type === 'ROOFTOP');
-              if (bestRefined) best = bestRefined;
-            }
+        let best = candidatesByVariant[0] || null;
+        let bestScore = best ? scoreCandidate(best, { refPoint, expectedHouse, expectedPostal, inside: inActiveZone(best.geometry.location) }) : -Infinity;
+        if (best) {
+          for (let i = 1; i < candidatesByVariant.length; i++) {
+            const c = candidatesByVariant[i]
+            const s = scoreCandidate(c, { refPoint, expectedHouse, expectedPostal, inside: inActiveZone(c.geometry.location) })
+            if (s > bestScore) { best = c; bestScore = s; }
           }
         }
 
-        const winnerStreetNum = (best.address_components || []).find((c: any) => c.types?.includes('street_number'))?.long_name;
+        // v5.32: Do NOT return early if empty. Proceed to force research if suspicious or empty.
+        const winnerStreetNum = best ? (best.address_components || []).find((c: any) => c.types?.includes('street_number'))?.long_name : null;
         const houseMatchedExactly = !expectedHouse || (winnerStreetNum && winnerStreetNum.toLowerCase() === expectedHouse.toLowerCase());
-        const inTechZone = checkTechnicalKmlZone(best.geometry.location);
-        const bestInAnyZoneObject = findZoneForLoc(best.geometry.location, zones);
+        const inTechZone = best ? checkTechnicalKmlZone(best.geometry.location) : false;
+        const bestInAnyZoneObject = best ? findZoneForLoc(best.geometry.location, zones) : null;
         const bestInAnyZone = !!bestInAnyZoneObject;
 
-        const isSuspicious = !houseMatchedExactly || inTechZone || !bestInAnyZone;
-        const bestIsInside = kmlLoaded ? isInsideSector(best.geometry.location) : true;
+        const isSuspicious = !best || !houseMatchedExactly || inTechZone || !bestInAnyZone;
+        const bestIsInside = (best && kmlLoaded) ? isInsideSector(best.geometry.location) : true;
 
         // v5.20: Optimized Research trigger. Skip expensive extras if we have a direct hit in active zone.
-        const hasActiveDirectHit = candidatesByVariant.some(c =>
+        const hasActiveDirectHit = best && candidatesByVariant.some(c =>
           inActiveZone(c.geometry.location) &&
           (c.geometry.location_type === 'ROOFTOP' || c.geometry.location_type === 'RANGE_INTERPOLATED') &&
           (!expectedHouse || (c.address_components || []).some((comp: any) => comp.types.includes('street_number') && comp.long_name.toLowerCase() === expectedHouse.toLowerCase()))
         );
 
-        if ((isSuspicious || !bestIsInside || candidatesByVariant.length < 2) && !hasActiveDirectHit) {
-          console.log('[v5.20] triggering exhaustive search...');
-          // v5.29: Parallelize research and fallbacks
-          const [exhaustive, streetRes] = await Promise.all([
-            researchExhaustive(rawAddress, refPoint),
-            (async () => {
-              if (!isSuspicious) return [];
-              const streetOnly = cleanAddress(rawAddress).replace(/\s*\d+.*$/, '');
-              return googleApiCache.geocode({ address: `${streetOnly}, ${cityCtx.city}, ${cityCtx.region}`, region: 'ua' });
-            })()
-          ]);
+        // v5.43: Balanced SPEED TRIGGER. 
+        // If confirmAddresses is OFF AND we have a decent best result, skip research.
+        // If best is extremely poor (suspicious + not in any zone), we STILL do ONE quick research pass even in Silent Mode.
+        const bestIsReliableEnough = best && !inTechZone && bestInAnyZone;
+        const skipResearch = !confirmAddresses && bestIsReliableEnough;
 
+        if (!skipResearch && (isSuspicious || !bestIsInside || candidatesByVariant.length < 2) && !hasActiveDirectHit) {
+          console.log('[v5.32] triggering exhaustive search for suspected suburban/unresolved addr...');
+          // v5.31: Revert from aggressive Promise.all to intelligent sequential research with early exit
+          const exhaustive = await researchExhaustive(rawAddress, refPoint);
           exhaustive.forEach(r => {
             const exists = candidatesByVariant.some(c => distBetween(c.geometry.location, r.geometry.location) < 100);
             if (!exists) candidatesByVariant.push(r);
           });
 
-          if (streetRes && streetRes.length > 0) {
-            streetRes.forEach((r: any) => {
-              const exists = candidatesByVariant.some(c => distBetween(c.geometry.location, r.geometry.location) < 100);
-              if (!exists) { (r as any)._isResearch = true; candidatesByVariant.push(r); }
-            });
+          if (isSuspicious) {
+            const streetOnly = cleanAddress(rawAddress).replace(/\s*\d+.*$/, '');
+            const streetRes: any = await googleApiCache.geocode({ address: `${streetOnly}, ${cityCtx.city}, ${cityCtx.region}`, region: 'ua' });
+            if (streetRes && streetRes.length > 0) {
+              streetRes.forEach((r: any) => {
+                const exists = candidatesByVariant.some(c => distBetween(c.geometry.location, r.geometry.location) < 100);
+                if (!exists) { (r as any)._isResearch = true; candidatesByVariant.push(r); }
+              });
+            }
           }
         }
+
+        if (candidatesByVariant.length === 0) {
+          // v5.44: Desperate attempt - search without any region/country restrictions
+          try {
+            const finalRoll: any = await googleApiCache.geocode({ address: rawAddress });
+            if (finalRoll && finalRoll.length > 0) candidatesByVariant = [...finalRoll];
+          } catch { }
+        }
+
+        if (candidatesByVariant.length === 0) return null;
 
         // v5.17: Final Pruning and Decision Logic
         const prunedPool = candidatesByVariant.filter(c => {
@@ -1434,19 +1525,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         const finalHouseMatched = !expectedHouse || (finalWinnerStreetNum && finalWinnerStreetNum.toLowerCase() === expectedHouse.toLowerCase());
 
         // v5.22: Relaxed House Match - if street matches exactly and in active zone, we allow it to be 'silent'
-        const finalStreetComp = (finalBest.address_components || []).find((comp: any) => comp.types.includes('route'))?.long_name?.toLowerCase() || '';
-        const finalStreetMatched = streetFromRaw && (finalStreetComp.includes(streetFromRaw) || streetFromRaw.includes(finalStreetComp));
         const finalInTechZone = checkTechnicalKmlZone(finalBest.geometry.location);
         const finalInAnyZone = !!findZoneForLoc(finalBest.geometry.location, zones);
-        const finalIsRooftop = finalBest.geometry.location_type === 'ROOFTOP';
-        const finalHasHouseNum = (finalBest.address_components || []).some((c: any) => c.types?.includes('street_number'));
 
-        const hasCompetingRooftop = activePool.some(c =>
-          c !== finalBest && c.geometry?.location_type === 'ROOFTOP' && distBetween(finalBest.geometry.location, c.geometry.location) > 500
-        );
         const hasScatteredAlternatives = activePool.some(c => distBetween(c.geometry.location, finalBest.geometry.location) > 2000);
 
-        const isSafeQualityWinner = finalIsRooftop && finalHasHouseNum && !hasCompetingRooftop && !finalInTechZone;
 
         let finalTooFar = false;
         if (refPoint) {
@@ -1464,18 +1547,26 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         const isInSelectedZone = inActiveZone(finalBest.geometry.location);
 
         // v5.23: We allow automatic selection of street centroids (GEOMETRIC_CENTER) if the street matches exactly and it's in an active zone.
-        const finalIsAcceptableType = finalIsRooftop ||
-          finalBest.geometry.location_type === 'RANGE_INTERPOLATED' ||
-          (finalStreetMatched && finalBest.geometry.location_type === 'GEOMETRIC_CENTER');
 
-        const isHighConfidenceInZone = (finalHouseMatched || finalStreetMatched) &&
-          isInSelectedZone && !finalInTechZone && finalIsAcceptableType;
 
-        // v5.28: More aggressive silent fallback for street centroids in active zones
-        const autoReady = (!confirmAddresses && !finalInTechZone) || isHighConfidenceInZone ||
-          (activePool.length === 1 && !finalInTechZone && !finalTooFar) ||
-          (isSafeQualityWinner && isInSelectedZone && !finalTooFar && activePool.length < 3) ||
-          (finalStreetMatched && isInSelectedZone && !finalInTechZone && finalBest.geometry.location_type === 'GEOMETRIC_CENTER');
+        // v5.41: Smart Clarification (Prioritize Safety & Respect Silent Mode)
+        // Rule 1: High Risk (Always Ask) - Technical Zone, OUTSIDE ALL KML ZONES, or Too Far
+        const isOutsideAllZones = !finalInAnyZone;
+        const isHighRiskTrigger = finalInTechZone || isOutsideAllZones || finalTooFar;
+
+        // Rule 2: Moderate Risk (Respect Silent/confirmAddresses) - Inside KML but NOT in Active Sector
+        const isSectoredButInactive = !isInSelectedZone;
+
+        // Final Decision: 
+        // We trigger modal if:
+        // - It's a High Risk Trigger (regardless of setting)
+        // - It's Sectored-but-Inactive AND current user setting is to ALWAYS CONFIRM (confirmAddresses is true)
+        const shouldClarifyStatus = isHighRiskTrigger || (isSectoredButInactive && confirmAddresses);
+
+
+        // v5.41: Refined autoReady. If NOT shouldClarifyStatus, we are autoReady.
+        // v5.44: In SILENT mode, we are always autoReady unless it's a critical error (no result at all)
+        const autoReady = !shouldClarifyStatus || (!confirmAddresses && !!finalBest && !finalInTechZone);
 
         if (autoReady) return finalBest;
 
@@ -1505,7 +1596,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             label: r.formatted_address || 'Кандидат',
             distanceMeters: d,
             mapsUrl,
-            zoneName: r._isResearch ? 'РЕЗУЛЬТАТ ПОИСКА (ЦЕНТР УЛИЦЫ)' : (!zoneFound ? '⚠ вне всех KML зон' : (!isInActive ? `⚠ ${zoneFound.name} (выкл)` : (checkTechnicalKmlZone(loc) ? `🛑 ${zoneFound.name} (АВТОРАЗГРУЗ)` : zoneFound.name))),
+            zoneName: r._isResearch ? '📍 ЦЕНТР УЛИЦЫ (БЕЗОПАСНАЯ ТОЧКА)' : (!zoneFound ? '⚠ вне всех KML зон' : (!isInActive ? `⚠ ${zoneFound.name} (выкл)` : (checkTechnicalKmlZone(loc) ? `🛑 ${zoneFound.name} (АВТОРАЗГРУЗ - НЕ ВЫБИРАТЬ!)` : `✅ ${zoneFound.name}`))),
             res: r
           };
         });
@@ -1532,19 +1623,23 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       }
 
 
-      // v5.16: Исчерпывающий поиск по всем вариантам (пригороды, области итд)
       const researchExhaustive = async (rawAddress: string, hintPoint?: any): Promise<any[]> => {
         const request: any = { address: rawAddress, region: cityCtx.region, componentRestrictions: { country: 'ua' } };
         let candidates: any[] = [];
         const variants = generateStreetVariants(rawAddress, cityCtx.city);
-
-        // v5.29: Parallelize variant research
-        const variantResults = await Promise.all(variants.map(variant =>
-          googleApiCache.geocode({ ...request, address: variant })
-        ));
-        variantResults.forEach(res => {
-          if (res && res.length > 0) candidates = [...candidates, ...res];
-        });
+        // v5.31: Restore serial loop with Early Exit for "Instant" feel
+        for (const variant of variants) {
+          const res: any = await googleApiCache.geocode({ ...request, address: variant });
+          if (res && res.length > 0) {
+            candidates = [...candidates, ...res];
+            const bestFound = res.find((r: any) =>
+              r.geometry?.location_type === 'ROOFTOP' &&
+              isInsideSector(r.geometry.location) &&
+              !checkTechnicalKmlZone(r.geometry.location)
+            );
+            if (bestFound) break; // Speed!
+          }
+        }
 
         // Если привязаны к городу и ничего нет — пробуем БЕЗ города (для областей)
         if (candidates.length === 0) {
@@ -1640,11 +1735,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       const waypointResList: Array<any | null> = new Array(route.orders.length).fill(null)
       const baseRefPoint = originRes?.geometry?.location || null
 
-      // v5.29: Global Queue in cache handles concurrency perfectly.
-      // We can now fire hundreds of requests at once without UI hangs or blocking.
-      // v5.30: Added tiny stagger to avoid immediate API "wall"
+      // v5.33: Restore parallel geocoding with tiny stagger (2ms)
+      // Since our queue the retry logic are now stable, parallelizing this is safe and extremely fast.
       const waypointPromises = route.orders.map(async (order, idx) => {
-        if (idx > 0) await new Promise(r => setTimeout(r, idx * 10)); // 10ms stagger
+        if (idx > 0) await new Promise(r => setTimeout(r, idx * 2));
         return geocodeWithSector(order.address, baseRefPoint);
       });
       const results = await Promise.all(waypointPromises);
@@ -2772,13 +2866,58 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                             isId0CourierName(selectedCourier) ? 'Не назначено' : (String(selectedCourier) || '')
                           );
 
-                          // v5.28: TURBO Parallel Mass Routing
+                          // v5.34: UNIVERSAL TURBO - Batched State Updates
                           setIsCalculating(true);
                           try {
-                            const routePromises = groups.map((group) => {
-                              return createRoute(group.orders);
+                            const courier = String(selectedCourier || '');
+                            if (!courier || courier === 'Не назначено') return;
+
+                            const newRoutes: Route[] = [];
+                            const allOrderIdsToUpdate = new Set<string>();
+
+                            groups.forEach((group, index) => {
+                              const groupOrders = group.orders as Order[]; // Cast to local type to avoid mismatch
+                              const newRoute: Route = {
+                                id: `route_${Date.now()}_${index}`,
+                                courier: courier,
+                                orders: groupOrders,
+                                totalDistance: 0,
+                                totalDuration: 0,
+                                startAddress,
+                                endAddress,
+                                isOptimized: false,
+                                createdAt: Date.now()
+                              };
+                              newRoutes.push(newRoute);
+                              groupOrders.forEach(o => allOrderIdsToUpdate.add(String(o.id)));
                             });
-                            await Promise.all(routePromises);
+
+                            // Perform a SINGLE state update for all routes and order assignments
+                            updateExcelData((prev: any) => {
+                              const currentOrders = prev?.orders || [];
+                              const updatedOrders = currentOrders.map((order: any) => {
+                                if (allOrderIdsToUpdate.has(String(order.id))) {
+                                  return { ...order, courier: courier };
+                                }
+                                return order;
+                              });
+
+                              return {
+                                ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
+                                routes: [...(prev?.routes || []), ...newRoutes],
+                                orders: updatedOrders
+                              };
+                            });
+
+                            // Reset selection once
+                            setSelectedOrders(new Set());
+                            setSelectedOrdersOrder([]);
+
+                            // Parallel distance calculation for all new routes
+                            await Promise.all(newRoutes.map(route => calculateRouteDistance(route)));
+                          } catch (err) {
+                            console.error('Batch route creation error:', err);
+                            toast.error('Ошибка при создании группы маршрутов');
                           } finally {
                             setIsCalculating(false);
                           }
@@ -2794,7 +2933,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                       isDark ? "bg-gray-800 border-gray-700 shadow-black/40" : "bg-white border-blue-50 shadow-blue-500/5"
                     )}>
                       {/* Декоративный фон для списка заказов */}
-                      <div className="absolute top-0 left-0 w-64 h-64 bg-blue-500/5 rounded-full -ml-32 -mt-32 blur-3xl opacity-30"></div>
+                      <div className="absolute top-0 left-0 w-64 h-64 bg-blue-500/5 rounded-full -ml-32 -mt-32 blur-2xl opacity-30"></div>
 
                       <div className="relative z-10">
                         <div className="flex flex-col gap-6 mb-10">
@@ -2900,7 +3039,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             isDark ? 'bg-gray-800 border-gray-700 shadow-black/40' : 'bg-white border-blue-50 shadow-blue-500/5'
           )}>
             {/* Декоративный фон */}
-            <div className="absolute top-0 left-0 w-96 h-96 bg-purple-500/5 rounded-full -ml-48 -mt-48 blur-3xl opacity-50"></div>
+            <div className="absolute top-0 left-0 w-96 h-96 bg-purple-500/5 rounded-full -ml-48 -mt-48 blur-2xl opacity-50"></div>
 
             <div className="relative z-10">
               <div className="flex items-center justify-between mb-10">
