@@ -20,7 +20,8 @@ export const TimeWindowGroupCard = memo(({
     onOrderMoved,
     onCalculateRoute
 }: TimeWindowGroupCardProps) => {
-    const [isExpanded, setIsExpanded] = useState(false);
+    // v5.47: Expanded by default as per user request
+    const [isExpanded, setIsExpanded] = useState(true);
     const [isDragOver, setIsDragOver] = useState(false);
 
     // Calculate readiness status
@@ -37,19 +38,27 @@ export const TimeWindowGroupCard = memo(({
     const theme = useMemo(() => {
         const isReady = readinessStatus === 'ready';
         if (isReady) return {
-            border: isDark ? 'border-emerald-500/40' : 'border-emerald-500',
-            bg: isDark ? 'bg-slate-900' : 'bg-white',
+            border: isDark ? 'border-emerald-500/30' : 'border-emerald-500/50',
+            bg: isDark ? 'bg-slate-900/60' : 'bg-white/80',
             badgeBg: isDark ? 'bg-emerald-500/20' : 'bg-emerald-50',
             badgeText: 'text-emerald-500',
-            headerBg: 'bg-transparent'
+            glow: isDark ? 'shadow-[0_0_20px_rgba(16,185,129,0.1)]' : 'shadow-[0_0_15px_rgba(16,185,129,0.1)]'
+        };
+
+        if (readinessStatus === 'partial') return {
+            border: isDark ? 'border-amber-500/30' : 'border-amber-500/50',
+            bg: isDark ? 'bg-slate-900/60' : 'bg-white/80',
+            badgeBg: isDark ? 'bg-amber-500/20' : 'bg-amber-50',
+            badgeText: 'text-amber-500',
+            glow: isDark ? 'shadow-[0_0_20px_rgba(245,158,11,0.1)]' : 'shadow-[0_0_15px_rgba(245,158,11,0.1)]'
         };
 
         return {
-            border: isDark ? 'border-amber-500/40' : 'border-amber-500',
-            bg: isDark ? 'bg-slate-900' : 'bg-white',
-            badgeBg: isDark ? 'bg-amber-500/20' : 'bg-amber-50',
-            badgeText: 'text-amber-500',
-            headerBg: 'bg-transparent'
+            border: isDark ? 'border-slate-700/50' : 'border-slate-200',
+            bg: isDark ? 'bg-slate-900/60' : 'bg-white/80',
+            badgeBg: isDark ? 'bg-slate-500/10' : 'bg-slate-50',
+            badgeText: isDark ? 'text-slate-400' : 'text-slate-500',
+            glow: ''
         };
 
     }, [readinessStatus, isDark]);
@@ -83,63 +92,71 @@ export const TimeWindowGroupCard = memo(({
                 }
             }}
             className={clsx(
-                'rounded-3xl border-2 transition-all duration-200 relative overflow-hidden flex flex-col',
+                'rounded-3xl border transition-all duration-300 relative overflow-hidden flex flex-col',
+                'backdrop-blur-md', // v5.48: Lightened for better performance on weak PCs
                 theme.border,
                 theme.bg,
+                theme.glow,
+                'hover:scale-[1.01] hover:shadow-xl active:scale-[0.99]', // v5.48: slightly reduced shadow on hover
+                'will-change-transform', // v5.48: GPU hint
                 isDragOver && (isDark ? 'ring-2 ring-blue-500 bg-blue-900/30' : 'ring-2 ring-blue-400 bg-blue-50/80')
             )}
         >
-            {/* Header - Simple Flex Row */}
+            {/* Header */}
             <div
                 className={clsx(
-                    'relative p-4 pb-2 cursor-pointer transition-colors',
+                    'relative p-4 pb-2.5 cursor-pointer transition-colors select-none', // v5.48: compact padding
                     isDark ? 'hover:bg-white/5' : 'hover:bg-slate-50'
                 )}
                 onClick={() => setIsExpanded(!isExpanded)}
             >
                 <div className="flex items-center justify-between mb-3">
                     <div className={clsx(
-                        'px-4 py-1.5 rounded-full flex items-center gap-2 text-xs font-black tracking-widest',
-                        isDark ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'
+                        'px-3.5 py-1 rounded-full flex items-center gap-2 text-[10px] font-black tracking-widest shadow-md', // v5.48: smaller header badge
+                        isDark ? 'bg-blue-600/90 text-white' : 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white'
                     )}>
-                        <ClockIcon className="w-4 h-4" />
+                        <ClockIcon className="w-3.5 h-3.5" />
                         <span>{group.windowLabel}</span>
                     </div>
 
                     <div className={clsx(
-                        'w-8 h-8 rounded-full flex items-center justify-center transition-colors',
-                        isDark ? 'bg-slate-800' : 'bg-slate-100'
+                        'w-7 h-7 rounded-full flex items-center justify-center transition-all duration-300', // v5.48: smaller icon
+                        isDark ? 'bg-slate-800' : 'bg-slate-100',
+                        isExpanded ? 'rotate-180 bg-blue-500/10' : ''
                     )}>
-                        <ChevronDownIcon className={clsx('w-4 h-4 text-slate-400 transition-transform duration-200', isExpanded ? 'rotate-180' : 'rotate-0')} />
+                        <ChevronDownIcon className={clsx('w-3.5 h-3.5 text-slate-400')} />
                     </div>
                 </div>
 
-                {/* Sub-header text row */}
                 <div className="flex items-center justify-between">
                     <div className={clsx(
-                        'px-2 py-0.5 rounded-md text-[12px] font-black uppercase tracking-widest flex items-center gap-1.5',
+                        'px-2 py-0.5 rounded-lg text-[11px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-sm',
                         theme.badgeBg, theme.badgeText
                     )}>
-                        <CheckBadgeIcon className="w-4 h-4" />
-                        <span className="tabular-nums">{assembledOrders.length}</span>
+                        {readinessStatus === 'ready' ? <CheckBadgeIcon className="w-3.5 h-3.5" /> : <ClockIcon className="w-3.5 h-3.5 opacity-50" />}
+                        <span className="tabular-nums">{assembledOrders.length} / {group.orders.length}</span>
                     </div>
 
-                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                        {group.orders.length} {getOrdersEnding(group.orders.length)}
-                    </div>
+                    {group.splitReason && (
+                        <span className={clsx(
+                            "text-[8px] font-black uppercase tracking-tighter px-1.2 py-0.2 rounded border",
+                            isDark ? "text-amber-400/60 border-amber-900/30 bg-amber-900/10" : "text-amber-500 border-amber-100 bg-amber-50"
+                        )}>
+                            {group.splitReason}
+                        </span>
+                    )}
                 </div>
             </div>
 
-            {/* Separator Line */}
-            <div className={clsx("h-[2px] w-full mt-2", theme.bg)} />
-            <div className={clsx("h-[2px] w-full", isDark ? "bg-slate-800" : "bg-slate-100")} />
+            {/* Separator */}
+            <div className={clsx("h-[1px] w-full", isDark ? "bg-slate-800" : "bg-slate-100")} />
 
-            {/* Expanded Content Area with flex-1 to push button to bottom if needed */}
+            {/* Expanded Content */}
             <div className={clsx(
-                'flex flex-col transition-all overflow-hidden',
-                isExpanded ? 'max-h-[800px] opacity-100 flex-1' : 'max-h-0 opacity-0 border-t-0'
+                'flex flex-col transition-all duration-500 ease-in-out overflow-hidden',
+                isExpanded ? 'max-h-[800px] opacity-100 flex-1' : 'max-h-0 opacity-0'
             )}>
-                <div className="p-2 flex-1 overflow-y-auto max-h-[300px] custom-scrollbar space-y-1">
+                <div className="p-2 flex-1 overflow-y-auto max-h-[350px] custom-scrollbar space-y-1.5">
                     {group.orders.map((order: any, idx: number) => {
                         const statusProps = getStatusBadgeProps(order.status || '', isDark);
                         const isReady = statusProps.text === 'СОБРАН' || statusProps.text === 'ИСПОЛНЕН';
@@ -155,42 +172,38 @@ export const TimeWindowGroupCard = memo(({
                                     e.dataTransfer.effectAllowed = 'move';
                                 }}
                                 className={clsx(
-                                    'p-3 rounded-2xl flex flex-col gap-2 cursor-grab active:cursor-grabbing border-2',
-                                    isDark ? 'bg-slate-800/50 border-transparent hover:border-slate-700' : 'bg-white border-transparent hover:border-slate-100 shadow-sm'
+                                    'p-3 rounded-xl flex flex-col gap-1.5 cursor-grab active:cursor-grabbing border-2 transition-all', // v5.48: tighter layout
+                                    'contain-content', // v5.48: Performance optimization
+                                    isDark
+                                        ? 'bg-slate-800/40 border-slate-700/30 hover:bg-slate-800/60 hover:border-slate-600'
+                                        : 'bg-white border-slate-50 hover:border-blue-100 shadow-sm'
                                 )}
                             >
                                 <div className="flex items-center justify-between">
-                                    <span className={clsx(
-                                        'text-xs font-black tracking-widest',
-                                        isReady ? 'text-emerald-500' :
-                                            statusProps.text === 'ДОСТАВЛЯЕТСЯ' ? 'text-blue-500' :
-                                                statusProps.text === 'В РАБОТЕ' ? 'text-amber-500' :
-                                                    'text-slate-400'
-                                    )}>
-                                        #{order.orderNumber}
-                                    </span>
-
                                     <div className="flex items-center gap-2">
+                                        <span className={clsx(
+                                            'text-[11px] font-black tracking-widest',
+                                            isReady ? 'text-emerald-500' :
+                                                statusProps.text === 'ДОСТАВЛЯЕТСЯ' ? 'text-blue-500' :
+                                                    statusProps.text === 'В РАБОТЕ' ? 'text-amber-500' :
+                                                        'text-slate-400'
+                                        )}>
+                                            #{order.orderNumber}
+                                        </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5">
                                         <div className={clsx(
-                                            'px-2 py-0.5 rounded-md text-[10px] font-black',
-                                            isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'
+                                            'px-1.5 py-0.5 rounded-md text-[9px] font-black tabular-nums',
+                                            isDark ? 'bg-slate-800 text-slate-400 border border-slate-700' : 'bg-slate-50 text-slate-600 border border-slate-100'
                                         )}>
                                             {formatTimeLabel(getPlannedTime(order) || 0)}
                                         </div>
-                                        {isReady ? (
-                                            <div className="w-5 h-5 rounded-md bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
-                                                <CheckBadgeIcon className="w-3.5 h-3.5 text-emerald-500" />
-                                            </div>
-                                        ) : (
-                                            <div className="w-5 h-5 rounded-md bg-slate-100 flex items-center justify-center">
-                                                <ClockIcon className="w-3 h-3 text-slate-400" />
-                                            </div>
-                                        )}
                                     </div>
                                 </div>
                                 <div className={clsx(
-                                    'text-[11px] font-bold leading-tight',
-                                    isDark ? 'text-slate-300' : 'text-slate-700'
+                                    'text-[10px] font-bold leading-normal truncate px-0.5',
+                                    isDark ? 'text-slate-300' : 'text-slate-600'
                                 )}>
                                     {order.address}
                                 </div>
@@ -199,23 +212,24 @@ export const TimeWindowGroupCard = memo(({
                     })}
                 </div>
 
-                <div className={clsx("p-3 mt-auto", isDark ? "bg-slate-800/30" : "bg-slate-50/50")}>
+                <div className={clsx("p-3 mt-auto border-t", isDark ? "border-slate-800/50 bg-slate-900/30" : "border-slate-50 bg-slate-50/20")}>
                     <button
                         disabled={isCalculating}
                         onClick={(e) => { e.stopPropagation(); onCalculateRoute && onCalculateRoute(group); }}
                         className={clsx(
-                            'w-full py-3.5 rounded-2xl flex items-center justify-center gap-2 text-xs font-black uppercase tracking-widest transition-all',
+                            'w-full py-2.5 rounded-xl flex items-center justify-center gap-2.5 text-[10px] font-black uppercase tracking-[0.1em] transition-all',
+                            'active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed group shadow-lg',
                             isDark
-                                ? 'bg-slate-800 text-white hover:bg-slate-700'
-                                : 'bg-slate-900 text-white hover:bg-slate-800 shadow-lg shadow-black/10'
+                                ? 'bg-gradient-to-br from-blue-600 to-indigo-700 text-white hover:from-blue-500 hover:to-indigo-600 shadow-blue-500/10'
+                                : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/20'
                         )}
                     >
                         {isCalculating ? (
                             <ArrowPathIcon className="w-4 h-4 animate-spin" />
                         ) : (
-                            <RocketLaunchIcon className="w-4 h-4" />
+                            <RocketLaunchIcon className="w-4 h-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
                         )}
-                        В МАРШРУТ
+                        <span>В МАРШРУТ</span>
                     </button>
                 </div>
             </div>
@@ -223,13 +237,5 @@ export const TimeWindowGroupCard = memo(({
     );
 });
 
-function getOrdersEnding(count: number): string {
-    const lastDigit = count % 10;
-    const lastTwoDigits = count % 100;
-    if (lastTwoDigits >= 11 && lastTwoDigits <= 14) return 'заказов';
-    if (lastDigit === 1) return 'заказ';
-    if (lastDigit >= 2 && lastDigit <= 4) return 'заказа';
-    return 'заказов';
-}
 
 

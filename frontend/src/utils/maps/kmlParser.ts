@@ -35,7 +35,7 @@ export const parseKML = (xmlString: string): KMLData => {
         const placemarks = element.getElementsByTagName('Placemark')
         for (let i = 0; i < placemarks.length; i++) {
             const pm = placemarks[i]
-            const name = pm.getElementsByTagName('name')[0]?.textContent || 'Unnamed'
+            const name = (pm.getElementsByTagName('name')[0]?.textContent || 'Unnamed').trim()
 
             // Check for Polygon
             const polygonNode = pm.getElementsByTagName('Polygon')[0]
@@ -63,7 +63,7 @@ export const parseKML = (xmlString: string): KMLData => {
     if (folders.length > 0) {
         for (let i = 0; i < folders.length; i++) {
             const folder = folders[i]
-            const folderName = folder.getElementsByTagName('name')[0]?.textContent || 'General'
+            const folderName = (folder.getElementsByTagName('name')[0]?.textContent || 'General').trim()
             processPlacemarks(folder, folderName)
         }
     } else {

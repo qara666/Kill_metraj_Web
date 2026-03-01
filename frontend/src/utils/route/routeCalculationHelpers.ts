@@ -318,16 +318,17 @@ export function groupOrdersByTimeWindow(
         let groupEndTime = 0; // FIX: track the LAST order's time, not the first
 
         hOrdersList.forEach((order) => {
-            const time = order.statusTimings?.deliveringAt || order.statusTimings?.assembledAt || order.handoverAt || getPlannedTime(order) || 0;
+            const time = getArrivalTime(order) || 0;
 
             if (currentHandoverGroup.length === 0) {
                 currentHandoverGroup.push(order);
                 groupEndTime = time;
             } else {
-                // FIX: Compare against groupEndTime (last order in group), not groupStartTime
-                // This ensures all orders within 20 min of each other chain into one block
-                if (time - groupEndTime <= HANDOVER_WINDOW_MS) {
+                // v5.46 Rolling Window: If order status changed within 20min of the LAST order in block, keep them together.
+                const diffMs = time - groupEndTime;
+                if (diffMs <= HANDOVER_WINDOW_MS) {
                     currentHandoverGroup.push(order);
+                    // Update the group "heartbeat" time
                     if (time > groupEndTime) groupEndTime = time;
                 } else {
                     createHandoverGroup(currentHandoverGroup, splitReasonLabel);
@@ -387,16 +388,11 @@ export function groupOrdersByTimeWindow(
             (currentGroup as any).lastKitchen = kitchen;
         } else {
             // Проверяем условия объединения:
-            // 1. Прилетели близко друг к другу?
-            // ИЛИ: У них одинаковое плановое время доставки (SLA)?
-            // ИЛИ: У них ОДИНАКОВЫЙ АДРЕС (с нормализацией) ПРИ УСЛОВИИ близости по времени
             const sameAddress = normalizeAddress(order.address) === normalizeAddress(currentGroup.orders[0].address);
-
-            // ВАЖНО: Даже при одинаковом адресе, если разрыв по времени SLA > 90 мин 
-            // или разрыв по времени прихода > 60 мин — НЕ объединяем (разные маршруты).
             const slaGapOk = Math.abs(planned - currentGroup.windowStart) <= 90 * 60 * 1000;
             const arrivalGapOk = (arrival - (currentGroup.arrivalEnd || 0)) <= 60 * 60 * 1000;
 
+            // 1. Прилетели близко друг к другу?
             const arrivedClose = (arrival - (currentGroup.arrivalEnd || 0) <= proximityMs) ||
                 (planned === currentGroup.windowStart) ||
                 (sameAddress && slaGapOk && arrivalGapOk);
@@ -406,29 +402,24 @@ export function groupOrdersByTimeWindow(
             const maxDelivery = Math.max(currentGroup.windowEnd, planned);
             const deliveryFits = (maxDelivery - minDelivery) <= deliverySpanMs;
 
-            // 3. Доп. проверка: Если у заказов сильно разное время готовности (более 15 мин),
-            // даже если они в одном окне доставки - лучше разделить.
-            // УЛУЧШЕНО: Снижен порог с 30 до 15 минут для более точной группировки
+            // 3. Доп. проверка: готовность на кухне
             let kitchenGapOk = true;
             const prevKitchen = (currentGroup as any).lastKitchen;
             if (prevKitchen && kitchen && Math.abs(kitchen - prevKitchen) > 15 * 60 * 1000) {
                 kitchenGapOk = false;
             }
 
-            // 4. Географическая проверка (НОВОЕ): Расстояние > 5км -> РАЗДЕЛИТЬ
+            // 4. Географическая проверка
             let distanceOk = true;
             if (order.coords && currentGroup.orders[0].coords) {
-                // Берем первый заказ группы как опорный для простоты (centroid был бы точнее, но дороже)
                 const dist = haversineDistance(
                     order.coords.lat, order.coords.lng,
                     currentGroup.orders[0].coords.lat, currentGroup.orders[0].coords.lng
                 );
-                if (dist > 5) {
-                    distanceOk = false;
-                }
+                if (dist > 5) distanceOk = false;
             }
 
-            // 5. Проверка по районам (НОВОЕ: Phase 2.3): Если районы разные -> РАЗДЕЛИТЬ
+            // 5. Проверка по районам
             let districtOk = true;
             const orderZone = order.deliveryZone || '';
             const groupZone = currentGroup.orders[0].deliveryZone || '';
@@ -436,10 +427,18 @@ export function groupOrdersByTimeWindow(
                 districtOk = false;
             }
 
+            // v5.46: Strong Same-Courier Affinity
+            // If the courier matches, and the gap is up to 20 mins, keep them in one block (trip).
+            // This prevents "trip fragmentation" in the UI.
+            const isSameCourierTrip = (arrival - (currentGroup.arrivalEnd || 0) <= 20 * 60 * 1000);
+
             // ОПРЕДЕЛЕНИЕ ПРИЧИНЫ РАЗДЕЛЕНИЯ (Phase 4.1)
             let newSplitReason = '';
             // Если адрес совпадает, игнорируем большинство причин для разделения
             if (sameAddress) {
+                newSplitReason = '';
+            } else if (isSameCourierTrip && deliveryFits) {
+                // v5.46: Force group if it's the same trip (20rd-min gap) and SLA isn't wildly different
                 newSplitReason = '';
             } else {
                 if (!arrivedClose) newSplitReason = 'Время';
