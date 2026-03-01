@@ -4,7 +4,7 @@ services:
     name: yapiko-auto-km-backend
     env: node
     plan: free
-    buildCommand: cd backend && npm install
+    buildCommand: cd backend && npm ci
     startCommand: cd backend && node simple_server.js
     envVars:
       - key: NODE_ENV
