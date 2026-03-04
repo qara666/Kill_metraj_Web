@@ -25,7 +25,7 @@ export interface Order {
   readyAtSource?: number | null // Время на кухню без упаковки (приоритет над readyAt)
   deadlineAt?: number | null
   coords?: Coordinates | null
-  deliveryZone?: string
+  isAddressLocked?: boolean // Protects manually edited coordinates from being overridden
   status?: string // 'В работе', 'Собран', 'Доставляется', 'Исполнен'
   handoverAt?: number | null // Время перехода в статус 'Доставляется' (Phase 4.4)
   manualGroupId?: string | null // Ручное назначение группы (Phase 4.7)
@@ -100,6 +100,8 @@ export interface Route {
   totalTrafficDelay?: number;
   hasCriticalTraffic?: boolean;
   legDurations?: number[];
+  orders: Order[]; // Added to match usage in RouteManagement
+  isOptimized?: boolean; // Added to match usage in RouteManagement
 }
 
 export interface ProcessedOrder {
@@ -457,27 +459,6 @@ export interface DemandForecast {
   recommendations: string[];
 }
 
-export interface Geofence {
-  id: string;
-  name: string;
-  type: 'delivery_zone' | 'restricted_area' | 'depot' | 'custom';
-  center: Coordinates;
-  radius: number;
-  color: string;
-  isActive: boolean;
-  alerts: GeofenceAlert[];
-}
-
-export interface GeofenceAlert {
-  id: string;
-  type: 'entry' | 'exit' | 'violation' | 'delay';
-  courier: string;
-  message: string;
-  timestamp: string;
-  severity: 'low' | 'medium' | 'high' | 'critical';
-  isRead: boolean;
-  location: Coordinates;
-}
 
 export interface CourierLocation {
   courierId: string;

@@ -12,7 +12,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
-import { useAutoPlannerStore } from '../stores/useAutoPlannerStore';
+import { useDashboardStore } from '../stores/useDashboardStore';
 import { socketService } from '../services/socketService';
 import { ProcessedExcelData } from '../types';
 import { logger } from '../utils/ui/logger';
@@ -31,14 +31,14 @@ export const useDashboardWebSocket = ({
     enabled = false
 }: DashboardWebSocketParams) => {
     // Selectors
-    const setApiLastSyncTime = useAutoPlannerStore(s => s.setApiLastSyncTime);
-    const setApiNextSyncTime = useAutoPlannerStore(s => s.setApiNextSyncTime);
-    const setApiSyncStatus = useAutoPlannerStore(s => s.setApiSyncStatus);
-    const setApiSyncError = useAutoPlannerStore(s => s.setApiSyncError);
-    const apiManualSyncTrigger = useAutoPlannerStore(s => s.apiManualSyncTrigger);
-    const apiAutoRefreshEnabled = useAutoPlannerStore(s => s.apiAutoRefreshEnabled);
-    const apiDateShift = useAutoPlannerStore(s => s.apiDateShift);
-    const apiDepartmentId = useAutoPlannerStore(s => s.apiDepartmentId);
+    const setApiLastSyncTime = useDashboardStore(s => s.setApiLastSyncTime);
+    const setApiNextSyncTime = useDashboardStore(s => s.setApiNextSyncTime);
+    const setApiSyncStatus = useDashboardStore(s => s.setApiSyncStatus);
+    const setApiSyncError = useDashboardStore(s => s.setApiSyncError);
+    const apiManualSyncTrigger = useDashboardStore(s => s.apiManualSyncTrigger);
+    const apiAutoRefreshEnabled = useDashboardStore(s => s.apiAutoRefreshEnabled);
+    const apiDateShift = useDashboardStore(s => s.apiDateShift);
+    const apiDepartmentId = useDashboardStore(s => s.apiDepartmentId);
 
     // Refs for stable logic
     const isConnectedRef = useRef(false);

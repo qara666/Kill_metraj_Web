@@ -47,8 +47,7 @@ class ExcelService {
           deliveryCount: 0,
           pickupCount: 0,
           courierStats: {},
-          paymentStats: {},
-          zoneStats: {}
+          paymentStats: {}
         },
         debug: {
           logs: this.debugLogs,
@@ -132,8 +131,7 @@ class ExcelService {
             deliveryCount: 0,
             pickupCount: 0,
             courierStats: {},
-            paymentStats: {},
-            zoneStats: {}
+            paymentStats: {}
           },
           debug: {
             logs: this.debugLogs,
@@ -629,8 +627,7 @@ class ExcelService {
       deliveryCount,
       pickupCount,
       courierStats: {},
-      paymentStats: {},
-      zoneStats: {}
+      paymentStats: {}
     };
 
     this.addDebugLog('Статистика рассчитана', stats);

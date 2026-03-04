@@ -14,11 +14,13 @@ import { AddressValidationService, AddressValidationResult } from '../../service
 interface AddressEditModalProps {
   isOpen: boolean
   onClose: () => void
-  onSave: (newAddress: string) => void
+  onSave: (newAddress: string, coords?: { lat: number; lng: number }) => void
   currentAddress: string
   orderNumber: string
   customerName?: string
   isDark?: boolean
+  cityContext?: string
+  activeBounds?: any
 }
 
 import { createPortal } from 'react-dom'
@@ -30,7 +32,9 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
   currentAddress,
   orderNumber,
   customerName,
-  isDark = false
+  isDark = false,
+  cityContext,
+  activeBounds
 }) => {
   const [editedAddress, setEditedAddress] = useState(currentAddress)
   const [isGeocoding, setIsGeocoding] = useState(false)
@@ -63,9 +67,16 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
     setGeocodingResult(null)
 
     try {
-      const result = await GeocodingService.geocodeAndCleanAddress(editedAddress, {
+      // v5.52: Apply city context to prevent finding addresses in other cities (e.g. Lviv)
+      let queryAddress = editedAddress;
+      if (cityContext && !queryAddress.toLowerCase().includes(cityContext.toLowerCase())) {
+        queryAddress = `${queryAddress}, ${cityContext}, Україна`;
+      }
+
+      const result = await GeocodingService.geocodeAndCleanAddress(queryAddress, {
         region: 'UA',
-        language: 'uk'
+        language: 'uk',
+        bounds: activeBounds
       })
 
       setGeocodingResult(result)
@@ -87,8 +98,15 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
 
   const handleSave = () => {
     if (editedAddress.trim()) {
-      onSave(editedAddress.trim())
-      onClose()
+      let coords: { lat: number; lng: number } | undefined;
+
+      // If we have a successful geocoding result with coordinates, lock them in
+      if (geocodingResult?.success && geocodingResult.latitude !== undefined && geocodingResult.longitude !== undefined) {
+        coords = { lat: geocodingResult.latitude, lng: geocodingResult.longitude };
+      }
+
+      onSave(editedAddress.trim(), coords);
+      onClose();
     }
   }
 

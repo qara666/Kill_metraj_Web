@@ -1,0 +1,18 @@
+
+> kill-metraj-frontend@1.0.0 build
+> tsc && vite build
+
+src/components/route/RouteManagement.tsx(5,3): error TS6133: 'PlusIcon' is declared but its value is never read.
+src/components/route/RouteManagement.tsx(15,30): error TS2307: Cannot find module '../../context/ExcelDataContext' or its corresponding type declarations.
+src/components/route/RouteManagement.tsx(16,26): error TS2307: Cannot find module '../../context/ThemeContext' or its corresponding type declarations.
+src/components/route/RouteManagement.tsx(20,8): error TS2307: Cannot find module '../../types/dashboard' or its corresponding type declarations.
+src/components/route/RouteManagement.tsx(22,3): error TS2305: Module '"../../utils/data/addressUtils"' has no exported member 'extractHouseNumber'.
+src/components/route/RouteManagement.tsx(23,3): error TS2305: Module '"../../utils/data/addressUtils"' has no exported member 'extractPostal'.
+src/components/route/RouteManagement.tsx(29,3): error TS2305: Module '"../../services/addressValidation"' has no exported member 'findZoneForLoc'.
+src/components/route/RouteManagement.tsx(30,3): error TS2305: Module '"../../services/addressValidation"' has no exported member 'checkTechnicalKmlZone'.
+src/components/route/RouteManagement.tsx(34,3): error TS2305: Module '"../../utils/route/routeCalculationHelpers"' has no exported member 'formatDisplayDistance'.
+src/components/route/RouteManagement.tsx(35,3): error TS2305: Module '"../../utils/route/routeCalculationHelpers"' has no exported member 'getCourierVehicleType'.
+src/components/route/RouteManagement.tsx(36,3): error TS2305: Module '"../../utils/route/routeCalculationHelpers"' has no exported member 'isId0CourierName'.
+src/components/route/RouteManagement.tsx(1004,17): error TS2322: Type '(corrections: any[]) => void' is not assignable to type '(corrections: Map<string, AddressSuggestion>) => void'.
+  Types of parameters 'corrections' and 'corrections' are incompatible.
+    Type 'Map<string, AddressSuggestion>' is missing the following properties from type 'any[]': length, pop, push, concat, and 24 more.

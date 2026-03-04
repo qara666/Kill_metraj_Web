@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, memo, useRef, useDeferredValue } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, memo, useDeferredValue } from 'react'
 import { OrderList } from './OrderList'
 import {
   TruckIcon,
@@ -17,7 +17,7 @@ import {
   ChevronRightIcon
 } from '@heroicons/react/24/outline'
 import { localStorageUtils } from '../../utils/ui/localStorage'
-import { cleanAddress, generateStreetVariants } from '../../utils/data/addressUtils'
+import { cleanAddress, } from '../../utils/data/addressUtils'
 import { googleMapsLoader } from '../../utils/maps/googleMapsLoader'
 import { useExcelData } from '../../contexts/ExcelDataContext'
 import { useTheme } from '../../contexts/ThemeContext'
@@ -27,22 +27,16 @@ import { AddressValidationService, RouteAnomalyCheck } from '../../services/addr
 import { getPaymentMethodBadgeProps } from '../../utils/data/paymentMethodHelper'
 import { toast } from 'react-hot-toast'
 import { Tooltip } from '../shared/Tooltip'
-import { googleApiCache } from '../../services/googleApiCache'
 import { lazy, Suspense } from 'react'
 import { CourierTimeWindows } from './CourierTimeWindows'
 import { GridOrderCard } from './GridOrderCard'
-import { getUkraineTrafficForOrders, calculateTotalTrafficDelay } from '../../utils/maps/ukraineTrafficAPI'
 import { type TimeWindowGroup, groupOrdersByTimeWindow, formatTimeLabel } from '../../utils/route/routeCalculationHelpers'
-import { SmartAddressCorrectionModal } from '../modals/SmartAddressCorrectionModal'
-import { BatchAddressCorrectionPanel } from './BatchAddressCorrectionPanel'
-import { useSmartAddressCorrection } from '../../hooks/useSmartAddressCorrection'
 import { isId0CourierName, normalizeCourierName } from '../../utils/data/courierName'
 import { getReturnETA, getAccurateReturnETA, getCourierSpeed, enrichRoutesWithCoords } from '../../utils/routes/courierETA'
 import { ReturningCouriersModal } from './modals/ReturningCouriersModal'
 import { TransitCouriersModal } from './modals/TransitCouriersModal'
-import { type DeliveryZone, calculateDistance } from '../../utils/geoUtils'
+import { calculateDistance } from '../../utils/geoUtils'
 
-// --- Helpers ---
 const formatDisplayDistance = (meters?: number) => {
   if (meters === undefined) return undefined;
   if (meters < 1000) return `${Math.round(meters)} м`;
@@ -64,46 +58,9 @@ declare global {
   }
 }
 
-interface Order {
-  id: string
-  orderNumber: string
-  address: string
-  courier: string
-  amount: number
-  phone: string
-  customerName: string
-  isSelected?: boolean
-  routeOrder?: number
-  plannedTime?: string
-  paymentMethod?: string
-  coords?: { lat: number; lng: number }
-  manualGroupId?: string
-  deadlineAt?: number | null
-  handoverAt?: number | null
-  status?: string
-  statusTimings?: {
-    assembledAt?: number;
-    deliveringAt?: number;
-    completedAt?: number;
-  };
-  raw?: any
-}
-
-interface Route {
-  id: string
-  courier: string
-  orders: Order[]
-  totalDistance: number
-  totalDuration: number
-  startAddress: string
-  endAddress: string
-  // ... (rest omitted to save context, but I will keep the existing Route interface)
-  isOptimized: boolean
-  geoMeta?: any // геокод-мета для визуальной верификации
-  createdAt?: number
-  legDurations?: number[]
-}
-
+import { Route, Order } from '../../types/route'
+import { useRouteGeocoding } from '../../hooks/useRouteGeocoding'
+import { useBackgroundGeocoder } from '../../hooks/useBackgroundGeocoder'
 
 interface RouteManagementProps {
   excelData?: any
@@ -312,33 +269,25 @@ const CourierListItem = memo(({
   )
 })
 
-// getDistance and getReturnETA moved to /utils/routes/courierETA.ts
-
-
 export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const { excelData, updateExcelData, saveManualOverrides } = useExcelData()
   const { isDark } = useTheme()
   const [selectedCourier, setSelectedCourier] = useState<string | null>(null)
 
-  const [isCalculating, setIsCalculating] = useState(false)
-  const [startAddress] = useState<string>(localStorageUtils.getAllSettings().defaultStartAddress || '')
-  const [endAddress] = useState<string>(localStorageUtils.getAllSettings().defaultEndAddress || '')
+  const [startAddress] = useState<string>(() => localStorageUtils.getAllSettings().defaultStartAddress || '')
+  const [endAddress] = useState<string>(() => localStorageUtils.getAllSettings().defaultEndAddress || '')
   const [orderSearchTerm, setOrderSearchTerm] = useState('')
   const [courierSearchTerm, setCourierSearchTerm] = useState('')
   const [courierSortType, setCourierSortType] = useState<'alpha' | 'load'>('alpha')
   const [googleMapsReady, setGoogleMapsReady] = useState(false)
-  // SOTA 5.12: Reactive Settings Sync
+
   // v5.41: Robust Normalization - trim all inputs to prevent mismatch
   const [settings, setSettings] = useState<any>(localStorageUtils.getAllSettings())
-  const [selectedHubs, setSelectedHubs] = useState<string[]>(() => (settings.selectedHubs || []).map((h: string) => h.trim()))
-  const [selectedZones, setSelectedZones] = useState<string[]>(() => (settings.selectedZones || []).map((z: string) => z.trim()))
 
   useEffect(() => {
     const handleSettingsUpdate = () => {
       const newSettings = localStorageUtils.getAllSettings()
       setSettings(newSettings)
-      setSelectedHubs((newSettings.selectedHubs || []).map((h: string) => h.trim()))
-      setSelectedZones((newSettings.selectedZones || []).map((z: string) => z.trim()))
     }
     window.addEventListener('km-settings-updated', handleSettingsUpdate)
     return () => window.removeEventListener('km-settings-updated', handleSettingsUpdate)
@@ -352,36 +301,47 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [showAddressEditModal, setShowAddressEditModal] = useState(false)
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [routeAnomalies, setRouteAnomalies] = useState<Map<string, RouteAnomalyCheck>>(new Map())
+  const [selectedHubs, setSelectedHubs] = useState<string[]>(() => settings.selectedHubs || [])
+  const [selectedZones, setSelectedZones] = useState<string[]>(() => settings.selectedZones || [])
 
-  const [disambModal, setDisambModal] = useState<{ open: boolean; title: string; options: Array<{ label: string; distanceMeters?: number; mapsUrl?: string; zoneName?: string; res: any }> } | null>(null)
-  const disambResolver = useRef<(choice: any | null) => void>()
+  useEffect(() => {
+    setSelectedHubs(settings.selectedHubs || [])
+    setSelectedZones(settings.selectedZones || [])
+  }, [settings.selectedHubs, settings.selectedZones])
 
-  // SOTA 5.0: Modal Queue Logic
-  const disambQueue = useRef<Array<{ title: string; options: any[]; resolve: (val: any) => void }>>([])
-  const isProcessingQueue = useRef(false)
+  // Кэшированные полигоны для проверки вхождения (Google Maps objects)
+  const [cachedHubPolygons, setCachedHubPolygons] = useState<any[]>([])
+  const [cachedAllKmlPolygons, setCachedAllKmlPolygons] = useState<any[]>([])
 
-  const processDisambQueue = useCallback(async () => {
-    if (isProcessingQueue.current || disambQueue.current.length === 0) return
-    isProcessingQueue.current = true
+  // Helper for bounding box filtering (performance)
+  const buildBounds = (path: any[]) => {
+    if (!window.google?.maps?.LatLngBounds) return null
+    const bounds = new window.google.maps.LatLngBounds()
+    path.forEach(pt => bounds.extend(pt))
+    return bounds
+  }
 
-    while (disambQueue.current.length > 0) {
-      const next = disambQueue.current.shift()!
-      const choice = await new Promise(resolve => {
-        setDisambModal({ open: true, title: next.title, options: next.options })
-        disambResolver.current = resolve
-      })
-      setDisambModal(null)
-      next.resolve(choice)
+  // Инициализация полигонов при загрузке или смене KML
+  useEffect(() => {
+    if (!settings.kmlData?.polygons || !window.google?.maps?.Polygon) return
+
+    // 1. Все полигоны для общей проверки зон (технические/доставка)
+    const all = settings.kmlData.polygons.map((p: any) => ({
+      ...p,
+      googlePoly: new window.google.maps.Polygon({ paths: p.path }),
+      bounds: buildBounds(p.path)
+    }))
+    setCachedAllKmlPolygons(all)
+
+    // 2. Только полигоны выбранных хабов (для geocodeWithSector)
+    if (selectedHubs.length > 0) {
+      const hubPolys = all.filter((p: any) => selectedHubs.includes(p.folderName))
+      setCachedHubPolygons(hubPolys)
+    } else {
+      setCachedHubPolygons([])
     }
+  }, [settings.kmlData, selectedHubs, window.google?.maps?.Polygon])
 
-    isProcessingQueue.current = false
-  }, [])
-
-  // Smart Address Correction
-  const [showCorrectionModal, setShowCorrectionModal] = useState(false)
-  const [showBatchPanel, setShowBatchPanel] = useState(false)
-  const [currentProblem, setCurrentProblem] = useState<any>(null)
-  const [problemOrders, setProblemOrders] = useState<any[]>([])
   const [showReturningModal, setShowReturningModal] = useState(false)
   const [showTransitModal, setShowTransitModal] = useState(false)
   // Routes enriched with geocoded order coordinates (populated on modal open)
@@ -482,112 +442,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     }) || false
   }, [excelData?.routes])
 
-  // --- Geocoding Utilities (Component Level) ---
-  const extractHouseNumber = useCallback((raw: string): string | null => {
-    const m = raw.match(/\d+[\/\-\wа-яА-ЯёЁіІєЄґҐ]*/)
-    return m ? m[0] : null
-  }, [])
 
-  const extractPostal = useCallback((raw: string): string | null => {
-    const m = raw.match(/\b\d{5}\b/)
-    return m ? m[0] : null
-  }, [])
-
-  const buildBounds = useCallback((paths: any[]) => {
-    const bounds = new window.google.maps.LatLngBounds()
-    paths.forEach(p => {
-      if (Array.isArray(p)) p.forEach(pt => bounds.extend(pt))
-      else bounds.extend(p)
-    })
-    return bounds
-  }, [])
-
-
-  const cachedAllKmlPolygons = useMemo(() => {
-    if (!settings.kmlData?.polygons || !window.google?.maps?.Polygon) return []
-    return settings.kmlData.polygons.map((p: any) => ({
-      ...p,
-      googlePoly: new window.google.maps.Polygon({ paths: p.path }),
-      bounds: buildBounds(p.path)
-    }))
-  }, [settings.kmlData?.polygons, buildBounds])
-
-  const cachedHubPolygons = useMemo(() => {
-    if (selectedHubs.length === 0 || !settings.kmlData?.polygons || !window.google?.maps?.Polygon) return []
-    // v5.41: Case-insensitive and trimmed hub filtering
-    const rawPolys = settings.kmlData.polygons.filter((p: any) => {
-      const pFolder = (p.folderName || '').trim().toLowerCase();
-      return selectedHubs.some(sh => sh.trim().toLowerCase() === pFolder);
-    })
-    return rawPolys.map((p: any) => ({
-      ...p,
-      googlePoly: new window.google.maps.Polygon({ paths: p.path }),
-      bounds: buildBounds(p.path)
-    }))
-  }, [selectedHubs, settings.kmlData?.polygons, buildBounds])
-
-  const checkInside = useCallback((latOrLatLng: any, lng?: number) => {
-    if (!window.google?.maps?.geometry?.poly || cachedAllKmlPolygons.length === 0) return false
-
-    // Normalize input to Google LatLng
-    let latLng: any;
-    if (typeof latOrLatLng === 'object' && latOrLatLng !== null) {
-      // It's already a LatLng or {lat, lng}
-      const lat = typeof latOrLatLng.lat === 'function' ? latOrLatLng.lat() : latOrLatLng.lat;
-      const lngVal = typeof latOrLatLng.lng === 'function' ? latOrLatLng.lng() : latOrLatLng.lng;
-      latLng = new window.google.maps.LatLng(lat, lngVal);
-    } else if (typeof latOrLatLng === 'number' && typeof lng === 'number') {
-      latLng = new window.google.maps.LatLng(latOrLatLng, lng);
-    } else {
-      return false;
-    }
-
-    if (selectedHubs.length > 0) {
-      return cachedHubPolygons.some((p: any) => {
-        if (selectedZones.length > 0) {
-          const zoneKey = `${(p.folderName || '').trim()}:${(p.name || '').trim()}`
-          if (!selectedZones.includes(zoneKey)) return false
-        }
-        if (p.bounds && !p.bounds.contains(latLng)) return false
-        if (window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)) return true
-        return window.google.maps.geometry.poly.isLocationOnEdge(latLng, p.googlePoly, 0.001)
-      })
-    }
-    return cachedAllKmlPolygons.some((p: any) => {
-      if (p.bounds && !p.bounds.contains(latLng)) return false
-      if (window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)) return true
-      return window.google.maps.geometry.poly.isLocationOnEdge(latLng, p.googlePoly, 0.001)
-    })
-  }, [cachedHubPolygons, cachedAllKmlPolygons, selectedZones, selectedHubs])
-
-  const isInsideSector = useCallback((loc: any) => checkInside(loc), [checkInside])
-
-  const _isTechZoneName = useCallback((name: string, folder: string) => {
-    const n = `${name} ${folder}`.toLowerCase()
-    return n.includes('авторозвантаження') ||
-      n.includes('авторазгруз') ||
-      n.includes('разгруз') ||
-      n.includes('склад') ||
-      n.includes('depot')
-  }, [])
-
-  const checkTechnicalKmlZone = useCallback((latLng: any) => {
-    if (!latLng || cachedAllKmlPolygons.length === 0) return false
-    return cachedAllKmlPolygons.some((p: any) => {
-      if (!_isTechZoneName(p.name || '', p.folderName || '')) return false
-      if (p.bounds && !p.bounds.contains(latLng)) return false
-      return window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)
-    })
-  }, [cachedAllKmlPolygons, _isTechZoneName])
-
-  const checkDeliveryKmlZone = useCallback((latLng: any) => {
-    if (!latLng || cachedAllKmlPolygons.length === 0) return false
-    return cachedAllKmlPolygons.some((p: any) => {
-      if (_isTechZoneName(p.name || '', p.folderName || '')) return false
-      if (p.bounds && !p.bounds.contains(latLng)) return false
-      return window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)
-    })
-  }, [cachedAllKmlPolygons, _isTechZoneName])
 
   const [confirmAddresses, setConfirmAddresses] = useState<boolean>(() => {
     const saved = localStorage.getItem('confirmAddresses');
@@ -617,25 +472,106 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     })
   }, [isOrderInExistingRoute])
 
+  // --- KML Logic ---
+
+  // Memoization caches for current session
+  const checkInsideMemo = useMemo(() => new Map<string, boolean>(), [])
+  const checkAnyMemo = useMemo(() => new Map<string, boolean>(), [])
+
+  const checkInside = useCallback((latLng: any) => {
+    if (!latLng || !window.google?.maps?.geometry?.poly) return false
+    const key = `${latLng.lat()},${latLng.lng()}`
+    if (checkInsideMemo.has(key)) return checkInsideMemo.get(key)!
+
+    let result = true
+    if (cachedHubPolygons.length > 0) {
+      result = cachedHubPolygons.some((p: any) => {
+        if (selectedZones.length > 0) {
+          const zoneKey = `${p.folderName}:${p.name}`
+          if (!selectedZones.includes(zoneKey)) return false
+        }
+        if (p.bounds && !p.bounds.contains(latLng)) return false
+        if (window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)) return true
+        return window.google.maps.geometry.poly.isLocationOnEdge(latLng, p.googlePoly, 0.0005)
+      })
+    }
+    checkInsideMemo.set(key, result)
+    return result
+  }, [cachedHubPolygons, selectedZones, checkInsideMemo])
+
+  const isTechnicalKmlZone = useCallback((p: any): boolean => {
+    const n = (p.name || p.folderName || '').toLowerCase()
+    return n.includes('авторозвантаження') ||
+      n.includes('авторазгрузка') ||
+      n.includes('разгрузка') ||
+      n.includes('склад') ||
+      n.includes('depot')
+  }, [])
+
+  const checkDeliveryKmlZone = useCallback((latLng: any) => {
+    if (!latLng || cachedAllKmlPolygons.length === 0 || !window.google?.maps?.geometry?.poly) return false
+    const key = `D:${latLng.lat()},${latLng.lng()}`
+    if (checkAnyMemo.has(key)) return checkAnyMemo.get(key)!
+    const result = cachedAllKmlPolygons.some((p: any) => {
+      if (isTechnicalKmlZone(p)) return false
+      if (p.bounds && !p.bounds.contains(latLng)) return false
+      return window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)
+    })
+    checkAnyMemo.set(key, result)
+    return result
+  }, [cachedAllKmlPolygons, isTechnicalKmlZone, checkAnyMemo])
+
+  const checkTechnicalKmlZone = useCallback((latLng: any) => {
+    if (!latLng || cachedAllKmlPolygons.length === 0 || !window.google?.maps?.geometry?.poly) return false
+    const key = `T:${latLng.lat()},${latLng.lng()}`
+    if (checkAnyMemo.has(key)) return checkAnyMemo.get(key)!
+    const result = cachedAllKmlPolygons.some((p: any) => {
+      if (!isTechnicalKmlZone(p)) return false
+      if (p.bounds && !p.bounds.contains(latLng)) return false
+      return window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)
+    })
+    checkAnyMemo.set(key, result)
+    return result
+  }, [cachedAllKmlPolygons, isTechnicalKmlZone, checkAnyMemo])
+
+  const isInsideSector = useCallback((loc: any) => checkInside(loc), [checkInside])
+
   // --- Custom Hooks ---
 
-  const { validateOrders, applyCorrection, applyBatchCorrections, applyManualEdit, validator } = useSmartAddressCorrection({
-    updateExcelData
-  })
 
-  // SOTA 4.0: Синхронизируем валидатор с зонами KML из настроек
-  useEffect(() => {
-    // `settings` is now a component-level memo
-    if (settings.kmlData?.polygons) {
-      const zones: DeliveryZone[] = settings.kmlData.polygons.map((p: any) => ({
-        id: p.id || p.name,
-        name: p.name,
-        polygon: p.path || p.points, // SOTA 4.6: Robust mapping
-        hub: p.center
-      }));
-      validator.setZones(zones);
-    }
-  }, [validator, settings]); // Added settings as dependency
+  // --- Background Pre-geocoder (L1 + L2 Cache Warming) ---
+  const allOrders = useMemo(() => excelData?.orders || [], [excelData?.orders])
+  useBackgroundGeocoder(allOrders)
+
+  // SOTA 5.46: useRouteGeocoding encapsulates all complex logic
+  const {
+    calculateRouteDistance,
+    isCalculating,
+    disambModal,
+    setDisambModal,
+    disambResolver,
+    processDisambQueue: _processDisambQueue
+  } = useRouteGeocoding({
+    settings,
+    confirmAddresses,
+    isInsideSector,
+    checkTechnicalKmlZone,
+    checkDeliveryKmlZone,
+    selectedHubs,
+    selectedZones,
+    cachedHubPolygons,
+    cachedAllKmlPolygons,
+    getCourierVehicleType,
+    updateExcelData,
+    validateOrders: async () => [],
+    setProblemOrders: () => { },
+    setCurrentProblem: () => { },
+    setShowCorrectionModal: () => { },
+    setShowBatchPanel: () => { },
+    startAddress,
+    endAddress,
+    cleanAddressForRoute
+  })
 
   // Группируем заказы по курьерам
   const courierOrders = useMemo(() => {
@@ -1136,7 +1072,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     }
 
     // v5.22: Set isCalculating early to prevent UI hangs and multiple clicks
-    setIsCalculating(true)
 
     // Добавляем новый маршрут и синхронизируем курьера в списке всех заказов
     updateExcelData((prev: any) => {
@@ -1169,896 +1104,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
 
 
-  const calculateRouteDistance = async (route: Route) => {
-    if (!googleMapsReady) {
-      // Проверяем, есть ли API ключ в настройках
-      if (!localStorageUtils.hasApiKey()) {
-        toast.error('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ.')
-        return
-      }
 
-      // Пытаемся загрузить Google Maps API если он не готов
-      try {
-        await googleMapsLoader.load()
-        setGoogleMapsReady(true)
-      } catch (error) {
-        toast.error('Ошибка загрузки Google Maps API. Проверьте настройки API ключа.')
-        return
-      }
-    }
+  // calculateRouteDistance moved to useRouteGeocoding (Duplicate instance removed)
 
-    // Проверяем аномалии перед расчетом
-    const anomalyCheck = AddressValidationService.checkRouteAnomalies(route)
-    setRouteAnomalies(prev => new Map(prev).set(route.id, anomalyCheck))
-
-    if (anomalyCheck.hasAnomalies && anomalyCheck.errors.length > 0) {
-      const errorMessage = `Обнаружены ошибки в маршруте:\n${anomalyCheck.errors.join('\n')}\n\nРасчет невозможен. Исправьте ошибки в адресах.`
-      toast.error(errorMessage)
-      return
-    }
-
-    // Предупреждения не блокируют расчет — продолжаем автоматически
-    if (anomalyCheck.warnings.length > 0) {
-      console.warn('Route warnings:', anomalyCheck.warnings)
-    }
-
-    setIsCalculating(true)
-
-    try {
-
-      // `settings` is now a component-level memo
-      const cityCtx = getSelectedCity()
-
-      // (Top-level utilities now used: isInsideSector, checkTechnicalKmlZone, _isTechZoneName, extractHouseNumber, extractPostal)
-
-
-      // Общая оценка кандидата: приоритет внутри сектора, наличие street_number и ROOFTOP
-      const scoreCandidate = (candidate: any, opts: { refPoint?: any; expectedHouse?: string | null; expectedPostal?: string | null; inside: boolean }): number => {
-        let score = 0
-        // внутри сектора весомее всего
-        if (opts.inside) score += 1000
-        // тип геометрии
-        const lt = candidate.geometry?.location_type
-        if (lt === 'ROOFTOP') score += 200
-        else if (lt === 'RANGE_INTERPOLATED') score += 120
-        else if (lt === 'GEOMETRIC_CENTER') score += 80
-        else if (lt === 'APPROXIMATE') score += 40
-
-        // наличие точного street_number
-        const comps = candidate.address_components || []
-        const streetNumComp = comps.find((c: any) => c.types?.includes('street_number'))
-        if (streetNumComp) score += 150
-        // совпадение номера дома
-        if (opts.expectedHouse) {
-          const formatted = (candidate.formatted_address || '').toString().toLowerCase()
-          if (formatted.includes(opts.expectedHouse.toLowerCase())) score += 120
-          if (streetNumComp && streetNumComp.long_name && streetNumComp.long_name.toLowerCase() === opts.expectedHouse.toLowerCase()) score += 300 // v5.17: Critical weight for house match
-        }
-        // совпадение почтового кода
-        if (opts.expectedPostal) {
-          const postalComp = comps.find((c: any) => c.types?.includes('postal_code'))
-          if (postalComp && postalComp.long_name === opts.expectedPostal) score += 120
-          const f = (candidate.formatted_address || '').toString()
-          if (f.includes(opts.expectedPostal)) score += 60
-        }
-
-        // близость к опорной точке
-        if (opts.refPoint) {
-          try {
-            const d = window.google.maps.geometry.spherical.computeDistanceBetween(candidate.geometry.location, opts.refPoint)
-            // чем ближе, тем лучше; конвертируем в баллы
-            // до 2км — 100 баллов, 2-5км — 60, 5-10км — 30, дальше — 0..10
-            if (d <= 2000) score += 100
-            else if (d <= 5000) score += 60
-            else if (d <= 10000) score += 30
-            else score += Math.max(0, 10 - Math.floor((d - 10000) / 2000))
-          } catch { }
-        }
-
-        // SOTA 4.5: delivery zones get strong bonus, technical zones get hard penalty.
-        // Before: ALL zones (including авторозвантаження) gave +500 → technical zones won.
-        // Now: only real delivery zones give +500; technical zones give -400.
-        const loc = candidate.geometry.location
-        if (checkDeliveryKmlZone(loc)) {
-          score += 500
-        } else if (checkTechnicalKmlZone(loc)) {
-          score -= 1000 // SOTA 5.4: Harder penalty for technical centers to prevent them from winning over real ROOFTOPs
-        }
-
-        return score
-      }
-
-      // Геокодирование адреса с учетом сектора и region/componentRestrictions
-      const geocodeWithSector = async (rawAddress: string, hintPoint?: any): Promise<any | null> => {
-        const expectedHouse = extractHouseNumber(rawAddress)
-        const expectedPostal = extractPostal(rawAddress)
-        const refPoint = hintPoint || null
-        const hasRestriction = cachedHubPolygons.length > 0
-        const kmlLoaded = cachedAllKmlPolygons.length > 0
-        const zones = settings.kmlData?.polygons || [];
-
-        // Geocoding 2.0: Smart Permutations Search
-        const searchVariants = generateStreetVariants(rawAddress, cityCtx.city)
-        let candidatesByVariant: any[] = []
-
-        // v5.43: Perfect Hit Logic. Determines if a result is 100% reliable for instant exit.
-        const isPerfectHit = (r: any) => {
-          const lt = r.geometry?.location_type;
-          const comps = r.address_components || [];
-          const streetNum = comps.find((c: any) => c.types?.includes('street_number'))?.long_name;
-          const matchHouse = !expectedHouse || (streetNum && streetNum.toLowerCase() === expectedHouse.toLowerCase());
-          const matchStreet = (r.formatted_address || '').toLowerCase().includes(cityCtx.city.toLowerCase()); // Basic city check
-          const deliveryZone = checkDeliveryKmlZone(r.geometry.location);
-          const techZone = checkTechnicalKmlZone(r.geometry.location);
-          return (lt === 'ROOFTOP') && matchHouse && matchStreet && deliveryZone && !techZone;
-        };
-
-        for (const variant of searchVariants) {
-          try {
-            // v5.44: Relax parameters. Uppercase 'UA' and more lenient region usage.
-            const res: any = await googleApiCache.geocode({
-              address: variant,
-              region: 'UA', // v5.44: Use static region to avoid cityCtx mismatches
-              componentRestrictions: { country: 'UA' }
-            });
-
-            if (res && res.length > 0) {
-              candidatesByVariant = [...candidatesByVariant, ...res]
-              const bestFound = res.find((r: any) =>
-                (r.geometry?.location_type === 'ROOFTOP' || r.geometry?.location_type === 'RANGE_INTERPOLATED') &&
-                (!hasRestriction || isInsideSector(r.geometry.location)) &&
-                !checkTechnicalKmlZone(r.geometry.location) &&
-                (!kmlLoaded || checkDeliveryKmlZone(r.geometry.location))
-              )
-              // v5.45: Smart Early Exit. 
-              // Stop immediately on PERFECT hit. 
-              if (bestFound && isPerfectHit(bestFound)) break;
-              // In Silent Mode (confirmAddresses OFF), only stop if we have a GOOD hit (found in zone)
-              // AND it is NOT a technical zone (auto-unloading).
-              if (!confirmAddresses && bestFound && !checkTechnicalKmlZone(bestFound.geometry.location)) break;
-            }
-          } catch (e) {
-            console.error(`[v5.44] Geocode error for variant "${variant}":`, e);
-          }
-        }
-        if (candidatesByVariant.length === 0) {
-          // Proceed to exhaustive search if empty
-        }
-
-        // v5.40: Coordinator Fix & Name Normalization. Strictly sync with checkInside logic.
-        const findZoneForLoc = (locInput: any, targetPolygons: any[]) => {
-          // Normalize input to Google LatLng
-          let loc: any;
-          if (typeof locInput.lat === 'function') {
-            loc = locInput;
-          } else {
-            loc = new window.google.maps.LatLng(locInput.lat, locInput.lng);
-          }
-
-          // Tier 1: Check strictly ACTIVE polygons (selectedHubs AND selectedZones)
-          const activeMatch = cachedHubPolygons.find((p: any) => {
-            try {
-              if (selectedZones.length > 0) {
-                const zoneKey = `${(p.folderName || '').trim()}:${(p.name || '').trim()}`;
-                if (!selectedZones.includes(zoneKey)) return false;
-              }
-              if (p.bounds && !p.bounds.contains(loc)) return false;
-              const poly = p.googlePoly;
-              return window.google.maps.geometry.poly.containsLocation(loc, poly) ||
-                window.google.maps.geometry.poly.isLocationOnEdge(loc, poly, 0.001);
-            } catch { return false; }
-          });
-          if (activeMatch) return activeMatch;
-
-          // Tier 2: Check all polygons in selected Hubs (even if specific zone is not in selectedZones)
-          const hubMatch = cachedHubPolygons.find((p: any) => {
-            try {
-              if (p.bounds && !p.bounds.contains(loc)) return false;
-              const poly = p.googlePoly;
-              return window.google.maps.geometry.poly.containsLocation(loc, poly) ||
-                window.google.maps.geometry.poly.isLocationOnEdge(loc, poly, 0.001);
-            } catch { return false; }
-          });
-          if (hubMatch) return hubMatch;
-
-          // Tier 3: Check all polygons (full list) as final fallback
-          return targetPolygons.find((p: any) => {
-            try {
-              if (p.bounds && !p.bounds.contains(loc)) return false;
-              const poly = p.googlePoly || new window.google.maps.Polygon({ paths: p.path });
-              return window.google.maps.geometry.poly.containsLocation(loc, poly) ||
-                window.google.maps.geometry.poly.isLocationOnEdge(loc, poly, 0.001);
-            } catch { return false; }
-          });
-        };
-
-        const inActiveZone = (loc: any) => isInsideSector(loc);
-
-        // Preliminary scoring to establish a baseline best
-        let best = candidatesByVariant[0] || null;
-        let bestScore = best ? scoreCandidate(best, { refPoint, expectedHouse, expectedPostal, inside: inActiveZone(best.geometry.location) }) : -Infinity;
-        if (best) {
-          for (let i = 1; i < candidatesByVariant.length; i++) {
-            const c = candidatesByVariant[i]
-            const s = scoreCandidate(c, { refPoint, expectedHouse, expectedPostal, inside: inActiveZone(c.geometry.location) })
-            if (s > bestScore) { best = c; bestScore = s; }
-          }
-        }
-
-        // v5.32: Do NOT return early if empty. Proceed to force research if suspicious or empty.
-        const winnerStreetNum = best ? (best.address_components || []).find((c: any) => c.types?.includes('street_number'))?.long_name : null;
-        const houseMatchedExactly = !expectedHouse || (winnerStreetNum && winnerStreetNum.toLowerCase() === expectedHouse.toLowerCase());
-        const inTechZone = best ? checkTechnicalKmlZone(best.geometry.location) : false;
-        const bestInAnyZoneObject = best ? findZoneForLoc(best.geometry.location, zones) : null;
-        const bestInAnyZone = !!bestInAnyZoneObject;
-
-        const isSuspicious = !best || !houseMatchedExactly || inTechZone || !bestInAnyZone;
-        const bestIsInside = (best && kmlLoaded) ? isInsideSector(best.geometry.location) : true;
-
-        // v5.20: Optimized Research trigger. Skip expensive extras if we have a direct hit in active zone.
-        const hasActiveDirectHit = best && candidatesByVariant.some(c =>
-          inActiveZone(c.geometry.location) &&
-          (c.geometry.location_type === 'ROOFTOP' || c.geometry.location_type === 'RANGE_INTERPOLATED') &&
-          (!expectedHouse || (c.address_components || []).some((comp: any) => comp.types.includes('street_number') && comp.long_name.toLowerCase() === expectedHouse.toLowerCase()))
-        );
-
-        // v5.43: Balanced SPEED TRIGGER. 
-        // If confirmAddresses is OFF AND we have a decent best result, skip research.
-        // If best is extremely poor (suspicious + not in any zone), we STILL do ONE quick research pass even in Silent Mode.
-        const bestIsReliableEnough = best && !inTechZone && bestInAnyZone;
-        const skipResearch = !confirmAddresses && bestIsReliableEnough;
-
-        if (!skipResearch && (isSuspicious || !bestIsInside || candidatesByVariant.length < 2) && !hasActiveDirectHit) {
-          console.log('[v5.32] triggering exhaustive search for suspected suburban/unresolved addr...');
-          // v5.31: Revert from aggressive Promise.all to intelligent sequential research with early exit
-          const exhaustive = await researchExhaustive(rawAddress, refPoint);
-          exhaustive.forEach(r => {
-            const exists = candidatesByVariant.some(c => distBetween(c.geometry.location, r.geometry.location) < 100);
-            if (!exists) candidatesByVariant.push(r);
-          });
-
-          if (isSuspicious) {
-            const streetOnly = cleanAddress(rawAddress).replace(/\s*\d+.*$/, '');
-            const streetRes: any = await googleApiCache.geocode({ address: `${streetOnly}, ${cityCtx.city}, ${cityCtx.region}`, region: 'ua' });
-            if (streetRes && streetRes.length > 0) {
-              streetRes.forEach((r: any) => {
-                const exists = candidatesByVariant.some(c => distBetween(c.geometry.location, r.geometry.location) < 100);
-                if (!exists) { (r as any)._isResearch = true; candidatesByVariant.push(r); }
-              });
-            }
-          }
-        }
-
-        if (candidatesByVariant.length === 0) {
-          // v5.44: Desperate attempt - search without any region/country restrictions
-          try {
-            const finalRoll: any = await googleApiCache.geocode({ address: rawAddress });
-            if (finalRoll && finalRoll.length > 0) candidatesByVariant = [...finalRoll];
-          } catch { }
-        }
-
-        if (candidatesByVariant.length === 0) return null;
-
-        // v5.17: Final Pruning and Decision Logic
-        const prunedPool = candidatesByVariant.filter(c => {
-          // Rule 1: Must be in Ukraine
-          const isUA = (c.address_components || []).some((comp: any) => comp.short_name === 'UA' || comp.long_name === 'Україна');
-          if (!isUA) return false;
-
-          // Rule 2: No "trash" from distant cities (>60km from ref)
-          if (refPoint) {
-            try {
-              const d = distBetween(c.geometry.location, refPoint);
-              if (d > 60000) return false;
-            } catch { }
-          }
-          return true;
-        });
-
-        const finalPool = prunedPool.length > 0 ? prunedPool : candidatesByVariant;
-
-        // Final Scoring Pass
-        let finalBest = finalPool[0];
-        let finalBestScore = scoreCandidate(finalBest, { refPoint, expectedHouse, expectedPostal, inside: inActiveZone(finalBest.geometry.location) });
-        for (let i = 1; i < finalPool.length; i++) {
-          const c = finalPool[i];
-          const s = scoreCandidate(c, { refPoint, expectedHouse, expectedPostal, inside: inActiveZone(c.geometry.location) });
-          if (s > finalBestScore) { finalBest = c; finalBestScore = s; }
-        }
-
-        // v5.23: Street Similarity Filter - improved street extraction stripping prefixes (вул, пр, и т.д.)
-        const cleanRaw = cleanAddress(rawAddress).toLowerCase();
-
-        // v5.23: Advanced prefix stripping (вул., ул., пр., просп., и т.д.)
-        const prefixesRegex = /^(вул|ул|пр|просп|пр-т|проспект|пров|пер|пер-к|блв|бульвар|шосе|шоссе|набережна|набережная|пл|площа|площадь|київ|киев|украина|україна|ua)\.?\s+/i;
-        let streetFromRaw = cleanRaw.replace(prefixesRegex, '').replace(/\s*\d+.*$/, '').trim();
-        // If still starts with prefix (case without dot or space after dot)
-        streetFromRaw = streetFromRaw.replace(/^(вул|ул|пр|просп|пр-т|проспект|пров|пер|пер-к|блв|бульвар|шосе|шоссе|набережна|набережная|пл|площа|площадь)\.?/i, '').trim();
-
-        const filteredPool = finalPool.filter(c => {
-          const comps = c.address_components || [];
-          const streetComp = comps.find((comp: any) => comp.types.includes('route'))?.long_name?.toLowerCase() || '';
-          const formattedLower = (c.formatted_address || '').toLowerCase();
-
-          const hasStreetInAddress = formattedLower.includes(streetFromRaw);
-
-          // v5.24: Renamed Streets handling
-          const isFormattedMatch = formattedLower.includes(streetFromRaw);
-
-          if (streetFromRaw && !hasStreetInAddress && !streetComp.includes(streetFromRaw) && !isFormattedMatch) {
-            // If the street name is not present in the result at all (even in formatted string), it's likely trash
-            return false;
-          }
-
-          // v5.24: Extra-distant trash pruning (>25km from ref and outside any zone)
-          if (refPoint) {
-            try {
-              const d = distBetween(c.geometry.location, refPoint);
-              const inAnyZone = !!findZoneForLoc(c.geometry.location, zones);
-              if (d > 25000 && !inAnyZone) return false;
-            } catch { }
-          }
-
-          // If street name is completely different (no common words), prune it
-          if (streetFromRaw && streetComp) {
-            const wordsRaw = streetFromRaw.split(/\s+/).filter((w: string) => w.length > 2);
-            const wordsComp = streetComp.split(/\s+/).filter((wc: string) => wc.length > 2);
-            const hasOverlap = wordsRaw.some(wr => wordsComp.some((wc: string) => wc.includes(wr) || wr.includes(wc)));
-            if (!hasOverlap) return false;
-          }
-          return true;
-        });
-
-        const activePool = filteredPool.length > 0 ? filteredPool : [finalBest];
-
-        // Re-score the active pool
-        let finalWinner = activePool[0];
-        let finalWinnerScore = scoreCandidate(finalWinner, { refPoint, expectedHouse, expectedPostal, inside: inActiveZone(finalWinner.geometry.location) });
-        for (let i = 1; i < activePool.length; i++) {
-          const c = activePool[i];
-          const s = scoreCandidate(c, { refPoint, expectedHouse, expectedPostal, inside: inActiveZone(c.geometry.location) });
-          if (s > finalWinnerScore) { finalWinner = c; finalWinnerScore = s; }
-        }
-        finalBest = finalWinner;
-
-        const finalWinnerStreetNum = (finalBest.address_components || []).find((c: any) => c.types?.includes('street_number'))?.long_name;
-        const finalHouseMatched = !expectedHouse || (finalWinnerStreetNum && finalWinnerStreetNum.toLowerCase() === expectedHouse.toLowerCase());
-
-        // v5.22: Relaxed House Match - if street matches exactly and in active zone, we allow it to be 'silent'
-        const finalInTechZone = checkTechnicalKmlZone(finalBest.geometry.location);
-        const finalInAnyZone = !!findZoneForLoc(finalBest.geometry.location, zones);
-
-        const hasScatteredAlternatives = activePool.some(c => distBetween(c.geometry.location, finalBest.geometry.location) > 2000);
-
-
-        let finalTooFar = false;
-        if (refPoint) {
-          try {
-            const dt = window.google.maps.geometry.spherical.computeDistanceBetween(finalBest.geometry.location, refPoint);
-            if (dt > (hintPoint ? 20000 : 40000)) finalTooFar = true;
-          } catch { }
-        }
-
-        // v5.23: Ultimate Automation Rules (Universal Silent Fallback)
-        // Auto-select if:
-        // 1. Point is IN ACTIVE ZONE + (STREET MATCH OR HOUSE MATCH) + (Rooftop/Interpolated/Centroid) + NOT Tech Zone.
-        // 2. Point is PERFECT (Rooftop + Active Zone + House Match) + NOT Tech Zone.
-        // 3. There is only ONE candidate left after filtration and it is NOT in Tech Zone.
-        const isInSelectedZone = inActiveZone(finalBest.geometry.location);
-
-        // v5.23: We allow automatic selection of street centroids (GEOMETRIC_CENTER) if the street matches exactly and it's in an active zone.
-
-
-        // v5.41: Smart Clarification (Prioritize Safety & Respect Silent Mode)
-        // Rule 1: High Risk (Always Ask) - Technical Zone, OUTSIDE ALL KML ZONES, or Too Far
-        const isOutsideAllZones = !finalInAnyZone;
-        const isHighRiskTrigger = finalInTechZone || isOutsideAllZones || finalTooFar;
-
-        // Rule 2: Moderate Risk (Respect Silent/confirmAddresses) - Inside KML but NOT in Active Sector
-        const isSectoredButInactive = !isInSelectedZone;
-
-        // Final Decision: 
-        // We trigger modal if:
-        // - It's a High Risk Trigger (regardless of setting)
-        // - It's Sectored-but-Inactive AND current user setting is to ALWAYS CONFIRM (confirmAddresses is true)
-        const shouldClarifyStatus = isHighRiskTrigger || (isSectoredButInactive && confirmAddresses);
-
-
-        // v5.41: Refined autoReady. If NOT shouldClarifyStatus, we are autoReady.
-        // v5.44: In SILENT mode, we are always autoReady unless it's a critical error (no result at all)
-        const autoReady = !shouldClarifyStatus || (!confirmAddresses && !!finalBest && !finalInTechZone);
-
-        if (autoReady) return finalBest;
-
-        // Modal Presentation
-        const modalReason = finalInTechZone ? 'ВНИМАНИЕ: Зона авторазгрузки!' :
-          !finalInAnyZone ? 'Адрес ВНЕ всех KML зон!' :
-            (hasRestriction && !inActiveZone(finalBest.geometry.location)) ? 'Адрес за пределами хаба' :
-              !finalHouseMatched ? `Дом ${expectedHouse} не найден (только ${finalWinnerStreetNum || 'без номера'})` :
-                hasScatteredAlternatives ? 'Варианты в разных местах' :
-                  finalTooFar ? 'Сильное отклонение от маршрута' :
-                    `Выберите верный вариант (${activePool.length})`;
-
-        const modalOptions = activePool.map((r: any) => {
-          let d: number | undefined;
-          let mapsUrl = '';
-          let zoneFound = null;
-          const loc = r.geometry.location; // Moved outside try
-          try {
-            if (refPoint) d = window.google.maps.geometry.spherical.computeDistanceBetween(loc, refPoint);
-            const lat = typeof loc.lat === 'function' ? loc.lat() : loc.lat;
-            const lng = typeof loc.lng === 'function' ? loc.lng() : loc.lng;
-            mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
-            zoneFound = findZoneForLoc(loc, zones);
-          } catch { }
-          const isInActive = inActiveZone(loc);
-          return {
-            label: r.formatted_address || 'Кандидат',
-            distanceMeters: d,
-            mapsUrl,
-            zoneName: r._isResearch ? '📍 ЦЕНТР УЛИЦЫ (БЕЗОПАСНАЯ ТОЧКА)' : (!zoneFound ? '⚠ вне всех KML зон' : (!isInActive ? `⚠ ${zoneFound.name} (выкл)` : (checkTechnicalKmlZone(loc) ? `🛑 ${zoneFound.name} (АВТОРАЗГРУЗ - НЕ ВЫБИРАТЬ!)` : `✅ ${zoneFound.name}`))),
-            res: r
-          };
-        });
-
-        const seenUnique = new Set<string>();
-        const deduped = modalOptions.filter((opt: any) => {
-          const key = opt.res?.place_id || opt.label;
-          if (seenUnique.has(key)) return false;
-          seenUnique.add(key);
-          return true;
-        });
-
-        if (deduped.length === 0) return finalBest;
-
-        const choice: any = await new Promise(resolve => {
-          disambQueue.current.push({
-            title: `${modalReason}: "${rawAddress}". Выберите правильный вариант:`,
-            options: deduped,
-            resolve
-          });
-          processDisambQueue();
-        });
-        return choice || finalBest;
-      }
-
-
-      const researchExhaustive = async (rawAddress: string, hintPoint?: any): Promise<any[]> => {
-        const request: any = { address: rawAddress, region: cityCtx.region, componentRestrictions: { country: 'ua' } };
-        let candidates: any[] = [];
-        const variants = generateStreetVariants(rawAddress, cityCtx.city);
-        // v5.31: Restore serial loop with Early Exit for "Instant" feel
-        for (const variant of variants) {
-          const res: any = await googleApiCache.geocode({ ...request, address: variant });
-          if (res && res.length > 0) {
-            candidates = [...candidates, ...res];
-            const bestFound = res.find((r: any) =>
-              r.geometry?.location_type === 'ROOFTOP' &&
-              isInsideSector(r.geometry.location) &&
-              !checkTechnicalKmlZone(r.geometry.location)
-            );
-            if (bestFound) break; // Speed!
-          }
-        }
-
-        // Если привязаны к городу и ничего нет — пробуем БЕЗ города (для областей)
-        if (candidates.length === 0) {
-          const resNoCity: any = await googleApiCache.geocode({ address: cleanAddress(rawAddress), region: 'ua' });
-          if (resNoCity) candidates = [...candidates, ...resNoCity];
-        }
-
-        if (candidates.length === 0) return [];
-
-        // Hint-based expansion (sublocalities)
-        if (hintPoint) {
-          const rev: any = await googleApiCache.geocode({ location: hintPoint });
-          const sub = (rev || []).find((r: any) => (r.address_components || []).some((c: any) => c.types?.includes('sublocality') || c.types?.includes('neighborhood')))
-            ?.address_components?.find((c: any) => c.types?.includes('sublocality') || c.types?.includes('neighborhood'))?.long_name;
-          if (sub) {
-            const subRes: any = await googleApiCache.geocode({ ...request, address: `${cleanAddress(rawAddress)}, ${sub}` });
-            if (subRes) candidates = [...candidates, ...subRes];
-          }
-        }
-
-        // Town-specific KML expansion
-        if (settings.kmlData?.polygons) {
-          const towns = new Set<string>();
-          settings.kmlData.polygons.forEach((p: any) => { if (p.folderName) towns.add(p.folderName); if (p.name) towns.add(p.name); });
-          await Promise.all(Array.from(towns).map(async town => {
-            const tr: any = await googleApiCache.geocode({ ...request, address: `${cleanAddress(rawAddress)}, ${town}` });
-            if (tr) candidates = [...candidates, ...tr];
-          }));
-        }
-
-        // Deduplicate before returning
-        const seen = new Set<string>();
-        return candidates.filter(c => {
-          const lat = typeof c.geometry.location.lat === 'function' ? c.geometry.location.lat() : c.geometry.location.lat;
-          const lng = typeof c.geometry.location.lng === 'function' ? c.geometry.location.lng() : c.geometry.location.lng;
-          const key = `${lat},${lng}`;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-      }
-
-      // v5.16: Legacy wrapper for single-result sector fallback
-      const geocodeInsideOnly = async (rawAddress: string, hintPoint?: any): Promise<any | null> => {
-        const candidates = await researchExhaustive(rawAddress, hintPoint);
-        const inside = candidates.filter(r => isInsideSector(r.geometry.location));
-        if (inside.length === 0) return null;
-        if (inside.length === 1) return inside[0];
-
-        // Score them to find the best
-        const expectedHouse = extractHouseNumber(rawAddress);
-        const expectedPostal = extractPostal(rawAddress);
-        let best = inside[0];
-        let bestScore = scoreCandidate(best, { refPoint: hintPoint, expectedHouse, expectedPostal, inside: true });
-        for (let i = 1; i < inside.length; i++) {
-          const s = scoreCandidate(inside[i], { refPoint: hintPoint, expectedHouse, expectedPostal, inside: true });
-          if (s > bestScore) { best = inside[i]; bestScore = s; }
-        }
-        return best;
-      }
-
-      // Вспомогательная функция: вычисляем центроид набора точек
-      const computeCentroid = (points: any[]): any | null => {
-        const valid = points.filter(Boolean)
-        if (valid.length === 0) return null
-        let sumLat = 0, sumLng = 0
-        valid.forEach((p: any) => {
-          sumLat += typeof p.lat === 'function' ? p.lat() : (p.lat || 0)
-          sumLng += typeof p.lng === 'function' ? p.lng() : (p.lng || 0)
-        })
-        return { lat: sumLat / valid.length, lng: sumLng / valid.length };
-      }
-
-      // Вспомогательная функция: расстояние между двумя LatLng (метры)
-      const distBetween = (a: any, b: any): number => {
-        try { return window.google.maps.geometry.spherical.computeDistanceBetween(a, b) } catch { return Infinity }
-      }
-
-      // SOTA 5.2: Use coordinate presets if available and address matches preset
-      const useStartCoords = settings.defaultStartAddress === route.startAddress && settings.defaultStartLat && settings.defaultStartLng
-      const useEndCoords = settings.defaultEndAddress === route.endAddress && settings.defaultEndLat && settings.defaultEndLng
-
-      // v5.24: Fix crash where window.google.maps.LatLng might be undefined
-      // We use object literals { lat, lng } which Google Maps API accepts interchangeably
-      const startCoord = (settings.defaultStartLat && settings.defaultStartLng)
-        ? { lat: Number(settings.defaultStartLat), lng: Number(settings.defaultStartLng) }
-        : null;
-
-      let originRes = (useStartCoords && startCoord)
-        ? { geometry: { location: startCoord }, formatted_address: route.startAddress }
-        : await geocodeWithSector(route.startAddress)
-
-      const waypointResList: Array<any | null> = new Array(route.orders.length).fill(null)
-      const baseRefPoint = originRes?.geometry?.location || null
-
-      // v5.33: Restore parallel geocoding with tiny stagger (2ms)
-      // Since our queue the retry logic are now stable, parallelizing this is safe and extremely fast.
-      const waypointPromises = route.orders.map(async (order, idx) => {
-        if (idx > 0) await new Promise(r => setTimeout(r, idx * 2));
-        return geocodeWithSector(order.address, baseRefPoint);
-      });
-      const results = await Promise.all(waypointPromises);
-      results.forEach((res, idx) => { waypointResList[idx] = res; });
-
-      let prevPoint = waypointResList.length > 0
-        ? (waypointResList[waypointResList.length - 1]?.geometry?.location || baseRefPoint)
-        : baseRefPoint;
-
-      const endCoord = (settings.defaultEndLat && settings.defaultEndLng)
-        ? { lat: Number(settings.defaultEndLat), lng: Number(settings.defaultEndLng) }
-        : null;
-
-      let destinationRes = (route.endAddress === route.startAddress)
-        ? originRes
-        : (useEndCoords && endCoord
-          ? { geometry: { location: endCoord }, formatted_address: route.endAddress }
-          : await geocodeWithSector(route.endAddress, prevPoint))
-
-      // ═══════════════════════════════════════════════════════════════
-      // ДЕТЕКТОР ВЫБРОСОВ: если одна точка сильно отличается от остальных
-      // — это признак неправильного геокодирования (например, ул. Леси
-      // Украинки нашлась в другом городе). Перегеокодируем выброс строго
-      // внутри KML-зон.
-      // ═══════════════════════════════════════════════════════════════
-      const OUTLIER_THRESHOLD_M = 30_000 // 30 км — явный выброс
-      const allResolved: Array<{ res: any; label: string; rawAddr: string }> = [
-        { res: originRes, label: 'Стартовый адрес', rawAddr: route.startAddress },
-        ...waypointResList.map((r, i) => ({ res: r, label: `Заказ #${route.orders[i].orderNumber}`, rawAddr: route.orders[i].address })),
-        { res: destinationRes, label: 'Конечный адрес', rawAddr: route.endAddress }
-      ]
-
-      const resolvedLocs = allResolved.map(x => x.res?.geometry?.location).filter(Boolean)
-      if (resolvedLocs.length >= 3) {
-        const centroid = computeCentroid(resolvedLocs)
-        if (centroid) {
-          for (let i = 0; i < allResolved.length; i++) {
-            const item = allResolved[i]
-            if (!item.res?.geometry?.location) continue
-            const d = distBetween(item.res.geometry.location, centroid)
-            if (d > OUTLIER_THRESHOLD_M) {
-              // Пересчитываем центроид без этой точки
-              const otherLocs = resolvedLocs.filter((_, j) => j !== i)
-              const centroidWithout = computeCentroid(otherLocs)
-              const dWithout = centroidWithout ? distBetween(item.res.geometry.location, centroidWithout) : d
-              if (dWithout > OUTLIER_THRESHOLD_M) {
-                // v5.11: Disabled auto-correction.
-                // We show a warning toast if suspicious, but NEVER overwrite the user's choice (manual or disambiguated).
-                toast(`⚠️ Внимание: точка "${item.label}" находится очень далеко (${formatDisplayDistance(dWithout)}). Проверьте правильность адреса.`, { duration: 6000 });
-              }
-            }
-          }
-        }
-      }
-      // Подготовим метаинформацию для визуальной верификации
-      const buildMeta = (res: any, raw: string) => {
-        if (!res) return null
-        const comps = res.address_components || []
-        const house = extractHouseNumber(raw)
-        const postal = extractPostal(raw)
-        const streetNumComp = comps.find((c: any) => c.types?.includes('street_number'))
-        const postalComp = comps.find((c: any) => c.types?.includes('postal_code'))
-        const lat = typeof res.geometry?.location?.lat === 'function' ? res.geometry.location.lat() : res.geometry?.location?.lat
-        const lng = typeof res.geometry?.location?.lng === 'function' ? res.geometry.location.lng() : res.geometry?.location?.lng
-
-        let zoneInfo = null
-        if (lat !== undefined && lng !== undefined && settings.kmlData) {
-          zoneInfo = AddressValidationService.checkInKmlSectors(lat, lng, settings.kmlData, selectedHubs, selectedZones)
-        }
-
-        return {
-          locationType: res.geometry?.location_type || 'UNKNOWN',
-          placeId: res.place_id || null,
-          streetNumberMatched: !!house && ((res.formatted_address || '').toLowerCase().includes(house.toLowerCase()) || (streetNumComp?.long_name || '').toLowerCase() === house.toLowerCase()),
-          postalMatched: !!postal && (postalComp?.long_name === postal || (res.formatted_address || '').includes(postal)),
-          formatted: res.formatted_address || '',
-          lat,
-          lng,
-          zoneName: zoneInfo?.zoneName || null,
-          hubName: zoneInfo?.hubName || null
-        }
-      }
-      // Валидация
-      const unresolved: string[] = []
-      if (!originRes) unresolved.push('стартовый адрес')
-      waypointResList.forEach((r, idx) => { if (!r) unresolved.push(`точка #${idx + 1}`) })
-      if (!destinationRes) unresolved.push('финишный адрес')
-      if (unresolved.length > 0) {
-        toast.error(`Не удалось однозначно определить: ${unresolved.join(', ')}. Уточните адреса или границы сектора.`)
-        setIsCalculating(false)
-        return
-      }
-
-      // Проверка попадания в сектор (если есть) + повторная попытка для внешних точек
-      if (cachedHubPolygons.length > 0) {
-        const all = [originRes, ...waypointResList, destinationRes]
-
-        let anyOutside = false
-        all.forEach((r: any) => { if (r && !isInsideSector(r.geometry.location)) anyOutside = true })
-
-        if (anyOutside) {
-          // Пробуем переразрешить только внешние точки строго внутри полигона
-          // origin
-          if (originRes && !isInsideSector(originRes.geometry.location)) {
-            const fix = await geocodeInsideOnly(route.startAddress, null)
-            if (fix) originRes = fix
-          }
-          // waypoints
-          for (let i = 0; i < waypointResList.length; i++) {
-            const r = waypointResList[i]
-            if (r && !isInsideSector(r.geometry.location)) {
-              // eslint-disable-next-line no-await-in-loop
-              const prev = i === 0 ? (originRes?.geometry?.location || null) : (waypointResList[i - 1]?.geometry?.location || null)
-              const fix = await geocodeInsideOnly(route.orders[i].address, prev)
-              if (fix) waypointResList[i] = fix
-            }
-          }
-          // destination
-          if (destinationRes && !isInsideSector(destinationRes.geometry.location)) {
-            const prev = waypointResList.length > 0 ? (waypointResList[waypointResList.length - 1]?.geometry?.location || null) : (originRes?.geometry?.location || null)
-            const fix = await geocodeInsideOnly(route.endAddress, prev)
-            if (fix) destinationRes = fix
-          }
-
-
-          // Final sync for identical addresses to ensure perfect round-trip
-          if (route.startAddress === route.endAddress) {
-            destinationRes = originRes;
-          }
-
-          // Повторная валидация с деталями
-          const pointsToCheck = [
-            { name: 'Стартовый адрес', addr: route.startAddress, res: originRes },
-            ...waypointResList.map((r, i) => ({ name: `Заказ #${route.orders[i].orderNumber}`, addr: route.orders[i].address, res: r })),
-            { name: 'Конечный адрес', addr: route.endAddress, res: destinationRes }
-          ]
-
-          const outsidePoints = pointsToCheck.filter((p: any) => p.res && !isInsideSector(p.res.geometry.location))
-
-          if (outsidePoints.length > 0) {
-            // Smart Address Correction Integration
-            // The instruction mentions fixing a `useSmartAddressCorrection` hook call,
-            // but no such hook is present in the provided code.
-            // Assuming the intent was to ensure the `validateOrders` and related state updates are correct.
-            const problems = await validateOrders(route.orders)
-
-            if (problems.length > 0) {
-              setProblemOrders(problems)
-
-              if (problems.length === 1) {
-                setCurrentProblem(problems[0])
-                setShowCorrectionModal(true)
-              } else {
-                setShowBatchPanel(true)
-              }
-            } else {
-              const names = outsidePoints.map(p => p.name).join(', ')
-              const hubsDesc = selectedHubs.length > 0 ? ` в хабах: ${selectedHubs.join(', ')}` : ''
-              toast.error(`Точки вне зоны${hubsDesc}: ${names}. Проверьте адреса.`, { duration: 5000 })
-            }
-
-            setIsCalculating(false)
-            return
-          }
-        }
-      }
-
-      // Подготовим метаинформацию для визуальной верификации (после всех коррекций)
-      const routeGeoMeta: any = {
-        origin: buildMeta(originRes, route.startAddress),
-        destination: buildMeta(destinationRes, route.endAddress),
-        waypoints: route.orders.map((o, i) => buildMeta(waypointResList[i], o.address))
-      }
-
-      // v5.11: Use exact LatLng for directions to ensure user choice in disambiguation modal is respected perfectly
-      const originLocation = originRes?.geometry?.location || (originRes?.place_id ? { placeId: originRes.place_id } : (originRes?.formatted_address || cleanAddressForRoute(route.startAddress)))
-      const destinationLocation = destinationRes?.geometry?.location || (destinationRes?.place_id ? { placeId: destinationRes.place_id } : (destinationRes?.formatted_address || cleanAddressForRoute(route.endAddress)))
-      const waypointsLocations = waypointResList.map(r => ({
-        location: r?.geometry?.location || (r?.place_id ? { placeId: r.place_id } : (r?.formatted_address || '')),
-        stopover: true
-      }))
-      const request = {
-        origin: originLocation,
-        destination: destinationLocation,
-        waypoints: waypointsLocations,
-        travelMode: window.google.maps.TravelMode.DRIVING,
-        optimizeWaypoints: false,
-        unitSystem: window.google.maps.UnitSystem.METRIC,
-        avoidHighways: false,
-        avoidTolls: false,
-        avoidFerries: false,
-        drivingOptions: {
-          departureTime: new Date(),
-          trafficModel: window.google.maps.TrafficModel.BEST_GUESS
-        },
-        region: cityCtx.region,
-        provideRouteAlternatives: false
-      }
-
-      const result = await googleApiCache.getDirections(request)
-      if (result) {
-        // v5.27: Removed redundant post-calculation `checkInside(legs.end_location)` check.
-        // Google Directions API snaps locations to the nearest road, which may fall slightly outside
-        // the strict polygon bounds, causing false "Outside Hub/Sector" errors for perfectly valid addresses.
-        // The true rooftop coordinates are already rigorously validated by `isInsideSector` during geocoding.
-
-        // --- TRAFFIC ENHANCEMENT (NEW) ---
-        let adjustedDuration = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
-        let trafficDelayMin = 0
-        const mapboxToken = settings.mapboxToken || localStorage.getItem('km_mapbox_token')
-        const vType = getCourierVehicleType(route.courier)
-
-        if (mapboxToken && route.orders.length >= 1) {
-          try {
-            // We need coords for traffic API
-            const chainForTraffic = route.orders.map((o, i) => ({
-              ...o,
-              coords: routeGeoMeta.waypoints[i] ? { lat: routeGeoMeta.waypoints[i].lat, lng: routeGeoMeta.waypoints[i].lng } : null
-            })).filter(o => o.coords)
-
-            if (chainForTraffic.length >= 1) {
-              const trafficInfo = await getUkraineTrafficForOrders(chainForTraffic as any, mapboxToken)
-              if (trafficInfo.length > 0) {
-                trafficDelayMin = calculateTotalTrafficDelay(trafficInfo)
-
-                // Apply motorcycle reduction factor
-                if (vType === 'motorcycle') {
-                  trafficDelayMin = trafficDelayMin * 0.5
-                }
-
-                adjustedDuration += (trafficDelayMin * 60)
-              }
-            }
-          } catch (err) {
-            console.warn('Traffic calculation failed:', err)
-          }
-        }
-
-        // Используем точное расстояние из Google Maps API
-        const totalDistance = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
-        const totalDuration = adjustedDuration // Use adjusted duration with traffic
-
-        // Конвертируем в километры с высокой точностью
-        const distanceKm = totalDistance / 1000
-        // Критическая отсечка аномалий (из настроек, по умолчанию 120км)
-        const maxKm = settings?.maxCriticalRouteDistanceKm ?? 120
-        if (distanceKm > maxKm) {
-          console.warn(`Аномальное расстояние: ${distanceKm.toFixed(1)} км > ${maxKm} км. Повторяем расчет с принудительным городом/страной.`)
-          // Повторная попытка с жестким добавлением города/страны
-          const forcedRequest = request
-          const result2 = await googleApiCache.getDirections(forcedRequest)
-          if (result2) {
-            const totalDistance2 = result2.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
-            const totalDuration2 = result2.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
-            const distanceKm2 = totalDistance2 / 1000
-            // Retry log removed for production
-            updateExcelData((prev: any) => ({
-              ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
-              routes: (prev?.routes || []).map((r: Route) =>
-                r.id === route.id
-                  ? {
-                    ...r,
-                    totalDistance: distanceKm2,
-                    totalDuration: totalDuration2 / 60,
-                    legDurations: result2.routes[0].legs.map((leg: any) => leg.duration.value / 60),
-                    isOptimized: true,
-                    geoMeta: routeGeoMeta
-                  }
-                  : r
-              )
-            }))
-          } else {
-            console.error('Ошибка повторного расчета маршрута')
-          }
-          setIsCalculating(false)
-          return
-        }
-
-        // Проверяем, что маршрут не превышает 100км (возможная ошибка в адресе)
-        if (distanceKm > 100) {
-          console.warn(`Маршрут превышает 100км (${distanceKm.toFixed(1)}км). Возможна ошибка в адресе.`)
-        }
-
-        // Логируем для отладки и сравнения с Google Maps UI
-        // Distance calculation log removed for production
-
-        const legDurations = result.routes[0].legs.map((leg: any) => {
-          const baseDur = leg.duration.value / 60
-          if (trafficDelayMin > 0) {
-            const prop = leg.duration.value / (result.routes[0].legs.reduce((t: number, l: any) => t + l.duration.value, 0))
-            return baseDur + (trafficDelayMin * prop)
-          }
-          return baseDur
-        })
-
-        updateExcelData((prev: any) => ({
-          ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
-          routes: (prev?.routes || []).map((r: Route) =>
-            r.id === route.id
-              ? {
-                ...r,
-                totalDistance: distanceKm,
-                totalDuration: totalDuration / 60,
-                legDurations,
-                isOptimized: true,
-                geoMeta: routeGeoMeta
-              }
-              : r
-          )
-        }))
-      } else {
-        console.error('Ошибка расчета маршрута')
-      }
-
-      setIsCalculating(false)
-    } catch (error: any) {
-      toast.error(`Ошибка при расчете маршрута: ${error.message || 'Неизвестная ошибка'}`)
-      setIsCalculating(false)
-    }
-  }
 
   const deleteRoute = (routeId: string) => {
     const route = excelData?.routes?.find(r => r.id === routeId)
@@ -2867,7 +1915,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                           );
 
                           // v5.34: UNIVERSAL TURBO - Batched State Updates
-                          setIsCalculating(true);
+                          ;
                           try {
                             const courier = String(selectedCourier || '');
                             if (!courier || courier === 'Не назначено') return;
@@ -2919,7 +1967,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                             console.error('Batch route creation error:', err);
                             toast.error('Ошибка при создании группы маршрутов');
                           } finally {
-                            setIsCalculating(false);
+
                           }
                         }}
                       />
@@ -3616,44 +2664,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           }}
         />
 
-        {/* Smart Address Correction Modals */}
-        {
-          showCorrectionModal && currentProblem && (
-            <SmartAddressCorrectionModal
-              order={currentProblem.order}
-              validationResult={currentProblem.validationResult}
-              isDark={isDark}
-              onApplyCorrection={(suggestion) => applyCorrection(currentProblem.order, suggestion)}
-              onManualEdit={(newAddress) => {
-                applyManualEdit(currentProblem.order, newAddress)
-              }}
-              onSkip={() => setShowCorrectionModal(false)}
-              onClose={() => setShowCorrectionModal(false)}
-            />
-          )
-        }
-
-        {
-          showBatchPanel && problemOrders.length > 0 && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-              <div className="w-full max-w-2xl">
-                <BatchAddressCorrectionPanel
-                  problemOrders={problemOrders}
-                  isDark={isDark}
-                  onAutoCorrectAll={applyBatchCorrections}
-                  onReviewManually={() => {
-                    if (problemOrders.length > 0) {
-                      setCurrentProblem(problemOrders[0])
-                      setShowBatchPanel(false)
-                      setShowCorrectionModal(true)
-                    }
-                  }}
-                  onClose={() => setShowBatchPanel(false)}
-                />
-              </div>
-            </div>
-          )
-        }
 
         {/* SOTA 5.0: Disambiguation Modal Implementation */}
         {
@@ -3684,8 +2694,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 <div className="p-6 space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
                   {disambModal.options.map((option, idx) => {
                     const isTechnical = option.res?.zone?.name?.toLowerCase().includes('авторозвантаження') ||
-                      option.res?.zone?.name?.toLowerCase().includes('разгрузка') ||
-                      checkTechnicalKmlZone(option.res?.geometry?.location);
+                      option.res?.zone?.name?.toLowerCase().includes('разгрузка');
 
                     return (
                       <div key={idx} className="group relative">

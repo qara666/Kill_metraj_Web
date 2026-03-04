@@ -188,6 +188,7 @@ export class AddressValidationService {
     if (typeof window === 'undefined' || !window.google || !window.google.maps || !window.google.maps.Polygon || !window.google.maps.geometry) return null
 
     const point = new window.google.maps.LatLng(lat, lng)
+    const results: Array<{ zoneName: string; hubName: string; isTechnical: boolean }> = []
 
     for (const polyData of kmlData.polygons) {
       // Фильтр по хабам
@@ -201,14 +202,23 @@ export class AddressValidationService {
 
       const polygon = new window.google.maps.Polygon({ paths: polyData.path })
       if (window.google.maps.geometry.poly.containsLocation(point, polygon)) {
-        return {
+        const isTechnical = /авторозвантаження|технічна|авторазгрузка/i.test(polyData.name) || /авторозвантаження|технічна|авторазгрузка/i.test(polyData.folderName);
+        results.push({
           zoneName: polyData.name,
-          hubName: polyData.folderName
-        }
+          hubName: polyData.folderName,
+          isTechnical
+        })
       }
     }
 
-    return null
+    if (results.length === 0) return null;
+
+    // v5.60: Prioritize delivery zones (non-technical)
+    const deliveryZone = results.find(r => !r.isTechnical);
+    if (deliveryZone) return { zoneName: deliveryZone.zoneName, hubName: deliveryZone.hubName };
+
+    // Fallback to technical if no delivery zone found
+    return { zoneName: results[0].zoneName, hubName: results[0].hubName };
   }
 
   /**

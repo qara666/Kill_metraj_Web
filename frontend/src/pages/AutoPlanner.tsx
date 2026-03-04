@@ -8,7 +8,6 @@ import { SparklesIcon as SparklesIconSolid } from '@heroicons/react/24/solid'
 import { routeHistory } from '../utils/routes/routeHistory'
 import { Tooltip } from '../components/shared/Tooltip'
 import { VEHICLE_LIMITS } from '../utils/routes/courierSchedule'
-import type { CoverageAnalysis } from '../utils/processing/coverageAnalysis'
 
 // Custom Components
 import { AutoPlannerStats } from '../components/autoplanner/AutoPlannerStats'
@@ -34,11 +33,11 @@ import { useOrderFiltering } from '../hooks/useOrderFiltering'
 import { useTrafficManagement } from '../hooks/useTrafficManagement'
 import { AutoPlannerControls } from '../components/autoplanner/AutoPlannerControls'
 import { OptimizationProgressView } from '../components/autoplanner/OptimizationProgressView'
-import { CoverageAnalysisView } from '../components/autoplanner/CoverageAnalysisView'
 import { ExcelDataPreview } from '../components/excel/ExcelDataPreview'
 import { useExcelImporter } from '../hooks/useExcelImporter'
 import { useAutoPlannerStore } from '../stores/useAutoPlannerStore'
 import { localStorageUtils } from '../utils/ui/localStorage'
+import { useBackgroundGeocoder } from '../hooks/useBackgroundGeocoder'
 
 // Lazy loaded components
 import type { TourStep } from '../components/features/HelpTour'
@@ -57,7 +56,6 @@ const TrafficHeatmap = lazy(() => import('../components/maps/TrafficHeatmap')
         return { default: () => <MapSkeleton /> }
     })
 )
-const WorkloadHeatmap = lazy(() => import('../components/maps/WorkloadHeatmap').then(m => ({ default: m.WorkloadHeatmap })))
 
 export const AutoPlanner: React.FC = () => {
     const { isDark } = useTheme()
@@ -78,17 +76,10 @@ export const AutoPlanner: React.FC = () => {
     const {
         isTrafficHeatmapCollapsed,
         setTrafficHeatmapCollapsed,
-        isWorkloadHeatmapCollapsed,
-        setWorkloadHeatmapCollapsed,
-        enableCoverageAnalysis,
-        enableWorkloadHeatmap,
         enableScheduleFiltering,
         setEnableScheduleFiltering
     } = useAutoPlannerStore()
 
-    // --- Advanced Analytics State ---
-    const [coverageAnalysis, _setCoverageAnalysis] = useState<CoverageAnalysis | null>(null)
-    const [workloadHeatmapData, setWorkloadHeatmapData] = useState<any[]>([])
 
     // --- New Hooks ---
     const state = useAutoPlannerState()
@@ -177,6 +168,9 @@ export const AutoPlanner: React.FC = () => {
     } = filterState
 
     const filteredOrders = React.useDeferredValue(rawFilteredOrders)
+
+    // --- Background Pre-geocoder (L1 + L2 Cache Warming) ---
+    useBackgroundGeocoder(filteredOrders)
 
     // --- Excel Importer Hook ---
     const { handleScheduleOnlyUpload } = useExcelImporter(setExcelData, setCourierSchedules)
@@ -431,25 +425,8 @@ export const AutoPlanner: React.FC = () => {
                     )}
                 </div>
 
-                {enableWorkloadHeatmap && workloadHeatmapData.length > 0 && (
-                    <div className={clsx('mt-6 rounded-2xl border-2 overflow-hidden', isDark ? 'border-gray-700 bg-gray-800/40' : 'border-gray-200 bg-white')}>
-                        <button onClick={() => setWorkloadHeatmapCollapsed(!isWorkloadHeatmapCollapsed)} className="w-full px-4 py-3 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <ChartBarIcon className="w-5 h-5" />
-                                <span className="font-semibold">Тепловая карта загруженности</span>
-                            </div>
-                        </button>
-                        {!isWorkloadHeatmapCollapsed && (
-                            <div className="p-4">
-                                <Suspense fallback={<div>Загрузка...</div>}>
-                                    <WorkloadHeatmap orders={workloadHeatmapData} onHeatmapDataLoad={setWorkloadHeatmapData} />
-                                </Suspense>
-                            </div>
-                        )}
-                    </div>
-                )}
 
-                <CoverageAnalysisView analysis={enableCoverageAnalysis ? coverageAnalysis : null} isDark={isDark} />
+                {/* Coverage analysis removed */}
 
                 {(plannedRoutes.length > 0 || (isPlanning === false && excelData && ordersCount > 0)) && (
                     <div className="mt-6" data-tour="routes">
