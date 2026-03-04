@@ -1,0 +1,45 @@
+services:
+  # ── Backend ────────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: km-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    ports:
+      - "5001:5001"
+    environment:
+      - NODE_ENV=production
+    networks:
+      - km-network
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:5001/api/health" ]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+
+  # ── Frontend ───────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Points to backend API — change to your server's domain/IP
+        VITE_API_URL: http://backend:5001
+    container_name: km-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - km-network
+
+# ── Networks ───────────────────────────────────────────────────────────────
+networks:
+  km-network:
+    driver: bridge

@@ -1,4 +1,0 @@
-# Render Environment Variables для Backend
-PORT=10000
-NODE_ENV=production
-CORS_ORIGIN=https://kill-metraj-frontend.onrender.com

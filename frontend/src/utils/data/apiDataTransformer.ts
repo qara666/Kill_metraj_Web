@@ -193,7 +193,6 @@ const transformDashboardOrder = (swaggerOrder: DashboardOrderResponse, baseDate:
         deadlineAt,
         handoverAt, // Добавлено (Phase 4.4)
         plannedTime: deadlineStr || 'Без времени',
-        deliveryZone: swaggerOrder.deliveryZone,
         courier: (swaggerOrder.courier && isId0CourierName(swaggerOrder.courier)) ? 'Не назначено' : asNonEmptyString(swaggerOrder.courier),
         amount: swaggerOrder.amount,
         paymentMethod: swaggerOrder.paymentMethod,

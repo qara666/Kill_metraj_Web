@@ -1,0 +1,43 @@
+
+> kill-metraj-frontend@1.0.0 build
+> tsc && vite build
+
+vite v4.5.14 building for production...
+transforming...
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+✓ 1021 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                      2.60 kB │ gzip:   1.29 kB
+dist/assets/index-b52aea23.css                     145.85 kB │ gzip:  19.88 kB
+dist/assets/ExcelDebugLogs-83311b65.js               0.72 kB │ gzip:   0.43 kB
+dist/assets/CollapsibleSection-2bff1e32.js           1.54 kB │ gzip:   0.64 kB
+dist/assets/googleMapsLoader-64f2c8b4.js             1.93 kB │ gzip:   1.06 kB
+dist/assets/paymentMethodHelper-03c3112d.js          2.01 kB │ gzip:   0.73 kB
+dist/assets/useAutoPlannerStore-dd96674b.js          2.31 kB │ gzip:   0.75 kB
+dist/assets/Tooltip-73f41b5b.js                      2.42 kB │ gzip:   1.10 kB
+dist/assets/ExcelDataPreview-51133e38.js             7.24 kB │ gzip:   1.88 kB
+dist/assets/routeCalculationHelpers-14b8ceef.js      9.44 kB │ gzip:   3.77 kB
+dist/assets/HelpModalRoutes-9525c5da.js              9.60 kB │ gzip:   2.92 kB
+dist/assets/HelpModalCouriers-b21ec5a1.js           10.10 kB │ gzip:   2.95 kB
+dist/assets/Administration-52ff9cca.js              11.44 kB │ gzip:   3.39 kB
+dist/assets/HelpTour-42fa7cac.js                    11.74 kB │ gzip:   4.03 kB
+dist/assets/Analytics-0547ca62.js                   12.09 kB │ gzip:   3.45 kB
+dist/assets/Users-538833ab.js                       12.30 kB │ gzip:   3.30 kB
+dist/assets/TelegramParsing-404db8a6.js             17.45 kB │ gzip:   5.89 kB
+dist/assets/KmlPreviewMap-7ab9bf1e.js               18.59 kB │ gzip:   5.91 kB
+dist/assets/Couriers-78edf947.js                    25.08 kB │ gzip:   6.96 kB
+dist/assets/Presets-fcb9eea2.js                     28.75 kB │ gzip:   7.33 kB
+dist/assets/Settings-6d10c9b9.js                    44.72 kB │ gzip:  15.45 kB
+dist/assets/icons-289d0f79.js                       46.57 kB │ gzip:   8.16 kB
+dist/assets/utils-6e14d010.js                       48.32 kB │ gzip:  19.26 kB
+dist/assets/Logs-75beea57.js                        66.51 kB │ gzip:  20.10 kB
+dist/assets/index-b72321cc.js                      110.14 kB │ gzip:  33.48 kB
+dist/assets/Dashboard-c0b43192.js                  141.04 kB │ gzip:  41.54 kB
+dist/assets/Routes-181b17da.js                     166.16 kB │ gzip:  50.00 kB
+dist/assets/vendor-6051c926.js                     203.51 kB │ gzip:  63.88 kB
+dist/assets/Financials-76707595.js               1,032.27 kB │ gzip: 298.78 kB
+✓ built in 5.00s

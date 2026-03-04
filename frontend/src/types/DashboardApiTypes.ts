@@ -10,7 +10,6 @@ export interface DashboardOrderResponse {
     kitchenTime: string;           // Время выдачи с кухни (формат "HH:MM")
     deliverBy: string;             // Точное время доставки (формат "HH:MM")
     plannedTime: string;           // Плановое время (формат "HH:MM")
-    deliveryZone: string;          // Зона доставки
     deliveryTime: string;          // Время доставки (например "42мин.")
     changeAmount: number;          // Сдача
     orderComment: string;          // Комментарий

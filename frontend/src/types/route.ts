@@ -1,0 +1,39 @@
+export interface Order {
+    id: string
+    orderNumber: string
+    address: string
+    courier: string
+    amount: number
+    phone: string
+    customerName: string
+    isSelected?: boolean
+    routeOrder?: number
+    plannedTime?: string
+    paymentMethod?: string
+    coords?: { lat: number; lng: number }
+    manualGroupId?: string
+    deadlineAt?: number | null
+    handoverAt?: number | null
+    status?: string
+    statusTimings?: {
+        assembledAt?: number;
+        deliveringAt?: number;
+        completedAt?: number;
+    };
+    raw?: any
+}
+
+export interface Route {
+    id: string
+    courier: string
+    orders: Order[]
+    totalDistance: number
+    totalDuration: number
+    startAddress: string
+    endAddress: string
+    isOptimized: boolean
+    geoMeta?: any
+    createdAt?: number
+    legDurations?: number[]
+    accurateETA?: any
+}

@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react';
 import { useExcelData } from '../../contexts/ExcelDataContext';
-import { useAutoPlannerStore } from '../../stores/useAutoPlannerStore';
+import { useDashboardStore } from '../../stores/useDashboardStore';
 import { useDashboardWebSocket } from '../../hooks/useDashboardWebSocket';
 import { ProcessedExcelData } from '../../types';
 import { logger } from '../../utils/ui/logger';
@@ -8,7 +8,7 @@ import { syncDashboardData } from '../../utils/data/dataMerging';
 
 export const GlobalDashboardFetcher: React.FC = () => {
     const { updateExcelData } = useExcelData();
-    const { apiAutoRefreshEnabled } = useAutoPlannerStore();
+    const { apiAutoRefreshEnabled } = useDashboardStore();
 
     const handleDataLoaded = useCallback((data: ProcessedExcelData) => {
         logger.info(` Global Fetcher: Loaded ${data.orders.length} orders from Dashboard API (WebSocket/Auto-Refresh)`);

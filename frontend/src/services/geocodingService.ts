@@ -1,6 +1,12 @@
 /**
  * Сервис геокодирования через Google Maps API
+ *
+ * v2 COST OPTIMIZATIONS:
+ *  - Routes ALL geocoding calls through googleApiCache (persistent 30-day localStorage cache)
+ *  - In-flight deduplication: same address never fires twice simultaneously
+ *  - Removed redundant in-memory cache (superseded by googleApiCache persistence)
  */
+import { googleApiCache } from './googleApiCache'
 
 // Google Maps types
 declare global {
@@ -29,110 +35,86 @@ export interface GeocodingOptions {
 }
 
 export class GeocodingService {
-  private static geocoder: any = null
-  private static cache = new Map<string, GeocodingResult>()
+  // Routes all geocoding through googleApiCache (persistent 30-day localStorage cache)
 
-  /**
-   * Инициализация геокодера
-   */
-  static initialize(): void {
-    if (typeof window !== 'undefined' && window.google && window.google.maps && window.google.maps.Geocoder) {
-      this.geocoder = new window.google.maps.Geocoder()
-    }
-  }
-
-  /**
-   * Проверка готовности геокодера
-   */
   static isReady(): boolean {
-    return this.geocoder !== null
+    return (typeof window !== 'undefined' && !!window.google?.maps?.Geocoder)
   }
 
   /**
-   * Геокодирование адреса с возвратом нескольких кандидатов
+   * Map raw Google Geocoder results to GeocodingResult[]
+   */
+  private static mapResults(results: any[], address: string): GeocodingResult[] {
+    if (!results || results.length === 0) {
+      return [{ success: false, formattedAddress: address, error: 'Адрес не найден' }]
+    }
+    return results.map((result: any) => {
+      const lat = typeof result.geometry.location.lat === 'function'
+        ? result.geometry.location.lat()
+        : result.geometry.location.lat
+      const lng = typeof result.geometry.location.lng === 'function'
+        ? result.geometry.location.lng()
+        : result.geometry.location.lng
+      const geo: GeocodingResult = {
+        success: true,
+        formattedAddress: result.formatted_address,
+        latitude: lat,
+        longitude: lng,
+        placeId: result.place_id,
+        locationType: result.geometry.location_type,
+        types: result.types,
+        warnings: []
+      }
+      if (result.geometry.location_type === 'APPROXIMATE') geo.warnings?.push('Адрес найден приблизительно')
+      if (result.geometry.location_type === 'GEOMETRIC_CENTER') geo.warnings?.push('Адрес найден как геометрический центр')
+      return geo
+    })
+  }
+
+  /**
+   * Geocode an address — returns multiple candidates.
+   * Uses googleApiCache (persistent + deduplicated).
    */
   static async geocodeAddressMulti(
     address: string,
     options: GeocodingOptions = {}
   ): Promise<GeocodingResult[]> {
-    if (!this.geocoder) {
-      this.initialize()
-      if (!this.geocoder) {
-        return [{
-          success: false,
-          formattedAddress: address,
-          error: 'Google Maps API не инициализирован'
-        }]
-      }
-    }
+    try {
+      const req: any = { address, region: options.region || 'ua' }
+      if (options.componentRestrictions) req.componentRestrictions = options.componentRestrictions
 
-    return new Promise((resolve) => {
-      const request: any = {
-        address: address,
-        region: options.region || 'ua',
-        ...options
-      }
-
-      if (options.bounds && !(options.bounds instanceof (window as any).google.maps.LatLngBounds)) {
-        try {
-          const b = options.bounds;
-          request.bounds = new (window as any).google.maps.LatLngBounds(
-            new (window as any).google.maps.LatLng(b.south, b.west),
-            new (window as any).google.maps.LatLng(b.north, b.east)
-          );
-        } catch (e) {
-          console.warn('Failed to parse bounds in GeocodingService', e);
-        }
-      }
-
-      this.geocoder!.geocode(request, (results: any, status: any) => {
-        if (status === 'OK' && results && results.length > 0) {
-          const mappedResults: GeocodingResult[] = results.map((result: any) => {
-            const geocodingResult: GeocodingResult = {
-              success: true,
-              formattedAddress: result.formatted_address,
-              latitude: result.geometry.location.lat(),
-              longitude: result.geometry.location.lng(),
-              placeId: result.place_id,
-              locationType: result.geometry.location_type,
-              types: result.types,
-              warnings: []
-            }
-
-            if (result.geometry.location_type === 'APPROXIMATE') {
-              geocodingResult.warnings?.push('Адрес найден приблизительно')
-            } else if (result.geometry.location_type === 'GEOMETRIC_CENTER') {
-              geocodingResult.warnings?.push('Адрес найден как геометрический центр')
-            }
-
-            return geocodingResult
-          })
-          resolve(mappedResults)
+      // Convert plain bounds object to LatLngBounds if needed
+      if (options.bounds) {
+        if (options.bounds instanceof (window as any).google.maps.LatLngBounds) {
+          req.bounds = options.bounds
         } else {
-          const errorMessage = this.getErrorMessage(status)
-          resolve([{
-            success: false,
-            formattedAddress: address,
-            error: errorMessage
-          }])
+          try {
+            const b = options.bounds
+            req.bounds = new (window as any).google.maps.LatLngBounds(
+              new (window as any).google.maps.LatLng(b.south, b.west),
+              new (window as any).google.maps.LatLng(b.north, b.east)
+            )
+          } catch { }
         }
-      })
-    })
+      }
+
+      const results = await googleApiCache.geocode(req)
+      return this.mapResults(results, address)
+    } catch {
+      return [{ success: false, formattedAddress: address, error: 'Ошибка геокодирования' }]
+    }
   }
 
   /**
-   * Геокодирование адреса
+   * Geocode an address — returns best result.
    */
-  static async geocodeAddress(
-    address: string,
-    options: GeocodingOptions = {}
-  ): Promise<GeocodingResult> {
+  static async geocodeAddress(address: string, options: GeocodingOptions = {}): Promise<GeocodingResult> {
     const results = await this.geocodeAddressMulti(address, options)
     return results[0]
   }
 
   /**
-   * Геокодирование с учетом географического контекста (координат существующих заказов или зон)
+   * Geocode with geographic context (bounds bias toward existing orders).
    */
   static async geocodeWithContext(
     address: string,
@@ -143,207 +125,90 @@ export class GeocodingService {
       try {
         const bounds = new (window as any).google.maps.LatLngBounds()
         contextCoords.forEach(c => bounds.extend(new (window as any).google.maps.LatLng(c.lat, c.lng)))
-
-        // Используем bounds для bias (смещения) поиска в сторону существующего маршрута
         options.bounds = bounds
-      } catch (e) {
-        console.warn('Error creating bounds for geocoding context', e)
-      }
+      } catch { }
     }
-
     return this.geocodeAndCleanAddress(address, options)
   }
 
   /**
-   * Обратное геокодирование (координаты -> адрес)
+   * Reverse geocode (coords → address). Cached via googleApiCache.
    */
-  static async reverseGeocode(
-    lat: number,
-    lng: number,
-    options: GeocodingOptions = {}
-  ): Promise<GeocodingResult> {
-    if (!this.geocoder) {
-      this.initialize()
-      if (!this.geocoder) {
-        return {
-          success: false,
-          formattedAddress: '',
-          error: 'Google Maps API не инициализирован'
-        }
+  static async reverseGeocode(lat: number, lng: number, _options: GeocodingOptions = {}): Promise<GeocodingResult> {
+    try {
+      const results = await googleApiCache.geocode({ location: { lat, lng } })
+      if (!results || results.length === 0) {
+        return { success: false, formattedAddress: '', error: 'Адрес не найден' }
       }
-    }
-
-    const cacheKey = `reverse_${lat}_${lng}_${JSON.stringify(options)}`
-    if (this.cache.has(cacheKey)) {
-      return this.cache.get(cacheKey)!
-    }
-
-    return new Promise((resolve) => {
-      const latlng = new (window as any).google.maps.LatLng(lat, lng)
-      const request: any = {
-        location: latlng,
-        ...options
+      const result = results[0]
+      const resLat = typeof result.geometry.location.lat === 'function' ? result.geometry.location.lat() : result.geometry.location.lat
+      const resLng = typeof result.geometry.location.lng === 'function' ? result.geometry.location.lng() : result.geometry.location.lng
+      return {
+        success: true,
+        formattedAddress: result.formatted_address,
+        latitude: resLat,
+        longitude: resLng,
+        placeId: result.place_id,
+        locationType: result.geometry.location_type,
+        types: result.types
       }
-
-      this.geocoder!.geocode(request, (results: any, status: any) => {
-        if (status === 'OK' && results && results.length > 0) {
-          const result = results[0]
-          const geocodingResult: GeocodingResult = {
-            success: true,
-            formattedAddress: result.formatted_address,
-            latitude: lat,
-            longitude: lng,
-            placeId: result.place_id,
-            locationType: result.geometry.location_type,
-            types: result.types
-          }
-
-          this.cache.set(cacheKey, geocodingResult)
-          resolve(geocodingResult)
-        } else {
-          const errorMessage = this.getErrorMessage(status)
-          const geocodingResult: GeocodingResult = {
-            success: false,
-            formattedAddress: '',
-            error: errorMessage
-          }
-
-          this.cache.set(cacheKey, geocodingResult)
-          setTimeout(() => this.cache.delete(cacheKey), 60000)
-
-          resolve(geocodingResult)
-        }
-      })
-    })
-  }
-
-  /**
-   * Получение сообщения об ошибке
-   */
-  private static getErrorMessage(status: string): string {
-    switch (status) {
-      case 'ZERO_RESULTS':
-        return 'Адрес не найден'
-      case 'OVER_QUERY_LIMIT':
-        return 'Превышен лимит запросов к Google Maps API'
-      case 'REQUEST_DENIED':
-        return 'Запрос отклонен. Проверьте API ключ'
-      case 'INVALID_REQUEST':
-        return 'Некорректный запрос'
-      case 'UNKNOWN_ERROR':
-        return 'Неизвестная ошибка'
-      default:
-        return 'Ошибка геокодирования'
+    } catch {
+      return { success: false, formattedAddress: '', error: 'Ошибка геокодирования' }
     }
   }
 
   /**
-   * Очистка кэша
-   */
-  static clearCache(): void {
-    this.cache.clear()
-  }
-
-  /**
-   * Получение размера кэша
-   */
-  static getCacheSize(): number {
-    return this.cache.size
-  }
-
-  /**
-   * Геокодирование с автоматической очисткой адреса
+   * Geocode with automatic address cleaning.
+   * Tries the original address first; falls back to cleaned variant only if necessary.
+   * Max 2 API calls per address (vs 3 before).
    */
   static async geocodeAndCleanAddress(address: string, options: GeocodingOptions = {}): Promise<GeocodingResult> {
-    // Сначала пытаемся геокодировать исходный адрес
+    // First attempt: original address through cache
     let result = await this.geocodeAddress(address, options)
 
-    // Если результат найден, но это ОБЛАСТЬ (регион), а не точный адрес - считаем это ошибкой (раздутие километража)
     const isRegionCenter = result.success && (
       (result.locationType === 'APPROXIMATE' || result.locationType === 'GEOMETRIC_CENTER') &&
-      result.types?.includes('administrative_area_level_1') // Киевская область
-    );
+      result.types?.includes('administrative_area_level_1')
+    )
 
-    if (result.success && !isRegionCenter) {
-      return result
-    }
+    if (result.success && !isRegionCenter) return result
 
-    // Если не получилось или это центр области, пробуем очищенный адрес
+    // Second attempt: cleaned address (only if first failed or resolved to region centre)
     let cleanedAddress = address
-      .replace(/(?:,|\s)\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис|вход|дом|корп|секция|литера).*$/i, '')
-      .replace(/(?:,|\s)\s*\d+\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис|вход|дом|корп|секция|литера).*$/i, '')
-      // Удаляем почтовые индексы (5 цифр)
+      .replace(/(?:,|\s)\s*(?:под\.?|подъезд|д\/ф|эт\.?|этаж|под|кв\.?|квартира|оф\.?|офис|вход|дом|корп|секция|литера).*$/i, '')
       .replace(/\b\d{5}\b/g, '')
+      .replace(/киевская область|kyiv oblast|kiev oblast/gi, '')
+      .replace(/,\s*,/g, ',').replace(/,$/, '')
       .trim()
 
-    // Удаляем "Киевская область" и другие вариации, которые могут сбивать поиск в центр области
-    cleanedAddress = cleanedAddress
-      .replace(/киевская область|kyiv oblast|kiev oblast/gi, '')
-      .replace(/,\s*,/g, ',') // fix double commas
-      .trim();
+    const hasKyiv = /киев|kyiv|kiev/i.test(cleanedAddress)
+    const hasSatelliteCity = /вишневое|vishneve|вышгород|vyshhorod|ирпень|irpin|буча|bucha|бровары|brovary/i.test(cleanedAddress)
 
-    // Убираем лишние запятые после удаления
-    cleanedAddress = cleanedAddress.replace(/,\s*,/g, ',').replace(/,$/, '').trim()
-
-    // Если нет упоминания Киева, добавляем (приоритет Киева)
-    // Но если есть пригород (Вишневое и т.д.), то не добавляем Киев, а добавляем Украину
-    const hasKyiv = /киев|kyiv|kiev/i.test(cleanedAddress);
-
-    // Список городов-спутников (KML зон), чтобы не добавлять "Киев" к "Вишневое"
-    const hasSatelliteCity = /вишневое|vishneve|вышгород|vyshhorod|ирпень|irpin|буча|bucha|бровары|brovary|бортничи|bortnychi|коцюбинское|kotsiubynske|софиевская борщаговка|sofiyivska borshchahivka/i.test(cleanedAddress);
-
-    if (!hasKyiv && !hasSatelliteCity) {
-      cleanedAddress += ', Киев, Украина'
-    } else {
-      if (!/украина|ukraine|україна/i.test(cleanedAddress)) {
-        cleanedAddress += ', Украина'
-      }
-    }
+    if (!hasKyiv && !hasSatelliteCity) cleanedAddress += ', Киев, Украина'
+    else if (!/украина|ukraine|україна/i.test(cleanedAddress)) cleanedAddress += ', Украина'
 
     if (cleanedAddress !== address) {
-      // console.log(`Geocoding with cleaned address: "${cleanedAddress}"`)
       result = await this.geocodeAddress(cleanedAddress, options)
-
-      // Если и очищенный адрес вернул регион, пробуем жестко добавить Киев (если это не спутник)
-      const isCleanedRegionCenter = result.success && (
-        (result.locationType === 'APPROXIMATE' || result.locationType === 'GEOMETRIC_CENTER') &&
-        result.types?.includes('administrative_area_level_1')
-      );
-
-      if (isCleanedRegionCenter && !hasKyiv && !hasSatelliteCity) {
-        cleanedAddress = address.replace(/киевская область|kyiv oblast|kiev oblast/gi, '').trim(); // Reset to almost original
-        cleanedAddress += ', Киев, Украина'; // Force Kiev
-        result = await this.geocodeAddress(cleanedAddress, options);
-      }
-
-      if (result.success) {
-        result.warnings = [...(result.warnings || []), 'Адрес был автоматически очищен для поиска']
-      }
+      if (result.success) result.warnings = [...(result.warnings || []), 'Адрес был автоматически очищен для поиска']
     }
 
     return result
   }
 
   /**
-   * Пакетное геокодирование нескольких адресов
+   * Batch geocode addresses. Uses cache so re-runs are free.
    */
   static async geocodeAddresses(
     addresses: string[],
     options: GeocodingOptions = {},
-    delayMs: number = 100
+    _delayMs: number = 100  // delay no longer needed; googleApiCache handles rate-limiting
   ): Promise<GeocodingResult[]> {
-    const results: GeocodingResult[] = []
-
-    for (let i = 0; i < addresses.length; i++) {
-      const result = await this.geocodeAddress(addresses[i], options)
-      results.push(result)
-
-      // Добавляем задержку между запросами для избежания превышения лимитов
-      if (i < addresses.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, delayMs))
-      }
-    }
-
-    return results
+    // Parallel (safe because googleApiCache limits MAX_CONCURRENT = 5)
+    return Promise.all(addresses.map(addr => this.geocodeAddress(addr, options)))
   }
+
+  // Legacy no-ops (kept for API compatibility)
+  static clearCache(): void { googleApiCache.clearGeocodeCache() }
+  static getCacheSize(): number { return googleApiCache.getStats().geocode }
+  static initialize(): void { } // intentionally no-op; googleApiCache self-initializes
 }

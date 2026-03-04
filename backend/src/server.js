@@ -85,9 +85,9 @@ app.get('/health', (req, res) => {
 const swaggerRoutes = require('./routes/swaggerRoutes');
 app.use('/api/swagger', swaggerRoutes);
 
-// Delivery zones routes
-const deliveryZoneRoutes = require('./routes/deliveryZoneRoutes');
-app.use('/api/delivery-zones', deliveryZoneRoutes);
+// Geocache (L2 Persistent Store)
+const geocacheRoutes = require('./routes/geocacheRoutes');
+app.use('/api/geocache', geocacheRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {

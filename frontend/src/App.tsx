@@ -6,7 +6,6 @@ const Dashboard = React.lazy(() => import('./pages/Dashboard').then(m => ({ defa
 const Couriers = React.lazy(() => import('./pages/Couriers').then(m => ({ default: m.Couriers })))
 const RoutesPage = React.lazy(() => import('./pages/Routes').then(m => ({ default: m.Routes })))
 const Analytics = React.lazy(() => import('./pages/Analytics').then(m => ({ default: m.Analytics })))
-const AutoPlanner = React.lazy(() => import('./pages/AutoPlanner').then(m => ({ default: m.AutoPlanner })))
 const Settings = React.lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })))
 const TelegramParsing = React.lazy(() => import('./pages/TelegramParsing').then(m => ({ default: m.TelegramParsing })))
 const Financials = React.lazy(() => import('./pages/Financials').then(m => ({ default: m.Financials })))
@@ -56,7 +55,6 @@ function App() {
                             <Route path="/" element={<Dashboard />} />
                             <Route path="/routes" element={<RoutesPage />} />
                             <Route path="/couriers" element={<Couriers />} />
-                            <Route path="/autoplanner" element={<AutoPlanner />} />
                             <Route path="/analytics" element={<Analytics />} />
                             <Route path="/telegram-parsing" element={<TelegramParsing />} />
                             <Route path="/financials" element={<Financials />} />

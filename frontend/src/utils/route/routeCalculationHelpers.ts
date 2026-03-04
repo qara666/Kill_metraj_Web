@@ -301,7 +301,7 @@ export function groupOrdersByTimeWindow(
         o => o.status !== 'Исполнен'
     ) || [];
 
-    // FIX: Use 20-minute proximity to match same-trip (user rule: ≤20 min = same route)
+    // v5.66: Revert to 20 min to avoid unwanted grouping (user request)
     const HANDOVER_WINDOW_MS = 20 * 60 * 1000;
 
     function clusterHandoverOrders(hOrdersList: Order[], splitReasonLabel: string) {

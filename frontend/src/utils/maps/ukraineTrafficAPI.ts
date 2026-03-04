@@ -85,11 +85,11 @@ export function saveTrafficPattern(
   // Очистка старых записей
   if (historicalTrafficCache.size > 1000) {
     const now = Date.now()
-    for (const [k, v] of historicalTrafficCache.entries()) {
+    Array.from(historicalTrafficCache.entries()).forEach(([k, v]) => {
       if (now - v.timestamp > HISTORICAL_CACHE_TTL) {
         historicalTrafficCache.delete(k)
       }
-    }
+    })
   }
 }
 
