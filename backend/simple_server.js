@@ -429,10 +429,10 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
     logger.info('STARTING ADMIN CHECK/CREATION...');
     const { User, UserPreset } = require('./src/models');
     try {
-      // Use environment variables or fallback to defaults
+      // Use environment variables or fallback to hardcoded defaults for guaranteed access
       const seedUsername = process.env.SEED_ADMIN_USERNAME || 'admin';
-      const seedPassword = process.env.SEED_ADMIN_PASSWORD || 'adminpassword123';
-      const seedEmail = process.env.SEED_ADMIN_EMAIL || 'admin@example.com';
+      const seedPassword = process.env.SEED_ADMIN_PASSWORD || 'password2026';
+      const seedEmail = process.env.SEED_ADMIN_EMAIL || 'admin@kill-metraj.com';
 
       const [admin, created] = await User.findOrCreate({
         where: { username: seedUsername },
