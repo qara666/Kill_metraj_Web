@@ -234,6 +234,90 @@ export const AdminPresets: React.FC = () => {
                                 />
                             </CollapsibleSection>
 
+                            <CollapsibleSection isDark={isDark} icon={<MapIcon className="h-5 w-5" />} title="Адреса маршрутов по умолчанию (Старт/Финиш)">
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 bg-gray-50/50 dark:bg-gray-800/20 p-6 rounded-2xl border border-gray-100 dark:border-gray-700/50">
+                                    {/* Start Address Block */}
+                                    <div className="space-y-4">
+                                        <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2">Адрес начала маршрута</h3>
+                                        
+                                        <div className="p-4 rounded-xl border-2 transition-all bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700 focus-within:border-blue-400 dark:focus-within:border-blue-500 focus-within:ring-4 ring-blue-50 dark:ring-blue-900/20">
+                                            <input 
+                                                type="text" 
+                                                className="w-full bg-transparent outline-none text-sm font-bold text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500" 
+                                                placeholder="Введите адрес начала..." 
+                                                value={settings.defaultStartAddress || ''}
+                                                onChange={(e) => setSettings({ ...settings, defaultStartAddress: e.target.value })}
+                                            />
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-1.5">
+                                            <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Широта (LAT)</label>
+                                            <input 
+                                                type="number" 
+                                                step="any"
+                                                className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
+                                                placeholder="50.4501" 
+                                                value={settings.defaultStartLat || ''}
+                                                onChange={(e) => setSettings({ ...settings, defaultStartLat: e.target.value ? parseFloat(e.target.value) : null })}
+                                            />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                            <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Долгота (LNG)</label>
+                                            <input 
+                                                type="number" 
+                                                step="any"
+                                                className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
+                                                placeholder="30.5234" 
+                                                value={settings.defaultStartLng || ''}
+                                                onChange={(e) => setSettings({ ...settings, defaultStartLng: e.target.value ? parseFloat(e.target.value) : null })}
+                                            />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* End Address Block */}
+                                    <div className="space-y-4">
+                                        <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2">Адрес окончания маршрута</h3>
+                                        
+                                        <div className="p-4 rounded-xl border-2 transition-all bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700 focus-within:border-blue-400 dark:focus-within:border-blue-500 focus-within:ring-4 ring-blue-50 dark:ring-blue-900/20">
+                                            <input 
+                                                type="text" 
+                                                className="w-full bg-transparent outline-none text-sm font-bold text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500" 
+                                                placeholder="Введите адрес окончания..." 
+                                                value={settings.defaultEndAddress || ''}
+                                                onChange={(e) => setSettings({ ...settings, defaultEndAddress: e.target.value })}
+                                            />
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-1.5">
+                                            <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Широта (LAT)</label>
+                                            <input 
+                                                type="number" 
+                                                step="any"
+                                                className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
+                                                placeholder="50.4501" 
+                                                value={settings.defaultEndLat || ''}
+                                                onChange={(e) => setSettings({ ...settings, defaultEndLat: e.target.value ? parseFloat(e.target.value) : null })}
+                                            />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                            <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Долгота (LNG)</label>
+                                            <input 
+                                                type="number" 
+                                                step="any"
+                                                className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
+                                                placeholder="30.5234" 
+                                                value={settings.defaultEndLng || ''}
+                                                onChange={(e) => setSettings({ ...settings, defaultEndLng: e.target.value ? parseFloat(e.target.value) : null })}
+                                            />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </CollapsibleSection>
+
                             <CollapsibleSection isDark={isDark} icon={<MapIcon className="h-5 w-5" />} title="Зона расчета заказов Google My Maps (KML)">
                                 <div className="space-y-6">
                                     <div className={clsx(
