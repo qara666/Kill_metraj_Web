@@ -5,18 +5,34 @@ const createRateLimiter = (windowMs, max, message) => {
   return rateLimit({
     windowMs,
     max,
-    message: { error: message },
+    message: { 
+      success: false,
+      error: 'RateLimitExceeded',
+      message: message 
+    },
     standardHeaders: true,
     legacyHeaders: false,
+    // Robust IP identification for Render/Proxy
+    keyGenerator: (req) => {
+      // Prefer X-Forwarded-For if it exists, otherwise fallback to req.ip
+      const forwarded = req.headers['x-forwarded-for'];
+      if (forwarded) {
+        return forwarded.split(',')[0].trim();
+      }
+      return req.ip || req.connection.remoteAddress;
+    },
     handler: (req, res) => {
-      logger.warn(`Rate limit exceeded for IP: ${req.ip}, Path: ${req.path}`);
+      const clientIp = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.ip;
+      logger.warn(`Rate limit exceeded for IP: ${clientIp}, Path: ${req.path}`);
       res.status(429).json({
-        error: message,
+        success: false,
+        error: 'RateLimitExceeded',
+        message: message,
         retryAfter: Math.ceil(windowMs / 1000)
       });
     },
     skip: (req) => {
-      // Skip rate limiting in development for localhost (both IPv4 and IPv6)
+      // Skip rate limiting in development for localhost
       if (process.env.NODE_ENV === 'development') {
         const ip = req.ip;
         return ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1';
@@ -28,14 +44,14 @@ const createRateLimiter = (windowMs, max, message) => {
 
 const generalLimiter = createRateLimiter(
   15 * 60 * 1000,
-  300,
-  'Слишком много запросов. Попробуйте позже.'
+  1000, // Increased to 1000 for dashboard polling compatibility
+  'Слишком много запросов от вашего устройства. Пожалуйста, подождите 15 минут.'
 );
 
 const strictLimiter = createRateLimiter(
   15 * 60 * 1000,
   20,
-  'Превышен лимит запросов. Подождите 15 минут.'
+  'Слишком много попыток входа. В целях безопасности подождите 15 минут.'
 );
 
 const telegramLimiter = createRateLimiter(

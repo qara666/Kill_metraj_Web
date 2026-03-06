@@ -13,7 +13,7 @@ const presetRoutes = require('./src/routes/presetRoutes');
 const logRoutes = require('./src/routes/logRoutes');
 const logger = require('./src/utils/logger');
 // Константы и настройки загрузки файлов
-const { generalLimiter, uploadLimiter, telegramLimiter } = require('./src/middleware/rateLimiter');
+const { generalLimiter, strictLimiter, uploadLimiter, telegramLimiter } = require('./src/middleware/rateLimiter');
 const { sequelize, testConnection } = require('./src/config/database');
 const { syncDatabase, AuditLog } = require('./src/models');
 const { authenticateToken } = require('./src/middleware/auth');
@@ -79,7 +79,8 @@ const cors = require('cors');
 // - express-rate-limit to correctly identify client IPs
 // - req.ip to return the real client IP instead of the proxy IP
 // - Security and logging purposes
-app.set('trust proxy', 1);
+// app.set('trust proxy', 1); // Trust first hop
+app.set('trust proxy', true); // Trust all hops on Render/Cloudflare
 
 // CORS configuration for Render and local development
 const corsOptions = {
@@ -298,6 +299,7 @@ const orderRoutes = require('./src/routes/orderRoutes');
 app.use('/api/v1/orders', orderRoutes);
 
 // Маршруты авторизации
+app.use('/api/auth/login', strictLimiter); // Protect login against brute-force
 app.use('/api/auth', authRoutes);
 
 // Управление пользователями (только для админов)
