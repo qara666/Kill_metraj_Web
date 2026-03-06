@@ -21,6 +21,7 @@ import { clsx } from 'clsx'
 import { CityBiasSection } from '../components/zone/CityBiasSection'
 import { CollapsibleSection } from '../components/shared/CollapsibleSection'
 import { KmlPreviewMap } from '../components/zone/KmlPreviewMap'
+import { authService } from '../utils/auth/authService'
 
 interface SettingsForm {
   googleMapsApiKey: string
@@ -44,6 +45,13 @@ interface SettingsForm {
   mapStyle: 'standard' | 'silver' | 'retro' | 'dark' | 'night' | 'aubergine'
   maxCriticalRouteDistanceKm: number
   fastopertorApiKey: string
+  fastopertorDepartmentId: number | null
+  apiAutoRefreshEnabled: boolean
+  apiDateShift: string
+  apiDateShiftFilterEnabled: boolean
+  apiTimeDeliveryBeg: string
+  apiTimeDeliveryEnd: string
+  apiTimeFilterEnabled: boolean
   kmlData: any | null
   kmlSourceUrl: string
   lastKmlSync: string | null
@@ -62,6 +70,7 @@ export const Settings: React.FC = () => {
   const [isTestingApiKey, setIsTestingApiKey] = useState(false)
   const [zoneSearchTerm, setZoneSearchTerm] = useState('')
   const [isSyncingKml, setIsSyncingKml] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
   const { register, handleSubmit, watch, setValue } = useForm<SettingsForm>({
     defaultValues: {
@@ -83,6 +92,13 @@ export const Settings: React.FC = () => {
       enableAdaptiveThresholds: true,
       maxCriticalRouteDistanceKm: 120,
       fastopertorApiKey: '',
+      fastopertorDepartmentId: null,
+      apiAutoRefreshEnabled: false,
+      apiDateShift: '',
+      apiDateShiftFilterEnabled: true,
+      apiTimeDeliveryBeg: '',
+      apiTimeDeliveryEnd: '',
+      apiTimeFilterEnabled: false,
       fastopertorEndpoint: '',
       enableFastopertorApi: false,
       mapStyle: 'standard',
@@ -110,46 +126,82 @@ export const Settings: React.FC = () => {
   }
 
   useEffect(() => {
-    const settings = localStorageUtils.getAllSettings()
-    setValue('googleMapsApiKey', settings.googleMapsApiKey || '')
-    const savedMapboxToken = localStorage.getItem('km_mapbox_token')
-    setValue('mapboxToken', (savedMapboxToken || settings.mapboxToken || '').trim())
-    setValue('defaultStartAddress', settings.defaultStartAddress || '')
-    setValue('defaultStartLat', settings.defaultStartLat || null)
-    setValue('defaultStartLng', settings.defaultStartLng || null)
-    setValue('defaultEndAddress', settings.defaultEndAddress || '')
-    setValue('defaultEndLat', settings.defaultEndLat || null)
-    setValue('defaultEndLng', settings.defaultEndLng || null)
-    setValue('cityBias', settings.cityBias || '')
-    setValue('anomalyFilterEnabled', settings.anomalyFilterEnabled ?? true)
-    setValue('anomalyMaxLegDistanceKm', settings.anomalyMaxLegDistanceKm ?? 10)
-    setValue('anomalyMaxTotalDistanceKm', settings.anomalyMaxTotalDistanceKm ?? 35)
-    setValue('anomalyMaxAvgPerOrderKm', settings.anomalyMaxAvgPerOrderKm ?? 25)
-    setValue('addressQualityThreshold', settings.addressQualityThreshold ?? 60)
-    setValue('enableCoordinateValidation', settings.enableCoordinateValidation ?? true)
-    setValue('enableAdaptiveThresholds', settings.enableAdaptiveThresholds ?? true)
-    setValue('mapStyle', settings.mapStyle || 'standard')
-    setValue('maxCriticalRouteDistanceKm', settings.maxCriticalRouteDistanceKm ?? 120)
+    const loadSettings = async () => {
+      setIsLoading(true)
+      try {
+        // 1. Get local settings first for immediate display
+        const localSettings = localStorageUtils.getAllSettings()
+        
+        // 2. Try to get server presets if user is logged in
+        let serverSettings = {}
+        if (user?.id) {
+          const presets = await authService.getUserPresets(user.id)
+          if (presets && presets.settings) {
+            serverSettings = presets.settings
+          }
+        }
 
-    if (settings.googleMapsApiKey) {
-      checkApiKeyStatus(settings.googleMapsApiKey)
+        // 3. Merge: Server settings take precedence for synced fields
+        const settings = { ...localSettings, ...serverSettings }
+
+        setValue('googleMapsApiKey', settings.googleMapsApiKey || '')
+        const savedMapboxToken = localStorage.getItem('km_mapbox_token')
+        setValue('mapboxToken', (savedMapboxToken || settings.mapboxToken || '').trim())
+        setValue('defaultStartAddress', settings.defaultStartAddress || '')
+        setValue('defaultStartLat', settings.defaultStartLat || null)
+        setValue('defaultStartLng', settings.defaultStartLng || null)
+        setValue('defaultEndAddress', settings.defaultEndAddress || '')
+        setValue('defaultEndLat', settings.defaultEndLat || null)
+        setValue('defaultEndLng', settings.defaultEndLng || null)
+        setValue('cityBias', settings.cityBias || '')
+        setValue('anomalyFilterEnabled', settings.anomalyFilterEnabled ?? true)
+        setValue('anomalyMaxLegDistanceKm', settings.anomalyMaxLegDistanceKm ?? 10)
+        setValue('anomalyMaxTotalDistanceKm', settings.anomalyMaxTotalDistanceKm ?? 35)
+        setValue('anomalyMaxAvgPerOrderKm', settings.anomalyMaxAvgPerOrderKm ?? 25)
+        setValue('addressQualityThreshold', settings.addressQualityThreshold ?? 60)
+        setValue('enableCoordinateValidation', settings.enableCoordinateValidation ?? true)
+        setValue('enableAdaptiveThresholds', settings.enableAdaptiveThresholds ?? true)
+        setValue('mapStyle', settings.mapStyle || 'standard')
+        setValue('maxCriticalRouteDistanceKm', settings.maxCriticalRouteDistanceKm ?? 120)
+
+        if (settings.googleMapsApiKey) {
+          checkApiKeyStatus(settings.googleMapsApiKey)
+        }
+
+        setValue('kmlData', settings.kmlData || null)
+        setValue('kmlSourceUrl', settings.kmlSourceUrl || '')
+        setValue('lastKmlSync', settings.lastKmlSync || null)
+        setValue('autoSyncKml', settings.autoSyncKml ?? false)
+        setValue('selectedHubs', settings.selectedHubs || [])
+        setValue('selectedZones', settings.selectedZones || [])
+        setValue('routingProvider', settings.routingProvider || 'google')
+        setValue('geocodingProvider', settings.geocodingProvider || 'google')
+        setValue('generouteApiKey', settings.generouteApiKey || '')
+        
+        // Dashboard fields
+        setValue('fastopertorApiKey', settings.fastopertorApiKey || '')
+        setValue('fastopertorDepartmentId', settings.fastopertorDepartmentId || null)
+        setValue('apiAutoRefreshEnabled', settings.apiAutoRefreshEnabled ?? false)
+        setValue('apiDateShift', settings.apiDateShift || '')
+        setValue('apiDateShiftFilterEnabled', settings.apiDateShiftFilterEnabled ?? true)
+        setValue('apiTimeDeliveryBeg', settings.apiTimeDeliveryBeg || '')
+        setValue('apiTimeDeliveryEnd', settings.apiTimeDeliveryEnd || '')
+        setValue('apiTimeFilterEnabled', settings.apiTimeFilterEnabled ?? false)
+
+        // Auto-sync KML if enabled
+        if (settings.autoSyncKml && settings.kmlSourceUrl) {
+          syncKmlFromUrl(settings.kmlSourceUrl)
+        }
+      } catch (error) {
+        console.error('Error loading settings:', error)
+        toast.error('Ошибка загрузки настроек с сервера')
+      } finally {
+        setIsLoading(false)
+      }
     }
 
-    setValue('kmlData', settings.kmlData || null)
-    setValue('kmlSourceUrl', settings.kmlSourceUrl || '')
-    setValue('lastKmlSync', settings.lastKmlSync || null)
-    setValue('autoSyncKml', settings.autoSyncKml ?? false)
-    setValue('selectedHubs', settings.selectedHubs || [])
-    setValue('selectedZones', settings.selectedZones || [])
-    setValue('routingProvider', settings.routingProvider || 'google')
-    setValue('geocodingProvider', settings.geocodingProvider || 'google')
-    setValue('generouteApiKey', settings.generouteApiKey || '')
-
-    // Auto-sync KML if enabled
-    if (settings.autoSyncKml && settings.kmlSourceUrl) {
-      syncKmlFromUrl(settings.kmlSourceUrl)
-    }
-  }, [setValue])
+    loadSettings()
+  }, [setValue, user?.id])
 
   const testApiKey = async () => {
     if (!googleMapsApiKey.trim()) {
@@ -175,13 +227,32 @@ export const Settings: React.FC = () => {
   const onSubmit = async (data: SettingsForm) => {
     const normalizedToken = (data.mapboxToken || '').trim()
     const normalizedData = { ...data, mapboxToken: normalizedToken }
+    
+    // Save to localStorage
     localStorageUtils.setAllSettings(normalizedData)
     if (normalizedToken) {
       localStorage.setItem('km_mapbox_token', normalizedToken)
     } else {
       localStorage.removeItem('km_mapbox_token')
     }
-    toast.success('Настройки сохранены локально')
+
+    // Save to server
+    if (user?.id) {
+      try {
+        const response = await authService.updateUserPresets(user.id, normalizedData)
+        if (response.success) {
+          toast.success('Настройки успешно синхронизированы с сервером')
+        } else {
+          toast.error(`Ошибка синхронизации: ${response.error}`)
+        }
+      } catch (error) {
+        console.error('Save settings error:', error)
+        toast.error('Не удалось сохранить настройки на сервере')
+      }
+    } else {
+      toast.success('Настройки сохранены локально')
+    }
+
     if (data.googleMapsApiKey.trim()) {
       checkApiKeyStatus(data.googleMapsApiKey)
     }
@@ -257,14 +328,19 @@ export const Settings: React.FC = () => {
   return (
     <div className={clsx('space-y-6', isDark ? 'text-gray-100' : 'text-gray-900')}>
       <div className={clsx('rounded-2xl shadow-lg border p-8', isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}>
-        <h1 className="text-2xl font-bold">Настройки</h1>
-        <p className={clsx('mt-1 text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>Настройка приложения и API ключей</p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold">Настройки</h1>
+            <p className={clsx('mt-1 text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>Настройка приложения и API ключей</p>
+          </div>
+          {isLoading && <LoadingSpinner size="md" />}
+        </div>
       </div>
 
       <div className={clsx('rounded-2xl shadow-lg border p-8', isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
           {/* City Bias */}
-          <CityBiasSection isDark={isDark} value={watch('cityBias')} onChange={(v) => setValue('cityBias', v)} />
+          <CityBiasSection isDark={isDark} value={watch('cityBias')} onChange={(v) => setValue('cityBias', v)} disabled={!canModify} />
 
           {/* KML Section */}
           <CollapsibleSection
@@ -290,16 +366,15 @@ export const Settings: React.FC = () => {
                     className="input flex-1"
                     placeholder="https://www.google.com/maps/d/viewer?mid=..."
                     {...register('kmlSourceUrl')}
-                    disabled={!canModify}
                   />
                   <button
                     type="button"
                     onClick={() => syncKmlFromUrl(watch('kmlSourceUrl'))}
-                    disabled={isSyncingKml || !watch('kmlSourceUrl') || !canModify}
+                    disabled={isSyncingKml || !watch('kmlSourceUrl')}
                     className={clsx(
                       'px-4 py-2 rounded-xl font-medium transition-all flex items-center gap-2',
                       isDark ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-indigo-500 hover:bg-indigo-600 text-white',
-                      (isSyncingKml || !watch('kmlSourceUrl') || !canModify) && 'opacity-50 cursor-not-allowed'
+                      (isSyncingKml || !watch('kmlSourceUrl')) && 'opacity-50 cursor-not-allowed'
                     )}
                   >
                     {isSyncingKml ? <LoadingSpinner size="sm" /> : <ArrowPathIcon className="h-5 w-5" />}
@@ -308,7 +383,7 @@ export const Settings: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-4 mt-2">
                   <label className="inline-flex items-center space-x-2 cursor-pointer">
-                    <input type="checkbox" className="checkbox" {...register('autoSyncKml')} disabled={!canModify} />
+                    <input type="checkbox" className="checkbox" {...register('autoSyncKml')} />
                     <span className="text-sm">Обновлять автоматически при загрузке страницы</span>
                   </label>
                   {watch('lastKmlSync') && (
@@ -341,14 +416,12 @@ export const Settings: React.FC = () => {
                   }}
                   className="hidden"
                   id="kml-upload"
-                  disabled={!canModify}
                 />
                 <label
                   htmlFor="kml-upload"
                   className={clsx(
                     'px-4 py-2 rounded-xl font-medium cursor-pointer transition-all flex items-center gap-2',
-                    isDark ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white',
-                    !canModify && 'opacity-50 cursor-not-allowed pointer-events-none'
+                    isDark ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white'
                   )}
                 >
                   <CloudArrowUpIcon className="h-5 w-5" />
@@ -363,10 +436,8 @@ export const Settings: React.FC = () => {
                       toast.success('Данные KML удалены')
                     }}
                     className={clsx(
-                      'px-4 py-2 rounded-xl font-medium transition-all flex items-center gap-2 text-red-400',
-                      !canModify && 'opacity-50 cursor-not-allowed pointer-events-none'
+                      'px-4 py-2 rounded-xl font-medium transition-all flex items-center gap-2 text-red-400'
                     )}
-                    disabled={!canModify}
                   >
                     <TrashIcon className="h-5 w-5" />
                     Очистить KML
@@ -530,7 +601,17 @@ export const Settings: React.FC = () => {
           </CollapsibleSection>
 
           <CollapsibleSection isDark={isDark} icon={<ArrowPathIcon className="h-4 w-4" />} title="Автообновление (API Dashboard)">
-            <DashboardSettingsPanel isDark={isDark} onManualSync={() => toast.success('Синхронизация запущена')} />
+            <DashboardSettingsPanel 
+              isDark={isDark} 
+              initialSettings={watch()} 
+              onSettingsChange={(newS) => {
+                Object.entries(newS).forEach(([key, val]) => {
+                  setValue(key as any, val);
+                });
+              }}
+              onManualSync={() => toast.success('Синхронизация запущена')} 
+              canModify={canModify}
+            />
           </CollapsibleSection>
 
           {isAdmin && (
@@ -582,6 +663,35 @@ export const Settings: React.FC = () => {
                   <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Generoute API Key</label>
                   <input type="password" className="input" placeholder="Generoute API Key" {...register('generouteApiKey')} disabled={!canModify} />
                 </div>
+              </div>
+            </div>
+          </CollapsibleSection>
+          <CollapsibleSection isDark={isDark} icon={<CogIcon className="h-5 w-5" />} title="Интерфейс и Ограничения" defaultOpen={false}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase text-gray-500">Стиль карты Google</label>
+                <select
+                  {...register('mapStyle')}
+                  className="input"
+                  disabled={!canModify}
+                >
+                  <option value="standard">Стандартный</option>
+                  <option value="silver">Серебро</option>
+                  <option value="retro">Ретро</option>
+                  <option value="dark">Темный</option>
+                  <option value="night">Ночной</option>
+                  <option value="aubergine">Баклажан</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase text-gray-500">Макс. критическая дистанция (км)</label>
+                <input 
+                  type="number" 
+                  {...register('maxCriticalRouteDistanceKm', { valueAsNumber: true })}
+                  className="input"
+                  disabled={!canModify}
+                />
+                <p className="text-[10px] text-gray-400">Маршруты длиннее этого значения помечаются как критические</p>
               </div>
             </div>
           </CollapsibleSection>

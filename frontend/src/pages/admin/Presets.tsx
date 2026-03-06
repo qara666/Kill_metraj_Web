@@ -393,6 +393,20 @@ export const AdminPresets: React.FC = () => {
                                             placeholder="Ссылка Google My Maps..."
                                         />
                                     </div>
+                                    <div className="flex items-center gap-4 mt-2">
+                                        <label className="inline-flex items-center space-x-2 cursor-pointer">
+                                            <input 
+                                                type="checkbox" 
+                                                className="checkbox" 
+                                                checked={settings.autoSyncKml ?? false}
+                                                onChange={(e) => setSettings({ ...settings, autoSyncKml: e.target.checked })}
+                                            />
+                                            <span className="text-sm">Обновлять автоматически при загрузке страницы</span>
+                                        </label>
+                                        {settings.lastKmlSync && (
+                                            <span className="text-[10px] text-gray-500 italic">Последнее обновление: {settings.lastKmlSync}</span>
+                                        )}
+                                    </div>
                                     <div className="flex items-center gap-4">
                                         <input
                                             type="file"
@@ -627,6 +641,17 @@ export const AdminPresets: React.FC = () => {
                                                 onChange={(e) => isAdmin && setSettings({ ...settings, anomalyMaxTotalDistanceKm: parseFloat(e.target.value) })}
                                                 className="input"
                                                 disabled={!isAdmin}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold uppercase text-gray-500">Макс. среднее расстояние на заказ (км)</label>
+                                            <input 
+                                                type="number" 
+                                                value={settings.anomalyMaxAvgPerOrderKm || ''}
+                                                onChange={(e) => isAdmin && setSettings({ ...settings, anomalyMaxAvgPerOrderKm: parseFloat(e.target.value) })}
+                                                className="input"
+                                                disabled={!isAdmin}
+                                                placeholder="25"
                                             />
                                         </div>
                                     </div>

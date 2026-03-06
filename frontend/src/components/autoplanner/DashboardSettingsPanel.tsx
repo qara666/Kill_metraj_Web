@@ -20,15 +20,18 @@ interface DashboardSettingsPanelProps {
     // New props for Controlled Mode (Admin Presets)
     initialSettings?: Record<string, any>;
     onSettingsChange?: (newSettings: Record<string, any>) => void;
+    canModify?: boolean; // New prop for generic permission control
 }
 
 export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
     isDark,
     onManualSync,
     initialSettings,
-    onSettingsChange
+    onSettingsChange,
+    canModify = true // Default to true if not provided (e.g. for basic usage)
 }) => {
     const { isAdmin, user } = useAuth();
+    const effectiveCanModify = canModify;
 
     // --- Stable Store Selectors ---
     const storeApiKey = useDashboardStore(s => s.apiKey);
@@ -352,7 +355,8 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                             <input
                                 type="checkbox"
                                 checked={apiAutoRefreshEnabled}
-                                onChange={handleToggleAutoRefresh}
+                                onChange={effectiveCanModify ? handleToggleAutoRefresh : undefined}
+                                disabled={!effectiveCanModify}
                                 className="sr-only"
                             />
                             <div className={clsx(
@@ -410,12 +414,12 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                         <input
                             type="password"
                             value={editApiKey}
-                            onChange={(e) => isAdmin && setEditApiKey(e.target.value)}
-                            disabled={!isAdmin}
-                            placeholder={!isAdmin ? "Ключ задается администратором" : "Введите API ключ"}
+                            onChange={(e) => (isAdmin && effectiveCanModify) && setEditApiKey(e.target.value)}
+                            disabled={!isAdmin || !effectiveCanModify}
+                            placeholder={(!isAdmin || !effectiveCanModify) ? "Ключ задается администратором" : "Введите API ключ"}
                             className={clsx(
                                 'w-full px-3 py-1.5 rounded-lg text-xs border transition-colors',
-                                !isAdmin && 'opacity-60 cursor-not-allowed',
+                                (!isAdmin || !effectiveCanModify) && 'opacity-60 cursor-not-allowed',
                                 isDark
                                     ? 'bg-gray-900 border-gray-700 text-gray-100 placeholder-gray-500 focus:border-blue-500'
                                     : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500'
@@ -436,7 +440,8 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                                     <input
                                         type="checkbox"
                                         checked={apiDateShiftFilterEnabled}
-                                        onChange={(e) => handleDateShiftFilterToggle(e.target.checked)}
+                                        onChange={(e) => effectiveCanModify && handleDateShiftFilterToggle(e.target.checked)}
+                                        disabled={!effectiveCanModify}
                                         className="sr-only peer"
                                     />
                                     <div className="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
@@ -446,12 +451,12 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                         <input
                             type="date"
                             value={apiDateShift}
-                            disabled={!apiDateShiftFilterEnabled}
-                            onChange={(e) => handleDateShiftChange(e.target.value)}
+                            disabled={!apiDateShiftFilterEnabled || !effectiveCanModify}
+                            onChange={(e) => effectiveCanModify && handleDateShiftChange(e.target.value)}
                             placeholder="Оставьте пустым для автоопределения"
                             className={clsx(
                                 'w-full px-3 py-1.5 rounded-lg text-xs border transition-colors',
-                                !apiDateShiftFilterEnabled && 'opacity-50 cursor-not-allowed',
+                                (!apiDateShiftFilterEnabled || !effectiveCanModify) && 'opacity-50 cursor-not-allowed',
                                 isDark
                                     ? 'bg-gray-900 border-gray-700 text-gray-100 focus:border-blue-500'
                                     : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
@@ -474,7 +479,8 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                                     <input
                                         type="checkbox"
                                         checked={apiTimeFilterEnabled}
-                                        onChange={(e) => handleTimeFilterToggle(e.target.checked)}
+                                        onChange={(e) => effectiveCanModify && handleTimeFilterToggle(e.target.checked)}
+                                        disabled={!effectiveCanModify}
                                         className="sr-only peer"
                                     />
                                     <div className="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
@@ -490,11 +496,11 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                                 <input
                                     type="datetime-local"
                                     value={apiTimeDeliveryBeg}
-                                    disabled={!apiTimeFilterEnabled}
-                                    onChange={(e) => handleTimeBegChange(e.target.value)}
+                                    disabled={!apiTimeFilterEnabled || !effectiveCanModify}
+                                    onChange={(e) => effectiveCanModify && handleTimeBegChange(e.target.value)}
                                     className={clsx(
                                         'w-full px-2 py-1.5 rounded-lg text-xs border transition-colors',
-                                        !apiTimeFilterEnabled && 'opacity-50 cursor-not-allowed',
+                                        (!apiTimeFilterEnabled || !effectiveCanModify) && 'opacity-50 cursor-not-allowed',
                                         isDark
                                             ? 'bg-gray-900 border-gray-700 text-gray-100 focus:border-blue-500'
                                             : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
@@ -509,11 +515,11 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                                 <input
                                     type="datetime-local"
                                     value={apiTimeDeliveryEnd}
-                                    disabled={!apiTimeFilterEnabled}
-                                    onChange={(e) => handleTimeEndChange(e.target.value)}
+                                    disabled={!apiTimeFilterEnabled || !effectiveCanModify}
+                                    onChange={(e) => effectiveCanModify && handleTimeEndChange(e.target.value)}
                                     className={clsx(
                                         'w-full px-2 py-1.5 rounded-lg text-xs border transition-colors',
-                                        !apiTimeFilterEnabled && 'opacity-50 cursor-not-allowed',
+                                        (!apiTimeFilterEnabled || !effectiveCanModify) && 'opacity-50 cursor-not-allowed',
                                         isDark
                                             ? 'bg-gray-900 border-gray-700 text-gray-100 focus:border-blue-500'
                                             : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
@@ -532,12 +538,12 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                         <input
                             type="number"
                             value={editDepartmentId}
-                            onChange={(e) => isAdmin && setEditDepartmentId(e.target.value)}
-                            disabled={!isAdmin}
-                            placeholder={!isAdmin ? "ID задается администратором" : "100000052"}
+                            onChange={(e) => (isAdmin && effectiveCanModify) && setEditDepartmentId(e.target.value)}
+                            disabled={!isAdmin || !effectiveCanModify}
+                            placeholder={(!isAdmin || !effectiveCanModify) ? "ID задается администратором" : "100000052"}
                             className={clsx(
                                 'w-full px-3 py-1.5 rounded-lg text-xs border transition-colors',
-                                !isAdmin && 'opacity-60 cursor-not-allowed',
+                                (!isAdmin || !effectiveCanModify) && 'opacity-60 cursor-not-allowed',
                                 isDark
                                     ? 'bg-gray-900 border-gray-700 text-gray-100 placeholder-gray-500 focus:border-blue-500'
                                     : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500'
@@ -548,9 +554,11 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                     {/* Action Buttons */}
                     <div className="flex gap-2 pt-2">
                         <button
-                            onClick={handleSaveSettings}
+                            onClick={effectiveCanModify ? handleSaveSettings : undefined}
+                            disabled={!effectiveCanModify}
                             className={clsx(
                                 'flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-colors',
+                                !effectiveCanModify && 'opacity-60 cursor-not-allowed',
                                 isDark
                                     ? 'bg-blue-600 hover:bg-blue-700 text-white'
                                     : 'bg-blue-500 hover:bg-blue-600 text-white'
@@ -560,10 +568,10 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                         </button>
                         <button
                             onClick={handleManualSync}
-                            disabled={apiSyncStatus === 'syncing' || !editApiKey.trim()}
+                            disabled={apiSyncStatus === 'syncing' || !editApiKey.trim() || !effectiveCanModify}
                             className={clsx(
                                 'flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1',
-                                apiSyncStatus === 'syncing' || !editApiKey.trim()
+                                apiSyncStatus === 'syncing' || !editApiKey.trim() || !effectiveCanModify
                                     ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
                                     : isDark
                                         ? 'bg-green-600 hover:bg-green-700 text-white'

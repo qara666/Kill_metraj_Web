@@ -8,9 +8,10 @@ interface CityBiasSectionProps {
     isDark: boolean
     value: CityName
     onChange: (v: CityName) => void
+    disabled?: boolean
 }
 
-export const CityBiasSection: React.FC<CityBiasSectionProps> = ({ isDark, value, onChange }) => {
+export const CityBiasSection: React.FC<CityBiasSectionProps> = ({ isDark, value, onChange, disabled }) => {
     const [isExpanded, setIsExpanded] = useState(true)
     return (
         <div className={clsx(
@@ -71,11 +72,13 @@ export const CityBiasSection: React.FC<CityBiasSectionProps> = ({ isDark, value,
                         <label className={clsx('text-sm font-medium', isDark ? 'text-gray-300' : 'text-gray-700')}>Выберите город</label>
                         <select
                             className={clsx(
-                                'md:col-span-2 px-3 py-2 rounded-lg border text-sm',
-                                isDark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'
+                                'md:col-span-2 px-3 py-2 rounded-lg border text-sm transition-opacity',
+                                isDark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900',
+                                disabled && 'opacity-50 cursor-not-allowed'
                             )}
                             value={value}
                             onChange={(e) => onChange(e.target.value as any)}
+                            disabled={disabled}
                         >
                             <option value="">— Не выбран —</option>
                             <option value="Киев">Киев</option>

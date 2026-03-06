@@ -83,22 +83,40 @@ router.put('/:userId', authenticateToken, auditLog('preset_update'), async (req,
             const { User } = require('../models');
             const user = await User.findByPk(userId);
             if (!user || !user.canModifySettings) {
-                // Если запрещено, разрешаем менять только некритичные настройки (например тему)
+                // Если запрещено, разрешаем менять только некритичные настройки и KML
+                const allowedKeys = [
+                    'theme', 
+                    'courierTransportType',
+                    'kmlData',
+                    'kmlSourceUrl',
+                    'selectedHubs',
+                    'selectedZones',
+                    'lastKmlSync',
+                    'autoSyncKml'
+                ];
+                
                 const allowedUpdates = {};
-                if (settings.theme) allowedUpdates.theme = settings.theme;
-                if (settings.courierTransportType) allowedUpdates.courierTransportType = settings.courierTransportType;
+                allowedKeys.forEach(key => {
+                    if (settings[key] !== undefined) {
+                        allowedUpdates[key] = settings[key];
+                    }
+                });
 
                 let preset = await UserPreset.findOne({ where: { userId } });
                 if (preset) {
                     preset.settings = { ...preset.settings, ...allowedUpdates };
                     preset.updatedBy = req.user.id;
                     await preset.save();
-                    return res.json({ success: true, data: preset });
+                    return res.json({ 
+                        success: true, 
+                        data: preset,
+                        message: 'Настройки обновлены (ограниченный доступ: только тема и KML)' 
+                    });
                 } else {
                     return res.status(403).json({
                         success: false,
                         error: 'ДоступЗапрещен',
-                        message: 'Вам не разрешено изменять свои настройки'
+                        message: 'Вам не разрешено изменять свои основные настройки'
                     });
                 }
             }
