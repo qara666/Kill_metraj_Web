@@ -30,7 +30,11 @@ export const syncPresetsToLocalStorage = async (userId: number): Promise<void> =
 
                 // Ensure default addresses are set
                 defaultStartAddress: serverSettings.defaultStartAddress || '',
+                defaultStartLat: serverSettings.defaultStartLat || null,
+                defaultStartLng: serverSettings.defaultStartLng || null,
                 defaultEndAddress: serverSettings.defaultEndAddress || '',
+                defaultEndLat: serverSettings.defaultEndLat || null,
+                defaultEndLng: serverSettings.defaultEndLng || null,
                 // Ensure API key is set for consistency (though it's saved separately too)
                 googleMapsApiKey: serverSettings.googleMapsApiKey || '',
             };
