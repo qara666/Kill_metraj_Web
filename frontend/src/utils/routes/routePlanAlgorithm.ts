@@ -34,11 +34,7 @@ export async function runRoutePlanningAlgorithm(
         trafficSnapshot,
         depotCoords,
         defaultStartAddress,
-        defaultStartLat,
-        defaultStartLng,
         defaultEndAddress,
-        defaultEndLat,
-        defaultEndLng,
         setOptimizationProgress
     } = context;
 

@@ -219,7 +219,7 @@ export const AutoPlanner: React.FC = () => {
     }, [handleScheduleOnlyUpload])
 
     // --- Route Planning Hook ---
-    const { defaultStartAddress, defaultEndAddress } = useMemo(() => localStorageUtils.getAllSettings(), [])
+    const { defaultStartAddress, defaultStartLat, defaultStartLng, defaultEndAddress, defaultEndLat, defaultEndLng } = useMemo(() => localStorageUtils.getAllSettings(), [])
 
     const { isPlanning, optimizationProgress, planRoutes } = useRoutePlanning(
         excelData?.orders || null,
@@ -233,7 +233,11 @@ export const AutoPlanner: React.FC = () => {
         maxRouteDistanceKm,
         routePlanningSettings.maxOrdersPerCourier || 50,
         defaultStartAddress,
+        defaultStartLat || null,
+        defaultStartLng || null,
         defaultEndAddress,
+        defaultEndLat || null,
+        defaultEndLng || null,
         setPlannedRoutes,
         setErrorMsg,
         setPlanTrafficImpact,
