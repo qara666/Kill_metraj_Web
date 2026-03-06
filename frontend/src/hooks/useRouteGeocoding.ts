@@ -11,9 +11,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import { googleApiCache } from '../services/googleApiCache'
-import { GenerouteService } from '../services/generouteService'
 import { cleanAddress, generateStreetVariants } from '../utils/data/addressUtils'
-import { getUkraineTrafficForOrders, calculateTotalTrafficDelay } from '../utils/maps/ukraineTrafficAPI'
 import { Route, Order } from '../types/route'
 
 interface UseRouteGeocodingProps {
@@ -47,13 +45,13 @@ export const useRouteGeocoding = ({
     isInsideSector,
     checkTechnicalKmlZone,
     checkDeliveryKmlZone,
-    getCourierVehicleType,
+    getCourierVehicleType: _getCourierVehicleType,
     updateExcelData,
-    validateOrders,
-    setProblemOrders,
-    setCurrentProblem,
-    setShowCorrectionModal,
-    setShowBatchPanel,
+    validateOrders: _validateOrders,
+    setProblemOrders: _setProblemOrders,
+    setCurrentProblem: _setCurrentProblem,
+    setShowCorrectionModal: _setShowCorrectionModal,
+    setShowBatchPanel: _setShowBatchPanel,
     cleanAddressForRoute
 }: UseRouteGeocodingProps) => {
     const [isCalculating, setIsCalculating] = useState(false)
@@ -221,7 +219,8 @@ export const useRouteGeocoding = ({
      * OPTIMIZATION: Stops immediately when a ROOFTOP result inside the delivery zone is found.
      * This means most addresses require only 1 API call instead of 10-20.
      */
-    const geocodeWithSector = async (rawAddress: string, hintPoint?: any): Promise<any | null> => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const _geocodeWithSector = async (rawAddress: string, hintPoint?: any): Promise<any | null> => {
         const expectedHouse = extractHouseNumber(rawAddress)
         const expectedPostal = extractPostal(rawAddress)
         const refPoint = hintPoint || null
@@ -351,172 +350,135 @@ export const useRouteGeocoding = ({
     const calculateRouteDistance = async (route: Route) => {
         setIsCalculating(true)
         try {
-            // Helper to convert {lat, lng} plain object to google.maps.LatLng if needed
-            const toLatLng = (loc: any) => {
-                if (!loc) return null
-                if (typeof loc.lat === 'function') return loc // Already a LatLng
-                try {
-                    return new window.google.maps.LatLng(Number(loc.lat), Number(loc.lng))
-                } catch {
-                    return loc
-                }
-            }
-
-            // 1. Geocode start address (use pinned coords if available)
-            const useStartCoords = settings.defaultStartLat && settings.defaultStartLng
-            const startCoord = useStartCoords
-                ? { lat: Number(settings.defaultStartLat), lng: Number(settings.defaultStartLng) }
-                : null
-            const startLatLng = startCoord ? toLatLng(startCoord) : null
-            const originRes = startLatLng
-                ? { geometry: { location: startLatLng }, formatted_address: route.startAddress }
-                : await geocodeWithSector(route.startAddress)
-
-            const baseRefPoint = originRes?.geometry?.location || null
-
-            // 2. ★ COST OPTIMIZATION: Deduplicate identical order addresses
-            //    Build a map of cleaned address → geocode result, geocoding each unique address only once.
-            const addressToResult = new Map<string, any>()
-            const uniqueAddresses = [...new Set(route.orders.map((o: any) => cleanAddress(o.address).trim().toLowerCase()))]
-
-            await Promise.all(uniqueAddresses.map(async (cleanAddr) => {
-                const raw = route.orders.find((o: any) => cleanAddress(o.address).trim().toLowerCase() === cleanAddr)?.address || cleanAddr
-                const result = await geocodeWithSector(raw, baseRefPoint)
-                addressToResult.set(cleanAddr, result)
-            }))
-
-            const waypointResList: Array<any | null> = route.orders.map((o: any) =>
-                addressToResult.get(cleanAddress(o.address).trim().toLowerCase()) || null
-            )
-
-            // 3. Geocode end address
-            const useEndCoords = settings.defaultEndLat && settings.defaultEndLng
-            const endCoord = useEndCoords
-                ? { lat: Number(settings.defaultEndLat), lng: Number(settings.defaultEndLng) }
-                : null
-            const endLatLng = endCoord ? toLatLng(endCoord) : null
-            const lastWPLoc = waypointResList[waypointResList.length - 1]?.geometry?.location || baseRefPoint
-            const destinationRes = route.endAddress === route.startAddress
-                ? originRes
-                : endLatLng
-                    ? { geometry: { location: endLatLng }, formatted_address: route.endAddress }
-                    : await geocodeWithSector(route.endAddress, lastWPLoc)
-
-            // 4. Validate all points inside zone — SKIP if no KML is configured (no hub polygons)
-            const hasKmlZones = cachedHubPolygons.length > 0
-            if (hasKmlZones) {
-                const outsidePoints = [originRes, ...waypointResList, destinationRes].filter(r => {
-                    if (!r?.geometry?.location) return false
-                    const ll = toLatLng(r.geometry.location)
-                    return ll && !isInsideSector(ll)
+            // Simple Google Geocoder helper
+            const geocodeAddr = (address: string): Promise<any | null> =>
+                new Promise((resolve) => {
+                    try {
+                        new window.google.maps.Geocoder().geocode(
+                            { address, region: 'UA', componentRestrictions: { country: 'UA' } },
+                            (results: any, status: any) => {
+                                resolve(status === 'OK' && results?.length > 0 ? results[0] : null)
+                            }
+                        )
+                    } catch (e) { resolve(null) }
                 })
-                if (outsidePoints.length > 0) {
-                    const problems = await validateOrders(route.orders)
-                    if (problems.length > 0) {
-                        setProblemOrders(problems)
-                        setCurrentProblem(problems[0])
-                        if (problems.length === 1) setShowCorrectionModal(true)
-                        else setShowBatchPanel(true)
-                    } else {
-                        toast.error('Точки вне зоны')
-                    }
-                    setIsCalculating(false)
-                    return
-                }
+
+            // Extract LatLng from geocoder result — handles both LatLng objects and plain {lat,lng}
+            const toLoc = (res: any): any => {
+                if (!res?.geometry?.location) return null
+                const loc = res.geometry.location
+                if (typeof loc.lat === 'function') return loc
+                try { return new window.google.maps.LatLng(Number(loc.lat), Number(loc.lng)) } catch { return null }
             }
 
+            // 1. Start point
+            let originLoc: any = null
+            const startLat = settings.defaultStartLat ? Number(settings.defaultStartLat) : null
+            const startLng = settings.defaultStartLng ? Number(settings.defaultStartLng) : null
+            if (startLat && startLng) {
+                originLoc = new window.google.maps.LatLng(startLat, startLng)
+            } else if (route.startAddress) {
+                const res = await geocodeAddr(cleanAddressForRoute(route.startAddress))
+                originLoc = toLoc(res)
+            }
 
-            // 5. Get directions
-            const routingProvider = settings.routingProvider || 'google'
-            let totalDistance: number = 0
-            let totalDuration: number = 0
-            let routeGeometry: any = null
+            if (!originLoc) {
+                toast.error('Не удалось определить адрес старта. Настройте адрес Базы в Настройках.')
+                setIsCalculating(false)
+                return
+            }
 
-            const allGeocoded = originRes && destinationRes && waypointResList.every(r => r !== null)
+            // 2. Waypoints (order addresses) — geocode each unique address once
+            const addrCache = new Map<string, any>()
+            const waypointLocs: any[] = []
+            for (const order of route.orders) {
+                const cleaned = cleanAddressForRoute(order.address)
+                const key = cleaned.toLowerCase()
+                if (!addrCache.has(key)) {
+                    addrCache.set(key, await geocodeAddr(cleaned))
+                }
+                const loc = toLoc(addrCache.get(key))
+                waypointLocs.push(loc || cleaned) // text fallback if geocode fails
+            }
 
-            if (routingProvider === 'generoute' && settings.generouteApiKey && allGeocoded) {
-                const locations = [
-                    {
-                        lat: typeof originRes.geometry.location.lat === 'function' ? originRes.geometry.location.lat() : originRes.geometry.location.lat,
-                        lng: typeof originRes.geometry.location.lng === 'function' ? originRes.geometry.location.lng() : originRes.geometry.location.lng,
-                        title: route.startAddress
-                    },
-                    ...waypointResList.map((r, i) => ({
-                        lat: typeof r!.geometry.location.lat === 'function' ? r!.geometry.location.lat() : r!.geometry.location.lat,
-                        lng: typeof r!.geometry.location.lng === 'function' ? r!.geometry.location.lng() : r!.geometry.location.lng,
-                        title: route.orders[i].address
-                    })),
-                    {
-                        lat: typeof destinationRes.geometry.location.lat === 'function' ? destinationRes.geometry.location.lat() : destinationRes.geometry.location.lat,
-                        lng: typeof destinationRes.geometry.location.lng === 'function' ? destinationRes.geometry.location.lng() : destinationRes.geometry.location.lng,
-                        title: route.endAddress
+            // 3. End point
+            let destinLoc: any = null
+            const endLat = settings.defaultEndLat ? Number(settings.defaultEndLat) : null
+            const endLng = settings.defaultEndLng ? Number(settings.defaultEndLng) : null
+            if (endLat && endLng) {
+                destinLoc = new window.google.maps.LatLng(endLat, endLng)
+            } else if (!route.endAddress || route.endAddress === route.startAddress) {
+                destinLoc = originLoc
+            } else {
+                const res = await geocodeAddr(cleanAddressForRoute(route.endAddress))
+                destinLoc = toLoc(res) || originLoc
+            }
+
+            // 4. Google Directions API (chunks of max 23 waypoints)
+            const MAX_WP = 23
+            const allWpDefs = waypointLocs.map(loc => ({ location: loc, stopover: true }))
+            const chunks: any[][] = []
+            for (let i = 0; i < allWpDefs.length; i += MAX_WP) chunks.push(allWpDefs.slice(i, i + MAX_WP))
+            if (chunks.length === 0) chunks.push([])
+
+            let totalDistance = 0
+            let totalDuration = 0
+
+            for (let ci = 0; ci < chunks.length; ci++) {
+                const chunkOrigin = ci === 0 ? originLoc : allWpDefs[(ci * MAX_WP) - 1].location
+                const chunkDest = ci === chunks.length - 1
+                    ? destinLoc
+                    : allWpDefs[Math.min((ci + 1) * MAX_WP, allWpDefs.length) - 1].location
+
+                const dirResult: any = await new Promise((resolve) => {
+                    try {
+                        new window.google.maps.DirectionsService().route(
+                            {
+                                origin: chunkOrigin,
+                                destination: chunkDest,
+                                waypoints: chunks[ci],
+                                travelMode: window.google.maps.TravelMode.DRIVING,
+                                region: 'UA',
+                            },
+                            (res: any, status: any) => {
+                                if (status === 'OK' && res) resolve(res)
+                                else { console.error('[DirectionsService]', status); resolve(null) }
+                            }
+                        )
+                    } catch (e) { console.error('[DirectionsService error]', e); resolve(null) }
+                })
+
+                if (dirResult?.routes?.[0]?.legs) {
+                    for (const leg of dirResult.routes[0].legs) {
+                        totalDistance += leg.distance?.value || 0
+                        totalDuration += leg.duration?.value || 0
                     }
-                ]
-
-                const generouteResult = await GenerouteService.calculateTrip(locations, settings.generouteApiKey, settings.cityBias === 'Киев' ? 'UA' : 'UA')
-                if (generouteResult) {
-                    totalDistance = generouteResult.total_distance // meters
-                    totalDuration = generouteResult.total_duration // seconds
-                    routeGeometry = generouteResult.geometry
-                } else {
-                    toast.error('Generoute API error, falling back to Google')
-                    // Fallback will happen below because totalDistance is still 0
                 }
             }
 
             if (totalDistance === 0) {
-                // Google Provider Fallback or primary choice
-                const request = {
-                    origin: originRes?.geometry?.location || cleanAddressForRoute(route.startAddress),
-                    destination: destinationRes?.geometry?.location || cleanAddressForRoute(route.endAddress),
-                    waypoints: waypointResList.map((r, i) => ({ location: r?.geometry?.location || cleanAddressForRoute(route.orders[i].address), stopover: true })),
-                    travelMode: window.google.maps.TravelMode.DRIVING,
-                }
-
-                const result = await googleApiCache.getDirections(request as any)
-                if (result) {
-                    totalDistance = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
-                    totalDuration = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
-                }
+                toast.error('Google Directions вернул 0 км. Проверьте адреса маршрута.')
+                setIsCalculating(false)
+                return
             }
 
-            if (totalDistance > 0) {
-                // Optional Mapbox traffic adjustment (only for Google or if desired for Generoute)
-                const mapboxToken = settings.mapboxToken || localStorage.getItem('km_mapbox_token')
-                const vType = getCourierVehicleType(route.courier)
-                if (mapboxToken) {
-                    const chainForTraffic = route.orders.map((o: any, i: number) => ({
-                        ...o,
-                        coords: waypointResList[i] ? {
-                            lat: typeof waypointResList[i].geometry.location.lat === 'function' ? waypointResList[i].geometry.location.lat() : waypointResList[i].geometry.location.lat,
-                            lng: typeof waypointResList[i].geometry.location.lng === 'function' ? waypointResList[i].geometry.location.lng() : waypointResList[i].geometry.location.lng,
-                        } : null
-                    })).filter((o: any) => o.coords)
-
-                    if (chainForTraffic.length > 0) {
-                        const trafficInfo = await getUkraineTrafficForOrders(chainForTraffic as any, mapboxToken)
-                        let trafficDelayMin = calculateTotalTrafficDelay(trafficInfo)
-                        if (vType === 'motorcycle') trafficDelayMin *= 0.5
-                        totalDuration += (trafficDelayMin * 60)
-                    }
-                }
-
-                updateExcelData((prev: any) => ({
-                    ...prev,
-                    routes: (prev?.routes || []).map((r: Route) =>
-                        r.id === route.id
-                            ? { ...r, totalDistance: totalDistance / 1000, totalDuration: totalDuration / 60, isOptimized: true, routeGeometry }
-                            : r
-                    )
-                }))
-            }
+            // 5. Save result
+            updateExcelData((prev: any) => ({
+                ...prev,
+                routes: (prev?.routes || []).map((r: Route) =>
+                    r.id === route.id
+                        ? { ...r, totalDistance: totalDistance / 1000, totalDuration: totalDuration / 60, isOptimized: true }
+                        : r
+                )
+            }))
+            toast.success(`Маршрут рассчитан: ${(totalDistance / 1000).toFixed(1)} км`)
         } catch (err) {
-            console.error(err)
+            console.error('[calculateRouteDistance]', err)
             toast.error('Ошибка расчета')
         } finally {
             setIsCalculating(false)
         }
     }
 
-    return { calculateRouteDistance, isCalculating, disambModal, setDisambModal, disambResolver, processDisambQueue }
+        return { calculateRouteDistance, isCalculating, disambModal, setDisambModal, disambResolver, processDisambQueue, geocodeWithSector: _geocodeWithSector }
 }
