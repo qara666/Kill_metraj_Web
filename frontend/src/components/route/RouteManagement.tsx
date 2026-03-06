@@ -1450,27 +1450,34 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     try {
       const base = 'https://www.google.com/maps/dir/?api=1'
       const meta: any = (route as any).geoMeta || {}
-      const hasFullCoords = (m: any) => typeof m?.lat === 'number' && typeof m?.lng === 'number'
       const waypointsMeta: any[] = (meta.waypoints && Array.isArray(meta.waypoints)) ? meta.waypoints : []
-      const missingCoords = !hasFullCoords(meta.origin) || !hasFullCoords(meta.destination) || waypointsMeta.some((w: any) => !hasFullCoords(w)) || waypointsMeta.length !== route.orders.length
+      
+      const hasCoords = (m: any) => typeof m?.lat === 'number' && typeof m?.lng === 'number'
 
-      let originStr: string
-      let destinationStr: string
-      let wpList: string[]
-
-      if (!missingCoords) {
-        // Prefer precise coords from last route calculation
+      // 1. Origin
+      let originStr = ''
+      if (hasCoords(meta.origin)) {
         originStr = `${meta.origin.lat},${meta.origin.lng}`
-        destinationStr = `${meta.destination.lat},${meta.destination.lng}`
-        wpList = waypointsMeta.map((w: any) => `${w.lat},${w.lng}`)
       } else {
-        // v5.9: Fallback to address strings — always open, even without recalc
-        originStr = meta.origin?.formattedAddress || route.startAddress || ''
-        destinationStr = meta.destination?.formattedAddress || route.endAddress || ''
-        wpList = route.orders.map((o: any, i: number) =>
-          waypointsMeta[i]?.formattedAddress || o.address || ''
-        )
+        originStr = route.startAddress || (settings.defaultStartAddress || '')
       }
+
+      // 2. Destination
+      let destinationStr = ''
+      if (hasCoords(meta.destination)) {
+        destinationStr = `${meta.destination.lat},${meta.destination.lng}`
+      } else {
+        destinationStr = route.endAddress || route.startAddress || (settings.defaultEndAddress || settings.defaultStartAddress || '')
+      }
+
+      // 3. Waypoints
+      const wpList = route.orders.map((o: any, i: number) => {
+        const wMeta = waypointsMeta[i]
+        if (hasCoords(wMeta)) {
+          return `${wMeta.lat},${wMeta.lng}`
+        }
+        return o.address || ''
+      })
 
       const origin = `origin=${encodeURIComponent(originStr)}`
       const destination = `destination=${encodeURIComponent(destinationStr)}`
@@ -1481,6 +1488,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       if (waypoints) parts.push(waypoints)
       const url = `${base}&${parts.join('&')}`
       window.open(url, '_blank')
+    } catch (err) {
     } catch (err) {
       toast.error('Не удалось открыть маршрут в Google Maps')
     }
@@ -2257,17 +2265,19 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
 
                             const meta = (route as any).geoMeta?.waypoints?.[index]
-                            const metaBadge = meta ? (
+                            const metaBadge = (meta || order.kmlZone) ? (
                               <div className="mt-2 flex items-center flex-wrap gap-2 text-[10px] font-black uppercase tracking-widest">
-                                <span className={clsx(
-                                  'px-2 py-0.5 rounded-lg border',
-                                  meta.locationType === 'ROOFTOP'
-                                    ? (isDark ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-green-50 text-green-700 border-green-200')
-                                    : meta.locationType === 'RANGE_INTERPOLATED'
-                                      ? (isDark ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : 'bg-yellow-50 text-yellow-700 border-yellow-200')
-                                      : (isDark ? 'bg-gray-700 text-gray-400 border-gray-600' : 'bg-gray-50 text-gray-600 border-gray-200')
-                                )}>{translateLocationType(meta.locationType)}</span>
-                                {typeof meta.streetNumberMatched === 'boolean' && (
+                                {meta?.locationType && (
+                                  <span className={clsx(
+                                    'px-2 py-0.5 rounded-lg border',
+                                    meta.locationType === 'ROOFTOP'
+                                      ? (isDark ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-green-50 text-green-700 border-green-200')
+                                      : meta.locationType === 'RANGE_INTERPOLATED'
+                                        ? (isDark ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : 'bg-yellow-50 text-yellow-700 border-yellow-200')
+                                        : (isDark ? 'bg-gray-700 text-gray-400 border-gray-600' : 'bg-gray-50 text-gray-600 border-gray-200')
+                                  )}>{translateLocationType(meta.locationType)}</span>
+                                )}
+                                {typeof meta?.streetNumberMatched === 'boolean' && (
                                   <span className={clsx(
                                     'px-2 py-0.5 rounded-lg border',
                                     meta.streetNumberMatched
@@ -2277,12 +2287,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                     {meta.streetNumberMatched ? ' Найден номер дома' : ' Не нашел номера дома'}
                                   </span>
                                 )}
-                                {meta.zoneName && (
+                                {(meta?.zoneName || order.kmlZone) && (
                                   <span className={clsx(
-                                    'px-2 py-0.5 rounded-lg border',
-                                    isDark ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-purple-50 text-purple-700 border-purple-200'
+                                    'px-2 py-0.5 rounded-lg border shadow-sm flex items-center gap-1',
+                                    isDark ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-indigo-50 text-indigo-700 border-indigo-200'
                                   )}>
-                                    Зона: {meta.zoneName}
+                                    <MapIcon className="w-3 h-3" />
+                                    {order.kmlZone || meta?.zoneName}
                                   </span>
                                 )}
                               </div>

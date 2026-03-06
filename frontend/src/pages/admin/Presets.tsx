@@ -16,17 +16,27 @@ import {
 } from '@heroicons/react/24/outline'
 import { parseKML } from '../../utils/maps/kmlParser'
 import { KmlPreviewMap } from '../../components/zone/KmlPreviewMap'
+import { useAuth } from '../../contexts/AuthContext'
 import type { UserPreset } from '../../types/auth'
 import { LoadingSpinner } from '../../components/shared/LoadingSpinner'
 import { CollapsibleSection } from '../../components/shared/CollapsibleSection'
 import { DashboardSettingsPanel } from '../../components/autoplanner/DashboardSettingsPanel'
+import { CityBiasSection } from '../../components/zone/CityBiasSection'
 
 export const AdminPresets: React.FC = () => {
     const { isDark } = useTheme()
+    const { isAdmin, user: currentUser } = useAuth()
     const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
     const [settings, setSettings] = useState<Record<string, any>>({})
     const [searchTerm, setSearchTerm] = useState('')
     const [zoneSearchTerm, setZoneSearchTerm] = useState('')
+
+    // If not admin, force selection to current user's ID
+    React.useEffect(() => {
+        if (!isAdmin && currentUser?.id) {
+            setSelectedUserId(currentUser.id)
+        }
+    }, [isAdmin, currentUser])
 
     const queryClient = useQueryClient()
 
@@ -123,44 +133,47 @@ export const AdminPresets: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                {/* Users List */}
-                <div className={clsx(
-                    'lg:col-span-3 rounded-3xl border p-6 flex flex-col h-[calc(100vh-250px)] sticky top-4',
-                    isDark ? 'bg-gray-800/80 border-gray-700/50 backdrop-blur-xl' : 'bg-white/80 border-gray-200 shadow-xl'
-                )}>
-                    <div className="relative mb-6">
-                        <MagnifyingGlassIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                        <input
-                            type="text"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            placeholder="Найти пользователя..."
-                            className={clsx(
-                                'w-full pl-11 pr-4 py-3 rounded-2xl border text-sm transition-all outline-none',
-                                isDark ? 'bg-gray-900 border-gray-700 text-white' : 'bg-gray-50 border-gray-200'
-                            )}
-                        />
-                    </div>
-                    <div className="space-y-2 flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                        {filteredUsers.map((user) => (
-                            <button
-                                key={user.id}
-                                onClick={() => setSelectedUserId(user.id)}
+                {/* Users List - Hidden for non-admins */}
+                {isAdmin && (
+                    <div className={clsx(
+                        'lg:col-span-3 rounded-3xl border p-6 flex flex-col h-[calc(100vh-250px)] sticky top-4',
+                        isDark ? 'bg-gray-800/80 border-gray-700/50 backdrop-blur-xl' : 'bg-white/80 border-gray-200 shadow-xl'
+                    )}>
+                        <div className="relative mb-6">
+                            <MagnifyingGlassIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                            <input
+                                type="text"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                placeholder="Найти пользователя..."
                                 className={clsx(
-                                    'w-full text-left p-4 rounded-2xl transition-all border',
-                                    selectedUserId === user.id ? 'bg-blue-600 border-blue-500 text-white' : 'hover:bg-gray-700/50 text-gray-300'
+                                    'w-full pl-11 pr-4 py-3 rounded-2xl border text-sm transition-all outline-none',
+                                    isDark ? 'bg-gray-900 border-gray-700 text-white' : 'bg-gray-50 border-gray-200'
                                 )}
-                            >
-                                <div className="font-bold">{user.username}</div>
-                                <div className="text-xs opacity-60">ID: {user.divisionId || 'N/A'}</div>
-                            </button>
-                        ))}
+                            />
+                        </div>
+                        <div className="space-y-2 flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                            {filteredUsers.map((user) => (
+                                <button
+                                    key={user.id}
+                                    onClick={() => setSelectedUserId(user.id)}
+                                    className={clsx(
+                                        'w-full text-left p-4 rounded-2xl transition-all border',
+                                        selectedUserId === user.id ? 'bg-blue-600 border-blue-500 text-white' : 'hover:bg-gray-700/50 text-gray-300'
+                                    )}
+                                >
+                                    <div className="font-bold">{user.username}</div>
+                                    <div className="text-xs opacity-60">ID: {user.divisionId || 'N/A'}</div>
+                                </button>
+                            ))}
+                        </div>
                     </div>
-                </div>
+                )}
 
                 {/* Editor */}
                 <div className={clsx(
-                    'lg:col-span-9 rounded-3xl border p-8 transition-all',
+                    isAdmin ? 'lg:col-span-9' : 'lg:col-span-12',
+                    'rounded-3xl border p-8 transition-all',
                     isDark ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-200'
                 )}>
                     {!selectedUser ? (
@@ -169,26 +182,35 @@ export const AdminPresets: React.FC = () => {
                         <div className="flex justify-center py-20"><LoadingSpinner /></div>
                     ) : (
                         <div className="space-y-6">
-                            <CollapsibleSection isDark={isDark} icon={<KeyIcon className="h-5 w-5" />} title="API Ключи" defaultOpen={true}>
+                            {/* City Bias - Syced with Settings.tsx */}
+                            <CityBiasSection 
+                                isDark={isDark} 
+                                value={settings.cityBias || ''} 
+                                onChange={(v) => isAdmin && setSettings({ ...settings, cityBias: v })} 
+                            />
+
+                            <CollapsibleSection isDark={isDark} icon={<KeyIcon className="h-5 w-5" />} title="API Ключи / Провайдеры" defaultOpen={isAdmin}>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                         <label className="text-xs font-bold uppercase text-gray-500">Google Maps API Key</label>
                                         <input
                                             type="password"
                                             value={settings.googleMapsApiKey || ''}
-                                            onChange={(e) => setSettings({ ...settings, googleMapsApiKey: e.target.value })}
+                                            onChange={(e) => isAdmin && setSettings({ ...settings, googleMapsApiKey: e.target.value })}
                                             className="input"
                                             placeholder="AIza..."
+                                            disabled={!isAdmin}
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <label className="text-xs font-bold uppercase text-gray-500">Mapbox Token</label>
+                                        <label className="text-xs font-bold uppercase text-gray-500">Mapbox Token (для трафика)</label>
                                         <input
-                                            type="password"
+                                            type="text"
                                             value={settings.mapboxToken || ''}
-                                            onChange={(e) => setSettings({ ...settings, mapboxToken: e.target.value })}
+                                            onChange={(e) => isAdmin && setSettings({ ...settings, mapboxToken: e.target.value })}
                                             className="input"
                                             placeholder="pk..."
+                                            disabled={!isAdmin}
                                         />
                                     </div>
                                     <div className="space-y-2">
@@ -196,41 +218,44 @@ export const AdminPresets: React.FC = () => {
                                         <input
                                             type="password"
                                             value={settings.generouteApiKey || ''}
-                                            onChange={(e) => setSettings({ ...settings, generouteApiKey: e.target.value })}
+                                            onChange={(e) => isAdmin && setSettings({ ...settings, generouteApiKey: e.target.value })}
                                             className="input"
                                             placeholder="gen_..."
+                                            disabled={!isAdmin}
                                         />
                                     </div>
                                     <div className="space-y-2">
                                         <label className="text-xs font-bold uppercase text-gray-500">Провайдер маршрутизации</label>
                                         <select
                                             value={settings.routingProvider || 'google'}
-                                            onChange={(e) => setSettings({ ...settings, routingProvider: e.target.value })}
+                                            onChange={(e) => isAdmin && setSettings({ ...settings, routingProvider: e.target.value })}
                                             className="input"
+                                            disabled={!isAdmin}
                                         >
-                                            <option value="google">Google Maps</option>
-                                            <option value="generoute">Generoute.io</option>
+                                            <option value="google">Google Maps (Платный)</option>
+                                            <option value="generoute">Generoute.io (Оптимизация)</option>
                                         </select>
                                     </div>
                                     <div className="space-y-2">
                                         <label className="text-xs font-bold uppercase text-gray-500">Провайдер геокодирования</label>
                                         <select
                                             value={settings.geocodingProvider || 'google'}
-                                            onChange={(e) => setSettings({ ...settings, geocodingProvider: e.target.value })}
+                                            onChange={(e) => isAdmin && setSettings({ ...settings, geocodingProvider: e.target.value })}
                                             className="input"
+                                            disabled={!isAdmin}
                                         >
-                                            <option value="google">Google Maps</option>
-                                            <option value="nominatim">Nominatim / OSM</option>
+                                            <option value="google">Google Maps (Точный)</option>
+                                            <option value="nominatim">Nominatim / OSM (Бесплатно)</option>
                                         </select>
                                     </div>
                                 </div>
                             </CollapsibleSection>
 
-                            <CollapsibleSection isDark={isDark} icon={<ArrowPathIcon className="h-5 w-5" />} title="Интеграция FastOperator">
+                            <CollapsibleSection isDark={isDark} icon={<ArrowPathIcon className="h-5 w-5" />} title="Интеграция FastOperator / Dashboard" defaultOpen={false}>
                                 <DashboardSettingsPanel
                                     isDark={isDark}
                                     initialSettings={settings}
-                                    onSettingsChange={(newS) => setSettings(prev => ({ ...prev, ...newS }))}
+                                    onSettingsChange={(newS) => isAdmin && setSettings(prev => ({ ...prev, ...newS }))}
                                 />
                             </CollapsibleSection>
 
@@ -246,7 +271,8 @@ export const AdminPresets: React.FC = () => {
                                                 className="w-full bg-transparent outline-none text-sm font-bold text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500" 
                                                 placeholder="Введите адрес начала..." 
                                                 value={settings.defaultStartAddress || ''}
-                                                onChange={(e) => setSettings({ ...settings, defaultStartAddress: e.target.value })}
+                                                onChange={(e) => isAdmin && setSettings({ ...settings, defaultStartAddress: e.target.value })}
+                                                disabled={!isAdmin}
                                             />
                                         </div>
 
@@ -259,7 +285,8 @@ export const AdminPresets: React.FC = () => {
                                                 className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
                                                 placeholder="50.4501" 
                                                 value={settings.defaultStartLat || ''}
-                                                onChange={(e) => setSettings({ ...settings, defaultStartLat: e.target.value ? parseFloat(e.target.value) : null })}
+                                                onChange={(e) => isAdmin && setSettings({ ...settings, defaultStartLat: e.target.value ? parseFloat(e.target.value) : null })}
+                                                disabled={!isAdmin}
                                             />
                                             </div>
                                             <div className="space-y-1.5">
@@ -270,7 +297,8 @@ export const AdminPresets: React.FC = () => {
                                                 className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
                                                 placeholder="30.5234" 
                                                 value={settings.defaultStartLng || ''}
-                                                onChange={(e) => setSettings({ ...settings, defaultStartLng: e.target.value ? parseFloat(e.target.value) : null })}
+                                                onChange={(e) => isAdmin && setSettings({ ...settings, defaultStartLng: e.target.value ? parseFloat(e.target.value) : null })}
+                                                disabled={!isAdmin}
                                             />
                                             </div>
                                         </div>
@@ -286,7 +314,8 @@ export const AdminPresets: React.FC = () => {
                                                 className="w-full bg-transparent outline-none text-sm font-bold text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500" 
                                                 placeholder="Введите адрес окончания..." 
                                                 value={settings.defaultEndAddress || ''}
-                                                onChange={(e) => setSettings({ ...settings, defaultEndAddress: e.target.value })}
+                                                onChange={(e) => isAdmin && setSettings({ ...settings, defaultEndAddress: e.target.value })}
+                                                disabled={!isAdmin}
                                             />
                                         </div>
 
@@ -299,7 +328,8 @@ export const AdminPresets: React.FC = () => {
                                                 className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
                                                 placeholder="50.4501" 
                                                 value={settings.defaultEndLat || ''}
-                                                onChange={(e) => setSettings({ ...settings, defaultEndLat: e.target.value ? parseFloat(e.target.value) : null })}
+                                                onChange={(e) => isAdmin && setSettings({ ...settings, defaultEndLat: e.target.value ? parseFloat(e.target.value) : null })}
+                                                disabled={!isAdmin}
                                             />
                                             </div>
                                             <div className="space-y-1.5">
@@ -310,7 +340,8 @@ export const AdminPresets: React.FC = () => {
                                                 className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
                                                 placeholder="30.5234" 
                                                 value={settings.defaultEndLng || ''}
-                                                onChange={(e) => setSettings({ ...settings, defaultEndLng: e.target.value ? parseFloat(e.target.value) : null })}
+                                                onChange={(e) => isAdmin && setSettings({ ...settings, defaultEndLng: e.target.value ? parseFloat(e.target.value) : null })}
+                                                disabled={!isAdmin}
                                             />
                                             </div>
                                         </div>
@@ -318,7 +349,7 @@ export const AdminPresets: React.FC = () => {
                                 </div>
                             </CollapsibleSection>
 
-                            <CollapsibleSection isDark={isDark} icon={<MapIcon className="h-5 w-5" />} title="Зона расчета заказов Google My Maps (KML)">
+                            <CollapsibleSection isDark={isDark} icon={<MapIcon className="h-5 w-5" />} title="Зона расчета заказов Google My Maps (KML)" defaultOpen={true}>
                                 <div className="space-y-6">
                                     <div className={clsx(
                                         'p-4 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4',
@@ -374,9 +405,12 @@ export const AdminPresets: React.FC = () => {
                                                     const parsed = parseKML(text)
                                                     setSettings({ ...settings, kmlData: parsed })
                                                     toast.success(`Успешно импортировано: ${parsed.polygons.length} зон`)
-                                                } catch (error) {
-                                                    toast.error('Ошибка при разборе KML файла')
-                                                }
+                                              const url = `${base}&${parts.join('&')}`
+      window.open(url, '_blank')
+    } catch (err) {
+      toast.error('Не удалось открыть маршрут в Google Maps')
+    }
+  }                                          }
                                             }}
                                             className="hidden"
                                             id="preset-kml-upload"
@@ -565,15 +599,113 @@ export const AdminPresets: React.FC = () => {
                                 </div>
                             </CollapsibleSection>
 
-                            <CollapsibleSection isDark={isDark} icon={<ShieldCheckIcon className="h-5 w-5" />} title="Фильтры аномалий">
-                                <div className="flex items-center gap-4">
-                                    <input
-                                        type="checkbox"
-                                        checked={settings.anomalyFilterEnabled ?? true}
-                                        onChange={(e) => setSettings({ ...settings, anomalyFilterEnabled: e.target.checked })}
-                                        className="checkbox"
-                                    />
-                                    <span className="text-sm">Включить фильтр аномалий</span>
+                             <CollapsibleSection isDark={isDark} icon={<ShieldCheckIcon className="h-5 w-5" />} title="Фильтры аномалий" defaultOpen={false}>
+                                <div className="space-y-4">
+                                    <div className="flex items-center gap-4">
+                                        <input
+                                            type="checkbox"
+                                            checked={settings.anomalyFilterEnabled ?? true}
+                                            onChange={(e) => isAdmin && setSettings({ ...settings, anomalyFilterEnabled: e.target.checked })}
+                                            className="checkbox"
+                                            disabled={!isAdmin}
+                                        />
+                                        <span className="text-sm">Включить фильтр аномалий</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold uppercase text-gray-500">Макс. расстояние сегмента (км)</label>
+                                            <input 
+                                                type="number" 
+                                                value={settings.anomalyMaxLegDistanceKm || ''}
+                                                onChange={(e) => isAdmin && setSettings({ ...settings, anomalyMaxLegDistanceKm: parseFloat(e.target.value) })}
+                                                className="input"
+                                                disabled={!isAdmin}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold uppercase text-gray-500">Макс. общее расстояние (км)</label>
+                                            <input 
+                                                type="number" 
+                                                value={settings.anomalyMaxTotalDistanceKm || ''}
+                                                onChange={(e) => isAdmin && setSettings({ ...settings, anomalyMaxTotalDistanceKm: parseFloat(e.target.value) })}
+                                                className="input"
+                                                disabled={!isAdmin}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-gray-100 dark:border-gray-700/50">
+                                        <div className="space-y-4">
+                                            <div className="flex items-center gap-4">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={settings.enableCoordinateValidation ?? true}
+                                                    onChange={(e) => isAdmin && setSettings({ ...settings, enableCoordinateValidation: e.target.checked })}
+                                                    className="checkbox"
+                                                    disabled={!isAdmin}
+                                                />
+                                                <span className="text-sm">Валидация координат (Украина)</span>
+                                            </div>
+                                            <div className="flex items-center gap-4">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={settings.enableAdaptiveThresholds ?? true}
+                                                    onChange={(e) => isAdmin && setSettings({ ...settings, enableAdaptiveThresholds: e.target.checked })}
+                                                    className="checkbox"
+                                                    disabled={!isAdmin}
+                                                />
+                                                <span className="text-sm">Адаптивные пороги (на базе статистики)</span>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold uppercase text-gray-500">Порог качества адреса (%)</label>
+                                            <div className="flex items-center gap-4">
+                                                <input 
+                                                    type="range"
+                                                    min="0"
+                                                    max="100"
+                                                    step="5"
+                                                    value={settings.addressQualityThreshold || 60}
+                                                    onChange={(e) => isAdmin && setSettings({ ...settings, addressQualityThreshold: parseInt(e.target.value) })}
+                                                    className="flex-1 accent-blue-500"
+                                                    disabled={!isAdmin}
+                                                />
+                                                <span className="text-sm font-bold w-10 text-center">{settings.addressQualityThreshold || 60}%</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </CollapsibleSection>
+
+                            <CollapsibleSection isDark={isDark} icon={<CogIcon className="h-5 w-5" />} title="Интерфейс и Ограничения" defaultOpen={false}>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold uppercase text-gray-500">Стиль карты Google</label>
+                                        <select
+                                            value={settings.mapStyle || 'standard'}
+                                            onChange={(e) => isAdmin && setSettings({ ...settings, mapStyle: e.target.value })}
+                                            className="input"
+                                            disabled={!isAdmin}
+                                        >
+                                            <option value="standard">Стандартный</option>
+                                            <option value="silver">Серебро</option>
+                                            <option value="retro">Ретро</option>
+                                            <option value="dark">Темный</option>
+                                            <option value="night">Ночной</option>
+                                            <option value="aubergine">Баклажан</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold uppercase text-gray-500">Макс. критическая дистанция (км)</label>
+                                        <input 
+                                            type="number" 
+                                            value={settings.maxCriticalRouteDistanceKm || ''}
+                                            onChange={(e) => isAdmin && setSettings({ ...settings, maxCriticalRouteDistanceKm: parseFloat(e.target.value) })}
+                                            className="input"
+                                            disabled={!isAdmin}
+                                        />
+                                        <p className="text-[10px] text-gray-400">Маршруты длиннее этого значения помечаются как критические</p>
+                                    </div>
                                 </div>
                             </CollapsibleSection>
                         </div>

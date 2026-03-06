@@ -350,18 +350,26 @@ export const useRouteGeocoding = ({
     const calculateRouteDistance = async (route: Route) => {
         setIsCalculating(true)
         try {
-            // Simple Google Geocoder helper
-            const geocodeAddr = (address: string): Promise<any | null> =>
-                new Promise((resolve) => {
-                    try {
-                        new window.google.maps.Geocoder().geocode(
-                            { address, region: 'UA', componentRestrictions: { country: 'UA' } },
-                            (results: any, status: any) => {
-                                resolve(status === 'OK' && results?.length > 0 ? results[0] : null)
-                            }
-                        )
-                    } catch (e) { resolve(null) }
-                })
+            // Simple Google Geocoder helper with variant support
+            const geocodeAddr = async (address: string): Promise<any | null> => {
+                const cityBias = settings.cityBias || 'Киев'
+                const variants = generateStreetVariants(address, cityBias)
+                
+                for (const variant of variants) {
+                    const result = await new Promise((resolve) => {
+                        try {
+                            new window.google.maps.Geocoder().geocode(
+                                { address: variant, region: 'UA', componentRestrictions: { country: 'UA' } },
+                                (results: any, status: any) => {
+                                    resolve(status === 'OK' && results?.length > 0 ? results[0] : null)
+                                }
+                            )
+                        } catch (e) { resolve(null) }
+                    })
+                    if (result) return result
+                }
+                return null
+            }
 
             // Extract LatLng from geocoder result — handles both LatLng objects and plain {lat,lng}
             const toLoc = (res: any): any => {
@@ -391,14 +399,32 @@ export const useRouteGeocoding = ({
             // 2. Waypoints (order addresses) — geocode each unique address once
             const addrCache = new Map<string, any>()
             const waypointLocs: any[] = []
+            const orderUpdates: any[] = []
+
             for (const order of route.orders) {
                 const cleaned = cleanAddressForRoute(order.address)
                 const key = cleaned.toLowerCase()
+                
                 if (!addrCache.has(key)) {
                     addrCache.set(key, await geocodeAddr(cleaned))
                 }
-                const loc = toLoc(addrCache.get(key))
+                
+                const geocodeRes = addrCache.get(key)
+                const loc = toLoc(geocodeRes)
                 waypointLocs.push(loc || cleaned) // text fallback if geocode fails
+
+                // Track zone and coords for each order
+                const update: any = { id: order.id }
+                if (loc) {
+                    update.lat = loc.lat()
+                    update.lng = loc.lng()
+                    const zone = findZoneForLoc(loc, cachedAllKmlPolygons)
+                    if (zone) {
+                        update.kmlZone = zone.name
+                        update.kmlHub = zone.folderName
+                    }
+                }
+                orderUpdates.push(update)
             }
 
             // 3. End point
@@ -465,11 +491,31 @@ export const useRouteGeocoding = ({
             // 5. Save result
             updateExcelData((prev: any) => ({
                 ...prev,
-                routes: (prev?.routes || []).map((r: Route) =>
-                    r.id === route.id
-                        ? { ...r, totalDistance: totalDistance / 1000, totalDuration: totalDuration / 60, isOptimized: true }
-                        : r
-                )
+                routes: (prev?.routes || []).map((r: Route) => {
+                    if (r.id !== route.id) return r
+
+                    const geoMeta = {
+                        origin: { lat: originLoc.lat(), lng: originLoc.lng() },
+                        destination: { lat: destinLoc.lat(), lng: destinLoc.lng() },
+                        waypoints: waypointLocs.map(loc => 
+                            typeof loc === 'string' ? { address: loc } : { lat: loc.lat(), lng: loc.lng() }
+                        )
+                    }
+
+                    const updatedOrders = r.orders.map(o => {
+                        const upd = orderUpdates.find(u => u.id === o.id)
+                        return upd ? { ...o, ...upd } : o
+                    })
+
+                    return { 
+                        ...r, 
+                        totalDistance: totalDistance / 1000, 
+                        totalDuration: totalDuration / 60, 
+                        orders: updatedOrders,
+                        geoMeta,
+                        isOptimized: true 
+                    }
+                })
             }))
             toast.success(`Маршрут рассчитан: ${(totalDistance / 1000).toFixed(1)} км`)
         } catch (err) {
