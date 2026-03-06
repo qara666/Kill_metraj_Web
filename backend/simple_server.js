@@ -510,6 +510,7 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
     await setupDashboardListener();
 
     // Start manual migration check
+    await ensureDashboardCacheTable(); // Ensure base table exists first
     await ensureStatusHistoryTable();
     await ensureDivisionIdColumn();
     await ensureManualOverridesTable();
@@ -545,6 +546,33 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
     logger.error('Не удалось запустить gRPC сервер', grpcError);
   }
 });
+
+/**
+ * Manual migration to ensure api_dashboard_cache table exists
+ */
+async function ensureDashboardCacheTable() {
+  try {
+    logger.info('DB Check: Ensuring api_dashboard_cache table exists...');
+    await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS api_dashboard_cache (
+        id SERIAL PRIMARY KEY,
+        payload JSONB NOT NULL,
+        data_hash TEXT NOT NULL,
+        status_code INTEGER DEFAULT 200,
+        error_message TEXT,
+        division_id TEXT,
+        target_date DATE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+    logger.info('DB Check: api_dashboard_cache table verified/created successfully');
+  } catch (err) {
+    logger.error('DB Check: Error creating api_dashboard_cache table', {
+      error: err.message,
+      stack: err.stack
+    });
+  }
+}
 
 /**
  * Manual migration to ensure table exists
