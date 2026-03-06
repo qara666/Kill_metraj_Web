@@ -3,6 +3,7 @@ import { clsx } from 'clsx';
 import { ClockIcon, BuildingOfficeIcon, KeyIcon } from '@heroicons/react/24/outline';
 import { dashboardApi } from '../../services/dashboardApi';
 import { useAutoPlannerStore } from '../../stores/useAutoPlannerStore';
+import { useDashboardStore } from '../../stores/useDashboardStore';
 import { ProcessedExcelData } from '../../types';
 import { formatDateForApi, formatDateTimeForApi } from '../../utils/data/apiDataTransformer';
 
@@ -39,10 +40,11 @@ export const DashboardImportModal: React.FC<DashboardImportModalProps> = ({
         apiDepartmentId,
         setApiKey,
         setApiDepartmentId,
-        setLastApiImport,
         apiTimeFilterEnabled,
         setApiTimeFilterEnabled
-    } = useAutoPlannerStore();
+    } = useDashboardStore();
+
+    const { setLastApiImport } = useAutoPlannerStore();
 
     const [localApiKey, setLocalApiKey] = useState(apiKey);
     const [localDepartmentId, setLocalDepartmentId] = useState<string>(apiDepartmentId?.toString() || '');
