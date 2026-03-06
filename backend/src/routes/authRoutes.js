@@ -26,10 +26,19 @@ router.post('/login', async (req, res) => {
         }
 
         // Find user (Sequelize)
-        const user = await User.findOne({ where: { username } });
+        // We bypass RLS for the login query by running it with a temporary admin role context
+        const user = await rlsContextStore.run({ role: 'admin', userId: 0 }, async () => {
+            try {
+                return await User.findOne({ where: { username } });
+            } catch (findErr) {
+                logger.error('Ошибка при поиске пользователя в БД:', { username, error: findErr.message });
+                throw findErr;
+            }
+        });
 
         if (!user) {
-            logger.warn('Ошибка входа: Пользователь не найден', { username });
+            const duration = Date.now() - startTime;
+            logger.warn('Ошибка входа: Пользователь не найден', { username, duration });
             return res.status(401).json({
                 success: false,
                 error: 'НеверныеУчетныеДанные',
@@ -47,9 +56,21 @@ router.post('/login', async (req, res) => {
         }
 
         // Verify password
-        const isPasswordValid = await user.comparePassword(password);
+        let isPasswordValid = false;
+        try {
+            if (typeof user.comparePassword !== 'function') {
+                logger.error('Ошибка: Метод comparePassword отсутствует у модели User');
+                throw new Error('Internal error: Method comparePassword missing');
+            }
+            isPasswordValid = await user.comparePassword(password);
+        } catch (compareErr) {
+            logger.error('Ошибка при проверке пароля:', { username, error: compareErr.message });
+            throw compareErr;
+        }
+
         if (!isPasswordValid) {
-            logger.warn('Ошибка входа: Неверный пароль', { username });
+            const duration = Date.now() - startTime;
+            logger.warn('Ошибка входа: Неверный пароль', { username, duration });
             return res.status(401).json({
                 success: false,
                 error: 'НеверныеУчетныеДанные',
