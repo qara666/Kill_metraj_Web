@@ -351,11 +351,25 @@ export const useRouteGeocoding = ({
     const calculateRouteDistance = async (route: Route) => {
         setIsCalculating(true)
         try {
+            // Helper to convert {lat, lng} plain object to google.maps.LatLng if needed
+            const toLatLng = (loc: any) => {
+                if (!loc) return null
+                if (typeof loc.lat === 'function') return loc // Already a LatLng
+                try {
+                    return new window.google.maps.LatLng(Number(loc.lat), Number(loc.lng))
+                } catch {
+                    return loc
+                }
+            }
+
             // 1. Geocode start address (use pinned coords if available)
-            const useStartCoords = settings.defaultStartAddress === route.startAddress && settings.defaultStartLat && settings.defaultStartLng
-            const startCoord = useStartCoords ? { lat: Number(settings.defaultStartLat), lng: Number(settings.defaultStartLng) } : null
-            const originRes = startCoord
-                ? { geometry: { location: startCoord }, formatted_address: route.startAddress }
+            const useStartCoords = settings.defaultStartLat && settings.defaultStartLng
+            const startCoord = useStartCoords
+                ? { lat: Number(settings.defaultStartLat), lng: Number(settings.defaultStartLng) }
+                : null
+            const startLatLng = startCoord ? toLatLng(startCoord) : null
+            const originRes = startLatLng
+                ? { geometry: { location: startLatLng }, formatted_address: route.startAddress }
                 : await geocodeWithSector(route.startAddress)
 
             const baseRefPoint = originRes?.geometry?.location || null
@@ -376,29 +390,39 @@ export const useRouteGeocoding = ({
             )
 
             // 3. Geocode end address
-            const useEndCoords = settings.defaultEndAddress === route.endAddress && settings.defaultEndLat && settings.defaultEndLng
-            const endCoord = useEndCoords ? { lat: Number(settings.defaultEndLat), lng: Number(settings.defaultEndLng) } : null
+            const useEndCoords = settings.defaultEndLat && settings.defaultEndLng
+            const endCoord = useEndCoords
+                ? { lat: Number(settings.defaultEndLat), lng: Number(settings.defaultEndLng) }
+                : null
+            const endLatLng = endCoord ? toLatLng(endCoord) : null
             const lastWPLoc = waypointResList[waypointResList.length - 1]?.geometry?.location || baseRefPoint
             const destinationRes = route.endAddress === route.startAddress
                 ? originRes
-                : endCoord
-                    ? { geometry: { location: endCoord }, formatted_address: route.endAddress }
+                : endLatLng
+                    ? { geometry: { location: endLatLng }, formatted_address: route.endAddress }
                     : await geocodeWithSector(route.endAddress, lastWPLoc)
 
-            // 4. Validate all points inside zone
-            const outsidePoints = [originRes, ...waypointResList, destinationRes].filter(r => r && !isInsideSector(r.geometry.location))
-            if (outsidePoints.length > 0) {
-                const problems = await validateOrders(route.orders)
-                if (problems.length > 0) {
-                    setProblemOrders(problems)
-                    setCurrentProblem(problems[0])
-                    if (problems.length === 1) setShowCorrectionModal(true)
-                    else setShowBatchPanel(true)
-                } else {
-                    toast.error('Точки вне зоны')
+            // 4. Validate all points inside zone — SKIP if no KML is configured (no hub polygons)
+            const hasKmlZones = cachedHubPolygons.length > 0
+            if (hasKmlZones) {
+                const outsidePoints = [originRes, ...waypointResList, destinationRes].filter(r => {
+                    if (!r?.geometry?.location) return false
+                    const ll = toLatLng(r.geometry.location)
+                    return ll && !isInsideSector(ll)
+                })
+                if (outsidePoints.length > 0) {
+                    const problems = await validateOrders(route.orders)
+                    if (problems.length > 0) {
+                        setProblemOrders(problems)
+                        setCurrentProblem(problems[0])
+                        if (problems.length === 1) setShowCorrectionModal(true)
+                        else setShowBatchPanel(true)
+                    } else {
+                        toast.error('Точки вне зоны')
+                    }
+                    setIsCalculating(false)
+                    return
                 }
-                setIsCalculating(false)
-                return
             }
 
 
