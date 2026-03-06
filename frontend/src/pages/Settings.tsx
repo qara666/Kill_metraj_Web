@@ -26,7 +26,11 @@ interface SettingsForm {
   googleMapsApiKey: string
   mapboxToken: string
   defaultStartAddress: string
+  defaultStartLat: number | null
+  defaultStartLng: number | null
   defaultEndAddress: string
+  defaultEndLat: number | null
+  defaultEndLng: number | null
   cityBias: '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'
   anomalyFilterEnabled: boolean
   anomalyMaxLegDistanceKm: number
@@ -64,7 +68,11 @@ export const Settings: React.FC = () => {
       googleMapsApiKey: '',
       mapboxToken: '',
       defaultStartAddress: '',
+      defaultStartLat: null,
+      defaultStartLng: null,
       defaultEndAddress: '',
+      defaultEndLat: null,
+      defaultEndLng: null,
       cityBias: '',
       anomalyFilterEnabled: true,
       anomalyMaxLegDistanceKm: 10,
@@ -107,7 +115,11 @@ export const Settings: React.FC = () => {
     const savedMapboxToken = localStorage.getItem('km_mapbox_token')
     setValue('mapboxToken', (savedMapboxToken || settings.mapboxToken || '').trim())
     setValue('defaultStartAddress', settings.defaultStartAddress || '')
+    setValue('defaultStartLat', settings.defaultStartLat || null)
+    setValue('defaultStartLng', settings.defaultStartLng || null)
     setValue('defaultEndAddress', settings.defaultEndAddress || '')
+    setValue('defaultEndLat', settings.defaultEndLat || null)
+    setValue('defaultEndLng', settings.defaultEndLng || null)
     setValue('cityBias', settings.cityBias || '')
     setValue('anomalyFilterEnabled', settings.anomalyFilterEnabled ?? true)
     setValue('anomalyMaxLegDistanceKm', settings.anomalyMaxLegDistanceKm ?? 10)
@@ -574,9 +586,86 @@ export const Settings: React.FC = () => {
             </div>
           </CollapsibleSection>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <input type="text" className="input" placeholder="Адрес начала" {...register('defaultStartAddress')} disabled={!canModify} />
-            <input type="text" className="input" placeholder="Адрес окончания" {...register('defaultEndAddress')} disabled={!canModify} />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 bg-gray-50/50 dark:bg-gray-800/20 p-6 rounded-2xl border border-gray-100 dark:border-gray-700/50">
+            {/* Start Address Block */}
+            <div className="space-y-4">
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2">Адрес начала маршрута</h3>
+              
+              <div className="p-4 rounded-xl border-2 transition-all bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700 focus-within:border-blue-400 dark:focus-within:border-blue-500 focus-within:ring-4 ring-blue-50 dark:ring-blue-900/20">
+                 <input 
+                    type="text" 
+                    className="w-full bg-transparent outline-none text-sm font-bold text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500" 
+                    placeholder="Введите адрес начала..." 
+                    {...register('defaultStartAddress')} 
+                    disabled={!canModify} 
+                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Широта (LAT)</label>
+                  <input 
+                    type="number" 
+                    step="any"
+                    className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
+                    placeholder="50.4501" 
+                    {...register('defaultStartLat')} 
+                    disabled={!canModify} 
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Долгота (LNG)</label>
+                  <input 
+                    type="number" 
+                    step="any"
+                    className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
+                    placeholder="30.5234" 
+                    {...register('defaultStartLng')} 
+                    disabled={!canModify} 
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* End Address Block */}
+            <div className="space-y-4">
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2">Адрес окончания маршрута</h3>
+              
+              <div className="p-4 rounded-xl border-2 transition-all bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700 focus-within:border-blue-400 dark:focus-within:border-blue-500 focus-within:ring-4 ring-blue-50 dark:ring-blue-900/20">
+                 <input 
+                    type="text" 
+                    className="w-full bg-transparent outline-none text-sm font-bold text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500" 
+                    placeholder="Введите адрес окончания..." 
+                    {...register('defaultEndAddress')} 
+                    disabled={!canModify} 
+                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Широта (LAT)</label>
+                  <input 
+                    type="number" 
+                    step="any"
+                    className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
+                    placeholder="50.4501" 
+                    {...register('defaultEndLat')} 
+                    disabled={!canModify} 
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Долгота (LNG)</label>
+                  <input 
+                    type="number" 
+                    step="any"
+                    className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
+                    placeholder="30.5234" 
+                    {...register('defaultEndLng')} 
+                    disabled={!canModify} 
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="flex justify-between">

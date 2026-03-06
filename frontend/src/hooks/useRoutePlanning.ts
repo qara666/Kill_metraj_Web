@@ -40,7 +40,11 @@ export const useRoutePlanning = (
     maxRouteDistanceKm: number = 100,
     maxOrdersPerCourier: number = 50,
     defaultStartAddress: string = '', // Default fallback
+    defaultStartLat: number | null = null,
+    defaultStartLng: number | null = null,
     defaultEndAddress: string = '',   // Default fallback
+    defaultEndLat: number | null = null,
+    defaultEndLng: number | null = null,
     setPlannedRoutes: (routes: any[]) => void,
     setErrorMsg: (msg: string | null) => void,
     setPlanTrafficImpact: (impact: any) => void,
@@ -129,14 +133,24 @@ export const useRoutePlanning = (
                 let destination: any = includeStartEnd ? endAddr : chain[chain.length - 1].address
 
                 // Try to use cached coordinates for start/end to ensure consistency with our geocoder
+                // PRIORITY: 1. Passed explicitly from settings, 2. Cached
                 if (includeStartEnd) {
-                    const startCoords = routeOptimizationCache.getCoordinates(startAddr)
-                    if (startCoords) {
-                        origin = new gmaps.LatLng(startCoords.lat, startCoords.lng)
+                    if (defaultStartLat && defaultStartLng) {
+                         origin = new gmaps.LatLng(defaultStartLat, defaultStartLng)
+                    } else {
+                        const startCoords = routeOptimizationCache.getCoordinates(startAddr)
+                        if (startCoords) {
+                            origin = new gmaps.LatLng(startCoords.lat, startCoords.lng)
+                        }
                     }
-                    const endCoords = routeOptimizationCache.getCoordinates(endAddr)
-                    if (endCoords) {
-                        destination = new gmaps.LatLng(endCoords.lat, endCoords.lng)
+
+                    if (defaultEndLat && defaultEndLng) {
+                         destination = new gmaps.LatLng(defaultEndLat, defaultEndLng)
+                    } else {
+                        const endCoords = routeOptimizationCache.getCoordinates(endAddr)
+                        if (endCoords) {
+                            destination = new gmaps.LatLng(endCoords.lat, endCoords.lng)
+                        }
                     }
                 }
 
@@ -222,7 +236,13 @@ export const useRoutePlanning = (
                 }
             })()
 
-            const depotCoords = routeOptimizationCache.getCoordinates(startAddr)
+            // Define depotCoords prioritizing explicit input
+            let depotCoords = null;
+            if (defaultStartLat && defaultStartLng) {
+                depotCoords = { lat: defaultStartLat, lng: defaultStartLng };
+            } else {
+                depotCoords = routeOptimizationCache.getCoordinates(startAddr);
+            }
             const mode = getPresetMode()
             const preset = getPreset(mode)
             setLastPlanPreset(preset)
@@ -236,7 +256,11 @@ export const useRoutePlanning = (
                 trafficSnapshot: trafficSnapshotRef.current,
                 depotCoords,
                 defaultStartAddress: startAddr,
+                defaultStartLat,
+                defaultStartLng,
                 defaultEndAddress: endAddr,
+                defaultEndLat,
+                defaultEndLng,
                 setOptimizationProgress
             });
 
@@ -289,7 +313,7 @@ export const useRoutePlanning = (
     }, [
         orders, filteredOrders, settings, runtimeMaxStopsPerRoute, runtimeMaxRouteDurationMin,
         runtimeMaxRouteDistanceKm, trafficModeOverride, trafficSnapshotRef, notificationPreferences,
-        defaultStartAddress, defaultEndAddress,
+        defaultStartAddress, defaultStartLat, defaultStartLng, defaultEndAddress, defaultEndLat, defaultEndLng,
         setPlannedRoutes, setRouteAnalytics, setPlanTrafficImpact, setErrorMsg, setIsPlanning, setOptimizationProgress,
         setLastPlanPreset, getPreset, getPresetMode
     ])

@@ -44,7 +44,11 @@ export interface UserPreset {
         theme?: 'light' | 'dark'
         courierTransportType?: 'car' | 'bike' | 'walk'
         defaultStartAddress?: string
+        defaultStartLat?: number | null
+        defaultStartLng?: number | null
         defaultEndAddress?: string
+        defaultEndLat?: number | null
+        defaultEndLng?: number | null
 
         // Route Planning Constraints
         maxStopsPerRoute?: number

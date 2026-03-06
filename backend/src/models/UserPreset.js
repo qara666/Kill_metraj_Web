@@ -30,7 +30,11 @@ const UserPreset = sequelize.define('UserPreset', {
             theme: 'dark',
             courierTransportType: 'car',
             defaultStartAddress: '',
+            defaultStartLat: null,
+            defaultStartLng: null,
             defaultEndAddress: '',
+            defaultEndLat: null,
+            defaultEndLng: null,
 
             // Route Planning Constraints
             maxStopsPerRoute: 12,

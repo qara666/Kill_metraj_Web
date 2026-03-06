@@ -15,7 +15,11 @@ export interface RoutePlanningContext {
     trafficSnapshot: TrafficSnapshot | null;
     depotCoords: { lat: number, lng: number } | null;
     defaultStartAddress: string;
+    defaultStartLat?: number | null;
+    defaultStartLng?: number | null;
     defaultEndAddress: string;
+    defaultEndLat?: number | null;
+    defaultEndLng?: number | null;
     setOptimizationProgress: (p: { current: number; total: number; message: string }) => void;
 }
 
@@ -30,7 +34,11 @@ export async function runRoutePlanningAlgorithm(
         trafficSnapshot,
         depotCoords,
         defaultStartAddress,
+        defaultStartLat,
+        defaultStartLng,
         defaultEndAddress,
+        defaultEndLat,
+        defaultEndLng,
         setOptimizationProgress
     } = context;
 
