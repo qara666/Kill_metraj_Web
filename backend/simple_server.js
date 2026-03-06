@@ -419,15 +419,28 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
     await testConnection();
     logger.info('PostgreSQL подключен');
 
-    // Skip sync in production unless explicitly requested via DB_ALTER_SYNC
-    if (process.env.NODE_ENV !== 'production' || process.env.DB_ALTER_SYNC === 'true') {
+    // CRITICAL: Robust Database Initialization
+    // Check if core tables exist by trying to count users
+    const { User, UserPreset } = require('./src/models');
+    let dbNeedsSync = false;
+
+    try {
+      await User.count();
+      logger.info('SUCCESS: Core tables exist (User.count succeeded)');
+    } catch (dbErr) {
+      logger.warn('WARNING: Core tables (users) might be missing. Triggering sync...', { error: dbErr.message });
+      dbNeedsSync = true;
+    }
+
+    // Skip sync in production unless explicitly requested via DB_ALTER_SYNC OR if tables are missing
+    if (process.env.NODE_ENV !== 'production' || process.env.DB_ALTER_SYNC === 'true' || dbNeedsSync) {
+      logger.info(`Starting syncDatabase (Reason: ${dbNeedsSync ? 'Tables missing' : 'Dev/Forced mode'})`);
       await syncDatabase();
     } else {
-      logger.info('SUCCESS: Database sync skipped (production mode)');
+      logger.info('SUCCESS: Database sync skipped (production mode & tables exist)');
     }
 
     logger.info('STARTING ADMIN CHECK/CREATION...');
-    const { User, UserPreset } = require('./src/models');
     try {
       // Use environment variables or fallback to hardcoded defaults for guaranteed access
       const seedUsername = process.env.SEED_ADMIN_USERNAME || 'admin';
