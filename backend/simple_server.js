@@ -448,21 +448,19 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
 
       if (created) {
         logger.info(`УСПЕХ: Аккаунт администратора "${seedUsername}" создан автоматически.`);
-
-        // Create default preset for new admin
-        try {
-          await UserPreset.create({
-            userId: admin.id,
-            settings: { theme: 'dark', cityBias: 'Kyiv, Ukraine' },
-            updatedBy: admin.id
-          });
-          logger.info('УСПЕХ: Профиль настроек (UserPreset) для администратора создан.');
-        } catch (presetErr) {
-          logger.error('ПРЕДУПРЕЖДЕНИЕ: Не удалось создать UserPreset для администратора', { error: presetErr.message });
-        }
       } else {
-        logger.info(`ИНФО: Аккаунт администратора "${seedUsername}" уже существует.`);
+        logger.info(`ИНФО: Аккаунт администратора "${seedUsername}" уже существует. Проверка пароля...`);
 
+        // Force update password if it doesn't match to ensure user can log in
+        const isMatch = await admin.comparePassword(seedPassword);
+        if (!isMatch) {
+          admin.passwordHash = seedPassword; // Will be hashed via beforeUpdate hook
+          await admin.save();
+          logger.info(`УСПЕХ: Пароль администратора "${seedUsername}" принудительно обновлен до значения по умолчанию.`);
+        }
+      }
+
+      if (created || !created) { // Run for both new and existing
         // Ensure admin has correct role and division
         let needsUpdate = false;
         if (admin.role !== 'admin') { admin.role = 'admin'; needsUpdate = true; }
@@ -473,15 +471,20 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
           logger.info('ИНФО: Права и подразделение администратора обновлены.');
         }
 
-        // Check if preset exists for existing admin
-        const existingPreset = await UserPreset.findOne({ where: { userId: admin.id } });
-        if (!existingPreset) {
-          await UserPreset.create({
-            userId: admin.id,
-            settings: { theme: 'dark', cityBias: 'Kyiv, Ukraine' },
-            updatedBy: admin.id
+        // Create/Update default preset
+        try {
+          const [preset, presetCreated] = await UserPreset.findOrCreate({
+            where: { userId: admin.id },
+            defaults: {
+              settings: { theme: 'dark', cityBias: 'Kyiv, Ukraine' },
+              updatedBy: admin.id
+            }
           });
-          logger.info('ИНФО: Отсутствующий UserPreset для администратора был создан.');
+          if (presetCreated) {
+            logger.info('УСПЕХ: Профиль настроек (UserPreset) для администратора создан.');
+          }
+        } catch (presetErr) {
+          logger.error('ПРЕДУПРЕЖДЕНИЕ: Не удалось проверить/создать UserPreset', { error: presetErr.message });
         }
       }
     } catch (createErr) {
