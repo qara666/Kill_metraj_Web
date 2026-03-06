@@ -159,7 +159,7 @@ export class AddressValidationService {
     // Определение уверенности в геокодировании
     if (result.geocodingConfidence === 'unknown') {
       // Geocoding 2.0: Check if using historical rename
-      const usesRename = STREET_RENAMES.some(([oldName]) => oldName.test(trimmedAddress))
+      const usesRename = STREET_RENAMES.some(([oldName]) => new RegExp(oldName, 'i').test(trimmedAddress))
       if (usesRename) {
         qualityScore += 10 // Bonus for recognized historical name
         result.suggestions.push('Обнаружено историческое название улицы — Geocoding 2.0 применит автоматическое переименование')
