@@ -609,7 +609,7 @@ export const Settings: React.FC = () => {
                     step="any"
                     className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
                     placeholder="50.4501" 
-                    {...register('defaultStartLat')} 
+                    {...register('defaultStartLat', { valueAsNumber: true })} 
                     disabled={!canModify} 
                   />
                 </div>
@@ -620,7 +620,7 @@ export const Settings: React.FC = () => {
                     step="any"
                     className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
                     placeholder="30.5234" 
-                    {...register('defaultStartLng')} 
+                    {...register('defaultStartLng', { valueAsNumber: true })} 
                     disabled={!canModify} 
                   />
                 </div>
@@ -649,7 +649,7 @@ export const Settings: React.FC = () => {
                     step="any"
                     className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
                     placeholder="50.4501" 
-                    {...register('defaultEndLat')} 
+                    {...register('defaultEndLat', { valueAsNumber: true })} 
                     disabled={!canModify} 
                   />
                 </div>
@@ -660,7 +660,7 @@ export const Settings: React.FC = () => {
                     step="any"
                     className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
                     placeholder="30.5234" 
-                    {...register('defaultEndLng')} 
+                    {...register('defaultEndLng', { valueAsNumber: true })} 
                     disabled={!canModify} 
                   />
                 </div>
