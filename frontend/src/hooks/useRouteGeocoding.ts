@@ -212,15 +212,14 @@ export const useRouteGeocoding = ({
         })
     }
 
-    // ─── Core geocoding ──────────────────────────────────────────────────────
     /**
+     * SOTA 5.67: Robust geocoding with zone validation.
      * Geocode an address, retrying with street variants only until a perfect hit is found.
      *
-     * OPTIMIZATION: Stops immediately when a ROOFTOP result inside the delivery zone is found.
-     * This means most addresses require only 1 API call instead of 10-20.
+     * @param options.silent If true, suppresses disambiguation modals (auto-pick best).
      */
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const _geocodeWithSector = async (rawAddress: string, hintPoint?: any): Promise<any | null> => {
+    const robustGeocode = async (rawAddress: string, options: { hintPoint?: any; silent?: boolean } = {}): Promise<any | null> => {
+        const { hintPoint, silent = false } = options
         const expectedHouse = extractHouseNumber(rawAddress)
         const expectedPostal = extractPostal(rawAddress)
         const refPoint = hintPoint || null
@@ -308,8 +307,8 @@ export const useRouteGeocoding = ({
 
         if (candidatesByVariant.length === 0) return null
 
-        const autoReady = !confirmAddresses && !!best && !checkTechnicalKmlZone(best.geometry.location) && !!findZoneForLoc(best.geometry.location, zones)
-        if (autoReady || !confirmAddresses) return best
+        const autoReady = (!confirmAddresses || silent) && !!best && !checkTechnicalKmlZone(best.geometry.location) && !!findZoneForLoc(best.geometry.location, zones)
+        if (autoReady || (!confirmAddresses || silent)) return best
 
         // Disambiguation modal (only in confirmAddresses mode)
         const modalOptions = candidatesByVariant.map((r: any) => {
@@ -350,27 +349,6 @@ export const useRouteGeocoding = ({
     const calculateRouteDistance = async (route: Route) => {
         setIsCalculating(true)
         try {
-            // Simple Google Geocoder helper with variant support
-            const geocodeAddr = async (address: string): Promise<any | null> => {
-                const cityBias = settings.cityBias || 'Киев'
-                const variants = generateStreetVariants(address, cityBias)
-                
-                for (const variant of variants) {
-                    const result = await new Promise((resolve) => {
-                        try {
-                            new window.google.maps.Geocoder().geocode(
-                                { address: variant, region: 'UA', componentRestrictions: { country: 'UA' } },
-                                (results: any, status: any) => {
-                                    resolve(status === 'OK' && results?.length > 0 ? results[0] : null)
-                                }
-                            )
-                        } catch (e) { resolve(null) }
-                    })
-                    if (result) return result
-                }
-                return null
-            }
-
             // Extract LatLng from geocoder result — handles both LatLng objects and plain {lat,lng}
             const toLoc = (res: any): any => {
                 if (!res?.geometry?.location) return null
@@ -386,7 +364,7 @@ export const useRouteGeocoding = ({
             if (startLat && startLng) {
                 originLoc = new window.google.maps.LatLng(startLat, startLng)
             } else if (route.startAddress) {
-                const res = await geocodeAddr(cleanAddressForRoute(route.startAddress))
+                const res = await robustGeocode(cleanAddressForRoute(route.startAddress), { silent: true })
                 originLoc = toLoc(res)
             }
 
@@ -406,7 +384,7 @@ export const useRouteGeocoding = ({
                 const key = cleaned.toLowerCase()
                 
                 if (!addrCache.has(key)) {
-                    addrCache.set(key, await geocodeAddr(cleaned))
+                    addrCache.set(key, await robustGeocode(cleaned, { silent: true }))
                 }
                 
                 const geocodeRes = addrCache.get(key)
@@ -436,7 +414,7 @@ export const useRouteGeocoding = ({
             } else if (!route.endAddress || route.endAddress === route.startAddress) {
                 destinLoc = originLoc
             } else {
-                const res = await geocodeAddr(cleanAddressForRoute(route.endAddress))
+                const res = await robustGeocode(cleanAddressForRoute(route.endAddress), { silent: true })
                 destinLoc = toLoc(res) || originLoc
             }
 
@@ -526,5 +504,5 @@ export const useRouteGeocoding = ({
         }
     }
 
-        return { calculateRouteDistance, isCalculating, disambModal, setDisambModal, disambResolver, processDisambQueue, geocodeWithSector: _geocodeWithSector }
+        return { calculateRouteDistance, isCalculating, disambModal, setDisambModal, disambResolver, processDisambQueue, robustGeocode }
 }
