@@ -400,17 +400,14 @@ export const AdminPresets: React.FC = () => {
                                             onChange={async (e) => {
                                                 const file = e.target.files?.[0]
                                                 if (!file) return
-                                                const text = await file.text()
                                                 try {
+                                                    const text = await file.text()
                                                     const parsed = parseKML(text)
                                                     setSettings({ ...settings, kmlData: parsed })
                                                     toast.success(`Успешно импортировано: ${parsed.polygons.length} зон`)
-                                              const url = `${base}&${parts.join('&')}`
-      window.open(url, '_blank')
-    } catch (err) {
-      toast.error('Не удалось открыть маршрут в Google Maps')
-    }
-  }                                          }
+                                                } catch (error) {
+                                                    toast.error('Ошибка при разборе KML файла')
+                                                }
                                             }}
                                             className="hidden"
                                             id="preset-kml-upload"

@@ -1489,7 +1489,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       const url = `${base}&${parts.join('&')}`
       window.open(url, '_blank')
     } catch (err) {
-    } catch (err) {
       toast.error('Не удалось открыть маршрут в Google Maps')
     }
   }
