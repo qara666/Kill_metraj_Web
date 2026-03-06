@@ -408,7 +408,9 @@ export const useRouteGeocoding = ({
             let totalDuration: number = 0
             let routeGeometry: any = null
 
-            if (routingProvider === 'generoute' && settings.generouteApiKey) {
+            const allGeocoded = originRes && destinationRes && waypointResList.every(r => r !== null)
+
+            if (routingProvider === 'generoute' && settings.generouteApiKey && allGeocoded) {
                 const locations = [
                     {
                         lat: typeof originRes.geometry.location.lat === 'function' ? originRes.geometry.location.lat() : originRes.geometry.location.lat,
@@ -416,8 +418,8 @@ export const useRouteGeocoding = ({
                         title: route.startAddress
                     },
                     ...waypointResList.map((r, i) => ({
-                        lat: typeof r.geometry.location.lat === 'function' ? r.geometry.location.lat() : r.geometry.location.lat,
-                        lng: typeof r.geometry.location.lng === 'function' ? r.geometry.location.lng() : r.geometry.location.lng,
+                        lat: typeof r!.geometry.location.lat === 'function' ? r!.geometry.location.lat() : r!.geometry.location.lat,
+                        lng: typeof r!.geometry.location.lng === 'function' ? r!.geometry.location.lng() : r!.geometry.location.lng,
                         title: route.orders[i].address
                     })),
                     {
@@ -443,7 +445,7 @@ export const useRouteGeocoding = ({
                 const request = {
                     origin: originRes?.geometry?.location || cleanAddressForRoute(route.startAddress),
                     destination: destinationRes?.geometry?.location || cleanAddressForRoute(route.endAddress),
-                    waypoints: waypointResList.map(r => ({ location: r?.geometry?.location || '', stopover: true })),
+                    waypoints: waypointResList.map((r, i) => ({ location: r?.geometry?.location || cleanAddressForRoute(route.orders[i].address), stopover: true })),
                     travelMode: window.google.maps.TravelMode.DRIVING,
                 }
 
