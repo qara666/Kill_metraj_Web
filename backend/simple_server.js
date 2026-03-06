@@ -434,6 +434,8 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
       const seedPassword = process.env.SEED_ADMIN_PASSWORD || 'password2026';
       const seedEmail = process.env.SEED_ADMIN_EMAIL || 'admin@kill-metraj.com';
 
+      logger.info(`[ADMIN_SEED] Using credentials Source: ${process.env.SEED_ADMIN_PASSWORD ? 'Environment' : 'Defaults (password2026)'}`);
+
       const [admin, created] = await User.findOrCreate({
         where: { username: seedUsername },
         defaults: {
@@ -449,7 +451,7 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
       if (created) {
         logger.info(`УСПЕХ: Аккаунт администратора "${seedUsername}" создан автоматически.`);
       } else {
-        logger.info(`ИНФО: Аккаунт администратора "${seedUsername}" уже существует. Проверка пароля...`);
+        logger.info(`ИНФО: Аккаунт администратора "${seedUsername}" уже существует.Проверка пароля...`);
 
         // Force update password if it doesn't match to ensure user can log in
         const isMatch = await admin.comparePassword(seedPassword);
@@ -461,10 +463,11 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
       }
 
       if (created || !created) { // Run for both new and existing
-        // Ensure admin has correct role and division
+        // Ensure admin has correct role, division and is active
         let needsUpdate = false;
         if (admin.role !== 'admin') { admin.role = 'admin'; needsUpdate = true; }
         if (admin.divisionId !== 'all') { admin.divisionId = 'all'; needsUpdate = true; }
+        if (!admin.isActive) { admin.isActive = true; needsUpdate = true; }
 
         if (needsUpdate) {
           await admin.save();
@@ -500,7 +503,7 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
           await diagUser.save();
           logger.info('Пользователь adm_mak понижен до роли user');
         }
-        logger.info(`Диагностика пользователя [adm_mak]: role=${diagUser.role}, divisionId=${diagUser.divisionId}, isActive=${diagUser.isActive}`);
+        logger.info(`Диагностика пользователя[adm_mak]: role = ${diagUser.role}, divisionId = ${diagUser.divisionId}, isActive = ${diagUser.isActive}`);
       } else {
         logger.warn('Диагностика пользователя [adm_mak]: НЕ НАЙДЕН');
       }
@@ -557,17 +560,17 @@ async function ensureDashboardCacheTable() {
   try {
     logger.info('DB Check: Ensuring api_dashboard_cache table exists...');
     await sequelize.query(`
-      CREATE TABLE IF NOT EXISTS api_dashboard_cache (
-        id SERIAL PRIMARY KEY,
-        payload JSONB NOT NULL,
-        data_hash TEXT NOT NULL,
-        status_code INTEGER DEFAULT 200,
-        error_message TEXT,
-        division_id TEXT,
-        target_date DATE,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-      );
-    `);
+      CREATE TABLE IF NOT EXISTS api_dashboard_cache(
+      id SERIAL PRIMARY KEY,
+      payload JSONB NOT NULL,
+      data_hash TEXT NOT NULL,
+      status_code INTEGER DEFAULT 200,
+      error_message TEXT,
+      division_id TEXT,
+      target_date DATE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+`);
     logger.info('DB Check: api_dashboard_cache table verified/created successfully');
   } catch (err) {
     logger.error('DB Check: Error creating api_dashboard_cache table', {
@@ -584,14 +587,14 @@ async function ensureStatusHistoryTable() {
   try {
     logger.info('DB Check: Ensuring api_dashboard_status_history table exists...');
     await sequelize.query(`
-      CREATE TABLE IF NOT EXISTS api_dashboard_status_history (
-        id SERIAL PRIMARY KEY,
-        order_number TEXT NOT NULL,
-        old_status TEXT,
-        new_status TEXT,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-      );
-    `);
+      CREATE TABLE IF NOT EXISTS api_dashboard_status_history(
+  id SERIAL PRIMARY KEY,
+  order_number TEXT NOT NULL,
+  old_status TEXT,
+  new_status TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+`);
     logger.info('DB Check: api_dashboard_status_history table verified/created successfully');
   } catch (err) {
     logger.error('DB Check: Error creating api_dashboard_status_history table', {
@@ -610,15 +613,15 @@ async function ensureDivisionIdColumn() {
     logger.info('DB Check: Ensuring division_id column exists...');
     await sequelize.query(`
       DO $$
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                       WHERE table_name='api_dashboard_cache' AND column_name='division_id') THEN
+BEGIN
+        IF NOT EXISTS(SELECT 1 FROM information_schema.columns 
+                       WHERE table_name = 'api_dashboard_cache' AND column_name = 'division_id') THEN
           ALTER TABLE api_dashboard_cache ADD COLUMN division_id TEXT;
           RAISE NOTICE 'Added division_id column to api_dashboard_cache';
         END IF;
-      END
-      $$;
-    `);
+END
+$$;
+`);
     logger.info('DB Check: division_id column verified/added successfully');
   } catch (err) {
     logger.error('DB Check: Error adding division_id column', {
@@ -635,17 +638,17 @@ async function ensureManualOverridesTable() {
   try {
     logger.info('DB Check: Ensuring manual_order_overrides table exists...');
     await sequelize.query(`
-      CREATE TABLE IF NOT EXISTS manual_order_overrides (
-        id SERIAL PRIMARY KEY,
-        order_number TEXT NOT NULL UNIQUE,
-        field_name TEXT NOT NULL,
-        override_value TEXT,
-        original_value TEXT,
-        updated_by TEXT,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-      );
-    `);
+      CREATE TABLE IF NOT EXISTS manual_order_overrides(
+  id SERIAL PRIMARY KEY,
+  order_number TEXT NOT NULL UNIQUE,
+  field_name TEXT NOT NULL,
+  override_value TEXT,
+  original_value TEXT,
+  updated_by TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+`);
     logger.info('DB Check: manual_order_overrides table verified/created successfully');
   } catch (err) {
     logger.error('DB Check: Error creating manual_order_overrides table', {
@@ -668,22 +671,22 @@ async function ensureDashboardCacheV2() {
     // 1. Add new columns if missing
     await sequelize.query(`
       DO $$
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='api_dashboard_cache' AND column_name='updated_at') THEN
+BEGIN
+        IF NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name = 'api_dashboard_cache' AND column_name = 'updated_at') THEN
           ALTER TABLE api_dashboard_cache ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
         END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='api_dashboard_cache' AND column_name='order_count') THEN
+        IF NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name = 'api_dashboard_cache' AND column_name = 'order_count') THEN
           ALTER TABLE api_dashboard_cache ADD COLUMN order_count INTEGER DEFAULT 0;
         END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='api_dashboard_cache' AND column_name='courier_count') THEN
+        IF NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name = 'api_dashboard_cache' AND column_name = 'courier_count') THEN
           ALTER TABLE api_dashboard_cache ADD COLUMN courier_count INTEGER DEFAULT 0;
         END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='api_dashboard_cache' AND column_name='fetch_etag') THEN
+        IF NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name = 'api_dashboard_cache' AND column_name = 'fetch_etag') THEN
           ALTER TABLE api_dashboard_cache ADD COLUMN fetch_etag TEXT;
         END IF;
-      END
-      $$;
-    `);
+END
+$$;
+`);
 
     // 2. Deduplicate: keep only the newest row per division_id + target_date
     await sequelize.query(`
@@ -692,28 +695,28 @@ async function ensureDashboardCacheV2() {
       WHERE a.id < b.id
         AND a.division_id IS NOT DISTINCT FROM b.division_id
         AND a.target_date IS NOT DISTINCT FROM b.target_date;
-    `);
+`);
 
     // 3. Add unique constraint if missing
     await sequelize.query(`
       DO $$
-      BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM pg_constraint
+BEGIN
+        IF NOT EXISTS(
+  SELECT 1 FROM pg_constraint
           WHERE conname = 'uq_dashboard_cache_div_date'
-        ) THEN
+) THEN
           ALTER TABLE api_dashboard_cache
-            ADD CONSTRAINT uq_dashboard_cache_div_date UNIQUE (division_id, target_date);
+            ADD CONSTRAINT uq_dashboard_cache_div_date UNIQUE(division_id, target_date);
         END IF;
-      END
-      $$;
-    `);
+END
+$$;
+`);
 
     // 4. Add composite index for fast lookups
     await sequelize.query(`
       CREATE INDEX IF NOT EXISTS idx_dashboard_cache_div_date
-      ON api_dashboard_cache (division_id, target_date);
-    `);
+      ON api_dashboard_cache(division_id, target_date);
+`);
 
     logger.info('DB Check: Dashboard cache V2 migration complete');
   } catch (err) {
@@ -734,20 +737,20 @@ async function ensureIndexes() {
     // Index for history lookups
     await sequelize.query(`
       CREATE INDEX IF NOT EXISTS idx_status_history_order 
-      ON api_dashboard_status_history (order_number);
-    `);
+      ON api_dashboard_status_history(order_number);
+`);
 
     // Index for fetcher lookups (division + date)
     await sequelize.query(`
       CREATE INDEX IF NOT EXISTS idx_dashboard_cache_lookup 
-      ON api_dashboard_cache (division_id, target_date);
-    `);
+      ON api_dashboard_cache(division_id, target_date);
+`);
 
     // Index for deduplication hash
     await sequelize.query(`
       CREATE INDEX IF NOT EXISTS idx_dashboard_cache_hash 
-      ON api_dashboard_cache (data_hash);
-    `);
+      ON api_dashboard_cache(data_hash);
+`);
 
     logger.info('DB Check: Indexes verified/created successfully');
   } catch (err) {
@@ -761,7 +764,7 @@ async function ensureIndexes() {
 async function setupDashboardListener() {
   try {
     const dbName = process.env.DB_NAME || 'kill_metraj';
-    logger.info(`Настройка PostgreSQL LISTEN для базы данных: ${dbName}`);
+    logger.info(`Настройка PostgreSQL LISTEN для базы данных: ${dbName} `);
 
     const connectionConfig = process.env.DATABASE_URL
       ? {
@@ -903,7 +906,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    logger.info(`Клиент отключен: ${socket.id}`);
+    logger.info(`Клиент отключен: ${socket.id} `);
     trackWebSocketConnection('disconnect', user.divisionId, user.role);
   });
 });
@@ -981,7 +984,7 @@ app.get('/api/debug/fetcher', authenticateToken, async (req, res) => {
         await axios.head(process.env.EXTERNAL_API_URL, { timeout: 3000 });
         stats.external_api = {
           status: 'reachable',
-          latency: `${Date.now() - start}ms`,
+          latency: `${Date.now() - start} ms`,
           url: process.env.EXTERNAL_API_URL.split('?')[0]
         };
       } catch (err) {

@@ -9,6 +9,7 @@ const {
     JWT_SECRET
 } = require('../middleware/auth');
 const jwt = require('jsonwebtoken');
+const { rlsContextStore } = require('../utils/context');
 
 // POST /api/auth/login - User login
 router.post('/login', async (req, res) => {
