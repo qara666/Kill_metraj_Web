@@ -73,7 +73,7 @@ function App() {
                             <Route
                               path="/admin/presets"
                               element={
-                                <ProtectedRoute requireAdmin>
+                                <ProtectedRoute>
                                   <AdminPresets />
                                 </ProtectedRoute>
                               }

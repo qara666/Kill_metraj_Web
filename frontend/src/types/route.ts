@@ -21,6 +21,10 @@ export interface Order {
         completedAt?: number;
     };
     raw?: any
+    lat?: number
+    lng?: number
+    kmlZone?: string
+    kmlHub?: string
 }
 
 export interface Route {
