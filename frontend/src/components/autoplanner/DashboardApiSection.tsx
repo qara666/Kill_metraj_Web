@@ -5,21 +5,21 @@ import { ArrowPathIcon, CalendarIcon } from '@heroicons/react/24/outline';
 import { clsx } from 'clsx';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useExcelData } from '../../contexts/ExcelDataContext';
-import { useAutoPlannerStore } from '../../stores/useAutoPlannerStore'; // Import Store
+import { useDashboardStore } from '../../stores/useDashboardStore';
 
 export const DashboardApiSection: React.FC = () => {
     const { isDark } = useTheme();
     const { clearExcelData } = useExcelData();
 
     // Store values
-    const apiSyncStatus = useAutoPlannerStore(s => s.apiSyncStatus);
-    const apiDateShift = useAutoPlannerStore(s => s.apiDateShift);
-    const setApiDateShift = useAutoPlannerStore(s => s.setApiDateShift);
-    const apiAutoRefreshEnabled = useAutoPlannerStore(s => s.apiAutoRefreshEnabled);
-    const setApiAutoRefreshEnabled = useAutoPlannerStore(s => s.setApiAutoRefreshEnabled);
-    const apiLastSyncTime = useAutoPlannerStore(s => s.apiLastSyncTime);
-    const apiNextSyncTime = useAutoPlannerStore(s => s.apiNextSyncTime);
-    const triggerApiManualSync = useAutoPlannerStore(s => s.triggerApiManualSync);
+    const apiSyncStatus = useDashboardStore(s => s.apiSyncStatus);
+    const apiDateShift = useDashboardStore(s => s.apiDateShift);
+    const setApiDateShift = useDashboardStore(s => s.setApiDateShift);
+    const apiAutoRefreshEnabled = useDashboardStore(s => s.apiAutoRefreshEnabled);
+    const setApiAutoRefreshEnabled = useDashboardStore(s => s.setApiAutoRefreshEnabled);
+    const apiLastSyncTime = useDashboardStore(s => s.apiLastSyncTime);
+    const apiNextSyncTime = useDashboardStore(s => s.apiNextSyncTime);
+    const triggerApiManualSync = useDashboardStore(s => s.triggerApiManualSync);
 
     // Initial selectedDate state removal, use apiDateShift instead
     const selectedDate = apiDateShift;

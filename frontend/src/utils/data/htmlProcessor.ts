@@ -9,7 +9,7 @@ import { ProcessedExcelData, processJsonData } from './excelProcessor'
 const extractCellText = (cell: HTMLTableCellElement): string => {
   // Пробуем разные способы извлечения текста
   let text = ''
-  
+
   // Сначала пробуем textContent (предпочтительно)
   if (cell.textContent) {
     text = cell.textContent
@@ -18,127 +18,135 @@ const extractCellText = (cell: HTMLTableCellElement): string => {
   } else if (cell.textContent !== null) {
     text = String(cell.textContent)
   }
-  
+
   // Очищаем текст от лишних пробелов и переносов строк
   text = text.trim().replace(/\s+/g, ' ').replace(/\n+/g, ' ')
-  
+
   return text
 }
 
 // Общая функция парсинга HTML таблицы в структуру Excel
 const parseHtmlTableToJson = (htmlText: string): any[][] => {
-  // Убеждаемся, что HTML текст правильно декодирован
-  // Если текст содержит BOM или неправильную кодировку, пытаемся исправить
   let processedHtml = htmlText
-  
-  // Удаляем BOM если есть
+
   if (processedHtml.charCodeAt(0) === 0xFEFF) {
     processedHtml = processedHtml.slice(1)
   }
-  
-  // Пробуем определить кодировку из мета-тегов
-  const charsetMatch = processedHtml.match(/<meta[^>]+charset=["']?([^"'\s>]+)/i)
-  const detectedCharset = charsetMatch ? charsetMatch[1].toLowerCase() : 'utf-8'
-  
-  console.log(` [HTML Processor] Обнаруженная кодировка из мета-тегов: ${detectedCharset}`)
-  
-  // Если кодировка не UTF-8, пытаемся конвертировать (но это сложно в браузере)
-  // В большинстве случаев современные браузеры автоматически декодируют правильно
+
   const parser = new DOMParser()
   const doc = parser.parseFromString(processedHtml, 'text/html')
 
-  // Проверяем на ошибки парсинга
-  const parserError = doc.querySelector('parsererror')
-  if (parserError) {
-    console.warn('️ [HTML Processor] Ошибка парсинга HTML, но продолжаем:', parserError.textContent)
-  }
-
-  // Ищем таблицы в HTML
   const tables = doc.querySelectorAll('table')
 
   if (tables.length === 0) {
     throw new Error('В HTML странице не найдено таблиц')
   }
 
-  // Берем первую таблицу (или самую большую)
+  // Ищем таблицу, которая наиболее вероятно содержит данные заказов
+  // Критерии: наличие ключевых слов в заголовках или наибольшее количество ячеек
   let targetTable: HTMLTableElement | null = null
-  let maxRows = 0
+  let maxScore = -1
 
   tables.forEach((table) => {
     const rows = table.querySelectorAll('tr')
-    if (rows.length > maxRows) {
-      maxRows = rows.length
+    const text = table.textContent?.toLowerCase() || ''
+
+    // Оценка таблицы
+    let score = rows.length * 2 // Базовые очки за количество строк
+
+    // Бонус за ключевые слова
+    const keywords = ['адрес', 'номер', 'заказ', 'время', 'курьер', 'сумма', 'телефон']
+    keywords.forEach(kw => {
+      if (text.includes(kw)) score += 50
+    })
+
+    // Штраф за слишком маленькие таблицы
+    if (rows.length < 2) score -= 100
+
+    if (score > maxScore) {
+      maxScore = score
       targetTable = table as HTMLTableElement
     }
   })
 
   if (!targetTable) {
-    throw new Error('Не удалось найти таблицу в HTML')
+    throw new Error('Не удалось найти таблицу с данными в HTML')
   }
 
   const jsonData: any[][] = []
   const table: HTMLTableElement = targetTable
-  const rows = table.querySelectorAll('tr') as NodeListOf<HTMLTableRowElement>
+  const rows = Array.from(table.querySelectorAll('tr')) as HTMLTableRowElement[]
 
-  rows.forEach((row: HTMLTableRowElement) => {
-    const cells: any[] = []
-    
-    // Получаем все ячейки строки (и th, и td)
-    const allCellsInRow: HTMLTableCellElement[] = []
-    
-    // Сначала th (заголовки)
-    const thCells = row.querySelectorAll('th')
-    thCells.forEach(cell => allCellsInRow.push(cell as HTMLTableCellElement))
-    
-    // Потом td (данные)
-    const tdCells = row.querySelectorAll('td')
-    tdCells.forEach(cell => allCellsInRow.push(cell as HTMLTableCellElement))
-    
-    // Если нет ни th, ни td, пропускаем строку
-    if (allCellsInRow.length === 0) {
-      return
-    }
+  // Матрица для отслеживания занятых ячеек (из-за rowspan и colspan)
+  const occupied: { [key: string]: boolean } = {}
 
-    allCellsInRow.forEach((cell: HTMLTableCellElement) => {
-      const cellText = extractCellText(cell)
-      const colspan = parseInt(cell.getAttribute('colspan') || '1', 10)
-      
-      cells.push(cellText)
+  rows.forEach((row, rowIndex) => {
+    const cellsData: any[] = []
+    let colIndex = 0
 
-      // Добавляем пустые ячейки для colspan
-      for (let i = 1; i < colspan; i++) {
-        cells.push('')
+    const allCellsInRow = Array.from(row.querySelectorAll('th, td')) as HTMLTableCellElement[]
+
+    allCellsInRow.forEach((cell) => {
+      // Пропускаем уже занятые (из-за rowspan сверху) колонки
+      while (occupied[`${rowIndex},${colIndex}`]) {
+        cellsData[colIndex] = jsonData[rowIndex] ? jsonData[rowIndex][colIndex] : ''
+        colIndex++
       }
+
+      const cellText = extractCellText(cell)
+      const rowspan = parseInt(cell.getAttribute('rowspan') || '1', 10)
+      const colspan = parseInt(cell.getAttribute('colspan') || '1', 10)
+
+      // Заполняем текущую ячейку и учитываем colspan/rowspan
+      for (let r = 0; r < rowspan; r++) {
+        for (let c = 0; c < colspan; c++) {
+          const targetRow = rowIndex + r
+          const targetCol = colIndex + c
+
+          if (r === 0 && c === 0) {
+            cellsData[targetCol] = cellText
+          } else {
+            // Для последующих строк/колонок помечаем как занятые
+            occupied[`${targetRow},${targetCol}`] = true
+
+            // Если мы в той же строке, но это colspan, добавляем пустую ячейку
+            if (r === 0) {
+              cellsData[targetCol] = ''
+            }
+          }
+        }
+      }
+
+      colIndex += colspan
     })
 
-    // Добавляем строку только если в ней есть хотя бы одна непустая ячейка
-    if (cells.length > 0 && cells.some(cell => cell !== '')) {
-      jsonData.push(cells)
+    // Добавляем пустые значения для оставшихся занятых ячеек в конце строки
+    // (на случай если rowspan идет до конца строки)
+    // Но обычно в HTMLRowElement.cells это не нужно
+
+    if (cellsData.length > 0 || Object.keys(cellsData).length > 0) {
+      // Преобразуем разреженный массив в плотный для корректной работы процессора
+      const denseRow: any[] = []
+      const maxCol = Math.max(...Object.keys(cellsData).map(Number), -1)
+      for (let i = 0; i <= maxCol; i++) {
+        denseRow[i] = cellsData[i] || ''
+      }
+
+      if (denseRow.some(c => c !== '')) {
+        jsonData[rowIndex] = denseRow
+      }
     }
   })
 
-  if (jsonData.length < 2) {
+  // Фильтруем пустые строки
+  const finalJsonData = jsonData.filter(row => row && row.length > 0)
+
+  if (finalJsonData.length < 2) {
     throw new Error('Таблица должна содержать заголовки и данные (минимум 2 строки)')
   }
 
-  // Логируем первые строки для диагностики
-  console.log(` [HTML Processor] Извлечено ${jsonData.length} строк из таблицы`)
-  if (jsonData.length > 0) {
-    console.log(` [HTML Processor] Первая строка (заголовки, первые 15):`, jsonData[0].slice(0, 15).map((v, i) => {
-      const val = String(v).substring(0, 50)
-      const hasCyrillic = /[а-яА-ЯёЁіІїЇєЄ]/.test(val)
-      const charCodes = val.split('').slice(0, 10).map(c => c.charCodeAt(0).toString(16)).join(' ')
-      return `${i}: "${val}" [кириллица: ${hasCyrillic}, коды: ${charCodes}]`
-    }))
-  }
-  if (jsonData.length > 1) {
-    console.log(` [HTML Processor] Вторая строка (данные, первые 15):`, jsonData[1].slice(0, 15).map((v, i) => {
-      const val = String(v).substring(0, 50)
-      return `${i}: "${val}"`
-    }))
-  }
-
-  return jsonData
+  console.log(` [HTML Processor] Извлечено ${finalJsonData.length} строк из таблицы`)
+  return finalJsonData
 }
 
 /**
@@ -156,17 +164,17 @@ export const processHtmlUrl = async (url: string): Promise<ProcessedExcelData> =
       isFileProtocol
         ? undefined
         : {
-            mode: 'cors',
-            headers: {
-              Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            },
+          mode: 'cors',
+          headers: {
+            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           },
+        },
     )
-    
+
     if (!response.ok) {
       throw new Error(`Ошибка загрузки HTML: ${response.status} ${response.statusText}`)
     }
-    
+
     // Читаем как текст с правильной кодировкой
     // response.text() автоматически декодирует UTF-8
     const htmlText = await response.text()
@@ -219,11 +227,11 @@ const detectCharsetFromHtml = (htmlBytes: Uint8Array): string => {
  */
 const decodeHtmlWithCharset = async (arrayBuffer: ArrayBuffer): Promise<string> => {
   const bytes = new Uint8Array(arrayBuffer)
-  
+
   // Сначала пробуем определить кодировку из мета-тегов
   let detectedCharset = detectCharsetFromHtml(bytes)
   console.log(` [HTML Processor] Обнаруженная кодировка из мета-тегов: ${detectedCharset}`)
-  
+
   // Список кодировок для попытки декодирования
   const charsetsToTry = [
     detectedCharset, // Сначала пробуем обнаруженную
@@ -233,25 +241,25 @@ const decodeHtmlWithCharset = async (arrayBuffer: ArrayBuffer): Promise<string> 
     'iso-8859-5', // Кириллица ISO
     'koi8-r', // Кириллица KOI8
   ]
-  
+
   // Убираем дубликаты
   const uniqueCharsets = [...new Set(charsetsToTry)]
-  
+
   for (const charset of uniqueCharsets) {
     try {
       const decoder = new TextDecoder(charset, { fatal: true })
       const decoded = decoder.decode(arrayBuffer)
-      
+
       // Проверяем, что декодирование прошло успешно
       // Проверяем наличие кириллицы или нормальных символов
       const hasCyrillic = /[а-яА-ЯёЁіІїЇєЄ]/.test(decoded)
       const hasNormalChars = /[a-zA-Z0-9\s]/.test(decoded)
-      
+
       // Проверяем на кракозябры - если много нечитаемых символов, это плохо
       // Кракозябры обычно содержат много символов вне ASCII и кириллицы
       const suspiciousChars = decoded.match(/[^\x00-\x7Fа-яА-ЯёЁіІїЇєЄ\s]/g)
       const suspiciousRatio = suspiciousChars ? suspiciousChars.length / decoded.length : 0
-      
+
       // Если есть кириллица или нормальные символы, и мало подозрительных символов
       if ((hasCyrillic || hasNormalChars) && suspiciousRatio < 0.3) {
         console.log(` [HTML Processor] Успешно декодировано с кодировкой: ${charset} (кириллица: ${hasCyrillic}, подозрительных: ${(suspiciousRatio * 100).toFixed(1)}%)`)
@@ -263,7 +271,7 @@ const decodeHtmlWithCharset = async (arrayBuffer: ArrayBuffer): Promise<string> 
       continue
     }
   }
-  
+
   // Если ничего не помогло, пробуем UTF-8 с игнорированием ошибок
   console.warn(`️ [HTML Processor] Не удалось определить кодировку, используем UTF-8 с игнорированием ошибок`)
   const decoder = new TextDecoder('utf-8', { fatal: false })
@@ -278,20 +286,20 @@ export const processHtmlFile = async (file: File): Promise<ProcessedExcelData> =
   try {
     // Читаем файл как ArrayBuffer для правильной обработки кодировки
     const arrayBuffer = await file.arrayBuffer()
-    
+
     // Декодируем с правильной кодировкой
     const text = await decodeHtmlWithCharset(arrayBuffer)
-    
+
     // Логируем первые символы для диагностики
     if (text.length > 0) {
       const firstChars = text.substring(0, 200)
       console.log(` [HTML Processor] Первые 200 символов декодированного файла:`, firstChars)
-      
+
       // Проверяем наличие кириллицы
       const hasCyrillic = /[а-яА-ЯёЁіІїЇєЄ]/.test(text)
       console.log(` [HTML Processor] Найдена кириллица: ${hasCyrillic}`)
     }
-    
+
     const jsonData = parseHtmlTableToJson(text)
     console.log(` [HTML Processor] Извлечено ${jsonData.length} строк из локального HTML`)
 

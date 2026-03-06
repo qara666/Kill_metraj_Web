@@ -148,7 +148,10 @@ export const localStorageUtils = {
         lastKmlSync: localStorage.getItem('km_last_kml_sync') || null,
         autoSyncKml: localStorage.getItem('km_auto_sync_kml') === 'true',
         fastopertorApiKey: localStorage.getItem('km_fastopertor_api_key') || '',
-        fastopertorDepartmentId: localStorage.getItem('km_fastopertor_department_id') || ''
+        fastopertorDepartmentId: localStorage.getItem('km_fastopertor_department_id') || '',
+        routingProvider: (localStorage.getItem('km_routing_provider') as any) || 'google',
+        geocodingProvider: (localStorage.getItem('km_geococding_provider') as any) || 'google',
+        generouteApiKey: localStorage.getItem('km_generoute_api_key') || ''
       }
 
       return settingsJson ? {
@@ -163,7 +166,10 @@ export const localStorageUtils = {
         selectedHubs: localStorage.getItem('km_selected_hubs') ? JSON.parse(localStorage.getItem('km_selected_hubs')!) : [],
         selectedZones: localStorage.getItem('km_selected_zones') ? JSON.parse(localStorage.getItem('km_selected_zones')!) : [],
         fastopertorApiKey: localStorage.getItem('km_fastopertor_api_key') || '',
-        fastopertorDepartmentId: localStorage.getItem('km_fastopertor_department_id') || ''
+        fastopertorDepartmentId: localStorage.getItem('km_fastopertor_department_id') || '',
+        routingProvider: (localStorage.getItem('km_routing_provider') as any) || 'google',
+        geocodingProvider: (localStorage.getItem('km_geococding_provider') as any) || 'google',
+        generouteApiKey: localStorage.getItem('km_generoute_api_key') || ''
       } : defaultSettings
     } catch (error) {
       console.error('Error reading settings:', error)
@@ -181,7 +187,10 @@ export const localStorageUtils = {
         lastKmlSync: localStorage.getItem('km_last_kml_sync') || null,
         autoSyncKml: localStorage.getItem('km_auto_sync_kml') === 'true',
         fastopertorApiKey: localStorage.getItem('km_fastopertor_api_key') || '',
-        fastopertorDepartmentId: localStorage.getItem('km_fastopertor_department_id') || ''
+        fastopertorDepartmentId: localStorage.getItem('km_fastopertor_department_id') || '',
+        routingProvider: (localStorage.getItem('km_routing_provider') as any) || 'google',
+        geocodingProvider: (localStorage.getItem('km_geococding_provider') as any) || 'google',
+        generouteApiKey: localStorage.getItem('km_generoute_api_key') || ''
       }
     }
   },
@@ -235,6 +244,15 @@ export const localStorageUtils = {
       }
       if (settings.fastopertorDepartmentId !== undefined) {
         localStorage.setItem('km_fastopertor_department_id', settings.fastopertorDepartmentId.toString())
+      }
+      if (settings.routingProvider !== undefined) {
+        localStorage.setItem('km_routing_provider', settings.routingProvider)
+      }
+      if (settings.geocodingProvider !== undefined) {
+        localStorage.setItem('km_geococding_provider', settings.geocodingProvider)
+      }
+      if (settings.generouteApiKey !== undefined) {
+        localStorage.setItem('km_generoute_api_key', settings.generouteApiKey)
       }
       // Save courier vehicle map separately
       if (courierVehicleMap && typeof courierVehicleMap === 'object') {

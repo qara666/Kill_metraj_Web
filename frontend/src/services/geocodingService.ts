@@ -7,6 +7,8 @@
  *  - Removed redundant in-memory cache (superseded by googleApiCache persistence)
  */
 import { googleApiCache } from './googleApiCache'
+import { NominatimService } from './nominatimService'
+import { localStorageUtils } from '../utils/ui/localStorage'
 
 // Google Maps types
 declare global {
@@ -32,19 +34,28 @@ export interface GeocodingOptions {
   language?: string
   bounds?: any
   componentRestrictions?: any
+  provider?: 'google' | 'nominatim'
 }
 
 export class GeocodingService {
-  // Routes all geocoding through googleApiCache (persistent 30-day localStorage cache)
+  /**
+   * Get the current geocoding provider from settings
+   */
+  private static getProvider(): 'google' | 'nominatim' {
+    const settings = localStorageUtils.getAllSettings()
+    return settings.geocodingProvider || 'google'
+  }
 
   static isReady(): boolean {
+    const provider = this.getProvider()
+    if (provider === 'nominatim') return true
     return (typeof window !== 'undefined' && !!window.google?.maps?.Geocoder)
   }
 
   /**
    * Map raw Google Geocoder results to GeocodingResult[]
    */
-  private static mapResults(results: any[], address: string): GeocodingResult[] {
+  private static mapGoogleResults(results: any[], address: string): GeocodingResult[] {
     if (!results || results.length === 0) {
       return [{ success: false, formattedAddress: address, error: 'Адрес не найден' }]
     }
@@ -73,18 +84,24 @@ export class GeocodingService {
 
   /**
    * Geocode an address — returns multiple candidates.
-   * Uses googleApiCache (persistent + deduplicated).
    */
   static async geocodeAddressMulti(
     address: string,
     options: GeocodingOptions = {}
   ): Promise<GeocodingResult[]> {
+    const provider = options.provider || this.getProvider()
+
+    if (provider === 'nominatim') {
+      return NominatimService.geocode(address, options.region || 'ua')
+    }
+
+    // Google Provider
     try {
       const req: any = { address, region: options.region || 'ua' }
       if (options.componentRestrictions) req.componentRestrictions = options.componentRestrictions
 
       // Convert plain bounds object to LatLngBounds if needed
-      if (options.bounds) {
+      if (options.bounds && typeof window !== 'undefined' && (window as any).google?.maps) {
         if (options.bounds instanceof (window as any).google.maps.LatLngBounds) {
           req.bounds = options.bounds
         } else {
@@ -99,7 +116,7 @@ export class GeocodingService {
       }
 
       const results = await googleApiCache.geocode(req)
-      return this.mapResults(results, address)
+      return this.mapGoogleResults(results, address)
     } catch {
       return [{ success: false, formattedAddress: address, error: 'Ошибка геокодирования' }]
     }
@@ -121,7 +138,7 @@ export class GeocodingService {
     contextCoords: { lat: number; lng: number }[],
     options: GeocodingOptions = {}
   ): Promise<GeocodingResult> {
-    if (contextCoords.length > 0 && typeof window !== 'undefined' && (window as any).google) {
+    if (contextCoords.length > 0 && typeof window !== 'undefined' && (window as any).google?.maps) {
       try {
         const bounds = new (window as any).google.maps.LatLngBounds()
         contextCoords.forEach(c => bounds.extend(new (window as any).google.maps.LatLng(c.lat, c.lng)))
@@ -132,9 +149,17 @@ export class GeocodingService {
   }
 
   /**
-   * Reverse geocode (coords → address). Cached via googleApiCache.
+   * Reverse geocode (coords → address).
    */
-  static async reverseGeocode(lat: number, lng: number, _options: GeocodingOptions = {}): Promise<GeocodingResult> {
+  static async reverseGeocode(lat: number, lng: number, options: GeocodingOptions = {}): Promise<GeocodingResult> {
+    const provider = options.provider || this.getProvider()
+
+    if (provider === 'nominatim') {
+      const result = await NominatimService.reverse(lat, lng)
+      return result || { success: false, formattedAddress: '', error: 'Адрес не найден' }
+    }
+
+    // Google Provider
     try {
       const results = await googleApiCache.geocode({ location: { lat, lng } })
       if (!results || results.length === 0) {
@@ -159,11 +184,9 @@ export class GeocodingService {
 
   /**
    * Geocode with automatic address cleaning.
-   * Tries the original address first; falls back to cleaned variant only if necessary.
-   * Max 2 API calls per address (vs 3 before).
    */
   static async geocodeAndCleanAddress(address: string, options: GeocodingOptions = {}): Promise<GeocodingResult> {
-    // First attempt: original address through cache
+    // First attempt: original address
     let result = await this.geocodeAddress(address, options)
 
     const isRegionCenter = result.success && (
@@ -173,7 +196,7 @@ export class GeocodingService {
 
     if (result.success && !isRegionCenter) return result
 
-    // Second attempt: cleaned address (only if first failed or resolved to region centre)
+    // Second attempt: cleaned address
     let cleanedAddress = address
       .replace(/(?:,|\s)\s*(?:под\.?|подъезд|д\/ф|эт\.?|этаж|под|кв\.?|квартира|оф\.?|офис|вход|дом|корп|секция|литера).*$/i, '')
       .replace(/\b\d{5}\b/g, '')
@@ -196,19 +219,17 @@ export class GeocodingService {
   }
 
   /**
-   * Batch geocode addresses. Uses cache so re-runs are free.
+   * Batch geocode addresses.
    */
   static async geocodeAddresses(
     addresses: string[],
-    options: GeocodingOptions = {},
-    _delayMs: number = 100  // delay no longer needed; googleApiCache handles rate-limiting
+    options: GeocodingOptions = {}
   ): Promise<GeocodingResult[]> {
-    // Parallel (safe because googleApiCache limits MAX_CONCURRENT = 5)
     return Promise.all(addresses.map(addr => this.geocodeAddress(addr, options)))
   }
 
   // Legacy no-ops (kept for API compatibility)
   static clearCache(): void { googleApiCache.clearGeocodeCache() }
   static getCacheSize(): number { return googleApiCache.getStats().geocode }
-  static initialize(): void { } // intentionally no-op; googleApiCache self-initializes
+  static initialize(): void { }
 }

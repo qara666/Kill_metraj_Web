@@ -46,6 +46,9 @@ interface SettingsForm {
   autoSyncKml: boolean
   selectedHubs: string[]
   selectedZones: string[]
+  routingProvider: 'google' | 'generoute'
+  geocodingProvider: 'google' | 'nominatim'
+  generouteApiKey: string
 }
 
 export const Settings: React.FC = () => {
@@ -80,7 +83,10 @@ export const Settings: React.FC = () => {
       lastKmlSync: null,
       autoSyncKml: false,
       selectedHubs: [],
-      selectedZones: []
+      selectedZones: [],
+      routingProvider: 'google',
+      geocodingProvider: 'google',
+      generouteApiKey: ''
     }
   })
 
@@ -123,6 +129,9 @@ export const Settings: React.FC = () => {
     setValue('autoSyncKml', settings.autoSyncKml ?? false)
     setValue('selectedHubs', settings.selectedHubs || [])
     setValue('selectedZones', settings.selectedZones || [])
+    setValue('routingProvider', settings.routingProvider || 'google')
+    setValue('geocodingProvider', settings.geocodingProvider || 'google')
+    setValue('generouteApiKey', settings.generouteApiKey || '')
 
     // Auto-sync KML if enabled
     if (settings.autoSyncKml && settings.kmlSourceUrl) {
@@ -524,12 +533,43 @@ export const Settings: React.FC = () => {
             </CollapsibleSection>
           )}
 
-          <CollapsibleSection isDark={isDark} icon={<KeyIcon className="h-4 w-4" />} title="API Ключи">
-            <div className="space-y-4">
-              <input type="text" className="input" placeholder="Mapbox Token" {...register('mapboxToken')} disabled={!canModify} />
-              <div className="flex gap-2">
-                <input type="password" className="input" placeholder="Google Maps API Ключ" {...register('googleMapsApiKey')} disabled={!canModify} />
-                <button type="button" onClick={testApiKey} disabled={isTestingApiKey} className="btn-outline">Проверить</button>
+          <CollapsibleSection isDark={isDark} icon={<KeyIcon className="h-4 w-4" />} title="API Ключи / Провайдеры">
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-4 border-b border-gray-100 dark:border-gray-700">
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер маршрутизации</label>
+                  <select {...register('routingProvider')} className="input w-full" disabled={!canModify}>
+                    <option value="google">Google Maps (Платный)</option>
+                    <option value="generoute">Generoute.io (Оптимизация)</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер геокодирования</label>
+                  <select {...register('geocodingProvider')} className="input w-full" disabled={!canModify}>
+                    <option value="google">Google Maps (Точный)</option>
+                    <option value="nominatim">Nominatim / OSM (Бесплатно)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Google Maps API Ключ</label>
+                  <div className="flex gap-2">
+                    <input type="password" className="input flex-1" placeholder="Google Maps API Ключ" {...register('googleMapsApiKey')} disabled={!canModify} />
+                    <button type="button" onClick={testApiKey} disabled={isTestingApiKey} className="btn-outline">Проверить</button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Mapbox Token (для трафика)</label>
+                  <input type="text" className="input" placeholder="Mapbox Token" {...register('mapboxToken')} disabled={!canModify} />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Generoute API Key</label>
+                  <input type="password" className="input" placeholder="Generoute API Key" {...register('generouteApiKey')} disabled={!canModify} />
+                </div>
               </div>
             </div>
           </CollapsibleSection>

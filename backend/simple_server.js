@@ -427,12 +427,18 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
     }
 
     logger.info('STARTING ADMIN CHECK/CREATION...');
-    const { User } = require('./src/models');
+    const { User, UserPreset } = require('./src/models');
     try {
+      // Use environment variables or fallback to defaults
+      const seedUsername = process.env.SEED_ADMIN_USERNAME || 'admin';
+      const seedPassword = process.env.SEED_ADMIN_PASSWORD || 'adminpassword123';
+      const seedEmail = process.env.SEED_ADMIN_EMAIL || 'admin@example.com';
+
       const [admin, created] = await User.findOrCreate({
-        where: { username: 'admin' },
+        where: { username: seedUsername },
         defaults: {
-          passwordHash: 'adminpassword123', // Will be hashed via hook
+          passwordHash: seedPassword, // Will be hashed via hook
+          email: seedEmail,
           role: 'admin',
           isActive: true,
           canModifySettings: true,
@@ -441,13 +447,41 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
       });
 
       if (created) {
-        logger.info('УСПЕХ: Аккаунт администратора создан автоматически.');
+        logger.info(`УСПЕХ: Аккаунт администратора "${seedUsername}" создан автоматически.`);
+
+        // Create default preset for new admin
+        try {
+          await UserPreset.create({
+            userId: admin.id,
+            settings: { theme: 'dark', cityBias: 'Kyiv, Ukraine' },
+            updatedBy: admin.id
+          });
+          logger.info('УСПЕХ: Профиль настроек (UserPreset) для администратора создан.');
+        } catch (presetErr) {
+          logger.error('ПРЕДУПРЕЖДЕНИЕ: Не удалось создать UserPreset для администратора', { error: presetErr.message });
+        }
       } else {
-        logger.info('ИНФО: Аккаунт администратора уже существует.');
-        if (admin.divisionId !== 'all') {
-          admin.divisionId = 'all';
+        logger.info(`ИНФО: Аккаунт администратора "${seedUsername}" уже существует.`);
+
+        // Ensure admin has correct role and division
+        let needsUpdate = false;
+        if (admin.role !== 'admin') { admin.role = 'admin'; needsUpdate = true; }
+        if (admin.divisionId !== 'all') { admin.divisionId = 'all'; needsUpdate = true; }
+
+        if (needsUpdate) {
           await admin.save();
-          logger.info('ИНФО: Подразделение администратора обновлено на "all".');
+          logger.info('ИНФО: Права и подразделение администратора обновлены.');
+        }
+
+        // Check if preset exists for existing admin
+        const existingPreset = await UserPreset.findOne({ where: { userId: admin.id } });
+        if (!existingPreset) {
+          await UserPreset.create({
+            userId: admin.id,
+            settings: { theme: 'dark', cityBias: 'Kyiv, Ukraine' },
+            updatedBy: admin.id
+          });
+          logger.info('ИНФО: Отсутствующий UserPreset для администратора был создан.');
         }
       }
     } catch (createErr) {

@@ -14,6 +14,7 @@ export interface FetchDashboardDataRequest {
     date: string;       // DD.MM.YYYY
     divisionId?: string; // Опционально, если админ хочет конкретное подразделение
     force?: boolean;     // Принудительно запросить данные из API, игнорируя кэш
+    apiKey?: string;     // Опционально, если пользователь хочет использовать свой ключ
 }
 
 const API_BASE_URL = `${API_URL}/api/v1`;

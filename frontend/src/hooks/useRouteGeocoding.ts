@@ -11,6 +11,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import { googleApiCache } from '../services/googleApiCache'
+import { GenerouteService } from '../services/generouteService'
 import { cleanAddress, generateStreetVariants } from '../utils/data/addressUtils'
 import { getUkraineTrafficForOrders, calculateTotalTrafficDelay } from '../utils/maps/ukraineTrafficAPI'
 import { Route, Order } from '../types/route'
@@ -400,20 +401,61 @@ export const useRouteGeocoding = ({
                 return
             }
 
+
             // 5. Get directions
-            const request = {
-                origin: originRes?.geometry?.location || cleanAddressForRoute(route.startAddress),
-                destination: destinationRes?.geometry?.location || cleanAddressForRoute(route.endAddress),
-                waypoints: waypointResList.map(r => ({ location: r?.geometry?.location || '', stopover: true })),
-                travelMode: window.google.maps.TravelMode.DRIVING,
+            const routingProvider = settings.routingProvider || 'google'
+            let totalDistance: number = 0
+            let totalDuration: number = 0
+            let routeGeometry: any = null
+
+            if (routingProvider === 'generoute' && settings.generouteApiKey) {
+                const locations = [
+                    {
+                        lat: typeof originRes.geometry.location.lat === 'function' ? originRes.geometry.location.lat() : originRes.geometry.location.lat,
+                        lng: typeof originRes.geometry.location.lng === 'function' ? originRes.geometry.location.lng() : originRes.geometry.location.lng,
+                        title: route.startAddress
+                    },
+                    ...waypointResList.map((r, i) => ({
+                        lat: typeof r.geometry.location.lat === 'function' ? r.geometry.location.lat() : r.geometry.location.lat,
+                        lng: typeof r.geometry.location.lng === 'function' ? r.geometry.location.lng() : r.geometry.location.lng,
+                        title: route.orders[i].address
+                    })),
+                    {
+                        lat: typeof destinationRes.geometry.location.lat === 'function' ? destinationRes.geometry.location.lat() : destinationRes.geometry.location.lat,
+                        lng: typeof destinationRes.geometry.location.lng === 'function' ? destinationRes.geometry.location.lng() : destinationRes.geometry.location.lng,
+                        title: route.endAddress
+                    }
+                ]
+
+                const generouteResult = await GenerouteService.calculateTrip(locations, settings.generouteApiKey, settings.cityBias === 'Киев' ? 'UA' : 'UA')
+                if (generouteResult) {
+                    totalDistance = generouteResult.total_distance // meters
+                    totalDuration = generouteResult.total_duration // seconds
+                    routeGeometry = generouteResult.geometry
+                } else {
+                    toast.error('Generoute API error, falling back to Google')
+                    // Fallback will happen below because totalDistance is still 0
+                }
             }
 
-            const result = await googleApiCache.getDirections(request as any)
-            if (result) {
-                let totalDistance = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
-                let totalDuration = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
+            if (totalDistance === 0) {
+                // Google Provider Fallback or primary choice
+                const request = {
+                    origin: originRes?.geometry?.location || cleanAddressForRoute(route.startAddress),
+                    destination: destinationRes?.geometry?.location || cleanAddressForRoute(route.endAddress),
+                    waypoints: waypointResList.map(r => ({ location: r?.geometry?.location || '', stopover: true })),
+                    travelMode: window.google.maps.TravelMode.DRIVING,
+                }
 
-                // Optional Mapbox traffic adjustment
+                const result = await googleApiCache.getDirections(request as any)
+                if (result) {
+                    totalDistance = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.distance.value, 0)
+                    totalDuration = result.routes[0].legs.reduce((total: number, leg: any) => total + leg.duration.value, 0)
+                }
+            }
+
+            if (totalDistance > 0) {
+                // Optional Mapbox traffic adjustment (only for Google or if desired for Generoute)
                 const mapboxToken = settings.mapboxToken || localStorage.getItem('km_mapbox_token')
                 const vType = getCourierVehicleType(route.courier)
                 if (mapboxToken) {
@@ -437,7 +479,7 @@ export const useRouteGeocoding = ({
                     ...prev,
                     routes: (prev?.routes || []).map((r: Route) =>
                         r.id === route.id
-                            ? { ...r, totalDistance: totalDistance / 1000, totalDuration: totalDuration / 60, isOptimized: true }
+                            ? { ...r, totalDistance: totalDistance / 1000, totalDuration: totalDuration / 60, isOptimized: true, routeGeometry }
                             : r
                     )
                 }))

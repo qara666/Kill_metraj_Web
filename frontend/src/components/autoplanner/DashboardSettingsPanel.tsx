@@ -9,7 +9,7 @@ import {
     ExclamationCircleIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
-import { useAutoPlannerStore } from '../../stores/useAutoPlannerStore';
+import { useDashboardStore } from '../../stores/useDashboardStore';
 
 import { useAuth } from '../../contexts/AuthContext';
 import { localStorageUtils } from '../../utils/ui/localStorage';
@@ -31,28 +31,28 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
     const { isAdmin, user } = useAuth();
 
     // --- Stable Store Selectors ---
-    const storeApiKey = useAutoPlannerStore(s => s.apiKey);
-    const storeApiDepartmentId = useAutoPlannerStore(s => s.apiDepartmentId);
-    const storeApiAutoRefreshEnabled = useAutoPlannerStore(s => s.apiAutoRefreshEnabled);
-    const storeApiDateShift = useAutoPlannerStore(s => s.apiDateShift);
-    const storeApiDateShiftFilterEnabled = useAutoPlannerStore(s => s.apiDateShiftFilterEnabled);
-    const storeApiTimeDeliveryBeg = useAutoPlannerStore(s => s.apiTimeDeliveryBeg);
-    const storeApiTimeDeliveryEnd = useAutoPlannerStore(s => s.apiTimeDeliveryEnd);
-    const storeApiTimeFilterEnabled = useAutoPlannerStore(s => s.apiTimeFilterEnabled);
-    const storeApiSyncStatus = useAutoPlannerStore(s => s.apiSyncStatus);
-    const storeApiLastSyncTime = useAutoPlannerStore(s => s.apiLastSyncTime);
-    const storeApiNextSyncTime = useAutoPlannerStore(s => s.apiNextSyncTime);
+    const storeApiKey = useDashboardStore(s => s.apiKey);
+    const storeApiDepartmentId = useDashboardStore(s => s.apiDepartmentId);
+    const storeApiAutoRefreshEnabled = useDashboardStore(s => s.apiAutoRefreshEnabled);
+    const storeApiDateShift = useDashboardStore(s => s.apiDateShift);
+    const storeApiDateShiftFilterEnabled = useDashboardStore(s => s.apiDateShiftFilterEnabled);
+    const storeApiTimeDeliveryBeg = useDashboardStore(s => s.apiTimeDeliveryBeg);
+    const storeApiTimeDeliveryEnd = useDashboardStore(s => s.apiTimeDeliveryEnd);
+    const storeApiTimeFilterEnabled = useDashboardStore(s => s.apiTimeFilterEnabled);
+    const storeApiSyncStatus = useDashboardStore(s => s.apiSyncStatus);
+    const storeApiLastSyncTime = useDashboardStore(s => s.apiLastSyncTime);
+    const storeApiNextSyncTime = useDashboardStore(s => s.apiNextSyncTime);
 
     // Actions
-    const setApiKey = useAutoPlannerStore(s => s.setApiKey);
-    const setApiDepartmentId = useAutoPlannerStore(s => s.setApiDepartmentId);
-    const setApiAutoRefreshEnabled = useAutoPlannerStore(s => s.setApiAutoRefreshEnabled);
-    const setApiDateShift = useAutoPlannerStore(s => s.setApiDateShift);
-    const setApiDateShiftFilterEnabled = useAutoPlannerStore(s => s.setApiDateShiftFilterEnabled);
-    const setApiTimeDeliveryBeg = useAutoPlannerStore(s => s.setApiTimeDeliveryBeg);
-    const setApiTimeDeliveryEnd = useAutoPlannerStore(s => s.setApiTimeDeliveryEnd);
-    const setApiTimeFilterEnabled = useAutoPlannerStore(s => s.setApiTimeFilterEnabled);
-    const triggerApiManualSync = useAutoPlannerStore(s => s.triggerApiManualSync);
+    const setApiKey = useDashboardStore(s => s.setApiKey);
+    const setApiDepartmentId = useDashboardStore(s => s.setApiDepartmentId);
+    const setApiAutoRefreshEnabled = useDashboardStore(s => s.setApiAutoRefreshEnabled);
+    const setApiDateShift = useDashboardStore(s => s.setApiDateShift);
+    const setApiDateShiftFilterEnabled = useDashboardStore(s => s.setApiDateShiftFilterEnabled);
+    const setApiTimeDeliveryBeg = useDashboardStore(s => s.setApiTimeDeliveryBeg);
+    const setApiTimeDeliveryEnd = useDashboardStore(s => s.setApiTimeDeliveryEnd);
+    const setApiTimeFilterEnabled = useDashboardStore(s => s.setApiTimeFilterEnabled);
+    const triggerApiManualSync = useDashboardStore(s => s.triggerApiManualSync);
 
     // --- State Logic: Controlled vs Uncontrolled ---
     const isControlled = !!onSettingsChange;
