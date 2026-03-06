@@ -135,8 +135,11 @@ export const useRoutePlanning = (
                 // Try to use cached coordinates for start/end to ensure consistency with our geocoder
                 // PRIORITY: 1. Passed explicitly from settings, 2. Cached
                 if (includeStartEnd) {
-                    if (defaultStartLat && defaultStartLng) {
-                         origin = new gmaps.LatLng(defaultStartLat, defaultStartLng)
+                    const sLat = defaultStartLat ? Number(defaultStartLat) : null;
+                    const sLng = defaultStartLng ? Number(defaultStartLng) : null;
+                    
+                    if (sLat && sLng) {
+                         origin = new gmaps.LatLng(sLat, sLng);
                     } else {
                         const startCoords = routeOptimizationCache.getCoordinates(startAddr)
                         if (startCoords) {
@@ -144,8 +147,11 @@ export const useRoutePlanning = (
                         }
                     }
 
-                    if (defaultEndLat && defaultEndLng) {
-                         destination = new gmaps.LatLng(defaultEndLat, defaultEndLng)
+                    const eLat = defaultEndLat ? Number(defaultEndLat) : null;
+                    const eLng = defaultEndLng ? Number(defaultEndLng) : null;
+                    
+                    if (eLat && eLng) {
+                         destination = new gmaps.LatLng(eLat, eLng);
                     } else {
                         const endCoords = routeOptimizationCache.getCoordinates(endAddr)
                         if (endCoords) {
@@ -238,11 +244,41 @@ export const useRoutePlanning = (
 
             // Define depotCoords prioritizing explicit input
             let depotCoords = null;
-            if (defaultStartLat && defaultStartLng) {
-                depotCoords = { lat: defaultStartLat, lng: defaultStartLng };
+            // Parse to avoid string errors
+            const sLat = defaultStartLat ? Number(defaultStartLat) : null;
+            const sLng = defaultStartLng ? Number(defaultStartLng) : null;
+            const eLat = defaultEndLat ? Number(defaultEndLat) : null;
+            const eLng = defaultEndLng ? Number(defaultEndLng) : null;
+
+            if (sLat && sLng) {
+                depotCoords = { lat: sLat, lng: sLng };
             } else {
-                depotCoords = routeOptimizationCache.getCoordinates(startAddr);
+                depotCoords = routeOptimizationCache.getCoordinates(startAddr || 'Киев') || null;
             }
+
+            if (!depotCoords) {
+                setErrorMsg('Не удалось определить координаты точки старта (Базы). Убедитесь, что адрес геокодирован.');
+                setIsPlanning(false);
+                setOptimizationProgress(null);
+                return;
+            }
+
+            let endCoords = null;
+            if (eLat && eLng) {
+                endCoords = { lat: eLat, lng: eLng };
+            } else if (endAddr !== startAddr) {
+                endCoords = routeOptimizationCache.getCoordinates(endAddr || 'Киев') || null;
+            } else {
+                endCoords = depotCoords;
+            }
+
+            if (!endCoords) {
+                setErrorMsg('Не удалось определить координаты точки финиша. Убедитесь, что адрес геокодирован.');
+                setIsPlanning(false);
+                setOptimizationProgress(null);
+                return;
+            }
+
             const mode = getPresetMode()
             const preset = getPreset(mode)
             setLastPlanPreset(preset)
@@ -255,12 +291,9 @@ export const useRoutePlanning = (
                 optimizedSettings,
                 trafficSnapshot: trafficSnapshotRef.current,
                 depotCoords,
+                endCoords,
                 defaultStartAddress: startAddr,
-                defaultStartLat,
-                defaultStartLng,
                 defaultEndAddress: endAddr,
-                defaultEndLat,
-                defaultEndLng,
                 setOptimizationProgress
             });
 

@@ -14,6 +14,7 @@ export interface RoutePlanningContext {
     optimizedSettings: RoutePlanningSettings;
     trafficSnapshot: TrafficSnapshot | null;
     depotCoords: { lat: number, lng: number } | null;
+    endCoords?: { lat: number, lng: number } | null;
     defaultStartAddress: string;
     defaultStartLat?: number | null;
     defaultStartLng?: number | null;
