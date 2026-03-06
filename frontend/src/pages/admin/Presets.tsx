@@ -191,6 +191,38 @@ export const AdminPresets: React.FC = () => {
                                             placeholder="pk..."
                                         />
                                     </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold uppercase text-gray-500">Generoute API Key</label>
+                                        <input
+                                            type="password"
+                                            value={settings.generouteApiKey || ''}
+                                            onChange={(e) => setSettings({ ...settings, generouteApiKey: e.target.value })}
+                                            className="input"
+                                            placeholder="gen_..."
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold uppercase text-gray-500">Провайдер маршрутизации</label>
+                                        <select
+                                            value={settings.routingProvider || 'google'}
+                                            onChange={(e) => setSettings({ ...settings, routingProvider: e.target.value })}
+                                            className="input"
+                                        >
+                                            <option value="google">Google Maps</option>
+                                            <option value="generoute">Generoute.io</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold uppercase text-gray-500">Провайдер геокодирования</label>
+                                        <select
+                                            value={settings.geocodingProvider || 'google'}
+                                            onChange={(e) => setSettings({ ...settings, geocodingProvider: e.target.value })}
+                                            className="input"
+                                        >
+                                            <option value="google">Google Maps</option>
+                                            <option value="nominatim">Nominatim / OSM</option>
+                                        </select>
+                                    </div>
                                 </div>
                             </CollapsibleSection>
 
@@ -205,12 +237,36 @@ export const AdminPresets: React.FC = () => {
                             <CollapsibleSection isDark={isDark} icon={<MapIcon className="h-5 w-5" />} title="Зона расчета заказов Google My Maps (KML)">
                                 <div className="space-y-6">
                                     <div className={clsx(
-                                        'p-4 rounded-xl border-l-4 mb-4',
-                                        isDark ? 'bg-blue-500/10 border-blue-500 text-blue-200' : 'bg-blue-50 border-blue-500 text-blue-800'
+                                        'p-4 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4',
+                                        isDark ? 'bg-blue-500/10 border-blue-500/30 text-blue-200' : 'bg-blue-50 border-blue-500 text-blue-800'
                                     )}>
-                                        <p className="text-sm">
-                                            Рассчет киллометража через выбранные секторы локации по зонам
-                                        </p>
+                                        <div className="space-y-1">
+                                            <p className="text-sm font-bold">Зоны доставки (KML)</p>
+                                            <p className="text-[10px] opacity-70">
+                                                Рассчет киллометража через выбранные секторы локации по зонам
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const globalKmlData = JSON.parse(localStorage.getItem('km_kml_data') || 'null');
+                                                const globalKmlUrl = localStorage.getItem('km_kml_source_url') || '';
+                                                const globalHubs = JSON.parse(localStorage.getItem('km_selected_hubs') || '[]');
+                                                const globalZones = JSON.parse(localStorage.getItem('km_selected_zones') || '[]');
+
+                                                setSettings(prev => ({
+                                                    ...prev,
+                                                    kmlData: globalKmlData,
+                                                    kmlSourceUrl: globalKmlUrl,
+                                                    selectedHubs: globalHubs,
+                                                    selectedZones: globalZones
+                                                }));
+                                                toast.success('Настройки KML скопированы из общих');
+                                            }}
+                                            className="px-4 py-2 rounded-xl bg-blue-600/20 text-blue-400 text-[10px] font-black uppercase hover:bg-blue-600/30 transition-all border border-blue-500/30"
+                                        >
+                                            Копировать из настроек
+                                        </button>
                                     </div>
 
                                     <div className="flex gap-2">

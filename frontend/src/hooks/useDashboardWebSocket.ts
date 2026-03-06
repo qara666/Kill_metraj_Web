@@ -39,6 +39,7 @@ export const useDashboardWebSocket = ({
     const apiAutoRefreshEnabled = useDashboardStore(s => s.apiAutoRefreshEnabled);
     const apiDateShift = useDashboardStore(s => s.apiDateShift);
     const apiDepartmentId = useDashboardStore(s => s.apiDepartmentId);
+    const apiKey = useDashboardStore(s => s.apiKey);
 
     // Refs for stable logic
     const isConnectedRef = useRef(false);
@@ -51,12 +52,13 @@ export const useDashboardWebSocket = ({
     const stateRef = useRef({
         apiDateShift,
         apiDepartmentId,
-        apiManualSyncTrigger
+        apiManualSyncTrigger,
+        apiKey
     });
 
     useEffect(() => {
-        stateRef.current = { apiDateShift, apiDepartmentId, apiManualSyncTrigger };
-    }, [apiDateShift, apiDepartmentId, apiManualSyncTrigger]);
+        stateRef.current = { apiDateShift, apiDepartmentId, apiManualSyncTrigger, apiKey };
+    }, [apiDateShift, apiDepartmentId, apiManualSyncTrigger, apiKey]);
 
     useEffect(() => {
         onDataLoadedRef.current = onDataLoaded;
@@ -76,7 +78,7 @@ export const useDashboardWebSocket = ({
         }
         lastFetchTimeRef.current = now;
 
-        const { apiDateShift: dateShift, apiDepartmentId: deptId } = stateRef.current;
+        const { apiDateShift: dateShift, apiDepartmentId: deptId, apiKey: key } = stateRef.current;
         const dateStr = dateShift || formatDateForApi(new Date());
         const apiDate = dashboardApiService.convertDateToApiFormat(dateStr);
 
@@ -93,7 +95,8 @@ export const useDashboardWebSocket = ({
             const response = await dashboardApiService.fetchDataForDate({
                 date: apiDate,
                 divisionId: deptId ? String(deptId) : 'all',
-                force: true
+                force: true,
+                apiKey: key // Pass the user-specific API key
             });
 
             if (response.success && response.data) {
