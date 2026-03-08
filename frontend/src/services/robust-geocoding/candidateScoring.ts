@@ -121,7 +121,9 @@ export function scoreCandidate(
   let isInside = false
 
   const isPrecise = locType === 'ROOFTOP'
-  const tolerance = isPrecise ? 0.001 : 0.015 // 111m for exact houses, ~1.6km for generic street centers/ranges
+  // Huge tolerance (0.05 deg =~ 5.5km) for ROOFTOP to bridge gaps between perfect addresses and sloppily drawn KML polygons.
+  // Broad tolerance (0.02 deg =~ 2.2km) for generic matches like GEOMETRIC_CENTER to snap them into the sector.
+  const tolerance = isPrecise ? 0.05 : 0.02
 
   if (googleLoc && opts.ctx.allPolygons.length > 0) {
     const zoneMatches = findZonesForLoc(googleLoc, opts.ctx.allPolygons, tolerance)
