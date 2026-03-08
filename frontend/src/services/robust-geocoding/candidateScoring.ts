@@ -120,8 +120,11 @@ export function scoreCandidate(
   let isTech = false
   let isInside = false
 
+  const isPrecise = locType === 'ROOFTOP'
+  const tolerance = isPrecise ? 0.001 : 0.015 // 111m for exact houses, ~1.6km for generic street centers/ranges
+
   if (googleLoc && opts.ctx.allPolygons.length > 0) {
-    const zoneMatches = findZonesForLoc(googleLoc, opts.ctx.allPolygons)
+    const zoneMatches = findZonesForLoc(googleLoc, opts.ctx.allPolygons, tolerance)
 
     if (zoneMatches.length > 0) {
       const firstDelivery = zoneMatches.find(m => !m.isTechnical)
