@@ -99,8 +99,8 @@ export const useRouteGeocoding = ({
     /**
      * SOTA 5.68: Robust geocoding with centralized service and zone validation.
      */
-    const robustGeocode = async (rawAddress: string, options: { hintPoint?: any; silent?: boolean } = {}): Promise<any | null> => {
-        const { hintPoint, silent = false } = options
+    const robustGeocode = async (rawAddress: string, options: { hintPoint?: any; silent?: boolean; strictZoneFallback?: boolean } = {}): Promise<any | null> => {
+        const { hintPoint, silent = false, strictZoneFallback = true } = options
         const cityBias = settings.cityBias || 'Киев'
 
         // 1. Delegate core logic to the central service
@@ -115,7 +115,7 @@ export const useRouteGeocoding = ({
         // 2. If it's a silent call or confirmation is off, return the best hit immediately
         if (silent || !confirmAddresses) {
             // Strict rejection: if the score is horribly penalized (e.g. out of zone or disabled zone), reject it
-            if (result.best.score <= -1000) return null
+            if (strictZoneFallback && result.best.score <= -1000) return null
             return result.best.raw
         }
 
@@ -184,7 +184,7 @@ export const useRouteGeocoding = ({
             if (startLat && startLng) {
                 originLoc = new window.google.maps.LatLng(startLat, startLng)
             } else if (route.startAddress) {
-                const res = await robustGeocode(cleanAddressForRoute(route.startAddress), { silent: true })
+                const res = await robustGeocode(cleanAddressForRoute(route.startAddress), { silent: true, strictZoneFallback: false })
                 originLoc = toLoc(res)
             }
 
@@ -240,7 +240,7 @@ export const useRouteGeocoding = ({
             } else if (!route.endAddress || route.endAddress === route.startAddress) {
                 destinLoc = originLoc
             } else {
-                const res = await robustGeocode(cleanAddressForRoute(route.endAddress), { silent: true })
+                const res = await robustGeocode(cleanAddressForRoute(route.endAddress), { silent: true, strictZoneFallback: false })
                 destinLoc = toLoc(res) || originLoc
             }
 
