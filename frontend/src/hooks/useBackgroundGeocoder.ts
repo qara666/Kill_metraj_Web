@@ -53,10 +53,10 @@ export function useBackgroundGeocoder(orders: Order[]) {
     };
 
     const doWork = async () => {
-        // Process up to 5 at a time
+        // Process up to 10 at a time to leverage batching and deduplication
         const batch: string[] = [];
         const it = queueRef.current.values();
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < 10; i++) {
             const next = it.next();
             if (next.done) break;
             batch.push(next.value);

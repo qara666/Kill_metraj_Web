@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTheme } from '../../contexts/ThemeContext'
 import { authService } from '../../utils/auth/authService'
+import { syncPresetsToLocalStorage } from '../../utils/auth/presetSync'
 import { clsx } from 'clsx'
 import { toast } from 'react-hot-toast'
 import {
@@ -30,6 +31,7 @@ export const AdminPresets: React.FC = () => {
     const [settings, setSettings] = useState<Record<string, any>>({})
     const [searchTerm, setSearchTerm] = useState('')
     const [zoneSearchTerm, setZoneSearchTerm] = useState('')
+    const [userFields, setUserFields] = useState({ divisionId: '', canModifySettings: true })
 
     // If not admin, force selection to current user's ID
     React.useEffect(() => {
@@ -48,6 +50,12 @@ export const AdminPresets: React.FC = () => {
     })
     const users = usersData?.users || []
 
+    const filteredUsers = users.filter(user =>
+        user.username.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+
+    const selectedUser = users.find(u => u.id === selectedUserId)
+
     // Presets Query
     const { data: currentPreset, isLoading: isPresetsLoading } = useQuery<UserPreset | null>({
         queryKey: ['user_presets', selectedUserId],
@@ -59,7 +67,13 @@ export const AdminPresets: React.FC = () => {
         if (currentPreset?.settings) {
             setSettings(currentPreset.settings)
         }
-    }, [currentPreset])
+        if (selectedUser) {
+            setUserFields({
+                divisionId: selectedUser.divisionId || '',
+                canModifySettings: selectedUser.canModifySettings !== false
+            })
+        }
+    }, [currentPreset, selectedUser])
 
     // Save Preset Mutation
     const saveMutation = useMutation({
@@ -83,21 +97,42 @@ export const AdminPresets: React.FC = () => {
         onSettled: (_data, _err, variables) => {
             queryClient.invalidateQueries({ queryKey: ['user_presets', variables.userId] })
         },
+        onSuccess: (_, { userId }) => {
+            queryClient.invalidateQueries({ queryKey: ['user_presets', userId] })
+            toast.success('Настройки успешно сохранены')
+            
+            // If saving for CURRENT user (admin themselves), sync local storage immediately
+            if (userId === currentUser?.id) {
+                syncPresetsToLocalStorage(userId).catch(err => 
+                    console.error('Immediate preset sync failed:', err)
+                )
+            }
+        }
+    })
+
+    // Save User fields mutation
+    const updateUserMutation = useMutation({
+        mutationFn: ({ userId, data }: { userId: number; data: any }) =>
+            authService.updateUser(userId, data),
         onSuccess: () => {
-            toast.success('Настройки сохранены')
+            queryClient.invalidateQueries({ queryKey: ['admin_users_list'] })
         }
     })
 
     const handleSave = async () => {
         if (!selectedUserId) return
+        
+        // Save presets
         saveMutation.mutate({ userId: selectedUserId, settings })
+        
+        // Save user fields (if admin)
+        if (isAdmin) {
+            updateUserMutation.mutate({ 
+                userId: selectedUserId, 
+                data: userFields 
+            })
+        }
     }
-
-    const filteredUsers = users.filter(user =>
-        user.username.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-
-    const selectedUser = users.find(u => u.id === selectedUserId)
 
     return (
         <div className="p-4 space-y-6 max-w-[1600px] mx-auto min-h-screen">
@@ -182,6 +217,35 @@ export const AdminPresets: React.FC = () => {
                         <div className="flex justify-center py-20"><LoadingSpinner /></div>
                     ) : (
                         <div className="space-y-6">
+                            {/* User Profile Section (Admin only) */}
+                            {isAdmin && (
+                                <CollapsibleSection isDark={isDark} icon={<ShieldCheckIcon className="h-5 w-5" />} title="Права и Идентификация" defaultOpen={true}>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold uppercase text-gray-500">ID Подразделения (Fastopertor)</label>
+                                            <input
+                                                type="text"
+                                                value={userFields.divisionId}
+                                                onChange={(e) => setUserFields({ ...userFields, divisionId: e.target.value })}
+                                                className="input"
+                                                placeholder="Напр. 101"
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-3 pt-6">
+                                            <input
+                                                type="checkbox"
+                                                id="canModifySettings"
+                                                checked={userFields.canModifySettings}
+                                                onChange={(e) => setUserFields({ ...userFields, canModifySettings: e.target.checked })}
+                                                className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                            />
+                                            <label htmlFor="canModifySettings" className="text-sm font-bold text-gray-700 dark:text-gray-300 cursor-pointer">
+                                                Разрешить пользователю менять настройки
+                                            </label>
+                                        </div>
+                                    </div>
+                                </CollapsibleSection>
+                            )}
                             {/* City Bias - Syced with Settings.tsx */}
                             <CityBiasSection 
                                 isDark={isDark} 

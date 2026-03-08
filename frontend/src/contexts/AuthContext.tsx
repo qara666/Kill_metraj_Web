@@ -110,6 +110,36 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
     }, [])
 
+    // Периодическая фоновая синхронизация пресетов
+    useEffect(() => {
+        if (!user) return
+
+        const performSync = () => {
+            syncPresetsToLocalStorage(user.id).catch(err =>
+                console.error('Periodic background preset sync failed:', err)
+            )
+        }
+
+        // 1. Initial sync on mount/user change
+        performSync()
+
+        // 2. Periodic sync every 5 minutes
+        const interval = setInterval(performSync, 5 * 60 * 1000)
+
+        // 3. Sync when window becomes visible again
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                performSync()
+            }
+        }
+        document.addEventListener('visibilitychange', handleVisibilityChange)
+
+        return () => {
+            clearInterval(interval)
+            document.removeEventListener('visibilitychange', handleVisibilityChange)
+        }
+    }, [user])
+
     const value: AuthContextType = {
         user,
         loading,

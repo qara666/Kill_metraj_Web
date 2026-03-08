@@ -22,6 +22,7 @@ import { CityBiasSection } from '../components/zone/CityBiasSection'
 import { CollapsibleSection } from '../components/shared/CollapsibleSection'
 import { KmlPreviewMap } from '../components/zone/KmlPreviewMap'
 import { authService } from '../utils/auth/authService'
+import { syncPresetsToLocalStorage } from '../utils/auth/presetSync'
 
 interface SettingsForm {
   googleMapsApiKey: string
@@ -61,6 +62,8 @@ interface SettingsForm {
   routingProvider: 'google' | 'generoute'
   geocodingProvider: 'google' | 'nominatim'
   generouteApiKey: string
+  theme: 'light' | 'dark'
+  courierTransportType: 'car' | 'bicycle' | 'walking' | 'motorcycle'
 }
 
 export const Settings: React.FC = () => {
@@ -71,6 +74,7 @@ export const Settings: React.FC = () => {
   const [zoneSearchTerm, setZoneSearchTerm] = useState('')
   const [isSyncingKml, setIsSyncingKml] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [isSyncingPresets, setIsSyncingPresets] = useState(false)
 
   const { register, handleSubmit, watch, setValue } = useForm<SettingsForm>({
     defaultValues: {
@@ -108,9 +112,11 @@ export const Settings: React.FC = () => {
       autoSyncKml: false,
       selectedHubs: [],
       selectedZones: [],
-      routingProvider: 'google',
+     routingProvider: 'google',
       geocodingProvider: 'google',
-      generouteApiKey: ''
+      generouteApiKey: '',
+      theme: 'light',
+      courierTransportType: 'car'
     }
   })
 
@@ -308,6 +314,26 @@ export const Settings: React.FC = () => {
     }
   }
 
+  const handleManualSyncPresets = async () => {
+    if (!user?.id) return
+    setIsSyncingPresets(true)
+    try {
+      const result = await syncPresetsToLocalStorage(user.id)
+      if (result) {
+        toast.success('Настройки синхронизированы с сервером')
+        // Force reload settings from local storage to update UI
+        window.location.reload()
+      } else {
+        toast.error('Не удалось получить настройки с сервера')
+      }
+    } catch (error) {
+      console.error('Manual sync error:', error)
+      toast.error('Ошибка синхронизации')
+    } finally {
+      setIsSyncingPresets(false)
+    }
+  }
+
   const handleClearAllData = async () => {
     if (window.confirm('Вы уверены, что хотите очистить все динамические данные (маршруты, логи, историю)? Настройки и API ключи будут сохранены.')) {
       try {
@@ -333,14 +359,52 @@ export const Settings: React.FC = () => {
             <h1 className="text-2xl font-bold">Настройки</h1>
             <p className={clsx('mt-1 text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>Настройка приложения и API ключей</p>
           </div>
-          {isLoading && <LoadingSpinner size="md" />}
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={handleManualSyncPresets}
+              disabled={isSyncingPresets || !user?.id}
+              className={clsx(
+                'px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2',
+                isDark 
+                  ? 'bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30' 
+                  : 'bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200'
+              )}
+            >
+              <ArrowPathIcon className={clsx('h-4 w-4', isSyncingPresets && 'animate-spin')} />
+              {isSyncingPresets ? 'Синхронизация...' : 'Синхронизировать с сервером'}
+            </button>
+            {isLoading && <LoadingSpinner size="md" />}
+          </div>
         </div>
       </div>
 
       <div className={clsx('rounded-2xl shadow-lg border p-8', isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+          {/* Personal Settings Section - Always Visible */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-blue-50/30 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-900/20">
+            <div className="space-y-2">
+              <label className="text-xs font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">Цветовая тема</label>
+              <select {...register('theme')} className="input w-full">
+                <option value="light">Светлая</option>
+                <option value="dark">Темная</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">Тип транспорта</label>
+              <select {...register('courierTransportType')} className="input w-full">
+                <option value="car">Автомобиль</option>
+                <option value="bicycle">Велосипед</option>
+                <option value="walking">Пешком</option>
+                <option value="motorcycle">Мотоцикл</option>
+              </select>
+            </div>
+          </div>
+
           {/* City Bias */}
-          <CityBiasSection isDark={isDark} value={watch('cityBias')} onChange={(v) => setValue('cityBias', v)} disabled={!canModify} />
+          {(isAdmin || canModify) && (
+            <CityBiasSection isDark={isDark} value={watch('cityBias')} onChange={(v) => setValue('cityBias', v)} disabled={!canModify} />
+          )}
 
           {/* KML Section */}
           <CollapsibleSection
@@ -600,19 +664,21 @@ export const Settings: React.FC = () => {
             </div>
           </CollapsibleSection>
 
-          <CollapsibleSection isDark={isDark} icon={<ArrowPathIcon className="h-4 w-4" />} title="Автообновление (API Dashboard)">
-            <DashboardSettingsPanel 
-              isDark={isDark} 
-              initialSettings={watch()} 
-              onSettingsChange={(newS) => {
-                Object.entries(newS).forEach(([key, val]) => {
-                  setValue(key as any, val);
-                });
-              }}
-              onManualSync={() => toast.success('Синхронизация запущена')} 
-              canModify={canModify}
-            />
-          </CollapsibleSection>
+          {(isAdmin || canModify) && (
+            <CollapsibleSection isDark={isDark} icon={<ArrowPathIcon className="h-4 w-4" />} title="Автообновление (API Dashboard)">
+              <DashboardSettingsPanel 
+                isDark={isDark} 
+                initialSettings={watch()} 
+                onSettingsChange={(newS) => {
+                  Object.entries(newS).forEach(([key, val]) => {
+                    setValue(key as any, val);
+                  });
+                }}
+                onManualSync={() => toast.success('Синхронизация запущена')} 
+                canModify={canModify}
+              />
+            </CollapsibleSection>
+          )}
 
           {isAdmin && (
             <CollapsibleSection isDark={isDark} icon={<CogIcon className="h-4 w-4" />} title="Фильтр аномалий">
@@ -626,161 +692,169 @@ export const Settings: React.FC = () => {
             </CollapsibleSection>
           )}
 
-          <CollapsibleSection isDark={isDark} icon={<KeyIcon className="h-4 w-4" />} title="API Ключи / Провайдеры">
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-4 border-b border-gray-100 dark:border-gray-700">
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер маршрутизации</label>
-                  <select {...register('routingProvider')} className="input w-full" disabled={!canModify}>
-                    <option value="google">Google Maps (Платный)</option>
-                    <option value="generoute">Generoute.io (Оптимизация)</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер геокодирования</label>
-                  <select {...register('geocodingProvider')} className="input w-full" disabled={!canModify}>
-                    <option value="google">Google Maps (Точный)</option>
-                    <option value="nominatim">Nominatim / OSM (Бесплатно)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Google Maps API Ключ</label>
-                  <div className="flex gap-2">
-                    <input type="password" className="input flex-1" placeholder="Google Maps API Ключ" {...register('googleMapsApiKey')} disabled={!canModify} />
-                    <button type="button" onClick={testApiKey} disabled={isTestingApiKey} className="btn-outline">Проверить</button>
+          {(isAdmin || canModify) && (
+            <CollapsibleSection isDark={isDark} icon={<KeyIcon className="h-4 w-4" />} title="API Ключи / Провайдеры">
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-4 border-b border-gray-100 dark:border-gray-700">
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер маршрутизации</label>
+                    <select {...register('routingProvider')} className="input w-full" disabled={!canModify}>
+                      <option value="google">Google Maps (Платный)</option>
+                      <option value="generoute">Generoute.io (Оптимизация)</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер геокодирования</label>
+                    <select {...register('geocodingProvider')} className="input w-full" disabled={!canModify}>
+                      <option value="google">Google Maps (Точный)</option>
+                      <option value="nominatim">Nominatim / OSM (Бесплатно)</option>
+                    </select>
                   </div>
                 </div>
 
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Google Maps API Ключ</label>
+                    <div className="flex gap-2">
+                      <input type="password" className="input flex-1" placeholder="Google Maps API Ключ" {...register('googleMapsApiKey')} disabled={!canModify} />
+                      <button type="button" onClick={testApiKey} disabled={isTestingApiKey} className="btn-outline">Проверить</button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Mapbox Token (для трафика)</label>
+                    <input type="text" className="input" placeholder="Mapbox Token" {...register('mapboxToken')} disabled={!canModify} />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Generoute API Key</label>
+                    <input type="password" className="input" placeholder="Generoute API Key" {...register('generouteApiKey')} disabled={!canModify} />
+                  </div>
+                </div>
+              </div>
+            </CollapsibleSection>
+          )}
+          {(isAdmin || canModify) && (
+            <CollapsibleSection isDark={isDark} icon={<CogIcon className="h-5 w-5" />} title="Интерфейс и Ограничения" defaultOpen={false}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Mapbox Token (для трафика)</label>
-                  <input type="text" className="input" placeholder="Mapbox Token" {...register('mapboxToken')} disabled={!canModify} />
+                  <label className="text-xs font-bold uppercase text-gray-500">Стиль карты Google</label>
+                  <select
+                    {...register('mapStyle')}
+                    className="input"
+                    disabled={!canModify}
+                  >
+                    <option value="standard">Стандартный</option>
+                    <option value="silver">Серебро</option>
+                    <option value="retro">Ретро</option>
+                    <option value="dark">Темный</option>
+                    <option value="night">Ночной</option>
+                    <option value="aubergine">Баклажан</option>
+                  </select>
                 </div>
-
                 <div className="space-y-2">
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Generoute API Key</label>
-                  <input type="password" className="input" placeholder="Generoute API Key" {...register('generouteApiKey')} disabled={!canModify} />
+                  <label className="text-xs font-bold uppercase text-gray-500">Макс. критическая дистанция (км)</label>
+                  <input 
+                    type="number" 
+                    {...register('maxCriticalRouteDistanceKm', { valueAsNumber: true })}
+                    className="input"
+                    disabled={!canModify}
+                  />
+                  <p className="text-[10px] text-gray-400">Маршруты длиннее этого значения помечаются как критические</p>
+                </div>
+              </div>
+            </CollapsibleSection>
+          )}
+
+          {(isAdmin || canModify) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 bg-gray-50/50 dark:bg-gray-800/20 p-6 rounded-2xl border border-gray-100 dark:border-gray-700/50">
+              {/* Start Address Block */}
+              <div className="space-y-4">
+                <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2">Адрес начала маршрута</h3>
+                
+                <div className="p-4 rounded-xl border-2 transition-all bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700 focus-within:border-blue-400 dark:focus-within:border-blue-500 focus-within:ring-4 ring-blue-50 dark:ring-blue-900/20">
+                   <input 
+                      type="text" 
+                      className="w-full bg-transparent outline-none text-sm font-bold text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500" 
+                      placeholder="Введите адрес начала..." 
+                      {...register('defaultStartAddress')} 
+                      disabled={!canModify} 
+                   />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Широта (LAT)</label>
+                    <input 
+                      type="number" 
+                      step="any"
+                      className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
+                      placeholder="50.4501" 
+                      {...register('defaultStartLat', { valueAsNumber: true })} 
+                      disabled={!canModify} 
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Долгота (LNG)</label>
+                    <input 
+                      type="number" 
+                      step="any"
+                      className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
+                      placeholder="30.5234" 
+                      {...register('defaultStartLng', { valueAsNumber: true })} 
+                      disabled={!canModify} 
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* End Address Block */}
+              <div className="space-y-4">
+                <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2">Адрес окончания маршрута</h3>
+                
+                <div className="p-4 rounded-xl border-2 transition-all bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700 focus-within:border-blue-400 dark:focus-within:border-blue-500 focus-within:ring-4 ring-blue-50 dark:ring-blue-900/20">
+                   <input 
+                      type="text" 
+                      className="w-full bg-transparent outline-none text-sm font-bold text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500" 
+                      placeholder="Введите адрес окончания..." 
+                      {...register('defaultEndAddress')} 
+                      disabled={!canModify} 
+                   />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Широта (LAT)</label>
+                    <input 
+                      type="number" 
+                      step="any"
+                      className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
+                      placeholder="50.4501" 
+                      {...register('defaultEndLat', { valueAsNumber: true })} 
+                      disabled={!canModify} 
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Долгота (LNG)</label>
+                    <input 
+                      type="number" 
+                      step="any"
+                      className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
+                      placeholder="30.5234" 
+                      {...register('defaultEndLng', { valueAsNumber: true })} 
+                      disabled={!canModify} 
+                    />
+                  </div>
                 </div>
               </div>
             </div>
-          </CollapsibleSection>
-          <CollapsibleSection isDark={isDark} icon={<CogIcon className="h-5 w-5" />} title="Интерфейс и Ограничения" defaultOpen={false}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="text-xs font-bold uppercase text-gray-500">Стиль карты Google</label>
-                <select
-                  {...register('mapStyle')}
-                  className="input"
-                  disabled={!canModify}
-                >
-                  <option value="standard">Стандартный</option>
-                  <option value="silver">Серебро</option>
-                  <option value="retro">Ретро</option>
-                  <option value="dark">Темный</option>
-                  <option value="night">Ночной</option>
-                  <option value="aubergine">Баклажан</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs font-bold uppercase text-gray-500">Макс. критическая дистанция (км)</label>
-                <input 
-                  type="number" 
-                  {...register('maxCriticalRouteDistanceKm', { valueAsNumber: true })}
-                  className="input"
-                  disabled={!canModify}
-                />
-                <p className="text-[10px] text-gray-400">Маршруты длиннее этого значения помечаются как критические</p>
-              </div>
-            </div>
-          </CollapsibleSection>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 bg-gray-50/50 dark:bg-gray-800/20 p-6 rounded-2xl border border-gray-100 dark:border-gray-700/50">
-            {/* Start Address Block */}
-            <div className="space-y-4">
-              <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2">Адрес начала маршрута</h3>
-              
-              <div className="p-4 rounded-xl border-2 transition-all bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700 focus-within:border-blue-400 dark:focus-within:border-blue-500 focus-within:ring-4 ring-blue-50 dark:ring-blue-900/20">
-                 <input 
-                    type="text" 
-                    className="w-full bg-transparent outline-none text-sm font-bold text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500" 
-                    placeholder="Введите адрес начала..." 
-                    {...register('defaultStartAddress')} 
-                    disabled={!canModify} 
-                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Широта (LAT)</label>
-                  <input 
-                    type="number" 
-                    step="any"
-                    className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
-                    placeholder="50.4501" 
-                    {...register('defaultStartLat', { valueAsNumber: true })} 
-                    disabled={!canModify} 
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Долгота (LNG)</label>
-                  <input 
-                    type="number" 
-                    step="any"
-                    className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
-                    placeholder="30.5234" 
-                    {...register('defaultStartLng', { valueAsNumber: true })} 
-                    disabled={!canModify} 
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* End Address Block */}
-            <div className="space-y-4">
-              <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2">Адрес окончания маршрута</h3>
-              
-              <div className="p-4 rounded-xl border-2 transition-all bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700 focus-within:border-blue-400 dark:focus-within:border-blue-500 focus-within:ring-4 ring-blue-50 dark:ring-blue-900/20">
-                 <input 
-                    type="text" 
-                    className="w-full bg-transparent outline-none text-sm font-bold text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500" 
-                    placeholder="Введите адрес окончания..." 
-                    {...register('defaultEndAddress')} 
-                    disabled={!canModify} 
-                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Широта (LAT)</label>
-                  <input 
-                    type="number" 
-                    step="any"
-                    className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
-                    placeholder="50.4501" 
-                    {...register('defaultEndLat', { valueAsNumber: true })} 
-                    disabled={!canModify} 
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Долгота (LNG)</label>
-                  <input 
-                    type="number" 
-                    step="any"
-                    className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
-                    placeholder="30.5234" 
-                    {...register('defaultEndLng', { valueAsNumber: true })} 
-                    disabled={!canModify} 
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+          )}
 
           <div className="flex justify-between">
-            <button type="button" onClick={handleClearAllData} className="px-6 py-3 rounded-xl bg-red-600 text-white">Очистить данные</button>
-            <button type="submit" className="px-6 py-3 rounded-xl bg-blue-600 text-white">Сохранить настройки</button>
+            {(isAdmin || canModify) && (
+              <button type="button" onClick={handleClearAllData} className="px-6 py-3 rounded-xl bg-red-600 text-white">Очистить данные</button>
+            )}
+            <button type="submit" className="px-6 py-3 rounded-xl bg-blue-600 text-white ml-auto">Сохранить настройки</button>
           </div>
         </form>
       </div>

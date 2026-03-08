@@ -1,53 +1,53 @@
-import { authService } from './authService';
-import { localStorageUtils } from '../ui/localStorage';
+import { authService } from './authService'
+import { localStorageUtils } from '../ui/localStorage'
 
 /**
  * Synchronizes user presets from the server to the local storage.
  * This ensures that the user always has the latest settings defined by the admin.
  * @param userId - The ID of the user to sync presets for.
+ * @returns The synchronized settings or null if failed/no data.
  */
-export const syncPresetsToLocalStorage = async (userId: number): Promise<void> => {
+export const syncPresetsToLocalStorage = async (userId: number): Promise<any | null> => {
     try {
-        console.log(`Starting preset sync for user ${userId}...`);
-        const preset = await authService.getUserPresets(userId);
+        const presets = await authService.getUserPresets(userId)
+        if (!presets || !presets.settings) return null
 
-        if (preset && preset.settings) {
-            console.log('Received presets from server:', preset.settings);
-
-            // Map server settings to local storage format
-            // The server settings structure matches what localStorageUtils expects,
-            // but we need to ensure specific keys like mapboxToken match if naming differs.
-            // Based on UserPreset.js: mapboxApiKey is used, but Settings.tsx uses mapboxToken
-
-            const serverSettings = preset.settings;
-            console.log('Mapping server settings to local:', serverSettings);
-
-            const settingsToSave = {
-                ...serverSettings,
-                // Map differing keys with fallbacks
-                mapboxToken: serverSettings.mapboxToken || serverSettings.mapboxApiKey || '',
-                anomalyFilterEnabled: serverSettings.anomalyFilterEnabled ?? serverSettings.anomalyFilter ?? false,
-
-                // Ensure default addresses are set
-                defaultStartAddress: serverSettings.defaultStartAddress || '',
-                defaultStartLat: serverSettings.defaultStartLat || null,
-                defaultStartLng: serverSettings.defaultStartLng || null,
-                defaultEndAddress: serverSettings.defaultEndAddress || '',
-                defaultEndLat: serverSettings.defaultEndLat || null,
-                defaultEndLng: serverSettings.defaultEndLng || null,
-                // Ensure API key is set for consistency (though it's saved separately too)
-                googleMapsApiKey: serverSettings.googleMapsApiKey || '',
-            };
-
-            // Save to localStorage using the utility which broadcasts the update event
-            localStorageUtils.setAllSettings(settingsToSave);
-
-            console.log('Presets successfully synced to localStorage');
-        } else {
-            console.log('No specific presets found for user, using defaults.');
+        const serverSettings = presets.settings
+        
+        // 1. Get current local settings to compare
+        const currentLocal = localStorageUtils.getAllSettings()
+        
+        // 2. Map server fields to local storage keys (handling mismatches)
+        const mappedSettings: Record<string, any> = {
+            ...serverSettings,
+            // Map mapboxApiKey -> mapboxToken if needed (checking both directions)
+            mapboxToken: serverSettings.mapboxToken || serverSettings.mapboxApiKey || '',
+            mapboxApiKey: serverSettings.mapboxApiKey || serverSettings.mapboxToken || '',
         }
+        
+        // 3. Change detection to avoid redundant broadcasts
+        const hasChanged = JSON.stringify(currentLocal.googleMapsApiKey) !== JSON.stringify(mappedSettings.googleMapsApiKey) || 
+                          JSON.stringify(currentLocal.cityBias) !== JSON.stringify(mappedSettings.cityBias) ||
+                          JSON.stringify(currentLocal.kmlSourceUrl) !== JSON.stringify(mappedSettings.kmlSourceUrl) ||
+                          JSON.stringify(currentLocal.selectedHubs) !== JSON.stringify(mappedSettings.selectedHubs) ||
+                          JSON.stringify(currentLocal.selectedZones) !== JSON.stringify(mappedSettings.selectedZones);
+
+        if (hasChanged) {
+            console.log('Detected preset changes from server, updating local storage...')
+            // 4. Save to local storage (this broadcasts the update to other tabs/components)
+            localStorageUtils.setAllSettings(mappedSettings)
+            
+            // Mapbox token specifically (used by some map components directly)
+            if (mappedSettings.mapboxToken) {
+                localStorage.setItem('km_mapbox_token', mappedSettings.mapboxToken)
+            }
+        } else {
+            // console.log('Presets are up to date with server.')
+        }
+
+        return mappedSettings
     } catch (error) {
-        console.error('Failed to sync presets to localStorage:', error);
-        // We don't throw here to avoid blocking login if sync fails (e.g. offline)
+        console.error('Failed to sync presets from server:', error)
+        return null
     }
-};
+}
