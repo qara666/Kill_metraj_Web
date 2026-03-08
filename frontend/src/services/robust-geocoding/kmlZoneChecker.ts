@@ -18,6 +18,22 @@ export function isTechnicalZone(polygon: KmlPolygonData): boolean {
   )
 }
 
+/**
+ * Returns true if the polygon is currently active (part of an active hub and selected by the user).
+ */
+export function isPolygonActive(polygon: KmlPolygonData, ctx: KmlZoneContext): boolean {
+  // 1. Must be in the activePolygons list (this list usually contains polygons from active hubs)
+  const isFromActiveHub = ctx.activePolygons.some(p => p.key === polygon.key)
+  if (!isFromActiveHub) return false
+
+  // 2. If the user has a specific subset of zones selected, it must be in that list
+  if (ctx.selectedZoneKeys.length > 0) {
+    return ctx.selectedZoneKeys.includes(polygon.key)
+  }
+
+  return true
+}
+
 // ─── Point-in-polygon ─────────────────────────────────────────────────────────
 
 /**

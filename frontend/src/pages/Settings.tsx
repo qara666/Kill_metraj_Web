@@ -700,8 +700,11 @@ export const Settings: React.FC = () => {
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер маршрутизации</label>
                     <select {...register('routingProvider')} className="input w-full" disabled={!canModify}>
                       <option value="google">Google Maps (Платный)</option>
-                      <option value="generoute">Generoute.io (Оптимизация)</option>
+                      <option value="generoute">Generoute.io / OSRM (Бесплатно)</option>
                     </select>
+                    <p className="text-[10px] text-gray-400 mt-1">
+                      Google Maps использует Directions API (платно). Generoute.io работает на базе OSRM и предоставляется бесплатно по партнерскому ключу.
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер геокодирования</label>
@@ -728,7 +731,16 @@ export const Settings: React.FC = () => {
 
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Generoute API Key</label>
-                    <input type="password" className="input" placeholder="Generoute API Key" {...register('generouteApiKey')} disabled={!canModify} />
+                    <input 
+                      type="password" 
+                      className="input" 
+                      placeholder="Оставьте пустым для использования ключа по умолчанию" 
+                      {...register('generouteApiKey')} 
+                      disabled={!canModify} 
+                    />
+                    <p className="text-[10px] text-gray-400">
+                      Партнерский ключ `wukkif-bixkit-Zabso4` используется автоматически, если это поле пустое.
+                    </p>
                   </div>
                 </div>
               </div>

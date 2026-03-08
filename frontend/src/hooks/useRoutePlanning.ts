@@ -17,6 +17,8 @@ import { calculateRouteAnalytics } from '../utils/routes/routeAnalytics'
 import { generateRouteNotifications } from '../utils/ui/notifications'
 import { googleMapsLoader } from '../utils/maps/googleMapsLoader'
 import { isValidAddress } from '../utils/data/orderEnrichment'
+import { localStorageUtils } from '../utils/ui/localStorage'
+import { GenerouteService } from '../services/generouteService'
 
 // --- Interfaces & Types ---
 
@@ -126,6 +128,48 @@ export const useRoutePlanning = (
             }
 
             const checkChainFeasible = async (chain: any[], includeStartEnd: boolean = true) => {
+                const appSettings = localStorageUtils.getAllSettings()
+                const provider = appSettings.routingProvider || 'google'
+                const generouteKey = appSettings.generouteApiKey
+
+                if (provider === 'generoute') {
+                    // --- Generoute.io (OSRM) Path ---
+                    const locations = []
+                    
+                    if (includeStartEnd) {
+                        const sLat = defaultStartLat ? Number(defaultStartLat) : null;
+                        const sLng = defaultStartLng ? Number(defaultStartLng) : null;
+                        if (sLat && sLng) {
+                            locations.push({ lat: sLat, lng: sLng });
+                        } else {
+                            const startCoords = routeOptimizationCache.getCoordinates(startAddr)
+                            if (startCoords) locations.push(startCoords)
+                        }
+                    }
+
+                    chain.forEach(o => {
+                        const coords = o.coords || routeOptimizationCache.getCoordinates(o.address)
+                        if (coords) locations.push(coords)
+                    })
+
+                    if (includeStartEnd) {
+                        const eLat = defaultEndLat ? Number(defaultEndLat) : null;
+                        const eLng = defaultEndLng ? Number(defaultEndLng) : null;
+                        if (eLat && eLng) {
+                            locations.push({ lat: eLat, lng: eLng });
+                        } else {
+                            const endCoords = routeOptimizationCache.getCoordinates(endAddr)
+                            if (endCoords) locations.push(endCoords)
+                        }
+                    }
+
+                    if (locations.length < 2) return { feasible: false }
+
+                    const res = await GenerouteService.calculateRoute(locations, generouteKey)
+                    return res
+                }
+
+                // --- Google Maps Path ---
                 const gmaps = window.google.maps
                 const directionsService = new gmaps.DirectionsService()
 
