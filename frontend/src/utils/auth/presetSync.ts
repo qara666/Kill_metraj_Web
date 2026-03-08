@@ -26,11 +26,21 @@ export const syncPresetsToLocalStorage = async (userId: number): Promise<any | n
         }
         
         // 3. Change detection to avoid redundant broadcasts
-        const hasChanged = JSON.stringify(currentLocal.googleMapsApiKey) !== JSON.stringify(mappedSettings.googleMapsApiKey) || 
-                          JSON.stringify(currentLocal.cityBias) !== JSON.stringify(mappedSettings.cityBias) ||
-                          JSON.stringify(currentLocal.kmlSourceUrl) !== JSON.stringify(mappedSettings.kmlSourceUrl) ||
-                          JSON.stringify(currentLocal.selectedHubs) !== JSON.stringify(mappedSettings.selectedHubs) ||
-                          JSON.stringify(currentLocal.selectedZones) !== JSON.stringify(mappedSettings.selectedZones);
+        // We explicitly check keys that should trigger a reload for the user, especially lastKmlSync
+        const keysToCheck = [
+            'googleMapsApiKey', 'cityBias', 'kmlSourceUrl', 
+            'selectedHubs', 'selectedZones', 'lastKmlSync', 
+            'autoSyncKml', 'theme', 'courierTransportType', 
+            'fastopertorApiKey'
+        ];
+
+        let hasChanged = false;
+        for (const key of keysToCheck) {
+            if (JSON.stringify(currentLocal[key]) !== JSON.stringify(mappedSettings[key])) {
+                hasChanged = true;
+                break;
+            }
+        }
 
         if (hasChanged) {
             console.log('Detected preset changes from server, updating local storage...')
