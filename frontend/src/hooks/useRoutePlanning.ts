@@ -10,6 +10,7 @@ import {
 export type { TrafficPresetMode }
 import { GoogleAPIManager } from '../utils/api/googleAPIManager'
 import { GeocodingService } from '../services/geocodingService'
+import { robustGeocodingService } from '../services/robust-geocoding/RobustGeocodingService'
 import { routeOptimizationCache } from '../utils/routes/routeOptimizationCache'
 import { routeHistory } from '../utils/routes/routeHistory'
 import { runRoutePlanningAlgorithm } from '../utils/routes/routePlanAlgorithm'
@@ -47,6 +48,9 @@ export const useRoutePlanning = (
     defaultEndAddress: string = '',   // Default fallback
     defaultEndLat: number | null = null,
     defaultEndLng: number | null = null,
+    selectedZones: string[] = [],
+    cachedHubPolygons: any[] = [],
+    cachedAllKmlPolygons: any[] = [],
     setPlannedRoutes: (routes: any[]) => void,
     setErrorMsg: (msg: string | null) => void,
     setPlanTrafficImpact: (impact: any) => void,
@@ -55,6 +59,24 @@ export const useRoutePlanning = (
 ) => {
     const [isPlanning, setIsPlanning] = useState(false)
     const [optimizationProgress, setOptimizationProgress] = useState<OptimizationProgress | null>(null)
+
+    // --- Sync KML context before planning ---
+    const syncKmlContext = useCallback(() => {
+        const buildPolygon = (p: any) => ({
+            key: `${(p.folderName || '').trim()}:${(p.name || '').trim()}`,
+            name: p.name || '',
+            folderName: p.folderName || '',
+            googlePoly: p.googlePoly,
+            bounds: p.bounds,
+            path: p.path,
+        })
+        robustGeocodingService.setZoneContext({
+            allPolygons: (cachedAllKmlPolygons || []).map(buildPolygon),
+            activePolygons: (cachedHubPolygons || []).map(buildPolygon),
+            selectedZoneKeys: selectedZones || [],
+        })
+        robustGeocodingService.setCityBias(localStorageUtils.getAllSettings()?.cityBias || 'Киев')
+    }, [cachedAllKmlPolygons, cachedHubPolygons, selectedZones])
 
     const runtimeMaxStopsPerRoute = useMemo(() => Math.max(maxStopsPerRoute, maxOrdersPerCourier), [maxStopsPerRoute, maxOrdersPerCourier])
     const runtimeMaxRouteDurationMin = maxRouteDurationMin
@@ -106,6 +128,9 @@ export const useRoutePlanning = (
         setIsPlanning(true)
         setErrorMsg(null)
         setOptimizationProgress({ current: 0, total: validOrders.length, message: 'Инициализация...' })
+
+        // 1. Sync KML context to ensure geocoding respects active/selected zones
+        syncKmlContext()
 
         try {
             await googleMapsLoader.load()
@@ -249,11 +274,12 @@ export const useRoutePlanning = (
             for (let i = 0; i < addresses.length; i++) {
                 const addr = addresses[i]
                 if (!routeOptimizationCache.getCoordinates(addr)) {
-                    const result = await GeocodingService.geocodeAndCleanAddress(addr, { region: 'ua' })
-                    if (result.success && result.latitude && result.longitude) {
+                    // Use geocodeWithZones to ensure KML-aware biasing and scoring
+                    const result = await GeocodingService.geocodeWithZones(addr, { silent: true })
+                    if (result.best && result.best.score > -1000) {
                         routeOptimizationCache.setCoordinates(addr, {
-                            lat: result.latitude,
-                            lng: result.longitude
+                            lat: result.best.lat,
+                            lng: result.best.lng
                         })
                     }
                 }
@@ -390,9 +416,11 @@ export const useRoutePlanning = (
     }, [
         orders, filteredOrders, settings, runtimeMaxStopsPerRoute, runtimeMaxRouteDurationMin,
         runtimeMaxRouteDistanceKm, trafficModeOverride, trafficSnapshotRef, notificationPreferences,
-        defaultStartAddress, defaultStartLat, defaultStartLng, defaultEndAddress, defaultEndLat, defaultEndLng,
+        defaultStartAddress, defaultStartLat, defaultStartLng, defaultEndAddress,
+        defaultEndLat, defaultEndLng,
+        selectedZones, cachedHubPolygons, cachedAllKmlPolygons,
         setPlannedRoutes, setRouteAnalytics, setPlanTrafficImpact, setErrorMsg, setIsPlanning, setOptimizationProgress,
-        setLastPlanPreset, getPreset, getPresetMode
+        setLastPlanPreset, getPreset, getPresetMode, syncKmlContext
     ])
 
     return { isPlanning, optimizationProgress, planRoutes }

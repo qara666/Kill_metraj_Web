@@ -61,6 +61,7 @@ declare global {
 import { Route, Order } from '../../types/route'
 import { useRouteGeocoding } from '../../hooks/useRouteGeocoding'
 import { useBackgroundGeocoder } from '../../hooks/useBackgroundGeocoder'
+import { useKmlData } from '../../hooks/useKmlData'
 
 interface RouteManagementProps {
   excelData?: any
@@ -301,17 +302,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [showAddressEditModal, setShowAddressEditModal] = useState(false)
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [routeAnomalies, setRouteAnomalies] = useState<Map<string, RouteAnomalyCheck>>(new Map())
-  const [selectedHubs, setSelectedHubs] = useState<string[]>(() => settings.selectedHubs || [])
-  const [selectedZones, setSelectedZones] = useState<string[]>(() => settings.selectedZones || [])
-
-  useEffect(() => {
-    setSelectedHubs(settings.selectedHubs || [])
-    setSelectedZones(settings.selectedZones || [])
-  }, [settings.selectedHubs, settings.selectedZones])
-
-  // Кэшированные полигоны для проверки вхождения (Google Maps objects)
-  const [cachedHubPolygons, setCachedHubPolygons] = useState<any[]>([])
-  const [cachedAllKmlPolygons, setCachedAllKmlPolygons] = useState<any[]>([])
+  const {
+    settings,
+    selectedHubs,
+    selectedZones,
+    cachedHubPolygons,
+    cachedAllKmlPolygons
+  } = useKmlData()
 
   // Helper for bounding box filtering (performance)
   const buildBounds = (path: any[]) => {
@@ -321,24 +318,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     return bounds
   }
 
-  // Инициализация полигонов при загрузке или смене KML
-  useEffect(() => {
-    if (!settings.kmlData?.polygons || !window.google?.maps?.Polygon) return
-
-    // 1. Все полигоны для общей проверки зон (технические/доставка)
-    const all = settings.kmlData.polygons.map((p: any) => ({
-      ...p,
-      googlePoly: new window.google.maps.Polygon({ paths: p.path }),
-      bounds: buildBounds(p.path)
-    }))
-    setCachedAllKmlPolygons(all)
-
-    // 2. Только полигоны выбранных хабов (для geocodeWithSector)
-    if (selectedHubs.length > 0) {
-      const hubPolys = all.filter((p: any) => selectedHubs.includes(p.folderName))
-      setCachedHubPolygons(hubPolys)
-    } else {
-      setCachedHubPolygons([])
     }
   }, [settings.kmlData, selectedHubs, window.google?.maps?.Polygon])
 

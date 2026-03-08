@@ -60,8 +60,10 @@ interface SettingsForm {
   selectedHubs: string[]
   selectedZones: string[]
   routingProvider: 'google' | 'generoute'
-  geocodingProvider: 'google' | 'nominatim'
+  geocodingProvider: 'google' | 'nominatim' | 'geoapify'
+  mapProvider: 'google' | 'osm'
   generouteApiKey: string
+  geoapifyApiKey: string
   theme: 'light' | 'dark'
   courierTransportType: 'car' | 'bicycle' | 'walking' | 'motorcycle'
 }
@@ -112,9 +114,11 @@ export const Settings: React.FC = () => {
       autoSyncKml: false,
       selectedHubs: [],
       selectedZones: [],
-     routingProvider: 'google',
+      routingProvider: 'google',
       geocodingProvider: 'google',
+      mapProvider: 'google',
       generouteApiKey: '',
+      geoapifyApiKey: '',
       theme: 'light',
       courierTransportType: 'car'
     }
@@ -182,7 +186,9 @@ export const Settings: React.FC = () => {
         setValue('selectedZones', settings.selectedZones || [])
         setValue('routingProvider', settings.routingProvider || 'google')
         setValue('geocodingProvider', settings.geocodingProvider || 'google')
+        setValue('mapProvider', settings.mapProvider || 'google')
         setValue('generouteApiKey', settings.generouteApiKey || '')
+        setValue('geoapifyApiKey', settings.geoapifyApiKey || '')
         
         // Dashboard fields
         setValue('fastopertorApiKey', settings.fastopertorApiKey || '')
@@ -695,22 +701,27 @@ export const Settings: React.FC = () => {
           {(isAdmin || canModify) && (
             <CollapsibleSection isDark={isDark} icon={<KeyIcon className="h-4 w-4" />} title="API Ключи / Провайдеры">
               <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-4 border-b border-gray-100 dark:border-gray-700">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-4 border-b border-gray-100 dark:border-gray-700">
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер карты</label>
+                    <select {...register('mapProvider')} className="input w-full" disabled={!canModify}>
+                      <option value="google">Google Maps</option>
+                      <option value="osm">OpenStreetMap (Бесплатно)</option>
+                    </select>
+                  </div>
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер маршрутизации</label>
                     <select {...register('routingProvider')} className="input w-full" disabled={!canModify}>
                       <option value="google">Google Maps (Платный)</option>
                       <option value="generoute">Generoute.io / OSRM (Бесплатно)</option>
                     </select>
-                    <p className="text-[10px] text-gray-400 mt-1">
-                      Google Maps использует Directions API (платно). Generoute.io работает на базе OSRM и предоставляется бесплатно по партнерскому ключу.
-                    </p>
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер геокодирования</label>
                     <select {...register('geocodingProvider')} className="input w-full" disabled={!canModify}>
                       <option value="google">Google Maps (Точный)</option>
                       <option value="nominatim">Nominatim / OSM (Бесплатно)</option>
+                      <option value="geoapify">Geoapify (Бесплатно/Лимит)</option>
                     </select>
                   </div>
                 </div>
@@ -740,6 +751,20 @@ export const Settings: React.FC = () => {
                     />
                     <p className="text-[10px] text-gray-400">
                       Партнерский ключ `wukkif-bixkit-Zabso4` используется автоматически, если это поле пустое.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Geoapify API Key</label>
+                    <input 
+                      type="password" 
+                      className="input" 
+                      placeholder="Geoapify API Key" 
+                      {...register('geoapifyApiKey')} 
+                      disabled={!canModify} 
+                    />
+                    <p className="text-[10px] text-gray-400">
+                      Необходим для провайдера геокодирования Geoapify.
                     </p>
                   </div>
                 </div>

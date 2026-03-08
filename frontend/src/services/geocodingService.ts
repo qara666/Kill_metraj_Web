@@ -8,6 +8,7 @@
  */
 import { googleApiCache } from './googleApiCache'
 import { NominatimService } from './nominatimService'
+import { GeoapifyService } from './geoapifyService'
 import { localStorageUtils } from '../utils/ui/localStorage'
 import { robustGeocodingService, RobustGeocodeResult } from './robust-geocoding/RobustGeocodingService'
 
@@ -42,14 +43,14 @@ export class GeocodingService {
   /**
    * Get the current geocoding provider from settings
    */
-  private static getProvider(): 'google' | 'nominatim' {
+  private static getProvider(): 'google' | 'nominatim' | 'geoapify' {
     const settings = localStorageUtils.getAllSettings()
     return settings.geocodingProvider || 'google'
   }
 
   static isReady(): boolean {
     const provider = this.getProvider()
-    if (provider === 'nominatim') return true
+    if (provider === 'nominatim' || provider === 'geoapify') return true
     return (typeof window !== 'undefined' && !!window.google?.maps?.Geocoder)
   }
 
@@ -94,6 +95,10 @@ export class GeocodingService {
 
     if (provider === 'nominatim') {
       return NominatimService.geocode(address, options.region || 'ua')
+    }
+
+    if (provider === 'geoapify') {
+      return GeoapifyService.geocode(address)
     }
 
     // Google Provider
@@ -157,6 +162,11 @@ export class GeocodingService {
 
     if (provider === 'nominatim') {
       const result = await NominatimService.reverse(lat, lng)
+      return result || { success: false, formattedAddress: '', error: 'Адрес не найден' }
+    }
+
+    if (provider === 'geoapify') {
+      const result = await GeoapifyService.reverse(lat, lng)
       return result || { success: false, formattedAddress: '', error: 'Адрес не найден' }
     }
 
