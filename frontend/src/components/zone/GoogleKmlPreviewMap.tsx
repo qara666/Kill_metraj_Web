@@ -55,20 +55,25 @@ export const GoogleKmlPreviewMap: React.FC<GoogleKmlPreviewMapProps> = ({ isDark
 
                     // Если выбраны конкретные зоны, фильтруем по ним
                     if (selectedZones.length > 0) {
-                        return selectedZones.includes(`${p.folderName}:${p.name}`)
+                        return selectedZones.includes(`${(p.folderName || '').trim()}:${(p.name || '').trim()}`)
                     }
                     return true
                 })
 
                 filteredPolygons.forEach(p => {
-                    const isZoneExplicitlySelected = selectedZones.includes(`${p.folderName}:${p.name}`)
+                    const zoneKey = `${(p.folderName || '').trim()}:${(p.name || '').trim()}`
+                    const isZoneExplicitlySelected = selectedZones.includes(zoneKey)
+                    
+                    // If no zones selected, show all filtered as "background" (low opacity)
+                    const isBackground = selectedZones.length === 0
+                    
                     const poly = new window.google.maps.Polygon({
                         paths: p.path,
                         strokeColor: isZoneExplicitlySelected ? '#a855f7' : '#6366f1',
-                        strokeOpacity: 0.8,
+                        strokeOpacity: isBackground ? 0.2 : 0.8,
                         strokeWeight: isZoneExplicitlySelected ? 3 : 2,
                         fillColor: isZoneExplicitlySelected ? '#c084fc' : '#818cf8',
-                        fillOpacity: isZoneExplicitlySelected ? 0.35 : 0.2,
+                        fillOpacity: isBackground ? 0.05 : (isZoneExplicitlySelected ? 0.35 : 0.2),
                         map: map
                     })
                     polygonsRef.current.push(poly)

@@ -25,7 +25,7 @@ export const SCORE = {
 
   // Technical zone kills
   TECHNICAL_ZONE_PENALTY: -99999, // effectively eliminates the candidate
-  DISABLED_ZONE_PENALTY: -5000,    // strongly penalises candidates in disabled zones
+  DISABLED_ZONE_PENALTY: -500,    // strongly penalises candidates in disabled zones
   OUT_OF_ZONE_PENALTY: -5000,       // heavily penalise candidates not in any zone
 
   // House number match
@@ -123,7 +123,13 @@ export function scoreCandidate(
   const tolerance = 0.05 // ~5.5km tolerance for all candidates to bridge gaps in KML drawings
 
   if (googleLoc && opts.ctx.allPolygons.length > 0) {
-    const zoneMatches = findZonesForLoc(googleLoc, opts.ctx.allPolygons, tolerance)
+    const allMatches = findZonesForLoc(googleLoc, opts.ctx.allPolygons, tolerance)
+
+    // ★ HUB FILTERING: Only consider zones from active hubs (scourable) or technical zones
+    const zoneMatches = allMatches.filter(m => 
+      m.isTechnical || 
+      opts.ctx.activePolygons.some(ap => ap.key === m.polygon.key)
+    )
 
     if (zoneMatches.length > 0) {
       // Prioritize active zones first, then delivery zones, then technical zones
@@ -144,25 +150,20 @@ export function scoreCandidate(
       if (isTech) {
         score += SCORE.TECHNICAL_ZONE_PENALTY
       } else {
-        // ★ CRITICAL FIX: Only give delivery bonus if the zone is ACTIVE
         const isActive = isPolygonActive(bestMatch.polygon, opts.ctx)
-
+        
         if (isActive) {
-          score += SCORE.INSIDE_DELIVERY_ZONE
+          score += SCORE.INSIDE_DELIVERY_ZONE + SCORE.INSIDE_ACTIVE_ZONE
           isInside = true
-
-          // Active zone bonus (extra nudge for explicitly selected sectors)
-          if (opts.ctx.selectedZoneKeys.includes(bestMatch.polygon.key)) {
-            score += SCORE.INSIDE_ACTIVE_ZONE
-          }
         } else {
-          // It's in a delivery zone, but it's DISABLED (hub off or sector unselected)
-          score += SCORE.DISABLED_ZONE_PENALTY
-          isInside = false
+          // It's in an active HUB, but an unselected SECTOR (scouring)
+          score += SCORE.INSIDE_DELIVERY_ZONE + SCORE.DISABLED_ZONE_PENALTY
+          // Fix: treat as "inside" to allow 100% calculation for scoured addresses in the same hub
+          isInside = true 
         }
       }
     } else {
-      // Not in any zone (active, disabled, or technical)
+      // Not in any active hub or technical zone
       score += SCORE.OUT_OF_ZONE_PENALTY
     }
   }

@@ -52,21 +52,24 @@ export const OsmKmlPreviewMap: React.FC<OsmKmlPreviewMapProps> = ({ isDark, kmlD
                     const isHubSelected = selectedHubs.length === 0 || selectedHubs.includes(p.folderName)
                     if (!isHubSelected) return false
                     if (selectedZones.length > 0) {
-                        return selectedZones.includes(`${p.folderName}:${p.name}`)
+                        return selectedZones.includes(`${(p.folderName || '').trim()}:${(p.name || '').trim()}`)
                     }
                     return true
                 })
 
                 filteredPolygons.forEach(p => {
-                    const isZoneExplicitlySelected = selectedZones.includes(`${p.folderName}:${p.name}`)
+                    const zoneKey = `${(p.folderName || '').trim()}:${(p.name || '').trim()}`
+                    const isZoneExplicitlySelected = selectedZones.includes(zoneKey)
+                    const isBackground = selectedZones.length === 0
+
                     const latlngs = p.path.map((pt: any) => [pt.lat, pt.lng])
                     
                     const poly = L.polygon(latlngs, {
                         color: isZoneExplicitlySelected ? '#a855f7' : '#6366f1',
                         weight: isZoneExplicitlySelected ? 3 : 2,
-                        opacity: 0.8,
+                        opacity: isBackground ? 0.2 : 0.8,
                         fillColor: isZoneExplicitlySelected ? '#c084fc' : '#818cf8',
-                        fillOpacity: isZoneExplicitlySelected ? 0.35 : 0.2
+                        fillOpacity: isBackground ? 0.05 : (isZoneExplicitlySelected ? 0.35 : 0.2)
                     }).addTo(map)
                     
                     polygonsRef.current.push(poly)

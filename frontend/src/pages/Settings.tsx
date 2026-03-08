@@ -584,8 +584,9 @@ export const Settings: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => {
+                            const currentHubs = watch('selectedHubs') || [];
                             const allZones = watch('kmlData').polygons
-                              .filter((p: any) => watch('selectedHubs')?.includes(p.folderName))
+                              .filter((p: any) => currentHubs.includes(p.folderName))
                               .map((p: any) => `${(p.folderName || '').trim()}:${(p.name || '').trim()}`);
                             setValue('selectedZones', allZones);
                           }}

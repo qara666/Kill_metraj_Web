@@ -21,10 +21,6 @@ export function isTechnicalZone(polygon: KmlPolygonData): boolean {
 export function isPolygonActive(polygon: KmlPolygonData, ctx: KmlZoneContext): boolean {
   if (isTechnicalZone(polygon)) return true
 
-  // If no zones are explicitly selected, fall back to "all delivery zones are active"
-  // as per user requirement (Step 4 in summary: empty selection = all active)
-  if (!ctx.selectedZoneKeys || ctx.selectedZoneKeys.length === 0) return true;
-
   // STRICT REQUIREMENT: polygon must be exclusively in the user's active selections
   return ctx.selectedZoneKeys.includes(polygon.key)
 }
