@@ -719,10 +719,12 @@ export const Settings: React.FC = () => {
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер геокодирования</label>
                     <select {...register('geocodingProvider')} className="input w-full" disabled={!canModify}>
-                      <option value="google">Google Maps (Точный)</option>
-                      <option value="nominatim">Nominatim / OSM (Бесплатно)</option>
-                      <option value="geoapify">Geoapify (Бесплатно/Лимит)</option>
+                      <option value="google">💳 Google Maps — Платный (точный, требует API ключ)</option>
+                      <option value="nominatim">🆓 Бесплатный — Nominatim (OSM) + Geoapify</option>
                     </select>
+                    <p className="text-xs text-gray-400">
+                      {watch('geocodingProvider') === 'nominatim' ? '⚠️ Бесплатный режим: геокодирование через OpenStreetMap. Точность ниже, нет лимитов оплаты.' : '✅ Платный режим: Google Maps API. Высокая точность, особенно для украинских переименованных улиц.'}
+                    </p>
                   </div>
                 </div>
 
