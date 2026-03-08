@@ -18,9 +18,74 @@ export interface GenerouteTripResponse {
 
 export class GenerouteService {
     private static readonly BASE_URL = 'https://api.generoute.io/v1'
+    private static readonly DEFAULT_API_KEY = 'wukkif-bixkit-Zabso4'
 
     /**
-     * Calculate a trip/route between multiple points.
+     * Calculate a route between multiple points in a fixed order.
+     * Maps the response to a format compatible with Google Maps DirectionsLeg.
+     */
+    static async calculateRoute(
+        locations: { lat: number; lng: number }[],
+        apiKey?: string,
+        region: string = 'UA'
+    ): Promise<{
+        feasible: boolean
+        legs?: any[]
+        totalDuration?: number
+        totalDistance?: number
+    }> {
+        const key = apiKey || this.DEFAULT_API_KEY
+        
+        // Convert to [lng, lat] format required by Generoute
+        const formattedLocations = locations.map((loc, index) => ({
+            coordinates: [loc.lng, loc.lat],
+            title: `Point ${index + 1}`
+        }))
+
+        try {
+            const response = await fetch(`${this.BASE_URL}/trip`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${key}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    region: region,
+                    locations: formattedLocations,
+                    metrics: ['distance', 'duration'],
+                    // Ensure we don't reorder if we are checking a specific chain
+                    optimize: false 
+                })
+            })
+
+            if (!response.ok) {
+                return { feasible: false }
+            }
+
+            const data = await response.json()
+            
+            // Map Generoute segments to Google-like legs
+            const legs = (data.segments || []).map((seg: any) => ({
+                distance: { text: `${(seg.distance / 1000).toFixed(1)} km`, value: seg.distance },
+                duration: { text: `${Math.round(seg.duration / 60)} min`, value: seg.duration },
+                start_location: { lat: seg.start_location?.[1], lng: seg.start_location?.[0] },
+                end_location: { lat: seg.end_location?.[1], lng: seg.end_location?.[0] }
+            }))
+
+            return {
+                feasible: true,
+                legs,
+                totalDistance: data.total_distance || 0,
+                totalDuration: data.total_duration || 0
+            }
+        } catch (error) {
+            console.error('Generoute route calculation failed:', error)
+            return { feasible: false }
+        }
+    }
+
+    /**
+     * Calculate a trip/route between multiple points (TSP optimization).
      * @param locations List of points. Coordinates should be {lat, lng}
      * @param apiKey Generoute API Key
      * @param region Region code (e.g., 'UA')
@@ -30,9 +95,7 @@ export class GenerouteService {
         apiKey: string,
         region: string = 'UA'
     ): Promise<GenerouteTripResponse | null> {
-        if (!apiKey) {
-            throw new Error('Generoute API Key is required')
-        }
+        const key = apiKey || this.DEFAULT_API_KEY
 
         // Convert to [lng, lat] format required by Generoute
         const formattedLocations: GenerouteLocation[] = locations.map((loc, index) => ({
@@ -45,7 +108,7 @@ export class GenerouteService {
             const response = await fetch(`${this.BASE_URL}/trip`, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${apiKey}`,
+                    'Authorization': `Bearer ${key}`,
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({

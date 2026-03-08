@@ -472,70 +472,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     })
   }, [isOrderInExistingRoute])
 
-  // --- KML Logic ---
-
-  // Memoization caches for current session
-  const checkInsideMemo = useMemo(() => new Map<string, boolean>(), [])
-  const checkAnyMemo = useMemo(() => new Map<string, boolean>(), [])
-
-  const checkInside = useCallback((latLng: any) => {
-    if (!latLng || !window.google?.maps?.geometry?.poly) return false
-    const key = `${latLng.lat()},${latLng.lng()}`
-    if (checkInsideMemo.has(key)) return checkInsideMemo.get(key)!
-
-    let result = true
-    if (cachedHubPolygons.length > 0) {
-      result = cachedHubPolygons.some((p: any) => {
-        if (selectedZones.length > 0) {
-          const zoneKey = `${p.folderName}:${p.name}`
-          if (!selectedZones.includes(zoneKey)) return false
-        }
-        if (p.bounds && !p.bounds.contains(latLng)) return false
-        if (window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)) return true
-        return window.google.maps.geometry.poly.isLocationOnEdge(latLng, p.googlePoly, 0.0005)
-      })
-    }
-    checkInsideMemo.set(key, result)
-    return result
-  }, [cachedHubPolygons, selectedZones, checkInsideMemo])
-
-  const isTechnicalKmlZone = useCallback((p: any): boolean => {
-    const n = (p.name || p.folderName || '').toLowerCase()
-    return n.includes('авторозвантаження') ||
-      n.includes('авторазгрузка') ||
-      n.includes('разгрузка') ||
-      n.includes('склад') ||
-      n.includes('depot')
-  }, [])
-
-  const checkDeliveryKmlZone = useCallback((latLng: any) => {
-    if (!latLng || cachedAllKmlPolygons.length === 0 || !window.google?.maps?.geometry?.poly) return false
-    const key = `D:${latLng.lat()},${latLng.lng()}`
-    if (checkAnyMemo.has(key)) return checkAnyMemo.get(key)!
-    const result = cachedAllKmlPolygons.some((p: any) => {
-      if (isTechnicalKmlZone(p)) return false
-      if (p.bounds && !p.bounds.contains(latLng)) return false
-      return window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)
-    })
-    checkAnyMemo.set(key, result)
-    return result
-  }, [cachedAllKmlPolygons, isTechnicalKmlZone, checkAnyMemo])
-
-  const checkTechnicalKmlZone = useCallback((latLng: any) => {
-    if (!latLng || cachedAllKmlPolygons.length === 0 || !window.google?.maps?.geometry?.poly) return false
-    const key = `T:${latLng.lat()},${latLng.lng()}`
-    if (checkAnyMemo.has(key)) return checkAnyMemo.get(key)!
-    const result = cachedAllKmlPolygons.some((p: any) => {
-      if (!isTechnicalKmlZone(p)) return false
-      if (p.bounds && !p.bounds.contains(latLng)) return false
-      return window.google.maps.geometry.poly.containsLocation(latLng, p.googlePoly)
-    })
-    checkAnyMemo.set(key, result)
-    return result
-  }, [cachedAllKmlPolygons, isTechnicalKmlZone, checkAnyMemo])
-
-  const isInsideSector = useCallback((loc: any) => checkInside(loc), [checkInside])
-
   // --- Custom Hooks ---
 
 
@@ -554,18 +490,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   } = useRouteGeocoding({
     settings,
     confirmAddresses,
-    isInsideSector,
-    checkTechnicalKmlZone,
-    checkDeliveryKmlZone,
     selectedHubs,
     selectedZones,
     cachedHubPolygons,
     cachedAllKmlPolygons,
-    getCourierVehicleType,
     updateExcelData,
-    validateOrders: async () => [],
-    setProblemOrders: () => { },
-    setCurrentProblem: () => { },
     setShowCorrectionModal: () => { },
     setShowBatchPanel: () => { },
     startAddress,
