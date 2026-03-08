@@ -20,6 +20,7 @@
  */
 
 import { googleApiCache } from '../googleApiCache'
+import { NominatimService } from '../nominatimService'
 import type {
   KmlZoneContext,
   RobustGeocodeOptions,
@@ -207,6 +208,29 @@ class RobustGeocodingService {
           allCandidates.push(...scored)
         }
       } catch { /* ignore */ }
+    }
+
+    // ── Nominatim fallback: if still no zone hit from Google ────────────────
+    const hasZoneHitAfterGoogle = allCandidates.some(c => c.isInsideZone && !c.isTechnicalZone)
+    if (!hasZoneHitAfterGoogle) {
+      try {
+        const nominatimResults = await NominatimService.geocode(rawAddress, cityBias)
+        if (nominatimResults.length > 0) {
+          const scored = nominatimResults.map((r: any) => scoreCandidate(normaliseRaw(r), scoringOpts))
+          // Only use Nominatim results if they're at least weakly inside the zone
+          // (prevents substituting a wrong far-away result)
+          const nominatimZoneHits = scored.filter(c => c.isInsideZone && !c.isTechnicalZone)
+          if (nominatimZoneHits.length > 0) {
+            console.log(`[RobustGeocoding] Nominatim fallback found ${nominatimZoneHits.length} zone hit(s) for "${rawAddress}"`)
+            allCandidates.push(...nominatimZoneHits)
+          } else if (allCandidates.length === 0) {
+            // No zone hits from either provider, still add all Nominatim results so we can pick the best
+            allCandidates.push(...scored)
+          }
+        }
+      } catch (e) {
+        console.warn('[RobustGeocoding] Nominatim fallback failed:', e)
+      }
     }
 
     const deduped = dedupeByCoord(allCandidates)

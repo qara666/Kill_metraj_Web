@@ -1,7 +1,109 @@
 /**
- * Service for Nominatim (OpenStreetMap) Geocoding API
- * Docs: https://nominatim.org/release-docs/latest/api/Search/
+ * NominatimService — v2.0
+ *
+ * Improved OpenStreetMap/Nominatim Geocoding for Ukrainian addresses.
+ *
+ * Improvements:
+ *  ✔ Proper location_type mapping (ROOFTOP / RANGE_INTERPOLATED / GEOMETRIC_CENTER)
+ *  ✔ Ukrainian abbreviation normalization (вул. → вулиця, просп. → проспект)
+ *  ✔ City-biased search (countrycodes + city in query)
+ *  ✔ Rate limiting (1 req/s to respect Nominatim usage policy)
+ *  ✔ Multiple query strategies: expanded + freeform fallback
+ *  ✔ address_components compatible with RawGeoCandidate format
  */
+
+// ─── Rate limiter (Nominatim policy: max 1 req/s) ────────────────────────────
+let _lastNominatimCall = 0
+async function rateLimitedFetch(url: string): Promise<Response> {
+    const now = Date.now()
+    const diff = now - _lastNominatimCall
+    if (diff < 1100) {
+        await new Promise(res => setTimeout(res, 1100 - diff))
+    }
+    _lastNominatimCall = Date.now()
+    return fetch(url, {
+        headers: {
+            'Accept-Language': 'uk,ru,en',
+            'User-Agent': 'KillMetraj_DeliveryApp/2.0 (contact@killmetraj.ua)',
+        }
+    })
+}
+
+// ─── Ukrainian abbreviation expander ─────────────────────────────────────────
+const UA_ABBREV: Array<[string, string]> = [
+    ['вул\\.', 'вулиця'],
+    ['просп\\.', 'проспект'],
+    ['пр-т\\.', 'проспект'],
+    ['пр-т ', 'проспект '],
+    ['бул\\.', 'бульвар'],
+    ['пл\\.', 'площа'],
+    ['пров\\.', 'провулок'],
+    ['шос\\.', 'шосе'],
+    ['наб\\.', 'набережна'],
+]
+
+function expandUkrAbbrev(address: string): string {
+    let result = address
+    for (const [abbrev, full] of UA_ABBREV) {
+        result = result.replace(new RegExp(abbrev, 'gi'), `${full} `)
+    }
+    return result.replace(/\s+/g, ' ').trim()
+}
+
+// ─── Map OSM type to our location_type ───────────────────────────────────────
+function mapLocationType(r: NominatimResult): 'ROOFTOP' | 'RANGE_INTERPOLATED' | 'GEOMETRIC_CENTER' | 'APPROXIMATE' {
+    const { type, class: cls, address } = r
+    // Has house number in address → strongly exact
+    if (address?.house_number) return 'ROOFTOP'
+    // Building/amenity types
+    if (['house', 'apartments', 'residential', 'building', 'yes'].includes(type)) return 'ROOFTOP'
+    if (cls === 'building') return 'ROOFTOP'
+    // Street-level interpolation
+    if (type === 'street' || type === 'road') return 'RANGE_INTERPOLATED'
+    if (cls === 'highway') return 'RANGE_INTERPOLATED'
+    // Neighborhood/district/city → geometric center
+    return 'GEOMETRIC_CENTER'
+}
+
+// ─── Convert Nominatim result to RawGeoCandidate-compatible format ────────────
+function toRawCandidate(r: NominatimResult): any {
+    const locationType = mapLocationType(r)
+    // Build address_components array compatible with Google Maps format
+    const addressComponents: Array<{ types: string[]; long_name: string; short_name: string }> = []
+    if (r.address?.house_number) {
+        addressComponents.push({ types: ['street_number'], long_name: r.address.house_number, short_name: r.address.house_number })
+    }
+    if (r.address?.road) {
+        addressComponents.push({ types: ['route'], long_name: r.address.road, short_name: r.address.road })
+    }
+    const city = r.address?.city || r.address?.town || ''
+    if (city) {
+        addressComponents.push({ types: ['locality'], long_name: city, short_name: city })
+    }
+    if (r.address?.postcode) {
+        addressComponents.push({ types: ['postal_code'], long_name: r.address.postcode, short_name: r.address.postcode })
+    }
+    if (r.address?.country) {
+        addressComponents.push({ types: ['country'], long_name: r.address.country, short_name: (r.address.country_code || '').toUpperCase() })
+    }
+
+    return {
+        formatted_address: r.display_name,
+        geometry: {
+            location: {
+                lat: parseFloat(r.lat),
+                lng: parseFloat(r.lon),
+            },
+            location_type: locationType,
+        },
+        address_components: addressComponents,
+        place_id: `nominatim_${r.place_id}`,
+        types: [r.type],
+        _source: 'nominatim',
+    }
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface NominatimResult {
     place_id: number
@@ -19,95 +121,88 @@ export interface NominatimResult {
         house_number?: string
         road?: string
         city?: string
+        town?: string
         state?: string
         postcode?: string
         country?: string
+        country_code?: string
     }
 }
+
+// ─── Service ──────────────────────────────────────────────────────────────────
 
 export class NominatimService {
     private static readonly BASE_URL = 'https://nominatim.openstreetmap.org/search'
     private static readonly REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse'
-    private static readonly USER_AGENT = 'KillMetraj_App/1.0' // Nominatim requires a User-Agent
 
     /**
-     * Geocode an address
+     * Geocode an address with fallback strategies.
+     * Returns results in a format compatible with RawGeoCandidate.
      */
-    static async geocode(address: string, region: string = 'ua'): Promise<any[]> {
+    static async geocode(address: string, cityBias?: string): Promise<any[]> {
+        const expanded = expandUkrAbbrev(address)
+        const city = cityBias || 'Київ'
+
+        // Strategy 1: Full address with city bias
+        const results = await this._query(`${expanded}, ${city}, Україна`)
+        if (results.length > 0) return results
+
+        // Strategy 2: Expanded abbreviations without city bias
+        const results2 = await this._query(expanded)
+        if (results2.length > 0) return results2
+
+        // Strategy 3: Original address as-is with city (if abbreviations didn't change it)
+        if (expanded !== address) {
+            const results3 = await this._query(`${address}, ${city}, Україна`)
+            if (results3.length > 0) return results3
+        }
+
+        return []
+    }
+
+    /**
+     * Internal query function with error handling.
+     */
+    private static async _query(q: string): Promise<any[]> {
         try {
             const url = new URL(this.BASE_URL)
-            url.searchParams.append('q', address)
-            url.searchParams.append('format', 'json')
+            url.searchParams.append('q', q)
+            url.searchParams.append('format', 'jsonv2')
             url.searchParams.append('addressdetails', '1')
-            url.searchParams.append('countrycodes', region)
+            url.searchParams.append('countrycodes', 'ua')
             url.searchParams.append('limit', '5')
 
-            const response = await fetch(url.toString(), {
-                headers: {
-                    'Accept-Language': 'ru,uk,en',
-                    'User-Agent': this.USER_AGENT
-                }
-            })
+            const response = await rateLimitedFetch(url.toString())
+            if (!response.ok) throw new Error(`Nominatim ${response.status}`)
 
-            if (!response.ok) {
-                throw new Error(`Nominatim error: ${response.status}`)
-            }
-
-            const results: NominatimResult[] = await response.json()
-
-            // Map to a format consistent with our GeocodingResult
-            return results.map(r => ({
-                success: true,
-                formattedAddress: r.display_name,
-                latitude: parseFloat(r.lat),
-                longitude: parseFloat(r.lon),
-                placeId: String(r.place_id),
-                locationType: r.importance > 0.6 ? 'ROOFTOP' : 'APPROXIMATE',
-                types: [r.type],
-                raw: r
-            }))
+            const items: NominatimResult[] = await response.json()
+            return items
+                .sort((a, b) => b.importance - a.importance)
+                .map(toRawCandidate)
         } catch (error) {
-            console.error('Nominatim geocode failed:', error)
+            console.warn('[Nominatim] query failed:', error)
             return []
         }
     }
 
     /**
-     * Reverse geocode
+     * Reverse geocode lat/lng to address.
      */
     static async reverse(lat: number, lng: number): Promise<any | null> {
         try {
             const url = new URL(this.REVERSE_URL)
             url.searchParams.append('lat', String(lat))
             url.searchParams.append('lon', String(lng))
-            url.searchParams.append('format', 'json')
+            url.searchParams.append('format', 'jsonv2')
             url.searchParams.append('addressdetails', '1')
 
-            const response = await fetch(url.toString(), {
-                headers: {
-                    'Accept-Language': 'ru,uk,en',
-                    'User-Agent': this.USER_AGENT
-                }
-            })
+            const response = await rateLimitedFetch(url.toString())
+            if (!response.ok) throw new Error(`Nominatim reverse ${response.status}`)
 
-            if (!response.ok) {
-                throw new Error(`Nominatim error: ${response.status}`)
-            }
-
-            const r = await response.json()
-
-            return {
-                success: true,
-                formattedAddress: r.display_name,
-                latitude: parseFloat(r.lat),
-                longitude: parseFloat(r.lon),
-                placeId: String(r.place_id),
-                locationType: 'ROOFTOP',
-                types: [r.type],
-                raw: r
-            }
+            const r: NominatimResult = await response.json()
+            return toRawCandidate(r)
         } catch (error) {
-            console.error('Nominatim reverse failed:', error)
+            console.error('[Nominatim] reverse failed:', error)
             return null
         }
     }
