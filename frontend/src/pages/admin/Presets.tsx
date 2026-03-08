@@ -289,6 +289,29 @@ export const AdminPresets: React.FC = () => {
                                         />
                                     </div>
                                     <div className="space-y-2">
+                                        <label className="text-xs font-bold uppercase text-gray-500">Geoapify API Key</label>
+                                        <input
+                                            type="password"
+                                            value={settings.geoapifyApiKey || ''}
+                                            onChange={(e) => isAdmin && setSettings({ ...settings, geoapifyApiKey: e.target.value })}
+                                            className="input"
+                                            placeholder="geo_..."
+                                            disabled={!isAdmin}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold uppercase text-gray-500">Провайдер карты</label>
+                                        <select
+                                            value={settings.mapProvider || 'google'}
+                                            onChange={(e) => isAdmin && setSettings({ ...settings, mapProvider: e.target.value })}
+                                            className="input"
+                                            disabled={!isAdmin}
+                                        >
+                                            <option value="google">Google Maps</option>
+                                            <option value="osm">OpenStreetMap (Бесплатно)</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-2">
                                         <label className="text-xs font-bold uppercase text-gray-500">Провайдер маршрутизации</label>
                                         <select
                                             value={settings.routingProvider || 'google'}
@@ -310,6 +333,7 @@ export const AdminPresets: React.FC = () => {
                                         >
                                             <option value="google">Google Maps (Точный)</option>
                                             <option value="nominatim">Nominatim / OSM (Бесплатно)</option>
+                                            <option value="geoapify">Geoapify (Бесплатно/Лимит)</option>
                                         </select>
                                     </div>
                                 </div>

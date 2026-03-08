@@ -24,8 +24,9 @@ export const SCORE = {
   INSIDE_ACTIVE_ZONE: 50, // active selection bonus on top of delivery
 
   // Technical zone kills
-  TECHNICAL_ZONE_PENALTY: -9999, // effectively eliminates the candidate
-  DISABLED_ZONE_PENALTY: -1000, // strongly penalises candidates in disabled zones
+  TECHNICAL_ZONE_PENALTY: -99999, // effectively eliminates the candidate
+  DISABLED_ZONE_PENALTY: -5000,    // strongly penalises candidates in disabled zones
+  OUT_OF_ZONE_PENALTY: -500,       // penalise candidates not in any zone (active or disabled)
 
   // House number match
   HOUSE_MATCH_EXACT: 150,
@@ -150,6 +151,9 @@ export function scoreCandidate(
           isInside = false
         }
       }
+    } else {
+      // Not in any zone (active, disabled, or technical)
+      score += SCORE.OUT_OF_ZONE_PENALTY
     }
   }
 
