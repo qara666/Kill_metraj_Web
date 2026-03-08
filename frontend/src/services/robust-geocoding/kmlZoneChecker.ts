@@ -18,20 +18,11 @@ export function isTechnicalZone(polygon: KmlPolygonData): boolean {
   )
 }
 
-/**
- * Returns true if the polygon is currently active (part of an active hub and selected by the user).
- */
 export function isPolygonActive(polygon: KmlPolygonData, ctx: KmlZoneContext): boolean {
-  // 1. Must be in the activePolygons list (this list usually contains polygons from active hubs)
-  const isFromActiveHub = ctx.activePolygons.some(p => p.key === polygon.key)
-  if (!isFromActiveHub) return false
+  if (isTechnicalZone(polygon)) return true
 
-  // 2. If the user has a specific subset of zones selected, it must be in that list
-  if (ctx.selectedZoneKeys.length > 0) {
-    return ctx.selectedZoneKeys.includes(polygon.key)
-  }
-
-  return true
+  // STRICT REQUIREMENT: polygon must be exclusively in the user's active selections
+  return ctx.selectedZoneKeys.includes(polygon.key)
 }
 
 // ─── Point-in-polygon ─────────────────────────────────────────────────────────
@@ -40,11 +31,11 @@ export function isPolygonActive(polygon: KmlPolygonData, ctx: KmlZoneContext): b
  * Returns true if `loc` is inside or on the edge of `polygon`.
  * Requires `window.google.maps.geometry` to be loaded.
  */
-export function containsLocation(loc: any, polygon: KmlPolygonData): boolean {
+export function containsLocation(loc: any, polygon: KmlPolygonData, tolerance: number = 0.001): boolean {
   if (typeof window === 'undefined' || !window.google?.maps?.geometry) return false
   try {
-    // Fast AABB rejection
-    if (polygon.bounds && !polygon.bounds.contains(loc)) return false
+    // We skip fast AABB rejection for large edge tolerances, but keep it for standard tolerance
+    if (tolerance <= 0.001 && polygon.bounds && !polygon.bounds.contains(loc)) return false
 
     const poly =
       polygon.googlePoly ||
@@ -52,7 +43,7 @@ export function containsLocation(loc: any, polygon: KmlPolygonData): boolean {
 
     return (
       window.google.maps.geometry.poly.containsLocation(loc, poly) ||
-      window.google.maps.geometry.poly.isLocationOnEdge(loc, poly, 0.001)
+      window.google.maps.geometry.poly.isLocationOnEdge(loc, poly, tolerance)
     )
   } catch {
     return false
@@ -72,12 +63,13 @@ export interface ZoneMatch {
  */
 export function findZonesForLoc(
   loc: any,
-  polygons: KmlPolygonData[]
+  polygons: KmlPolygonData[],
+  tolerance: number = 0.001
 ): ZoneMatch[] {
   const matches: ZoneMatch[] = []
 
   for (const poly of polygons) {
-    if (containsLocation(loc, poly)) {
+    if (containsLocation(loc, poly, tolerance)) {
       matches.push({ polygon: poly, isTechnical: isTechnicalZone(poly) })
     }
   }
@@ -93,14 +85,15 @@ export function findZonesForLoc(
  */
 export function findBestZone(
   loc: any,
-  ctx: KmlZoneContext
+  ctx: KmlZoneContext,
+  tolerance: number = 0.001
 ): ZoneMatch | null {
   // 1. Try active/selected polygons first
-  const activeMatches = findZonesForLoc(loc, ctx.activePolygons)
+  const activeMatches = findZonesForLoc(loc, ctx.activePolygons, tolerance)
   if (activeMatches.length > 0) return activeMatches[0]
 
   // 2. Fall back to all polygons
-  const allMatches = findZonesForLoc(loc, ctx.allPolygons)
+  const allMatches = findZonesForLoc(loc, ctx.allPolygons, tolerance)
   return allMatches[0] || null
 }
 

@@ -44,13 +44,13 @@ const createRateLimiter = (windowMs, max, message) => {
 
 const generalLimiter = createRateLimiter(
   15 * 60 * 1000,
-  1000, // Increased to 1000 for dashboard polling compatibility
+  50000, // Increased to 50000 to prevent blocking during active usage/polling
   'Слишком много запросов от вашего устройства. Пожалуйста, подождите 15 минут.'
 );
 
 const strictLimiter = createRateLimiter(
   15 * 60 * 1000,
-  20,
+  1000, // Increased to 1000 to allow smooth testing 
   'Слишком много попыток входа. В целях безопасности подождите 15 минут.'
 );
 

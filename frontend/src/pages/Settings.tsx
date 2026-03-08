@@ -625,7 +625,7 @@ export const Settings: React.FC = () => {
                     <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-1">
                       {watch('kmlData').polygons
                         .filter((p: any) => {
-                          const isFromHub = (watch('selectedHubs') || []).length === 0 || watch('selectedHubs').includes(p.folderName);
+                          const isFromHub = (watch('selectedHubs') || []).includes(p.folderName);
                           const matchesSearch = !zoneSearchTerm || (p.name || '').toLowerCase().includes(zoneSearchTerm.toLowerCase()) || (p.folderName || '').toLowerCase().includes(zoneSearchTerm.toLowerCase());
                           return isFromHub && matchesSearch;
                         })

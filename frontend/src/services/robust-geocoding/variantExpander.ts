@@ -16,7 +16,9 @@ export { cleanAddress }
 // ─── House number + postal extraction ────────────────────────────────────────
 
 export function extractHouseNumber(raw: string): string | null {
-  const m = raw.match(/\b\d+[\/\-\wа-яА-ЯёЁіІєЄґҐ]*/u)
+  // First, temporarily remove 5-digit postal codes so they aren't matched as house numbers
+  const noPostal = raw.replace(/\b\d{5}\b/g, '')
+  const m = noPostal.match(/\b\d+[\/\-\wа-яА-ЯёЁіІєЄґҐ]*/u)
   return m ? m[0] : null
 }
 
