@@ -21,6 +21,8 @@
 
 import { googleApiCache } from '../googleApiCache'
 import { NominatimService } from '../nominatimService'
+import { GeoapifyService } from '../geoapifyService'
+import { localStorageUtils } from '../../utils/ui/localStorage'
 import type {
   KmlZoneContext,
   RobustGeocodeOptions,
@@ -106,6 +108,47 @@ class RobustGeocodingService {
     return this.ctx
   }
 
+  /**
+   * Get the current geocoding provider from localStorage settings.
+   */
+  private getProvider(): 'google' | 'nominatim' | 'geoapify' {
+    try {
+      const settings = localStorageUtils.getAllSettings()
+      return (settings.geocodingProvider as any) || 'google'
+    } catch {
+      return 'google'
+    }
+  }
+
+  /**
+   * Free-mode geocoding chain: Nominatim → Geoapify fallback.
+   * Returns raw candidate arrays compatible with normaliseRaw.
+   */
+  private async _geocodeWithFreeProvider(address: string, cityBias: string): Promise<any[]> {
+    // 1. Try Nominatim (OSM)
+    const nominatimResults = await NominatimService.geocode(address, cityBias)
+    if (nominatimResults.length > 0) return nominatimResults
+
+    // 2. Fallback to Geoapify if Nominatim returned nothing
+    const geoapifyResults = await GeoapifyService.geocode(address)
+    if (geoapifyResults.length > 0) {
+      // Map Geoapify format to our RawGeoCandidate format
+      return geoapifyResults.map((r: any) => ({
+        formatted_address: r.formattedAddress || r.formatted || address,
+        geometry: {
+          location: { lat: r.latitude || r.lat, lng: r.longitude || r.lon },
+          location_type: r.locationType || 'GEOMETRIC_CENTER',
+        },
+        address_components: [],
+        place_id: r.placeId || `geoapify_${Date.now()}`,
+        types: r.types || [],
+        _source: 'geoapify',
+      }))
+    }
+
+    return []
+  }
+
   // ─── Core geocoding ───────────────────────────────────────────────────────
 
   /**
@@ -138,21 +181,26 @@ class RobustGeocodingService {
     const ordered = [...primary, ...secondary]
     const variants = maxVariants ? ordered.slice(0, maxVariants) : ordered
 
+    // Determine which provider to use (read fresh from settings each call)
+    const provider = this.getProvider()
+    const isFreeMode = provider !== 'google'
+
     // ── Try variants until a perfect hit is found ──
     for (const variant of variants) {
       let apiResults: any[] = []
       let hitCache = false
 
       try {
-        // googleApiCache already handles L1→L2→L3 and in-flight dedup
-        const cacheKey = { address: variant, region: 'UA', componentRestrictions: { country: 'UA' } }
-
-        // Detect if this will be a cache hit (synchronous check)
-        hitCache = googleApiCache.hasGeocodeCacheSync(variant)
-
-        apiResults = await googleApiCache.geocode(cacheKey)
-
-        if (hitCache && apiResults.length > 0) fromCache = true
+        if (isFreeMode) {
+          // Free mode: Nominatim + Geoapify chain (no Google API needed)
+          apiResults = await this._geocodeWithFreeProvider(variant, cityBias)
+        } else {
+          // Paid mode: Google Maps via googleApiCache (L1 → L2 → L3)
+          const cacheKey = { address: variant, region: 'UA', componentRestrictions: { country: 'UA' } }
+          hitCache = googleApiCache.hasGeocodeCacheSync(variant)
+          apiResults = await googleApiCache.geocode(cacheKey)
+          if (hitCache && apiResults.length > 0) fromCache = true
+        }
       } catch (e) {
         console.error(`[RobustGeocodingService] geocode error for "${variant}":`, e)
         continue
@@ -193,10 +241,10 @@ class RobustGeocodingService {
       }
     }
 
-    // ── Exhaustive fallback: only if we have no zone hit at all ──
+    // ── Exhaustive fallback (Google-mode only): try a minimal cleaned address ──
     const hasZoneHit = allCandidates.some(c => c.isInsideZone && !c.isTechnicalZone)
-    if (!hasZoneHit && allCandidates.length === 0) {
-      // Last resort: try a minimal cleaned address without city expansion
+    if (!hasZoneHit && allCandidates.length === 0 && !isFreeMode) {
+      // Last resort Google fallback: cleaned address with city
       try {
         const stripped = cleanAddress(rawAddress)
         const fallback = await googleApiCache.geocode({
@@ -210,27 +258,17 @@ class RobustGeocodingService {
       } catch { /* ignore */ }
     }
 
-    // ── Nominatim fallback: if still no zone hit from Google ────────────────
-    const hasZoneHitAfterGoogle = allCandidates.some(c => c.isInsideZone && !c.isTechnicalZone)
-    if (!hasZoneHitAfterGoogle) {
+    // ── Free-mode additional fallback: try original address if all variants missed ──
+    const hasZoneHitAfterMain = allCandidates.some(c => c.isInsideZone && !c.isTechnicalZone)
+    if (!hasZoneHitAfterMain && allCandidates.length === 0 && isFreeMode) {
       try {
-        const nominatimResults = await NominatimService.geocode(rawAddress, cityBias)
-        if (nominatimResults.length > 0) {
-          const scored = nominatimResults.map((r: any) => scoreCandidate(normaliseRaw(r), scoringOpts))
-          // Only use Nominatim results if they're at least weakly inside the zone
-          // (prevents substituting a wrong far-away result)
-          const nominatimZoneHits = scored.filter(c => c.isInsideZone && !c.isTechnicalZone)
-          if (nominatimZoneHits.length > 0) {
-            console.log(`[RobustGeocoding] Nominatim fallback found ${nominatimZoneHits.length} zone hit(s) for "${rawAddress}"`)
-            allCandidates.push(...nominatimZoneHits)
-          } else if (allCandidates.length === 0) {
-            // No zone hits from either provider, still add all Nominatim results so we can pick the best
-            allCandidates.push(...scored)
-          }
+        const stripped = cleanAddress(rawAddress)
+        const fallback = await this._geocodeWithFreeProvider(`${stripped}, ${cityBias}, Україна`, cityBias)
+        if (fallback.length > 0) {
+          const scored = fallback.map((r: any) => scoreCandidate(normaliseRaw(r), scoringOpts))
+          allCandidates.push(...scored)
         }
-      } catch (e) {
-        console.warn('[RobustGeocoding] Nominatim fallback failed:', e)
-      }
+      } catch { /* ignore */ }
     }
 
     const deduped = dedupeByCoord(allCandidates)
