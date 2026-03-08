@@ -387,25 +387,6 @@ export const Settings: React.FC = () => {
 
       <div className={clsx('rounded-2xl shadow-lg border p-8', isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
-          {/* Personal Settings Section - Always Visible */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-blue-50/30 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-900/20">
-            <div className="space-y-2">
-              <label className="text-xs font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">Цветовая тема</label>
-              <select {...register('theme')} className="input w-full">
-                <option value="light">Светлая</option>
-                <option value="dark">Темная</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">Тип транспорта</label>
-              <select {...register('courierTransportType')} className="input w-full">
-                <option value="car">Автомобиль</option>
-                <option value="bicycle">Велосипед</option>
-                <option value="walking">Пешком</option>
-                <option value="motorcycle">Мотоцикл</option>
-              </select>
-            </div>
-          </div>
 
           {/* City Bias */}
           {(isAdmin || canModify) && (
@@ -561,7 +542,7 @@ export const Settings: React.FC = () => {
                                     const currentZones = watch('selectedZones') || [];
                                     const hubZoneKeys = watch('kmlData').polygons
                                       .filter((p: any) => p.folderName === hub)
-                                      .map((p: any) => `${p.folderName}:${p.name}`);
+                                      .map((p: any) => `${(p.folderName || '').trim()}:${(p.name || '').trim()}`);
 
                                     if (e.target.checked) {
                                       setValue('selectedZones', Array.from(new Set([...currentZones, ...hubZoneKeys])));
