@@ -164,7 +164,7 @@ router.get('/:id', auditLog('user_view'), async (req, res) => {
 // PUT /api/users/:id - Update user
 router.put('/:id', auditLog('user_update'), async (req, res) => {
     try {
-        const { email, role, isActive, divisionId, password } = req.body;
+        const { email, role, isActive, divisionId, canModifySettings, password } = req.body;
 
         const user = await User.findByPk(req.params.id);
 
@@ -181,6 +181,7 @@ router.put('/:id', auditLog('user_update'), async (req, res) => {
         if (role) user.role = role;
         if (isActive !== undefined) user.isActive = isActive;
         if (divisionId !== undefined) user.divisionId = divisionId;
+        if (canModifySettings !== undefined) user.canModifySettings = canModifySettings;
         if (password) user.passwordHash = password; // Hashed via hook
 
         await user.save();
