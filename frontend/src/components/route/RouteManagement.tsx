@@ -283,16 +283,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [googleMapsReady, setGoogleMapsReady] = useState(false)
 
   // v5.41: Robust Normalization - trim all inputs to prevent mismatch
-  const [settings, setSettings] = useState<any>(localStorageUtils.getAllSettings())
-
-  useEffect(() => {
-    const handleSettingsUpdate = () => {
-      const newSettings = localStorageUtils.getAllSettings()
-      setSettings(newSettings)
-    }
-    window.addEventListener('km-settings-updated', handleSettingsUpdate)
-    return () => window.removeEventListener('km-settings-updated', handleSettingsUpdate)
-  }, [])
   const [courierFilter, setCourierFilter] = useState<string>('all')
   const [routePage, setRoutePage] = useState(0)
   const [routesPerPage] = useState(5) // Количество маршрутов на странице
@@ -309,17 +299,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     cachedHubPolygons,
     cachedAllKmlPolygons
   } = useKmlData()
-
-  // Helper for bounding box filtering (performance)
-  const buildBounds = (path: any[]) => {
-    if (!window.google?.maps?.LatLngBounds) return null
-    const bounds = new window.google.maps.LatLngBounds()
-    path.forEach(pt => bounds.extend(pt))
-    return bounds
-  }
-
-    }
-  }, [settings.kmlData, selectedHubs, window.google?.maps?.Polygon])
 
   const [showReturningModal, setShowReturningModal] = useState(false)
   const [showTransitModal, setShowTransitModal] = useState(false)

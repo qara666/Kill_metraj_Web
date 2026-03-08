@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { localStorageUtils } from '../utils/ui/localStorage'
 
 export interface KmlPolygon {
