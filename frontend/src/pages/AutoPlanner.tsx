@@ -30,6 +30,7 @@ import { useAutoPlannerSettings } from '../hooks/useAutoPlannerSettings'
 import { useRoutePlanning } from '../hooks/useRoutePlanning'
 import { useAutoPlannerState } from '../hooks/useAutoPlannerState'
 import { useOrderFiltering } from '../hooks/useOrderFiltering'
+import { useKmlData } from '../hooks/useKmlData'
 import { useTrafficManagement } from '../hooks/useTrafficManagement'
 import { AutoPlannerControls } from '../components/autoplanner/AutoPlannerControls'
 import { OptimizationProgressView } from '../components/autoplanner/OptimizationProgressView'
@@ -82,6 +83,7 @@ export const AutoPlanner: React.FC = () => {
 
 
     // --- New Hooks ---
+    const { selectedZones, cachedHubPolygons, cachedAllKmlPolygons } = useKmlData()
     const state = useAutoPlannerState()
     const {
         excelData,
@@ -238,9 +240,9 @@ export const AutoPlanner: React.FC = () => {
         defaultEndAddress,
         defaultEndLat || null,
         defaultEndLng || null,
-        filterState.orderFilters.selectedZones || [],
-        filterState.availableFilters.cachedHubPolygons || [],
-        filterState.availableFilters.cachedAllKmlPolygons || [],
+        selectedZones,
+        cachedHubPolygons,
+        cachedAllKmlPolygons,
         setPlannedRoutes,
         setErrorMsg,
         setPlanTrafficImpact,
