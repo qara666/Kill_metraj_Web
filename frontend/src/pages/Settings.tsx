@@ -541,7 +541,7 @@ export const Settings: React.FC = () => {
                                     // Auto-select/deselect zones of this hub
                                     const currentZones = watch('selectedZones') || [];
                                     const hubZoneKeys = watch('kmlData').polygons
-                                      .filter((p: any) => p.folderName === hub)
+                                      .filter((p: any) => (p.folderName || '').trim() === (hub as string).trim())
                                       .map((p: any) => `${(p.folderName || '').trim()}:${(p.name || '').trim()}`);
 
                                     if (e.target.checked) {
@@ -586,7 +586,7 @@ export const Settings: React.FC = () => {
                           onClick={() => {
                             const currentHubs = watch('selectedHubs') || [];
                             const allZones = watch('kmlData').polygons
-                              .filter((p: any) => currentHubs.includes(p.folderName))
+                              .filter((p: any) => currentHubs.includes((p.folderName || '').trim()))
                               .map((p: any) => `${(p.folderName || '').trim()}:${(p.name || '').trim()}`);
                             setValue('selectedZones', allZones);
                           }}
@@ -607,7 +607,7 @@ export const Settings: React.FC = () => {
                     <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-1">
                       {watch('kmlData').polygons
                         .filter((p: any) => {
-                          const isFromHub = (watch('selectedHubs') || []).includes(p.folderName);
+                          const isFromHub = (watch('selectedHubs') || []).includes((p.folderName || '').trim());
                           const matchesSearch = !zoneSearchTerm || (p.name || '').toLowerCase().includes(zoneSearchTerm.toLowerCase()) || (p.folderName || '').toLowerCase().includes(zoneSearchTerm.toLowerCase());
                           return isFromHub && matchesSearch;
                         })
