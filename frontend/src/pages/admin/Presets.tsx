@@ -579,7 +579,7 @@ export const AdminPresets: React.FC = () => {
                                                                                 const currentZones = settings.selectedZones || [];
                                                                                 const hubZoneKeys = settings.kmlData.polygons
                                                                                     .filter((p: any) => p.folderName === hub)
-                                                                                    .map((p: any) => `${p.folderName}:${p.name}`);
+                                                                                    .map((p: any) => `${(p.folderName || '').trim()}:${(p.name || '').trim()}`);
 
                                                                                 let newZones = currentZones;
                                                                                 if (e.target.checked) {
@@ -630,7 +630,7 @@ export const AdminPresets: React.FC = () => {
                                                             onClick={() => {
                                                                 const allZones = settings.kmlData.polygons
                                                                     .filter((p: any) => settings.selectedHubs?.includes(p.folderName))
-                                                                    .map((p: any) => `${p.folderName}:${p.name}`);
+                                                                    .map((p: any) => `${(p.folderName || '').trim()}:${(p.name || '').trim()}`);
                                                                 setSettings({ ...settings, selectedZones: allZones });
                                                             }}
                                                             className="text-[10px] font-black text-indigo-400 uppercase hover:text-indigo-300"

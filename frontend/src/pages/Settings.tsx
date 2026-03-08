@@ -605,7 +605,7 @@ export const Settings: React.FC = () => {
                           onClick={() => {
                             const allZones = watch('kmlData').polygons
                               .filter((p: any) => watch('selectedHubs')?.includes(p.folderName))
-                              .map((p: any) => `${p.folderName}:${p.name}`);
+                              .map((p: any) => `${(p.folderName || '').trim()}:${(p.name || '').trim()}`);
                             setValue('selectedZones', allZones);
                           }}
                           className="text-[10px] font-black text-indigo-400 uppercase hover:text-indigo-300"
@@ -630,7 +630,7 @@ export const Settings: React.FC = () => {
                           return isFromHub && matchesSearch;
                         })
                         .map((p: any) => {
-                          const zoneKey = `${p.folderName}:${p.name}`;
+                          const zoneKey = `${(p.folderName || '').trim()}:${(p.name || '').trim()}`;
                           const isSelected = watch('selectedZones')?.includes(zoneKey);
                           return (
                             <label key={zoneKey} className={clsx(

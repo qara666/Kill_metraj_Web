@@ -120,10 +120,7 @@ export function scoreCandidate(
   let isTech = false
   let isInside = false
 
-  const isPrecise = locType === 'ROOFTOP'
-  // Huge tolerance (0.05 deg =~ 5.5km) for ROOFTOP to bridge gaps between perfect addresses and sloppily drawn KML polygons.
-  // Broad tolerance (0.02 deg =~ 2.2km) for generic matches like GEOMETRIC_CENTER to snap them into the sector.
-  const tolerance = isPrecise ? 0.05 : 0.02
+  const tolerance = 0.05 // ~5.5km tolerance for all candidates to bridge gaps in KML drawings
 
   if (googleLoc && opts.ctx.allPolygons.length > 0) {
     const zoneMatches = findZonesForLoc(googleLoc, opts.ctx.allPolygons, tolerance)
