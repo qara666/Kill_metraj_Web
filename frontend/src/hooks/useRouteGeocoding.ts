@@ -113,7 +113,11 @@ export const useRouteGeocoding = ({
         if (!result.best) return null
 
         // 2. If it's a silent call or confirmation is off, return the best hit immediately
-        if (silent || !confirmAddresses) return result.best.raw
+        if (silent || !confirmAddresses) {
+            // Strict rejection: if the score is horribly penalized (e.g. out of zone or disabled zone), reject it
+            if (result.best.score <= -1000) return null
+            return result.best.raw
+        }
 
         // 3. If confirmation is required, check if we need to show the disambiguation modal
         const best = result.best
@@ -204,6 +208,12 @@ export const useRouteGeocoding = ({
                 }
                 
                 const geocodeRes = addrCache.get(key)
+                if (geocodeRes === null) {
+                    toast.error(`Адрес вне активных зон доставки: ${order.address}`);
+                    setIsCalculating(false);
+                    return; // Prevent 100km routes
+                }
+
                 const loc = toLoc(geocodeRes)
                 waypointLocs.push(loc || cleaned) // text fallback if geocode fails
 
