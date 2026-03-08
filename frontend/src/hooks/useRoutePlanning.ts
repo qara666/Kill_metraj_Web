@@ -353,7 +353,25 @@ export const useRoutePlanning = (
             const preset = getPreset(mode)
             setLastPlanPreset(preset)
 
-            const finalRoutes = await runRoutePlanningAlgorithm(validOrders, {
+            // Strict filter: EXCLUDE any order whose address failed our zone-aware geocoding (i.e. not in cache)
+            // This prevents Google Directions API from falling back to raw strings and bypassing zone rejection.
+            const routeableOrders = validOrders.filter(o => {
+                const addr = o.address || o.raw?.address || '';
+                const hasCoords = !!routeOptimizationCache.getCoordinates(addr);
+                if (!hasCoords) {
+                    console.warn(`[AutoPlanner] Отклонен адрес вне зон: ${addr}`);
+                }
+                return hasCoords;
+            });
+
+            if (routeableOrders.length === 0) {
+                setErrorMsg('Ни один из заказов не попал в активную зону доставки. Все адреса были отклонены как находящиеся вне КML зон.');
+                setIsPlanning(false);
+                setOptimizationProgress(null);
+                return;
+            }
+
+            const finalRoutes = await runRoutePlanningAlgorithm(routeableOrders, {
                 apiManager,
                 runtimeMaxStopsPerRoute,
                 runtimeMaxRouteDurationMin,

@@ -26,7 +26,7 @@ export const SCORE = {
   // Technical zone kills
   TECHNICAL_ZONE_PENALTY: -99999, // effectively eliminates the candidate
   DISABLED_ZONE_PENALTY: -5000,    // strongly penalises candidates in disabled zones
-  OUT_OF_ZONE_PENALTY: -500,       // penalise candidates not in any zone (active or disabled)
+  OUT_OF_ZONE_PENALTY: -5000,       // heavily penalise candidates not in any zone
 
   // House number match
   HOUSE_MATCH_EXACT: 150,
