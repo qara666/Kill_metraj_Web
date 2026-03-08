@@ -628,8 +628,9 @@ export const AdminPresets: React.FC = () => {
                                                         <button
                                                             type="button"
                                                             onClick={() => {
+                                                                const currentHubs = settings.selectedHubs || [];
                                                                 const allZones = settings.kmlData.polygons
-                                                                    .filter((p: any) => settings.selectedHubs?.includes(p.folderName))
+                                                                    .filter((p: any) => currentHubs.includes(p.folderName))
                                                                     .map((p: any) => `${(p.folderName || '').trim()}:${(p.name || '').trim()}`);
                                                                 setSettings({ ...settings, selectedZones: allZones });
                                                             }}
