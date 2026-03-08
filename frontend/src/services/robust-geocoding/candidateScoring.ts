@@ -126,8 +126,16 @@ export function scoreCandidate(
     const zoneMatches = findZonesForLoc(googleLoc, opts.ctx.allPolygons, tolerance)
 
     if (zoneMatches.length > 0) {
-      const firstDelivery = zoneMatches.find(m => !m.isTechnical)
-      const bestMatch = firstDelivery || zoneMatches[0]
+      // Prioritize active zones first, then delivery zones, then technical zones
+      const sortedMatches = [...zoneMatches].sort((a, b) => {
+        const aActive = isPolygonActive(a.polygon, opts.ctx) ? 1 : 0
+        const bActive = isPolygonActive(b.polygon, opts.ctx) ? 1 : 0
+        
+        if (aActive !== bActive) return bActive - aActive // Active first
+        return (a.isTechnical ? 1 : 0) - (b.isTechnical ? 1 : 0) // Delivery first
+      })
+
+      const bestMatch = sortedMatches[0]
 
       kmlZone = bestMatch.polygon.name
       kmlHub = bestMatch.polygon.folderName

@@ -32,12 +32,8 @@ const createRateLimiter = (windowMs, max, message) => {
       });
     },
     skip: (req) => {
-      // Skip rate limiting in development for localhost
-      if (process.env.NODE_ENV === 'development') {
-        const ip = req.ip;
-        return ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1';
-      }
-      return false;
+      // Disable rate limiting globally as requested
+      return true;
     }
   });
 };
