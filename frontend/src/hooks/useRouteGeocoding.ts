@@ -8,10 +8,11 @@
  *  4. Start/end address coordinate pin — if coordinates are stored in settings, zero geocode calls
  *  5. All results backed by persistent googleApiCache (survives page reloads)
  */
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import { googleApiCache } from '../services/googleApiCache'
 import { cleanAddress, generateStreetVariants } from '../utils/data/addressUtils'
+import { robustGeocodingService } from '../services/robust-geocoding/RobustGeocodingService'
 import { Route, Order } from '../types/route'
 
 interface UseRouteGeocodingProps {
@@ -59,6 +60,24 @@ export const useRouteGeocoding = ({
     const isProcessingQueue = useRef(false)
     const [disambModal, setDisambModal] = useState<{ open: boolean; title: string; options: any[] } | null>(null)
     const disambResolver = useRef<(choice: any | null) => void>()
+
+    // ─── Sync KML context into the singleton service ─────────────────────────
+    useEffect(() => {
+        const buildPolygon = (p: any) => ({
+            key: `${(p.folderName || '').trim()}:${(p.name || '').trim()}`,
+            name: p.name || '',
+            folderName: p.folderName || '',
+            googlePoly: p.googlePoly,
+            bounds: p.bounds,
+            path: p.path,
+        })
+        robustGeocodingService.setZoneContext({
+            allPolygons: cachedAllKmlPolygons.map(buildPolygon),
+            activePolygons: cachedHubPolygons.map(buildPolygon),
+            selectedZoneKeys: selectedZones,
+        })
+        robustGeocodingService.setCityBias(settings?.cityBias || 'Киев')
+    }, [cachedAllKmlPolygons, cachedHubPolygons, selectedZones, settings?.cityBias])
 
     // ─── Helpers ────────────────────────────────────────────────────────────────
 

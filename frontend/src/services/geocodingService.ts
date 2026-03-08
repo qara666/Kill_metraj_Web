@@ -9,6 +9,7 @@
 import { googleApiCache } from './googleApiCache'
 import { NominatimService } from './nominatimService'
 import { localStorageUtils } from '../utils/ui/localStorage'
+import { robustGeocodingService, RobustGeocodeResult } from './robust-geocoding/RobustGeocodingService'
 
 // Google Maps types
 declare global {
@@ -219,13 +220,36 @@ export class GeocodingService {
   }
 
   /**
-   * Batch geocode addresses.
+   * Batch geocode addresses using the RobustGeocodingService.
    */
   static async geocodeAddresses(
     addresses: string[],
-    options: GeocodingOptions = {}
+    options: any = {}
   ): Promise<GeocodingResult[]> {
-    return Promise.all(addresses.map(addr => this.geocodeAddress(addr, options)))
+    const resultsMap = await robustGeocodingService.batchGeocode(addresses, options)
+    
+    return addresses.map(addr => {
+      const res = resultsMap.get(addr.trim().toLowerCase())
+      if (!res || !res.best) {
+        return { success: false, formattedAddress: addr, error: 'Адрес не найден' }
+      }
+      return {
+        success: true,
+        formattedAddress: res.best.raw.formatted_address,
+        latitude: res.best.lat,
+        longitude: res.best.lng,
+        placeId: res.best.raw.place_id,
+        locationType: res.best.raw.geometry.location_type,
+        types: res.best.raw.types
+      }
+    })
+  }
+
+  /**
+   * New zone-aware geocoding method.
+   */
+  static async geocodeWithZones(address: string, options: any = {}): Promise<RobustGeocodeResult> {
+    return robustGeocodingService.geocode(address, options)
   }
 
   // Legacy no-ops (kept for API compatibility)
