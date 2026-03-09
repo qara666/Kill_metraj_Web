@@ -33,6 +33,7 @@ import type {
 import {
   findBestZone,
   isTechnicalZone as isTechZone,
+  clearSpatialCache,
 } from './kmlZoneChecker'
 import {
   scoreCandidate,
@@ -95,6 +96,7 @@ class RobustGeocodingService {
    */
   setZoneContext(ctx: KmlZoneContext): void {
     this.ctx = ctx
+    clearSpatialCache()
   }
 
   /**

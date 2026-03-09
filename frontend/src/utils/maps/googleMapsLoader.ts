@@ -1,35 +1,58 @@
 import { localStorageUtils } from '../ui/localStorage'
 import { validateGoogleMapsApiKey } from '../api/apiKeyValidator'
 
-interface GoogleMapsLoader {
+interface GoogleMapsLoaderState {
     isLoaded: boolean
     isLoading: boolean
     loadPromise: Promise<void> | null
+    /** The API key that was used to load the current Maps script. */
+    loadedApiKey: string | null
 }
 
 class GoogleMapsLoaderClass {
-    private state: GoogleMapsLoader = {
+    private state: GoogleMapsLoaderState = {
         isLoaded: false,
         isLoading: false,
-        loadPromise: null
+        loadPromise: null,
+        loadedApiKey: null,
     }
 
     private callbacks: (() => void)[] = []
 
-    // Проверяем, загружен ли Google Maps API
+    /**
+     * Returns true only if Maps is loaded AND the loaded key matches the
+     * key currently stored in localStorage (set via admin preset sync).
+     */
     isLoaded(): boolean {
-        return this.state.isLoaded && 
-               window.google && 
-               window.google.maps && 
-               localStorageUtils.hasApiKey()
+        if (!this.state.isLoaded) return false
+        if (!window.google?.maps) return false
+        if (!localStorageUtils.hasApiKey()) return false
+
+        const currentKey = (localStorageUtils.getApiKey() || '').trim()
+        // If the key changed since we last loaded, treat as "not loaded"
+        // so the next load() call will pick up the new key.
+        if (this.state.loadedApiKey && currentKey && this.state.loadedApiKey !== currentKey) {
+            console.log('[googleMapsLoader] API key changed — will reload with new key.')
+            this.reset()
+            return false
+        }
+        return true
     }
 
-    // Загружаем Google Maps API с ключом из настроек
+    /** Reset state so the next load() re-fetches the script. */
+    private reset(): void {
+        this.state.isLoaded = false
+        this.state.isLoading = false
+        this.state.loadPromise = null
+        // Keep loadedApiKey so we can log the change, clear it before the next load
+    }
+
     async load(): Promise<void> {
         if (this.isLoaded()) {
             return Promise.resolve()
         }
 
+        // If already loading, piggyback on the existing promise
         if (this.state.isLoading && this.state.loadPromise) {
             return this.state.loadPromise
         }
@@ -42,31 +65,32 @@ class GoogleMapsLoaderClass {
             throw new Error('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ в настройках.')
         }
 
-        const isValid = validateGoogleMapsApiKey(finalApiKey)
-
-        if (!isValid) {
+        if (!validateGoogleMapsApiKey(finalApiKey)) {
             throw new Error('Google Maps API ключ недействителен')
         }
 
         this.state.isLoading = true
-        this.state.loadPromise = this.loadScript(finalApiKey)
+        this.state.loadedApiKey = null // Clear before load so isLoaded() won't shortcircuit
+        this.state.loadPromise = this._loadScript(finalApiKey)
 
         try {
             await this.state.loadPromise
             this.state.isLoaded = true
             this.state.isLoading = false
-            
-            // Вызываем все колбэки
-            this.callbacks.forEach(callback => callback())
+            this.state.loadedApiKey = finalApiKey // Record which key we used
+
+            console.log('[googleMapsLoader] Loaded with key:', finalApiKey.slice(0, 8) + '...')
+
+            this.callbacks.forEach(cb => cb())
             this.callbacks = []
         } catch (error) {
             this.state.isLoading = false
             this.state.loadPromise = null
+            this.state.loadedApiKey = null
             throw error
         }
     }
 
-    // Добавляем колбэк, который будет вызван после загрузки
     onLoaded(callback: () => void): void {
         if (this.isLoaded()) {
             callback()
@@ -75,18 +99,30 @@ class GoogleMapsLoaderClass {
         }
     }
 
-    // Загружаем скрипт Google Maps API
-    private loadScript(apiKey: string): Promise<void> {
+    private _loadScript(apiKey: string): Promise<void> {
         return new Promise((resolve, reject) => {
-            const existingScript = document.querySelector('script[src*="maps.googleapis.com"]')
-            if (existingScript) {
-                existingScript.remove()
+            // Remove any previously injected Maps script (e.g. from old key)
+            document.querySelectorAll('script[src*="maps.googleapis.com"]').forEach(s => s.remove())
+
+            // If Maps is already present in window AND we haven't reset, it matches — resolve immediately
+            if (window.google?.maps && this.state.loadedApiKey === apiKey) {
+                window.googleMapsLoaded = true
+                resolve()
+                return
             }
 
-            if (window.google && window.google.maps) {
-                window.googleMapsLoaded = true; // Убедимся, что строка завершена корректно
-                resolve(); 
-                return;
+            // If Maps was loaded by a DIFFERENT key, we need a page-level reload because
+            // the Maps SDK doesn't support swapping keys after load.
+            // We set a flag + swap the key, then force a reload only on the next navigation.
+            if (window.google?.maps && this.state.loadedApiKey && this.state.loadedApiKey !== apiKey) {
+                // Key changed — store the new key and mark for reload
+                console.warn(
+                    '[googleMapsLoader] Google Maps already loaded with a different key.' +
+                    ' The browser session will reload to apply the new key.'
+                )
+                // The key was already saved by presetSync, so a reload will pick it up.
+                window.location.reload()
+                return
             }
 
             const script = document.createElement('script')
@@ -96,16 +132,17 @@ class GoogleMapsLoaderClass {
 
             window.initGoogleMaps = () => {
                 window.googleMapsLoaded = true
-                resolve(); // Убедимся, что строка завершена корректно
+                resolve()
             }
 
             script.onload = () => {
+                // Fallback: if callback hasn't fired within 200 ms, resolve anyway
                 setTimeout(() => {
-                    if (window.google && window.google.maps) {
+                    if (window.google?.maps) {
                         window.googleMapsLoaded = true
-                        resolve();
+                        resolve()
                     }
-                }, 100)
+                }, 200)
             }
 
             script.onerror = () => {
@@ -116,15 +153,14 @@ class GoogleMapsLoaderClass {
         })
     }
 
-    getState(): GoogleMapsLoader {
+    getState(): Readonly<GoogleMapsLoaderState> {
         return { ...this.state }
     }
 }
 
-// Создаем единственный экземпляр
+// Singleton instance
 export const googleMapsLoader = new GoogleMapsLoaderClass()
 
-// Расширяем интерфейс Window
 declare global {
     interface Window {
         googleMapsLoaded: boolean

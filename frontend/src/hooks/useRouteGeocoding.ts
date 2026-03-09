@@ -7,11 +7,15 @@
  *  3. Waypoint address deduplication — identical addresses share a single geocode result
  *  4. Start/end address coordinate pin — if coordinates are stored in settings, zero geocode calls
  *  5. All results backed by persistent googleApiCache (survives page reloads)
+ *  6. Main-thread yielding between geocoding iterations to keep UI responsive
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import { robustGeocodingService } from '../services/robust-geocoding/RobustGeocodingService'
 import { Route } from '../types/route'
+
+/** Yield control back to the browser event loop. Prevents UI jank during heavy loops. */
+const yieldToMain = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0))
 
 interface UseRouteGeocodingProps {
     settings: any
@@ -205,6 +209,8 @@ export const useRouteGeocoding = ({
                 
                 if (!addrCache.has(key)) {
                     addrCache.set(key, await robustGeocode(cleaned, { silent: true }))
+                    // Yield to main thread so UI stays fluid during large route geocoding
+                    await yieldToMain()
                 }
                 
                 const geocodeRes = addrCache.get(key)
@@ -259,6 +265,9 @@ export const useRouteGeocoding = ({
                 const chunkDest = ci === chunks.length - 1
                     ? destinLoc
                     : allWpDefs[Math.min((ci + 1) * MAX_WP, allWpDefs.length) - 1].location
+
+                // Yield to main thread before each chunk to keep UI responsive
+                if (ci > 0) await yieldToMain()
 
                 const dirResult: any = await new Promise((resolve) => {
                     try {
