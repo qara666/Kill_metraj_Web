@@ -623,18 +623,30 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     if (returningRoutes.length === 0) return
 
     setIsGeocodingETA(true)
-    enrichRoutesWithCoords(returningRoutes)
-      .then(async (enriched) => {
-        // После геокодирования запрашиваем точный расчет у Google для каждого маршрута
+    
+    // Ensure Google Maps is loaded before calculating accurate ETA
+    const loadAndEnrich = async () => {
+      try {
+        if (localStorageUtils.hasApiKey()) {
+          await googleMapsLoader.load()
+          setGoogleMapsReady(true)
+        }
+        
+        const enriched = await enrichRoutesWithCoords(returningRoutes)
         const processed = await Promise.all(enriched.map(async (r) => {
           const accurate = await getAccurateReturnETA(r as any, startAddress)
           return { ...r, accurateETA: accurate }
         }))
         setEnrichedRoutes(processed as unknown as Route[])
-      })
-      .catch(console.error)
-      .finally(() => setIsGeocodingETA(false))
-  }, [showReturningModal, excelData, courierOrders, courierMetricsMap, startAddress])
+      } catch (err) {
+        console.error('[enrichRoutesWithCoords] failed:', err)
+      } finally {
+        setIsGeocodingETA(false)
+      }
+    }
+
+    loadAndEnrich()
+  }, [showReturningModal, excelData, courierOrders, courierMetricsMap, startAddress, googleMapsReady])
 
   // Data for the returning couriers modal
   const returningCouriersData = useMemo(() => {
@@ -1285,6 +1297,22 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       const errorMessage = `Обнаружены ошибки в маршруте:\n${anomalyCheck.errors.join('\n')}\n\nПересчет невозможен. Исправьте ошибки в адресах.`
       toast.error(errorMessage)
       return
+    }
+
+    // Проверяем готовность Google Maps API
+    if (!googleMapsReady) {
+      if (!localStorageUtils.hasApiKey()) {
+        toast.error('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ.')
+        return
+      }
+
+      try {
+        await googleMapsLoader.load()
+        setGoogleMapsReady(true)
+      } catch (error) {
+        toast.error('Ошибка загрузки Google Maps API. Проверьте настройки API ключа.')
+        return
+      }
     }
 
     // Предупреждения не блокируют пересчет — продолжаем автоматически

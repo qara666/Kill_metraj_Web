@@ -196,6 +196,12 @@ export async function getAccurateReturnETA(
     const remaining = orders.slice(lastCompletedIndex + 1)
     if (!lastCoord || remaining.some(o => !o.coords)) return getReturnETA(route)
 
+    // Safety check for Google Maps API
+    if (typeof window === 'undefined' || !window.google?.maps?.TravelMode) {
+        console.warn('[getAccurateReturnETA] Google Maps API not loaded, falling back to basic ETA')
+        return getReturnETA(route)
+    }
+
     try {
         const request: any = {
             origin: lastCoord,
