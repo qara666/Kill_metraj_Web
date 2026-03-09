@@ -28,7 +28,7 @@ export const syncPresetsToLocalStorage = async (userId: number): Promise<any | n
         // 3. Change detection to avoid redundant broadcasts
         // We explicitly check keys that should trigger a reload for the user, especially lastKmlSync
         const keysToCheck = [
-            'googleMapsApiKey', 'cityBias', 'kmlSourceUrl', 
+            'googleMapsApiKey', 'cityBias', 'kmlSourceUrl', 'kmlData',
             'selectedHubs', 'selectedZones', 'lastKmlSync', 
             'autoSyncKml', 'theme', 'courierTransportType', 
             'fastopertorApiKey', 'generouteApiKey', 'geoapifyApiKey',
@@ -37,7 +37,9 @@ export const syncPresetsToLocalStorage = async (userId: number): Promise<any | n
             'defaultEndAddress', 'defaultEndLat', 'defaultEndLng',
             'anomalyFilterEnabled', 'anomalyMaxLegDistanceKm', 
             'anomalyMaxTotalDistanceKm', 'anomalyMaxAvgPerOrderKm',
-            'addressQualityThreshold', 'enableCoordinateValidation', 'enableAdaptiveThresholds'
+            'addressQualityThreshold', 'enableCoordinateValidation', 'enableAdaptiveThresholds',
+            'maxStopsPerRoute', 'maxRouteDurationMin', 'maxRouteDistanceKm', 'maxWaitPerStopMin',
+            'maxCriticalRouteDistanceKm'
         ];
 
         let hasChanged = false;
@@ -48,9 +50,20 @@ export const syncPresetsToLocalStorage = async (userId: number): Promise<any | n
             }
         }
 
+        // 4. Handle KML Auto-Sync if URL changed or data is missing
+        if (mappedSettings.kmlSourceUrl && (!mappedSettings.kmlData || mappedSettings.lastKmlSync !== currentLocal.lastKmlSync)) {
+            const { fetchAndParseKML } = await import('../maps/kmlSync')
+            const parsed = await fetchAndParseKML(mappedSettings.kmlSourceUrl)
+            if (parsed) {
+                mappedSettings.kmlData = parsed
+                mappedSettings.lastKmlSync = new Date().toLocaleString()
+                hasChanged = true
+            }
+        }
+
         if (hasChanged) {
             console.log('Detected preset changes from server, updating local storage...')
-            // 4. Save to local storage (this broadcasts the update to other tabs/components)
+            // 5. Save to local storage (this broadcasts the update to other tabs/components)
             localStorageUtils.setAllSettings(mappedSettings)
             
             // Mapbox token specifically (used by some map components directly)

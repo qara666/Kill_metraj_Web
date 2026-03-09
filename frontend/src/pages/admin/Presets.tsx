@@ -110,22 +110,6 @@ export const AdminPresets: React.FC = () => {
         }
     })
 
-    // Global Sync Mutation
-    const syncAllMutation = useMutation({
-        mutationFn: (settings: any) => authService.syncAllPresets(settings),
-        onSuccess: (data) => {
-            if (data.success) {
-                toast.success(data.message || 'Настройки применены ко всем пользователям')
-                queryClient.invalidateQueries({ queryKey: ['user_presets'] })
-            } else {
-                toast.error(data.error || 'Ошибка синхронизации')
-            }
-        },
-        onError: () => {
-            toast.error('Не удалось выполнить глобальную синхронизацию')
-        }
-    })
-
     // Save User fields mutation
     const updateUserMutation = useMutation({
         mutationFn: ({ userId, data }: { userId: number; data: any }) =>
@@ -148,13 +132,6 @@ export const AdminPresets: React.FC = () => {
                 data: userFields 
             })
         }
-    }
-
-    const handleSyncAll = () => {
-        if (!window.confirm('Вы уверены, что хотите применить эти настройки КО ВСЕМ активным пользователям? Это перезапишет их текущие API ключи и конфигурацию.')) {
-            return
-        }
-        syncAllMutation.mutate(settings)
     }
 
     return (
@@ -180,16 +157,6 @@ export const AdminPresets: React.FC = () => {
                     </div>
                     {selectedUser && (
                         <div className="flex flex-wrap gap-3">
-                            {isAdmin && (
-                                <button
-                                    onClick={handleSyncAll}
-                                    disabled={syncAllMutation.isPending}
-                                    className="px-6 py-3 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 font-bold hover:bg-indigo-600/30 transition-all flex items-center gap-2"
-                                >
-                                    <ArrowPathIcon className={clsx("w-5 h-5", syncAllMutation.isPending && "animate-spin")} />
-                                    {syncAllMutation.isPending ? 'Синхронизация...' : 'Применить ко всем'}
-                                </button>
-                            )}
                             <button
                                 onClick={handleSave}
                                 disabled={saveMutation.isPending}
@@ -665,7 +632,7 @@ export const AdminPresets: React.FC = () => {
                                                             onClick={() => {
                                                                 const currentHubs = settings.selectedHubs || [];
                                                                 const allZones = settings.kmlData.polygons
-                                                                    .filter((p: any) => currentHubs.includes((p.folderName || '').trim()))
+                                                                    .filter((p: any) => currentHubs.length === 0 || currentHubs.includes((p.folderName || '').trim()))
                                                                     .map((p: any) => `${(p.folderName || '').trim()}:${(p.name || '').trim()}`);
                                                                 setSettings({ ...settings, selectedZones: allZones });
                                                             }}

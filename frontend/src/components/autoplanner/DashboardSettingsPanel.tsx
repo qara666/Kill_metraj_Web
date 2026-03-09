@@ -8,7 +8,6 @@ import {
     CheckCircleIcon,
     ExclamationCircleIcon,
 } from '@heroicons/react/24/outline';
-import toast from 'react-hot-toast';
 import { useDashboardStore } from '../../stores/useDashboardStore';
 
 import { useAuth } from '../../contexts/AuthContext';
@@ -16,7 +15,6 @@ import { localStorageUtils } from '../../utils/ui/localStorage';
 
 interface DashboardSettingsPanelProps {
     isDark: boolean;
-    onManualSync?: () => void;
     // New props for Controlled Mode (Admin Presets)
     initialSettings?: Record<string, any>;
     onSettingsChange?: (newSettings: Record<string, any>) => void;
@@ -25,7 +23,6 @@ interface DashboardSettingsPanelProps {
 
 export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
     isDark,
-    onManualSync,
     initialSettings,
     onSettingsChange,
     canModify = true // Default to true if not provided (e.g. for basic usage)
@@ -55,7 +52,7 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
     const setApiTimeDeliveryBeg = useDashboardStore(s => s.setApiTimeDeliveryBeg);
     const setApiTimeDeliveryEnd = useDashboardStore(s => s.setApiTimeDeliveryEnd);
     const setApiTimeFilterEnabled = useDashboardStore(s => s.setApiTimeFilterEnabled);
-    const triggerApiManualSync = useDashboardStore(s => s.triggerApiManualSync);
+
 
     // --- State Logic: Controlled vs Uncontrolled ---
     const isControlled = !!onSettingsChange;
@@ -277,15 +274,7 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
     }, [isControlled, isAdmin, user?.divisionId, storeApiKey, storeApiDepartmentId, setApiKey, setApiDepartmentId]);
 
 
-    const handleManualSync = useCallback(() => {
-        handleSaveSettings();
-        if (!isControlled) {
-            triggerApiManualSync();
-        } else {
-            toast.success('Настройки сохранены (режим администратора)');
-        }
-        if (onManualSync) onManualSync();
-    }, [handleSaveSettings, isControlled, triggerApiManualSync, onManualSync]);
+
 
     const formatTimeAgo = (timestamp: number | null) => {
         if (!timestamp) return 'Никогда';
@@ -565,21 +554,6 @@ export const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({
                             )}
                         >
                             {isControlled ? 'Сохранить параметры' : 'Сохранить настройки API'}
-                        </button>
-                        <button
-                            onClick={handleManualSync}
-                            disabled={apiSyncStatus === 'syncing' || !editApiKey.trim() || !effectiveCanModify}
-                            className={clsx(
-                                'flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1',
-                                apiSyncStatus === 'syncing' || !editApiKey.trim() || !effectiveCanModify
-                                    ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                                    : isDark
-                                        ? 'bg-green-600 hover:bg-green-700 text-white'
-                                        : 'bg-green-500 hover:bg-green-600 text-white'
-                            )}
-                        >
-                            <ArrowPathIcon className={clsx('w-3 h-3', apiSyncStatus === 'syncing' && 'animate-spin')} />
-                            {isControlled ? 'Проверить синхронизацию' : 'Синхронизировать сейчас'}
                         </button>
                     </div>
                 </div>

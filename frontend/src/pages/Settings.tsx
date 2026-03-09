@@ -22,7 +22,6 @@ import { CityBiasSection } from '../components/zone/CityBiasSection'
 import { CollapsibleSection } from '../components/shared/CollapsibleSection'
 import { KmlPreviewMap } from '../components/zone/KmlPreviewMap'
 import { authService } from '../utils/auth/authService'
-import { syncPresetsToLocalStorage } from '../utils/auth/presetSync'
 
 interface SettingsForm {
   googleMapsApiKey: string
@@ -74,9 +73,7 @@ export const Settings: React.FC = () => {
   const canModify = user?.canModifySettings !== false
   const [isTestingApiKey, setIsTestingApiKey] = useState(false)
   const [zoneSearchTerm, setZoneSearchTerm] = useState('')
-  const [isSyncingKml, setIsSyncingKml] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
-  const [isSyncingPresets, setIsSyncingPresets] = useState(false)
 
   const { register, handleSubmit, watch, setValue } = useForm<SettingsForm>({
     defaultValues: {
@@ -276,7 +273,6 @@ export const Settings: React.FC = () => {
       return
     }
 
-    setIsSyncingKml(true)
     try {
       const midMatch = url.match(/mid=([^&\s]+)/)
       if (!midMatch) {
@@ -315,30 +311,19 @@ export const Settings: React.FC = () => {
     } catch (error: any) {
       console.error('KML Sync Error:', error)
       toast.error(`Ошибка синхронизации: ${error.message}`)
-    } finally {
-      setIsSyncingKml(false)
     }
   }
 
-  const handleManualSyncPresets = async () => {
-    if (!user?.id) return
-    setIsSyncingPresets(true)
-    try {
-      const result = await syncPresetsToLocalStorage(user.id)
-      if (result) {
-        toast.success('Настройки синхронизированы с сервером')
-        // Force reload settings from local storage to update UI
-        window.location.reload()
-      } else {
-        toast.error('Не удалось получить настройки с сервера')
-      }
-    } catch (error) {
-      console.error('Manual sync error:', error)
-      toast.error('Ошибка синхронизации')
-    } finally {
-      setIsSyncingPresets(false)
+  useEffect(() => {
+    const handleSettingsUpdated = () => {
+      const settings = localStorageUtils.getAllSettings()
+      Object.entries(settings).forEach(([key, value]) => {
+        setValue(key as any, value)
+      })
     }
-  }
+    window.addEventListener('km-settings-updated', handleSettingsUpdated)
+    return () => window.removeEventListener('km-settings-updated', handleSettingsUpdated)
+  }, [setValue])
 
   const handleClearAllData = async () => {
     if (window.confirm('Вы уверены, что хотите очистить все динамические данные (маршруты, логи, историю)? Настройки и API ключи будут сохранены.')) {
@@ -366,20 +351,6 @@ export const Settings: React.FC = () => {
             <p className={clsx('mt-1 text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>Настройка приложения и API ключей</p>
           </div>
           <div className="flex items-center gap-4">
-            <button
-              type="button"
-              onClick={handleManualSyncPresets}
-              disabled={isSyncingPresets || !user?.id}
-              className={clsx(
-                'px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2',
-                isDark 
-                  ? 'bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30' 
-                  : 'bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200'
-              )}
-            >
-              <ArrowPathIcon className={clsx('h-4 w-4', isSyncingPresets && 'animate-spin')} />
-              {isSyncingPresets ? 'Синхронизация...' : 'Синхронизировать с сервером'}
-            </button>
             {isLoading && <LoadingSpinner size="md" />}
           </div>
         </div>
@@ -418,29 +389,12 @@ export const Settings: React.FC = () => {
                     placeholder="https://www.google.com/maps/d/viewer?mid=..."
                     {...register('kmlSourceUrl')}
                   />
-                  <button
-                    type="button"
-                    onClick={() => syncKmlFromUrl(watch('kmlSourceUrl'))}
-                    disabled={isSyncingKml || !watch('kmlSourceUrl')}
-                    className={clsx(
-                      'px-4 py-2 rounded-xl font-medium transition-all flex items-center gap-2',
-                      isDark ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-indigo-500 hover:bg-indigo-600 text-white',
-                      (isSyncingKml || !watch('kmlSourceUrl')) && 'opacity-50 cursor-not-allowed'
-                    )}
-                  >
-                    {isSyncingKml ? <LoadingSpinner size="sm" /> : <ArrowPathIcon className="h-5 w-5" />}
-                    {isSyncingKml ? 'Синхронизация...' : 'Синхронизировать'}
-                  </button>
                 </div>
-                <div className="flex items-center gap-4 mt-2">
-                  <label className="inline-flex items-center space-x-2 cursor-pointer">
-                    <input type="checkbox" className="checkbox" {...register('autoSyncKml')} />
-                    <span className="text-sm">Обновлять автоматически при загрузке страницы</span>
-                  </label>
-                  {watch('lastKmlSync') && (
+                {watch('lastKmlSync') && (
+                  <div className="flex items-center gap-4 mt-2">
                     <span className="text-[10px] text-gray-500 italic">Последнее обновление: {watch('lastKmlSync')}</span>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-4 pt-2">
@@ -662,7 +616,6 @@ export const Settings: React.FC = () => {
                     setValue(key as any, val);
                   });
                 }}
-                onManualSync={() => toast.success('Синхронизация запущена')} 
                 canModify={canModify}
               />
             </CollapsibleSection>
