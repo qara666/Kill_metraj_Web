@@ -31,7 +31,13 @@ export const syncPresetsToLocalStorage = async (userId: number): Promise<any | n
             'googleMapsApiKey', 'cityBias', 'kmlSourceUrl', 
             'selectedHubs', 'selectedZones', 'lastKmlSync', 
             'autoSyncKml', 'theme', 'courierTransportType', 
-            'fastopertorApiKey'
+            'fastopertorApiKey', 'generouteApiKey', 'geoapifyApiKey',
+            'mapboxToken', 'mapProvider', 'routingProvider', 'geocodingProvider',
+            'defaultStartAddress', 'defaultStartLat', 'defaultStartLng',
+            'defaultEndAddress', 'defaultEndLat', 'defaultEndLng',
+            'anomalyFilterEnabled', 'anomalyMaxLegDistanceKm', 
+            'anomalyMaxTotalDistanceKm', 'anomalyMaxAvgPerOrderKm',
+            'addressQualityThreshold', 'enableCoordinateValidation', 'enableAdaptiveThresholds'
         ];
 
         let hasChanged = false;

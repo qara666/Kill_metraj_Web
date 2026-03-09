@@ -110,6 +110,22 @@ export const AdminPresets: React.FC = () => {
         }
     })
 
+    // Global Sync Mutation
+    const syncAllMutation = useMutation({
+        mutationFn: (settings: any) => authService.syncAllPresets(settings),
+        onSuccess: (data) => {
+            if (data.success) {
+                toast.success(data.message || 'Настройки применены ко всем пользователям')
+                queryClient.invalidateQueries({ queryKey: ['user_presets'] })
+            } else {
+                toast.error(data.error || 'Ошибка синхронизации')
+            }
+        },
+        onError: () => {
+            toast.error('Не удалось выполнить глобальную синхронизацию')
+        }
+    })
+
     // Save User fields mutation
     const updateUserMutation = useMutation({
         mutationFn: ({ userId, data }: { userId: number; data: any }) =>
@@ -134,6 +150,13 @@ export const AdminPresets: React.FC = () => {
         }
     }
 
+    const handleSyncAll = () => {
+        if (!window.confirm('Вы уверены, что хотите применить эти настройки КО ВСЕМ активным пользователям? Это перезапишет их текущие API ключи и конфигурацию.')) {
+            return
+        }
+        syncAllMutation.mutate(settings)
+    }
+
     return (
         <div className="p-4 space-y-6 max-w-[1600px] mx-auto min-h-screen">
             {/* Header omitted for brevity in rewrite, focused on functionality */}
@@ -156,13 +179,25 @@ export const AdminPresets: React.FC = () => {
                         </p>
                     </div>
                     {selectedUser && (
-                        <button
-                            onClick={handleSave}
-                            disabled={saveMutation.isPending}
-                            className="px-6 py-3 rounded-xl bg-blue-600 text-white font-bold shadow-lg hover:scale-105 transition-all"
-                        >
-                            {saveMutation.isPending ? 'Сохранение...' : 'Сохранить изменения'}
-                        </button>
+                        <div className="flex flex-wrap gap-3">
+                            {isAdmin && (
+                                <button
+                                    onClick={handleSyncAll}
+                                    disabled={syncAllMutation.isPending}
+                                    className="px-6 py-3 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 font-bold hover:bg-indigo-600/30 transition-all flex items-center gap-2"
+                                >
+                                    <ArrowPathIcon className={clsx("w-5 h-5", syncAllMutation.isPending && "animate-spin")} />
+                                    {syncAllMutation.isPending ? 'Синхронизация...' : 'Применить ко всем'}
+                                </button>
+                            )}
+                            <button
+                                onClick={handleSave}
+                                disabled={saveMutation.isPending}
+                                className="px-6 py-3 rounded-xl bg-blue-600 text-white font-bold shadow-lg hover:scale-105 transition-all"
+                            >
+                                {saveMutation.isPending ? 'Сохранение...' : 'Сохранить изменения'}
+                            </button>
+                        </div>
                     )}
                 </div>
             </div>
@@ -557,7 +592,7 @@ export const AdminPresets: React.FC = () => {
                                                         {Array.from(new Set(settings.kmlData.polygons.map((p: any) => p.folderName)))
                                                             .sort()
                                                             .map((hub: any) => {
-                                                                const isSelected = settings.selectedHubs?.includes(hub);
+                                                                const isSelected = settings.selectedHubs?.includes((hub as string).trim());
                                                                 return (
                                                                     <label key={hub} className={clsx(
                                                                         "flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all",
@@ -651,12 +686,12 @@ export const AdminPresets: React.FC = () => {
                                                 <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-1">
                                                     {settings.kmlData.polygons
                                                         .filter((p: any) => {
-                                                            const isFromHub = (settings.selectedHubs || []).length === 0 || settings.selectedHubs.includes(p.folderName);
+                                                            const isFromHub = (settings.selectedHubs || []).length === 0 || (settings.selectedHubs || []).includes((p.folderName || '').trim());
                                                             const matchesSearch = !zoneSearchTerm || (p.name || '').toLowerCase().includes(zoneSearchTerm.toLowerCase()) || (p.folderName || '').toLowerCase().includes(zoneSearchTerm.toLowerCase());
                                                             return isFromHub && matchesSearch;
                                                         })
                                                         .map((p: any) => {
-                                                            const zoneKey = `${p.folderName}:${p.name}`;
+                                                            const zoneKey = `${(p.folderName || '').trim()}:${(p.name || '').trim()}`;
                                                             const isSelected = settings.selectedZones?.includes(zoneKey);
                                                             return (
                                                                 <label key={zoneKey} className={clsx(

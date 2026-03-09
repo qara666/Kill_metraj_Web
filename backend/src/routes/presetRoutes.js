@@ -156,8 +156,8 @@ router.put('/:userId', authenticateToken, auditLog('preset_update'), async (req,
     }
 });
 
-// POST /api/presets/template - Create preset template (admin only)
-router.post('/template', requireRole('admin'), auditLog('preset_template_create'), async (req, res) => {
+// POST /api/presets/sync-all - Apply settings to all users (admin only)
+router.post('/sync-all', requireRole('admin'), auditLog('preset_sync_all'), async (req, res) => {
     try {
         const { settings } = req.body;
 
@@ -169,18 +169,41 @@ router.post('/template', requireRole('admin'), auditLog('preset_template_create'
             });
         }
 
-        // This is a placeholder for template functionality
+        const { User } = require('../models');
+        const users = await User.findAll({ where: { isActive: true } });
+
+        let updatedCount = 0;
+        for (const user of users) {
+            let [preset] = await UserPreset.findOrCreate({
+                where: { userId: user.id },
+                defaults: {
+                    userId: user.id,
+                    settings: settings,
+                    updatedBy: req.user.id
+                }
+            });
+
+            if (preset) {
+                // Merge settings: prioritizing the incoming global settings
+                preset.settings = { ...preset.settings, ...settings };
+                preset.updatedBy = req.user.id;
+                preset.changed('settings', true);
+                await preset.save();
+                updatedCount++;
+            }
+        }
+
         res.json({
             success: true,
-            message: 'Шаблон успешно создан',
-            data: { settings }
+            message: `Настройки успешно применены к ${updatedCount} пользователям`,
+            data: { updatedCount }
         });
     } catch (error) {
-        logger.error('Ошибка создания шаблона', { error: error.message });
+        logger.error('Ошибка глобальной синхронизации пресетов', { error: error.message });
         res.status(500).json({
             success: false,
             error: 'ВнутренняяОшибкаСервера',
-            message: 'Не удалось создать шаблон'
+            message: 'Не удалось синхронизировать пресеты'
         });
     }
 });

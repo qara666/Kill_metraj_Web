@@ -201,6 +201,18 @@ export const authService = {
         }
     },
 
+    async syncAllPresets(settings: Record<string, any>): Promise<{ success: boolean; message?: string; error?: string }> {
+        try {
+            const response = await axios.post(`${API_URL}/api/presets/sync-all`, { settings })
+            return response.data
+        } catch (error: any) {
+            return {
+                success: false,
+                error: error.response?.data?.message || 'Ошибка глобальной синхронизации'
+            }
+        }
+    },
+
     // ============================================
     // ЛОГИ (ADMIN)
     // ============================================
