@@ -50,6 +50,24 @@ export function containsLocation(loc: any, polygon: KmlPolygonData, tolerance: n
   }
 }
 
+// ─── Spatial Cache ────────────────────────────────────────────────────────────
+/**
+ * Global cache to store zone lookup results by coordinate.
+ * Prevents redundant polygon.containsLocation calls which are very expensive.
+ */
+const spatialCache = new Map<string, ZoneMatch[]>()
+
+export function clearSpatialCache(): void {
+  spatialCache.clear()
+}
+
+function getCoordKey(loc: any, tolerance: number): string | null {
+  const coords = extractLatLng(loc)
+  if (!coords) return null
+  // We use 6 decimal places (~11cm precision) to group near-identical points
+  return `${coords.lat.toFixed(6)},${coords.lng.toFixed(6)},${tolerance}`
+}
+
 // ─── Zone finder ──────────────────────────────────────────────────────────────
 
 export interface ZoneMatch {
@@ -66,6 +84,15 @@ export function findZonesForLoc(
   polygons: KmlPolygonData[],
   tolerance: number = 0.001
 ): ZoneMatch[] {
+  const cacheKey = getCoordKey(loc, tolerance)
+  // We only cache if we are checking against one of the standard polygon sets (all or active)
+  // For simplicity, we cache by coordinate + poly list length as a basic "version" check
+  const fullKey = cacheKey ? `${cacheKey}:${polygons.length}` : null
+  
+  if (fullKey && spatialCache.has(fullKey)) {
+    return spatialCache.get(fullKey)!
+  }
+
   const matches: ZoneMatch[] = []
 
   for (const poly of polygons) {
@@ -76,6 +103,11 @@ export function findZonesForLoc(
 
   // Delivery zones first
   matches.sort((a, b) => (a.isTechnical ? 1 : 0) - (b.isTechnical ? 1 : 0))
+
+  if (fullKey) {
+    spatialCache.set(fullKey, matches)
+  }
+
   return matches
 }
 

@@ -26,7 +26,6 @@ export const syncPresetsToLocalStorage = async (userId: number): Promise<any | n
         }
         
         // 3. Change detection to avoid redundant broadcasts
-        // We explicitly check keys that should trigger a reload for the user, especially lastKmlSync
         const keysToCheck = [
             'googleMapsApiKey', 'cityBias', 'kmlSourceUrl', 'kmlData',
             'selectedHubs', 'selectedZones', 'lastKmlSync', 
@@ -43,10 +42,17 @@ export const syncPresetsToLocalStorage = async (userId: number): Promise<any | n
         ];
 
         let hasChanged = false;
+        let googleMapsKeyChanged = false;
+
         for (const key of keysToCheck) {
-            if (JSON.stringify(currentLocal[key]) !== JSON.stringify(mappedSettings[key])) {
+            const localVal = JSON.stringify(currentLocal[key])
+            const serverVal = JSON.stringify(mappedSettings[key])
+            if (localVal !== serverVal) {
                 hasChanged = true;
-                break;
+                if (key === 'googleMapsApiKey') {
+                    googleMapsKeyChanged = true;
+                    console.log('[presetSync] Google Maps API key changed by admin.')
+                }
             }
         }
 
@@ -62,7 +68,7 @@ export const syncPresetsToLocalStorage = async (userId: number): Promise<any | n
         }
 
         if (hasChanged) {
-            console.log('Detected preset changes from server, updating local storage...')
+            console.log('[presetSync] Preset changes detected, updating local storage...')
             // 5. Save to local storage (this broadcasts the update to other tabs/components)
             localStorageUtils.setAllSettings(mappedSettings)
             
@@ -70,8 +76,18 @@ export const syncPresetsToLocalStorage = async (userId: number): Promise<any | n
             if (mappedSettings.mapboxToken) {
                 localStorage.setItem('km_mapbox_token', mappedSettings.mapboxToken)
             }
-        } else {
-            // console.log('Presets are up to date with server.')
+
+            // 6. If the Google Maps API key changed, trigger a reload of the Maps script.
+            // The googleMapsLoader will detect the key mismatch and reload the browser session.
+            if (googleMapsKeyChanged && mappedSettings.googleMapsApiKey) {
+                const { googleMapsLoader } = await import('../maps/googleMapsLoader')
+                try {
+                    await googleMapsLoader.load()
+                } catch (err) {
+                    console.warn('[presetSync] Maps loader reload after key change:', err)
+                    // Non-fatal — the user will get a fresh key on next calculation attempt
+                }
+            }
         }
 
         return mappedSettings
