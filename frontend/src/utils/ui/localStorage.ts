@@ -135,34 +135,7 @@ export const localStorageUtils = {
       const persistentMap = localStorageUtils.getCourierVehicleMap()
       const maxCriticalRouteDistanceKm = localStorage.getItem('km_max_critical_route_distance_km')
       
-      const defaultSettings = {
-        googleMapsApiKey: localStorage.getItem('google_maps_api_key') || '',
-        mapboxToken: localStorage.getItem('km_mapbox_token') || '',
-        defaultStartAddress: localStorage.getItem('km_default_start_address') || '',
-        defaultStartLat: localStorage.getItem('km_default_start_lat') ? parseFloat(localStorage.getItem('km_default_start_lat')!) : null,
-        defaultStartLng: localStorage.getItem('km_default_start_lng') ? parseFloat(localStorage.getItem('km_default_start_lng')!) : null,
-        defaultEndAddress: localStorage.getItem('km_default_end_address') || '',
-        defaultEndLat: localStorage.getItem('km_default_end_lat') ? parseFloat(localStorage.getItem('km_default_end_lat')!) : null,
-        defaultEndLng: localStorage.getItem('km_default_end_lng') ? parseFloat(localStorage.getItem('km_default_end_lng')!) : null,
-        cityBias: localStorage.getItem('km_city_bias') || '',
-        mapStyle: localStorage.getItem('km_map_style') || 'standard',
-        courierVehicleMap: persistentMap,
-        maxCriticalRouteDistanceKm: maxCriticalRouteDistanceKm ? parseFloat(maxCriticalRouteDistanceKm) : 120,
-        kmlData: localStorage.getItem('km_kml_data') ? JSON.parse(localStorage.getItem('km_kml_data')!) : null,
-        kmlSourceUrl: localStorage.getItem('km_kml_source_url') || '',
-        lastKmlSync: localStorage.getItem('km_last_kml_sync') || null,
-        autoSyncKml: localStorage.getItem('km_auto_sync_kml') === 'true',
-        fastopertorApiKey: localStorage.getItem('km_fastopertor_api_key') || '',
-        fastopertorDepartmentId: localStorage.getItem('km_fastopertor_department_id') || '',
-        routingProvider: (localStorage.getItem('km_routing_provider') as any) || 'google',
-        geocodingProvider: (localStorage.getItem('km_geocoding_provider') as any) || 'google',
-        generouteApiKey: localStorage.getItem('km_generoute_api_key') || '',
-        geoapifyApiKey: localStorage.getItem('km_geoapify_api_key') || '',
-        anomalyFilterEnabled: localStorage.getItem('km_anomaly_filter_enabled') !== 'false',
-        anomalyMaxLegDistanceKm: localStorage.getItem('km_anomaly_max_leg_distance') ? parseFloat(localStorage.getItem('km_anomaly_max_leg_distance')!) : 10,
-        anomalyMaxTotalDistanceKm: localStorage.getItem('km_anomaly_max_total_distance') ? parseFloat(localStorage.getItem('km_anomaly_max_total_distance')!) : 35,
-        anomalyMaxAvgPerOrderKm: localStorage.getItem('km_anomaly_max_avg_per_order') ? parseFloat(localStorage.getItem('km_anomaly_max_avg_per_order')!) : 25
-      }
+
 
       const parsedSettings = settingsJson ? JSON.parse(settingsJson) : {}
       
