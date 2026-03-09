@@ -88,13 +88,13 @@ export const localStorageUtils = {
 
       // Предупреждение если данные слишком большие (>2MB)
       if (size > 2 * 1024 * 1024) {
-        console.warn(`️ Данные для ключа "${key}" слишком большие: ${(size / 1024 / 1024).toFixed(2)}MB`)
+        console.warn(`⚠️ Данные для ключа "${key}" слишком большие: ${(size / 1024 / 1024).toFixed(2)}MB`)
       }
 
       localStorage.setItem(key, serialized)
     } catch (error: any) {
       if (error.name === 'QuotaExceededError' || error.message?.includes('quota')) {
-        console.warn(`️ localStorage переполнен для ключа "${key}". Попытка очистки...`)
+        console.warn(`⚠️ localStorage переполнен для ключа "${key}". Попытка очистки...`)
         // Пробуем очистить старые данные
         try {
           // Удаляем старые данные (кроме критически важных)
@@ -110,7 +110,7 @@ export const localStorageUtils = {
           // Пробуем сохранить снова
           localStorage.setItem(key, JSON.stringify(data))
         } catch (retryError) {
-          console.error(` Не удалось сохранить данные для ключа "${key}":`, retryError)
+          console.error(`❌ Не удалось сохранить данные для ключа "${key}":`, retryError)
         }
       } else {
         console.error('Error writing to localStorage:', error)
@@ -134,6 +134,7 @@ export const localStorageUtils = {
       const settingsJson = localStorage.getItem('km_settings')
       const persistentMap = localStorageUtils.getCourierVehicleMap()
       const maxCriticalRouteDistanceKm = localStorage.getItem('km_max_critical_route_distance_km')
+      
       const defaultSettings = {
         googleMapsApiKey: localStorage.getItem('google_maps_api_key') || '',
         mapboxToken: localStorage.getItem('km_mapbox_token') || '',
@@ -154,33 +155,41 @@ export const localStorageUtils = {
         fastopertorApiKey: localStorage.getItem('km_fastopertor_api_key') || '',
         fastopertorDepartmentId: localStorage.getItem('km_fastopertor_department_id') || '',
         routingProvider: (localStorage.getItem('km_routing_provider') as any) || 'google',
-        geocodingProvider: (localStorage.getItem('km_geococding_provider') as any) || 'google',
-        generouteApiKey: localStorage.getItem('km_generoute_api_key') || ''
+        geocodingProvider: (localStorage.getItem('km_geocoding_provider') as any) || 'google',
+        generouteApiKey: localStorage.getItem('km_generoute_api_key') || '',
+        geoapifyApiKey: localStorage.getItem('km_geoapify_api_key') || '',
+        anomalyFilterEnabled: localStorage.getItem('km_anomaly_filter_enabled') !== 'false',
+        anomalyMaxLegDistanceKm: localStorage.getItem('km_anomaly_max_leg_distance') ? parseFloat(localStorage.getItem('km_anomaly_max_leg_distance')!) : 10,
+        anomalyMaxTotalDistanceKm: localStorage.getItem('km_anomaly_max_total_distance') ? parseFloat(localStorage.getItem('km_anomaly_max_total_distance')!) : 35,
+        anomalyMaxAvgPerOrderKm: localStorage.getItem('km_anomaly_max_avg_per_order') ? parseFloat(localStorage.getItem('km_anomaly_max_avg_per_order')!) : 25
       }
 
-      return settingsJson ? {
-        ...JSON.parse(settingsJson),
-        mapStyle: localStorage.getItem('km_map_style') || 'standard',
+      const parsedSettings = settingsJson ? JSON.parse(settingsJson) : {}
+      
+      return {
+        ...parsedSettings,
+        // Overrides from individual keys (sources of truth)
+        googleMapsApiKey: localStorage.getItem('google_maps_api_key') || parsedSettings.googleMapsApiKey || '',
+        mapboxToken: localStorage.getItem('km_mapbox_token') || parsedSettings.mapboxToken || '',
+        defaultStartAddress: localStorage.getItem('km_default_start_address') || parsedSettings.defaultStartAddress || '',
+        defaultStartLat: localStorage.getItem('km_default_start_lat') ? parseFloat(localStorage.getItem('km_default_start_lat')!) : (parsedSettings.defaultStartLat || null),
+        defaultStartLng: localStorage.getItem('km_default_start_lng') ? parseFloat(localStorage.getItem('km_default_start_lng')!) : (parsedSettings.defaultStartLng || null),
+        defaultEndAddress: localStorage.getItem('km_default_end_address') || parsedSettings.defaultEndAddress || '',
+        defaultEndLat: localStorage.getItem('km_default_end_lat') ? parseFloat(localStorage.getItem('km_default_end_lat')!) : (parsedSettings.defaultEndLat || null),
+        defaultEndLng: localStorage.getItem('km_default_end_lng') ? parseFloat(localStorage.getItem('km_default_end_lng')!) : (parsedSettings.defaultEndLng || null),
+        kmlData: localStorage.getItem('km_kml_data') ? JSON.parse(localStorage.getItem('km_kml_data')!) : (parsedSettings.kmlData || null),
+        kmlSourceUrl: localStorage.getItem('km_kml_source_url') || parsedSettings.kmlSourceUrl || '',
+        routingProvider: (localStorage.getItem('km_routing_provider') as any) || parsedSettings.routingProvider || 'google',
+        geocodingProvider: (localStorage.getItem('km_geocoding_provider') as any) || parsedSettings.geocodingProvider || 'google',
+        fastopertorApiKey: localStorage.getItem('km_fastopertor_api_key') || parsedSettings.fastopertorApiKey || '',
+        generouteApiKey: localStorage.getItem('km_generoute_api_key') || parsedSettings.generouteApiKey || '',
+        geoapifyApiKey: localStorage.getItem('km_geoapify_api_key') || parsedSettings.geoapifyApiKey || '',
+        mapStyle: localStorage.getItem('km_map_style') || parsedSettings.mapStyle || 'standard',
         courierVehicleMap: persistentMap,
-        maxCriticalRouteDistanceKm: maxCriticalRouteDistanceKm ? parseFloat(maxCriticalRouteDistanceKm) : 120,
-        kmlData: localStorage.getItem('km_kml_data') ? JSON.parse(localStorage.getItem('km_kml_data')!) : null,
-        kmlSourceUrl: localStorage.getItem('km_kml_source_url') || '',
-        defaultStartAddress: localStorage.getItem('km_default_start_address') || '',
-        defaultStartLat: localStorage.getItem('km_default_start_lat') ? parseFloat(localStorage.getItem('km_default_start_lat')!) : null,
-        defaultStartLng: localStorage.getItem('km_default_start_lng') ? parseFloat(localStorage.getItem('km_default_start_lng')!) : null,
-        defaultEndAddress: localStorage.getItem('km_default_end_address') || '',
-        defaultEndLat: localStorage.getItem('km_default_end_lat') ? parseFloat(localStorage.getItem('km_default_end_lat')!) : null,
-        defaultEndLng: localStorage.getItem('km_default_end_lng') ? parseFloat(localStorage.getItem('km_default_end_lng')!) : null,
-        lastKmlSync: localStorage.getItem('km_last_kml_sync') || null,
-        autoSyncKml: localStorage.getItem('km_auto_sync_kml') === 'true',
-        selectedHubs: localStorage.getItem('km_selected_hubs') ? JSON.parse(localStorage.getItem('km_selected_hubs')!) : [],
-        selectedZones: localStorage.getItem('km_selected_zones') ? JSON.parse(localStorage.getItem('km_selected_zones')!) : [],
-        fastopertorApiKey: localStorage.getItem('km_fastopertor_api_key') || '',
-        fastopertorDepartmentId: localStorage.getItem('km_fastopertor_department_id') || '',
-        routingProvider: (localStorage.getItem('km_routing_provider') as any) || 'google',
-        geocodingProvider: (localStorage.getItem('km_geococding_provider') as any) || 'google',
-        generouteApiKey: localStorage.getItem('km_generoute_api_key') || ''
-      } : defaultSettings
+        maxCriticalRouteDistanceKm: maxCriticalRouteDistanceKm ? parseFloat(maxCriticalRouteDistanceKm) : (parsedSettings.maxCriticalRouteDistanceKm || 120),
+        selectedHubs: localStorage.getItem('km_selected_hubs') ? JSON.parse(localStorage.getItem('km_selected_hubs')!) : (parsedSettings.selectedHubs || []),
+        selectedZones: localStorage.getItem('km_selected_zones') ? JSON.parse(localStorage.getItem('km_selected_zones')!) : (parsedSettings.selectedZones || [])
+      }
     } catch (error) {
       console.error('Error reading settings:', error)
       return {
@@ -203,8 +212,13 @@ export const localStorageUtils = {
         fastopertorApiKey: localStorage.getItem('km_fastopertor_api_key') || '',
         fastopertorDepartmentId: localStorage.getItem('km_fastopertor_department_id') || '',
         routingProvider: (localStorage.getItem('km_routing_provider') as any) || 'google',
-        geocodingProvider: (localStorage.getItem('km_geococding_provider') as any) || 'google',
-        generouteApiKey: localStorage.getItem('km_generoute_api_key') || ''
+        geocodingProvider: (localStorage.getItem('km_geocoding_provider') as any) || 'google',
+        generouteApiKey: localStorage.getItem('km_generoute_api_key') || '',
+        geoapifyApiKey: localStorage.getItem('km_geoapify_api_key') || '',
+        anomalyFilterEnabled: localStorage.getItem('km_anomaly_filter_enabled') !== 'false',
+        anomalyMaxLegDistanceKm: localStorage.getItem('km_anomaly_max_leg_distance') ? parseFloat(localStorage.getItem('km_anomaly_max_leg_distance')!) : 10,
+        anomalyMaxTotalDistanceKm: localStorage.getItem('km_anomaly_max_total_distance') ? parseFloat(localStorage.getItem('km_anomaly_max_total_distance')!) : 35,
+        anomalyMaxAvgPerOrderKm: localStorage.getItem('km_anomaly_max_avg_per_order') ? parseFloat(localStorage.getItem('km_anomaly_max_avg_per_order')!) : 25
       }
     }
   },
@@ -263,10 +277,25 @@ export const localStorageUtils = {
         localStorage.setItem('km_routing_provider', settings.routingProvider)
       }
       if (settings.geocodingProvider !== undefined) {
-        localStorage.setItem('km_geococding_provider', settings.geocodingProvider)
+        localStorage.setItem('km_geocoding_provider', settings.geocodingProvider)
       }
       if (settings.generouteApiKey !== undefined) {
         localStorage.setItem('km_generoute_api_key', settings.generouteApiKey)
+      }
+      if (settings.geoapifyApiKey !== undefined) {
+        localStorage.setItem('km_geoapify_api_key', settings.geoapifyApiKey)
+      }
+      if (settings.anomalyFilterEnabled !== undefined) {
+        localStorage.setItem('km_anomaly_filter_enabled', settings.anomalyFilterEnabled ? 'true' : 'false')
+      }
+      if (settings.anomalyMaxLegDistanceKm !== undefined) {
+        localStorage.setItem('km_anomaly_max_leg_distance', settings.anomalyMaxLegDistanceKm.toString())
+      }
+      if (settings.anomalyMaxTotalDistanceKm !== undefined) {
+        localStorage.setItem('km_anomaly_max_total_distance', settings.anomalyMaxTotalDistanceKm.toString())
+      }
+      if (settings.anomalyMaxAvgPerOrderKm !== undefined) {
+        localStorage.setItem('km_anomaly_max_avg_per_order', settings.anomalyMaxAvgPerOrderKm.toString())
       }
       // Save courier vehicle map separately
       if (courierVehicleMap && typeof courierVehicleMap === 'object') {

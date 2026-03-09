@@ -88,13 +88,12 @@ export function findBestZone(
   ctx: KmlZoneContext,
   tolerance: number = 0.001
 ): ZoneMatch | null {
-  // 1. Try active/selected polygons first
+  // Try active (hub-scoped) polygons first
   const activeMatches = findZonesForLoc(loc, ctx.activePolygons, tolerance)
   if (activeMatches.length > 0) return activeMatches[0]
 
-  // 2. Fall back to all polygons
-  const allMatches = findZonesForLoc(loc, ctx.allPolygons, tolerance)
-  return allMatches[0] || null
+  // Do not fall back to other zones (strict geocoding scope)
+  return null
 }
 
 /**

@@ -201,6 +201,10 @@ export const authService = {
         }
     },
 
+    /**
+     * @deprecated Use automatic background synchronization via AuthContext and presetSync instead.
+     * This method will be removed in future versions.
+     */
     async syncAllPresets(settings: Record<string, any>): Promise<{ success: boolean; message?: string; error?: string }> {
         try {
             const response = await axios.post(`${API_URL}/api/presets/sync-all`, { settings })
