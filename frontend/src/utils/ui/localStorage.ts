@@ -138,7 +138,11 @@ export const localStorageUtils = {
         googleMapsApiKey: localStorage.getItem('google_maps_api_key') || '',
         mapboxToken: localStorage.getItem('km_mapbox_token') || '',
         defaultStartAddress: localStorage.getItem('km_default_start_address') || '',
+        defaultStartLat: localStorage.getItem('km_default_start_lat') ? parseFloat(localStorage.getItem('km_default_start_lat')!) : null,
+        defaultStartLng: localStorage.getItem('km_default_start_lng') ? parseFloat(localStorage.getItem('km_default_start_lng')!) : null,
         defaultEndAddress: localStorage.getItem('km_default_end_address') || '',
+        defaultEndLat: localStorage.getItem('km_default_end_lat') ? parseFloat(localStorage.getItem('km_default_end_lat')!) : null,
+        defaultEndLng: localStorage.getItem('km_default_end_lng') ? parseFloat(localStorage.getItem('km_default_end_lng')!) : null,
         cityBias: localStorage.getItem('km_city_bias') || '',
         mapStyle: localStorage.getItem('km_map_style') || 'standard',
         courierVehicleMap: persistentMap,
@@ -161,6 +165,12 @@ export const localStorageUtils = {
         maxCriticalRouteDistanceKm: maxCriticalRouteDistanceKm ? parseFloat(maxCriticalRouteDistanceKm) : 120,
         kmlData: localStorage.getItem('km_kml_data') ? JSON.parse(localStorage.getItem('km_kml_data')!) : null,
         kmlSourceUrl: localStorage.getItem('km_kml_source_url') || '',
+        defaultStartAddress: localStorage.getItem('km_default_start_address') || '',
+        defaultStartLat: localStorage.getItem('km_default_start_lat') ? parseFloat(localStorage.getItem('km_default_start_lat')!) : null,
+        defaultStartLng: localStorage.getItem('km_default_start_lng') ? parseFloat(localStorage.getItem('km_default_start_lng')!) : null,
+        defaultEndAddress: localStorage.getItem('km_default_end_address') || '',
+        defaultEndLat: localStorage.getItem('km_default_end_lat') ? parseFloat(localStorage.getItem('km_default_end_lat')!) : null,
+        defaultEndLng: localStorage.getItem('km_default_end_lng') ? parseFloat(localStorage.getItem('km_default_end_lng')!) : null,
         lastKmlSync: localStorage.getItem('km_last_kml_sync') || null,
         autoSyncKml: localStorage.getItem('km_auto_sync_kml') === 'true',
         selectedHubs: localStorage.getItem('km_selected_hubs') ? JSON.parse(localStorage.getItem('km_selected_hubs')!) : [],
@@ -177,7 +187,11 @@ export const localStorageUtils = {
         googleMapsApiKey: localStorage.getItem('google_maps_api_key') || '',
         mapboxToken: localStorage.getItem('km_mapbox_token') || '',
         defaultStartAddress: localStorage.getItem('km_default_start_address') || '',
+        defaultStartLat: localStorage.getItem('km_default_start_lat') ? parseFloat(localStorage.getItem('km_default_start_lat')!) : null,
+        defaultStartLng: localStorage.getItem('km_default_start_lng') ? parseFloat(localStorage.getItem('km_default_start_lng')!) : null,
         defaultEndAddress: localStorage.getItem('km_default_end_address') || '',
+        defaultEndLat: localStorage.getItem('km_default_end_lat') ? parseFloat(localStorage.getItem('km_default_end_lat')!) : null,
+        defaultEndLng: localStorage.getItem('km_default_end_lng') ? parseFloat(localStorage.getItem('km_default_end_lng')!) : null,
         cityBias: localStorage.getItem('km_city_bias') || '',
         mapStyle: localStorage.getItem('km_map_style') || 'standard',
         courierVehicleMap: localStorageUtils.getCourierVehicleMap(),
@@ -258,6 +272,19 @@ export const localStorageUtils = {
       if (courierVehicleMap && typeof courierVehicleMap === 'object') {
         localStorageUtils.setCourierVehicleMap(courierVehicleMap)
       }
+      if (settings.defaultStartLat !== undefined) {
+        localStorage.setItem('km_default_start_lat', settings.defaultStartLat !== null ? settings.defaultStartLat.toString() : '')
+      }
+      if (settings.defaultStartLng !== undefined) {
+        localStorage.setItem('km_default_start_lng', settings.defaultStartLng !== null ? settings.defaultStartLng.toString() : '')
+      }
+      if (settings.defaultEndLat !== undefined) {
+        localStorage.setItem('km_default_end_lat', settings.defaultEndLat !== null ? settings.defaultEndLat.toString() : '')
+      }
+      if (settings.defaultEndLng !== undefined) {
+        localStorage.setItem('km_default_end_lng', settings.defaultEndLng !== null ? settings.defaultEndLng.toString() : '')
+      }
+
       window.dispatchEvent(new CustomEvent('km-settings-updated', { detail: { settings: restSettings } }))
     } catch (error) {
       console.error('Error saving settings:', error)
@@ -324,4 +351,3 @@ export const localStorageUtils = {
     }
   }
 }
-
