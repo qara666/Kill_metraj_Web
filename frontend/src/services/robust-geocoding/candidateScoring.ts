@@ -458,7 +458,7 @@ export function scoreCandidate(
       // If the address is inside an ACTIVE user-drawn zone, we treat street mismatch as a minor warning, NOT a kill.
       // This allows coordinates in custom zones to survive even if the street name in metadata is slightly different.
       if (isInside) {
-        score -= 50000 // Moderate penalty instead of -2M
+        score -= 200000 // Was 50000, but -2M was too aggressive. -200k is a safe middle ground for in-zone.
         console.warn(`[Геокодинг] SOFT STREET MISMATCH: точка в активной зоне "${kmlZone}", но улица "${candidateFull}" не совпала с корнем.`)
       } else {
         score += SCORE.STREET_NAME_MISMATCH

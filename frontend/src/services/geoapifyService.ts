@@ -9,6 +9,7 @@ const GEOAPIFY_KEY = 'e57726487e4d41e7807a00508007a6ec' // FREE key shared acros
 
 export class GeoapifyService {
     static async geocode(address: string, cityBias?: string): Promise<any[]> {
+        if ((this as any).disabled) return []
         try {
             const query = cityBias ? `${address}, ${cityBias}, Ukraine` : `${address}, Ukraine`
             const url = new URL('https://api.geoapify.com/v1/geocode/search')
@@ -20,6 +21,11 @@ export class GeoapifyService {
             const proxyUrl = `${API_URL}/api/proxy/geocoding?url=${encodeURIComponent(url.toString())}`
             
             const response = await fetch(proxyUrl)
+            if (response.status === 401) {
+                console.warn('[Geoapify] Invalid API key (401). Disabling provider for this session.')
+                ;(this as any).disabled = true
+                return []
+            }
             if (!response.ok) throw new Error(`Geoapify status: ${response.status}`)
 
             const data = await response.json()

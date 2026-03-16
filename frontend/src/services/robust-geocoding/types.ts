@@ -105,6 +105,11 @@ export interface RobustGeocodeOptions {
    * Default: true (saves API calls).
    */
   skipExhaustiveIfGoodHit?: boolean
+
+  /**
+   * Pre-resolved canonical address string from server (v35.9.40).
+   */
+  addressGeoStr?: string
 }
 
 export interface RobustGeocodeResult {
