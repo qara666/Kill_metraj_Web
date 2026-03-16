@@ -97,8 +97,8 @@ export const useRouteGeocoding = ({
     /**
      * SOTA 5.68: Robust geocoding with centralized service and zone validation.
      */
-    const robustGeocode = async (rawAddress: string, options: { hintPoint?: any; silent?: boolean; strictZoneFallback?: boolean; expectedDeliveryZone?: string | null } = {}): Promise<any | null> => {
-        const { hintPoint, silent = false, strictZoneFallback = true, expectedDeliveryZone = null } = options
+    const robustGeocode = async (rawAddress: string, options: { hintPoint?: any; silent?: boolean; strictZoneFallback?: boolean; expectedDeliveryZone?: string | null; addressGeoStr?: string } = {}): Promise<any | null> => {
+        const { hintPoint, silent = false, strictZoneFallback = true, expectedDeliveryZone = null, addressGeoStr } = options
         const cityBias = settings.cityBias || 'Киев'
 
         // 1. Delegate core logic to the central service
@@ -106,7 +106,8 @@ export const useRouteGeocoding = ({
             hintPoint,
             cityBias,
             silent: silent || !confirmAddresses,
-            expectedDeliveryZone
+            expectedDeliveryZone,
+            addressGeoStr
         })
 
         const best = result.best
@@ -307,7 +308,8 @@ export const useRouteGeocoding = ({
                         const res = await robustGeocode(cleaned, { 
                             silent: !confirmAddresses, 
                             expectedDeliveryZone,
-                            hintPoint: lastLoc
+                            hintPoint: lastLoc,
+                            addressGeoStr: (order as any).addressGeoStr
                         })
                         
                         if (!res && confirmAddresses) {

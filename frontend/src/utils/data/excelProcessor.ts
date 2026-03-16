@@ -217,7 +217,8 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
     const addressGeoRaw = getValue(rowData, ['addressGeo', 'address_geo']);
     const geoData = addressGeoRaw ? parseAddressGeo(String(addressGeoRaw)) : {};
 
-    if (geoData.address && (!address || address.length < geoData.address.length)) {
+    // v35.9.40: Always prioritize addressGeo string if available
+    if (geoData.address) {
         address = geoData.address;
     }
 
@@ -370,6 +371,8 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
         latitude: geoData.lat,
         longitude: geoData.lng,
         isAddressLocked: !!(geoData.lat && geoData.lng), // Lock if we have server-side coords
+        addressGeoStr: geoData.address || '', // v35.9.40: Store canonical string
+        addressGeoRaw: addressGeoRaw,        // For debugging
         ...rowData
     };
 };

@@ -340,6 +340,27 @@ export class RobustGeocodingService {
     })
 
     const scoringOpts = { ...baseScoringOpts, requestedStreetNames: Array.from(expandedRoots) }
+    
+    // v35.9.40: AddressGeo Fast-Path Bypass
+    if (options.addressGeoStr) {
+        try {
+            console.log(`[Геокодинг] ПРЯМОЙ ОБХОД (AddressGeo): "${options.addressGeoStr}"`);
+            const { scored, perfect } = await this._evaluateProvidersEarlyExit(options.addressGeoStr, cityBias, scoringOpts, expectedHouse);
+            
+            if (perfect || scored.length > 0) {
+                const best = perfect || pickBest(scored);
+                if (best && best.score > -500000) { // Safety check for anomalies
+                    console.log(`[Геокодинг] AddressGeo УСПЕХ [${best.raw._source}]:`, best.raw.formatted_address);
+                    const res = { best, allCandidates: scored, resolvedVariant: options.addressGeoStr, fromCache: false };
+                    this.l1Cache.set(cacheKey, res);
+                    return res;
+                }
+            }
+        } catch (e) {
+            console.warn(`[Геокодинг] Ошибка AddressGeo Fast-Path, переход к расширению:`, e);
+        }
+    }
+
     const candidatesBatch = maxVariants ? primary.slice(0, maxVariants) : primary
 
     // v35.9.38: Short-Circuiting Parallel Sweeps
