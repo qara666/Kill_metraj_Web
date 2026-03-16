@@ -7,10 +7,12 @@
 
 const ADDR_REPLACEMENTS: [RegExp, string][] = [
     // 1. Punctuation and special chars (unifies d/f, Luk'yanenka, etc.)
+    // v35.9.25: Excluded apostrophe (') from punctuation stripping to keep names like Luk'yanenka together
     [/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, ' '],
 
-    // 2. Cleanup quotes
-    [/[«»"']/g, ''],
+    // 2. Unify apostrophes and cleanup other quotes
+    [/[ʼ`]/g, "'"], 
+    [/[«»"]/g, ''],
 
     // 3. Remove technical separators (підʼїзд, этаж, квартира, etc.)
     // Note: 'дом' and 'д' are NOT removed here because they often prefix the house number.
@@ -34,7 +36,7 @@ const TRANS_MAP: Record<string, string> = {
     'а': 'a', 'б': 'b', 'в': 'v', 'г': 'h', 'ґ': 'g', 'д': 'd', 'е': 'e', 'є': 'ye', 'ж': 'zh', 'з': 'z',
     'и': 'y', 'і': 'i', 'ї': 'yi', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o', 'п': 'p',
     'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch',
-    'ь': '', 'ы': 'y', 'ё': 'yo', 'э': 'e', 'ю': 'yu', 'я': 'ya', 'ʼ': '', "'": ''
+    'ь': '', 'ы': 'y', 'ё': 'yo', 'э': 'e', 'ю': 'yu', 'я': 'ya', 'ʼ': "'", '`': "'"
 };
 
 /**

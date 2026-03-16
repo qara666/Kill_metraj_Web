@@ -89,7 +89,8 @@ export const generateStreetVariants = (raw: string, city: string | null): string
     const base = normalizeAddr(raw, city);
     variants.add(base);
 
-    const fuzzy = (s: string) => s.replace(/['"«»‘’“”""\s?*]/g, '.');
+    // v35.9.25: Standardize fuzzy quotes and apostrophes before generation
+    const fuzzy = (s: string) => s.replace(/['"«»‘’“”""ʼ`\s?*]/g, '.');
 
     const tokenPairs: Array<[RegExp, string]> = [
         [/\bвулиця\b/iu, 'вул.'],
