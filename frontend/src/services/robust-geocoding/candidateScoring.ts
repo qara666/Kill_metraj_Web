@@ -377,7 +377,12 @@ export function scoreCandidate(
         ]
         const isKyivBias = city === 'киев' || city === 'київ'
         const matchesSuburb = isKyivBias && KYIV_SUBURBS.some(s => addr.includes(s))
-        const hasKyiv = addr.includes('киев') || addr.includes('київ') || addr.includes('kyiv')
+        
+        // v35.9.26: Dynamic City Lockdown
+        // Check if the address contains ANY of the valid names for the current city bias
+        const cityData = getCityBounds(city)
+        const validCityNames = cityData ? cityData.names : [city]
+        const hasCurrentCity = validCityNames.some(cn => addr.includes(cn))
 
         if (matchesSuburb) {
            // v35.9.11: Suburbs MUST get full parity with the city bias to avoid "Main City" gravity
@@ -385,10 +390,10 @@ export function scoreCandidate(
         }
 
         // v35.9.10: ABSOLUTE CITY LOCKDOWN
-        // If it doesn't have Kyiv AND doesn't match a known suburb -> Instant Kill
-        if (!hasKyiv && !matchesSuburb) {
+        // If it doesn't have the current city AND doesn't match a known suburb -> Instant Kill
+        if (!hasCurrentCity && !matchesSuburb) {
            score += SCORE.CITY_MISMATCH_PENALTY;
-           (raw as any)._rejectReason = `Lockdown: Not in Kyiv or known suburb. (v35.9.14)`;
+           (raw as any)._rejectReason = `Lockdown: Not in ${city} or known suburb. (v35.9.26)`;
         }
       }
     }

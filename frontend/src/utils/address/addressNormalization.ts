@@ -127,7 +127,7 @@ export function cleanAddressForSearch(address: string): string {
     cleaned = cleaned.replace(/,(\d)/g, ', $1');
 
     // Step 1: Remove leading city prefix
-    cleaned = cleaned.replace(/^(?:місто\s+|город\s+|м\.?\s*|г\.?\s*)?(?:київ|киев|kyiv|kiev|харків|харьков|дніпро|ужгород|одеса|одесса|львів|львов|бровари|бровары|бориспіль|борисполь|ірпінь|ирпень|буча|вишневе|вишневое)\s*,\s*/i, '');
+    cleaned = cleaned.replace(/^(?:місто\s+|город\s+|м\.?\s*|г\.?\s*)?(?:київ|киев|kyiv|kiev|харків|харьков|дніпро|ужгород|одеса|одесса|львів|львов|бровари|бровары|бориспіль|борисполь|ірпінь|ирпень|буча|вишневе|вишневое|полтава)\s*,\s*/i, '');
 
     // Step 2: Strip ALL parentheticals for search (they confuse OSM providers)
     cleaned = cleaned.replace(/\s*\([^)]*\)/g, '').trim();
