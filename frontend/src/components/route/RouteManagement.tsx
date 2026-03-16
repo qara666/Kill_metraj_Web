@@ -445,10 +445,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const {
     calculateRouteDistance,
     isCalculating,
+    setIsCalculating,
+    calcProgress,
+    setCalcProgress,
     disambModal,
     setDisambModal,
     disambResolver,
-    calcProgress,
     processDisambQueue: _processDisambQueue
   } = useRouteGeocoding({
     settings,
@@ -1945,7 +1947,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                             groups.forEach((group, index) => {
                               const groupOrders = group.orders as Order[];
                               const newRoute: Route = {
-                                id: `route_${Date.now()}_${index}`,
+                                // v35.9.35: Stronger unique ID to avoid collisions
+                                id: `route_${Date.now()}_idx${index}_rnd${Math.floor(Math.random() * 10000)}`,
                                 courier: courier,
                                 orders: groupOrders,
                                 totalDistance: 0,
@@ -1959,55 +1962,82 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                               groupOrders.forEach(o => allOrderIdsToUpdate.add(String(o.id)));
                             });
 
-                            // Step 2: Calculate distances BEFORE saving to React state.
-                            // calculateRouteDistance mutates React state and relies on prev.routes.
-                            // If we call it here rapidly before state flushes, it overwrites the array and drops routes.
-                            // To fix this, we'll temporally push these empty routes to state FIRST, 
-                            // WAIT for React to render (using a small timeout trick), and then calculate them sequentially.
-                            // But a MUCH safer way is to just use standard Promises for calculation, but wait, calculateRouteDistance ONLY updates state. It doesn't return the route.
-                            // So we MUST save them to state FIRST, then calculating them sequentially, but we need to ensure state is flushed.
-                            // Because calculateRouteDistance is a hook function tied to the current render closure, it's dangerous.
-                            // The safest fix: create them in state, wait a tiny bit, then calculate. We can't easily wait for React state in an event handler without a ref or useEffect.
-                            
-                            // Let's do the single state update to put the UNCALCULATED routes in the list.
-                            updateExcelData((prev: any) => {
-                              const currentOrders = prev?.orders || [];
-                              const updatedOrders = currentOrders.map((order: any) => {
-                                if (allOrderIdsToUpdate.has(String(order.id))) {
-                                  return { ...order, courier: courier };
-                                }
-                                return order;
-                              });
-
-                              return {
-                                ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
-                                routes: [...(prev?.routes || []), ...newRoutes],
-                                orders: updatedOrders
-                              };
-                            });
-
                             setSelectedOrders(new Set());
                             setSelectedOrdersOrder([]);
 
-                            // Start a separate async process to calculate distances.
-                            // We wait slightly to let the React state batch commit, 
-                            // so that calculateRouteDistance sees the newly added routes in prev.routes.
-                            setTimeout(async () => {
-                                for (const route of newRoutes) {
-                                    try {
-                                        await calculateRouteDistance(route);
-                                        // Slight pause between calculations to ensure React state commits
-                                        await new Promise(r => setTimeout(r, 100));
-                                    } catch(e) {
-                                        console.error("Failed to calculate bulk route", e);
-                                    }
+                            // v35.9.34: Sequential calculation + Atomic Commit
+                            // calculateRouteDistance uses shared hook state, so keep sequential.
+                            // We collect ALL results first and commit in ONE updateExcelData call.
+                            setIsCalculating(true)
+                            setCalcProgress(5)
+
+                            const calculatedRoutes: (Route | null)[] = [];
+                            for (let i = 0; i < newRoutes.length; i++) {
+                                const route = newRoutes[i];
+                                try {
+                                    // Update progress: 5% to 90% spread across routes
+                                    const progressPct = Math.round(5 + ((i / newRoutes.length) * 85))
+                                    setCalcProgress(progressPct)
+                                    const result = await calculateRouteDistance(route, true /* skipStateUpdate */);
+                                    calculatedRoutes.push(result);
+                                } catch (e) {
+                                    console.error(`[Батч] Ошибка маршрута ${i}:`, e);
+                                    calculatedRoutes.push(null);
                                 }
-                            }, 500);
+                            }
+
+                            setCalcProgress(95)
+
+                            // Single atomic state commit for all calculated routes
+                            updateExcelData((prev: any) => {
+                                const updatedRouteMap = new Map<string, Route>();
+                                calculatedRoutes.forEach(r => { if (r) updatedRouteMap.set(r.id, r); });
+
+                                const currentOrders = prev?.orders || [];
+                                // Merge all geocoded order data from calculated routes
+                                const allRouteOrderUpdates = new Map<string, any>();
+                                calculatedRoutes.forEach(r => {
+                                    if (r?.orders) {
+                                        r.orders.forEach((o: any) => allRouteOrderUpdates.set(String(o.id), o));
+                                    }
+                                });
+                                const updatedOrders = currentOrders.map((order: any) => {
+                                    const geocodedOrder = allRouteOrderUpdates.get(String(order.id));
+                                    if (geocodedOrder) return { ...order, ...geocodedOrder, courier };
+                                    if (allOrderIdsToUpdate.has(String(order.id))) return { ...order, courier };
+                                    return order;
+                                });
+
+                                const existingRoutes = (prev?.routes || []).filter(
+                                    (r: Route) => !newRoutes.some(nr => nr.id === r.id)
+                                );
+                                const finalRoutes = [
+                                    ...existingRoutes,
+                                    // Use calculated route if available, else use base uncalculated route
+                                    ...newRoutes.map(r => updatedRouteMap.get(r.id) || r)
+                                ];
+
+                                console.log(`[Батч] Финальный коммит: ${finalRoutes.length} маршрутов, ${updatedOrders.filter((o: any) => allOrderIdsToUpdate.has(String(o.id))).length} обновленных заказов`);
+
+                                return {
+                                    ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
+                                    routes: finalRoutes,
+                                    orders: updatedOrders
+                                };
+                            }, true /* force: true to ensure new routes are NOT dropped by protectData */);
+
+                            const successCount = calculatedRoutes.filter(Boolean).length;
+                            if (successCount > 0) {
+                                toast.success(`Расчитано ${successCount} маршрутов`);
+                            } else {
+                                toast.error('Не удалось рассчитать маршруты. Проверьте консоль.');
+                            }
                           } catch (err) {
                             console.error('Batch route creation error:', err);
                             toast.error('Ошибка при создании группы маршрутов');
                           } finally {
-
+                            setIsCalculating(false)
+                            setTimeout(() => setCalcProgress(0), 1000)
                           }
                         }}
                       />

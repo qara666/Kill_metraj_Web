@@ -189,13 +189,21 @@ const createPaymentMethod = (rowData: Record<string, any>, index: number): any =
 const parseAddressGeo = (str: string): { lat?: number; lng?: number; address?: string } => {
     if (!str) return {};
     const res: any = {};
-    const latMatch = str.match(/Lat="([^"]+)"/i);
-    const lngMatch = str.match(/Long="([^"]+)"/i);
-    const addrMatch = str.match(/AddressStr="([^"]+)"/i);
+    
+    // Improved regex to handle various quoting styles and case sensitivity
+    const latMatch = str.match(/Lat=["']?([^"'\s>]+)["']?/i);
+    const lngMatch = str.match(/Long=["']?([^"'\s>]+)["']?/i);
+    const addrMatch = str.match(/AddressStr=["']?([^"'>]+)["']?/i);
 
-    if (latMatch) res.lat = parseFloat(latMatch[1]);
-    if (lngMatch) res.lng = parseFloat(lngMatch[1]);
-    if (addrMatch) res.address = addrMatch[1];
+    if (latMatch) {
+        const lat = parseFloat(latMatch[1]);
+        if (!isNaN(lat)) res.lat = lat;
+    }
+    if (lngMatch) {
+        const lng = parseFloat(lngMatch[1]);
+        if (!isNaN(lng)) res.lng = lng;
+    }
+    if (addrMatch) res.address = addrMatch[1].trim();
     return res;
 };
 
