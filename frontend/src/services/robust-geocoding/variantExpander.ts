@@ -20,7 +20,8 @@ export function extractHouseNumber(raw: string): string | null {
   // First, temporarily remove 5-digit postal codes so they aren't matched as house numbers
   const noPostal = raw.replace(/\b\d{5}\b/g, '')
   // Match digits + optional letters + optional (slash/dash + optional digits + optional letters)
-  const m = noPostal.match(/\b\d+[а-яА-ЯёЁіІєЄґҐa-zA-Z]*(?:[\/\-]\d*[а-яА-ЯёЁіІєЄґҐa-zA-Z]*)?\b/u)
+  // v35.9.25: Allow apostrophes in the lookbehind/lookahead if any, though usually hn doesn't have them
+  const m = noPostal.match(/\b\d+[а-яієґa-z]*(?:[\/\-]\d*[а-яієґa-z]*)?\b/iu)
   return m ? m[0].toLowerCase() : null
 }
 
