@@ -76,4 +76,54 @@ export class YapikoOSRMService {
       return { feasible: false }
     }
   }
+
+  /**
+   * Calculate a distance/duration matrix for a set of points using Yapiko OSRM.
+   */
+  static async getMatrix(
+    sources: { lat: number; lng: number }[],
+    targets: { lat: number; lng: number }[],
+    baseUrl: string
+  ): Promise<{ distance: number; duration: number }[][] | null> {
+    if (!baseUrl) return null;
+    
+    const normalizedUrl = baseUrl.replace(/\/$/, '');
+    const allPoints = [...sources, ...targets]
+    const sourceIndices = sources.map((_, i) => i).join(';')
+    const targetIndices = targets.map((_, i) => sources.length + i).join(';')
+    const coordsStr = allPoints.map(p => `${p.lng},${p.lat}`).join(';')
+
+    const url = `${normalizedUrl}/table/v1/driving/${coordsStr}?sources=${sourceIndices}&destinations=${targetIndices}&annotations=duration,distance`
+
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(10000) })
+      if (!response.ok) return null
+      
+      const data = await response.json()
+      if (data.code !== 'Ok' || !data.distances) return null
+
+      return data.distances.map((row: number[], i: number) => 
+        row.map((dist: number, j: number) => ({
+          distance: dist,
+          duration: data.durations ? data.durations[i][j] : 0
+        }))
+      )
+    } catch (err) {
+      console.warn('[Маршрут] Ошибка матрицы Yapiko OSRM:', err)
+      return null
+    }
+  }
+
+  /**
+   * Quick point-to-point distance estimate using matrix (single leg).
+   */
+  static async getPointDistance(
+    from: { lat: number; lng: number },
+    to: { lat: number; lng: number },
+    baseUrl: string
+  ): Promise<{ distanceM: number; durationS: number } | null> {
+    const result = await this.calculateRoute([from, to], baseUrl)
+    if (!result.feasible || result.totalDistance === undefined) return null
+    return { distanceM: result.totalDistance, durationS: result.totalDuration ?? 0 }
+  }
 }

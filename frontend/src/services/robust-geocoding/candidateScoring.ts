@@ -467,7 +467,8 @@ export function scoreCandidate(
         console.error(`[RobustGeocode v35.9.13] FAIL: "${candidateFull}" vs Roots: [${missing}]`)
       }
     } else {
-      console.log(`[RobustGeocode v35.9.14] PASS: "${candidateFull}" (Root: "${matchedRoot}")`)
+      // v35.9.38: Silent mode for PASS logs to improve performance and clarity
+      // console.log(`[RobustGeocode v35.9.14] PASS: "${candidateFull}" (Root: "${matchedRoot}")`)
     }
   } else if (opts.expectedHouse) {
       score -= 400000 

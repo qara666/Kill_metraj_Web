@@ -22,68 +22,57 @@ async function rateLimitedFetch(url: string): Promise<Response> {
     const maxRetries = 3;
     let attempt = 0;
 
-    const executeWithRetry = (): Promise<Response> => {
-        return new Promise((resolve, reject) => {
-            _nominatimQueue.push(async () => {
-                try {
-                    const now = Date.now();
-                    // Increased delay to 2000ms to be extremely safe against OSB proxy blocks
-                    const delay = 2000; 
-                    const diff = now - _lastNominatimCall;
-                    if (diff < delay) {
-                        await new Promise(r => setTimeout(r, delay - diff));
-                    }
-                    _lastNominatimCall = Date.now();
-                    
-                    // Add a cache buster parameter to bypass Varnish cache (OSM caches 429 responses)
-                    const cacheBuster = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
-                    const proxyUrl = `${API_URL}/api/proxy/geocoding?url=${encodeURIComponent(`${url}&_cb=${cacheBuster}`)}`;
-                    
-                    const response = await fetch(proxyUrl, {
-
-                        headers: {
-                            'Accept-Language': 'uk,ru,en'
-                        }
-                    });
-
-                    // Handle 429 Too Many Requests with exponential backoff
-                    if (response.status === 429 && attempt < maxRetries) {
-                        attempt++;
-                        const backoff = 2000 * Math.pow(2, attempt) + Math.random() * 1000; // Exponential + jitter
-                        console.warn(`[Nominatim] 429 detected. Retry attempt ${attempt}/${maxRetries} in ${Math.round(backoff)}ms...`);
-                        
-                        // Wait for backoff period before re-queueing to not block other services instantly
-                        setTimeout(() => {
-                            // Re-queue at the FRONT for priority, or push to back depending on desired strategy.
-                            // Pushing to front ensures this specific request gets retried before new ones pile up.
-                            _nominatimQueue.unshift(async () => {
-                                 try {
-                                     const r = await executeWithRetry();
-                                     resolve(r);
-                                 } catch (e) {
-                                     reject(e);
-                                 }
-                            });
-                            _processNominatimQueue();
-                        }, backoff);
-                        return;
-                    }
-
-                    if (!response.ok && response.status !== 429) {
-                        console.warn(`[Nominatim] HTTP Error ${response.status} on ${proxyUrl}`);
-                    }
-
-                    resolve(response);
-                } catch (e) {
-                    reject(e);
+    return new Promise((resolve, reject) => {
+        const attemptFetch = async () => {
+            try {
+                const now = Date.now();
+                // Safe 1000ms delay for Nominatim policies
+                const delay = 1000; 
+                const diff = now - _lastNominatimCall;
+                if (diff < delay) {
+                    await new Promise(r => setTimeout(r, delay - diff));
                 }
-            });
-            
-            _processNominatimQueue();
-        });
-    };
+                _lastNominatimCall = Date.now();
+                
+                // Add a cache buster parameter to bypass Varnish cache (OSM caches 429 responses)
+                const cacheBuster = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
+                const proxyUrl = `${API_URL}/api/proxy/geocoding?url=${encodeURIComponent(`${url}&_cb=${cacheBuster}`)}`;
+                
+                const response = await fetch(proxyUrl, {
+                    headers: {
+                        'Accept-Language': 'uk,ru,en'
+                    }
+                });
 
-    return executeWithRetry();
+                // Handle 429 Too Many Requests with exponential backoff
+                if (response.status === 429 && attempt < maxRetries) {
+                    attempt++;
+                    const backoff = 1000 * Math.pow(2, attempt) + Math.random() * 500; // Faster exponential + jitter
+                    console.warn(`[Nominatim] 429 detected. Retry attempt ${attempt}/${maxRetries} in ${Math.round(backoff)}ms...`);
+                    
+                    // Wait for backoff period before re-queueing to not block other services instantly
+                    setTimeout(() => {
+                        // Re-queue at the FRONT for priority
+                        _nominatimQueue.unshift(attemptFetch);
+                        _processNominatimQueue();
+                    }, backoff);
+                    return; // Exit this task cleanly to free the queue processor! The outer Promise stays pending.
+                }
+
+                if (!response.ok && response.status !== 429) {
+                    console.warn(`[Nominatim] HTTP Error ${response.status} on ${proxyUrl}`);
+                }
+
+                resolve(response);
+            } catch (e) {
+                reject(e);
+            }
+        };
+        
+        // Push initial attempt to the queue
+        _nominatimQueue.push(attemptFetch);
+        _processNominatimQueue();
+    });
 }
 
 async function _processNominatimQueue() {

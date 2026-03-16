@@ -6,6 +6,7 @@
  */
 
 import { ValhallaService } from './valhallaService'
+import { YapikoOSRMService } from './YapikoOSRMService'
 import { localStorageUtils } from '../utils/ui/localStorage'
 
 export interface MatrixResult {
@@ -13,7 +14,7 @@ export interface MatrixResult {
   duration: number // seconds
 }
 
-export type MatrixProvider = 'valhalla' | 'osrm'
+export type MatrixProvider = 'valhalla' | 'osrm' | 'yapiko_osrm'
 
 export class DistanceMatrixService {
   /**
@@ -35,6 +36,12 @@ export class DistanceMatrixService {
     try {
       if (provider === 'valhalla') {
         const result = await ValhallaService.getMatrix(sources, targets)
+        if (result) return result
+      }
+
+      if (provider === 'yapiko_osrm') {
+        const url = settings.yapikoOsrmUrl || '';
+        const result = await YapikoOSRMService.getMatrix(sources, targets, url)
         if (result) return result
       }
 

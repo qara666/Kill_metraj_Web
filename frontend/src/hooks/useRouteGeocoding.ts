@@ -198,9 +198,13 @@ export const useRouteGeocoding = ({
 
     // ─── Main route calculation ──────────────────────────────────────────────
 
-    const calculateRouteDistance = async (route: Route) => {
-        setIsCalculating(true)
-        setCalcProgress(0)
+    const calculateRouteDistance = async (
+        route: Route, 
+        skipStateUpdate: boolean = false,
+        externalCache?: Map<string, any>
+    ): Promise<Route | null> => {
+        if (!skipStateUpdate) setIsCalculating(true)
+        if (!skipStateUpdate) setCalcProgress(0)
         try {
             // Extract LatLng from geocoder result — handles both LatLng objects and plain {lat,lng}
             const toLoc = (res: any): any => {
@@ -214,132 +218,159 @@ export const useRouteGeocoding = ({
                 return { lat, lng }
             }
 
+            // 1. Check if we can use the "Super-Fast Fast-Path"
+            // If all orders already have coordinates, we can skip the loop entirely
+            const allOrdersHaveCoords = route.orders.every(o => o.coords?.lat && o.coords?.lng);
+            const startLat = settings.defaultStartLat ? Number(settings.defaultStartLat) : null;
+            const startLng = settings.defaultStartLng ? Number(settings.defaultStartLng) : null;
+            const hasStartCoord = !!(startLat && startLng);
 
-            // 1. Start point
-            let originLoc: any = null
-            const startLat = settings.defaultStartLat ? Number(settings.defaultStartLat) : null
-            const startLng = settings.defaultStartLng ? Number(settings.defaultStartLng) : null
-            if (startLat && startLng) {
-                originLoc = makeLatLng(startLat, startLng)
+            // 1.1 Start point determination
+            let originLoc: any = null;
+            if (hasStartCoord) {
+                originLoc = makeLatLng(startLat as number, startLng as number);
             } else if (route.startAddress) {
-                // v35.9.28: Set strictZoneFallback: false for Base address to allow starting from outside delivery zones
-                const res = await robustGeocode(cleanAddressForRoute(route.startAddress), { silent: true, strictZoneFallback: false })
-                originLoc = res ? toLoc(res.raw) : null
+                const cleanedStart = cleanAddressForRoute(route.startAddress).toLowerCase();
+                if (externalCache?.has(cleanedStart)) {
+                    originLoc = toLoc(externalCache.get(cleanedStart).raw);
+                } else {
+                    const res = await robustGeocode(cleanAddressForRoute(route.startAddress), { silent: true, strictZoneFallback: false });
+                    originLoc = res ? toLoc(res.raw) : null;
+                    if (res && externalCache) externalCache.set(cleanedStart, res);
+                }
             }
 
-            setCalcProgress(5)
+            if (!skipStateUpdate) setCalcProgress(5);
 
             if (!originLoc) {
-                toast.error('Не удалось определить адрес старта. Настройте адрес Базы в Настройках.')
-                setIsCalculating(false)
-                return
+                toast.error('Не удалось определить адрес старта. Настройте адрес Базы в Настройках.');
+                if (!skipStateUpdate) setIsCalculating(false);
+                return null;
             }
 
-            // 2. Waypoints (order addresses)
-            const addrCache = new Map<string, any>()
-            const waypointLocs: any[] = []
-            const orderUpdates: any[] = []
-            
-            // v35.9.16: Chain Logic - Use the previous coordinate as a hint for the next one
-            let lastLoc = originLoc
+            // 2. Process Waypoints
+            const addrCache = externalCache || new Map<string, any>();
+            const waypointLocs: any[] = [];
+            const orderUpdates: any[] = [];
+            let lastLoc = originLoc;
 
-            for (const order of route.orders) {
-                const cleaned = cleanAddressForRoute(order.address)
-                const key = cleaned.toLowerCase()
-
-                const expectedDeliveryZone = order.deliveryZone || order.raw?.deliveryZone || order.raw?.['Зона доставки'] || null
-
-                // v35.9.30: High-Precision Bypass - If order already has server-provided coords (e.g. from addressGeo)
-                // we skip geocoding entirely to preserve maximum accuracy and save quota.
-                if (order.coords?.lat && order.coords?.lng && !addrCache.has(key)) {
-                    addrCache.set(key, {
-                        raw: {
-                            formatted_address: order.address,
-                            geometry: {
-                                location: { lat: order.coords.lat, lng: order.coords.lng },
-                                location_type: 'ROOFTOP'
-                            },
-                        },
-                        kmlZone: order.kmlZone || order.deliveryZone,
+            // FAST-PATH: If all orders have coordinates and we aren't confirming addresses,
+            // we can map them instantly without any yields or geocoding logic.
+            if (allOrdersHaveCoords && !confirmAddresses) {
+                console.log(`[Fast-Path] Processing ${route.orders.length} orders bypass mode`);
+                route.orders.forEach(order => {
+                    const loc = { lat: order.coords!.lat, lng: order.coords!.lng };
+                    waypointLocs.push(loc);
+                    
+                    const update: any = { 
+                        id: order.id,
+                        lat: loc.lat,
+                        lng: loc.lng,
+                        kmlZone: order.kmlZone,
                         kmlHub: order.kmlHub,
                         streetNumberMatched: true,
-                        score: 1000000, // Top score for "locked" addresses
-                        isLocked: true
-                    });
-                }
+                        isLocked: true,
+                        geocodeRes: {
+                            formatted_address: order.address,
+                            geometry: { location: loc, location_type: 'ROOFTOP' }
+                        }
+                    };
+                    orderUpdates.push(update);
+                });
+            } else {
+                // NORMAL-PATH: Loop with geocoding/cache checks
+                for (const order of route.orders) {
+                    const cleaned = cleanAddressForRoute(order.address)
+                    const key = cleaned.toLowerCase()
 
-                if (!addrCache.has(key)) {
-                    // v35.9.26: Pass silent: !confirmAddresses during batch processing.
-                    // This allows the "Уточнение адреса" modal to appear if a result is ambiguous or suspicious.
-                    const res = await robustGeocode(cleaned, { 
-                        silent: !confirmAddresses, 
-                        expectedDeliveryZone,
-                        hintPoint: lastLoc
-                    })
-                    
-                    // If user cancels disambiguation (choice: null), stop calculation
-                    if (!res && confirmAddresses) {
-                        toast.error(`Расчет прерван: адрес не был подтвержден (${order.address})`)
-                        setIsCalculating(false)
-                        return
+                    const expectedDeliveryZone = order.deliveryZone || order.raw?.deliveryZone || order.raw?.['Зона доставки'] || null
+
+                    // v35.9.30: High-Precision Bypass - If order already has server-provided coords (e.g. from addressGeo)
+                    if (order.coords?.lat && order.coords?.lng && !addrCache.has(key)) {
+                        addrCache.set(key, {
+                            raw: {
+                                formatted_address: order.address,
+                                geometry: {
+                                    location: { lat: order.coords.lat, lng: order.coords.lng },
+                                    location_type: 'ROOFTOP'
+                                },
+                            },
+                            kmlZone: order.kmlZone || order.deliveryZone,
+                            kmlHub: order.kmlHub,
+                            streetNumberMatched: true,
+                            score: 1000000,
+                            isLocked: true
+                        });
                     }
-                    
-                    addrCache.set(key, res)
-                    await yieldToMain()
-                }
 
-                const geocodeRes = addrCache.get(key)
-                if (!geocodeRes || !toLoc(geocodeRes.raw)) {
-                    console.error(`[Расчет] Адрес ОТКЛОНЕН: ${order.address}`, geocodeRes)
-                    // Simplified error message for better UX
-                    toast.error(`Проверьте адрес: ${order.address}. Не удалось найти точку в зоне обслуживания.`, { duration: 10000 })
-                    setIsCalculating(false)
-                    return
-                }
-
-                const loc = toLoc(geocodeRes.raw)
-                waypointLocs.push(loc)
-                lastLoc = loc // Update hint for next stop
-                
-                const update: any = { id: order.id }
-                if (loc) {
-                    const lLat = typeof loc.lat === 'function' ? loc.lat() : loc.lat
-                    const lLng = typeof loc.lng === 'function' ? loc.lng() : loc.lng
-                    update.lat = lLat
-                    update.lng = lLng
-                    
-                    // Use the metadata captured during geocoding
-                    update.kmlZone = geocodeRes.kmlZone
-                    update.kmlHub = geocodeRes.hubName || geocodeRes.kmlHub // Handle potential naming variations
-                    update.streetNumberMatched = geocodeRes.streetNumberMatched
-                    
-                    if (geocodeRes.raw.geometry?.location_type) {
-                        update.locationType = geocodeRes.raw.geometry.location_type
+                    if (!addrCache.has(key)) {
+                        const res = await robustGeocode(cleaned, { 
+                            silent: !confirmAddresses, 
+                            expectedDeliveryZone,
+                            hintPoint: lastLoc
+                        })
+                        
+                        if (!res && confirmAddresses) {
+                            toast.error(`Расчет прерван: адрес не был подтвержден (${order.address})`)
+                            if (!skipStateUpdate) setIsCalculating(false)
+                            return null
+                        }
+                        
+                        addrCache.set(key, res)
+                        await yieldToMain()
                     }
-                    update.geocodeRes = geocodeRes.raw; 
-                }
-                orderUpdates.push(update)
 
-                // Update progress: From 5% to 85% based on waypoints
-                const progress = Math.min(85, 5 + Math.round((orderUpdates.length / route.orders.length) * 80))
-                setCalcProgress(progress)
+                    const geocodeRes = addrCache.get(key)
+                    if (!geocodeRes || !toLoc(geocodeRes.raw)) {
+                        console.error(`[Расчет] Адрес ОТКЛОНЕН: ${order.address}`, geocodeRes)
+                        toast.error(`Проверьте адрес: ${order.address}. Не удалось найти точку в зоне обслуживания.`, { duration: 10000 })
+                        if (!skipStateUpdate) setIsCalculating(false)
+                        return null
+                    }
+
+                    const loc = toLoc(geocodeRes.raw)
+                    waypointLocs.push(loc)
+                    lastLoc = loc
+                    
+                    const update: any = { id: order.id }
+                    if (loc) {
+                        update.lat = loc.lat
+                        update.lng = loc.lng
+                        update.kmlZone = geocodeRes.kmlZone
+                        update.kmlHub = geocodeRes.hubName || geocodeRes.kmlHub
+                        update.streetNumberMatched = geocodeRes.streetNumberMatched
+                        if (geocodeRes.raw.geometry?.location_type) {
+                            update.locationType = geocodeRes.raw.geometry.location_type
+                        }
+                        update.geocodeRes = geocodeRes.raw; 
+                    }
+                    orderUpdates.push(update)
+
+                    const progress = Math.min(85, 5 + Math.round((orderUpdates.length / route.orders.length) * 80))
+                    if (!skipStateUpdate) setCalcProgress(progress)
+                }
             }
 
             // 2.5 Save GEODATA IMMEDIATELY (v35.9.6: Persistence Priority)
             // This ensures KML zones and coordinates are visible even if the routing engine fails.
-            updateExcelData((prev: any) => ({
-                ...prev,
-                routes: (prev?.routes || []).map((r: Route) => {
-                    if (r.id !== route.id) return r;
-                    return {
-                        ...r,
-                        orders: r.orders.map(o => {
-                            const upd = orderUpdates.find(u => u.id === o.id);
-                            return upd ? { ...o, ...upd } : o;
-                        })
-                    };
-                })
-            }));
+            // NOTE: Skip in batch mode (skipStateUpdate=true) because routes don't exist in state yet —
+            // the geodata will be included in the final atomic commit in RouteManagement.tsx.
+            if (!skipStateUpdate) {
+                updateExcelData((prev: any) => ({
+                    ...prev,
+                    routes: (prev?.routes || []).map((r: Route) => {
+                        if (r.id !== route.id) return r;
+                        return {
+                            ...r,
+                            orders: r.orders.map(o => {
+                                const upd = orderUpdates.find(u => u.id === o.id);
+                                return upd ? { ...o, ...upd } : o;
+                            })
+                        };
+                    })
+                }));
+            }
+
 
             // 2.6 Per-Leg Anomaly Guard with Disambiguation
             // Uses straight-line distances to detect geocoding errors BEFORE calling routing.
@@ -420,8 +451,8 @@ export const useRouteGeocoding = ({
 
                         if (allCandidates.length === 0) {
                             toast.error(`⛔ Не найдено вариантов для адреса: «${badOrder?.address || cleaned}». Проверьте написание адреса.`, { duration: 10000 })
-                            setIsCalculating(false)
-                            return
+            if (!skipStateUpdate) setIsCalculating(false)
+                            return null
                         }
 
                         // Build candidate options sorted by distance from PREVIOUS stop
@@ -457,16 +488,16 @@ export const useRouteGeocoding = ({
 
                         if (!choice) {
                             toast.error('Маршрут не сохранён — адрес не уточнён.')
-                            setIsCalculating(false)
-                            return
+            if (!skipStateUpdate) setIsCalculating(false)
+                            return null
                         }
 
                         // Apply user-selected correction
                         const correctedLoc = toLoc2(choice)
                         if (!correctedLoc) {
                             toast.error('Выбранный адрес не имеет координат. Маршрут не сохранён.')
-                            setIsCalculating(false)
-                            return
+            if (!skipStateUpdate) setIsCalculating(false)
+                            return null
                         }
 
                         waypointLocs[badOrderIdx] = correctedLoc
@@ -476,8 +507,8 @@ export const useRouteGeocoding = ({
                         const fixedSegKm = legDist(getXY(from), getXY(correctedLoc)) / 1000
                         if (fixedSegKm > legThresholdKm) {
                             toast.error(`⛔ Выбранный адрес всё равно слишком далеко (${fixedSegKm.toFixed(1)} км). Маршрут не сохранён.`)
-                            setIsCalculating(false)
-                            return
+            if (!skipStateUpdate) setIsCalculating(false)
+                            return null
                         }
 
                         // Update orderUpdates so that the corrected coord is persisted
@@ -506,14 +537,14 @@ export const useRouteGeocoding = ({
                 destinLoc = res ? (toLoc(res.raw) || originLoc) : originLoc
             }
 
-            setCalcProgress(90)
+            if (!skipStateUpdate) setCalcProgress(90)
 
             // 4. Routing Pipeline (Valhalla with OSRM Fallback)
             let totalDistance = 0
             let totalDuration = 0
             let routingSuccess = false
 
-            setCalcProgress(95)
+            if (!skipStateUpdate) setCalcProgress(95)
 
             const points = [originLoc, ...waypointLocs, destinLoc].map(l => {
                 const lat = typeof l.lat === 'function' ? l.lat() : l.lat
@@ -522,12 +553,13 @@ export const useRouteGeocoding = ({
             })
 
             const routingProvider = settings.routingProvider || 'valhalla'
+            const yapikoUrl = (settings.yapikoOsrmUrl || '').trim()
 
             // SOTA 5.68: Custom OSRM Provider (Yapiko)
-            if (routingProvider === 'yapiko_osrm' && settings.yapikoOsrmUrl) {
+            if (routingProvider === 'yapiko_osrm' && yapikoUrl) {
                 try {
                     const { YapikoOSRMService } = await import('../services/YapikoOSRMService')
-                    const yRes = await YapikoOSRMService.calculateRoute(points, settings.yapikoOsrmUrl)
+                    const yRes = await YapikoOSRMService.calculateRoute(points, yapikoUrl)
                     if (yRes.feasible && yRes.totalDistance && yRes.totalDistance > 0) {
                         totalDistance = yRes.totalDistance
                         totalDuration = yRes.totalDuration || 0
@@ -617,8 +649,8 @@ export const useRouteGeocoding = ({
                 const reason = `⛔ АНОМАЛЬНЫЙ ПЕРЕГОН: ${badLegKm.toFixed(1)} км от точки ${badLegIndex + 1} ("${badAddr || '?'}") — возможна ошибка геокодирования. Маршрут не сохранён.`
                 toast.error(reason, { duration: 12000 })
                 console.error(`[Расчет] ОБНАРУЖЕНА АНОМАЛИЯ на перегоне ${badLegIndex}: ${badLegKm.toFixed(1)} км`)
-                setIsCalculating(false)
-                return
+if (!skipStateUpdate) setIsCalculating(false)
+                return null
             }
 
             const currentCity = settings.cityBias || 'Киев'
@@ -626,80 +658,94 @@ export const useRouteGeocoding = ({
                 const reason = `⛔ АНОМАЛЬНАЯ ДИСТАНЦИЯ (${distanceKm.toFixed(1)} км) — превышает лимит ${anomalyThresholdKm} км для г. ${currentCity}. Вероятно, один из адресов геокодирован в другом районе. Маршрут не сохранён.`
                 toast.error(reason, { duration: 12000 })
                 console.error(`[Расчет] АНОМАЛИЯ ЗАБЛОКИРОВАНА: ${distanceKm.toFixed(1)}км > порога ${anomalyThresholdKm}км для ${currentCity}`)
-                setIsCalculating(false)
-                return
+if (!skipStateUpdate) setIsCalculating(false)
+                return null
             }
 
             if (totalDistance === 0) {
                 toast.error('Маршрут не найден', { duration: 6000 })
-                setIsCalculating(false)
-                return
+if (!skipStateUpdate) setIsCalculating(false)
+                return null
             }
 
             if (distanceKm > 150) {
                  toast.error(`Ошибка: Маршрут слишком длинный (${distanceKm.toFixed(1)} км).`)
-                 setIsCalculating(false)
-                 return
+ if (!skipStateUpdate) setIsCalculating(false)
+                 return null
             }
 
-            // 5. Save final Routing result
-            updateExcelData((prev: any) => ({
-                ...prev,
-                routes: (prev?.routes || []).map((r: Route) => {
-                    if (r.id !== route.id) return r
+            // 5. Create final Routing Result object
+            const getL = (l: any) => ({
+                lat: typeof l.lat === 'function' ? l.lat() : l.lat,
+                lng: typeof l.lng === 'function' ? l.lng() : l.lng
+            })
 
-                    const getL = (l: any) => ({
-                        lat: typeof l.lat === 'function' ? l.lat() : l.lat,
-                        lng: typeof l.lng === 'function' ? l.lng() : l.lng
-                    })
-
-                    const geoMeta = {
-                        origin: getL(originLoc),
-                        destination: getL(destinLoc),
-                        waypoints: waypointLocs.map((loc, idx) => {
-                            const addrKey = cleanAddressForRoute(route.orders[idx].address).toLowerCase();
-                            const res = addrCache.get(addrKey);
-                            const base = typeof loc === 'string' ? { address: loc } : getL(loc);
-                            if (res) {
-                                return {
-                                    ...base,
-                                    zoneName: res.kmlZone,
-                                    hubName: res.kmlHub, // Correct property name: res.kmlHub
-                                    locationType: res.raw.geometry?.location_type,
-                                    streetNumberMatched: res.streetNumberMatched,
-                                    score: res.score
-                                };
-                            }
-                            return base;
-                        })
+            const geoMeta = {
+                origin: getL(originLoc),
+                destination: getL(destinLoc),
+                waypoints: waypointLocs.map((loc, idx) => {
+                    const addrKey = cleanAddressForRoute(route.orders[idx].address).toLowerCase();
+                    const res = addrCache.get(addrKey);
+                    const base = typeof loc === 'string' ? { address: loc } : getL(loc);
+                    if (res) {
+                        return {
+                            ...base,
+                            zoneName: res.kmlZone,
+                            hubName: res.kmlHub,
+                            locationType: res.raw.geometry?.location_type,
+                            streetNumberMatched: res.streetNumberMatched,
+                            score: res.score
+                        };
                     }
-
-                    return {
-                        ...r,
-                        totalDistance: totalDistance / 1000,
-                        totalDuration: totalDuration / 60,
-                        geoMeta,
-                        isOptimized: true
-                    }
+                    return base;
                 })
-            }))
-            toast.success(`Маршрут рассчитан: ${(totalDistance / 1000).toFixed(1)} км`)
-            setIsCalculating(false)
-            setCalcProgress(100)
-            setTimeout(() => setCalcProgress(0), 1000)
+            }
+
+            const updatedRoute: Route = {
+                ...route,
+                totalDistance: totalDistance / 1000,
+                totalDuration: totalDuration / 60,
+                geoMeta,
+                isOptimized: true,
+                // Merge geocoded coordinates into orders for persistence
+                orders: route.orders.map((o: any) => {
+                    const upd = orderUpdates.find((u: any) => u.id === o.id);
+                    return upd ? { ...o, ...upd } : o;
+                })
+            }
+
+            // If not skipping state update, save to state normally (useful for single-route calculations)
+            if (!skipStateUpdate) {
+                updateExcelData((prev: any) => ({
+                    ...prev,
+                    routes: (prev?.routes || []).map((r: Route) => r.id === route.id ? updatedRoute : r)
+                }))
+                toast.success(`Маршрут рассчитан: ${(totalDistance / 1000).toFixed(1)} км`)
+            }
+
+            if (!skipStateUpdate) {
+                setIsCalculating(false)
+                setCalcProgress(100)
+                setTimeout(() => setCalcProgress(0), 1000)
+            }
+
+            return updatedRoute;
 
         } catch (e) {
             console.error('[Расчет] Критическая ошибка:', e)
-            toast.error('Произошла критическая ошибка при расчете маршрута.')
-            setIsCalculating(false)
-            setCalcProgress(0)
+            if (!skipStateUpdate) toast.error('Произошла критическая ошибка при расчете маршрута.')
+            if (!skipStateUpdate) setIsCalculating(false)
+            if (!skipStateUpdate) setCalcProgress(0)
+            return null;
         }
     }
 
     return {
         calculateRouteDistance,
         isCalculating,
+        setIsCalculating,
         calcProgress,
+        setCalcProgress,
         disambModal,
         setDisambModal,
         disambResolver,
