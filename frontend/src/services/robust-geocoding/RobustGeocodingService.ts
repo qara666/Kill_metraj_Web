@@ -389,13 +389,22 @@ export class RobustGeocodingService {
 
   async batchGeocode(rawAddresses: string[], options: RobustGeocodeOptions = {}): Promise<Map<string, RobustGeocodeResult>> {
     const results = new Map<string, RobustGeocodeResult>()
-    const inFlight = new Map<string, Promise<RobustGeocodeResult>>()
-    await Promise.all(rawAddresses.map(async addr => {
+    
+    // Process sequentially to avoid flooding the queue and triggering 429s across providers
+    for (const addr of rawAddresses) {
       const key = addr.trim().toLowerCase()
-      if (results.has(key)) return
-      if (!inFlight.has(key)) inFlight.set(key, this.geocode(addr, options))
-      results.set(key, await inFlight.get(key)!)
-    }))
+      if (results.has(key)) continue
+      
+      try {
+        const result = await this.geocode(addr, options)
+        results.set(key, result)
+        // Add a small delay between batch items to be gentle on the geocoders
+        await new Promise(r => setTimeout(r, 500))
+      } catch (e) {
+        console.error(`[BatchGeocode] Failed for ${addr}`, e)
+      }
+    }
+    
     return results
   }
 

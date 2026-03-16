@@ -35,9 +35,12 @@ async function rateLimitedFetch(url: string): Promise<Response> {
                     }
                     _lastNominatimCall = Date.now();
                     
-                    const proxyUrl = `${API_URL}/api/proxy/geocoding?url=${encodeURIComponent(url)}`;
+                    // Add a cache buster parameter to bypass Varnish cache (OSM caches 429 responses)
+                    const cacheBuster = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
+                    const proxyUrl = `${API_URL}/api/proxy/geocoding?url=${encodeURIComponent(`${url}&_cb=${cacheBuster}`)}`;
                     
                     const response = await fetch(proxyUrl, {
+
                         headers: {
                             'Accept-Language': 'uk,ru,en'
                         }

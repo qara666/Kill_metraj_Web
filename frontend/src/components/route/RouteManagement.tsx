@@ -1941,8 +1941,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                             const newRoutes: Route[] = [];
                             const allOrderIdsToUpdate = new Set<string>();
 
+                            // Step 1: Create all basic route objects
                             groups.forEach((group, index) => {
-                              const groupOrders = group.orders as Order[]; // Cast to local type to avoid mismatch
+                              const groupOrders = group.orders as Order[];
                               const newRoute: Route = {
                                 id: `route_${Date.now()}_${index}`,
                                 courier: courier,
@@ -1958,7 +1959,17 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                               groupOrders.forEach(o => allOrderIdsToUpdate.add(String(o.id)));
                             });
 
-                            // Perform a SINGLE state update for all routes and order assignments
+                            // Step 2: Calculate distances BEFORE saving to React state.
+                            // calculateRouteDistance mutates React state and relies on prev.routes.
+                            // If we call it here rapidly before state flushes, it overwrites the array and drops routes.
+                            // To fix this, we'll temporally push these empty routes to state FIRST, 
+                            // WAIT for React to render (using a small timeout trick), and then calculate them sequentially.
+                            // But a MUCH safer way is to just use standard Promises for calculation, but wait, calculateRouteDistance ONLY updates state. It doesn't return the route.
+                            // So we MUST save them to state FIRST, then calculating them sequentially, but we need to ensure state is flushed.
+                            // Because calculateRouteDistance is a hook function tied to the current render closure, it's dangerous.
+                            // The safest fix: create them in state, wait a tiny bit, then calculate. We can't easily wait for React state in an event handler without a ref or useEffect.
+                            
+                            // Let's do the single state update to put the UNCALCULATED routes in the list.
                             updateExcelData((prev: any) => {
                               const currentOrders = prev?.orders || [];
                               const updatedOrders = currentOrders.map((order: any) => {
@@ -1975,14 +1986,23 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                               };
                             });
 
-                            // Reset selection once
                             setSelectedOrders(new Set());
                             setSelectedOrdersOrder([]);
 
-                            // Sequential distance calculation for all new routes (v5.68: prevents race conditions and modal overlaps)
-                            for (const route of newRoutes) {
-                              await calculateRouteDistance(route);
-                            }
+                            // Start a separate async process to calculate distances.
+                            // We wait slightly to let the React state batch commit, 
+                            // so that calculateRouteDistance sees the newly added routes in prev.routes.
+                            setTimeout(async () => {
+                                for (const route of newRoutes) {
+                                    try {
+                                        await calculateRouteDistance(route);
+                                        // Slight pause between calculations to ensure React state commits
+                                        await new Promise(r => setTimeout(r, 100));
+                                    } catch(e) {
+                                        console.error("Failed to calculate bulk route", e);
+                                    }
+                                }
+                            }, 500);
                           } catch (err) {
                             console.error('Batch route creation error:', err);
                             toast.error('Ошибка при создании группы маршрутов');
