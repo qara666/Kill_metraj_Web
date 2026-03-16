@@ -284,6 +284,30 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
                 {geocodingResult.success ? (
                   <>
                     <p className="text-sm font-bold break-words">{geocodingResult.formattedAddress}</p>
+                    
+                    {/* SOTA 5.72: Accuracy Metadata */}
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <span className={clsx(
+                        "px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest",
+                        geocodingResult.locationType === 'ROOFTOP' ? (isDark ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-700') :
+                        geocodingResult.locationType === 'RANGE_INTERPOLATED' ? (isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700') :
+                        (isDark ? 'bg-yellow-500/20 text-yellow-500' : 'bg-yellow-100 text-yellow-700')
+                      )}>
+                        {geocodingResult.locationType === 'ROOFTOP' ? 'ТОЧНО (ROOFTOP)' : 
+                         geocodingResult.locationType === 'RANGE_INTERPOLATED' ? 'ДОМ (RANGE)' : 
+                         geocodingResult.locationType || 'ПРИМЕРНО'}
+                      </span>
+                      
+                      {geocodingResult.latitude !== undefined && (
+                        <span className={clsx(
+                          "px-2 py-0.5 rounded text-[10px] font-bold opacity-60",
+                          isDark ? 'bg-white/5 text-gray-300' : 'bg-gray-100 text-gray-600'
+                        )}>
+                          {geocodingResult.latitude.toFixed(6)}, {geocodingResult.longitude?.toFixed(6)}
+                        </span>
+                      )}
+                    </div>
+
                     {geocodingResult.warnings && geocodingResult.warnings.length > 0 && (
                       <div className={clsx(
                         'text-[10px] font-black uppercase tracking-widest opacity-80 mt-2',

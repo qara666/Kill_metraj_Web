@@ -16,7 +16,6 @@ import { routeHistory } from '../utils/routes/routeHistory'
 import { runRoutePlanningAlgorithm } from '../utils/routes/routePlanAlgorithm'
 import { calculateRouteAnalytics } from '../utils/routes/routeAnalytics'
 import { generateRouteNotifications } from '../utils/ui/notifications'
-import { googleMapsLoader } from '../utils/maps/googleMapsLoader'
 import { isValidAddress } from '../utils/data/orderEnrichment'
 import { localStorageUtils } from '../utils/ui/localStorage'
 import { GenerouteService } from '../services/generouteService'
@@ -66,8 +65,6 @@ export const useRoutePlanning = (
             key: `${(p.folderName || '').trim()}:${(p.name || '').trim()}`,
             name: p.name || '',
             folderName: p.folderName || '',
-            googlePoly: p.googlePoly,
-            bounds: p.bounds,
             path: p.path,
         })
         robustGeocodingService.setZoneContext({
@@ -133,7 +130,7 @@ export const useRoutePlanning = (
         syncKmlContext()
 
         try {
-            await googleMapsLoader.load()
+            // Google Maps loader removed
 
             const optimizedSettings = Object.freeze({
                 ...settings,
@@ -154,109 +151,64 @@ export const useRoutePlanning = (
 
             const checkChainFeasible = async (chain: any[], includeStartEnd: boolean = true) => {
                 const appSettings = localStorageUtils.getAllSettings()
-                const provider = appSettings.routingProvider || 'google'
                 const generouteKey = appSettings.generouteApiKey
-
-                if (provider === 'generoute') {
-                    // --- Generoute.io (OSRM) Path ---
-                    const locations = []
-                    
-                    if (includeStartEnd) {
-                        const sLat = defaultStartLat ? Number(defaultStartLat) : null;
-                        const sLng = defaultStartLng ? Number(defaultStartLng) : null;
-                        if (sLat && sLng) {
-                            locations.push({ lat: sLat, lng: sLng });
-                        } else {
-                            const startCoords = routeOptimizationCache.getCoordinates(startAddr)
-                            if (startCoords) locations.push(startCoords)
-                        }
-                    }
-
-                    chain.forEach(o => {
-                        const coords = o.coords || routeOptimizationCache.getCoordinates(o.address)
-                        if (coords) locations.push(coords)
-                    })
-
-                    if (includeStartEnd) {
-                        const eLat = defaultEndLat ? Number(defaultEndLat) : null;
-                        const eLng = defaultEndLng ? Number(defaultEndLng) : null;
-                        if (eLat && eLng) {
-                            locations.push({ lat: eLat, lng: eLng });
-                        } else {
-                            const endCoords = routeOptimizationCache.getCoordinates(endAddr)
-                            if (endCoords) locations.push(endCoords)
-                        }
-                    }
-
-                    if (locations.length < 2) return { feasible: false }
-
-                    const res = await GenerouteService.calculateRoute(locations, generouteKey)
-                    return res
-                }
-
-                // --- Google Maps Path ---
-                const gmaps = window.google.maps
-                const directionsService = new gmaps.DirectionsService()
-
-                let origin: any = includeStartEnd ? startAddr : chain[0].address
-                let destination: any = includeStartEnd ? endAddr : chain[chain.length - 1].address
-
-                // Try to use cached coordinates for start/end to ensure consistency with our geocoder
-                // PRIORITY: 1. Passed explicitly from settings, 2. Cached
+                
+                // Redirect all routing to free providers
+                const rawLocations = []
+                
                 if (includeStartEnd) {
                     const sLat = defaultStartLat ? Number(defaultStartLat) : null;
                     const sLng = defaultStartLng ? Number(defaultStartLng) : null;
-                    
                     if (sLat && sLng) {
-                         origin = new gmaps.LatLng(sLat, sLng);
+                        rawLocations.push({ lat: sLat, lng: sLng });
                     } else {
                         const startCoords = routeOptimizationCache.getCoordinates(startAddr)
-                        if (startCoords) {
-                            origin = new gmaps.LatLng(startCoords.lat, startCoords.lng)
-                        }
-                    }
-
-                    const eLat = defaultEndLat ? Number(defaultEndLat) : null;
-                    const eLng = defaultEndLng ? Number(defaultEndLng) : null;
-                    
-                    if (eLat && eLng) {
-                         destination = new gmaps.LatLng(eLat, eLng);
-                    } else {
-                        const endCoords = routeOptimizationCache.getCoordinates(endAddr)
-                        if (endCoords) {
-                            destination = new gmaps.LatLng(endCoords.lat, endCoords.lng)
+                        if (startCoords) rawLocations.push(startCoords)
+                        else {
+                            const res = await GeocodingService.geocodeAddressMulti(startAddr)
+                            if (res[0]?.success) rawLocations.push({ lat: res[0].latitude, lng: res[0].longitude })
                         }
                     }
                 }
 
-                const waypoints = includeStartEnd
-                    ? chain.map(n => ({ location: n.address, stopover: true }))
-                    : chain.slice(1, -1).map(n => ({ location: n.address, stopover: true }))
-
-                return new Promise<any>((resolve) => {
-                    directionsService.route({
-                        origin, destination, waypoints: waypoints.length > 0 ? waypoints : undefined,
-                        travelMode: gmaps.TravelMode.DRIVING,
-                        drivingOptions: {
-                            departureTime: new Date(),
-                            trafficModel: gmaps.TravelModel.PESSIMISTIC
-                        }
-                    }, (r: any, status: any) => {
-                        if (status === 'OK' && r?.routes[0]) {
-                            const legs = r.routes[0].legs
-                            const durTraffic = legs.reduce((acc: number, l: any) => acc + (l.duration_in_traffic?.value || l.duration?.value || 0), 0)
-                            const durPure = legs.reduce((acc: number, l: any) => acc + (l.duration?.value || 0), 0)
-                            const dist = legs.reduce((acc: number, l: any) => acc + (l.distance?.value || 0), 0)
-                            resolve({
-                                feasible: true,
-                                legs,
-                                totalDuration: durTraffic,
-                                pureDuration: durPure,
-                                totalDistance: dist
-                            })
-                        } else resolve({ feasible: false })
-                    })
+                chain.forEach(o => {
+                    const coords = o.coords || routeOptimizationCache.getCoordinates(o.address)
+                    if (coords) rawLocations.push(coords)
                 })
+
+                if (includeStartEnd) {
+                    const eLat = defaultEndLat ? Number(defaultEndLat) : null;
+                    const eLng = defaultEndLng ? Number(defaultEndLng) : null;
+                    if (eLat && eLng) {
+                        rawLocations.push({ lat: eLat, lng: eLng });
+                    } else {
+                        const endCoords = routeOptimizationCache.getCoordinates(endAddr)
+                        if (endCoords) rawLocations.push(endCoords)
+                        else {
+                            const res = await GeocodingService.geocodeAddressMulti(endAddr)
+                            if (res[0]?.success) rawLocations.push({ lat: res[0].latitude, lng: res[0].longitude })
+                        }
+                    }
+                }
+
+                const locations: { lat: number; lng: number }[] = rawLocations.filter(l => typeof l.lat === 'number' && typeof l.lng === 'number') as any
+
+                if (locations.length < 2) return { feasible: false }
+
+                // Try Valhalla first
+                try {
+                    const { ValhallaService } = await import('../services/valhallaService')
+                    const res = await ValhallaService.calculateRoute(locations)
+                    if (res.feasible) return res
+                } catch {}
+
+                // Try OSRM / Generoute
+                try {
+                    const res = await GenerouteService.calculateRoute(locations, generouteKey)
+                    return res
+                } catch {
+                    return { feasible: false }
+                }
             }
 
             const apiManager = new GoogleAPIManager({
@@ -274,8 +226,15 @@ export const useRoutePlanning = (
             for (let i = 0; i < addresses.length; i++) {
                 const addr = addresses[i]
                 if (!routeOptimizationCache.getCoordinates(addr)) {
+                    // Try to find the expected zone for this address to enable "Iron Dome" penalties
+                    const orderForAddr = validOrders.find(o => (o.address || o.raw?.address || '') === addr);
+                    const expectedDeliveryZone = orderForAddr?.sector || orderForAddr?.deliveryZone;
+
                     // Use geocodeWithZones to ensure KML-aware biasing and scoring
-                    const result = await GeocodingService.geocodeWithZones(addr, { silent: true })
+                    const result = await GeocodingService.geocodeWithZones(addr, { 
+                        silent: true,
+                        expectedDeliveryZone 
+                    })
                     if (result.best && result.best.score > -1000) {
                         routeOptimizationCache.setCoordinates(addr, {
                             lat: result.best.lat,

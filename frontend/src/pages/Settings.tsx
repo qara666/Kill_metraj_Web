@@ -7,6 +7,7 @@ import {
   MapIcon,
   ArrowPathIcon,
   CloudArrowUpIcon,
+  CloudIcon as SyncIcon,
   TrashIcon,
   MagnifyingGlassIcon
 } from '@heroicons/react/24/outline'
@@ -14,7 +15,6 @@ import { parseKML } from '../utils/maps/kmlParser'
 import { LoadingSpinner } from '../components/shared/LoadingSpinner'
 import { DashboardSettingsPanel } from '../components/autoplanner/DashboardSettingsPanel'
 import { localStorageUtils } from '../utils/ui/localStorage'
-import { validateGoogleMapsApiKey } from '../utils/api/apiKeyValidator'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { clsx } from 'clsx'
@@ -22,6 +22,8 @@ import { CityBiasSection } from '../components/zone/CityBiasSection'
 import { CollapsibleSection } from '../components/shared/CollapsibleSection'
 import { KmlPreviewMap } from '../components/zone/KmlPreviewMap'
 import { authService } from '../utils/auth/authService'
+import KmlManagementPanel from '../components/admin/KmlManagementPanel'
+import ZoneInspector from '../components/zone/ZoneInspector'
 
 interface SettingsForm {
   googleMapsApiKey: string
@@ -58,20 +60,23 @@ interface SettingsForm {
   autoSyncKml: boolean
   selectedHubs: string[]
   selectedZones: string[]
-  routingProvider: 'google' | 'generoute'
+  routingProvider: 'google' | 'generoute' | 'valhalla'
+  vehicleType: 'auto' | 'motorcycle' | 'motor_scooter'
   geocodingProvider: 'google' | 'nominatim' | 'geoapify'
   mapProvider: 'google' | 'osm'
   generouteApiKey: string
   geoapifyApiKey: string
   theme: 'light' | 'dark'
   courierTransportType: 'car' | 'bicycle' | 'walking' | 'motorcycle'
+  distanceMatrixEnabled: boolean
+  distanceMatrixProvider: 'valhalla' | 'osrm' | 'google'
 }
 
 export const Settings: React.FC = () => {
   const { isDark } = useTheme()
   const { isAdmin, user } = useAuth()
   const canModify = user?.canModifySettings !== false
-  const [isTestingApiKey, setIsTestingApiKey] = useState(false)
+  // The API Keys section has been simplified to hide deprecated options.
   const [zoneSearchTerm, setZoneSearchTerm] = useState('')
   const [isLoading, setIsLoading] = useState(true)
 
@@ -111,26 +116,18 @@ export const Settings: React.FC = () => {
       autoSyncKml: false,
       selectedHubs: [],
       selectedZones: [],
-      routingProvider: 'google',
-      geocodingProvider: 'google',
+      routingProvider: 'valhalla',
+      vehicleType: 'auto',
+      geocodingProvider: 'nominatim',
       mapProvider: 'google',
       generouteApiKey: '',
       geoapifyApiKey: '',
       theme: 'light',
-      courierTransportType: 'car'
+      courierTransportType: 'car',
+      distanceMatrixEnabled: false,
+      distanceMatrixProvider: 'valhalla'
     }
   })
-
-  const googleMapsApiKey = watch('googleMapsApiKey') || ''
-
-  const checkApiKeyStatus = async (apiKey: string) => {
-    if (!apiKey.trim()) return
-    try {
-      validateGoogleMapsApiKey(apiKey)
-    } catch (error) {
-      console.error('API Key validation failed:', error)
-    }
-  }
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -171,21 +168,20 @@ export const Settings: React.FC = () => {
         setValue('mapStyle', settings.mapStyle || 'standard')
         setValue('maxCriticalRouteDistanceKm', settings.maxCriticalRouteDistanceKm ?? 120)
 
-        if (settings.googleMapsApiKey) {
-          checkApiKeyStatus(settings.googleMapsApiKey)
-        }
-
         setValue('kmlData', settings.kmlData || null)
         setValue('kmlSourceUrl', settings.kmlSourceUrl || '')
         setValue('lastKmlSync', settings.lastKmlSync || null)
         setValue('autoSyncKml', settings.autoSyncKml ?? false)
         setValue('selectedHubs', settings.selectedHubs || [])
         setValue('selectedZones', settings.selectedZones || [])
-        setValue('routingProvider', settings.routingProvider || 'google')
-        setValue('geocodingProvider', settings.geocodingProvider || 'google')
+        setValue('routingProvider', settings.routingProvider || 'valhalla')
+        setValue('vehicleType', settings.vehicleType || 'auto')
+        setValue('geocodingProvider', settings.geocodingProvider || 'nominatim')
         setValue('mapProvider', settings.mapProvider || 'google')
         setValue('generouteApiKey', settings.generouteApiKey || '')
         setValue('geoapifyApiKey', settings.geoapifyApiKey || '')
+        setValue('distanceMatrixEnabled', settings.distanceMatrixEnabled ?? false)
+        setValue('distanceMatrixProvider', settings.distanceMatrixProvider || 'valhalla')
         
         // Dashboard fields
         setValue('fastopertorApiKey', settings.fastopertorApiKey || '')
@@ -211,27 +207,6 @@ export const Settings: React.FC = () => {
 
     loadSettings()
   }, [setValue, user?.id])
-
-  const testApiKey = async () => {
-    if (!googleMapsApiKey.trim()) {
-      toast.error('Пожалуйста, введите Google Maps API ключ')
-      return
-    }
-    setIsTestingApiKey(true)
-    try {
-      const validationResult = validateGoogleMapsApiKey(googleMapsApiKey)
-      if (validationResult) {
-        localStorageUtils.setApiKey(googleMapsApiKey)
-        toast.success(' API ключ действителен и сохранен!')
-      } else {
-        toast.error(`API ключ недействителен: Неизвестная ошибка`)
-      }
-    } catch (error) {
-      toast.error(`Не удалось проверить API ключ: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`)
-    } finally {
-      setIsTestingApiKey(false)
-    }
-  }
 
   const onSubmit = async (data: SettingsForm) => {
     const normalizedToken = (data.mapboxToken || '').trim()
@@ -260,10 +235,6 @@ export const Settings: React.FC = () => {
       }
     } else {
       toast.success('Настройки сохранены локально')
-    }
-
-    if (data.googleMapsApiKey.trim()) {
-      checkApiKeyStatus(data.googleMapsApiKey)
     }
   }
 
@@ -606,7 +577,41 @@ export const Settings: React.FC = () => {
             </div>
           </CollapsibleSection>
 
-          {(isAdmin || canModify) && (
+          {/* Server-Side KML Management (Admin Only) */}
+          {isAdmin && (
+            <CollapsibleSection
+              isDark={isDark}
+              icon={<SyncIcon className="h-5 w-5" />}
+              title="Централизованное управление KML (Сервер)"
+              defaultOpen={false}
+            >
+              <div className={clsx(
+                'rounded-xl border',
+                isDark ? 'bg-gray-800/30 border-gray-700' : 'bg-gray-50 border-gray-200'
+              )}>
+                <KmlManagementPanel />
+              </div>
+            </CollapsibleSection>
+          )}
+
+          {/* Zone Inspector (Admin Only) */}
+          {isAdmin && (
+            <CollapsibleSection
+              isDark={isDark}
+              icon={<MagnifyingGlassIcon className="h-5 w-5" />}
+              title="Инспектор зон и адресов (Отладка)"
+              defaultOpen={false}
+            >
+              <div className={clsx(
+                'rounded-xl border',
+                isDark ? 'bg-gray-800/30 border-gray-700' : 'bg-gray-50 border-gray-200'
+              )}>
+                <ZoneInspector isDark={isDark} />
+              </div>
+            </CollapsibleSection>
+          )}
+
+          {isAdmin && (
             <CollapsibleSection isDark={isDark} icon={<ArrowPathIcon className="h-4 w-4" />} title="Автообновление (API Dashboard)">
               <DashboardSettingsPanel 
                 isDark={isDark} 
@@ -647,47 +652,99 @@ export const Settings: React.FC = () => {
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер маршрутизации</label>
                     <select {...register('routingProvider')} className="input w-full" disabled={!canModify}>
-                      <option value="google">Google Maps (Платный)</option>
-                      <option value="generoute">Generoute.io / OSRM (Бесплатно)</option>
+                      <option value="valhalla">🗺 Основной — Valhalla OSM (Бесплатно, Точно)</option>
+                      <option value="generoute">⚡ OSRM / Generoute (Оптимизация, Бесплатно)</option>
+                      <option value="google">💳 Резервный — Google Maps (Платный)</option>
                     </select>
+                    <p className="text-xs text-gray-400">
+                      {watch('routingProvider') === 'valhalla'
+                        ? '✅ Рекомендовано: реальные дорожные расстояния через бесплатный OSM-движок Valhalla.'
+                        : watch('routingProvider') === 'generoute'
+                        ? '⚡ OSRM/Generoute — быстро, бесплатно.'
+                        : '⚠️ Платный режим: Google Maps Directions API.'}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Тип транспорта (Valhalla)</label>
+                    <select {...register('vehicleType')} className="input w-full" disabled={!canModify}>
+                      <option value="auto">🚗 Автомобиль</option>
+                      <option value="motorcycle">🏍 Мотоцикл</option>
+                      <option value="motor_scooter">🛵 Скутер / Мопед</option>
+                    </select>
+                    <p className="text-xs text-gray-400">Тип транспорта влияет на выбор дорог и скоростной режим в Valhalla.</p>
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер геокодирования</label>
                     <select {...register('geocodingProvider')} className="input w-full" disabled={!canModify}>
-                      <option value="google">💳 Google Maps — Платный (точный, требует API ключ)</option>
-                      <option value="nominatim">🆓 Бесплатный — Nominatim (OSM) + Geoapify</option>
+                      <option value="nominatim">⚡ Основной — Photon + OSM + Geoapify (Бесплатно, Высокая скорость)</option>
+                      <option value="google">💳 Резервный — Google Maps (Платный, Точный)</option>
                     </select>
                     <p className="text-xs text-gray-400">
-                      {watch('geocodingProvider') === 'nominatim' ? '⚠️ Бесплатный режим: геокодирование через OpenStreetMap. Точность ниже, нет лимитов оплаты.' : '✅ Платный режим: Google Maps API. Высокая точность, особенно для украинских переименованных улиц.'}
+                      {watch('geocodingProvider') === 'nominatim' ? '✅ Рекомендованный режим: геокодирование через высокоскоростной Photon, OpenStreetMap и Geoapify. Включено автоматическое кэширование.' : '⚠️ Платный режим: Google Maps API.'}
                     </p>
+
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Google Maps API Ключ</label>
-                    <div className="flex gap-2">
-                      <input type="password" className="input flex-1" placeholder="Google Maps API Ключ" {...register('googleMapsApiKey')} disabled={!canModify} />
-                      <button type="button" onClick={testApiKey} disabled={isTestingApiKey} className="btn-outline">Проверить</button>
+                <div className="p-6 rounded-2xl bg-indigo-50/30 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-500/10 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-xl bg-indigo-500 text-white">
+                        <ArrowPathIcon className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black uppercase tracking-tight">Резервная Матрица (Distance Matrix)</h4>
+                        <p className="text-[10px] text-gray-500 font-bold">Оптимизация N-to-M расчетов для ускорения планирования</p>
+                      </div>
                     </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" {...register('distanceMatrixEnabled')} disabled={!canModify} />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+                    </label>
                   </div>
 
+                  {watch('distanceMatrixEnabled') && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер матрицы</label>
+                        <select {...register('distanceMatrixProvider')} className="input w-full" disabled={!canModify}>
+                          <option value="valhalla">🗺 Valhalla Sources-to-Targets (OSM, Рекомендовано)</option>
+                          <option value="osrm">⚡ OSRM Table (Бесплатно, Высокая скорость)</option>
+                          <option value="google">💳 Google Distance Matrix API (Платный)</option>
+                        </select>
+                      </div>
+                      <div className="p-3 rounded-xl bg-white/50 dark:bg-gray-950/30 border border-white/50 dark:border-gray-800 flex items-center gap-3">
+                         <div className="text-[10px] text-gray-500 italic">
+                           {watch('distanceMatrixProvider') === 'valhalla' 
+                             ? 'Valhalla позволяет рассчитать матрицу 100x100 за один запрос. Идеально для оптимизации курьерских маршрутов.' 
+                             : watch('distanceMatrixProvider') === 'osrm' 
+                             ? 'OSRM Table — самый быстрый способ получить таблицу расстояний, но не учитывает специфику транспорта Valhalla.' 
+                             : 'Google Matrix — максимальная точность, но каждая ячейка таблицы оплачивается отдельно согласно тарифам Google.'}
+                         </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-6 mt-6 border-t border-gray-100 dark:border-gray-700 space-y-4">
+                  <h4 className="text-sm font-black uppercase tracking-tight mb-4 text-gray-700 dark:text-gray-300">API Ключи (Только для платных сервисов)</h4>
+                  
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Mapbox Token (для трафика)</label>
-                    <input type="text" className="input" placeholder="Mapbox Token" {...register('mapboxToken')} disabled={!canModify} />
+                    <input type="text" className="input" placeholder="pk.eyJ1..." {...register('mapboxToken')} disabled={!canModify} />
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Generoute API Key</label>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">OSRM / Generoute API Key</label>
                     <input 
                       type="password" 
                       className="input" 
-                      placeholder="Оставьте пустым для использования ключа по умолчанию" 
+                      placeholder="Оставьте пустым для ключа по умолчанию" 
                       {...register('generouteApiKey')} 
                       disabled={!canModify} 
                     />
                     <p className="text-[10px] text-gray-400">
-                      Партнерский ключ `wukkif-bixkit-Zabso4` используется автоматически, если это поле пустое.
+                      Используется только если провайдер маршрутизации установлен на OSRM / Generoute.
                     </p>
                   </div>
 
@@ -696,7 +753,7 @@ export const Settings: React.FC = () => {
                     <input 
                       type="password" 
                       className="input" 
-                      placeholder="Geoapify API Key" 
+                      placeholder="geo_..." 
                       {...register('geoapifyApiKey')} 
                       disabled={!canModify} 
                     />
@@ -704,10 +761,21 @@ export const Settings: React.FC = () => {
                       Необходим для провайдера геокодирования Geoapify.
                     </p>
                   </div>
+
+                  <div className="space-y-2 mt-4 p-4 rounded-xl border border-orange-200 bg-orange-50/50 dark:bg-orange-900/10 dark:border-orange-500/20">
+                    <label className="text-xs font-semibold text-orange-600 dark:text-orange-400 uppercase tracking-wider">Google Maps API Ключ (Deprecated)</label>
+                    <div className="flex gap-2 mt-1">
+                      <input type="password" className="input flex-1" placeholder="AIzaSy..." {...register('googleMapsApiKey')} disabled={!canModify} />
+                    </div>
+                    <p className="text-[10px] text-orange-500 mt-1">
+                      Внимание: система разработана для работы без Google Maps API. Этот ключ нужен исключительно если вы принудительно выбрали Google в качестве резервного провайдера. Взимается плата по тарифам Google.
+                    </p>
+                  </div>
                 </div>
               </div>
             </CollapsibleSection>
           )}
+
           {(isAdmin || canModify) && (
             <CollapsibleSection isDark={isDark} icon={<CogIcon className="h-5 w-5" />} title="Интерфейс и Ограничения" defaultOpen={false}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

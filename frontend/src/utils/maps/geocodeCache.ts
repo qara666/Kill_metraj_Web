@@ -82,32 +82,32 @@ function writeEntry(key: string, point: GeoPoint): void {
 
 // ─── Core geocoding ─────────────────────────────────────────────────────────
 
-function geocodeViaGoogle(address: string): Promise<GeoPoint | null> {
-    return new Promise((resolve) => {
-        if (
-            typeof window === 'undefined' ||
-            !window.google?.maps?.Geocoder
-        ) {
-            resolve(null)
-            return
+async function geocodeViaFreeProvider(address: string): Promise<GeoPoint | null> {
+    try {
+        const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(address)}&limit=1`
+        const response = await fetch(url)
+        const data = await response.json()
+        
+        if (data.features && data.features.length > 0) {
+            const [lng, lat] = data.features[0].geometry.coordinates
+            return { lat, lng }
         }
-
-        const geocoder = new window.google.maps.Geocoder()
-        geocoder.geocode(
-            { address, region: 'ua' },
-            (results: any, status: any) => {
-                if (status === 'OK' && results?.[0]?.geometry?.location) {
-                    const loc = results[0].geometry.location
-                    resolve({
-                        lat: typeof loc.lat === 'function' ? loc.lat() : loc.lat,
-                        lng: typeof loc.lng === 'function' ? loc.lng() : loc.lng,
-                    })
-                } else {
-                    resolve(null)
-                }
+        
+        // Final fallback to Nominatim
+        const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`
+        const nomRes = await fetch(nomUrl, { headers: { 'User-Agent': 'KillMetrajWeb/1.0' } })
+        const nomData = await nomRes.json()
+        
+        if (nomData && nomData.length > 0) {
+            return { 
+                lat: parseFloat(nomData[0].lat), 
+                lng: parseFloat(nomData[0].lon) 
             }
-        )
-    })
+        }
+    } catch (e) {
+        console.warn('[geocodeCache] Free provider failed:', e)
+    }
+    return null
 }
 
 /**
@@ -125,7 +125,7 @@ export async function getCachedGeocode(address: string): Promise<GeoPoint | null
     if (inFlight.has(key)) return inFlight.get(key)!
 
     // 3. Miss → call API
-    const promise = geocodeViaGoogle(address).then((point) => {
+    const promise = geocodeViaFreeProvider(address).then((point) => {
         inFlight.delete(key)
         if (point) writeEntry(key, point)
         return point

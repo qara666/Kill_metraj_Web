@@ -18,6 +18,7 @@
     "dotenv": "^16.3.1",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
+    "fast-xml-parser": "^5.5.3",
     "helmet": "^8.0.0",
     "ioredis": "^5.5.0",
     "joi": "^17.13.3",
@@ -39,5 +40,12 @@
   "devDependencies": {
     "jest": "^29.6.2",
     "nodemon": "^3.0.1"
-  }
+  },
+  "directories": {
+    "doc": "docs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
 }

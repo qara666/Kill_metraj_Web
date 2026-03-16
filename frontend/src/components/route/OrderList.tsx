@@ -1,12 +1,15 @@
 import React, { memo, useMemo } from 'react';
 import { clsx } from 'clsx';
+import { FixedSizeList as List } from 'react-window';
+import { AutoSizer } from 'react-virtualized-auto-sizer';
 import {
     TruckIcon,
     InboxIcon,
     CheckCircleIcon,
     ChevronUpIcon,
     ChevronDownIcon,
-    ClockIcon
+    ClockIcon,
+    MapPinIcon
 } from '@heroicons/react/24/outline';
 import { getStatusBadgeProps } from '../../utils/data/statusBadgeHelper';
 import { getPaymentMethodBadgeProps } from '../../utils/data/paymentMethodHelper';
@@ -32,6 +35,11 @@ interface Order {
         completedAt?: number;
     };
     raw?: any;
+    lat?: number;
+    lng?: number;
+    kmlZone?: string;
+    kmlHub?: string;
+    locationType?: 'ROOFTOP' | 'RANGE_INTERPOLATED' | 'GEOMETRIC_CENTER' | 'APPROXIMATE';
 }
 
 interface OrderListProps {
@@ -144,12 +152,33 @@ const OrderItem = memo(({
 
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 mb-1">
-                            <span className={clsx(
-                                'font-extrabold text-base tracking-tight',
-                                isDark ? 'text-white' : 'text-gray-900'
-                            )}>
-                                #{order.orderNumber}
-                            </span>
+                            <div className="flex items-center gap-2">
+                                <span className={clsx(
+                                    'font-extrabold text-base tracking-tight',
+                                    isDark ? 'text-white' : 'text-gray-900'
+                                )}>
+                                    #{order.orderNumber}
+                                </span>
+                                {order.lat && order.lng && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            const coords = `${order.lat},${order.lng}`;
+                                            navigator.clipboard.writeText(coords);
+                                            import('react-hot-toast').then(({ toast }) => {
+                                                toast.success('Координаты скопированы', { id: 'copy-coords', icon: '📍', duration: 1500 });
+                                            });
+                                        }}
+                                        className={clsx(
+                                            "p-1 rounded-md transition-all active:scale-90",
+                                            isDark ? "hover:bg-white/5 text-gray-400" : "hover:bg-gray-100 text-gray-400"
+                                        )}
+                                        title={`${order.lat}, ${order.lng}`}
+                                    >
+                                        <MapPinIcon className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
+                            </div>
                             <div className="flex items-center gap-1">
                                 {isSelected && onMoveUp && onMoveDown && (
                                     <div className="flex items-center bg-blue-100 dark:bg-blue-900/40 rounded-lg p-0.5">
@@ -174,6 +203,14 @@ const OrderItem = memo(({
 
                         <p className={clsx('text-sm leading-snug mb-2 font-medium', isDark ? 'text-gray-300' : 'text-gray-600')}>
                             {order.address}
+                            {order.kmlZone && (
+                                <span className={clsx(
+                                    "ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-tighter",
+                                    isDark ? "bg-purple-500/20 text-purple-300" : "bg-purple-100 text-purple-700"
+                                )}>
+                                    {order.kmlHub ? `${order.kmlHub}: ` : ''}{order.kmlZone}
+                                </span>
+                            )}
                         </p>
 
                         <div className="flex items-center gap-3 text-xs">
@@ -196,6 +233,17 @@ const OrderItem = memo(({
                                     </span>
                                 );
                             })()}
+                            {order.locationType && (
+                                <span className={clsx(
+                                    "px-2 py-0.5 rounded font-black text-[9px] tracking-wider",
+                                    order.locationType === 'ROOFTOP' ? (isDark ? "bg-green-500/20 text-green-400" : "bg-green-100 text-green-700") :
+                                    order.locationType === 'RANGE_INTERPOLATED' ? (isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-100 text-blue-700") :
+                                    (isDark ? "bg-yellow-500/20 text-yellow-500" : "bg-yellow-100 text-yellow-700")
+                                )}>
+                                    {order.locationType === 'ROOFTOP' ? 'ТОЧНО' : 
+                                     order.locationType === 'RANGE_INTERPOLATED' ? 'ДОМ' : 'ПРИМЕРНО'}
+                                </span>
+                            )}
                             <span className={clsx('font-black ml-auto', isDark ? 'text-white' : 'text-gray-900')}>
                                 {order.amount} ₴
                             </span>
@@ -227,8 +275,7 @@ export const OrderList = memo(({
     onSelectOrder,
     onMoveUp,
     onMoveDown,
-    isInRoute = false,
-    setSize
+    isInRoute = false
 }: OrderListProps) => {
 
     const selectionOrderMap = useMemo(() => {
@@ -239,6 +286,7 @@ export const OrderList = memo(({
         });
         return map;
     }, [selectedOrdersOrder]);
+
     if (orders.length === 0) {
         return (
             <div className={clsx("text-center py-8", isDark ? "text-gray-500" : "text-gray-400")}>
@@ -247,28 +295,45 @@ export const OrderList = memo(({
         );
     }
 
-    return (
-        <div className="space-y-3 p-1">
-            {orders.map((order, index) => {
-                const isSelected = selectedOrders.has(order.id);
-                const selectionIndex = isSelected ? (selectionOrderMap.get(order.id) || 0) : 0;
+    const AutoSizerAny = AutoSizer as any;
 
-                return (
-                    <OrderItem
-                        key={order.id}
-                        index={index}
-                        order={order}
-                        isDark={isDark}
-                        isSelected={isSelected}
-                        selectionOrder={selectionIndex}
-                        onSelect={(id) => onSelectOrder(id, false)}
-                        onMoveUp={onMoveUp}
-                        onMoveDown={onMoveDown}
-                        isInRoute={isInRoute}
-                        setSize={setSize}
-                    />
-                );
-            })}
+    return (
+        <div style={{ width: '100%', height: '100%' }}>
+            {AutoSizerAny && (
+                <AutoSizerAny>
+                    {({ width, height }: { width: number; height: number }) => (
+                    <List
+                        height={height}
+                        itemCount={orders.length}
+                        itemSize={120} // Approximate height of OrderItem
+                        width={width}
+                        className="custom-scrollbar"
+                    >
+                        {({ index, style }: { index: number; style: React.CSSProperties }) => {
+                            const order = orders[index];
+                            const isSelected = selectedOrders.has(order.id);
+                            const selectionIndex = isSelected ? (selectionOrderMap.get(order.id) || 0) : 0;
+
+                            return (
+                                <OrderItem
+                                    key={order.id}
+                                    index={index}
+                                    order={order}
+                                    isDark={isDark}
+                                    isSelected={isSelected}
+                                    selectionOrder={selectionIndex}
+                                    onSelect={(id: string) => onSelectOrder(id, false)}
+                                    onMoveUp={onMoveUp}
+                                    onMoveDown={onMoveDown}
+                                    isInRoute={isInRoute}
+                                    style={style}
+                                />
+                            );
+                        }}
+                    </List>
+                )}
+            </AutoSizerAny>
+          )}
         </div>
     );
 });

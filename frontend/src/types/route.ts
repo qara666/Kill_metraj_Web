@@ -25,6 +25,9 @@ export interface Order {
     lng?: number
     kmlZone?: string
     kmlHub?: string
+    locationType?: 'ROOFTOP' | 'RANGE_INTERPOLATED' | 'GEOMETRIC_CENTER' | 'APPROXIMATE'
+    deliveryZone?: string
+    streetNumberMatched?: boolean
 }
 
 export interface Route {

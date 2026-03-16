@@ -36,6 +36,11 @@ export interface Order {
   };
   isSelected?: boolean
   isInRoute?: boolean
+  lat?: number
+  lng?: number
+  kmlZone?: string
+  kmlHub?: string
+  locationType?: 'ROOFTOP' | 'RANGE_INTERPOLATED' | 'GEOMETRIC_CENTER' | 'APPROXIMATE'
   [key: string]: any
 }
 

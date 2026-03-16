@@ -5,6 +5,8 @@ const UserPreset = require('./UserPreset');
 const AuditLog = require('./AuditLog');
 const DashboardState = require('./DashboardState');
 const DashboardCache = require('./DashboardCache');
+const KmlHub = require('./KmlHub');
+const KmlZone = require('./KmlZone');
 
 // Define associations
 User.hasOne(UserPreset, {
@@ -45,6 +47,18 @@ AuditLog.belongsTo(User, {
     as: 'user'
 });
 
+// KML Associations
+KmlHub.hasMany(KmlZone, {
+    foreignKey: 'hub_id',
+    as: 'zones',
+    onDelete: 'CASCADE'
+});
+
+KmlZone.belongsTo(KmlHub, {
+    foreignKey: 'hub_id',
+    as: 'hub'
+});
+
 // Sync database (only in development)
 async function syncDatabase() {
     try {
@@ -69,5 +83,7 @@ module.exports = {
     AuditLog,
     DashboardState,
     DashboardCache,
+    KmlHub,
+    KmlZone,
     syncDatabase
 };

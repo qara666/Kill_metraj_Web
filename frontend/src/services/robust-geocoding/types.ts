@@ -18,6 +18,7 @@ export interface RawGeoCandidate {
   address_components?: Array<{ long_name: string; short_name: string; types: string[] }>
   place_id?: string
   types?: string[]
+  _source?: string
 }
 
 // ─── Scored geocoding candidate ──────────────────────────────────────────────
@@ -38,6 +39,8 @@ export interface ScoredCandidate {
   isTechnicalZone: boolean
   /** Whether this point is inside any active delivery zone */
   isInsideZone: boolean
+  /** Whether the house number was an exact match */
+  streetNumberMatched?: boolean
 }
 
 // ─── KML Zone context ─────────────────────────────────────────────────────────
@@ -68,6 +71,12 @@ export interface KmlZoneContext {
 // ─── Options and Results ──────────────────────────────────────────────────────
 
 export interface RobustGeocodeOptions {
+  /**
+   * Expected delivery zone from FastOperator. If provided and matches the KML zone,
+   * the candidate gets a massive score bonus.
+   */
+  expectedDeliveryZone?: string | null
+
   /**
    * If true, skips the disambiguation modal and auto-picks the best candidate.
    * Use for background/distance calculations.

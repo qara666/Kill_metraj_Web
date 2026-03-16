@@ -1,6 +1,7 @@
 /**
  * Единый менеджер для всех обращений к Google Maps API
  * Включает: кэширование, батчинг, приоритизацию, предварительную фильтрацию
+ * Routing: Valhalla (primary, free OSM) → Google/Generoute (fallback) → Haversine (offline)
  */
 
 import type { Order, Coordinates } from '../../types'
@@ -11,13 +12,14 @@ import {
   calculateTotalTrafficDelay,
   hasCriticalTraffic
 } from '../maps/ukraineTrafficAPI'
+import { ValhallaService } from '../../services/valhallaService'
+import { OSRMService } from '../../services/osrmService'
 
 // ============================================================================
 // ТИПЫ И ИНТЕРФЕЙСЫ
 // ============================================================================
 
 export interface DirectionsLeg {
-  distance?: { text: string; value: number }
   duration?: { text: string; value: number }
   duration_in_traffic?: { text: string; value: number }
   start_address?: string
@@ -475,10 +477,47 @@ export class GoogleAPIManager {
     this.config = config
     this.batchQueue = new GoogleAPIBatchQueue()
 
-    // Устанавливаем функцию для выполнения API запросов
-    this.batchQueue.setMakeAPIRequest(async (chain: Order[], includeStartEnd: boolean) => {
-      return this.config.checkChainFeasible(chain, includeStartEnd)
-    })
+      // ── Routing pipeline: Valhalla (free, OSM) → OSRM (free, OSM) → original API ──
+      this.batchQueue.setMakeAPIRequest(async (chain: Order[], includeStartEnd: boolean) => {
+        const hasCoords = chain.every(o => o.coords)
+
+        if (hasCoords && chain.length >= 2) {
+          const locations = chain.map(o => ({ lat: o.coords!.lat, lng: o.coords!.lng }))
+          
+          // 1. Try Valhalla (supports vehicle costing)
+          try {
+            const valhallaResult = await ValhallaService.calculateRoute(locations)
+            if (valhallaResult.feasible && valhallaResult.totalDistance) {
+              return {
+                feasible: true,
+                legs: valhallaResult.legs,
+                totalDuration: valhallaResult.totalDuration,
+                totalDistance: valhallaResult.totalDistance,
+              }
+            }
+          } catch (e) {
+            console.warn('[GoogleAPIManager] Valhalla failed:', e)
+          }
+
+          // 2. Try OSRM (simple fallback)
+          try {
+            const osrmResult = await OSRMService.calculateRoute(locations)
+            if (osrmResult.feasible && osrmResult.totalDistance) {
+              return {
+                feasible: true,
+                legs: osrmResult.legs,
+                totalDuration: osrmResult.totalDuration,
+                totalDistance: osrmResult.totalDistance,
+              }
+            }
+          } catch (e) {
+            console.warn('[GoogleAPIManager] OSRM failed:', e)
+          }
+        }
+
+        // Fallback: OSRM/Valhalla are now the only options (Google removed)
+        return this.config.checkChainFeasible(chain, includeStartEnd)
+      })
   }
 
   /**

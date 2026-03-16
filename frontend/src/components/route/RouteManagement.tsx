@@ -1,4 +1,7 @@
-import React, { useState, useEffect, useMemo, useCallback, memo, useDeferredValue } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, memo, useDeferredValue, useTransition, lazy, Suspense } from 'react'
+import { FixedSizeList as List } from 'react-window'
+import { AutoSizer } from 'react-virtualized-auto-sizer'
+const AutoSizerAny = AutoSizer as any
 import { OrderList } from './OrderList'
 import {
   TruckIcon,
@@ -14,7 +17,8 @@ import {
   ExclamationTriangleIcon,
   ExclamationCircleIcon,
   ChevronLeftIcon,
-  ChevronRightIcon
+  ChevronRightIcon,
+  PlayIcon
 } from '@heroicons/react/24/outline'
 import { localStorageUtils } from '../../utils/ui/localStorage'
 import { cleanAddress, } from '../../utils/data/addressUtils'
@@ -27,7 +31,6 @@ import { AddressValidationService, RouteAnomalyCheck } from '../../services/addr
 import { getPaymentMethodBadgeProps } from '../../utils/data/paymentMethodHelper'
 import { toast } from 'react-hot-toast'
 import { Tooltip } from '../shared/Tooltip'
-import { lazy, Suspense } from 'react'
 import { CourierTimeWindows } from './CourierTimeWindows'
 import { GridOrderCard } from './GridOrderCard'
 import { type TimeWindowGroup, groupOrdersByTimeWindow, formatTimeLabel } from '../../utils/route/routeCalculationHelpers'
@@ -60,8 +63,8 @@ declare global {
 
 import { Route, Order } from '../../types/route'
 import { useRouteGeocoding } from '../../hooks/useRouteGeocoding'
-import { useBackgroundGeocoder } from '../../hooks/useBackgroundGeocoder'
 import { useKmlData } from '../../hooks/useKmlData'
+import { exportToGoogleMaps, exportToValhalla } from '../../utils/routes/routeExport'
 
 interface RouteManagementProps {
   excelData?: any
@@ -273,14 +276,17 @@ const CourierListItem = memo(({
 export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const { excelData, updateExcelData, saveManualOverrides } = useExcelData()
   const { isDark } = useTheme()
-  const [selectedCourier, setSelectedCourier] = useState<string | null>(null)
+  // v5.50: Cache localStorage settings to avoid sync I/O in render loop
+  const localSettings = useMemo(() => localStorageUtils.getAllSettings(), [])
 
-  const [startAddress] = useState<string>(() => localStorageUtils.getAllSettings().defaultStartAddress || '')
-  const [endAddress] = useState<string>(() => localStorageUtils.getAllSettings().defaultEndAddress || '')
+  const [selectedCourier, setSelectedCourier] = useState<string | null>(null)
+  const [startAddress] = useState<string>(() => localSettings.defaultStartAddress || '')
+  const [endAddress] = useState<string>(() => localSettings.defaultEndAddress || '')
   const [orderSearchTerm, setOrderSearchTerm] = useState('')
   const [courierSearchTerm, setCourierSearchTerm] = useState('')
   const [courierSortType, setCourierSortType] = useState<'alpha' | 'load'>('alpha')
   const [googleMapsReady, setGoogleMapsReady] = useState(false)
+  const [, startTransition] = useTransition()
 
   // v5.41: Robust Normalization - trim all inputs to prevent mismatch
   const [courierFilter, setCourierFilter] = useState<string>('all')
@@ -330,10 +336,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     const normName = normalizeCourierName(courierName).toLowerCase()
 
     // 1. Проверяем в настройках (карта имен -> транспорт)
-    const settings = localStorageUtils.getAllSettings()
-    if (settings.courierVehicleMap) {
+    if (localSettings.courierVehicleMap) {
       // Ищем в карте с приведением ключей к нижнему регистру
-      const mappedEntry = Object.entries(settings.courierVehicleMap).find(([name]) =>
+      const mappedEntry = Object.entries(localSettings.courierVehicleMap).find(([name]) =>
         normalizeCourierName(name).toLowerCase() === normName
       )
       if (mappedEntry) return mappedEntry[1]
@@ -352,10 +357,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
   // Выбранный город обязателен; используем только его для bias/нормализации
   const getSelectedCity = useCallback((): { city: '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'; country: 'Украина'; region: 'UA' } => {
-    const settings = localStorageUtils.getAllSettings()
-    const city = (settings.cityBias || '') as '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'
+    const city = (localSettings.cityBias || '') as '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'
     return { city, country: 'Украина', region: 'UA' }
-  }, [])
+  }, [localSettings.cityBias])
 
   // Простая очистка адреса + добавление выбранного города/страны
   const cleanAddressForRoute = useCallback((raw: string): string => {
@@ -434,8 +438,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
 
   // --- Background Pre-geocoder (L1 + L2 Cache Warming) ---
-  const allOrders = useMemo(() => excelData?.orders || [], [excelData?.orders])
-  useBackgroundGeocoder(allOrders)
 
   // SOTA 5.46: useRouteGeocoding encapsulates all complex logic
   const {
@@ -444,6 +446,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     disambModal,
     setDisambModal,
     disambResolver,
+    calcProgress,
     processDisambQueue: _processDisambQueue
   } = useRouteGeocoding({
     settings,
@@ -941,22 +944,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       return
     }
 
-    // Проверяем готовность Google Maps API
+    // Пробуем загрузить Google Maps API в фоновом режиме, если он еще не готов
     if (!googleMapsReady) {
-      // Проверяем, есть ли API ключ в настройках
-      if (!localStorageUtils.hasApiKey()) {
-        toast.error('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ.')
-        return
-      }
-
-      try {
-        await googleMapsLoader.load()
-        setGoogleMapsReady(true)
-      } catch (error) {
-        toast.error('Ошибка загрузки Google Maps API. Проверьте настройки API ключа.')
-        return
-      }
+      googleMapsLoader.load()
+        .then(() => setGoogleMapsReady(true))
+        .catch(() => { /* Silent failure - providers will handle fallbacks */ })
     }
+
+
 
     const newRoute: Route = {
       id: `route_${Date.now()}`,
@@ -1299,21 +1294,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       return
     }
 
-    // Проверяем готовность Google Maps API
+    // Пробуем загрузить Google Maps API в фоновом режиме
     if (!googleMapsReady) {
-      if (!localStorageUtils.hasApiKey()) {
-        toast.error('Google Maps API ключ не найден в настройках. Пожалуйста, добавьте ключ.')
-        return
-      }
-
-      try {
-        await googleMapsLoader.load()
-        setGoogleMapsReady(true)
-      } catch (error) {
-        toast.error('Ошибка загрузки Google Maps API. Проверьте настройки API ключа.')
-        return
-      }
+      googleMapsLoader.load()
+        .then(() => setGoogleMapsReady(true))
+        .catch(() => { /* Silent failure */ })
     }
+
+
 
     // Предупреждения не блокируют пересчет — продолжаем автоматически
     if (anomalyCheck.warnings.length > 0) {
@@ -1356,57 +1344,28 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     });
   }
 
-  const openRouteInGoogleMaps = async (route: Route) => {
-    if (route.orders.length === 0) {
-      toast.error('Нет точек для маршрута')
-      return
-    }
-
-    try {
-      const base = 'https://www.google.com/maps/dir/?api=1'
-      const meta: any = (route as any).geoMeta || {}
-      const waypointsMeta: any[] = (meta.waypoints && Array.isArray(meta.waypoints)) ? meta.waypoints : []
-      
-      const hasCoords = (m: any) => typeof m?.lat === 'number' && typeof m?.lng === 'number'
-
-      // 1. Origin
-      let originStr = ''
-      if (hasCoords(meta.origin)) {
-        originStr = `${meta.origin.lat},${meta.origin.lng}`
-      } else {
-        originStr = route.startAddress || (settings.defaultStartAddress || '')
-      }
-
-      // 2. Destination
-      let destinationStr = ''
-      if (hasCoords(meta.destination)) {
-        destinationStr = `${meta.destination.lat},${meta.destination.lng}`
-      } else {
-        destinationStr = route.endAddress || route.startAddress || (settings.defaultEndAddress || settings.defaultStartAddress || '')
-      }
-
-      // 3. Waypoints
-      const wpList = route.orders.map((o: any, i: number) => {
-        const wMeta = waypointsMeta[i]
-        if (hasCoords(wMeta)) {
-          return `${wMeta.lat},${wMeta.lng}`
-        }
-        return o.address || ''
-      })
-
-      const origin = `origin=${encodeURIComponent(originStr)}`
-      const destination = `destination=${encodeURIComponent(destinationStr)}`
-      const waypoints = wpList.length > 0 ? `waypoints=${encodeURIComponent(wpList.join('|'))}` : ''
-      const travelmode = 'travelmode=driving'
-
-      const parts = [origin, destination, travelmode]
-      if (waypoints) parts.push(waypoints)
-      const url = `${base}&${parts.join('&')}`
-      window.open(url, '_blank')
-    } catch (err) {
-      toast.error('Не удалось открыть маршрут в Google Maps')
-    }
+  const openRouteInGoogleMaps = (route: Route) => {
+    if (!route) return
+    const url = exportToGoogleMaps({
+      route,
+      orders: route.orders || [],
+      startAddress: startAddress || '',
+      endAddress: endAddress || ''
+    })
+    if (url) window.open(url, '_blank')
   }
+
+  const openRouteInValhalla = (route: Route) => {
+    if (!route) return
+    const url = exportToValhalla({
+      route,
+      orders: route.orders || [],
+      startAddress: startAddress || '',
+      endAddress: endAddress || ''
+    })
+    if (url) window.open(url, '_blank')
+  }
+
 
   const formatDuration = (minutes: number) => {
     const hours = Math.floor(minutes / 60)
@@ -1483,10 +1442,26 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 Оптимизация маршрута
               </p>
             </div>
-            <div className="flex gap-2">
-              {[0, 1, 2].map(i => (
-                <div key={i} className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
-              ))}
+            <div className="w-full max-w-[240px] mt-2">
+              <div className="flex justify-between items-center mb-2 px-1">
+                <span className={clsx("text-[10px] font-black uppercase tracking-widest", isDark ? "text-blue-400" : "text-blue-600")}>
+                  Загрузка
+                </span>
+                <span className={clsx("text-[10px] font-black tracking-tighter", isDark ? "text-white" : "text-gray-900")}>
+                  {calcProgress}%
+                </span>
+              </div>
+              <div className={clsx(
+                "h-2 w-full rounded-full overflow-hidden relative",
+                isDark ? "bg-white/5" : "bg-gray-100"
+              )}>
+                <div 
+                  className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 transition-all duration-500 ease-out relative"
+                  style={{ width: `${calcProgress}%` }}
+                >
+                  <div className="absolute inset-0 bg-white/20 animate-pulse" />
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1657,7 +1632,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                         type="text"
                         placeholder="Поиск..."
                         value={courierSearchTerm}
-                        onChange={(e) => setCourierSearchTerm(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          startTransition(() => {
+                            setCourierSearchTerm(val);
+                          });
+                        }}
                         className="bg-transparent border-none outline-none text-[10px] font-black w-full placeholder:opacity-30 uppercase tracking-widest"
                       />
                     </div>
@@ -1689,25 +1669,40 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                       <p className="text-xs text-gray-400 font-bold uppercase tracking-widest px-4">Список пуст</p>
                     </div>
                   ) : (
-                    <div className="space-y-2">
-                      {filteredCouriers.map((courierName) => {
-                        const metric = getCourierMetrics(courierName)
-                        const vehicleType = getCourierVehicleType(courierName)
-                        return (
-                          <CourierListItem
-                            key={courierName}
-                            courierName={courierName}
-                            vehicleType={vehicleType}
-                            isSelected={selectedCourier === courierName}
-                            onSelect={handleCourierSelect}
-                            availableOrdersCount={metric.available}
-                            deliveredOrdersCount={metric.delivered}
-                            totalOrdersCount={metric.total}
-                            isDark={isDark}
-                          />
-                        )
-                      })}
-                    </div>
+                      <div style={{ height: '600px', width: '100%' }}>
+                        <AutoSizerAny>
+                          {(props: any) => (
+                            <List
+                              height={props.height}
+                              itemCount={filteredCouriers.length}
+                              itemSize={72}
+                              width={props.width}
+                              className="custom-scrollbar"
+                            >
+                              {({ index, style }: { index: number; style: React.CSSProperties }) => {
+                                const courierName = filteredCouriers[index]
+                                const metric = getCourierMetrics(courierName)
+                                const vehicleType = getCourierVehicleType(courierName)
+                                return (
+                                  <div style={style}>
+                                    <CourierListItem
+                                      key={courierName}
+                                      courierName={courierName}
+                                      vehicleType={vehicleType}
+                                      isSelected={selectedCourier === courierName}
+                                      onSelect={handleCourierSelect}
+                                      availableOrdersCount={metric.available}
+                                      deliveredOrdersCount={metric.delivered}
+                                      totalOrdersCount={metric.total}
+                                      isDark={isDark}
+                                    />
+                                  </div>
+                                )
+                              }}
+                            </List>
+                          )}
+                        </AutoSizerAny>
+                      </div>
                   )}
                 </div>
               </div>
@@ -1956,18 +1951,45 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                           </div>
                         </div>
 
-                        <div className="h-[600px] w-full overflow-y-auto pr-2 custom-scrollbar" data-tour="order-list">
+                        <div className="h-[600px] w-full pr-2 custom-scrollbar" data-tour="order-list">
                           {availableOrders.length > 0 ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4 pb-4">
-                              {availableOrders.map((order: Order) => (
-                                <GridOrderCard
-                                  key={order.id}
-                                  order={order}
-                                  isDark={isDark}
-                                  isSelected={selectedOrders.has(order.id)}
-                                  onSelect={(id) => handleOrderSelect(id, false)}
-                                />
-                              ))}
+                            <div style={{ height: '600px', width: '100%' }}>
+                              <AutoSizerAny>
+                                {(props: any) => {
+                                  // We group orders into rows of 3 to preserve the grid-like appearance
+                                  const columns = props.width > 1536 ? 3 : props.width > 768 ? 2 : 1;
+                                  const rowCount = Math.ceil(availableOrders.length / columns);
+                                  
+                                  return (
+                                    <List
+                                      height={props.height}
+                                      itemCount={rowCount}
+                                      itemSize={240} // Estimated height of a GridOrderCard row
+                                      width={props.width}
+                                      className="custom-scrollbar"
+                                    >
+                                      {({ index, style }: { index: number; style: React.CSSProperties }) => {
+                                        const startIdx = index * columns;
+                                        const rowOrders = availableOrders.slice(startIdx, startIdx + columns);
+                                        
+                                        return (
+                                          <div style={{ ...style, display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: '1rem', paddingBottom: '1rem' }}>
+                                            {rowOrders.map((order) => (
+                                              <GridOrderCard
+                                                key={order.id}
+                                                order={order}
+                                                isDark={isDark}
+                                                isSelected={selectedOrders.has(order.id)}
+                                                onSelect={(id) => handleOrderSelect(id, false)}
+                                              />
+                                            ))}
+                                          </div>
+                                        );
+                                      }}
+                                    </List>
+                                  );
+                                }}
+                              </AutoSizerAny>
                             </div>
                           ) : (
                             <div className="text-center py-20 opacity-30 italic">Список пуст</div>
@@ -2137,17 +2159,29 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
                           <div className="flex items-center gap-4 self-center lg:self-start">
                             <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/30 p-2 rounded-2xl">
-                              <button
-                                onClick={() => route.isOptimized ? openRouteInGoogleMaps(route) : calculateRouteDistance(route)}
-                                disabled={isCalculating}
-                                className={clsx(
-                                  'p-3 rounded-xl transition-all hover:scale-110 active:scale-90',
-                                  isDark ? 'text-blue-400 hover:bg-blue-900/20' : 'text-blue-600 hover:bg-blue-50'
-                                )}
-                                title={route.isOptimized ? "Открыть в Google Maps" : "Рассчитать"}
-                              >
-                                <MapIcon className="h-6 w-6" />
-                              </button>
+                                <button
+                                  onClick={() => route.isOptimized ? openRouteInGoogleMaps(route) : calculateRouteDistance(route)}
+                                  disabled={isCalculating}
+                                  className={clsx(
+                                    'p-3 rounded-xl transition-all hover:scale-110 active:scale-90',
+                                    isDark ? 'text-blue-400 hover:bg-blue-900/20' : 'text-blue-600 hover:bg-blue-50'
+                                  )}
+                                  title={route.isOptimized ? "Открыть в Google Maps" : "Рассчитать"}
+                                >
+                                  <MapIcon className="h-6 w-6" />
+                                </button>
+                                <button
+                                  onClick={() => openRouteInValhalla(route)}
+                                  disabled={isCalculating || !route.isOptimized}
+                                  className={clsx(
+                                    'p-3 rounded-xl transition-all hover:scale-110 active:scale-90',
+                                    isDark ? 'text-green-400 hover:bg-green-900/20' : 'text-green-600 hover:bg-green-50',
+                                    !route.isOptimized && 'opacity-30 grayscale cursor-not-allowed'
+                                  )}
+                                  title="Открыть в Valhalla"
+                                >
+                                  <PlayIcon className="h-6 w-6 transform rotate-90" />
+                                </button>
                               <button
                                 onClick={() => recalculateRoute(route)}
                                 disabled={isCalculating}
@@ -2176,12 +2210,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
                         <div className="space-y-4">
                           {route.orders.map((order: Order, index: number) => {
-
-
                             const meta = (route as any).geoMeta?.waypoints?.[index]
                             const metaBadge = (meta || order.kmlZone) ? (
                               <div className="mt-2 flex items-center flex-wrap gap-2 text-[10px] font-black uppercase tracking-widest">
-                                {meta?.locationType && (
+                                {(meta?.locationType) && (
                                   <span className={clsx(
                                     'px-2 py-0.5 rounded-lg border',
                                     meta.locationType === 'ROOFTOP'
@@ -2191,14 +2223,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                         : (isDark ? 'bg-gray-700 text-gray-400 border-gray-600' : 'bg-gray-50 text-gray-600 border-gray-200')
                                   )}>{translateLocationType(meta.locationType)}</span>
                                 )}
-                                {typeof meta?.streetNumberMatched === 'boolean' && (
+                                {(typeof meta?.streetNumberMatched === 'boolean' || typeof order.streetNumberMatched === 'boolean') && (
                                   <span className={clsx(
                                     'px-2 py-0.5 rounded-lg border',
-                                    meta.streetNumberMatched
+                                    (meta?.streetNumberMatched ?? order.streetNumberMatched)
                                       ? (isDark ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-blue-50 text-blue-700 border-blue-200')
                                       : (isDark ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-red-50 text-red-700 border-red-200')
                                   )}>
-                                    {meta.streetNumberMatched ? ' Найден номер дома' : ' Не нашел номера дома'}
+                                    {(meta?.streetNumberMatched ?? order.streetNumberMatched) ? ' Найден номер дома' : ' Не нашел номера дома'}
                                   </span>
                                 )}
                                 {(meta?.zoneName || order.kmlZone) && (
@@ -2207,7 +2239,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                     isDark ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-indigo-50 text-indigo-700 border-indigo-200'
                                   )}>
                                     <MapIcon className="w-3 h-3" />
-                                    {order.kmlZone || meta?.zoneName}
+                                    {order.kmlZone || meta?.zoneName}{(order.kmlHub || meta?.hubName) ? ` / ${order.kmlHub || meta?.hubName}` : ''}
                                   </span>
                                 )}
                               </div>
@@ -2374,7 +2406,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                       ) {
                         return (
                           <button
-                            key={i}
+                            key={`page-${i}`}
                             onClick={() => setRoutePage(i)}
                             className={clsx(
                               'w-10 h-10 rounded-xl text-xs font-black transition-all',
@@ -2392,7 +2424,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                         (i === totalRoutePages - 2 && routePage < totalRoutePages - 3)
                       ) {
                         return (
-                          <span key={i} className="px-2 opacity-30 text-xs font-black">...</span>
+                          <span key={`dots-${i}`} className="px-2 opacity-30 text-xs font-black">...</span>
                         );
                       }
                       return null;
@@ -2622,7 +2654,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                       option.res?.zone?.name?.toLowerCase().includes('разгрузка');
 
                     return (
-                      <div key={idx} className="group relative">
+                      <div key={`disamb-${idx}-${option.label}`} className="group relative">
                         <button
                           onClick={() => handleDisambiguationResolve(option.res)}
                           className={clsx(
@@ -2657,7 +2689,16 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                   <span>Дистанция: {formatDisplayDistance(option.distanceMeters)}</span>
                                 )}
                                 {option.res?.geometry?.location_type && (
-                                  <span>Тип: {translateLocationType(option.res.geometry.location_type)}</span>
+                                  <span className={clsx(
+                                    "px-1.5 py-0.5 rounded",
+                                    option.res.geometry.location_type === 'ROOFTOP' 
+                                      ? (isDark ? "bg-green-500/10 text-green-400" : "bg-green-50 text-green-700")
+                                      : option.res.geometry.location_type === 'RANGE_INTERPOLATED'
+                                        ? (isDark ? "bg-blue-500/10 text-blue-400" : "bg-blue-50 text-blue-700")
+                                        : (isDark ? "bg-yellow-500/10 text-yellow-500" : "bg-yellow-50 text-yellow-700")
+                                  )}>
+                                    Тип: {translateLocationType(option.res.geometry.location_type)}
+                                  </span>
                                 )}
                               </div>
                             </div>

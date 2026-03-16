@@ -258,50 +258,6 @@ export const AdminPresets: React.FC = () => {
                             <CollapsibleSection isDark={isDark} icon={<KeyIcon className="h-5 w-5" />} title="API Ключи / Провайдеры" defaultOpen={isAdmin}>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <label className="text-xs font-bold uppercase text-gray-500">Google Maps API Key</label>
-                                        <input
-                                            type="password"
-                                            value={settings.googleMapsApiKey || ''}
-                                            onChange={(e) => isAdmin && setSettings({ ...settings, googleMapsApiKey: e.target.value })}
-                                            className="input"
-                                            placeholder="AIza..."
-                                            disabled={!isAdmin}
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold uppercase text-gray-500">Mapbox Token (для трафика)</label>
-                                        <input
-                                            type="text"
-                                            value={settings.mapboxToken || ''}
-                                            onChange={(e) => isAdmin && setSettings({ ...settings, mapboxToken: e.target.value })}
-                                            className="input"
-                                            placeholder="pk..."
-                                            disabled={!isAdmin}
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold uppercase text-gray-500">Generoute API Key</label>
-                                        <input
-                                            type="password"
-                                            value={settings.generouteApiKey || ''}
-                                            onChange={(e) => isAdmin && setSettings({ ...settings, generouteApiKey: e.target.value })}
-                                            className="input"
-                                            placeholder="gen_..."
-                                            disabled={!isAdmin}
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold uppercase text-gray-500">Geoapify API Key</label>
-                                        <input
-                                            type="password"
-                                            value={settings.geoapifyApiKey || ''}
-                                            onChange={(e) => isAdmin && setSettings({ ...settings, geoapifyApiKey: e.target.value })}
-                                            className="input"
-                                            placeholder="geo_..."
-                                            disabled={!isAdmin}
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
                                         <label className="text-xs font-bold uppercase text-gray-500">Провайдер карты</label>
                                         <select
                                             value={settings.mapProvider || 'google'}
@@ -316,38 +272,151 @@ export const AdminPresets: React.FC = () => {
                                     <div className="space-y-2">
                                         <label className="text-xs font-bold uppercase text-gray-500">Провайдер маршрутизации</label>
                                         <select
-                                            value={settings.routingProvider || 'google'}
+                                            value={settings.routingProvider || 'valhalla'}
                                             onChange={(e) => isAdmin && setSettings({ ...settings, routingProvider: e.target.value })}
                                             className="input"
                                             disabled={!isAdmin}
                                         >
-                                            <option value="google">Google Maps (Платный)</option>
-                                            <option value="generoute">Generoute.io (Оптимизация)</option>
+                                            <option value="valhalla">🗺 Основной — Valhalla OSM (Бесплатно, Точно)</option>
+                                            <option value="generoute">⚡ OSRM / Generoute (Оптимизация, Бесплатно)</option>
+                                            <option value="google">💳 Резервный — Google Maps (Платный)</option>
                                         </select>
                                     </div>
                                     <div className="space-y-2">
                                         <label className="text-xs font-bold uppercase text-gray-500">Провайдер геокодирования</label>
                                         <select
-                                            value={settings.geocodingProvider || 'google'}
+                                            value={settings.geocodingProvider || 'nominatim'}
                                             onChange={(e) => isAdmin && setSettings({ ...settings, geocodingProvider: e.target.value })}
                                             className="input"
                                             disabled={!isAdmin}
                                         >
-                                            <option value="google">Google Maps (Точный)</option>
-                                            <option value="nominatim">Nominatim / OSM (Бесплатно)</option>
-                                            <option value="geoapify">Geoapify (Бесплатно/Лимит)</option>
+                                            <option value="nominatim">⚡ Основной — Photon + OSM + Geoapify</option>
+                                            <option value="google">💳 Резервный — Google Maps (Платный)</option>
                                         </select>
+                                    </div>
+                                </div>
+
+                                <div className="p-6 rounded-2xl bg-indigo-50/30 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-500/10 space-y-4 mt-6">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                      <div className="p-2 rounded-xl bg-indigo-500 text-white">
+                                        <ArrowPathIcon className="h-5 w-5" />
+                                      </div>
+                                      <div>
+                                        <h4 className="text-sm font-black uppercase tracking-tight">Резервная Матрица (Distance Matrix)</h4>
+                                        <p className="text-[10px] text-gray-500 font-bold">Оптимизация N-to-M расчетов для ускорения планирования</p>
+                                      </div>
+                                    </div>
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                      <input 
+                                        type="checkbox" 
+                                        className="sr-only peer" 
+                                        checked={settings.distanceMatrixEnabled ?? false}
+                                        onChange={(e) => isAdmin && setSettings({ ...settings, distanceMatrixEnabled: e.target.checked })}
+                                        disabled={!isAdmin} 
+                                      />
+                                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+                                    </label>
+                                  </div>
+
+                                  {settings.distanceMatrixEnabled && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                                      <div className="space-y-2">
+                                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер матрицы</label>
+                                        <select 
+                                            value={settings.distanceMatrixProvider || 'valhalla'}
+                                            onChange={(e) => isAdmin && setSettings({ ...settings, distanceMatrixProvider: e.target.value })}
+                                            className="input w-full" 
+                                            disabled={!isAdmin}
+                                        >
+                                          <option value="valhalla">🗺 Valhalla Sources-to-Targets (OSM, Рекомендовано)</option>
+                                          <option value="osrm">⚡ OSRM Table (Бесплатно, Высокая скорость)</option>
+                                          <option value="google">💳 Google Distance Matrix API (Платный)</option>
+                                        </select>
+                                      </div>
+                                      <div className="p-3 rounded-xl bg-white/50 dark:bg-gray-950/30 border border-white/50 dark:border-gray-800 flex items-center gap-3">
+                                         <div className="text-[10px] text-gray-500 italic">
+                                           {settings.distanceMatrixProvider === 'valhalla' 
+                                             ? 'Valhalla позволяет рассчитать матрицу 100x100 за один запрос. Идеально для оптимизации курьерских маршрутов.' 
+                                             : settings.distanceMatrixProvider === 'osrm' 
+                                             ? 'OSRM Table — самый быстрый способ получить таблицу расстояний, но не учитывает специфику транспорта Valhalla.' 
+                                             : 'Google Matrix — максимальная точность, но каждая ячейка таблицы оплачивается отдельно согласно тарифам Google.'}
+                                         </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="pt-6 mt-6 border-t border-gray-100 dark:border-gray-700 space-y-4">
+                                  <h4 className="text-sm font-black uppercase tracking-tight mb-4 text-gray-700 dark:text-gray-300">API Ключи (Только для платных сервисов)</h4>
+                                  
+                                    <div className="space-y-2 block">
+                                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Mapbox Token (для трафика)</label>
+                                        <input
+                                            type="text"
+                                            value={settings.mapboxToken || ''}
+                                            onChange={(e) => isAdmin && setSettings({ ...settings, mapboxToken: e.target.value })}
+                                            className="input"
+                                            placeholder="pk.eyJ1..."
+                                            disabled={!isAdmin}
+                                        />
+                                    </div>
+                                    <div className="space-y-2 block">
+                                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">OSRM / Generoute API Key</label>
+                                        <input
+                                            type="password"
+                                            value={settings.generouteApiKey || ''}
+                                            onChange={(e) => isAdmin && setSettings({ ...settings, generouteApiKey: e.target.value })}
+                                            className="input"
+                                            placeholder="Оставьте пустым для ключа по умолчанию"
+                                            disabled={!isAdmin}
+                                        />
+                                        <p className="text-[10px] text-gray-400">
+                                            Используется только если провайдер маршрутизации установлен на OSRM / Generoute.
+                                        </p>
+                                    </div>
+                                    <div className="space-y-2 block">
+                                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Geoapify API Key</label>
+                                        <input
+                                            type="password"
+                                            value={settings.geoapifyApiKey || ''}
+                                            onChange={(e) => isAdmin && setSettings({ ...settings, geoapifyApiKey: e.target.value })}
+                                            className="input"
+                                            placeholder="geo_..."
+                                            disabled={!isAdmin}
+                                        />
+                                        <p className="text-[10px] text-gray-400">
+                                            Необходим для провайдера геокодирования Geoapify.
+                                        </p>
+                                    </div>
+                                    <div className="space-y-2 mt-4 p-4 rounded-xl border border-orange-200 bg-orange-50/50 dark:bg-orange-900/10 dark:border-orange-500/20 block">
+                                        <label className="text-xs font-semibold text-orange-600 dark:text-orange-400 uppercase tracking-wider">Google Maps API Ключ (Deprecated)</label>
+                                        <div className="flex gap-2 mt-1">
+                                            <input
+                                                type="password"
+                                                value={settings.googleMapsApiKey || ''}
+                                                onChange={(e) => isAdmin && setSettings({ ...settings, googleMapsApiKey: e.target.value })}
+                                                className="input flex-1"
+                                                placeholder="AIzaSy..."
+                                                disabled={!isAdmin}
+                                            />
+                                        </div>
+                                        <p className="text-[10px] text-orange-500 mt-1">
+                                            Внимание: система разработана для работы без Google Maps API. Этот ключ нужен исключительно если вы принудительно выбрали Google в качестве резервного провайдера. Взимается плата по тарифам Google.
+                                        </p>
                                     </div>
                                 </div>
                             </CollapsibleSection>
 
-                            <CollapsibleSection isDark={isDark} icon={<ArrowPathIcon className="h-5 w-5" />} title="Интеграция FastOperator / Dashboard" defaultOpen={false}>
-                                <DashboardSettingsPanel
-                                    isDark={isDark}
-                                    initialSettings={settings}
-                                    onSettingsChange={(newS) => isAdmin && setSettings(prev => ({ ...prev, ...newS }))}
-                                />
-                            </CollapsibleSection>
+                            {isAdmin && (
+                                <CollapsibleSection isDark={isDark} icon={<ArrowPathIcon className="h-5 w-5" />} title="Интеграция FastOperator / Dashboard" defaultOpen={false}>
+                                    <DashboardSettingsPanel
+                                        isDark={isDark}
+                                        initialSettings={settings}
+                                        onSettingsChange={(newS) => isAdmin && setSettings(prev => ({ ...prev, ...newS }))}
+                                    />
+                                </CollapsibleSection>
+                            )}
 
                             <CollapsibleSection isDark={isDark} icon={<MapIcon className="h-5 w-5" />} title="Адреса маршрутов по умолчанию (Старт/Финиш)">
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 bg-gray-50/50 dark:bg-gray-800/20 p-6 rounded-2xl border border-gray-100 dark:border-gray-700/50">

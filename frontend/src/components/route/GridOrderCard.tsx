@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import clsx from 'clsx';
-import { CheckBadgeIcon, ClockIcon } from '@heroicons/react/24/outline';
+import { CheckBadgeIcon, ClockIcon, MapPinIcon } from '@heroicons/react/24/outline';
+import toast from 'react-hot-toast';
 import type { Order } from '../../types';
 import { getPlannedTime } from '../../utils/data/timeUtils';
 import { formatTimeLabel } from '../../utils/route/routeCalculationHelpers';
@@ -65,16 +66,54 @@ export const GridOrderCard = memo(({ order, isDark, isSelected, onSelect }: { or
                         </span>
                     );
                 })()}
+
+                {order.locationType && (
+                    <span className={clsx(
+                        "text-[9px] font-black px-2 py-0.5 rounded-lg tracking-widest",
+                        order.locationType === 'ROOFTOP' ? (isDark ? "bg-green-500/20 text-green-400" : "bg-green-100 text-green-700") :
+                        order.locationType === 'RANGE_INTERPOLATED' ? (isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-100 text-blue-700") :
+                        (isDark ? "bg-yellow-500/20 text-yellow-500" : "bg-yellow-100 text-yellow-700")
+                    )} title={order.locationType}>
+                        {order.locationType === 'ROOFTOP' ? 'ТОЧНО' : 
+                         order.locationType === 'RANGE_INTERPOLATED' ? 'ДОМ' : 'ПРИМЕРНО'}
+                    </span>
+                )}
             </div>
 
             <p className={clsx("text-sm font-bold mb-4 line-clamp-2 leading-tight flex-1", isDark ? "text-gray-100" : "text-gray-900")} title={order.address}>
                 {order.address}
+                {order.kmlZone && (
+                    <span className={clsx(
+                        "ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-tighter inline-block",
+                        isDark ? "bg-purple-500/20 text-purple-300" : "bg-purple-100 text-purple-700"
+                    )}>
+                        {order.kmlHub ? `${order.kmlHub}: ` : ''}{order.kmlZone}
+                    </span>
+                )}
             </p>
 
             <div className="flex items-end justify-between mt-auto">
                 <p className={clsx("text-lg font-black tracking-tight", isDark ? "text-white" : "text-gray-900")}>
                     {order.amount} ₴
                 </p>
+                
+                {order.lat && order.lng && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            const coords = `${order.lat},${order.lng}`;
+                            navigator.clipboard.writeText(coords);
+                            toast.success('Координаты скопированы', { icon: '📍', duration: 1500 });
+                        }}
+                        className={clsx(
+                            "p-2 rounded-lg transition-all active:scale-90",
+                            isDark ? "hover:bg-white/5 text-gray-500" : "hover:bg-gray-100 text-gray-400"
+                        )}
+                        title={`${order.lat}, ${order.lng}`}
+                    >
+                        <MapPinIcon className="w-4 h-4" />
+                    </button>
+                )}
             </div>
         </div>
     )

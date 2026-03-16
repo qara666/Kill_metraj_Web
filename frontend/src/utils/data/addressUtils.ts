@@ -1,3 +1,5 @@
+import { normalizeAddress, cleanAddressForSearch } from '../address/addressNormalization';
+
 /**
  * Извлекает подсказку района/массива из скобок в адресе.
  * Пример: "вул. Нарбута (Петропавлівська Борщагівка), 8" → "Петропавлівська Борщагівка"
@@ -27,16 +29,7 @@ export const extractDistrictHint = (address: string): string | null => {
  * Strips street types, parentheses, quotes, and extra spaces.
  */
 export const normalizeStreetForCompare = (street: string): string => {
-    if (!street) return '';
-    return street
-        .toLowerCase()
-        .replace(/\(.*?\)/g, ' ')
-        .replace(/["'«»‘’“”""]/g, '')
-        .replace(/[.,:;!\?]/g, ' ')
-        .replace(/\b(вул|ул|вулиця|улица|пр|просп|проспект|пр-т|пров|пер|пер-к|провулок|переулок|блв|бульвар|шосе|шоссе|набережна|набережная|пл|площа|площадь|тупик|узвіз|спуск)\b\.?/gi, ' ')
-        .replace(/\b(київ|киев|украина|україна|ua)\b/gi, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
+    return normalizeAddress(street);
 };
 
 export const extractStreetRoot = (address: string): string => {
@@ -47,63 +40,45 @@ export const extractStreetRoot = (address: string): string => {
 };
 
 export const cleanAddress = (address: string) => {
-    if (!address) return address;
-    return address
-        .replace(/[?*]/g, ' ')
-        // Remove technical annotations with numbers
-        .replace(/(?:,|\s)\s*(?:корп\.?|корпус|под\.?|подъезд|п\.?|к\.?|эт\.?|этаж|кв\.?|квартира|оф\.?|офис|вход|дом|секция|літера|літ\.?|литера|д\/ф|моб|под|эт|кв|оф|літ)\s*\.?\s*\d+.*$/i, '')
-        // Remove technical annotations without numbers
-        .replace(/(?:,|\s)\s*(?:д\/ф|моб|вход|секция|литера|літ\.?|літера|п\.?|к\.?)\b/gi, '')
-        .replace(/^(Київ|Киев|Kyiv|Kiev)\s*,\s*/i, '')
-        .replace(/\s+/g, ' ')
-        .trim();
+    if (!address) return '';
+    // Deep Cleaning V3: Aggressive stripping of technical info before it even hits the variant generator
+    let cleaned = address;
+    
+    // 1. Remove everything after common technical separators
+    // We remove p., k., t. from the list because they clash with street initials (e.g. П. Мирного, Т. Шевченко)
+    const stopWords = /\b(эт\.?|кв\.?|под\.?|пд\.?|п-д|квартира|этаж|подъезд|д\/ф|моб|д\.?ф\.?|эт|кв|под|домофон|тел\.?\b|мобільний|моб\.?)\b.*$/iu;
+    cleaned = cleaned.replace(stopWords, '');
+
+    // 2. Remove common technical patterns elsewhere (non-strip-to-end versions)
+    cleaned = cleaned.replace(/\b(д\/ф|моб|под\.?\d+|эт\.?\d+|кв\.?\d+|корп\.?\d+|офис\.?\d+|оф\.?\d+)\b/iu, '');
+
+    return cleanAddressForSearch(cleaned).trim();
 };
 
+import { ALL_STREET_RENAMES as GLOBAL_RENAMES } from './streetRenamesData';
+
+// ... (existing code omitted for brevity but I'll make sure to replace the right section)
+
 export const STREET_RENAMES: Array<[string, string]> = [
-    ['Маршала Тимошенка', 'Левка Лук\'яненка'],
-    ['Маршала Тимошенко', 'Левка Лукьяненко'],
-    ['Героїв Сталінграда', 'Володимира Івасюка'],
-    ['Героев Сталинграда', 'Владимира Ивасюка'],
-    ['Олександра Рокоссовського', 'Дмитра Павличка'],
-    ['Марини Цвєтаєвої', 'Олександри Екстер'],
-    ['Мате Залки', 'Олександра Архипенка'],
-    ['Лайоша Гавро', 'Йорданська'],
-    ['Берестейський проспект', 'проспект Перемоги'],
-    ['Берестейский проспект', 'проспект Победы'],
-    ['Сім\'ї Хохлових', 'Гарета Джонса'],
-    ['Семьи Хохловых', 'Гарета Джонса'],
-    ['Московський проспект', 'проспект Степана Бандери'],
-    ['Московский проспект', 'проспект Степана Бандеры'],
-    ['Фрунзе', 'Кирилівська'],
-    ['Артема', 'Січових Стрільців'],
-    ['Горького', 'Антоновича'],
-    ['Червоноармійська', 'Велика Васильківська'],
-    ['Красноармейская', 'Большая Васильковская'],
-    ['Димитрова', 'Ділова'],
-    ['Кутузова', 'Генерала Алмазова'],
-    ['Суворова', 'Михайла Омеляновича-Павленка'],
-    ['Урицького', 'Василя Липківського'],
-    ['Воровського', 'Бульварно-Кудрявська'],
-    ['Чкалова', 'Олеся Гончара'],
-    ['Кіквідзе', 'Михайла Бойчука'],
-    ['Ватутіна', 'проспект Романа Шухевича'],
-    ['Дружби Народів', 'бульвар Миколи Міхновського'],
-    ['Московська', 'Князів Острозьких'],
-    ['Юрія Гагаріна', 'Леоніда Каденюка'],
-    ['Соборності', 'Возз\'єднання'],
-    ['проспект Соборності', 'проспект Возз\'єднання'],
-    ['просп. Соборності', 'просп. Возз\'єднання'],
+    ...GLOBAL_RENAMES,
+    // Add any ad-hoc overrides here if needed
+    ['Нижньоюрківська', 'Нижнеюрковская'],
+    ['Нижня Юрківська', 'Нижньоюрківська'],
+    ['Нижне-Юрковская', 'Нижнеюрковская'],
 ];
 
 export const normalizeAddr = (addr: string, city: string | null) => {
-    const cityAppend = city ? `, ${city}, Украина` : ', Украина';
     const base = cleanAddress(addr).trim();
     if (!base) return base;
+
+    // If the address already has city or country, just return it as is.
+    // Otherwise, append city but MINIMALLY.
     const lower = base.toLowerCase();
     const hasCity = city && lower.includes(city.toLowerCase());
     const hasCountry = lower.includes('украина') || lower.includes('україна') || lower.includes('ukraine');
-    if (!hasCity && !hasCountry) return `${base}${cityAppend}`;
-    if (!hasCountry) return `${base}, Украина`;
+
+    if (hasCity && hasCountry) return base;
+    if (!hasCity && city) return `${base}, ${city}`;
     return base;
 };
 
@@ -121,10 +96,54 @@ export const generateStreetVariants = (raw: string, city: string | null): string
         [/\bвул\.?\b/iu, 'вулиця'],
         [/\bулица\b/iu, 'ул.'],
         [/\bул\.?\b/iu, 'улица'],
-        [/\bпровулок\b/iu, 'пров.'],
-        [/\bпров\.?\b/iu, 'провулок'],
+        // UA <-> RU Cross-Language swaps (CRITICAL for Photon)
+        [/\bул\.?\b/iu, 'вул.'],
+        [/\bулица\b/iu, 'вулиця'],
+        [/\bвул\.?\b/iu, 'ул.'],
+        [/\bвулиця\b/iu, 'улица'],
+        [/\bпровулок\b/iu, 'переулок'],
+        [/\bпереулок\b/iu, 'провулок'],
+        [/\bпров\.?\b/iu, 'пер.'],
+        [/\bпер\.?\b/iu, 'пров.'],
         [/\bпроспект\b/iu, 'просп.'],
-        [/\bпросп\.?\b/iu, 'проспект']
+        [/\bпросп\.?\b/iu, 'проспект'],
+        [/\bпр\.?\b/iu, 'просп.'],
+        [/\bпросп\.?\b/iu, 'пр.'],
+        // City translations
+        [/\bкиїв\b/iu, 'Киев'],
+        // Generic RU <-> UA Common translations (Linguistic)
+        [/\bозерная\b/iu, 'озерна'],
+        [/\bозерна\b/iu, 'озерная'],
+        [/\bполевая\b/iu, 'польова'],
+        [/\bпольова\b/iu, 'полевая'],
+        [/\bцветочная\b/iu, 'квіткова'],
+        [/\bквіткова\b/iu, 'цветочная'],
+        [/\bлесная\b/iu, 'лісова'],
+        [/\bлісова\b/iu, 'лесная'],
+        [/\bсадовая\b/iu, 'садова'],
+        [/\bсадова\b/iu, 'садовая'],
+        [/\bабрикосовая\b/iu, 'абрикосова'],
+        [/\bабрикосова\b/iu, 'абрикосовая'],
+        [/\bотдыха\b/iu, 'відпочинку'],
+        [/\bвідпочинку\b/iu, 'отдыха'],
+        [/\bнабережная\b/iu, 'набережна'],
+        [/\bнабережна\b/iu, 'набережная'],
+        [/\bсоборная\b/iu, 'соборна'],
+        [/\bсоборна\b/iu, 'соборная'],
+        [/\bстроителей\b/iu, 'будівельників'],
+        [/\bбудівельників\b/iu, 'строителей'],
+        [/\bмира\b/iu, 'миру'],
+        [/\bмиру\b/iu, 'мира'],
+        [/\bсолнечная\b/iu, 'сонячна'],
+        [/\bсонячна\b/iu, 'солнечная'],
+    ];
+
+    // Language suffix translations (e.g., -ая <-> -а)
+    const langSuffixes: Array<[RegExp, string]> = [
+        [/([а-яёієґ])ая\b/iu, '$1а'],
+        [/([а-яёієґ])а\b/iu, '$1ая'],
+        [/([а-яёієґ])ий\b/iu, '$1ый'],
+        [/([а-яёієґ])ый\b/iu, '$1ий'],
     ];
 
     // Multi-pass expansion to combine all transformations
@@ -132,19 +151,41 @@ export const generateStreetVariants = (raw: string, city: string | null): string
     for (let i = 0; i < 3 && variants.size > lastSize; i++) {
         lastSize = variants.size;
         const currentVariants = Array.from(variants);
-        
+
         currentVariants.forEach(v => {
             // 1. apply renames
             STREET_RENAMES.forEach(([nameA, nameB]) => {
-                const regA = new RegExp(fuzzy(nameA).replace(/\./g, '[.\'\\s]*'), 'iu');
-                const regB = new RegExp(fuzzy(nameB).replace(/\./g, '[.\'\\s]*'), 'iu');
-                if (regA.test(v)) variants.add(v.replace(regA, nameB));
-                if (regB.test(v)) variants.add(v.replace(regB, nameA));
+                const fuzzyA = fuzzy(nameA).replace(/\./g, '[.\'\\s]*');
+                const fuzzyB = fuzzy(nameB).replace(/\./g, '[.\'\\s]*');
+                const regA = new RegExp(fuzzyA, 'iu');
+                const regB = new RegExp(fuzzyB, 'iu');
+                
+                if (regA.test(v) && !regB.test(v)) {
+                    const next = v.replace(regA, nameB);
+                    if (next !== v) variants.add(next);
+                }
+                if (regB.test(v) && !regA.test(v)) {
+                    const next = v.replace(regB, nameA);
+                    if (next !== v) variants.add(next);
+                }
             });
 
             // 2. apply token swaps
             tokenPairs.forEach(([from, to]) => {
-                if (from.test(v)) variants.add(v.replace(from, to));
+                if (from.test(v)) {
+                    const swapped = v.replace(from, to).trim();
+                    // Basic prefix deduplication (e.g., 'вул. вул.' -> 'вул.')
+                    const deduped = swapped.replace(/\b(вул|ул|пров|просп|пр|бул|бульвар|вулиця|улица)\.?\s+\1\.?\b/gi, '$1.');
+                    variants.add(deduped);
+                }
+            });
+
+            // 2.5 apply language suffixes
+            langSuffixes.forEach(([from, to]) => {
+                if (from.test(v)) {
+                    const replaced = v.replace(from, to).trim();
+                    if (replaced !== v) variants.add(replaced);
+                }
             });
 
             // 3. line forms
@@ -159,6 +200,11 @@ export const generateStreetVariants = (raw: string, city: string | null): string
         });
     }
 
+    // Final global prefix deduplication
+    const finalVariants = Array.from(variants).map(v => 
+        v.replace(/\b(вул|ул|пров|просп|пр|бул|бульвар|вулиця|улица)\.?\s+\1\.?\b/gi, '$1.').trim()
+    );
+
     // Post-process: Parenthetical Old Name (added separately)
     const parentheticalMatch = raw.match(/\(([^)]+)\)/);
     const parentheticalContent = parentheticalMatch ? parentheticalMatch[1].trim() : null;
@@ -169,12 +215,26 @@ export const generateStreetVariants = (raw: string, city: string | null): string
         }
     }
 
+    // Post-process: Word Order Permutations for 2-word streets
+    // (e.g. "Леся Курбаса" -> "Курбаса Леся")
+    Array.from(variants).forEach(v => {
+        const parts = v.split(/[\s,]+/);
+        // Look for multi-word sequences that might be names
+        // Simple logic: if we have 2-3 words > 3 letters, try reversing them
+        const words = parts.filter(p => p.length > 3 && !/\d/.test(p));
+        if (words.length === 2) {
+            const reversed = v.replace(words[0], 'TEMP_W').replace(words[1], words[0]).replace('TEMP_W', words[1]);
+            variants.add(reversed);
+        }
+    });
+
     // Post-process: District Hint (appended to everything)
     if (districtHint && districtHint.length > 5) {
         Array.from(variants).forEach(v => {
-            variants.add(`${districtHint} ${v}`);
+            variants.add(`${districtHint}, ${v}`);
+            variants.add(`${v}, ${districtHint}`);
         });
     }
 
-    return Array.from(variants).filter(Boolean);
+    return Array.from(new Set(finalVariants)).filter(Boolean);
 };
