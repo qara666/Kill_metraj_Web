@@ -70,7 +70,7 @@ interface SettingsForm {
   theme: 'light' | 'dark'
   courierTransportType: 'car' | 'bicycle' | 'walking' | 'motorcycle'
   distanceMatrixEnabled: boolean
-  distanceMatrixProvider: 'valhalla' | 'osrm' | 'google'
+  distanceMatrixProvider: 'valhalla' | 'osrm' | 'google' | 'yapiko_osrm'
 }
 
 export const Settings: React.FC = () => {
