@@ -236,7 +236,7 @@ export class NominatimService {
                 .sort((a, b) => b.importance - a.importance)
                 .map(toRawCandidate)
         } catch (error: any) {
-            console.warn('[Nominatim] query failed:', error.message)
+            console.warn('[Геокодинг] Ошибка Nominatim:', error.message)
             throw error // Re-throw to allow Geoapify fallback in RobustGeocodingService
         }
     }
@@ -258,7 +258,7 @@ export class NominatimService {
             const r: NominatimResult = await response.json()
             return toRawCandidate(r)
         } catch (error) {
-            console.error('[Nominatim] reverse failed:', error)
+            console.error('[Геокодинг] Ошибка обратного геокодирования:', error)
             return null
         }
     }

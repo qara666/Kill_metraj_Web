@@ -150,7 +150,7 @@ export class PhotonService {
             const items = data.features || []
             return items.map(toRawCandidate)
         } catch (error: any) {
-             console.warn('[Photon] query failed:', error.message)
+             console.warn('[Геокодинг] Ошибка Photon:', error.message)
              throw error // Re-throw to allow Nominatim fallback
         }
     }

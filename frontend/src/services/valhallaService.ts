@@ -127,7 +127,7 @@ export class ValhallaService {
       const trip = data.trip
 
       if (!trip || trip.status !== 0) {
-        console.warn('[Valhalla] invalid trip result:', trip?.status_message)
+        console.warn('[Маршрут] Проблема с результатом Valhalla:', trip?.status_message)
         return { feasible: false }
       }
 
@@ -183,9 +183,9 @@ export class ValhallaService {
       return result
     } catch (error: any) {
       if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
-        console.warn('[Valhalla] request timed out — falling back to OSRM')
+        console.warn('[Маршрут] Таймаут Valhalla — переключаюсь на OSRM')
       } else {
-        console.warn('[Valhalla] route error:', error?.message ?? error)
+        console.warn('[Маршрут] Ошибка Valhalla:', error?.message ?? error)
       }
       return { feasible: false }
     }
@@ -248,7 +248,7 @@ export class ValhallaService {
         }))
       )
     } catch (err) {
-      console.warn('[Valhalla Matrix] error:', err)
+      console.warn('[Маршрут] Ошибка матрицы Valhalla:', err)
       return null
     }
   }

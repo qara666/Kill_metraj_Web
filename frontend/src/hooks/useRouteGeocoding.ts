@@ -132,7 +132,7 @@ export const useRouteGeocoding = ({
                 })
                 if (hasMuchCloser) {
                     suspectJump = true
-                    console.warn(`[useRouteGeocoding] SUSPECT JUMP DETECTED: best=${(bestDist / 1000).toFixed(1)}km. Forcing clarity.`)
+                    console.warn(`[Расчет] ПОДОЗРИТЕЛЬНЫЙ ПРЫЖОК: дистанция=${(bestDist / 1000).toFixed(1)}км. Требуется уточнение.`)
                 }
             }
         }
@@ -257,7 +257,7 @@ export const useRouteGeocoding = ({
 
                 const geocodeRes = addrCache.get(key)
                 if (!geocodeRes || !toLoc(geocodeRes.raw)) {
-                    console.error(`[useRouteGeocoding] Address REJECTED: ${order.address}`, geocodeRes)
+                    console.error(`[Расчет] Адрес ОТКЛОНЕН: ${order.address}`, geocodeRes)
                     toast.error(`Адрес не прошел проверку безопасности (слишком далеко или другой город): ${order.address}. Проверьте правильность написания.`)
                     setIsCalculating(false)
                     return
@@ -336,7 +336,7 @@ export const useRouteGeocoding = ({
                         const badOrder = route.orders[badOrderIdx]
                         const cleaned = badOrder ? cleanAddressForRoute(badOrder.address) : ''
 
-                        console.warn(`[useRouteGeocoding] Bad leg ${i}→${i+1}: ${segKm.toFixed(1)} km. Triggering disambiguation for: ${badOrder?.address}`)
+                        console.warn(`[Расчет] Аномальный перегон ${i}→${i+1}: ${segKm.toFixed(1)} км. Запуск уточнения для: ${badOrder?.address}`)
 
                         // ─── Multi-pass candidate fetch for maximum coverage ──────────────────
                         // Pass 1: with city bias (Kyiv city)
@@ -498,12 +498,12 @@ export const useRouteGeocoding = ({
                         totalDistance = vRes.totalDistance
                         totalDuration = vRes.totalDuration || 0
                         routingSuccess = true
-                        console.log(`[useRouteGeocoding] Valhalla successful: ${totalDistance}m`)
+                        console.log(`[Маршрут] Valhalla — успех: ${totalDistance}м`)
                     } else {
-                        console.warn('[useRouteGeocoding] Valhalla returned 0 or unfeasible. Trying OSRM fallback.')
+                        console.warn('[Маршрут] Valhalla вернула 0 или невозможный путь. Пробую OSRM.')
                     }
                 } catch (e) {
-                    console.warn('[useRouteGeocoding] Valhalla failed, trying OSRM fallback:', e)
+                    console.warn('[Маршрут] Ошибка Valhalla, пробую OSRM:', e)
                 }
 
                 // Try OSRM if Valhalla failed
@@ -515,12 +515,12 @@ export const useRouteGeocoding = ({
                             totalDistance = oRes.totalDistance
                             totalDuration = oRes.totalDuration || 0
                             routingSuccess = true
-                            console.log(`[useRouteGeocoding] OSRM successful: ${totalDistance}m`)
+                            console.log(`[Маршрут] OSRM — успех: ${totalDistance}м`)
                         } else {
-                            console.warn('[useRouteGeocoding] OSRM also returned 0 or unfeasible.')
+                            console.warn('[Маршрут] OSRM также вернул 0 или невозможный путь.')
                         }
                     } catch (e) {
-                        console.warn('[useRouteGeocoding] OSRM fallback failed:', e)
+                        console.warn('[Маршрут] Резервный OSRM не удался:', e)
                     }
                 }
             }
@@ -529,7 +529,7 @@ export const useRouteGeocoding = ({
             // But per user request "забудь за гугл", we skip automated fallback to Google.
             if (!routingSuccess) {
                 // If everything free failed, we return 0/failure instead of stealthy Google spend
-                console.error('[useRouteGeocoding] All free routing providers failed (Valhalla, OSRM).')
+                console.error('[Маршрут] Все бесплатные провайдеры (Valhalla, OSRM) не смогли построить путь.')
             }
 
 
@@ -565,7 +565,7 @@ export const useRouteGeocoding = ({
                 const badAddr = badLegIndex > 0 ? route.orders[badLegIndex - 1]?.address : 'Первая точка'
                 const reason = `⛔ АНОМАЛЬНЫЙ ПЕРЕГОН: ${badLegKm.toFixed(1)} км от точки ${badLegIndex + 1} ("${badAddr || '?'}") — возможна ошибка геокодирования. Маршрут не сохранён.`
                 toast.error(reason, { duration: 12000 })
-                console.error(`[useRouteGeocoding] BAD LEG DETECTED at index ${badLegIndex}: ${badLegKm.toFixed(1)} km`)
+                console.error(`[Расчет] ОБНАРУЖЕНА АНОМАЛИЯ на перегоне ${badLegIndex}: ${badLegKm.toFixed(1)} км`)
                 setIsCalculating(false)
                 return
             }
@@ -573,7 +573,7 @@ export const useRouteGeocoding = ({
             if (isKyiv && distanceKm > anomalyThresholdKm) {
                 const reason = `⛔ АНОМАЛЬНАЯ ДИСТАНЦИЯ (${distanceKm.toFixed(1)} км) — превышает лимит ${anomalyThresholdKm} км для Киева. Вероятно, один из адресов геокодирован в другом районе. Маршрут не сохранён.`
                 toast.error(reason, { duration: 12000 })
-                console.error(`[useRouteGeocoding] ANOMALY BLOCKED: ${distanceKm.toFixed(1)}km > ${anomalyThresholdKm}km threshold`)
+                console.error(`[Расчет] АНОМАЛИЯ ЗАБЛОКИРОВАНА: ${distanceKm.toFixed(1)}км > порога ${anomalyThresholdKm}км`)
                 setIsCalculating(false)
                 return
             }
@@ -637,7 +637,7 @@ export const useRouteGeocoding = ({
             setTimeout(() => setCalcProgress(0), 1000)
 
         } catch (e) {
-            console.error('[useRouteGeocoding] Fatal Error:', e)
+            console.error('[Расчет] Критическая ошибка:', e)
             toast.error('Произошла критическая ошибка при расчете маршрута.')
             setIsCalculating(false)
             setCalcProgress(0)

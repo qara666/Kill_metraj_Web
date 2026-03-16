@@ -63,7 +63,7 @@ export const parseKML = (xmlString: string): KMLData => {
     if (folders.length > 0) {
         for (let i = 0; i < folders.length; i++) {
             const folder = folders[i]
-            const folderName = folder.getElementsByTagName('name')[0]?.textContent || 'General'
+            const folderName = (folder.getElementsByTagName('name')[0]?.textContent || 'General').trim()
             processPlacemarks(folder, folderName)
         }
     } else {

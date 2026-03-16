@@ -133,7 +133,7 @@ export class RobustGeocodingService {
       const CACHE_CLEAN_KEY = 'km_cache_v31_cleared'
       localStorage.setItem(CACHE_CLEAN_KEY, 'true')
     } catch (e) {
-      console.warn('[RobustGeocode] autoSync failed', e)
+      console.warn('[Геокодинг] Ошибка синхронизации настроек:', e)
     }
   }
 
@@ -276,21 +276,21 @@ export class RobustGeocodingService {
     })
 
     const scoringOpts = { ...baseScoringOpts, requestedStreetNames: Array.from(expandedRoots) }
-    console.log(`[RobustGeocode v35.9.14] MANDATORY_ROOTS (Expanded):`, Array.from(expandedRoots))
+    console.log(`[Геокодинг v35.9.14] ОБЯЗАТЕЛЬНЫЕ КОРНИ (Расширенные):`, Array.from(expandedRoots))
     const candidatesBatch = maxVariants ? primary.slice(0, maxVariants) : primary
 
     for (const variant of candidatesBatch) {
       try {
         const rawResults = await this._geocodeWithFreeProviders(variant, cityBias)
         if (rawResults.length > 0) {
-            console.log(`[RobustGeocode] Variant "${variant}" got ${rawResults.length} hits from ${rawResults[0]._source}`)
+            console.log(`[Геокодинг] Вариант "${variant}" — найдено ${rawResults.length} совпадений от ${rawResults[0]._source}`)
         }
         const scored = rawResults.map(c => scoreCandidate(c, scoringOpts))
         
         allCandidates.push(...scored)
         const perfect = scored.find(c => isPerfectHit(c, expectedHouse, scoringOpts.requestedStreetNames))
         if (perfect) {
-            console.log(`[RobustGeocode] PERFECT HIT [${perfect.raw._source}]:`, perfect.raw.formatted_address)
+            console.log(`[Геокодинг] ТОЧНОЕ СОВПАДЕНИЕ [${perfect.raw._source}]:`, perfect.raw.formatted_address)
             return { best: perfect, allCandidates, resolvedVariant: variant, fromCache: false }
         }
 
@@ -298,7 +298,7 @@ export class RobustGeocodingService {
           break
         }
       } catch (e) {
-          console.error('[RobustGeocode] L1 fail', e)
+          console.error('[Геокодинг] Ошибка L1:', e)
       }
     }
 
@@ -326,7 +326,7 @@ export class RobustGeocodingService {
     const hasInZoneAtAll = allCandidates.some(c => c.isInsideZone)
     if (!hasInZoneAtAll) {
       try {
-        console.log(`[RobustGeocode] Level 3: Emergency search for "${cleanQuery}" (Free providers exhaustive)`)
+        console.log(`[Геокодинг] Уровень 3: Экстренный поиск для "${cleanQuery}" (Полный перебор бесплатных провайдеров)`)
         const raw = await this._geocodeWithFreeProviders(cleanQuery, null)
         const scored = raw.map(c => {
             const s = scoreCandidate(c, { ...scoringOpts, expectedDeliveryZone: null })
@@ -356,17 +356,17 @@ export class RobustGeocodingService {
 
     // IRON DOME
     if (best && best.score < -900000) {
-      console.warn(`[RobustGeocode] REJECTED (Iron Dome):`, best.raw.formatted_address, 'Score:', best.score, 'Loc:', best.raw.geometry.location)
+      console.warn(`[Геокодинг] ОТКЛОНЕНО (Защита от аномалий):`, best.raw.formatted_address, 'Score:', best.score, 'Loc:', best.raw.geometry.location)
       best = null
     }
 
     if (best) {
-      console.log(`[RobustGeocode v35.9.14] SUCCESS [${best.raw._source || 'unknown'}]:`, best.raw.formatted_address, `Score: ${best.score}`, `Lat: ${best.lat}, Lng: ${best.lng}`)
+      console.log(`[Геокодинг v35.9.14] УСПЕХ [${best.raw._source || 'неизвестно'}]:`, best.raw.formatted_address, `Баллы: ${best.score}`, `Широта: ${best.lat}, Долгота: ${best.lng}`)
     } else if (deduped.length > 0) {
-       console.log('[RobustGeocode v35.9.14] Best candidate null, top hits:', deduped.slice(0,3).map(c => ({ 
+       console.log('[Геокодинг v35.9.14] Лучший кандидат не найден, топ совпадений:', deduped.slice(0,3).map(c => ({ 
            addr: c.raw.formatted_address, 
            score: c.score,
-           reason: (c.raw as any)._rejectReason || (c.score < -500000 ? 'Iron Dome' : 'Low score')
+           reason: (c.raw as any)._rejectReason || (c.score < -500000 ? 'Аномалия' : 'Низкий балл')
        })))
     }
 
