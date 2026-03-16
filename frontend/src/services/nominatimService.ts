@@ -19,7 +19,7 @@ let _nominatimQueue: Array<() => void> = [];
 let _isNominatimProcessing = false;
 
 async function rateLimitedFetch(url: string): Promise<Response> {
-    const maxRetries = 2;
+    const maxRetries = 3;
     let attempt = 0;
 
     const executeWithRetry = (): Promise<Response> => {
@@ -27,8 +27,8 @@ async function rateLimitedFetch(url: string): Promise<Response> {
             _nominatimQueue.push(async () => {
                 try {
                     const now = Date.now();
-                    // v35.9.28: Increased delay to 1.5s to be safer against OSB proxy blocks
-                    const delay = 1500; 
+                    // Increased delay to 2000ms to be extremely safe against OSB proxy blocks
+                    const delay = 2000; 
                     const diff = now - _lastNominatimCall;
                     if (diff < delay) {
                         await new Promise(r => setTimeout(r, delay - diff));
@@ -43,18 +43,31 @@ async function rateLimitedFetch(url: string): Promise<Response> {
                         }
                     });
 
-                    // Handle 429 Too Many Requests with backoff
+                    // Handle 429 Too Many Requests with exponential backoff
                     if (response.status === 429 && attempt < maxRetries) {
                         attempt++;
-                        const backoff = 2000 * Math.pow(2, attempt);
-                        console.warn(`[Nominatim] 429 detected. Retry attempt ${attempt} in ${backoff}ms...`);
-                        await new Promise(r => setTimeout(r, backoff));
-                        // Re-queue the task
-                        _nominatimQueue.push(async () => {
-                             const r = await executeWithRetry();
-                             resolve(r);
-                        });
+                        const backoff = 2000 * Math.pow(2, attempt) + Math.random() * 1000; // Exponential + jitter
+                        console.warn(`[Nominatim] 429 detected. Retry attempt ${attempt}/${maxRetries} in ${Math.round(backoff)}ms...`);
+                        
+                        // Wait for backoff period before re-queueing to not block other services instantly
+                        setTimeout(() => {
+                            // Re-queue at the FRONT for priority, or push to back depending on desired strategy.
+                            // Pushing to front ensures this specific request gets retried before new ones pile up.
+                            _nominatimQueue.unshift(async () => {
+                                 try {
+                                     const r = await executeWithRetry();
+                                     resolve(r);
+                                 } catch (e) {
+                                     reject(e);
+                                 }
+                            });
+                            _processNominatimQueue();
+                        }, backoff);
                         return;
+                    }
+
+                    if (!response.ok && response.status !== 429) {
+                        console.warn(`[Nominatim] HTTP Error ${response.status} on ${proxyUrl}`);
                     }
 
                     resolve(response);

@@ -587,6 +587,8 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
     await ensureManualOverridesTable();
     await ensureDashboardCacheV2();
     await ensureIndexes();
+    await ensureKmlHubsTable();
+    await ensureKmlZonesTable();
 
     // Start Kafka CDC Consumer if enabled
     if (process.env.CDC_ENABLED === 'true') {
@@ -823,6 +825,55 @@ async function ensureIndexes() {
       error: err.message,
       stack: err.stack
     });
+  }
+}
+
+/**
+ * DB 2.1: Ensure KML Hubs table exists
+ */
+async function ensureKmlHubsTable() {
+  try {
+    logger.info('DB Check: Ensuring api_kml_hubs table exists...');
+    await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS api_kml_hubs(
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      source_url TEXT,
+      is_active BOOLEAN DEFAULT TRUE,
+      last_sync_at TIMESTAMP WITH TIME ZONE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+`);
+    logger.info('DB Check: api_kml_hubs table verified/created');
+  } catch (err) {
+    logger.error('DB Check: Error creating api_kml_hubs table', { error: err.message });
+  }
+}
+
+/**
+ * DB 2.1: Ensure KML Zones table exists
+ */
+async function ensureKmlZonesTable() {
+  try {
+    logger.info('DB Check: Ensuring api_kml_zones table exists...');
+    await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS api_kml_zones(
+      id SERIAL PRIMARY KEY,
+      hub_id INTEGER NOT NULL REFERENCES api_kml_hubs(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      boundary JSONB NOT NULL,
+      bounds JSONB,
+      is_technical BOOLEAN DEFAULT FALSE,
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+`);
+    // Add index for hub_id
+    await sequelize.query('CREATE INDEX IF NOT EXISTS idx_kml_zones_hub_id ON api_kml_zones(hub_id)');
+    logger.info('DB Check: api_kml_zones table verified/created');
+  } catch (err) {
+    logger.error('DB Check: Error creating api_kml_zones table', { error: err.message });
   }
 }
 
