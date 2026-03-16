@@ -344,19 +344,26 @@ export class RobustGeocodingService {
       } catch {}
     }
 
-    // Geoapify is no longer considered a "free" provider in the primary flow due to API key requirements and rate limits.
-    // It can be re-integrated if a dedicated API key and usage strategy are implemented.
-    // if (allCandidates.every(c => c.score < -100000)) {
-    //   try {
-    //     const geoResults = await GeoapifyService.geocode(cleanQuery, cityBias)
-    //     const scored = geoResults.map(c => {
-    //       const s = scoreCandidate(c, scoringOpts)
-    //       s.score -= 15000
-    //       return s
-    //     })
-    //     allCandidates.push(...scored)
-    //   } catch {}
-    // }
+    // LEVEL 4: Premium / Secondary Fallbacks (Geoapify & Generoute)
+    // If we have literally nothing or everything is terrible (-100k score), we try Geoapify
+    if (allCandidates.length === 0 || allCandidates.every(c => c.score < -100000)) {
+      try {
+        console.log(`[Геокодинг] Уровень 4: Запуск Geoapify fallback для "${cleanQuery}"`)
+        const { GeoapifyService } = await import('../geoapifyService')
+        const geoResults = await GeoapifyService.geocode(cleanQuery, cityBias)
+        
+        // Convert Geoapify raw format if needed, but assuming GeoapifyService returns compatible structure
+        const scored = geoResults.map((c: any) => {
+          const raw = normaliseRaw(c)
+          const s = scoreCandidate(raw, scoringOpts)
+          s.score -= 15000 // Penalty to ensure free providers win if they have a match
+          return s
+        })
+        allCandidates.push(...scored)
+      } catch (e) {
+         console.warn(`[Геокодинг] Geoapify fallback провалился:`, e)
+      }
+    }
 
     const deduped = dedupeByCoord(allCandidates)
     let best = pickBest(deduped)
