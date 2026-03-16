@@ -11,7 +11,19 @@ export interface RouteExportData {
 export const exportToGoogleMaps = (data: RouteExportData): string => {
   const { route, orders, startAddress, endAddress } = data
   
-  // Формируем URL для Google Maps с waypoints
+  // v35.9.26: Prefer coordinates (geoMeta) for 100% reliability in Google Maps
+  // This bypasses search errors caused by technical strings like "д/ф моб"
+  if (route.geoMeta) {
+    const origin = `${route.geoMeta.origin.lat},${route.geoMeta.origin.lng}`
+    const destination = `${route.geoMeta.destination.lat},${route.geoMeta.destination.lng}`
+    const waypoints = route.geoMeta.waypoints
+      .map((wp: any) => `${wp.lat},${wp.lng}`)
+      .join('/')
+    
+    return `https://www.google.com/maps/dir/${origin}/${waypoints}/${destination}`
+  }
+
+  // Fallback to addresses if coordinates are missing (legacy or manual routes)
   const waypoints = orders
     .map((order, idx) => {
       const address = encodeURIComponent(order.address || route.routeChain?.[idx] || '')
@@ -23,9 +35,7 @@ export const exportToGoogleMaps = (data: RouteExportData): string => {
   const origin = encodeURIComponent(startAddress)
   const destination = encodeURIComponent(endAddress)
   
-  // Google Maps Directions URL
-  const url = `https://www.google.com/maps/dir/${origin}/${waypoints}/${destination}`
-  return url
+  return `https://www.google.com/maps/dir/${origin}/${waypoints}/${destination}`
 }
 
 // Экспорт в OSRM Demo (ранее Valhalla — для надежной визуализации)

@@ -378,22 +378,31 @@ export function scoreCandidate(
         const isKyivBias = city === 'киев' || city === 'київ'
         const matchesSuburb = isKyivBias && KYIV_SUBURBS.some(s => addr.includes(s))
         
-        // v35.9.26: Dynamic City Lockdown
-        // Check if the address contains ANY of the valid names for the current city bias
+        // v35.9.26: Dynamic City Lockdown with Active KML Trust
         const cityData = getCityBounds(city)
         const validCityNames = cityData ? cityData.names : [city]
-        const hasCurrentCity = validCityNames.some(cn => addr.includes(cn))
+        
+        // Deep check: formatted string + address components
+        const cityInString = validCityNames.some(cn => addr.includes(cn))
+        const cityInComponents = (raw.address_components || []).some(comp => {
+          const l = (comp.long_name || '').toLowerCase()
+          const s = (comp.short_name || '').toLowerCase()
+          return validCityNames.some(cn => l.includes(cn) || s.includes(cn))
+        })
+        const hasCurrentCity = cityInString || cityInComponents
 
         if (matchesSuburb) {
-           // v35.9.11: Suburbs MUST get full parity with the city bias to avoid "Main City" gravity
            score += SCORE.CITY_CONFIRMED + SCORE.CITY_EXACT_MATCH_BONUS;
         }
 
-        // v35.9.10: ABSOLUTE CITY LOCKDOWN
-        // If it doesn't have the current city AND doesn't match a known suburb -> Instant Kill
-        if (!hasCurrentCity && !matchesSuburb) {
+        // ABSOLUTE CITY LOCKDOWN
+        // v35.9.26: Bypass lockdown if the point is inside an ACTIVE user zone!
+        // This handles cases where the geocoder returns a partial address without the city name.
+        if (!hasCurrentCity && !matchesSuburb && !isInside) {
            score += SCORE.CITY_MISMATCH_PENALTY;
            (raw as any)._rejectReason = `Lockdown: Not in ${city} or known suburb. (v35.9.26)`;
+        } else if (isInside && !hasCurrentCity) {
+           console.log(`[Геокодинг] LOCKDOWN BYPASS: точка в активной зоне "${kmlZone}" (город ${city} не найден в компонентах)`)
         }
       }
     }
