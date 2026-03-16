@@ -63,7 +63,7 @@ export class OSRMService {
         totalDuration: route.duration
       }
     } catch (error) {
-      console.warn('[OSRMService] route failed:', error)
+      console.warn('[Маршрут] Ошибка OSRM:', error)
       return { feasible: false }
     }
   }

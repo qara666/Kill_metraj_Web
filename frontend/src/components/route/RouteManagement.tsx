@@ -1662,14 +1662,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   </div>
                 </div>
 
-                <div className="flex-1 min-h-[400px] overflow-y-auto pr-2 custom-scrollbar" style={{ maxHeight: '600px' }}>
+                <div className="flex-1 min-h-[400px]">
                   {filteredCouriers.length === 0 ? (
                     <div className="text-center py-10 h-full flex flex-col items-center justify-center">
                       <TruckIcon className="w-10 h-10 mx-auto text-gray-300 mb-2 opacity-50" />
                       <p className="text-xs text-gray-400 font-bold uppercase tracking-widest px-4">Список пуст</p>
                     </div>
                   ) : (
-                      <div style={{ height: '600px', width: '100%' }}>
+                    <div style={{ height: '600px', width: '100%' }}>
                         <AutoSizerAny>
                           {(props: any) => (
                             <List
