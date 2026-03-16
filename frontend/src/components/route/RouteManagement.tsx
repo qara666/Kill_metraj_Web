@@ -1670,38 +1670,36 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                     </div>
                   ) : (
                     <div style={{ height: '600px', width: '100%' }}>
-                        <AutoSizerAny>
-                          {(props: any) => (
-                            <List
-                              height={props.height}
-                              itemCount={filteredCouriers.length}
-                              itemSize={72}
-                              width={props.width}
-                              className="custom-scrollbar"
-                            >
-                              {({ index, style }: { index: number; style: React.CSSProperties }) => {
-                                const courierName = filteredCouriers[index]
-                                const metric = getCourierMetrics(courierName)
-                                const vehicleType = getCourierVehicleType(courierName)
-                                return (
-                                  <div style={style}>
-                                    <CourierListItem
-                                      key={courierName}
-                                      courierName={courierName}
-                                      vehicleType={vehicleType}
-                                      isSelected={selectedCourier === courierName}
-                                      onSelect={handleCourierSelect}
-                                      availableOrdersCount={metric.available}
-                                      deliveredOrdersCount={metric.delivered}
-                                      totalOrdersCount={metric.total}
-                                      isDark={isDark}
-                                    />
-                                  </div>
-                                )
-                              }}
-                            </List>
-                          )}
-                        </AutoSizerAny>
+                    <div className="h-[600px] w-full">
+                      <List
+                        height={600}
+                        itemCount={filteredCouriers.length}
+                        itemSize={72}
+                        width="100%"
+                        className="custom-scrollbar"
+                      >
+                        {({ index, style }: { index: number; style: React.CSSProperties }) => {
+                          const courierName = filteredCouriers[index]
+                          const metric = getCourierMetrics(courierName)
+                          const vehicleType = getCourierVehicleType(courierName)
+                          return (
+                            <div style={style}>
+                              <CourierListItem
+                                key={courierName}
+                                courierName={courierName}
+                                vehicleType={vehicleType}
+                                isSelected={selectedCourier === courierName}
+                                onSelect={handleCourierSelect}
+                                availableOrdersCount={metric.available}
+                                deliveredOrdersCount={metric.delivered}
+                                totalOrdersCount={metric.total}
+                                isDark={isDark}
+                              />
+                            </div>
+                          )
+                        }}
+                      </List>
+                    </div>
                       </div>
                   )}
                 </div>
