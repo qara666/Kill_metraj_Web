@@ -40,6 +40,7 @@ import { ReturningCouriersModal } from './modals/ReturningCouriersModal'
 import { TransitCouriersModal } from './modals/TransitCouriersModal'
 import { calculateDistance } from '../../utils/geoUtils'
 import { loadLeaflet } from '../../utils/maps/leafletLoader'
+import { isOrderCompleted } from '../../utils/data/orderStatus'
 
 const formatDisplayDistance = (meters?: number) => {
   if (meters === undefined) return undefined;
@@ -534,7 +535,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         if (!ordersInRoutesSet.has(order.id)) {
           available++
         }
-        if (order.status === 'Доставлено' || order.status === 'Исполнен') {
+        if (isOrderCompleted(order.status)) {
           delivered++
         }
       }
@@ -1316,7 +1317,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
   const clearAllRoutes = () => {
     if (window.confirm('Вы уверены, что хотите удалить все маршруты?')) {
-      updateExcelData({ ...(excelData || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }), routes: [] })
+      updateExcelData({ ...(excelData || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }), routes: [] }, true)
       // Также очищаем из localStorage
       try {
         localStorage.removeItem('km_routes')
@@ -1332,7 +1333,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       const activeRoutes = routes.filter((r: Route) => {
         if (!r.orders || r.orders.length === 0) return true;
         // Маршрут считается завершенным, если ВСЕ его заказы в статусе 'Исполнен'
-        return !r.orders.every(o => o.status === 'Исполнен');
+        return !r.orders.every(o => isOrderCompleted(o.status));
       });
 
       if (activeRoutes.length === routes.length) {
@@ -1342,7 +1343,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
       toast.success(`Очищено маршрутов: ${routes.length - activeRoutes.length}`);
       return { ...prev, routes: activeRoutes };
-    });
+    }, true);
   }
 
   const openRouteInGoogleMaps = (route: Route) => {
@@ -1978,8 +1979,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                             setSelectedOrders(new Set());
                             setSelectedOrdersOrder([]);
 
-                            // Parallel distance calculation for all new routes
-                            await Promise.all(newRoutes.map(route => calculateRouteDistance(route)));
+                            // Sequential distance calculation for all new routes (v5.68: prevents race conditions and modal overlaps)
+                            for (const route of newRoutes) {
+                              await calculateRouteDistance(route);
+                            }
                           } catch (err) {
                             console.error('Batch route creation error:', err);
                             toast.error('Ошибка при создании группы маршрутов');
@@ -2241,7 +2244,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                 )}>
                                   {courierVehicle === 'car' ? 'Авто' : 'Мото'}
                                 </span>
-                                {route.orders.every(o => o.status === 'Исполнен') && (
+                                {route.orders.every(o => isOrderCompleted(o.status)) && (
                                   <span className="bg-green-500 text-white text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-widest flex items-center gap-1">
                                     <CheckBadgeIcon className="w-3 h-3" />
                                     ГОТОВ

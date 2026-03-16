@@ -249,6 +249,25 @@ export const useRouteGeocoding = ({
 
                 const expectedDeliveryZone = order.deliveryZone || order.raw?.deliveryZone || order.raw?.['Зона доставки'] || null
 
+                // v35.9.30: High-Precision Bypass - If order already has server-provided coords (e.g. from addressGeo)
+                // we skip geocoding entirely to preserve maximum accuracy and save quota.
+                if (order.coords?.lat && order.coords?.lng && !addrCache.has(key)) {
+                    addrCache.set(key, {
+                        raw: {
+                            formatted_address: order.address,
+                            geometry: {
+                                location: { lat: order.coords.lat, lng: order.coords.lng },
+                                location_type: 'ROOFTOP'
+                            },
+                        },
+                        kmlZone: order.kmlZone || order.deliveryZone,
+                        kmlHub: order.kmlHub,
+                        streetNumberMatched: true,
+                        score: 1000000, // Top score for "locked" addresses
+                        isLocked: true
+                    });
+                }
+
                 if (!addrCache.has(key)) {
                     // v35.9.26: Pass silent: !confirmAddresses during batch processing.
                     // This allows the "Уточнение адреса" modal to appear if a result is ambiguous or suspicious.
@@ -502,9 +521,27 @@ export const useRouteGeocoding = ({
                 return { lat: Number(lat), lng: Number(lng) }
             })
 
-            const useFreeRouting = true // Always try free providers first
+            const routingProvider = settings.routingProvider || 'valhalla'
 
-            if (useFreeRouting) {
+            // SOTA 5.68: Custom OSRM Provider (Yapiko)
+            if (routingProvider === 'yapiko_osrm' && settings.yapikoOsrmUrl) {
+                try {
+                    const { YapikoOSRMService } = await import('../services/YapikoOSRMService')
+                    const yRes = await YapikoOSRMService.calculateRoute(points, settings.yapikoOsrmUrl)
+                    if (yRes.feasible && yRes.totalDistance && yRes.totalDistance > 0) {
+                        totalDistance = yRes.totalDistance
+                        totalDuration = yRes.totalDuration || 0
+                        routingSuccess = true
+                        console.log(`[Маршрут] Yapiko OSRM — успех: ${totalDistance}м`)
+                    } else {
+                        console.warn('[Маршрут] Yapiko OSRM вернул 0 или ошибку. Пробую Valhalla.')
+                    }
+                } catch (e) {
+                    console.warn('[Маршрут] Ошибка Yapiko OSRM, пробую Valhalla:', e)
+                }
+            }
+
+            if (!routingSuccess) {
                 // Try Valhalla first
                 try {
                     const { ValhallaService } = await import('../services/valhallaService')

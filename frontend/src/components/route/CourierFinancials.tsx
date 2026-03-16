@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { isOrderCompleted } from '../../utils/data/orderStatus';
 import { clsx } from 'clsx';
 import { useExcelData } from '../../contexts/ExcelDataContext';
 import { toast } from 'react-hot-toast';
@@ -152,7 +153,7 @@ export function CourierFinancials({
                 startTime: new Date().toISOString(),
                 totalOrders: courierOrders.length,
                 completedOrders: courierOrders.filter((o: any) =>
-                    o.status === 'Исполнен' || o.status === 'Доставлено' || o.status === 'Выдано'
+                    isOrderCompleted(o.status)
                 ).length,
                 cashOrders: { count: 0, totalAmount: 0, orders: [] },
                 cardOrders: { count: 0, totalAmount: 0, orders: [] },
@@ -164,7 +165,7 @@ export function CourierFinancials({
         };
 
         courierOrders.forEach((order: any) => {
-            const isValidForFinancials = order.status === 'Исполнен' || order.status === 'Доставлено' || order.status === 'Выдано';
+            const isValidForFinancials = isOrderCompleted(order.status);
 
             if (order.settledDate) {
                 summary.historyOrders.push({
@@ -513,7 +514,7 @@ export function CourierFinancials({
         return [
             ...summary.currentShift.cashOrders.orders,
             ...(summary.currentShift as any).refusedOrders.orders
-        ].filter((o: any) => o.status === 'Исполнен');
+        ].filter((o: any) => isOrderCompleted(o.status));
     }, [summary]);
 
     const cashToCollect = useMemo(() => {

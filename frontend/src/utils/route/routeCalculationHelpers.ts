@@ -1,4 +1,5 @@
 import type { Order, CourierRouteStatus, RouteCalculationMode } from '../../types';
+import { isOrderCompleted } from '../data/orderStatus';
 import { getPlannedTime, getArrivalTime, getKitchenTime } from '../data/timeUtils';
 import { haversineDistance } from '../routes/routeOptimizationHelpers';
 
@@ -271,7 +272,7 @@ export function groupOrdersByTimeWindow(
             manualGroupsMap.get(item.order.manualGroupId)!.push(item.order);
         }
         // 2. Handover-based группы (SOTA 3.1: консолидация собранных, доставляемых и исполненных)
-        else if (item.order.status === 'Доставляется' || item.order.status === 'В пути' || item.order.status === 'Исполнен' || item.order.status === 'Собран') {
+        else if (item.order.status === 'Доставляется' || item.order.status === 'В пути' || isOrderCompleted(item.order.status) || item.order.status === 'Собран') {
             // Группируем их отдельно, логика ниже
             // Добавляем во временное хранилище для последующей кластеризации
             const key = `temp-handover`;
@@ -295,10 +296,10 @@ export function groupOrdersByTimeWindow(
     // FIX: Separate completed ('Исполнен') from active ('Доставляется', 'Собран', 'В пути')
     // so that a fully-completed block can NEVER absorb new active deliveries.
     const completedHandoverOrders = handoverGroupsMap.get('temp-handover')?.filter(
-        o => o.status === 'Исполнен'
+        o => isOrderCompleted(o.status)
     ) || [];
     const activeHandoverOrders = handoverGroupsMap.get('temp-handover')?.filter(
-        o => o.status !== 'Исполнен'
+        o => !isOrderCompleted(o.status)
     ) || [];
 
     // v5.66: Revert to 20 min to avoid unwanted grouping (user request)

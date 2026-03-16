@@ -8,6 +8,7 @@
  */
 
 import { batchGeocode, GeoPoint } from '../maps/geocodeCache'
+import { isOrderCompleted } from '../data/orderStatus'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -98,7 +99,7 @@ export function getReturnETA(
     let lastCoord: GeoPoint | null = null
 
     orders.forEach((o, i) => {
-        const done = o.status === 'Исполнен' || o.status === 'Доставлено'
+        const done = isOrderCompleted(o.status)
         if (!done) return
 
         if (o.statusTimings?.completedAt) {

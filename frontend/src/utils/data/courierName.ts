@@ -18,6 +18,6 @@ export function isId0CourierName(value: unknown): boolean {
 
 export function normalizeCourierName(value: unknown): string {
   const name = asNonEmptyString(value).trim().replace(/\s+/g, ' ')
-  if (!name) return ''
+  if (!name || name.length <= 2) return '' // Игнорируем слишком короткие имена (типа "по")
   return isId0CourierName(name) ? 'Не назначено' : name
 }
