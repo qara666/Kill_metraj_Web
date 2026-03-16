@@ -222,7 +222,8 @@ export const useRouteGeocoding = ({
             if (startLat && startLng) {
                 originLoc = makeLatLng(startLat, startLng)
             } else if (route.startAddress) {
-                const res = await robustGeocode(cleanAddressForRoute(route.startAddress), { silent: true, strictZoneFallback: true })
+                // v35.9.28: Set strictZoneFallback: false for Base address to allow starting from outside delivery zones
+                const res = await robustGeocode(cleanAddressForRoute(route.startAddress), { silent: true, strictZoneFallback: false })
                 originLoc = res ? toLoc(res.raw) : null
             }
 

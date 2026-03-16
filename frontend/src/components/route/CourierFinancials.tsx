@@ -9,10 +9,13 @@ import {
     ArrowsRightLeftIcon,
     CheckBadgeIcon,
     ExclamationTriangleIcon,
-    XMarkIcon
+    XMarkIcon,
+    ShieldExclamationIcon,
+    PencilSquareIcon
 } from '@heroicons/react/24/outline';
 import type { Order } from '../../types';
 import { SettlementModal } from './modals/SettlementModal';
+import { AddressEditModal } from '../modals/AddressEditModal';
 import { RevenueProgressBar } from './financials/RevenueProgressBar';
 import { PaymentMethodCard } from './financials/PaymentMethodCard';
 import { getStatusBadgeProps } from '../../utils/data/statusBadgeHelper';
@@ -84,10 +87,12 @@ export function CourierFinancials({
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showSettlementModal, setShowSettlementModal] = useState(false);
-    const [activeTab, setActiveTab] = useState<'cash' | 'online' | 'history' | 'general'>('cash');
+    const [activeTab, setActiveTab] = useState<'cash' | 'online' | 'history' | 'general' | 'fix'>('cash');
     const [switchingOrderId, setSwitchingOrderId] = useState<string | null>(null);
     const [notes, setNotes] = useState('');
     const [historySearchTerm, setHistorySearchTerm] = useState('');
+    const [showAddressEditModal, setShowAddressEditModal] = useState(false);
+    const [editingOrder, setEditingOrder] = useState<any>(null);
 
     // For Expandable General Report Sessions
     const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
@@ -317,6 +322,18 @@ export function CourierFinancials({
                 return currentShift.onlineOrders.orders;
             case 'history':
                 return historyOrders;
+            case 'fix':
+                return (excelData?.orders || []).filter((o: any) => {
+                    const c = o.courier;
+                    const cId = typeof c === 'object' ? (c.id || c._id || c.name) : c;
+                    const isMyOrder = String(cId) === String(courierId) || String(o.courierName) === String(courierId);
+                    if (!isMyOrder) return false;
+                    
+                    // Logic for "fix" tab: missing geodata or explicitly rejected
+                    const hasGeo = o.geoMeta || (o.lat && o.lng);
+                    const isFailed = o.geocodingError || o.outOfZone;
+                    return !hasGeo || isFailed;
+                });
             default:
                 return [];
         }
@@ -466,6 +483,27 @@ export function CourierFinancials({
         } finally {
             setSwitchingOrderId(null);
         }
+    };
+
+    const handleAddressUpdate = async (newAddress: string) => {
+      if (!editingOrder) return;
+      
+      try {
+        updateExcelData((prev: any) => ({
+          ...prev,
+          orders: prev.orders.map((o: any) => 
+            String(o.orderNumber) === String(editingOrder.orderNumber)
+              ? { ...o, address: newAddress, geocodingError: null, geoMeta: null, lat: undefined, lng: undefined }
+              : o
+          )
+        }));
+        setShowAddressEditModal(false);
+        setEditingOrder(null);
+        toast.success('Адрес обновлен. Пересчитайте маршруты.');
+        await fetchFinancialSummary();
+      } catch (err) {
+        toast.error('Ошибка при обновлении адреса');
+      }
     };
 
     // Calculate cashToCollect explicitly for "Исполнен" cash orders. 
@@ -663,21 +701,37 @@ export function CourierFinancials({
                         "p-1.5 rounded-2xl flex gap-1",
                         isDark ? "bg-gray-900" : "bg-white shadow-sm border border-gray-100"
                     )}>
-                        {(['cash', 'online', 'history', 'general'] as const).map((tab) => (
+                        {(['cash', 'online', 'fix', 'history', 'general'] as const).map((tab) => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
                                 className={clsx(
-                                    'px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all',
+                                    'px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all relative',
                                     activeTab === tab
                                         ? (isDark ? 'bg-gray-800 text-[#5175f0]' : 'bg-blue-50 text-[#5175f0]')
-                                        : 'opacity-40 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/5'
+                                        : 'opacity-40 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/5',
+                                    tab === 'fix' && (excelData?.orders || []).some((o: any) => {
+                                        const c = o.courier;
+                                        const cId = typeof c === 'object' ? (c.id || c._id || c.name) : c;
+                                        const isMy = String(cId) === String(courierId) || String(o.courierName) === String(courierId);
+                                        return isMy && (!o.geoMeta && !o.lat);
+                                    }) && "text-red-500"
                                 )}
                             >
                                 {tab === 'cash' ? `Наличные (${currentShift.cashOrders.count})` :
                                     tab === 'online' ? `Онлайн (${currentShift.onlineOrders.count})` :
-                                        tab === 'history' ? `История (${summary.historyOrders.length})` :
-                                            `Общий отчет`}
+                                        tab === 'fix' ? `Исправить` :
+                                            tab === 'history' ? `История (${summary.historyOrders.length})` :
+                                                `Общий отчет`}
+                                
+                                {tab === 'fix' && (excelData?.orders || []).some((o: any) => {
+                                    const c = o.courier;
+                                    const cId = typeof c === 'object' ? (c.id || c._id || c.name) : c;
+                                    const isMy = String(cId) === String(courierId) || String(o.courierName) === String(courierId);
+                                    return isMy && (!o.geoMeta && !o.lat);
+                                }) && (
+                                    <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-ping" />
+                                )}
                             </button>
                         ))}
                     </div>
@@ -1021,7 +1075,8 @@ export function CourierFinancials({
                                         style={{ animationDelay: `${idx * 50}ms` }}
                                         className={clsx(
                                             'p-6 rounded-[36px] border flex items-center justify-between transition-all group animate-in slide-in-from-bottom-2 duration-300 fill-mode-both',
-                                            isDark ? 'bg-black/20 border-white/5 hover:bg-black/40' : 'bg-[#f8faff] border-gray-100/50 hover:bg-white hover:shadow-md hover:shadow-blue-500/5'
+                                            isDark ? 'bg-black/20 border-white/5 hover:bg-black/40' : 'bg-[#f8faff] border-gray-100/50 hover:bg-white hover:shadow-md hover:shadow-blue-500/5',
+                                            (order.geocodingError || order.outOfZone || (!order.geoMeta && !order.lat)) && (isDark ? 'border-red-900/30' : 'border-red-100')
                                         )}
                                     >
                                         <div className="flex-1 min-w-0 mr-8">
@@ -1050,10 +1105,28 @@ export function CourierFinancials({
                                                         Смена оплаты
                                                     </span>
                                                 )}
+                                                {activeTab === 'fix' && (
+                                                    <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-xl bg-red-500 text-white flex items-center gap-1 shadow-lg shadow-red-500/20">
+                                                        <ShieldExclamationIcon className="w-3 h-3" />
+                                                        Ошибка локации
+                                                    </span>
+                                                )}
                                             </div>
-                                            <p className={clsx('text-sm font-bold leading-relaxed', isDark ? 'text-gray-300' : 'text-gray-800')} title={order.address}>
-                                                {order.address}
-                                            </p>
+                                            <div className="flex items-start gap-3">
+                                                {(order.geocodingError || (!order.geoMeta && !order.lat)) && (
+                                                    <div className="mt-1">
+                                                        <ExclamationTriangleIcon className="w-4 h-4 text-red-500 animate-pulse" />
+                                                    </div>
+                                                )}
+                                                <p className={clsx('text-sm font-bold leading-relaxed', isDark ? 'text-gray-300' : 'text-gray-800')} title={order.address}>
+                                                    {order.address}
+                                                </p>
+                                            </div>
+                                            {order.geocodingError && (
+                                                <p className="text-[10px] font-bold text-red-500/60 mt-2 uppercase tracking-tight">
+                                                    {order.geocodingError}
+                                                </p>
+                                            )}
                                         </div>
 
                                         <div className="flex items-center gap-8">
@@ -1061,7 +1134,8 @@ export function CourierFinancials({
                                                 <p className={clsx('text-xl font-black tracking-tight',
                                                     activeTab === 'cash' ? 'text-[#10b981]' :
                                                         activeTab === 'online' ? 'text-[#8b5cf6]' :
-                                                            (isDark ? 'text-white' : 'text-gray-900')
+                                                            activeTab === 'fix' ? 'text-red-500' :
+                                                                (isDark ? 'text-white' : 'text-gray-900')
                                                 )}>
                                                     {formatCurrency((order as any).settledAmount || (order as any).effectiveAmount || order.amount)}
                                                 </p>
@@ -1070,36 +1144,56 @@ export function CourierFinancials({
                                                         Сдача: {(order as any).changeAmount}₴
                                                     </p>
                                                 )}
+                                                {activeTab === 'fix' && (
+                                                    <p className="text-[9px] font-black text-red-500 opacity-40 uppercase tracking-widest mt-1">ТРЕБУЕТСЯ КОРРЕКЦИЯ</p>
+                                                )}
                                             </div>
 
                                             <div className="flex items-center gap-2">
-                                                <button
-                                                    onClick={() => handleSwitchPaymentMethod(String(order.orderNumber), String((order as any).paymentMethod || ''))}
-                                                    disabled={switchingOrderId === String(order.id || order.orderNumber)}
-                                                    className={clsx(
-                                                        'p-4 rounded-[20px] transition-all opacity-0 group-hover:opacity-100 border no-print relative overflow-hidden',
-                                                        isDark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white' : 'bg-white border-gray-100 text-gray-500 hover:text-blue-600 hover:shadow-xl hover:shadow-blue-500/10'
-                                                    )}
-                                                    title="Сменить способ оплаты"
-                                                >
-                                                    {switchingOrderId === order.orderNumber ? (
-                                                        <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                                    ) : (
-                                                        <ArrowsRightLeftIcon className="w-5 h-5" />
-                                                    )}
-                                                </button>
+                                                {activeTab === 'fix' ? (
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditingOrder(order);
+                                                            setShowAddressEditModal(true);
+                                                        }}
+                                                        className={clsx(
+                                                            'p-4 rounded-[20px] transition-all bg-[#5175f0] text-white hover:shadow-xl hover:shadow-blue-500/30'
+                                                        )}
+                                                        title="Исправить адрес"
+                                                    >
+                                                        <PencilSquareIcon className="w-5 h-5" />
+                                                    </button>
+                                                ) : (
+                                                    <>
+                                                        <button
+                                                            onClick={() => handleSwitchPaymentMethod(String(order.orderNumber), String((order as any).paymentMethod || ''))}
+                                                            disabled={switchingOrderId === String(order.id || order.orderNumber)}
+                                                            className={clsx(
+                                                                'p-4 rounded-[20px] transition-all opacity-0 group-hover:opacity-100 border no-print relative overflow-hidden',
+                                                                isDark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white' : 'bg-white border-gray-100 text-gray-500 hover:text-blue-600 hover:shadow-xl hover:shadow-blue-500/10'
+                                                            )}
+                                                            title="Сменить способ оплаты"
+                                                        >
+                                                            {switchingOrderId === order.orderNumber ? (
+                                                                <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                                            ) : (
+                                                                <ArrowsRightLeftIcon className="w-5 h-5" />
+                                                            )}
+                                                        </button>
 
-                                                <button
-                                                    onClick={() => handleRefuseOrder(String(order.orderNumber))}
-                                                    disabled={switchingOrderId === String(order.id || order.orderNumber)}
-                                                    className={clsx(
-                                                        'p-4 rounded-[20px] transition-all opacity-0 group-hover:opacity-100 border no-print relative overflow-hidden',
-                                                        isDark ? 'bg-red-900/10 border-red-900/30 text-red-500/60 hover:text-red-500' : 'bg-red-50 border-red-100 text-red-400 hover:text-red-600 hover:shadow-xl hover:shadow-red-500/10'
-                                                    )}
-                                                    title="Отказаться от заказа (Не в расчет)"
-                                                >
-                                                    <XMarkIcon className="w-5 h-5" />
-                                                </button>
+                                                        <button
+                                                            onClick={() => handleRefuseOrder(String(order.orderNumber))}
+                                                            disabled={switchingOrderId === String(order.id || order.orderNumber)}
+                                                            className={clsx(
+                                                                'p-4 rounded-[20px] transition-all opacity-0 group-hover:opacity-100 border no-print relative overflow-hidden',
+                                                                isDark ? 'bg-red-900/10 border-red-900/30 text-red-500/60 hover:text-red-500' : 'bg-red-50 border-red-100 text-red-400 hover:text-red-600 hover:shadow-xl hover:shadow-red-500/10'
+                                                            )}
+                                                            title="Отказаться от заказа (Не в расчет)"
+                                                        >
+                                                            <XMarkIcon className="w-5 h-5" />
+                                                        </button>
+                                                    </>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -1120,6 +1214,21 @@ export function CourierFinancials({
                     updateExcelData={updateExcelData}
                     setShowSettlementModal={setShowSettlementModal}
                     fetchFinancialSummary={fetchFinancialSummary}
+                />
+            )}
+
+            {showAddressEditModal && editingOrder && (
+                <AddressEditModal
+                    isOpen={showAddressEditModal}
+                    onClose={() => {
+                        setShowAddressEditModal(false);
+                        setEditingOrder(null);
+                    }}
+                    onSave={(newAddress) => handleAddressUpdate(newAddress)}
+                    currentAddress={editingOrder.address}
+                    orderNumber={editingOrder.orderNumber}
+                    customerName={editingOrder.customerName}
+                    isDark={isDark}
                 />
             )}
         </div>

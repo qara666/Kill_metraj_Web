@@ -39,6 +39,7 @@ import { getReturnETA, getAccurateReturnETA, getCourierSpeed, enrichRoutesWithCo
 import { ReturningCouriersModal } from './modals/ReturningCouriersModal'
 import { TransitCouriersModal } from './modals/TransitCouriersModal'
 import { calculateDistance } from '../../utils/geoUtils'
+import { loadLeaflet } from '../../utils/maps/leafletLoader'
 
 const formatDisplayDistance = (meters?: number) => {
   if (meters === undefined) return undefined;
@@ -1417,6 +1418,107 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     setDisambModal(null)
   }
 
+  // v35.9.27: Effect to initialize Leaflet Map in Disambiguation Modal
+  useEffect(() => {
+    if (!disambModal || !disambModal.open) {
+      if ((window as any)._disambMap) {
+        (window as any)._disambMap.remove();
+        (window as any)._disambMap = null;
+      }
+      return;
+    }
+
+    const initDisambMap = async () => {
+      // Small delay to ensure container is in DOM
+      await new Promise(r => setTimeout(r, 100));
+      const container = document.getElementById('disamb-map-container');
+      if (!container) return;
+
+      try {
+        const L = await loadLeaflet();
+        if ((window as any)._disambMap) return;
+
+        // Default to first candidate or Kyiv
+        let center: [number, number] = [50.4501, 30.5234];
+        if (disambModal.options && disambModal.options.length > 0) {
+          const first = disambModal.options[0].res;
+          const lat = typeof first.geometry.location.lat === 'function' ? first.geometry.location.lat() : first.geometry.location.lat;
+          const lng = typeof first.geometry.location.lng === 'function' ? first.geometry.location.lng() : first.geometry.location.lng;
+          if (lat && lng) center = [lat, lng];
+        }
+
+        const map = L.map(container, { zoomControl: false }).setView(center, 13);
+        (window as any)._disambMap = map;
+
+        const tileUrl = isDark 
+          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+          : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+        L.tileLayer(tileUrl).addTo(map);
+
+        // Add search result markers
+        disambModal.options.forEach((opt: any, idx: number) => {
+          const res = opt.res;
+          const lat = typeof res.geometry.location.lat === 'function' ? res.geometry.location.lat() : res.geometry.location.lat;
+          const lng = typeof res.geometry.location.lng === 'function' ? res.geometry.location.lng() : res.geometry.location.lng;
+          if (lat && lng) {
+            L.marker([lat, lng], { 
+                icon: L.divIcon({ 
+                    className: 'disamb-candidate-icon',
+                    html: `<div style="background-color: #3b82f6; color: white; border: 2px solid white; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold;">${idx + 1}</div>`,
+                    iconSize: [20, 20]
+                }) 
+            })
+              .addTo(map)
+              .bindPopup(`<b>${idx + 1}.</b> ${opt.label}`);
+          }
+        });
+
+        // Click to select manual point
+        let manualMarker: any = null;
+        map.on('click', (e: any) => {
+          const { lat, lng } = e.latlng;
+          if (manualMarker) manualMarker.remove();
+          
+          manualMarker = L.marker([lat, lng], {
+            icon: L.divIcon({
+              className: 'custom-manual-icon',
+              html: `<div style="background-color: #ef4444; width: 14px; height: 14px; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 10px rgba(239,68,68,0.5);"></div>`,
+              iconSize: [14, 14],
+              iconAnchor: [7, 7]
+            })
+          }).addTo(map);
+
+          // Update UI
+          const coordEl = document.getElementById('manual-selection-coord');
+          const btnEl = document.getElementById('confirm-manual-btn');
+          if (coordEl) coordEl.classList.remove('hidden');
+          if (btnEl) {
+            btnEl.classList.remove('hidden');
+            (btnEl as any).onclick = () => {
+              handleDisambiguationResolve({
+                geometry: { location: { lat, lng } },
+                formatted_address: 'Выбрано вручную на карте',
+                manual: true
+              });
+            };
+          }
+        });
+
+      } catch (err) {
+        console.error('Failed to init disamb map:', err);
+      }
+    };
+
+    initDisambMap();
+
+    return () => {
+      if ((window as any)._disambMap) {
+        (window as any)._disambMap.remove();
+        (window as any)._disambMap = null;
+      }
+    };
+  }, [disambModal, isDark, handleDisambiguationResolve]);
+
 
 
   return (
@@ -2646,8 +2748,43 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   </button>
                 </div>
 
-                <div className="p-6 space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
-                  {disambModal.options.map((option, idx) => {
+                <div className="p-6 space-y-4 max-h-[85vh] overflow-y-auto custom-scrollbar">
+                  {/* Manual Map Selection (v35.9.27) */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between px-1">
+                       <h4 className={clsx("text-[10px] font-black uppercase tracking-[0.2em] opacity-40")}>Ручной выбор на карте</h4>
+                       {disambModal.options[0]?.res?.geometry?.location && (
+                         <button 
+                            onClick={() => {
+                               // Center map on the first search result
+                               const res = disambModal.options[0].res;
+                               const lat = typeof res.geometry.location.lat === 'function' ? res.geometry.location.lat() : res.geometry.location.lat;
+                               const lng = typeof res.geometry.location.lng === 'function' ? res.geometry.location.lng() : res.geometry.location.lng;
+                               (window as any)._disambMap?.setView([lat, lng], 16);
+                            }}
+                            className="text-[9px] font-bold text-blue-500 hover:underline"
+                         >
+                            Центрировать на результате
+                         </button>
+                       )}
+                    </div>
+                    <div 
+                      id="disamb-map-container"
+                      className={clsx(
+                        "w-full h-64 rounded-xl border-2 overflow-hidden relative",
+                        isDark ? "bg-black/40 border-white/5" : "bg-gray-100 border-gray-100"
+                      )}
+                    >
+                      {/* Leaflet Map will be injected here */}
+                    </div>
+                    <p className={clsx("text-[9px] font-bold opacity-40 px-1 italic")}>
+                      * Кликните на карту, чтобы поставить точку вручную, затем нажмите «ПОДТВЕРДИТЬ МОЮ ТОЧКУ» ниже.
+                    </p>
+                  </div>
+
+                  <div className="space-y-3 pt-2">
+                    <h4 className={clsx("text-[10px] font-black uppercase tracking-[0.2em] opacity-40 px-1")}>Результаты поиска ({disambModal.options.length})</h4>
+                    {disambModal.options.map((option, idx) => {
                     const isTechnical = option.res?.zone?.name?.toLowerCase().includes('авторозвантаження') ||
                       option.res?.zone?.name?.toLowerCase().includes('разгрузка');
 
@@ -2728,18 +2865,35 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                       </div>
                     );
                   })}
+                  </div>
                 </div>
 
-                <div className={clsx("px-6 py-4 border-t flex justify-end", isDark ? "bg-gray-800/30 border-white/5" : "bg-gray-50/50 border-gray-100")}>
-                  <button
-                    onClick={() => handleDisambiguationResolve(null)}
-                    className={clsx(
-                      "px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all",
-                      isDark ? "text-gray-400 hover:text-white hover:bg-white/10" : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
-                    )}
-                  >
-                    Отмена
-                  </button>
+                <div className={clsx("px-6 py-4 border-t flex flex-col sm:flex-row justify-between items-center gap-4", isDark ? "bg-gray-800/30 border-white/5" : "bg-gray-50/50 border-gray-100")}>
+                  {/* Manual Selection Display */}
+                  <div id="manual-selection-coord" className="hidden">
+                    <div className="flex items-center gap-3">
+                      <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                      <span className={clsx("text-[10px] font-black uppercase tracking-widest opacity-60", isDark ? "text-gray-400" : "text-gray-500")}>Точка выбрана вручную</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 w-full sm:w-auto">
+                    <button
+                      id="confirm-manual-btn"
+                      className="hidden flex-1 sm:flex-none px-6 py-2.5 rounded-xl bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/30 hover:bg-blue-700 active:scale-95 transition-all"
+                    >
+                      Подтвердить мою точку
+                    </button>
+                    <button
+                      onClick={() => handleDisambiguationResolve(null)}
+                      className={clsx(
+                        "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border",
+                        isDark ? "text-gray-400 border-white/10 hover:text-white hover:bg-white/10" : "text-gray-500 border-gray-200 hover:text-gray-900 hover:bg-gray-100"
+                      )}
+                    >
+                      Отмена
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
