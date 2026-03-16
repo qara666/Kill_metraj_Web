@@ -71,9 +71,27 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                   }
 
                   const mapped = applyCourierVehicleMap(serverData);
-                  console.log(' Данные загружены с сервера (Hybrid Sync)');
-                  setExcelDataState(mapped);
-                  return;
+                  
+                  // LOGIC IMPROVEMENT: 
+                  // If the server data has NO routes but our local copy DOES (for similar order count),
+                  // we prefer the local copy because it probably contains the last calculated state.
+                  const localStored = localStorage.getItem('km_dashboard_processed_data');
+                  let localData: any = null;
+                  try { if (localStored) localData = JSON.parse(localStored); } catch(e) {}
+
+                  const serverHasRoutes = mapped.routes && mapped.routes.length > 0;
+                  const localHasRoutes = localData?.routes && localData.routes.length > 0;
+                  
+                  if (!serverHasRoutes && localHasRoutes) {
+                    console.log('⚠️ Сервер прислал пустой список маршрутов, используем локальную копию с маршрутами.');
+                    // Don't set state yet, let it fall through to localStorage part below
+                  } else if (mapped.orders && mapped.orders.length > 0) {
+                    console.log('✅ Данные загружены с сервера (Hybrid Sync)');
+                    setExcelDataState(mapped);
+                    return;
+                  }
+                  
+                  console.log('⚠️ Переходим к проверке локальной копии...');
                 }
               }
             } catch (apiError) {
@@ -101,8 +119,54 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     }
   }, [])
 
-  // Debounce ref for saving
   const saveTimeoutRef = useRef<any>(null);
+  const localStorageTimeoutRef = useRef<any>(null);
+
+  /**
+   * Universal LocalStorage Sync (Debounced for performance)
+   */
+  const syncToLocalStorage = useCallback((data: ExcelData) => {
+    if (localStorageTimeoutRef.current) clearTimeout(localStorageTimeoutRef.current);
+    
+    localStorageTimeoutRef.current = setTimeout(() => {
+      try {
+        // High-cost stringify
+        const json = JSON.stringify(data);
+        localStorage.setItem('km_dashboard_processed_data', json);
+      } catch (e) {
+        console.warn('LocalStorage save failed:', e);
+      }
+    }, 1000); // 1.0s debounce for disk IO
+  }, []);
+
+  /**
+   * Universal Protection Helper:
+   * Prevents overwriting local routes with empty server responses if order count is similar.
+   */
+  const protectData = useCallback((incoming: ExcelData, current: ExcelData | null): ExcelData => {
+    const val = applyCourierVehicleMap(incoming);
+    const serverHasRoutes = val.routes && val.routes.length > 0;
+    
+    // Check local storage for backup if current state is null
+    const localStored = localStorage.getItem('km_dashboard_processed_data');
+    let localData: any = null;
+    try { if (localStored) localData = JSON.parse(localStored); } catch(e) {}
+    
+    const backupData = current || localData;
+    const backupHasRoutes = backupData?.routes && backupData.routes.length > 0;
+    
+    if (!serverHasRoutes && backupHasRoutes) {
+      const incomingOrders = val.orders?.length || 0;
+      const backupOrders = backupData.orders?.length || 0;
+      
+      // If order counts are close (within 10%), assume it's the same dataset
+      if (Math.abs(incomingOrders - backupOrders) <= Math.max(2, backupOrders * 0.1)) {
+        console.log('🛡️ Защита данных: восстановление локальных маршрутов.');
+        val.routes = [...backupData.routes];
+      }
+    }
+    return val;
+  }, []);
 
   const saveDataToServer = async (data: ExcelData) => {
     const token = localStorage.getItem('km_access_token');
@@ -128,62 +192,55 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     }
   };
 
-  const setExcelData = useCallback((data: ExcelData | null) => {
-    if (window && (window as any).debugExcel) console.warn('[ExcelDataProvider:SET]', data, (new Error()).stack)
-    if (data) {
-      const val = applyCourierVehicleMap(data)
-      setExcelDataState(val)
+  const setExcelData = useCallback((incomingData: ExcelData | null) => {
+    if (window && (window as any).debugExcel) console.warn('[ExcelDataProvider:SET]', incomingData, (new Error()).stack)
+    
+    if (incomingData) {
+      setExcelDataState(prev => {
+        const val = protectData(incomingData, prev);
+        
+        // Debounced sync to localStorage
+        syncToLocalStorage(val);
+        
+        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = setTimeout(() => saveDataToServer(val), 2000);
 
-      // Clear previous timeout
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-
-      // Debounce both API save and localStorage (0.5s)
-      saveTimeoutRef.current = setTimeout(() => {
-        saveDataToServer(val);
-        try {
-          localStorage.setItem('km_dashboard_processed_data', JSON.stringify(val))
-        } catch (e) {
-          console.warn('LocalStorage save failed:', e);
-        }
-      }, 500);
+        return val;
+      });
     } else {
-      setExcelDataState(null)
-      localStorage.removeItem('km_dashboard_processed_data')
+      setExcelDataState(null);
+      localStorage.removeItem('km_dashboard_processed_data');
     }
-  }, [])
+  }, [protectData, syncToLocalStorage, saveDataToServer]);
 
   const updateExcelData = useCallback((dataOrUpdater: ExcelData | ((prev: ExcelData) => ExcelData)) => {
     setExcelDataState(prev => {
       let next: ExcelData;
+      const prevSafe = prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: {} } as any;
+      
       if (typeof dataOrUpdater === 'function') {
         const updater = dataOrUpdater as (p: ExcelData) => ExcelData;
-        const prevSafe = prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: {} } as any;
         next = applyCourierVehicleMap(updater(prevSafe));
       } else {
         next = applyCourierVehicleMap(dataOrUpdater);
       }
+      
+      // Ensure we don't regress routes if the updater somehow returns empty routes
+      const protectedNext = protectData(next, prevSafe);
 
-      // Clear previous timeout
+      // Debounced Sync
+      syncToLocalStorage(protectedNext);
+
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = setTimeout(() => saveDataToServer(protectedNext), 2000);
 
-      // Debounce both API save and localStorage (0.5s)
-      saveTimeoutRef.current = setTimeout(() => {
-        saveDataToServer(next);
-        try {
-          localStorage.setItem('km_dashboard_processed_data', JSON.stringify(next));
-        } catch (e) {
-          console.warn('LocalStorage update failed:', e);
-        }
-      }, 500);
-
-      return next;
+      return protectedNext;
     });
-  }, [])
+  }, [protectData]);
 
   const clearExcelData = useCallback(() => {
     if (window && (window as any).debugExcel) console.warn('[ExcelDataProvider:CLEAR]', (new Error()).stack)
 
-    // Clear any pending debounced saves
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = null;
@@ -214,18 +271,16 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
         orders: [], couriers: [], paymentMethods: [], routes: newRoutes, errors: [], summary: undefined
       } as any;
 
+      // Debounced sync to localStorage
+      syncToLocalStorage(next);
+
       // Clear previous timeout
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
-      // Debounce both API save and localStorage (0.5s)
+      // Debounce API save (2.0s)
       saveTimeoutRef.current = setTimeout(() => {
         saveDataToServer(next);
-        try {
-          localStorage.setItem('km_dashboard_processed_data', JSON.stringify(next));
-        } catch (e) {
-          console.warn('LocalStorage route update failed:', e);
-        }
-      }, 500);
+      }, 2000);
 
       return next;
     })

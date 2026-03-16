@@ -181,13 +181,11 @@ export class AddressValidationService {
   }
 
   /**
-   * Проверка вхождения координат в импортированные KML сектора
+   * Проверка вхождения координат в импортированные KML сектора (Без Google Maps)
    */
   static checkInKmlSectors(lat: number, lng: number, kmlData: any, hubNames?: string[], zoneNames?: string[]): { zoneName: string; hubName: string } | null {
     if (!kmlData || !kmlData.polygons || !Array.isArray(kmlData.polygons)) return null
-    if (typeof window === 'undefined' || !window.google || !window.google.maps || !window.google.maps.Polygon || !window.google.maps.geometry) return null
 
-    const point = new window.google.maps.LatLng(lat, lng)
     const results: Array<{ zoneName: string; hubName: string; isTechnical: boolean }> = []
 
     for (const polyData of kmlData.polygons) {
@@ -200,8 +198,17 @@ export class AddressValidationService {
         if (!zoneNames.includes(zoneKey)) continue
       }
 
-      const polygon = new window.google.maps.Polygon({ paths: polyData.path })
-      if (window.google.maps.geometry.poly.containsLocation(point, polygon)) {
+      // Point-in-polygon (Ray casting)
+      let inside = false
+      const vs = polyData.path || []
+      for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+        const xi = vs[i].lat, yi = vs[i].lng
+        const xj = vs[j].lat, yj = vs[j].lng
+        const intersect = ((yi > lng) !== (yj > lng)) && (lat < (xj - xi) * (lng - yi) / (yj - yi) + xi)
+        if (intersect) inside = !inside
+      }
+
+      if (inside) {
         const isTechnical = /авторозвантаження|технічна|авторазгрузка/i.test(polyData.name) || /авторозвантаження|технічна|авторазгрузка/i.test(polyData.folderName);
         results.push({
           zoneName: polyData.name,
@@ -217,7 +224,6 @@ export class AddressValidationService {
     const deliveryZone = results.find(r => !r.isTechnical);
     if (deliveryZone) return { zoneName: deliveryZone.zoneName, hubName: deliveryZone.hubName };
 
-    // Fallback to technical if no delivery zone found
     return { zoneName: results[0].zoneName, hubName: results[0].hubName };
   }
 

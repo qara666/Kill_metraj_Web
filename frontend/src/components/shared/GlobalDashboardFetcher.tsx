@@ -1,36 +1,24 @@
-import React, { useCallback } from 'react';
+import React from 'react';
 import { useExcelData } from '../../contexts/ExcelDataContext';
-import { useDashboardStore } from '../../stores/useDashboardStore';
 import { useDashboardWebSocket } from '../../hooks/useDashboardWebSocket';
-import { ProcessedExcelData } from '../../types';
-import { logger } from '../../utils/ui/logger';
-import { syncDashboardData } from '../../utils/data/dataMerging';
 
+/**
+ * Headless component that maintains a background WebSocket connection 
+ * for dashboard updates. It ensures that data remains synchronized
+ * across all sections of the application.
+ */
 export const GlobalDashboardFetcher: React.FC = () => {
-    const { updateExcelData } = useExcelData();
-    const { apiAutoRefreshEnabled } = useDashboardStore();
+    const { setExcelData } = useExcelData();
 
-    const handleDataLoaded = useCallback((data: ProcessedExcelData) => {
-        logger.info(` Global Fetcher: Loaded ${data.orders.length} orders from Dashboard API (WebSocket/Auto-Refresh)`);
-
-        // Use updateExcelData to sync with existing data (replaces logic)
-        updateExcelData((prevData) => {
-            return syncDashboardData(data, prevData);
-        });
-    }, [updateExcelData]);
-
-    // Use WebSocket-based updates instead of polling
-    const { isConnected } = useDashboardWebSocket({
-        enabled: apiAutoRefreshEnabled,
-        onDataLoaded: handleDataLoaded
+    // The logic is encapsulated in the useDashboardWebSocket hook.
+    // We provide a callback to update the global Excel Data context.
+    useDashboardWebSocket({
+        onDataLoaded: (data) => {
+            console.log('🔄 Global background sync: Data updated');
+            setExcelData(data);
+        },
+        enabled: true // Always enabled if the component is mounted
     });
 
-    // Log connection status
-    React.useEffect(() => {
-        if (apiAutoRefreshEnabled) {
-            logger.info(` WebSocket connection status: ${isConnected ? 'Connected' : 'Disconnected'}`);
-        }
-    }, [isConnected, apiAutoRefreshEnabled]);
-
-    return null; // This component does not render anything
+    return null;
 };

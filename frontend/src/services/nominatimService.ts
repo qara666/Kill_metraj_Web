@@ -1,3 +1,4 @@
+import { API_URL } from '../config/apiConfig'
 /**
  * NominatimService — v2.0
  *
@@ -13,25 +14,53 @@
  */
 
 // ─── Rate limiter (Nominatim policy: max 1 req/s) ────────────────────────────
-let _lastNominatimCall = 0
+let _lastNominatimCall = 0;
+let _nominatimQueue: Array<() => void> = [];
+let _isNominatimProcessing = false;
+
 async function rateLimitedFetch(url: string): Promise<Response> {
-    const now = Date.now()
-    const diff = now - _lastNominatimCall
-    if (diff < 1100) {
-        await new Promise(res => setTimeout(res, 1100 - diff))
-    }
-    _lastNominatimCall = Date.now()
-    return fetch(url, {
-        headers: {
-            'Accept-Language': 'uk,ru,en',
-            'User-Agent': 'KillMetraj_DeliveryApp/2.0 (contact@killmetraj.ua)',
-        }
-    })
+    return new Promise((resolve, reject) => {
+        _nominatimQueue.push(async () => {
+            try {
+                const now = Date.now();
+                const diff = now - _lastNominatimCall;
+                if (diff < 1100) {
+                    await new Promise(r => setTimeout(r, 1100 - diff));
+                }
+                _lastNominatimCall = Date.now();
+                
+                const proxyUrl = `${API_URL}/api/proxy/geocoding?url=${encodeURIComponent(url)}`;
+                
+                const response = await fetch(proxyUrl, {
+                    headers: {
+                        'Accept-Language': 'uk,ru,en'
+                    }
+                });
+                resolve(response);
+            } catch (e) {
+                reject(e);
+            }
+        });
+        
+        _processNominatimQueue();
+    });
 }
 
-// ─── Ukrainian abbreviation expander ─────────────────────────────────────────
+async function _processNominatimQueue() {
+    if (_isNominatimProcessing || _nominatimQueue.length === 0) return;
+    _isNominatimProcessing = true;
+    
+    while (_nominatimQueue.length > 0) {
+        const task = _nominatimQueue.shift();
+        if (task) await task();
+    }
+    
+    _isNominatimProcessing = false;
+}
+
 const UA_ABBREV: Array<[string, string]> = [
     ['вул\\.', 'вулиця'],
+    ['ул\\.', 'вулиця'],
     ['просп\\.', 'проспект'],
     ['пр-т\\.', 'проспект'],
     ['пр-т ', 'проспект '],
@@ -131,6 +160,8 @@ export interface NominatimResult {
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
+import { getCityBounds } from './robust-geocoding/cityBounds'
+
 export class NominatimService {
     private static readonly BASE_URL = 'https://nominatim.openstreetmap.org/search'
     private static readonly REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse'
@@ -142,19 +173,37 @@ export class NominatimService {
     static async geocode(address: string, cityBias?: string): Promise<any[]> {
         const expanded = expandUkrAbbrev(address)
         const city = cityBias || 'Київ'
+        
+        const bounds = getCityBounds(city)
+        // Nominatim expects left,top,right,bottom (west, north, east, south)
+        let viewbox: string | undefined
+        let bounded = false
+        if (bounds) {
+            const [south, west, north, east] = bounds.bbox
+            viewbox = `${west},${north},${east},${south}`
+            bounded = bounds.bounded
+        }
 
-        // Strategy 1: Full address with city bias
-        const results = await this._query(`${expanded}, ${city}, Україна`)
+        const lowerExpanded = expanded.toLowerCase()
+        const hasCity = lowerExpanded.includes(city.toLowerCase()) || 
+                      (city.toLowerCase() === 'київ' && lowerExpanded.includes('киев')) ||
+                      (city.toLowerCase() === 'киев' && lowerExpanded.includes('київ'))
+        const hasCountry = lowerExpanded.includes('україна') || lowerExpanded.includes('украина') || lowerExpanded.includes('ukraine')
+
+        let query = expanded
+        if (!hasCity) query = `${expanded}, ${city}`
+        if (!hasCountry) {
+            const country = (city === 'Киев' || city === 'Київ' || lowerExpanded.includes('киев') || lowerExpanded.includes('київ')) ? 'Україна' : 'Україна'
+            query = `${query}, ${country}`
+        }
+
+        const results = await this._query(query, viewbox, bounded)
         if (results.length > 0) return results
 
-        // Strategy 2: Expanded abbreviations without city bias
-        const results2 = await this._query(expanded)
-        if (results2.length > 0) return results2
-
-        // Strategy 3: Original address as-is with city (if abbreviations didn't change it)
-        if (expanded !== address) {
-            const results3 = await this._query(`${address}, ${city}, Україна`)
-            if (results3.length > 0) return results3
+        // Strategy 2: Original address (no expansion) + city
+        if (expanded !== address && !address.toLowerCase().includes(city.toLowerCase())) {
+            const results2 = await this._query(`${address}, ${city}`, viewbox, bounded)
+            if (results2.length > 0) return results2
         }
 
         return []
@@ -163,7 +212,7 @@ export class NominatimService {
     /**
      * Internal query function with error handling.
      */
-    private static async _query(q: string): Promise<any[]> {
+    private static async _query(q: string, viewbox?: string, bounded?: boolean): Promise<any[]> {
         try {
             const url = new URL(this.BASE_URL)
             url.searchParams.append('q', q)
@@ -171,6 +220,13 @@ export class NominatimService {
             url.searchParams.append('addressdetails', '1')
             url.searchParams.append('countrycodes', 'ua')
             url.searchParams.append('limit', '5')
+            
+            if (viewbox) {
+                url.searchParams.append('viewbox', viewbox)
+                if (bounded) {
+                    url.searchParams.append('bounded', '1')
+                }
+            }
 
             const response = await rateLimitedFetch(url.toString())
             if (!response.ok) throw new Error(`Nominatim ${response.status}`)
@@ -179,9 +235,9 @@ export class NominatimService {
             return items
                 .sort((a, b) => b.importance - a.importance)
                 .map(toRawCandidate)
-        } catch (error) {
-            console.warn('[Nominatim] query failed:', error)
-            return []
+        } catch (error: any) {
+            console.warn('[Nominatim] query failed:', error.message)
+            throw error // Re-throw to allow Geoapify fallback in RobustGeocodingService
         }
     }
 

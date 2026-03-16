@@ -1,13 +1,14 @@
 import { useEffect, useRef } from 'react';
-import { googleApiCache } from '../services/googleApiCache';
 import { GeocodingService } from '../services/geocodingService';
 import { Order } from '../types';
+
+// Rate-limit: avoid spamming during search
+const sessionGeocoded = new Set<string>();
 
 /**
  * Background Pre-geocoder
  * 
- * Silently warms up the geocode cache (L1 and L2) when orders are loaded.
- * Uses requestIdleCallback so it never blocks UI rendering or route calculation.
+ * Silently warms up the geocode cache when orders are loaded.
  */
 export function useBackgroundGeocoder(orders: Order[]) {
     const queueRef = useRef<Set<string>>(new Set());
@@ -16,19 +17,16 @@ export function useBackgroundGeocoder(orders: Order[]) {
     useEffect(() => {
         if (!orders || orders.length === 0) return;
 
-        // 1. Find all addresses we haven't seen yet and that aren't already in L1 cache
         const newAddresses = orders
             .map(o => o.address?.trim())
             .filter(addr => addr && addr.length > 5);
 
         let added = false;
         newAddresses.forEach(addr => {
-            // Check if already in L1 localStorage
-            // We do a fast synchronous check. If it's already in L1, no need to pre-geocode.
-            const L1hit = googleApiCache.hasGeocodeCacheSync(addr);
-            if (!L1hit && !queueRef.current.has(addr)) {
+            if (!sessionGeocoded.has(addr) && !queueRef.current.has(addr)) {
                 queueRef.current.add(addr);
                 added = true;
+                sessionGeocoded.add(addr);
             }
         });
 
@@ -79,11 +77,15 @@ export function useBackgroundGeocoder(orders: Order[]) {
 
         // Keep running until queue is empty
         if (queueRef.current.size > 0) {
-            if ('requestIdleCallback' in window) {
-                (window as any).requestIdleCallback(doWork, { timeout: 2000 });
-            } else {
-                setTimeout(doWork, 500);
-            }
+            // Add a small 500ms breather even between idle callbacks to prevent UI starvation 
+            // during massive (300+) order loads when the tab is first opened.
+            setTimeout(() => {
+                if ('requestIdleCallback' in window) {
+                    (window as any).requestIdleCallback(doWork, { timeout: 3000 });
+                } else {
+                    setTimeout(doWork, 1000);
+                }
+            }, 500);
         } else {
             isProcessingRef.current = false;
         }

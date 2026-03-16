@@ -10,7 +10,8 @@ import {
   MapIcon,
   ClockIcon,
   PlusIcon,
-  TrashIcon
+  TrashIcon,
+  PlayIcon
 } from '@heroicons/react/24/outline'
 import { clsx } from 'clsx'
 import { CourierCard } from './CourierCard'
@@ -21,6 +22,7 @@ import { toast } from 'react-hot-toast'
 import { Tooltip } from '../shared/Tooltip'
 
 import { normalizeCourierName } from '../../utils/data/courierName'
+import { exportToGoogleMaps, exportToValhalla } from '../../utils/routes/routeExport'
 
 // Ленивая загрузка тяжелых компонентов
 const HelpModalCouriers = lazy(() => import('../modals/HelpModalCouriers').then(m => ({ default: m.HelpModalCouriers })))
@@ -237,24 +239,25 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
 
 
   const openRouteInGoogleMaps = (route: any) => {
-    if (!route || !route.orders || route.orders.length === 0) {
-      toast.error('Маршрут пустой')
-      return
-    }
-    const meta = route.geoMeta || {}
-    const hasCoords = (m: any) => typeof m?.lat === 'number' && typeof m?.lng === 'number'
-    const waypointsMeta: any[] = Array.isArray(meta.waypoints) ? meta.waypoints : []
-    const missing = !hasCoords(meta.origin) || !hasCoords(meta.destination) || waypointsMeta.length !== route.orders.length || waypointsMeta.some(w => !hasCoords(w))
-    if (missing) {
-      toast.error('Щоб відкрити коректний маршрут у Google Maps, спочатку перерахуйте його.')
-      return
-    }
-    const parts: string[] = []
-    parts.push(`${meta.origin.lat},${meta.origin.lng}`)
-    waypointsMeta.forEach((w: any) => parts.push(`${w.lat},${w.lng}`))
-    parts.push(`${meta.destination.lat},${meta.destination.lng}`)
-    const googleMapsUrl = `https://www.google.com/maps/dir/${parts.map(encodeURIComponent).join('/')}`
-    window.open(googleMapsUrl, '_blank')
+    if (!route) return
+    const url = exportToGoogleMaps({
+      route,
+      orders: route.orders || [],
+      startAddress: route.startAddress || '',
+      endAddress: route.endAddress || ''
+    })
+    if (url) window.open(url, '_blank')
+  }
+
+  const openRouteInValhalla = (route: any) => {
+    if (!route) return
+    const url = exportToValhalla({
+      route,
+      orders: route.orders || [],
+      startAddress: route.startAddress || '',
+      endAddress: route.endAddress || ''
+    })
+    if (url) window.open(url, '_blank')
   }
 
   const deleteRoute = (routeId: string) => {
@@ -663,19 +666,33 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
                                     </span>
                                   </div>
                                   <div className="flex space-x-2">
-                                    <button
-                                      onClick={() => openRouteInGoogleMaps(route)}
-                                      disabled={!route.isOptimized}
-                                      className={clsx(
-                                        'p-2 rounded-lg transition-all duration-200',
-                                        route.isOptimized
-                                          ? 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
-                                          : 'text-gray-400 cursor-not-allowed'
-                                      )}
-                                      title={route.isOptimized ? "Відкрити маршрут у Google Maps" : "Маршрут не розрахований"}
-                                    >
-                                      <MapIcon className="h-4 w-4" />
-                                    </button>
+                                      <button
+                                        onClick={() => openRouteInGoogleMaps(route)}
+                                        disabled={!route.isOptimized}
+                                        className={clsx(
+                                          'p-2 rounded-lg transition-all duration-200',
+                                          route.isOptimized
+                                            ? 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
+                                            : 'text-gray-400 cursor-not-allowed'
+                                        )}
+                                        title={route.isOptimized ? "Відкрити маршрут у Google Maps" : "Маршрут не розрахований"}
+                                      >
+                                        <PlayIcon className="h-4 w-4" />
+                                      </button>
+
+                                      <button
+                                        onClick={() => openRouteInValhalla(route)}
+                                        disabled={!route.isOptimized}
+                                        className={clsx(
+                                          'p-2 rounded-lg transition-all duration-200',
+                                          route.isOptimized
+                                            ? 'text-green-600 hover:text-green-800 hover:bg-green-50'
+                                            : 'text-gray-400 cursor-not-allowed'
+                                        )}
+                                        title={route.isOptimized ? "Відкрити маршрут у Valhalla" : "Маршрут не розрахований"}
+                                      >
+                                        <MapIcon className="h-4 w-4" />
+                                      </button>
 
                                     <button
                                       onClick={() => deleteRoute(route.id)}

@@ -4,12 +4,10 @@ import { format } from 'date-fns';
 import { ArrowPathIcon, CalendarIcon } from '@heroicons/react/24/outline';
 import { clsx } from 'clsx';
 import { useTheme } from '../../contexts/ThemeContext';
-import { useExcelData } from '../../contexts/ExcelDataContext';
 import { useDashboardStore } from '../../stores/useDashboardStore';
 
 export const DashboardApiSection: React.FC = () => {
     const { isDark } = useTheme();
-    const { clearExcelData } = useExcelData();
 
     // Store values
     const apiSyncStatus = useDashboardStore(s => s.apiSyncStatus);
@@ -72,8 +70,8 @@ export const DashboardApiSection: React.FC = () => {
     };
 
     const handleDateChange = (date: string) => {
-        // Clear old data immediately to prevent layering/confusion while loading
-        clearExcelData();
+        // Stop auto-clearing! This causes data loss.
+        // clearExcelData();
         setSelectedDate(date);
     };
 

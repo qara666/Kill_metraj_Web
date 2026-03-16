@@ -11,6 +11,7 @@ const authRoutes = require('./src/routes/authRoutes');
 const userRoutes = require('./src/routes/userRoutes');
 const presetRoutes = require('./src/routes/presetRoutes');
 const logRoutes = require('./src/routes/logRoutes');
+const geocacheRoutes = require('./src/routes/geocacheRoutes');
 const logger = require('./src/utils/logger');
 // Константы и настройки загрузки файлов
 const { generalLimiter, strictLimiter, uploadLimiter, telegramLimiter } = require('./src/middleware/rateLimiter');
@@ -85,8 +86,13 @@ app.set('trust proxy', true); // Trust all hops on Render/Cloudflare
 // CORS configuration for Render and local development
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow local development
-    if (!origin || origin.startsWith('http://localhost') || origin === FRONTEND_URL) {
+    // Allow local development (localhost and 127.0.0.1)
+    const allowed = !origin || 
+                   origin.startsWith('http://localhost') || 
+                   origin.startsWith('http://127.0.0.1') || 
+                   origin === FRONTEND_URL;
+    
+    if (allowed) {
       return callback(null, true);
     }
     // Allow any Render subdomain
@@ -95,12 +101,18 @@ const corsOptions = {
     }
     // Log disallowed origins to help debugging
     logger.warn('[CORS] Источник запрещен Express:', { origin });
-    callback(null, false); // Don't throw error, just don't allow
+    callback(null, false);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'X-API-KEY', 'X-Requested-With', 'Accept', 'Origin'],
   maxAge: 86400
+};
+
+// Explicitly handle 127.0.0.1 for local loops
+const explicitAllow = (origin) => {
+  if (!origin) return true;
+  return origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1');
 };
 
 // Custom Middleware to handle CORS Preflight explicitly
@@ -114,10 +126,10 @@ app.use((req, res, next) => {
       origin === FRONTEND_URL ||
       origin.endsWith('.onrender.com');
 
-    if (isAllowed) {
+    if (explicitAllow(origin)) {
       res.header('Access-Control-Allow-Origin', origin || '*');
       res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-API-KEY, X-Requested-With, Accept, Origin');
+      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-API-KEY, X-Requested-With, Accept, Origin, User-Agent');
       res.header('Access-Control-Allow-Credentials', 'true');
       res.header('Access-Control-Max-Age', '86400');
       return res.sendStatus(204);
@@ -131,6 +143,41 @@ app.use(cors(corsOptions));
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+
+/**
+ * Geocoding Proxy to bypass browser CORS for free services (Photon, Nominatim, Geoapify)
+ */
+app.get('/api/proxy/geocoding', async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).json({ error: 'Missing URL parameter' });
+
+  try {
+    const axios = require('axios');
+    const response = await axios.get(url, {
+      timeout: 7000,
+      headers: {
+        'User-Agent': 'KillMetraj_DeliveryApp/2.0 (contact@killmetraj.ua)',
+        'Referer': 'https://killmetraj.ua/',
+        'Accept-Language': 'uk,ru,en'
+      }
+    });
+    res.json(response.data);
+  } catch (error) {
+    const status = error.response?.status || 500;
+    const errorData = error.response?.data;
+    logger.error('Proxy request failed', { 
+      url, 
+      status, 
+      error: error.message,
+      data: errorData
+    });
+    res.status(status).json({ 
+      error: 'Proxy request failed', 
+      message: error.message,
+      details: errorData 
+    });
+  }
 });
 
 app.use(express.json({ limit: '50mb' }));
@@ -318,6 +365,9 @@ app.use('/api/maintenance', maintenanceRoutes);
 
 // Аудит логов (только для админов)
 app.use('/api/logs', logRoutes);
+
+// Геокеш и KML (Централизованное хранилище зон)
+app.use('/api/geocache', geocacheRoutes);
 
 // Эндпоинты Health check
 app.get('/health/liveness', livenessProbe);

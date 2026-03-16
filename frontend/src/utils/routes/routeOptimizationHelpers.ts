@@ -1528,9 +1528,18 @@ export async function calculateRouteMetrics(
   let distance = route.totalDistance || 0
   let duration = route.totalDuration || 0
 
-  // Если есть функция для вычисления расстояния, используем её
+  // If getRouteDistance is provided, use it (it returns meters from Valhalla)
   if (context?.getRouteDistance && route.orders.length > 0) {
     distance = await context.getRouteDistance(route.orders)
+  }
+
+  // ── Unit safety guard ────────────────────────────────────────────────────────
+  // All routing APIs (Valhalla, Google) return totalDistance in METERS.
+  // A real courier route is never less than 50 meters. If the value looks like
+  // it's in km (< 50), it likely came from a legacy path that divided by 1000.
+  // Normalise to meters so efficiency calculations are consistent.
+  if (distance > 0 && distance < 50) {
+    distance = distance * 1000 // km → meters
   }
 
   if (context?.getRouteDuration && route.orders.length > 0) {

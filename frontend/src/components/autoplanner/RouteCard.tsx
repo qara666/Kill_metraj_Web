@@ -7,11 +7,15 @@ import {
     MapPinIcon,
     ChartBarIcon,
     PlayIcon,
-    ArrowsPointingOutIcon
+    ArrowsPointingOutIcon,
+    MapIcon,
+    DocumentArrowDownIcon,
+    GlobeAltIcon,
+    FlagIcon
 } from '@heroicons/react/24/outline';
 import { RouteMap } from './RouteMap';
 import { getKitchenTime, getPlannedTime } from '../../utils/data/timeUtils';
-import { exportToGoogleMaps, exportToWaze, exportToPDF } from '../../utils/routes/routeExport';
+import { exportToGoogleMaps, exportToWaze, exportToPDF, exportToValhalla, exportToVisicom } from '../../utils/routes/routeExport';
 import { generateRouteNotifications, formatNotificationForDisplay } from '../../utils/ui/notifications';
 import { calculateRouteEfficiencyMetrics } from '../../utils/routes/routeEfficiency';
 
@@ -149,9 +153,11 @@ export const RouteCard: React.FC<RouteCardProps> = React.memo(({
                     >
                         <ArrowsPointingOutIcon className="w-5 h-5" />
                     </button>
-                    <button onClick={(e) => { e.stopPropagation(); exportToGoogleMaps(route); }} className="p-2 rounded-xl hover:bg-blue-500/10 text-blue-400" title="Google Maps"><PlayIcon className="w-5 h-5" /></button>
-                    <button onClick={(e) => { e.stopPropagation(); exportToWaze(route); }} className="p-2 rounded-xl hover:bg-blue-500/10 text-blue-400" title="Waze"></button>
-                    <button onClick={(e) => { e.stopPropagation(); exportToPDF(route); }} className="p-2 rounded-xl hover:bg-blue-500/10 text-blue-400" title="PDF"></button>
+                    <button onClick={(e) => { e.stopPropagation(); const url = exportToGoogleMaps({ route, orders: route.routeChainFull || [], startAddress: route.startAddress, endAddress: route.endAddress }); if (url) window.open(url, '_blank'); }} className="p-2 rounded-xl hover:bg-blue-500/10 text-blue-400" title="Google Maps"><PlayIcon className="w-5 h-5" /></button>
+                    <button onClick={(e) => { e.stopPropagation(); const url = exportToValhalla({ route, orders: route.routeChainFull || [], startAddress: route.startAddress, endAddress: route.endAddress }); if (url) window.open(url, '_blank'); }} className="p-2 rounded-xl hover:bg-green-500/10 text-green-400" title="OSRM (Обычная точность)"><MapIcon className="w-5 h-5" /></button>
+                    <button onClick={(e) => { e.stopPropagation(); const url = exportToVisicom({ route, orders: route.routeChainFull || [], startAddress: route.startAddress, endAddress: route.endAddress }); if (url) window.open(url, '_blank'); }} className="p-2 rounded-xl hover:bg-yellow-500/10 text-yellow-500" title="Visicom (🇺🇦 Максимальная точность для Украины)"><FlagIcon className="w-5 h-5" /></button>
+                    <button onClick={(e) => { e.stopPropagation(); const url = exportToWaze({ route, orders: route.routeChainFull || [], startAddress: route.startAddress, endAddress: route.endAddress }); if (url) window.open(url, '_blank'); }} className="p-2 rounded-xl hover:bg-blue-500/10 text-blue-400" title="Waze"><GlobeAltIcon className="w-5 h-5" /></button>
+                    <button onClick={(e) => { e.stopPropagation(); exportToPDF({ route, orders: route.routeChainFull || [], startAddress: route.startAddress, endAddress: route.endAddress }); }} className="p-2 rounded-xl hover:bg-blue-500/10 text-blue-400" title="PDF"><DocumentArrowDownIcon className="w-5 h-5" /></button>
                 </div>
             </div>
 

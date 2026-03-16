@@ -1,91 +1,83 @@
+import { API_URL } from '../config/apiConfig'
+
 /**
- * Service for Geoapify Geocoding API
- * Docs: https://www.geoapify.com/geocoding-api
+ * GeoapifyService — Secondary Geocoding Provider
+ * Highly reliable for outskirts and fuzzy queries.
  */
-import { localStorageUtils } from '../utils/ui/localStorage'
+
+const GEOAPIFY_KEY = 'e57726487e4d41e7807a00508007a6ec' // FREE key shared across apps
 
 export class GeoapifyService {
-    private static getApiKey(): string {
-        const settings = localStorageUtils.getAllSettings()
-        return settings.geoapifyApiKey || ''
-    }
-
-    /**
-     * Geocode an address
-     */
-    static async geocode(address: string): Promise<any[]> {
-        const apiKey = this.getApiKey()
-        if (!apiKey) {
-            console.warn('Geoapify API Key not set')
-            return []
-        }
-
+    static async geocode(address: string, cityBias?: string): Promise<any[]> {
         try {
+            const query = cityBias ? `${address}, ${cityBias}, Ukraine` : `${address}, Ukraine`
             const url = new URL('https://api.geoapify.com/v1/geocode/search')
-            url.searchParams.append('text', address)
-            url.searchParams.append('apiKey', apiKey)
+            url.searchParams.append('text', query)
+            url.searchParams.append('apiKey', GEOAPIFY_KEY)
             url.searchParams.append('limit', '5')
-            url.searchParams.append('format', 'json')
+            url.searchParams.append('lang', 'uk')
 
-            const response = await fetch(url.toString())
-            if (!response.ok) {
-                throw new Error(`Geoapify error: ${response.status}`)
-            }
+            const proxyUrl = `${API_URL}/api/proxy/geocoding?url=${encodeURIComponent(url.toString())}`
+            
+            const response = await fetch(proxyUrl)
+            if (!response.ok) throw new Error(`Geoapify status: ${response.status}`)
 
             const data = await response.json()
-            const results = data.results || []
+            const features = data.features || []
 
-            return results.map((r: any) => ({
-                success: true,
-                formattedAddress: r.formatted,
-                latitude: r.lat,
-                longitude: r.lon,
-                placeId: r.place_id,
-                locationType: r.rank?.confidence > 0.9 ? 'ROOFTOP' : 'APPROXIMATE',
-                types: [r.result_type],
-                raw: r
-            }))
-        } catch (error) {
-            console.error('Geoapify geocode failed:', error)
+            return features.map((f: any) => {
+                const props = f.properties || {}
+                const geom = f.geometry || {}
+                
+                const components: any[] = []
+                if (props.housenumber) components.push({ long_name: props.housenumber, short_name: props.housenumber, types: ['street_number'] })
+                if (props.street) components.push({ long_name: props.street, short_name: props.street, types: ['route'] })
+                if (props.city) components.push({ long_name: props.city, short_name: props.city, types: ['locality'] })
+
+                return {
+                    formatted_address: props.formatted || '',
+                    geometry: {
+                        location: {
+                            lat: geom.coordinates[1],
+                            lng: geom.coordinates[0]
+                        },
+                        location_type: props.housenumber ? 'ROOFTOP' : 'RANGE_INTERPOLATED'
+                    },
+                    address_components: components,
+                    place_id: `geoapify_${props.place_id}`,
+                    types: [props.result_type],
+                    _source: 'geoapify'
+                }
+            })
+        } catch (error: any) {
+            console.warn('[Geoapify] failed:', error.message)
             return []
         }
     }
 
-    /**
-     * Reverse geocode
-     */
-    static async reverse(lat: number, lng: number): Promise<any | null> {
-        const apiKey = this.getApiKey()
-        if (!apiKey) return null
-
+    static async reverse(lat: number, lng: number): Promise<any> {
         try {
             const url = new URL('https://api.geoapify.com/v1/geocode/reverse')
-            url.searchParams.append('lat', String(lat))
-            url.searchParams.append('lon', String(lng))
-            url.searchParams.append('apiKey', apiKey)
-            url.searchParams.append('format', 'json')
+            url.searchParams.append('lat', lat.toString())
+            url.searchParams.append('lon', lng.toString())
+            url.searchParams.append('apiKey', GEOAPIFY_KEY)
 
-            const response = await fetch(url.toString())
-            if (!response.ok) {
-                throw new Error(`Geoapify error: ${response.status}`)
-            }
+            const proxyUrl = `${API_URL}/api/proxy/geocoding?url=${encodeURIComponent(url.toString())}`
+            const response = await fetch(proxyUrl)
+            if (!response.ok) return null
 
             const data = await response.json()
-            const r = data.results?.[0]
-            if (!r) return null
+            const feature = data.features?.[0]
+            if (!feature) return null
 
+            const props = feature.properties
             return {
                 success: true,
-                formattedAddress: r.formatted,
-                latitude: r.lat,
-                longitude: r.lon,
-                placeId: r.place_id,
-                locationType: 'ROOFTOP',
-                types: [r.result_type],
-                raw: r
+                formattedAddress: props.formatted || '',
+                latitude: lat,
+                longitude: lng
             }
-        } catch (error) {
-            console.error('Geoapify reverse failed:', error)
+        } catch {
             return null
         }
     }

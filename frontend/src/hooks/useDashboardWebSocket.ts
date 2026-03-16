@@ -168,9 +168,9 @@ export const useDashboardWebSocket = ({
 
     const disconnectWebSocket = useCallback(() => {
         if (!isConnectedRef.current) return;
-        socketService.disconnect();
+        socketService.offDashboardUpdate(handleDashboardUpdate);
         isConnectedRef.current = false;
-    }, []);
+    }, [handleDashboardUpdate]);
 
     // Effect for manual triggers
     useEffect(() => {

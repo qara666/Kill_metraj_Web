@@ -31,8 +31,8 @@ export const transformDashboardData = (
     const errors: any[] = [];
 
     // Преобразование курьеров
-    apiData.couriers.forEach((swaggerCourier) => {
-        const courierName = asNonEmptyString((swaggerCourier as any)?.name);
+    apiData.couriers.forEach((apiCourier) => {
+        const courierName = asNonEmptyString((apiCourier as any)?.name);
 
         // Пропускаем "ID:0", так как это техническое обозначение неназначенного заказа в API
         if (isId0CourierName(courierName)) return;
@@ -41,9 +41,9 @@ export const transformDashboardData = (
 
         // Определяем тип транспорта из API или по умолчанию 'car'
         let vehicleType: 'car' | 'motorcycle' = 'car';
-        if (swaggerCourier.vehicleType) {
+        if (apiCourier.vehicleType) {
             // Нормализуем значение из API
-            const apiType = swaggerCourier.vehicleType.toLowerCase();
+            const apiType = apiCourier.vehicleType.toLowerCase();
             if (apiType === 'motorcycle' || apiType === 'мото' || apiType === 'мотоцикл') {
                 vehicleType = 'motorcycle';
             }
@@ -51,7 +51,7 @@ export const transformDashboardData = (
 
         couriers.push({
             name: courierName,
-            isActive: swaggerCourier.isActive,
+            isActive: apiCourier.isActive,
             vehicleType: vehicleType,
         });
     });
@@ -61,28 +61,28 @@ export const transformDashboardData = (
 
 
     // Преобразование заказов
-    apiData.orders.forEach((swaggerOrder, index) => {
+    apiData.orders.forEach((apiOrder, index) => {
         try {
             // CLIENT-SIDE FAIL-SAFE: Verify date and department if possible
             // 1. Date check
             /* DISABLED: API already filters by date range correctly. Client-side check causes issues with timezone differences or late night orders.
-            if (effectiveDate && swaggerOrder.creationDate) {
+            if (effectiveDate && apiOrder.creationDate) {
                 // creationDate is "dd.mm.yyyy HH:MM"
                 // effectiveDate is "dd.mm.yyyy"
-                if (!swaggerOrder.creationDate.includes(effectiveDate)) {
-                    // console.log(`[dashboardTransformer] Skipping order ${swaggerOrder.orderNumber}: Date mismatch (${swaggerOrder.creationDate} vs ${effectiveDate})`);
+                if (!apiOrder.creationDate.includes(effectiveDate)) {
+                    // console.log(`[dashboardTransformer] Skipping order ${apiOrder.orderNumber}: Date mismatch (${apiOrder.orderNumber} vs ${effectiveDate})`);
                     return; // Skip wrong date
                 }
             }
             */
 
-            const order = transformDashboardOrder(swaggerOrder, effectiveDate, index);
+            const order = transformDashboardOrder(apiOrder, effectiveDate, index);
             orders.push(order);
         } catch (error) {
             errors.push({
                 row: index + 1,
-                message: `Ошибка обработки заказа ${swaggerOrder.orderNumber}: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
-                data: swaggerOrder,
+                message: `Ошибка обработки заказа ${apiOrder.orderNumber}: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
+                data: apiOrder,
             });
         }
     });
@@ -141,7 +141,7 @@ export const transformDashboardData = (
 /**
  * Преобразование одного заказа из формата API в внутренний формат
  */
-const transformDashboardOrder = (swaggerOrder: DashboardOrderResponse, baseDate: string, index: number): Order => {
+const transformDashboardOrder = (apiOrder: DashboardOrderResponse, baseDate: string, index: number): Order => {
     // Вспомогательная функция для проверки на "пустое" или "нулевое" время
     const isTimeEmpty = (t?: string) => {
         if (!t) return true;
@@ -151,19 +151,19 @@ const transformDashboardOrder = (swaggerOrder: DashboardOrderResponse, baseDate:
     };
 
     // Парсинг времени готовности на кухне
-    const readyAtSource = parseTimeToTimestamp(baseDate, swaggerOrder.kitchenTime);
+    const readyAtSource = parseTimeToTimestamp(baseDate, apiOrder.kitchenTime);
 
     // Парсинг дедлайна доставки. 
     // Приоритет: plannedTime, затем deliverBy (SLA). Игнорируем 00:00.
     let deadlineAt = null;
     let deadlineStr = '';
 
-    if (!isTimeEmpty(swaggerOrder.plannedTime)) {
-        deadlineAt = parseTimeToTimestamp(baseDate, swaggerOrder.plannedTime);
-        deadlineStr = swaggerOrder.plannedTime;
-    } else if (!isTimeEmpty(swaggerOrder.deliverBy)) {
-        deadlineAt = parseTimeToTimestamp(baseDate, swaggerOrder.deliverBy);
-        deadlineStr = swaggerOrder.deliverBy;
+    if (!isTimeEmpty(apiOrder.plannedTime)) {
+        deadlineAt = parseTimeToTimestamp(baseDate, apiOrder.plannedTime);
+        deadlineStr = apiOrder.plannedTime;
+    } else if (!isTimeEmpty(apiOrder.deliverBy)) {
+        deadlineAt = parseTimeToTimestamp(baseDate, apiOrder.deliverBy);
+        deadlineStr = apiOrder.deliverBy;
     }
 
     // Если все еще пусто — пробуем получить хоть что-то (даже 00:00) или вычисляем дефолт
@@ -181,32 +181,32 @@ const transformDashboardOrder = (swaggerOrder: DashboardOrderResponse, baseDate:
 
     // Извлечение времени перехода в доставку (Phase 4.4)
     let handoverAt = null;
-    if (swaggerOrder.statusTimings?.deliveringAt) {
-        handoverAt = new Date(swaggerOrder.statusTimings.deliveringAt).getTime();
+    if (apiOrder.statusTimings?.deliveringAt) {
+        handoverAt = new Date(apiOrder.statusTimings.deliveringAt).getTime();
     }
 
     return {
         idx: index,
-        address: swaggerOrder.address,
-        orderNumber: swaggerOrder.orderNumber,
+        address: apiOrder.address,
+        orderNumber: apiOrder.orderNumber,
         readyAtSource,
         deadlineAt,
         handoverAt, // Добавлено (Phase 4.4)
         plannedTime: deadlineStr || 'Без времени',
-        courier: (swaggerOrder.courier && isId0CourierName(swaggerOrder.courier)) ? 'Не назначено' : asNonEmptyString(swaggerOrder.courier),
-        amount: swaggerOrder.amount,
-        paymentMethod: swaggerOrder.paymentMethod,
-        status: swaggerOrder.status,
-        orderComment: swaggerOrder.orderComment,
-        orderType: swaggerOrder.orderType,
-        creationDate: swaggerOrder.creationDate,
-        deliveryTime: swaggerOrder.deliveryTime,
-        changeAmount: swaggerOrder.changeAmount,
-        totalTime: swaggerOrder.totalTime,
+        courier: (apiOrder.courier && isId0CourierName(apiOrder.courier)) ? 'Не назначено' : asNonEmptyString(apiOrder.courier),
+        amount: apiOrder.amount,
+        paymentMethod: apiOrder.paymentMethod,
+        status: apiOrder.status,
+        orderComment: apiOrder.orderComment,
+        orderType: apiOrder.orderType,
+        creationDate: apiOrder.creationDate,
+        deliveryTime: apiOrder.deliveryTime,
+        changeAmount: apiOrder.changeAmount,
+        totalTime: apiOrder.totalTime,
         coords: null,
         isSelected: false,
         isInRoute: false,
-        raw: swaggerOrder,
+        raw: apiOrder,
     };
 };
 

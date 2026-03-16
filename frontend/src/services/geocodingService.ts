@@ -2,11 +2,11 @@
  * Сервис геокодирования через Google Maps API
  *
  * v2 COST OPTIMIZATIONS:
- *  - Routes ALL geocoding calls through googleApiCache (persistent 30-day localStorage cache)
+ *  - Routes ALL geocoding calls through persistent 30-day localStorage cache
  *  - In-flight deduplication: same address never fires twice simultaneously
- *  - Removed redundant in-memory cache (superseded by googleApiCache persistence)
+ *  - Removed redundant in-memory cache (superseded by persistent cache)
+ *  5. All results backed by persistent geocode cache (survives page reloads)
  */
-import { googleApiCache } from './googleApiCache'
 import { NominatimService } from './nominatimService'
 import { GeoapifyService } from './geoapifyService'
 import { localStorageUtils } from '../utils/ui/localStorage'
@@ -29,6 +29,7 @@ export interface GeocodingResult {
   warnings?: string[]
   locationType?: string
   types?: string[]
+  _source?: string
 }
 
 export interface GeocodingOptions {
@@ -45,7 +46,8 @@ export class GeocodingService {
    */
   private static getProvider(): 'google' | 'nominatim' | 'geoapify' {
     const settings = localStorageUtils.getAllSettings()
-    return settings.geocodingProvider || 'google'
+    // Align with user's preference for free-first
+    return settings.geocodingProvider || 'nominatim'
   }
 
   static isReady(): boolean {
@@ -57,32 +59,6 @@ export class GeocodingService {
   /**
    * Map raw Google Geocoder results to GeocodingResult[]
    */
-  private static mapGoogleResults(results: any[], address: string): GeocodingResult[] {
-    if (!results || results.length === 0) {
-      return [{ success: false, formattedAddress: address, error: 'Адрес не найден' }]
-    }
-    return results.map((result: any) => {
-      const lat = typeof result.geometry.location.lat === 'function'
-        ? result.geometry.location.lat()
-        : result.geometry.location.lat
-      const lng = typeof result.geometry.location.lng === 'function'
-        ? result.geometry.location.lng()
-        : result.geometry.location.lng
-      const geo: GeocodingResult = {
-        success: true,
-        formattedAddress: result.formatted_address,
-        latitude: lat,
-        longitude: lng,
-        placeId: result.place_id,
-        locationType: result.geometry.location_type,
-        types: result.types,
-        warnings: []
-      }
-      if (result.geometry.location_type === 'APPROXIMATE') geo.warnings?.push('Адрес найден приблизительно')
-      if (result.geometry.location_type === 'GEOMETRIC_CENTER') geo.warnings?.push('Адрес найден как геометрический центр')
-      return geo
-    })
-  }
 
   /**
    * Geocode an address — returns multiple candidates.
@@ -93,6 +69,7 @@ export class GeocodingService {
   ): Promise<GeocodingResult[]> {
     const provider = options.provider || this.getProvider()
 
+    // ─── Free Providers (Non-Google) ───
     if (provider === 'nominatim') {
       return NominatimService.geocode(address, options.region || 'ua')
     }
@@ -101,39 +78,54 @@ export class GeocodingService {
       return GeoapifyService.geocode(address)
     }
 
-    // Google Provider
+    // ─── Google Provider (via Robust engine) ───
     try {
-      const req: any = { address, region: options.region || 'ua' }
-      if (options.componentRestrictions) req.componentRestrictions = options.componentRestrictions
+      const res = await robustGeocodingService.geocode(address, {
+        cityBias: options.region === 'ua' ? 'Киев' : options.region,
+        hintPoint: options.bounds?.getCenter ? (() => {
+          const center = options.bounds.getCenter()
+          return {
+            lat: typeof center.lat === 'function' ? center.lat() : center.lat,
+            lng: typeof center.lng === 'function' ? center.lng() : center.lng
+          }
+        })() : undefined
 
-      // Convert plain bounds object to LatLngBounds if needed
-      if (options.bounds && typeof window !== 'undefined' && (window as any).google?.maps) {
-        if (options.bounds instanceof (window as any).google.maps.LatLngBounds) {
-          req.bounds = options.bounds
-        } else {
-          try {
-            const b = options.bounds
-            req.bounds = new (window as any).google.maps.LatLngBounds(
-              new (window as any).google.maps.LatLng(b.south, b.west),
-              new (window as any).google.maps.LatLng(b.north, b.east)
-            )
-          } catch { }
-        }
-      }
+      })
 
-      const results = await googleApiCache.geocode(req)
-      return this.mapGoogleResults(results, address)
+      return res.allCandidates.map((c: any) => ({
+        success: true,
+        formattedAddress: c.raw.formatted_address,
+        latitude: c.lat,
+        longitude: c.lng,
+        placeId: c.raw.place_id,
+        locationType: c.raw.geometry.location_type,
+        types: c.raw.types,
+        warnings: c.isTechnicalZone ? ['Адрес находится в технической зоне'] : []
+      }))
     } catch {
       return [{ success: false, formattedAddress: address, error: 'Ошибка геокодирования' }]
     }
   }
 
-  /**
-   * Geocode an address — returns best result.
-   */
   static async geocodeAddress(address: string, options: GeocodingOptions = {}): Promise<GeocodingResult> {
-    const results = await this.geocodeAddressMulti(address, options)
-    return results[0]
+    // For ALL providers, we now prefer routing through robustGeocodingService 
+    // because it handles variants, zones, and technical fallbacks.
+    const res = await robustGeocodingService.geocode(address, {
+      cityBias: options.region === 'ua' ? 'Київ' : (options.region || undefined),
+    })
+    
+    if (!res.best) return { success: false, formattedAddress: address, error: 'Адрес не найден или вне зон' }
+
+    return {
+      success: true,
+      formattedAddress: res.best.raw.formatted_address,
+      latitude: res.best.lat,
+      longitude: res.best.lng,
+      placeId: res.best.raw.place_id,
+      locationType: res.best.raw.geometry.location_type,
+      types: res.best.raw.types,
+      warnings: res.best.isTechnicalZone ? ['Адрес находится в технической зоне'] : []
+    }
   }
 
   /**
@@ -144,12 +136,13 @@ export class GeocodingService {
     contextCoords: { lat: number; lng: number }[],
     options: GeocodingOptions = {}
   ): Promise<GeocodingResult> {
-    if (contextCoords.length > 0 && typeof window !== 'undefined' && (window as any).google?.maps) {
-      try {
-        const bounds = new (window as any).google.maps.LatLngBounds()
-        contextCoords.forEach(c => bounds.extend(new (window as any).google.maps.LatLng(c.lat, c.lng)))
-        options.bounds = bounds
-      } catch { }
+    if (contextCoords.length > 0) {
+      // Calculate a simple hint center instead of a Google Bounds object
+      let sumLat = 0, sumLng = 0
+      contextCoords.forEach(c => { sumLat += c.lat; sumLng += c.lng })
+      options.bounds = { 
+        getCenter: () => ({ lat: sumLat / contextCoords.length, lng: sumLng / contextCoords.length }) 
+      }
     }
     return this.geocodeAndCleanAddress(address, options)
   }
@@ -170,23 +163,17 @@ export class GeocodingService {
       return result || { success: false, formattedAddress: '', error: 'Адрес не найден' }
     }
 
-    // Google Provider
+    // Google Provider (via Robust engine)
     try {
-      const results = await googleApiCache.geocode({ location: { lat, lng } })
-      if (!results || results.length === 0) {
-        return { success: false, formattedAddress: '', error: 'Адрес не найден' }
-      }
-      const result = results[0]
-      const resLat = typeof result.geometry.location.lat === 'function' ? result.geometry.location.lat() : result.geometry.location.lat
-      const resLng = typeof result.geometry.location.lng === 'function' ? result.geometry.location.lng() : result.geometry.location.lng
+      const res = await robustGeocodingService.reverseGeocode(lat, lng)
+      if (!res) return { success: false, formattedAddress: '', error: 'Адрес не найден' }
+
       return {
         success: true,
-        formattedAddress: result.formatted_address,
-        latitude: resLat,
-        longitude: resLng,
-        placeId: result.place_id,
-        locationType: result.geometry.location_type,
-        types: result.types
+        formattedAddress: res.formattedAddress,
+        latitude: lat,
+        longitude: lng,
+        // Optional: attach zone info to result if needed
       }
     } catch {
       return { success: false, formattedAddress: '', error: 'Ошибка геокодирования' }
@@ -207,21 +194,12 @@ export class GeocodingService {
 
     if (result.success && !isRegionCenter) return result
 
-    // Second attempt: cleaned address
-    let cleanedAddress = address
-      .replace(/(?:,|\s)\s*(?:под\.?|подъезд|д\/ф|эт\.?|этаж|под|кв\.?|квартира|оф\.?|офис|вход|дом|корп|секция|литера).*$/i, '')
-      .replace(/\b\d{5}\b/g, '')
-      .replace(/киевская область|kyiv oblast|kiev oblast/gi, '')
-      .replace(/,\s*,/g, ',').replace(/,$/, '')
-      .trim()
+    // Second attempt: cleaned address using our robust utility
+    const { cleanAddressForSearch } = await import('../utils/address/addressNormalization')
+    const cleanedAddress = cleanAddressForSearch(address)
 
-    const hasKyiv = /киев|kyiv|kiev/i.test(cleanedAddress)
-    const hasSatelliteCity = /вишневое|vishneve|вышгород|vyshhorod|ирпень|irpin|буча|bucha|бровары|brovary/i.test(cleanedAddress)
-
-    if (!hasKyiv && !hasSatelliteCity) cleanedAddress += ', Киев, Украина'
-    else if (!/украина|ukraine|україна/i.test(cleanedAddress)) cleanedAddress += ', Украина'
-
-    if (cleanedAddress !== address) {
+    if (cleanedAddress !== address && cleanedAddress.length > 3) {
+      console.log(`[GeocodingService] Retrying with cleaned address: "${cleanedAddress}" (orig: "${address}")`)
       result = await this.geocodeAddress(cleanedAddress, options)
       if (result.success) result.warnings = [...(result.warnings || []), 'Адрес был автоматически очищен для поиска']
     }
@@ -263,7 +241,7 @@ export class GeocodingService {
   }
 
   // Legacy no-ops (kept for API compatibility)
-  static clearCache(): void { googleApiCache.clearGeocodeCache() }
-  static getCacheSize(): number { return googleApiCache.getStats().geocode }
+  static clearCache(): void { /* Removed Google Cache */ }
+  static getCacheSize(): number { return 0 }
   static initialize(): void { }
 }

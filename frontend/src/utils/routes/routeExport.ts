@@ -28,6 +28,48 @@ export const exportToGoogleMaps = (data: RouteExportData): string => {
   return url
 }
 
+// Экспорт в OSRM Demo (ранее Valhalla — для надежной визуализации)
+export const exportToValhalla = (data: RouteExportData): string => {
+  const { route, orders, startAddress, endAddress } = data
+  
+  if (route.geoMeta) {
+    const locs = [
+      { lat: route.geoMeta.origin.lat, lon: route.geoMeta.origin.lng },
+      ...route.geoMeta.waypoints.map((wp: any) => ({ lat: wp.lat, lon: wp.lng })),
+      { lat: route.geoMeta.destination.lat, lon: route.geoMeta.destination.lng }
+    ].filter(l => l.lat && l.lon)
+
+    // Используем 6 знаков после запятой для максимальной точности (ROOFTOP)
+    const locParams = locs.map(l => `loc=${l.lat.toFixed(6)}%2C${l.lon.toFixed(6)}`).join('&')
+    // Добавляем hl=ru для русского языка и alt=0 для одного маршрута. 
+    // К сожалению, OSRM Demo запоминает последний выбранный профиль в браузере.
+    return `https://map.project-osrm.org/?z=14&center=${locs[0].lat.toFixed(6)}%2C${locs[0].lon.toFixed(6)}&${locParams}&hl=ru&alt=0`
+  }
+
+  const allAddresses = [startAddress, ...orders.map(o => o.address), endAddress].filter(Boolean)
+  const query = encodeURIComponent(allAddresses[0])
+  return `https://www.openstreetmap.org/search?query=${query}`
+}
+
+/**
+ * Экспорт в Visicom Maps (самый точный картографический сервис для Украины)
+ * Показывает номера домов там, где другие сервисы могут ошибаться.
+ */
+export const exportToVisicom = (data: RouteExportData): string => {
+  const { route } = data
+  if (!route.geoMeta) return 'https://maps.visicom.ua/'
+
+  const locs = [
+    { lat: route.geoMeta.origin.lat, lon: route.geoMeta.origin.lng },
+    ...route.geoMeta.waypoints.map((wp: any) => ({ lat: wp.lat, lon: wp.lng })),
+    { lat: route.geoMeta.destination.lat, lon: route.geoMeta.destination.lng }
+  ].filter(l => l.lat && l.lon)
+
+  // Visicom использует формат: lon,lat;lon,lat (разделитель ;)
+  const points = locs.map(l => `${l.lon.toFixed(6)},${l.lat.toFixed(6)}`).join(';')
+  return `https://maps.visicom.ua/uk/route?points=${points}&engine=car`
+}
+
 // Экспорт в Waze
 export const exportToWaze = (data: RouteExportData): string => {
   const { orders, startAddress } = data
