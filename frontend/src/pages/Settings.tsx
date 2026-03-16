@@ -652,7 +652,7 @@ export const Settings: React.FC = () => {
                     value={watch('distanceMatrixProvider') || 'valhalla'} // Use watch for current value
                     onChange={(e) => {
                         const val = e.target.value;
-                        setValue('distanceMatrixProvider', val); // Use setValue to update form state
+                        setValue('distanceMatrixProvider', val as any); // Use setValue to update form state
                         if (val === 'yapiko_osrm' && !watch('distanceMatrixEnabled')) { // Check current state
                             setValue('distanceMatrixEnabled', true); // Use setValue
                         }

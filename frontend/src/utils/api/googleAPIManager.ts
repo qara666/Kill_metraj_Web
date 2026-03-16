@@ -14,6 +14,7 @@ import {
 } from '../maps/ukraineTrafficAPI'
 import { ValhallaService } from '../../services/valhallaService'
 import { OSRMService } from '../../services/osrmService'
+import { localStorageUtils } from '../ui/localStorage'
 
 // ============================================================================
 // ТИПЫ И ИНТЕРФЕЙСЫ
@@ -483,8 +484,28 @@ export class GoogleAPIManager {
 
         if (hasCoords && chain.length >= 2) {
           const locations = chain.map(o => ({ lat: o.coords!.lat, lng: o.coords!.lng }))
+          const settings = localStorageUtils.getAllSettings() || {};
+          const yapikoUrl = settings.yapikoOsrmUrl;
+
+          // 1. Try Yapiko OSRM if it's the selected provider
+          if (settings.routingProvider === 'yapiko_osrm' && yapikoUrl) {
+            try {
+               const { YapikoOSRMService } = await import('../../services/YapikoOSRMService')
+               const yapikoResult = await YapikoOSRMService.calculateRoute(locations, yapikoUrl)
+               if (yapikoResult.feasible && yapikoResult.totalDistance) {
+                 return {
+                   feasible: true,
+                   legs: yapikoResult.legs,
+                   totalDuration: yapikoResult.totalDuration,
+                   totalDistance: yapikoResult.totalDistance,
+                 }
+               }
+            } catch (e) {
+               console.warn('[GoogleAPIManager] Yapiko OSRM failed:', e)
+            }
+          }
           
-          // 1. Try Valhalla (supports vehicle costing)
+          // 2. Try Valhalla (supports vehicle costing)
           try {
             const valhallaResult = await ValhallaService.calculateRoute(locations)
             if (valhallaResult.feasible && valhallaResult.totalDistance) {
