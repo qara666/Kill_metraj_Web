@@ -194,15 +194,28 @@ export const useRoutePlanning = (
                 const locations: { lat: number; lng: number }[] = rawLocations.filter(l => typeof l.lat === 'number' && typeof l.lng === 'number') as any
 
                 if (locations.length < 2) return { feasible: false }
+                
+                const yapikoUrl = appSettings.yapikoOsrmUrl
 
-                // Try Valhalla first
+                // 1. Try Yapiko OSRM if it's the selected provider
+                if (appSettings.routingProvider === 'yapiko_osrm' && yapikoUrl) {
+                  try {
+                    const { YapikoOSRMService } = await import('../services/YapikoOSRMService')
+                    const res = await YapikoOSRMService.calculateRoute(locations, yapikoUrl)
+                    if (res.feasible) return res
+                  } catch (e) {
+                     console.warn('[AutoPlanner] Yapiko OSRM failed fallback to others:', e)
+                  }
+                }
+
+                // 2. Try Valhalla (supports vehicle costing)
                 try {
                     const { ValhallaService } = await import('../services/valhallaService')
                     const res = await ValhallaService.calculateRoute(locations)
                     if (res.feasible) return res
                 } catch {}
 
-                // Try OSRM / Generoute
+                // 3. Try OSRM / Generoute
                 try {
                     const res = await GenerouteService.calculateRoute(locations, generouteKey)
                     return res
