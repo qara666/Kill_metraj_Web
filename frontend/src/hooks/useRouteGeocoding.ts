@@ -138,8 +138,11 @@ export const useRouteGeocoding = ({
         }
 
         if (!suspectJump && (silent || !confirmAddresses)) {
-            // Strict rejection: only if the score is catastrophically low (e.g. city mismatch or technical zone)
-            if (strictZoneFallback && best.score < -800000) return null
+            // v35.9.26: Relaxed threshold for non-silent mode. 
+            // If we are in "confirmAddresses" mode, we want the user to see candidates 
+            // even if they were penalized by Lockdown (-2M), so they can confirm them manually.
+            // Catastrophic rejection (-5M+) still returns null.
+            if (strictZoneFallback && best.score < -5000000) return null
             return best
         }
 
