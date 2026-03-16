@@ -153,12 +153,16 @@ export class RobustGeocodingService {
   private async _geocodeWithFreeProviders(query: string, city: string | null): Promise<RawGeoCandidate[]> {
     try {
       const probes: Array<Promise<any>> = [
-        PhotonService.geocode(query, city || undefined),
-        NominatimService.geocode(query, city || undefined)
-      ]
+        PhotonService.geocode(query, city || undefined).catch(e => {
+            console.warn(`[RobustGeocode] Photon failure:`, e.message);
+            return [];
+        }),
+        NominatimService.geocode(query, city || undefined).catch(e => {
+            console.warn(`[RobustGeocode] Nominatim failure:`, e.message);
+            return [];
+        })
+      ];
       
-      // Google fallback removed (De-Googling)
-
       const probeResults = await Promise.allSettled(probes)
       const combined: RawGeoCandidate[] = []
       probeResults.forEach((pr, idx) => {
@@ -171,10 +175,13 @@ export class RobustGeocodingService {
           } else {
              combined.push({ ...val, _source: source })
           }
+        } else if (pr.status === 'rejected') {
+            console.error(`[RobustGeocode] Probe ${idx === 0 ? 'Photon' : 'Nominatim'} REJECTED:`, pr.reason);
         }
       })
       return combined.map(v => normaliseRaw(v))
-    } catch {
+    } catch (err: any) {
+      console.error('[RobustGeocode] Critical failure in free providers:', err.message);
       return []
     }
   }

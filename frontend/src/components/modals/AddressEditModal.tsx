@@ -24,6 +24,7 @@ interface AddressEditModalProps {
 }
 
 import { createPortal } from 'react-dom'
+import { loadLeaflet } from '../../utils/maps/leafletLoader'
 
 export const AddressEditModal: React.FC<AddressEditModalProps> = ({
   isOpen,
@@ -41,12 +42,15 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
   const [geocodingResult, setGeocodingResult] = useState<GeocodingResult | null>(null)
   const [validationResult, setValidationResult] = useState<AddressValidationResult | null>(null)
 
+  const [manualCoords, setManualCoords] = useState<{ lat: number; lng: number } | null>(null)
+
   // Сбрасываем состояние при открытии модального окна
   useEffect(() => {
     if (isOpen) {
       setEditedAddress(currentAddress)
       setGeocodingResult(null)
       setValidationResult(null)
+      setManualCoords(null)
     }
   }, [isOpen, currentAddress])
 
@@ -59,6 +63,79 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
       setValidationResult(null)
     }
   }, [editedAddress])
+
+  // v35.9.28: Effect to initialize Leaflet Map
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let map: any = null;
+    let marker: any = null;
+
+    const initMap = async () => {
+      // Small delay to ensure container is in DOM
+      await new Promise(r => setTimeout(r, 100));
+      const container = document.getElementById('edit-address-map');
+      if (!container) return;
+
+      try {
+        const L = await loadLeaflet();
+        
+        // Initial center (Kyiv or current results)
+        let center: [number, number] = [50.4501, 30.5234];
+        if (geocodingResult?.latitude && geocodingResult?.longitude) {
+           center = [geocodingResult.latitude, geocodingResult.longitude];
+        }
+
+        map = L.map(container, { zoomControl: false }).setView(center, 13);
+        
+        const tileUrl = isDark 
+          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+          : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+        L.tileLayer(tileUrl).addTo(map);
+
+        // Click to set manual point
+        map.on('click', (e: any) => {
+          const { lat, lng } = e.latlng;
+          setManualCoords({ lat, lng });
+          
+          if (marker) marker.remove();
+          marker = L.marker([lat, lng], {
+            icon: L.divIcon({
+              className: 'custom-manual-icon',
+              html: `<div style="background-color: #ef4444; width: 14px; height: 14px; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 10px rgba(239,68,68,0.5);"></div>`,
+              iconSize: [14, 14],
+              iconAnchor: [7, 7]
+            })
+          }).addTo(map);
+        });
+
+        // Store map instance if needed for centering
+        (container as any)._leafletMap = map;
+      } catch (err) {
+        console.error('Failed to init edit address map:', err);
+      }
+    };
+
+    initMap();
+
+    return () => {
+      if (map) {
+        map.remove();
+        map = null;
+      }
+    };
+  }, [isOpen, isDark]);
+
+  // Sync map center when geocoding result changes
+  useEffect(() => {
+    if (geocodingResult?.latitude && geocodingResult?.longitude) {
+      const container = document.getElementById('edit-address-map');
+      const map = (container as any)?._leafletMap;
+      if (map) {
+        map.setView([geocodingResult.latitude, geocodingResult.longitude], 16);
+      }
+    }
+  }, [geocodingResult]);
 
   const handleGeocode = async () => {
     if (!editedAddress.trim()) return
@@ -97,15 +174,19 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
   }
 
   const handleSave = () => {
-    if (editedAddress.trim()) {
+    if (editedAddress.trim() || manualCoords) {
       let coords: { lat: number; lng: number } | undefined;
 
+      // Manual selection priority
+      if (manualCoords) {
+        coords = manualCoords;
+      }
       // If we have a successful geocoding result with coordinates, lock them in
-      if (geocodingResult?.success && geocodingResult.latitude !== undefined && geocodingResult.longitude !== undefined) {
+      else if (geocodingResult?.success && geocodingResult.latitude !== undefined && geocodingResult.longitude !== undefined) {
         coords = { lat: geocodingResult.latitude, lng: geocodingResult.longitude };
       }
 
-      onSave(editedAddress.trim(), coords);
+      onSave(editedAddress.trim() || 'Выбрано на карте', coords);
       onClose();
     }
   }
@@ -236,6 +317,37 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
             </div>
           </div>
 
+          {/* Manual Map Selection (v35.9.28) */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between px-1">
+               <h4 className={clsx("text-[10px] font-black uppercase tracking-[0.2em] opacity-40")}>Ручной выбор на карте</h4>
+               {geocodingResult?.latitude && (
+                 <button 
+                    onClick={() => {
+                       const container = document.getElementById('edit-address-map');
+                       const map = (container as any)?._leafletMap;
+                       if (map) map.setView([geocodingResult.latitude, geocodingResult.longitude], 16);
+                    }}
+                    className="text-[9px] font-bold text-blue-500 hover:underline"
+                 >
+                    Центрировать на результате
+                 </button>
+               )}
+            </div>
+            <div 
+              id="edit-address-map"
+              className={clsx(
+                "w-full h-64 rounded-xl border-2 overflow-hidden relative",
+                isDark ? "bg-black/40 border-white/5" : "bg-gray-100 border-gray-100"
+              )}
+            >
+              {/* Leaflet Map will be injected here */}
+            </div>
+            <p className={clsx("text-[9px] font-bold opacity-40 px-1 italic")}>
+              * Кликните на карту, чтобы поставить точку вручную.
+            </p>
+          </div>
+
           {/* Validation Results */}
           {validationResult && (
             <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
@@ -363,34 +475,48 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
 
         {/* Footer */}
         <div className={clsx(
-          'px-6 py-4 border-t flex justify-end gap-3 shrink-0',
+          'px-6 py-4 border-t flex items-center justify-between shrink-0',
           isDark ? 'border-gray-700 bg-gray-800/50' : 'border-gray-100 bg-gray-50'
         )}>
-          <button
-            onClick={handleCancel}
-            className={clsx(
-              'px-6 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all',
-              isDark
-                ? 'text-gray-400 bg-gray-700 hover:text-white hover:bg-gray-600'
-                : 'text-gray-500 bg-white border border-gray-200 hover:bg-gray-50 hover:text-gray-700'
+          {/* Manual selection indicator (v35.9.28) */}
+          <div>
+            {manualCoords && (
+              <div className="flex items-center gap-2 animate-in slide-in-from-left duration-300">
+                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                <span className={clsx("text-[10px] font-black uppercase tracking-widest", isDark ? "text-gray-400" : "text-gray-500")}>
+                  Точка выбрана вручную
+                </span>
+              </div>
             )}
-          >
-            Отмена
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={!editedAddress.trim() || (validationResult ? !validationResult.isValid : false)}
-            className={clsx(
-              'px-8 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-xl',
-              !editedAddress.trim() || (validationResult ? !validationResult.isValid : false)
-                ? isDark
-                  ? 'text-gray-500 bg-gray-700 cursor-not-allowed grayscale'
-                  : 'text-gray-400 bg-gray-100 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/20 active:scale-95'
-            )}
-          >
-            Сохранить адрес
-          </button>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={handleCancel}
+              className={clsx(
+                'px-6 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all',
+                isDark
+                  ? 'text-gray-400 bg-gray-700 hover:text-white hover:bg-gray-600'
+                  : 'text-gray-500 bg-white border border-gray-200 hover:bg-gray-50 hover:text-gray-700'
+              )}
+            >
+              Отмена
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={(!editedAddress.trim() && !manualCoords) || (validationResult ? !validationResult.isValid : false)}
+              className={clsx(
+                'px-8 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-xl',
+                (!editedAddress.trim() && !manualCoords) || (validationResult ? !validationResult.isValid : false)
+                  ? isDark
+                    ? 'text-gray-500 bg-gray-700 cursor-not-allowed grayscale'
+                    : 'text-gray-400 bg-gray-100 cursor-not-allowed'
+                  : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/20 active:scale-95'
+              )}
+            >
+              {manualCoords ? 'Подтвердить мою точку' : 'Сохранить адрес'}
+            </button>
+          </div>
         </div>
       </div>
     </div>,

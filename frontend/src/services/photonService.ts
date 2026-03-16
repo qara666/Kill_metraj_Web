@@ -150,7 +150,8 @@ export class PhotonService {
             const items = data.features || []
             return items.map(toRawCandidate)
         } catch (error: any) {
-             console.warn('[Геокодинг] Ошибка Photon:', error.message)
+             const statusStr = error.message.includes('Photon') ? error.message : `Photon Error: ${error.message}`;
+             console.warn(`[Геокодинг] Ошибка Photon: – "${statusStr}"`);
              throw error // Re-throw to allow Nominatim fallback
         }
     }

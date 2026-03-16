@@ -19,31 +19,55 @@ let _nominatimQueue: Array<() => void> = [];
 let _isNominatimProcessing = false;
 
 async function rateLimitedFetch(url: string): Promise<Response> {
-    return new Promise((resolve, reject) => {
-        _nominatimQueue.push(async () => {
-            try {
-                const now = Date.now();
-                const diff = now - _lastNominatimCall;
-                if (diff < 1100) {
-                    await new Promise(r => setTimeout(r, 1100 - diff));
-                }
-                _lastNominatimCall = Date.now();
-                
-                const proxyUrl = `${API_URL}/api/proxy/geocoding?url=${encodeURIComponent(url)}`;
-                
-                const response = await fetch(proxyUrl, {
-                    headers: {
-                        'Accept-Language': 'uk,ru,en'
+    const maxRetries = 2;
+    let attempt = 0;
+
+    const executeWithRetry = (): Promise<Response> => {
+        return new Promise((resolve, reject) => {
+            _nominatimQueue.push(async () => {
+                try {
+                    const now = Date.now();
+                    // v35.9.28: Increased delay to 1.5s to be safer against OSB proxy blocks
+                    const delay = 1500; 
+                    const diff = now - _lastNominatimCall;
+                    if (diff < delay) {
+                        await new Promise(r => setTimeout(r, delay - diff));
                     }
-                });
-                resolve(response);
-            } catch (e) {
-                reject(e);
-            }
+                    _lastNominatimCall = Date.now();
+                    
+                    const proxyUrl = `${API_URL}/api/proxy/geocoding?url=${encodeURIComponent(url)}`;
+                    
+                    const response = await fetch(proxyUrl, {
+                        headers: {
+                            'Accept-Language': 'uk,ru,en'
+                        }
+                    });
+
+                    // Handle 429 Too Many Requests with backoff
+                    if (response.status === 429 && attempt < maxRetries) {
+                        attempt++;
+                        const backoff = 2000 * Math.pow(2, attempt);
+                        console.warn(`[Nominatim] 429 detected. Retry attempt ${attempt} in ${backoff}ms...`);
+                        await new Promise(r => setTimeout(r, backoff));
+                        // Re-queue the task
+                        _nominatimQueue.push(async () => {
+                             const r = await executeWithRetry();
+                             resolve(r);
+                        });
+                        return;
+                    }
+
+                    resolve(response);
+                } catch (e) {
+                    reject(e);
+                }
+            });
+            
+            _processNominatimQueue();
         });
-        
-        _processNominatimQueue();
-    });
+    };
+
+    return executeWithRetry();
 }
 
 async function _processNominatimQueue() {
