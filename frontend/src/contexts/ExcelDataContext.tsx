@@ -15,7 +15,7 @@ interface ExcelData {
 interface ExcelDataContextType {
   excelData: ExcelData | null
   setExcelData: (data: ExcelData | null) => void
-  updateExcelData: (dataOrUpdater: ExcelData | ((prev: ExcelData) => ExcelData)) => void
+  updateExcelData: (dataOrUpdater: ExcelData | ((prev: ExcelData) => ExcelData), force?: boolean) => void
   clearExcelData: () => void
   updateRouteData: (routes: any[]) => void
   updateOrderPaymentMethod: (orderNumber: string, newPaymentMethod: string) => void
@@ -213,7 +213,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     }
   }, [protectData, syncToLocalStorage, saveDataToServer]);
 
-  const updateExcelData = useCallback((dataOrUpdater: ExcelData | ((prev: ExcelData) => ExcelData)) => {
+  const updateExcelData = useCallback((dataOrUpdater: ExcelData | ((prev: ExcelData) => ExcelData), force?: boolean) => {
     setExcelDataState(prev => {
       let next: ExcelData;
       const prevSafe = prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: {} } as any;
@@ -226,7 +226,8 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       }
       
       // Ensure we don't regress routes if the updater somehow returns empty routes
-      const protectedNext = protectData(next, prevSafe);
+      // Bypassed if 'force' is true (manual clear)
+      const protectedNext = force ? next : protectData(next, prevSafe);
 
       // Debounced Sync
       syncToLocalStorage(protectedNext);

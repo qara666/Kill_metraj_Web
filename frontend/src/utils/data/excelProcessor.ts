@@ -186,11 +186,32 @@ const createPaymentMethod = (rowData: Record<string, any>, index: number): any =
     };
 };
 
+const parseAddressGeo = (str: string): { lat?: number; lng?: number; address?: string } => {
+    if (!str) return {};
+    const res: any = {};
+    const latMatch = str.match(/Lat="([^"]+)"/i);
+    const lngMatch = str.match(/Long="([^"]+)"/i);
+    const addrMatch = str.match(/AddressStr="([^"]+)"/i);
+
+    if (latMatch) res.lat = parseFloat(latMatch[1]);
+    if (lngMatch) res.lng = parseFloat(lngMatch[1]);
+    if (addrMatch) res.address = addrMatch[1];
+    return res;
+};
+
 const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, index: number): any => {
     let address = getValue(rowData, [
         'адрес', 'address', 'адрес_доставки', 'адресс', 'address_delivery',
-        'адрес доставки', 'delivery_address', 'адреса', 'адреса доставки', 'адреса_доставки'
+        'адрес доставки', 'delivery_address', 'адреса', 'адреса доставки', 'адреса_доставки',
+        'addressStr', 'address_str'
     ]);
+
+    const addressGeoRaw = getValue(rowData, ['addressGeo', 'address_geo']);
+    const geoData = addressGeoRaw ? parseAddressGeo(String(addressGeoRaw)) : {};
+
+    if (geoData.address && (!address || address.length < geoData.address.length)) {
+        address = geoData.address;
+    }
 
     const excludeCols = [
         'заказчик', 'customer', 'клиент', 'client', 'имя', 'name', 'способ оплаты', 'payment',
@@ -337,6 +358,10 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
         customerName: getValue(rowData, ['клиент', 'customer', 'имя_клиента', 'имя']) || '',
         isSelected: false,
         isInRoute: false,
+        coords: geoData.lat && geoData.lng ? { lat: geoData.lat, lng: geoData.lng } : undefined,
+        latitude: geoData.lat,
+        longitude: geoData.lng,
+        isAddressLocked: !!(geoData.lat && geoData.lng), // Lock if we have server-side coords
         ...rowData
     };
 };

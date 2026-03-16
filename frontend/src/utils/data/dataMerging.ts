@@ -1,5 +1,6 @@
 import { ProcessedExcelData } from '../../types';
 import { normalizeCourierName } from './courierName';
+import { isOrderCompleted } from './orderStatus';
 
 /**
  * Объединяет новые данные Excel/Dashboard API с существующими, избегая дубликатов.
@@ -220,8 +221,8 @@ export const syncDashboardData = (newData: any, existingData: any): ProcessedExc
     const syncedOrders = newOrders.map((newOrder: any) => {
         const existing = existingOrdersMap.get(newOrder.orderNumber);
         if (existing) {
-            const isNowCompleted = (newOrder.status === 'Исполнен' || newOrder.status === 'Доставлено');
-            const wasCompleted = (existing.status === 'Исполнен' || existing.status === 'Доставлено');
+            const isNowCompleted = isOrderCompleted(newOrder.status);
+            const wasCompleted = isOrderCompleted(existing.status);
 
             const statusTimings = {
                 ...(existing.statusTimings || {}),

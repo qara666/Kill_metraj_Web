@@ -60,7 +60,8 @@ interface SettingsForm {
   autoSyncKml: boolean
   selectedHubs: string[]
   selectedZones: string[]
-  routingProvider: 'google' | 'generoute' | 'valhalla'
+  routingProvider: 'google' | 'generoute' | 'valhalla' | 'yapiko_osrm'
+  yapikoOsrmUrl: string
   vehicleType: 'auto' | 'motorcycle' | 'motor_scooter'
   geocodingProvider: 'google' | 'nominatim' | 'geoapify'
   mapProvider: 'google' | 'osm'
@@ -92,7 +93,7 @@ export const Settings: React.FC = () => {
       defaultEndLng: null,
       cityBias: '',
       anomalyFilterEnabled: true,
-      anomalyMaxLegDistanceKm: 10,
+      anomalyMaxLegDistanceKm: 25,
       anomalyMaxTotalDistanceKm: 35,
       anomalyMaxAvgPerOrderKm: 25,
       addressQualityThreshold: 60,
@@ -122,6 +123,7 @@ export const Settings: React.FC = () => {
       mapProvider: 'google',
       generouteApiKey: '',
       geoapifyApiKey: '',
+      yapikoOsrmUrl: '',
       theme: 'light',
       courierTransportType: 'car',
       distanceMatrixEnabled: false,
@@ -159,7 +161,7 @@ export const Settings: React.FC = () => {
         setValue('defaultEndLng', settings.defaultEndLng || null)
         setValue('cityBias', settings.cityBias || '')
         setValue('anomalyFilterEnabled', settings.anomalyFilterEnabled ?? true)
-        setValue('anomalyMaxLegDistanceKm', settings.anomalyMaxLegDistanceKm ?? 10)
+        setValue('anomalyMaxLegDistanceKm', settings.anomalyMaxLegDistanceKm ?? 25)
         setValue('anomalyMaxTotalDistanceKm', settings.anomalyMaxTotalDistanceKm ?? 35)
         setValue('anomalyMaxAvgPerOrderKm', settings.anomalyMaxAvgPerOrderKm ?? 25)
         setValue('addressQualityThreshold', settings.addressQualityThreshold ?? 60)
@@ -180,6 +182,7 @@ export const Settings: React.FC = () => {
         setValue('mapProvider', settings.mapProvider || 'google')
         setValue('generouteApiKey', settings.generouteApiKey || '')
         setValue('geoapifyApiKey', settings.geoapifyApiKey || '')
+        setValue('yapikoOsrmUrl', settings.yapikoOsrmUrl || '')
         setValue('distanceMatrixEnabled', settings.distanceMatrixEnabled ?? false)
         setValue('distanceMatrixProvider', settings.distanceMatrixProvider || 'valhalla')
         
@@ -653,17 +656,39 @@ export const Settings: React.FC = () => {
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер маршрутизации</label>
                     <select {...register('routingProvider')} className="input w-full" disabled={!canModify}>
                       <option value="valhalla">🗺 Основной — Valhalla OSM (Бесплатно, Точно)</option>
+                      <option value="yapiko_osrm">🏙 Yapiko OSRM (Локальный сервер Yaposhka)</option>
                       <option value="generoute">⚡ OSRM / Generoute (Оптимизация, Бесплатно)</option>
-                      <option value="google">💳 Резервный — Google Maps (Платный)</option>
+                      <option value="google">💳 Резурвный — Google Maps (Платный)</option>
                     </select>
                     <p className="text-xs text-gray-400">
                       {watch('routingProvider') === 'valhalla'
                         ? '✅ Рекомендовано: реальные дорожные расстояния через бесплатный OSM-движок Valhalla.'
+                        : watch('routingProvider') === 'yapiko_osrm'
+                        ? '🏙 Yapiko OSRM — расчет через собственный сервер компании.'
                         : watch('routingProvider') === 'generoute'
                         ? '⚡ OSRM/Generoute — быстро, бесплатно.'
                         : '⚠️ Платный режим: Google Maps Directions API.'}
                     </p>
                   </div>
+
+                  {watch('routingProvider') === 'yapiko_osrm' && (
+                    <div className="space-y-2">
+                       <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">URL сервера Yapiko OSRM</label>
+                       <div className="relative">
+                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                           <MapIcon className="h-4 w-4 text-gray-400" />
+                         </div>
+                         <input
+                           type="text"
+                           {...register('yapikoOsrmUrl')}
+                           className="input w-full pl-10"
+                           placeholder="http://ip-address:port"
+                           disabled={!canModify}
+                         />
+                       </div>
+                       <p className="text-[10px] text-gray-400">Например: http://app.yaposhka.kh.ua:4999 или http://api.yapiko.ua:5000</p>
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Тип транспорта (Valhalla)</label>
                     <select {...register('vehicleType')} className="input w-full" disabled={!canModify}>
