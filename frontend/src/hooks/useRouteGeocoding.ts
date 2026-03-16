@@ -249,19 +249,30 @@ export const useRouteGeocoding = ({
                 const expectedDeliveryZone = order.deliveryZone || order.raw?.deliveryZone || order.raw?.['Зона доставки'] || null
 
                 if (!addrCache.has(key)) {
-                    // v35.9.16: Pass lastLoc as hintPoint to help disambiguate and trigger Suspect Jump modal
-                    addrCache.set(key, await robustGeocode(cleaned, { 
-                        silent: true, 
+                    // v35.9.26: Pass silent: !confirmAddresses during batch processing.
+                    // This allows the "Уточнение адреса" modal to appear if a result is ambiguous or suspicious.
+                    const res = await robustGeocode(cleaned, { 
+                        silent: !confirmAddresses, 
                         expectedDeliveryZone,
                         hintPoint: lastLoc
-                    }))
+                    })
+                    
+                    // If user cancels disambiguation (choice: null), stop calculation
+                    if (!res && confirmAddresses) {
+                        toast.error(`Расчет прерван: адрес не был подтвержден (${order.address})`)
+                        setIsCalculating(false)
+                        return
+                    }
+                    
+                    addrCache.set(key, res)
                     await yieldToMain()
                 }
 
                 const geocodeRes = addrCache.get(key)
                 if (!geocodeRes || !toLoc(geocodeRes.raw)) {
                     console.error(`[Расчет] Адрес ОТКЛОНЕН: ${order.address}`, geocodeRes)
-                    toast.error(`Адрес не прошел проверку безопасности (слишком далеко или другой город): ${order.address}. Проверьте правильность написания.`)
+                    // Simplified error message for better UX
+                    toast.error(`Проверьте адрес: ${order.address}. Не удалось найти точку в зоне обслуживания.`, { duration: 10000 })
                     setIsCalculating(false)
                     return
                 }
@@ -536,7 +547,6 @@ export const useRouteGeocoding = ({
             }
 
 
-            const isKyiv = (settings.cityBias || '').toLowerCase().includes('киев') || (settings.cityBias || '').toLowerCase().includes('київ')
             const distanceKm = totalDistance / 1000
             const anomalyThresholdKm = settings.anomalyMaxTotalDistanceKm || 65
 
@@ -573,10 +583,11 @@ export const useRouteGeocoding = ({
                 return
             }
 
-            if (isKyiv && distanceKm > anomalyThresholdKm) {
-                const reason = `⛔ АНОМАЛЬНАЯ ДИСТАНЦИЯ (${distanceKm.toFixed(1)} км) — превышает лимит ${anomalyThresholdKm} км для Киева. Вероятно, один из адресов геокодирован в другом районе. Маршрут не сохранён.`
+            const currentCity = settings.cityBias || 'Киев'
+            if (distanceKm > anomalyThresholdKm) {
+                const reason = `⛔ АНОМАЛЬНАЯ ДИСТАНЦИЯ (${distanceKm.toFixed(1)} км) — превышает лимит ${anomalyThresholdKm} км для г. ${currentCity}. Вероятно, один из адресов геокодирован в другом районе. Маршрут не сохранён.`
                 toast.error(reason, { duration: 12000 })
-                console.error(`[Расчет] АНОМАЛИЯ ЗАБЛОКИРОВАНА: ${distanceKm.toFixed(1)}км > порога ${anomalyThresholdKm}км`)
+                console.error(`[Расчет] АНОМАЛИЯ ЗАБЛОКИРОВАНА: ${distanceKm.toFixed(1)}км > порога ${anomalyThresholdKm}км для ${currentCity}`)
                 setIsCalculating(false)
                 return
             }

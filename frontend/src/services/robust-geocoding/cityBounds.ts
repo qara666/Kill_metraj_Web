@@ -53,12 +53,12 @@ export const CITY_BOUNDS: Record<string, CityBBox> = {
   // ─── ПОЛТАВА (POLTAVA) ───────────────────────────────────────────────────
   // Covers: Poltava city + Machukhivka, Rozkishne, Ivashky, Pidlisnivka
   'полтава': {
-    bbox: [49.52, 34.46, 49.65, 34.65],
-    viewbox: '34.46,49.52,34.65,49.65',
+    bbox: [49.45, 34.30, 49.75, 34.85],
+    viewbox: '34.30,49.45,34.85,49.75',
     bounded: true,
     names: ['полтава', 'poltava'],
     center: [34.5514, 49.5883],
-    radiusKm: 20,
+    radiusKm: 30, // Increased radius for Photon bias
   },
 
   // ─── ОДЕСА (ODESA) ───────────────────────────────────────────────────────

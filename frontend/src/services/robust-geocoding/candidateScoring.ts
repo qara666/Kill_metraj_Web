@@ -396,13 +396,32 @@ export function scoreCandidate(
         }
 
         // ABSOLUTE CITY LOCKDOWN
-        // v35.9.26: Bypass lockdown if the point is inside an ACTIVE user zone!
-        // This handles cases where the geocoder returns a partial address without the city name.
-        if (!hasCurrentCity && !matchesSuburb && !isInside) {
+        // v35.9.26: 3KM PROXIMITY TRUST
+        // If the point is outside an active zone, check if it's within 3km of ANY active zone.
+        let distToNearestActiveZone = Infinity
+        if (opts.ctx?.activePolygons) {
+           for (const p of opts.ctx.activePolygons) {
+             const center = (p as any)._center || (p.bounds ? { lat: (p.bounds.south + p.bounds.north) / 2, lng: (p.bounds.west + p.bounds.east) / 2 } : null)
+             if (center) {
+               const d = distanceBetween({ lat, lng }, center)
+               if (d < distToNearestActiveZone) distToNearestActiveZone = d
+             }
+           }
+        }
+        const isNearActiveZone = distToNearestActiveZone < 3000 // 3km limit per user request
+
+        // Lockdown logic
+        if (!hasCurrentCity && !matchesSuburb && !isInside && !isNearActiveZone) {
            score += SCORE.CITY_MISMATCH_PENALTY;
-           (raw as any)._rejectReason = `Lockdown: Not in ${city} or known suburb. (v35.9.26)`;
-        } else if (isInside && !hasCurrentCity) {
-           console.log(`[Геокодинг] LOCKDOWN BYPASS: точка в активной зоне "${kmlZone}" (город ${city} не найден в компонентах)`)
+           (raw as any)._rejectReason = `Lockdown: Not in ${city} or known suburb, and >3km from active zones. (v35.9.26)`;
+        } else if ((isInside || isNearActiveZone) && !hasCurrentCity) {
+           // Soften the penalty for proximity but don't kill the candidate
+           if (!isInside) {
+             score -= 50000 
+             console.log(`[Геокодинг] SOFT LOCKDOWN: точка в 3км от зоны (дистанция=${Math.round(distToNearestActiveZone)}м). Уменьшаем штраф.`)
+           } else {
+             console.log(`[Геокодинг] LOCKDOWN BYPASS: точка в активной зоне "${kmlZone}". Полное доверие.`)
+           }
         }
       }
     }
@@ -421,20 +440,12 @@ export function scoreCandidate(
         if (reqNormal.length < 3) continue 
         
         // Pass 1: Word-Boundary Match (v35.9.11)
-        // Check if reqNormal is a complete word (token) in the address
         if (candidateTokens.includes(reqNormal)) {
-            // v35.9.12: Ordinal Protection
-            // If the candidate address has an ordinal token (12-ta, 1-sha) but the request does NOT,
-            // we must reject this collision.
-            // We strictly check for street ordinal patterns and ignore common house numbers.
-            // v35.9.14: Refined Ordinal Protection
-            // Exclude single letters (а, б, в, г, і, є) from triggers to allow house numbers like "5а".
-            // We only trigger if it's a multi-letter ordinal suffix like "та", "ша", "ій".
             const hasExtraOrdinal = candidateFull.match(/\b\d+[\s\-]*(?:та|ша|га|ій|ий|ка)\b/i) && !req.match(/\d+(?:та|ша|га|ій|ий|ка)/i)
             
             if (hasExtraOrdinal) {
                 console.warn(`[RobustGeocode v35.9.14] ORDINAL COLLISION: "${candidateFull}" contains ordinal not in "${req}"`)
-                continue // Try next root or fail
+                continue 
             }
 
             matchedRoot = req
@@ -443,10 +454,18 @@ export function scoreCandidate(
     }
 
     if (!matchedRoot) {
-      score += SCORE.STREET_NAME_MISMATCH
-      const missing = opts.requestedStreetNames.join('|')
-      ;(raw as any)._rejectReason = `Street mismatch. Expected one of [${missing}]`
-      console.error(`[RobustGeocode v35.9.13] FAIL: "${candidateFull}" vs Roots: [${missing}]`)
+      // v35.9.26: PREZUMPTION OF CORRECTNESS
+      // If the address is inside an ACTIVE user-drawn zone, we treat street mismatch as a minor warning, NOT a kill.
+      // This allows coordinates in custom zones to survive even if the street name in metadata is slightly different.
+      if (isInside) {
+        score -= 50000 // Moderate penalty instead of -2M
+        console.warn(`[Геокодинг] SOFT STREET MISMATCH: точка в активной зоне "${kmlZone}", но улица "${candidateFull}" не совпала с корнем.`)
+      } else {
+        score += SCORE.STREET_NAME_MISMATCH
+        const missing = opts.requestedStreetNames.join('|')
+        ;(raw as any)._rejectReason = `Street mismatch. Expected one of [${missing}]`
+        console.error(`[RobustGeocode v35.9.13] FAIL: "${candidateFull}" vs Roots: [${missing}]`)
+      }
     } else {
       console.log(`[RobustGeocode v35.9.14] PASS: "${candidateFull}" (Root: "${matchedRoot}")`)
     }
