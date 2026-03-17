@@ -355,6 +355,10 @@ export class RobustGeocodingService {
         const extracted = this._parseAddressGeo(geoStr);
         if (extracted && extracted.lat && extracted.lng) {
             console.log(`[Геокодинг] INSTANT BYPASS (addressGeo): "${rawAddress}"`);
+            
+            // v38.1: Perform zone lookup even for bypass to ensure badges show in UI
+            const zoneInfo = this.findZoneForCoords(extracted.lat, extracted.lng);
+            
             const res: RobustGeocodeResult = {
                 best: {
                     lat: extracted.lat,
@@ -363,8 +367,8 @@ export class RobustGeocodingService {
                     isInsideZone: true,
                     isTechnicalZone: false,
                     streetNumberMatched: true,
-                    kmlZone: null,
-                    kmlHub: null,
+                    kmlZone: zoneInfo?.zoneName || null,
+                    kmlHub: zoneInfo?.hubName || null,
                     raw: {
                         formatted_address: extracted.address || rawAddress,
                         geometry: {

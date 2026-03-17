@@ -689,9 +689,21 @@ export const useRouteGeocoding = ({
                     const geoMeta = {
                         origin: originLoc,
                         destination: destinLoc,
-                        waypoints: waypointLocs.map((loc) => ({
-                            ...(typeof loc === 'string' ? { address: loc } : loc),
-                        }))
+                        waypoints: waypointLocs.map((loc, idx) => {
+                            const base = typeof loc === 'string' ? { address: loc } : loc;
+                            const orderId = route.orders[idx].id;
+                            const upd = orderUpdates.find(u => u.id === orderId);
+                            if (upd) {
+                                return {
+                                    ...base,
+                                    zoneName: upd.kmlZone,
+                                    hubName: upd.kmlHub,
+                                    locationType: upd.locationType,
+                                    streetNumberMatched: upd.streetNumberMatched
+                                };
+                            }
+                            return base;
+                        })
                     }
 
                     const updatedRoute: Route = {

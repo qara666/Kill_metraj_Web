@@ -66,8 +66,7 @@ const OrderItem = memo(({
     onMoveDown,
     isInRoute,
     isDark,
-    style,
-    index
+    style
 }: {
     order: Order
     isSelected: boolean
@@ -78,7 +77,6 @@ const OrderItem = memo(({
     isInRoute: boolean
     isDark: boolean
     style?: React.CSSProperties
-    index?: number
 }) => {
     const rowRef = React.useRef<HTMLDivElement>(null);
 
@@ -254,7 +252,6 @@ const OrderItem = memo(({
         prev.isInRoute === next.isInRoute &&
         prev.isDark === next.isDark &&
         prev.style === next.style &&
-        prev.index === next.index &&
         prev.order.status === next.order.status &&
         prev.order.orderNumber === next.order.orderNumber
     );
@@ -310,7 +307,6 @@ export const OrderList = memo(({
                             return (
                                 <OrderItem
                                     key={order.id}
-                                    index={index}
                                     order={order}
                                     isDark={isDark}
                                     isSelected={isSelected}
@@ -318,7 +314,7 @@ export const OrderList = memo(({
                                     onSelect={(id: string) => onSelectOrder(id, false)}
                                     onMoveUp={onMoveUp}
                                     onMoveDown={onMoveDown}
-                                    isInRoute={isInRoute}
+                                    isInRoute={isInRoute || false}
                                     style={style}
                                 />
                             );
