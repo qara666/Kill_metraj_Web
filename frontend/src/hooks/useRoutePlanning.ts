@@ -197,6 +197,39 @@ export const useRoutePlanning = (
                 
                 const yapikoUrl = appSettings.yapikoOsrmUrl
 
+                // TURBO INSTANT: Race all engines in parallel for the Auto-Planner phase too
+                if (appSettings.routingProvider === 'turbo_instant') {
+                    const raceResults = await Promise.allSettled([
+                        // 1. Yapiko OSRM
+                        yapikoUrl ? (async () => {
+                            const { YapikoOSRMService } = await import('../services/YapikoOSRMService')
+                            const r = await YapikoOSRMService.calculateRoute(locations, yapikoUrl)
+                            if (r.feasible && (r.totalDistance ?? 0) > 0) return r
+                            throw new Error('Yapiko empty')
+                        })() : Promise.reject('No yapikoUrl'),
+                        
+                        // 2. Valhalla
+                        (async () => {
+                            const { ValhallaService } = await import('../services/valhallaService')
+                            const r = await ValhallaService.calculateRoute(locations)
+                            if (r.feasible && (r.totalDistance ?? 0) > 0) return r
+                            throw new Error('Valhalla empty')
+                        })(),
+
+                        // 3. OSRM / Generoute
+                        (async () => {
+                            const r = await GenerouteService.calculateRoute(locations, generouteKey)
+                            if (r.feasible && (r.totalDistance ?? 0) > 0) return r
+                            throw new Error('Generoute empty')
+                        })()
+                    ])
+
+                    const winner = raceResults.find(r => r.status === 'fulfilled') as PromiseFulfilledResult<any> | undefined
+                    if (winner) return winner.value
+                    return { feasible: false }
+                }
+
+                // STANDARD SEQUENTIAL FLOW
                 // 1. Try Yapiko OSRM if it's the selected provider
                 if (appSettings.routingProvider === 'yapiko_osrm' && yapikoUrl) {
                   try {
@@ -209,13 +242,15 @@ export const useRoutePlanning = (
                 }
 
                 // 2. Try Valhalla (supports vehicle costing)
-                try {
-                    const { ValhallaService } = await import('../services/valhallaService')
-                    const res = await ValhallaService.calculateRoute(locations)
-                    if (res.feasible) return res
-                } catch {}
+                if (appSettings.routingProvider === 'valhalla') {
+                  try {
+                      const { ValhallaService } = await import('../services/valhallaService')
+                      const res = await ValhallaService.calculateRoute(locations)
+                      if (res.feasible) return res
+                  } catch {}
+                }
 
-                // 3. Try OSRM / Generoute
+                // 3. Try OSRM / Generoute (default or fallback)
                 try {
                     const res = await GenerouteService.calculateRoute(locations, generouteKey)
                     return res
@@ -355,8 +390,13 @@ export const useRoutePlanning = (
                 depotCoords,
                 endCoords,
                 defaultStartAddress: startAddr,
+                defaultStartLat: sLat,
+                defaultStartLng: sLng,
                 defaultEndAddress: endAddr,
-                setOptimizationProgress
+                defaultEndLat: eLat,
+                defaultEndLng: eLng,
+                setOptimizationProgress,
+                routingProvider: optimizedSettings.routingProvider
             });
 
             setPlannedRoutes(finalRoutes)

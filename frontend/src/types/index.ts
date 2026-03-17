@@ -161,6 +161,7 @@ export interface RoutePlanningSettings {
   combineMaxTimeWindowMinutes: number
   trafficImpactLevel: 'low' | 'medium' | 'high'
   lateDeliveryPenalty: number
+  routingProvider?: string
 }
 
 export interface TrafficPresetInfo {

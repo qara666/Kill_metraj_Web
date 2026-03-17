@@ -276,6 +276,7 @@ export const AdminPresets: React.FC = () => {
                                             className="input w-full"
                                             disabled={!isAdmin}
                                         >
+                                            <option value="turbo_instant">⚡ Turbo Instant (Все движки параллельно)</option>
                                             <option value="yapiko_osrm">🚀 Quantum Engine (Yapiko+OSRM)</option>
                                             <option value="osrm">OSRM (Публичный)</option>
                                             <option value="valhalla">Valhalla</option>
