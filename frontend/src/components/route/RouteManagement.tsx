@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo, useCallback, memo, useDeferredValue, useTransition, lazy, Suspense } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useDeferredValue, useTransition, lazy, Suspense } from 'react'
 import { FixedSizeList as List } from 'react-window'
 import { AutoSizer } from 'react-virtualized-auto-sizer'
 const AutoSizerAny = AutoSizer as any
 import { OrderList } from './OrderList'
+import { RouteCard } from './RouteCard'
 import {
   TruckIcon,
   MapIcon,
@@ -11,14 +12,9 @@ import {
   ClockIcon,
   ArrowPathIcon,
   PlusIcon,
-  CheckBadgeIcon,
   TrashIcon,
-  PencilIcon,
-  ExclamationTriangleIcon,
-  ExclamationCircleIcon,
   ChevronLeftIcon,
-  ChevronRightIcon,
-  PlayIcon
+  ChevronRightIcon
 } from '@heroicons/react/24/outline'
 import { localStorageUtils } from '../../utils/ui/localStorage'
 import { cleanAddress, } from '../../utils/data/addressUtils'
@@ -28,7 +24,6 @@ import { useTheme } from '../../contexts/ThemeContext'
 import { clsx } from 'clsx'
 import { AddressEditModal } from '../modals/AddressEditModal'
 import { AddressValidationService, RouteAnomalyCheck } from '../../services/addressValidation'
-import { getPaymentMethodBadgeProps } from '../../utils/data/paymentMethodHelper'
 import { toast } from 'react-hot-toast'
 import { Tooltip } from '../shared/Tooltip'
 import { CourierTimeWindows } from './CourierTimeWindows'
@@ -73,207 +68,7 @@ interface RouteManagementProps {
 }
 
 
-const CourierListItem = memo(({
-  courierName,
-  vehicleType,
-  isSelected,
-  onSelect,
-  availableOrdersCount,
-  deliveredOrdersCount,
-  totalOrdersCount,
-  isDark
-}: {
-  courierName: string
-  vehicleType: string
-  isSelected: boolean
-  onSelect: (name: string) => void
-  availableOrdersCount: number
-  deliveredOrdersCount: number
-  totalOrdersCount: number
-  isDark: boolean
-}) => {
-  const isUnassigned = courierName === 'Не назначено' || isId0CourierName(courierName)
-  const progress = totalOrdersCount > 0 ? (deliveredOrdersCount / totalOrdersCount) * 100 : 0
-  const isFinished = totalOrdersCount > 0 && deliveredOrdersCount === totalOrdersCount
-  const remaining = totalOrdersCount - deliveredOrdersCount
-  const isReturning = totalOrdersCount > 0 && deliveredOrdersCount > 0 && remaining > 0 && remaining <= 2
-  const isOnRoute = totalOrdersCount > 0 && (deliveredOrdersCount === 0 || remaining > 2) && deliveredOrdersCount < totalOrdersCount
-
-  if (isUnassigned) {
-    return (
-      <div className="group/item relative mb-2">
-        <button
-          onClick={() => onSelect(courierName)}
-          className={clsx(
-            'w-full text-left p-4 rounded-2xl border-2 transition-all duration-200 transform',
-            'relative overflow-hidden',
-            isSelected
-              ? (isDark
-                ? 'bg-blue-600/20 border-blue-500 shadow-lg shadow-blue-500/10'
-                : 'bg-blue-50/80 border-blue-500 shadow-md shadow-blue-500/5')
-              : (isDark
-                ? 'bg-blue-500/5 border-blue-500/20 hover:border-blue-500/40'
-                : 'bg-blue-50/30 border-blue-100 hover:border-blue-300')
-          )}
-        >
-          <div className="flex items-center gap-4 relative z-10">
-            <div className={clsx(
-              'w-12 h-12 rounded-xl flex flex-shrink-0 items-center justify-center transition-colors',
-              isSelected
-                ? 'bg-blue-500 text-white shadow-md shadow-blue-500/30'
-                : (isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-600')
-            )}>
-              <TruckIcon className="w-6 h-6" />
-            </div>
-            <div className="flex flex-col">
-              <span className={clsx(
-                'text-base font-black',
-                isSelected
-                  ? (isDark ? 'text-white' : 'text-blue-900')
-                  : (isDark ? 'text-blue-300' : 'text-blue-700')
-              )}>
-                Не назначено
-              </span>
-              <span className={clsx(
-                'text-[11px] font-bold mt-0.5',
-                isDark ? 'text-blue-400/60' : 'text-blue-600/60'
-              )}>
-                {totalOrdersCount} заказов
-              </span>
-            </div>
-          </div>
-        </button>
-      </div>
-    )
-  }
-
-  return (
-    <div className="group/item relative">
-      <button
-        onClick={() => onSelect(courierName)}
-        className={clsx(
-          'w-full text-left p-3 rounded-xl border-2 transition-all duration-200 transform mb-2',
-          'relative overflow-hidden',
-          isSelected
-            ? (isDark
-              ? 'bg-blue-600/10 border-blue-500 shadow-lg shadow-blue-500/10'
-              : 'bg-[#f0f7ff] border-blue-500 shadow-md shadow-blue-500/5')
-            : isReturning
-              ? (isDark
-                ? 'bg-purple-500/10 border-purple-500/30 shadow-lg shadow-purple-500/5'
-                : 'bg-purple-50 border-purple-200 shadow-md shadow-purple-500/5')
-              : isUnassigned
-                ? (isDark
-                  ? 'bg-amber-500/10 border-amber-500/30'
-                  : 'bg-amber-50 border-amber-200')
-                : (isDark
-                  ? 'bg-black/20 border-white/[0.03] hover:border-white/10 opacity-70 hover:opacity-100'
-                  : 'bg-white border-gray-100/80 hover:border-blue-200 shadow-sm opacity-60 hover:opacity-100')
-        )}
-      >
-        <div className="flex items-center gap-3.5 relative z-10">
-          <div className="relative shrink-0">
-            <div className={clsx(
-              'w-10 h-10 rounded-xl flex items-center justify-center transition-colors',
-              isSelected
-                ? 'bg-blue-600 text-white'
-                : isUnassigned
-                  ? (isDark ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-600')
-                  : vehicleType === 'car'
-                    ? (isDark ? 'bg-green-600/20 text-green-400' : 'bg-green-100 text-green-600')
-                    : (isDark ? 'bg-orange-600/20 text-orange-400' : 'bg-orange-100 text-orange-600')
-            )}>
-              <TruckIcon className="w-5 h-5" />
-            </div>
-            {(isOnRoute || isReturning || isFinished) && (
-              <div className={clsx(
-                'absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2',
-                isDark ? 'border-gray-800' : 'border-white',
-                isFinished ? 'bg-green-500' : isReturning ? 'bg-purple-500' : 'bg-blue-500'
-              )} />
-            )}
-          </div>
-
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <h4 className={clsx(
-                    'text-sm font-black truncate leading-tight',
-                    isSelected
-                      ? (isDark ? 'text-blue-100' : 'text-blue-700')
-                      : isUnassigned
-                        ? (isDark ? 'text-amber-200' : 'text-amber-700')
-                        : (isDark ? 'text-gray-200' : 'text-gray-800')
-                  )}>
-                    {courierName}
-                  </h4>
-                  {vehicleType !== 'car' && !isUnassigned && (
-                    <span className={clsx(
-                      'px-1.5 py-0.5 text-[7px] rounded-md font-black uppercase tracking-widest',
-                      isDark ? 'bg-orange-500/20 text-orange-400' : 'bg-orange-100 text-orange-600'
-                    )}>МОТО</span>
-                  )}
-                </div>
-
-                <div className={clsx(
-                  'text-[10px] font-bold mt-0.5 flex items-center gap-2',
-                  isDark ? 'text-gray-400' : 'text-gray-500'
-                )}>
-                  <span className={clsx(totalOrdersCount > 0 ? (isDark ? 'text-blue-400/80' : 'text-blue-600/80') : '')}>
-                    {totalOrdersCount > 0
-                      ? `${deliveredOrdersCount}/${totalOrdersCount} доставлено`
-                      : `${availableOrdersCount} заказов`}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex flex-col items-end gap-1.5 shrink-0">
-                <div className="text-right">
-                  <div className={clsx(
-                    'text-[11px] font-black leading-none',
-                    isSelected
-                      ? (isDark ? 'text-blue-200' : 'text-blue-700')
-                      : (isDark ? 'text-gray-200' : 'text-gray-700')
-                  )}>
-                    {Math.round(progress)}%
-                  </div>
-                  <div className={clsx(
-                    'text-[8px] font-bold uppercase tracking-tighter opacity-50 mt-0.5',
-                    isDark ? 'text-gray-400' : 'text-gray-500'
-                  )}>
-                    {isFinished ? 'Готов' : isOnRoute ? 'В пути' : 'Свободен'}
-                  </div>
-                </div>
-
-                <div className={clsx(
-                  'w-12 h-1 rounded-full overflow-hidden p-[1px]',
-                  isDark ? 'bg-white/5' : 'bg-gray-100'
-                )}>
-                  <div
-                    className={clsx(
-                      'h-full rounded-full transition-all duration-300',
-                      isFinished ? 'bg-green-500' : isOnRoute ? 'bg-blue-500' : 'bg-gray-300/50'
-                    )}
-                    style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </button>
-
-      {/* Background glow */}
-      {isSelected && (
-        <div className={clsx(
-          'absolute inset-0 opacity-10 pointer-events-none transition-opacity duration-300',
-          isDark ? 'bg-gradient-to-br from-blue-500 to-transparent' : 'bg-gradient-to-br from-blue-100 to-transparent'
-        )} />
-      )}
-    </div>
-  )
-})
+import { CourierListItem } from './CourierListItem'
 
 export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const { excelData, updateExcelData, saveManualOverrides } = useExcelData()
@@ -817,14 +612,17 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
   // Сортировка и пагинация маршрутов
   const allRoutes = (excelData?.routes || []) as Route[]
-  const sortedRoutes = sortRoutesByNewest
-    ? [...allRoutes].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
-    : allRoutes
-  const totalRoutePages = Math.ceil((sortedRoutes.length ?? 0) / routesPerPage || 0)
-  const paginatedRoutes = sortedRoutes.slice(
-    routePage * routesPerPage,
-    (routePage + 1) * routesPerPage
-  )
+  const { totalRoutePages, paginatedRoutes } = useMemo(() => {
+    const sorted = sortRoutesByNewest
+      ? [...allRoutes].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+      : allRoutes
+    const total = Math.ceil((sorted.length ?? 0) / routesPerPage || 0)
+    const paginated = sorted.slice(
+      routePage * routesPerPage,
+      (routePage + 1) * routesPerPage
+    )
+    return { totalRoutePages: total, paginatedRoutes: paginated }
+  }, [allRoutes, sortRoutesByNewest, routePage, routesPerPage])
 
   // Функция для поиска заказов по номеру
   const searchOrders = useCallback((orders: Order[]) => {
@@ -845,25 +643,39 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
 
 
-  const availableOrders = useMemo(() => {
-    if (!selectedCourier) return []
-    let all = sortOrdersByTime(searchOrders(courierOrders[selectedCourier] || []))
-    // Дедупликация на случай дублей данных из источника
-    const seen = new Set<string>()
-    all = all.filter(o => (seen.has(o.id) ? false : (seen.add(o.id), true)))
+  // --- Оптимизированная фильтрация заказов ---
+  const { availableOrders, ordersInRoutes } = useMemo(() => {
+    if (!selectedCourier) return { availableOrders: [], ordersInRoutes: [] }
+    
+    // 1. Предварительно вычисляем Set ID заказов в маршрутах для O(1) поиска
+    const orderIdsInRoutes = new Set<string>()
+    allRoutes.forEach(r => {
+      if (r.orders) {
+        r.orders.forEach((o: any) => orderIdsInRoutes.add(o.id || o._id))
+      }
+    })
 
-    return all.filter(order => !isOrderInExistingRoute(order.id))
-  }, [selectedCourier, courierOrders, searchOrders, isOrderInExistingRoute, sortOrdersByTime])
+    // 2. Получаем все заказы выбранного курьера
+    const rawOrders = courierOrders[selectedCourier] || []
+    const ordersWithSearch = searchOrders(rawOrders)
+    const sortedAndDeduplicated = sortOrdersByTime(ordersWithSearch).filter((o, idx, self) => 
+      self.findIndex(t => t.id === o.id) === idx
+    )
 
-  const ordersInRoutes = useMemo(() => {
-    if (!selectedCourier) return []
-    let all = sortOrdersByTime(searchOrders(courierOrders[selectedCourier] || []))
-    // Дедупликация
-    const seen = new Set<string>()
-    all = all.filter(o => (seen.has(o.id) ? false : (seen.add(o.id), true)))
+    // 3. Распределяем по спискам одним проходом
+    const available: Order[] = []
+    const inRoutes: Order[] = []
+    
+    sortedAndDeduplicated.forEach(order => {
+      if (orderIdsInRoutes.has(order.id)) {
+        inRoutes.push(order)
+      } else {
+        available.push(order)
+      }
+    })
 
-    return all.filter(order => isOrderInExistingRoute(order.id))
-  }, [selectedCourier, courierOrders, searchOrders, isOrderInExistingRoute, sortOrdersByTime])
+    return { availableOrders: available, ordersInRoutes: inRoutes }
+  }, [selectedCourier, courierOrders, searchOrders, sortOrdersByTime, allRoutes])
 
 
   const handleOrderSelect = useCallback((orderId: string, _multi?: boolean) => {
@@ -2252,286 +2064,24 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-8" data-tour="route-list">
-                  {paginatedRoutes.map(route => {
-                    const courierVehicle = getCourierVehicleType(route.courier);
-                    const anomalyCheck = routeAnomalies.get(route.id);
-
-                    return (
-                      <div key={route.id} className={clsx(
-                        'group rounded-[2.5rem] border-2 p-8 transition-all duration-200 relative overflow-hidden',
-                        isDark
-                          ? 'bg-gray-800/40 border-gray-700 hover:border-blue-500/50 hover:bg-gray-800/80 shadow-black/20'
-                          : 'bg-white border-blue-50 shadow-blue-500/5 hover:shadow-2xl hover:border-blue-400'
-                      )}>
-                        {/* Линия-акцент */}
-                        <div className={clsx(
-                          "absolute top-0 left-0 w-2 h-full transition-all duration-200",
-                          courierVehicle === 'car' ? "bg-green-500/50" : "bg-orange-500/50",
-                          "group-hover:w-4"
-                        )}></div>
-
-                        <div className="flex flex-col lg:flex-row items-start justify-between gap-8 mb-8">
-                          <div className="flex items-center gap-6">
-                            <div className={clsx(
-                              'w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-110',
-                              courierVehicle === 'car'
-                                ? (isDark ? 'bg-green-600/20 text-green-400' : 'bg-green-600 text-white')
-                                : (isDark ? 'bg-orange-600/20 text-orange-400' : 'bg-orange-600 text-white')
-                            )}>
-                              {courierVehicle === 'car' ? <TruckIcon className="w-8 h-8" /> : <TruckIcon className="w-8 h-8" />}
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-3 mb-1">
-                                <h3 className={clsx(
-                                  'text-2xl font-black tracking-tight',
-                                  isDark ? 'text-gray-100' : 'text-gray-900'
-                                )}>{route.courier}</h3>
-                                <span className={clsx(
-                                  'text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-widest',
-                                  courierVehicle === 'car'
-                                    ? (isDark ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-700')
-                                    : (isDark ? 'bg-orange-500/20 text-orange-400' : 'bg-orange-100 text-orange-700')
-                                )}>
-                                  {courierVehicle === 'car' ? 'Авто' : 'Мото'}
-                                </span>
-                                {route.orders.every(o => isOrderCompleted(o.status)) && (
-                                  <span className="bg-green-500 text-white text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-widest flex items-center gap-1">
-                                    <CheckBadgeIcon className="w-3 h-3" />
-                                    ГОТОВ
-                                  </span>
-                                )}
-                              </div>
-                              <p className={clsx(
-                                'text-sm font-bold opacity-50 uppercase tracking-widest',
-                                isDark ? 'text-gray-400' : 'text-gray-500'
-                              )}>
-                                {route.orders.length} заказов в списке
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-4 self-center lg:self-start">
-                            <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/30 p-2 rounded-2xl">
-                                <button
-                                  onClick={() => route.isOptimized ? openRouteInGoogleMaps(route) : calculateRouteDistance(route)}
-                                  disabled={isCalculating}
-                                  className={clsx(
-                                    'p-3 rounded-xl transition-all hover:scale-110 active:scale-90',
-                                    isDark ? 'text-blue-400 hover:bg-blue-900/20' : 'text-blue-600 hover:bg-blue-50'
-                                  )}
-                                  title={route.isOptimized ? "Открыть в Google Maps" : "Рассчитать"}
-                                >
-                                  <MapIcon className="h-6 w-6" />
-                                </button>
-                                <button
-                                  onClick={() => openRouteInValhalla(route)}
-                                  disabled={isCalculating || !route.isOptimized}
-                                  className={clsx(
-                                    'p-3 rounded-xl transition-all hover:scale-110 active:scale-90',
-                                    isDark ? 'text-green-400 hover:bg-green-900/20' : 'text-green-600 hover:bg-green-50',
-                                    !route.isOptimized && 'opacity-30 grayscale cursor-not-allowed'
-                                  )}
-                                  title="Открыть в Valhalla"
-                                >
-                                  <PlayIcon className="h-6 w-6 transform rotate-90" />
-                                </button>
-                              <button
-                                onClick={() => recalculateRoute(route)}
-                                disabled={isCalculating}
-                                className={clsx(
-                                  'p-3 rounded-xl transition-all hover:scale-110 active:scale-90',
-                                  isDark ? 'text-green-400 hover:bg-green-900/20' : 'text-green-600 hover:bg-green-50'
-                                )}
-                                title="Пересчитать"
-                              >
-                                <ArrowPathIcon className="h-6 w-6" />
-                              </button>
-                              <div className="w-px h-6 bg-gray-200 dark:bg-gray-600 mx-1"></div>
-                              <button
-                                onClick={() => deleteRoute(route.id)}
-                                className={clsx(
-                                  'p-3 rounded-xl transition-all hover:scale-110 active:scale-90',
-                                  isDark ? 'text-red-400 hover:bg-red-900/20' : 'text-red-600 hover:bg-red-50'
-                                )}
-                                title="Удалить"
-                              >
-                                <TrashIcon className="h-6 w-6" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="space-y-4">
-                          {route.orders.map((order: Order, index: number) => {
-                            const meta = (route as any).geoMeta?.waypoints?.[index]
-                            const metaBadge = (meta || order.kmlZone) ? (
-                              <div className="mt-2 flex items-center flex-wrap gap-2 text-[10px] font-black uppercase tracking-widest">
-                                {(meta?.locationType) && (
-                                  <span className={clsx(
-                                    'px-2 py-0.5 rounded-lg border',
-                                    meta.locationType === 'ROOFTOP'
-                                      ? (isDark ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-green-50 text-green-700 border-green-200')
-                                      : meta.locationType === 'RANGE_INTERPOLATED'
-                                        ? (isDark ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : 'bg-yellow-50 text-yellow-700 border-yellow-200')
-                                        : (isDark ? 'bg-gray-700 text-gray-400 border-gray-600' : 'bg-gray-50 text-gray-600 border-gray-200')
-                                  )}>{translateLocationType(meta.locationType)}</span>
-                                )}
-                                {(typeof meta?.streetNumberMatched === 'boolean' || typeof order.streetNumberMatched === 'boolean') && (
-                                  <span className={clsx(
-                                    'px-2 py-0.5 rounded-lg border',
-                                    (meta?.streetNumberMatched ?? order.streetNumberMatched)
-                                      ? (isDark ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-blue-50 text-blue-700 border-blue-200')
-                                      : (isDark ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-red-50 text-red-700 border-red-200')
-                                  )}>
-                                    {(meta?.streetNumberMatched ?? order.streetNumberMatched) ? ' Найден номер дома' : ' Не нашел номера дома'}
-                                  </span>
-                                )}
-                                {(meta?.zoneName || order.kmlZone) && (
-                                  <span className={clsx(
-                                    'px-2 py-0.5 rounded-lg border shadow-sm flex items-center gap-1',
-                                    isDark ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                                  )}>
-                                    <MapIcon className="w-3 h-3" />
-                                    {order.kmlZone || meta?.zoneName}{(order.kmlHub || meta?.hubName) ? ` / ${order.kmlHub || meta?.hubName}` : ''}
-                                  </span>
-                                )}
-                              </div>
-                            ) : null
-
-                            const hasAddressIssues = anomalyCheck?.errors.some(error =>
-                              error.includes('адрес') || error.includes('адресов')
-                            )
-
-                            return (
-                              <div
-                                key={order.id}
-                                draggable
-                                onDragStart={(e) => {
-                                  e.dataTransfer.setData('orderId', order.id);
-                                  e.dataTransfer.effectAllowed = 'move';
-                                }}
-                                className={clsx(
-                                  "flex items-start justify-between p-4 rounded-2xl transition-all duration-200",
-                                  isDark ? "hover:bg-gray-700/30" : "hover:bg-gray-50",
-                                  "cursor-grab active:cursor-grabbing"
-                                )}
-                              >
-                                <div className="flex items-start gap-4 flex-1">
-                                  <span className={clsx(
-                                    'w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black shadow-inner flex-shrink-0',
-                                    isDark
-                                      ? 'bg-gray-700 text-blue-400'
-                                      : 'bg-white text-blue-600 border border-blue-100'
-                                  )}>
-                                    {index + 1}
-                                  </span>
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex items-center flex-wrap gap-2 mb-1">
-                                      <span className={clsx(
-                                        'font-black text-sm tracking-tight',
-                                        isDark ? 'text-gray-100' : 'text-gray-900'
-                                      )}>#{order.orderNumber}</span>
-                                      {order.plannedTime && order.plannedTime !== '00:00' && order.plannedTime !== '00:00:00' && order.plannedTime !== 'Без времени' && (
-                                        <span className={clsx(
-                                          'px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider',
-                                          isDark ? 'bg-purple-600/20 text-purple-300' : 'bg-purple-50 text-purple-700 border border-purple-100'
-                                        )}>
-                                          {order.plannedTime}
-                                        </span>
-                                      )}
-                                      {order.paymentMethod && (() => {
-                                        const badgeProps = getPaymentMethodBadgeProps(order.paymentMethod, isDark)
-                                        return (
-                                          <span className={clsx('px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider', badgeProps.bgColorClass, badgeProps.textColorClass)}>
-                                            {badgeProps.text}
-                                          </span>
-                                        )
-                                      })()}
-                                    </div>
-                                    <div className={clsx(
-                                      'truncate text-sm font-medium',
-                                      isDark ? 'text-gray-400' : 'text-gray-600',
-                                      hasAddressIssues && 'text-red-500'
-                                    )} title={order.address}>{order.address}</div>
-                                    {metaBadge}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2 pl-4">
-                                  <button
-                                    onClick={() => handleEditAddress(order)}
-                                    className={clsx(
-                                      'p-2 rounded-xl transition-all hover:scale-110 active:scale-90',
-                                      isDark
-                                        ? 'text-gray-400 hover:text-blue-400 hover:bg-blue-900/20'
-                                        : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
-                                    )}
-                                    title="Редактировать адрес"
-                                  >
-                                    <PencilIcon className="h-4 w-4" />
-                                  </button>
-                                  {hasAddressIssues && (
-                                    <ExclamationTriangleIcon className="h-5 w-5 text-red-500 animate-bounce" title="Проблемы с адресом" />
-                                  )}
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-
-                        {/* Метрики маршрута */}
-                        <div className="mt-8 pt-8 border-t border-gray-100 dark:border-gray-700/50">
-                          {route.totalDistance || route.totalDuration ? (
-                            <div className="flex flex-wrap items-center gap-6">
-                              <div className={clsx(
-                                "flex items-center gap-3 px-4 py-2 rounded-2xl",
-                                isDark ? "bg-blue-500/10 text-blue-300" : "bg-blue-50 text-blue-700"
-                              )}>
-                                <MapIcon className="w-5 h-5" />
-                                <span className="text-sm font-black tracking-tight">{formatDistance(route.totalDistance || 0)}</span>
-                              </div>
-                              <div className={clsx(
-                                "flex items-center gap-3 px-4 py-2 rounded-2xl",
-                                isDark ? "bg-purple-500/10 text-purple-300" : "bg-purple-50 text-purple-700"
-                              )}>
-                                <ClockIcon className="w-5 h-5" />
-                                <span className="text-sm font-black tracking-tight">{formatDuration(route.totalDuration || 0)}</span>
-                              </div>
-                              {/* Removed 'Вернется в' and 'Оптимизирован' blocks as they clutter the interface */}
-
-                              {anomalyCheck && (
-                                <div className="flex flex-wrap gap-2 ml-auto">
-                                  {anomalyCheck.errors.length > 0 && (
-                                    <div className={clsx(
-                                      "flex items-center gap-2 px-4 py-2 rounded-2xl bg-red-500/10 text-red-500 border border-red-500/20"
-                                    )}>
-                                      <ExclamationCircleIcon className="w-4 h-4" />
-                                      <span className="text-xs font-black uppercase tracking-wider">{anomalyCheck.errors.length} Ошибок</span>
-                                    </div>
-                                  )}
-                                  {anomalyCheck.warnings.length > 0 && (
-                                    <div className={clsx(
-                                      "flex items-center gap-2 px-4 py-2 rounded-2xl bg-yellow-500/10 text-yellow-500 border border-yellow-500/20"
-                                    )}>
-                                      <ExclamationTriangleIcon className="w-4 h-4" />
-                                      <span className="text-xs font-black uppercase tracking-wider">{anomalyCheck.warnings.length} Предупр.</span>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <div className={clsx(
-                              'text-sm font-bold opacity-30 italic flex items-center gap-2',
-                              isDark ? 'text-gray-400' : 'text-gray-500'
-                            )}>
-                              <div className="w-2 h-2 rounded-full bg-gray-400"></div>
-                              {isCalculating ? 'Расчет расстояния...' : 'Расстояние не рассчитано'}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
+                  {paginatedRoutes.map(route => (
+                    <RouteCard
+                      key={route.id}
+                      route={route}
+                      isDark={isDark}
+                      courierVehicle={getCourierVehicleType(route.courier)}
+                      anomalyCheck={routeAnomalies.get(route.id)}
+                      formatDistance={formatDistance}
+                      formatDuration={formatDuration}
+                      translateLocationType={translateLocationType}
+                      onOpenGoogleMaps={openRouteInGoogleMaps}
+                      onOpenValhalla={openRouteInValhalla}
+                      onRecalculate={recalculateRoute}
+                      onDelete={deleteRoute}
+                      onEditAddress={handleEditAddress}
+                      isCalculating={isCalculating}
+                    />
+                  ))}
                 </div>
               )}
 

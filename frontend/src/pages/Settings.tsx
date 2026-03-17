@@ -627,6 +627,7 @@ export const Settings: React.FC = () => {
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-gray-500 tracking-wider">Основной движок (Маршруты)</label>
                     <select {...register('routingProvider')} className="input w-full" disabled={!canModify}>
+                      <option value="turbo_instant">⚡ Turbo Instant (Все движки параллельно)</option>
                       <option value="yapiko_osrm">🚀 Quantum Engine (Yapiko+OSRM)</option>
                       <option value="osrm">OSRM (Публичный)</option>
                       <option value="valhalla">Valhalla</option>

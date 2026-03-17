@@ -110,6 +110,19 @@ export interface RobustGeocodeOptions {
    * Pre-resolved canonical address string from server (v35.9.40).
    */
   addressGeoStr?: string
+
+  /**
+   * v37: Turbo Instant Mode.
+   * If true, the service will return the first "good enough" result immediately
+   * with minimal validaton and ultra-short timeouts (1.5s).
+   */
+  turbo?: boolean
+
+  /**
+   * v37: Internal optimization. Skip complex address normalization if the input
+   * is already considered clean or comes from a trusted source.
+   */
+  skipNormalization?: boolean
 }
 
 export interface RobustGeocodeResult {

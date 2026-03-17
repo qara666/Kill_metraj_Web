@@ -554,23 +554,114 @@ export const useRouteGeocoding = ({
 
             if (!skipStateUpdate) setCalcProgress(90)
 
-            // 4. Routing Pipeline (Valhalla with OSRM Fallback)
+            // ─── TURBO INSTANT MODE ───────────────────────────────────────────────────
+            // When routingProvider is 'turbo_instant':
+            //   - Immediately use order.coords (skip geocoding chain entirely)
+            //   - Race all 3 routing engines in parallel — take the first valid result
+            //   - Skip ALL anomaly checks, per-leg disambiguation, etc.
+            const routingProvider = settings.routingProvider || 'valhalla'
+            
+            if (routingProvider === 'turbo_instant') {
+                // Super-fast path: use raw cached coords directly
+                const turboPoints = [originLoc, ...waypointLocs, destinLoc].map(l => {
+                    const lat = typeof l.lat === 'function' ? l.lat() : l.lat
+                    const lng = typeof l.lng === 'function' ? l.lng() : (l.lng || (l as any).lon)
+                    return { lat: Number(lat), lng: Number(lng) }
+                })
+
+                const yapikoUrl = (settings.yapikoOsrmUrl || '').trim()
+
+                // Race all 3 engines in parallel — return first valid result
+                const raceResults = await Promise.allSettled([
+                    // 1. Yapiko OSRM (custom local server)
+                    yapikoUrl ? (async () => {
+                        const { YapikoOSRMService } = await import('../services/YapikoOSRMService')
+                        const r = await YapikoOSRMService.calculateRoute(turboPoints, yapikoUrl)
+                        if (r.feasible && (r.totalDistance ?? 0) > 0) return { dist: r.totalDistance ?? 0, dur: r.totalDuration ?? 0, src: 'Yapiko' }
+                        throw new Error('Yapiko returned 0')
+                    })() : Promise.reject('No Yapiko URL'),
+
+                    // 2. Public OSRM
+                    (async () => {
+                        const { OSRMService } = await import('../services/osrmService')
+                        const r = await OSRMService.calculateRoute(turboPoints)
+                        if (r.feasible && (r.totalDistance ?? 0) > 0) return { dist: r.totalDistance ?? 0, dur: r.totalDuration ?? 0, src: 'OSRM' }
+                        throw new Error('OSRM returned 0')
+                    })(),
+
+                    // 3. Valhalla
+                    (async () => {
+                        const { ValhallaService } = await import('../services/valhallaService')
+                        const r = await ValhallaService.calculateRoute(turboPoints)
+                        if (r.feasible && (r.totalDistance ?? 0) > 0) return { dist: r.totalDistance ?? 0, dur: r.totalDuration ?? 0, src: 'Valhalla' }
+                        throw new Error('Valhalla returned 0')
+                    })()
+                ])
+
+                const winner = raceResults.find(r => r.status === 'fulfilled') as PromiseFulfilledResult<any> | undefined
+
+                if (winner) {
+                    const totalDistance = winner.value.dist
+                    const totalDuration = winner.value.dur
+                    console.log(`[Turbo] Winner: ${winner.value.src} — ${(totalDistance / 1000).toFixed(1)} km`)
+
+                    const geoMeta = {
+                        origin: originLoc,
+                        destination: destinLoc,
+                        waypoints: waypointLocs.map((loc) => ({
+                            ...(typeof loc === 'string' ? { address: loc } : loc),
+                        }))
+                    }
+
+                    const updatedRoute: Route = {
+                        ...route,
+                        totalDistance: totalDistance / 1000,
+                        totalDuration: totalDuration / 60,
+                        geoMeta,
+                        isOptimized: true,
+                        orders: route.orders.map((o: any) => {
+                            const upd = orderUpdates.find((u: any) => u.id === o.id)
+                            return upd ? { ...o, ...upd } : o
+                        })
+                    }
+
+                    if (!skipStateUpdate) {
+                        updateExcelData((prev: any) => ({
+                            ...prev,
+                            routes: (prev?.routes || []).map((r: Route) => r.id === route.id ? updatedRoute : r)
+                        }))
+                        toast.success(`⚡ Turbo: ${(totalDistance / 1000).toFixed(1)} км`)
+                        setIsCalculating(false)
+                        setCalcProgress(100)
+                        setTimeout(() => setCalcProgress(0), 1000)
+                    }
+                    return updatedRoute
+                }
+
+                // All engines failed
+                if (!skipStateUpdate) {
+                    toast.error('Turbo: Все провайдеры недоступны. Проверьте сеть.')
+                    setIsCalculating(false)
+                }
+                return null
+            }
+
+            // ─── STANDARD ANOMALY GUARD ──────────────────────────────────────────────
+
+            // Declare standard routing vars for non-turbo path
+            const points = [originLoc, ...waypointLocs, destinLoc].map(l => {
+                const lat = typeof l.lat === 'function' ? l.lat() : l.lat
+                const lng = typeof l.lng === 'function' ? l.lng() : (l.lng || (l as any).lon)
+                return { lat: Number(lat), lng: Number(lng) }
+            })
+            const yapikoUrl = (settings.yapikoOsrmUrl || '').trim()
             let totalDistance = 0
             let totalDuration = 0
             let routingSuccess = false
 
             if (!skipStateUpdate) setCalcProgress(95)
 
-            const points = [originLoc, ...waypointLocs, destinLoc].map(l => {
-                const lat = typeof l.lat === 'function' ? l.lat() : l.lat
-                const lng = typeof l.lng === 'function' ? l.lng() : (l.lng || (l as any).lon)
-                return { lat: Number(lat), lng: Number(lng) }
-            })
 
-            const routingProvider = settings.routingProvider || 'valhalla'
-            const yapikoUrl = (settings.yapikoOsrmUrl || '').trim()
-
-            // SOTA 5.68: Custom OSRM Provider (Yapiko)
             if (routingProvider === 'yapiko_osrm' && yapikoUrl) {
                 try {
                     const { YapikoOSRMService } = await import('../services/YapikoOSRMService')

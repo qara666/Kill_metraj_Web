@@ -1,4 +1,4 @@
-import { findClustersHierarchical, calculateOrderPriorityV2, groupOrdersByReadyTimeWindows, enhancedCandidateEvaluationV2, prefilterCandidatesByDistance } from './routeOptimizationHelpers';
+import { findClustersHierarchical, calculateOrderPriorityV2, groupOrdersByReadyTimeWindows, enhancedCandidateEvaluationV2, prefilterCandidatesByDistance, getCachedDistance } from './routeOptimizationHelpers';
 import { type Order, type TrafficSnapshot } from '../../types';
 import { routeOptimizationCache } from './routeOptimizationCache';
 import { GoogleAPIManager } from '../api/googleAPIManager';
@@ -22,6 +22,7 @@ export interface RoutePlanningContext {
     defaultEndLat?: number | null;
     defaultEndLng?: number | null;
     setOptimizationProgress: (p: { current: number; total: number; message: string }) => void;
+    routingProvider?: string;
 }
 
 export async function runRoutePlanningAlgorithm(
@@ -164,8 +165,26 @@ export async function runRoutePlanningAlgorithm(
             routeReasons.push(`Маршрут оптимизирован методом 2-opt`);
         }
 
-        // Finalize route
-        const finalCheck = await apiManager.checkRouteWithTraffic(routeChain, { includeStartEnd: true, priority: 'high' });
+        // Finalize route: In Turbo mode, bypass the slow API check completely.
+        let finalCheck: any;
+        if (context.routingProvider === 'turbo_instant') {
+            const rawDist = routeChain.reduce((sum, o, idx) => {
+                if (idx === 0) return sum + (depotCoords ? getCachedDistance(depotCoords, o.coords!) : 0)
+                return sum + getCachedDistance(routeChain[idx-1].coords!, o.coords!)
+            }, 0) + (depotCoords ? getCachedDistance(routeChain[routeChain.length-1].coords!, depotCoords) : 0);
+            
+            finalCheck = {
+                feasible: true,
+                totalDistance: rawDist,
+                totalDuration: (rawDist / 1000) * 2 * 60, // ~2 mins per km
+                legs: [],
+                trafficInfo: [],
+                totalTrafficDelay: 0,
+                hasCriticalTraffic: false
+            };
+        } else {
+            finalCheck = await apiManager.checkRouteWithTraffic(routeChain, { includeStartEnd: true, priority: 'high' });
+        }
 
         routes.push({
             id: `route-${Date.now()}-${routes.length + 1}`,
