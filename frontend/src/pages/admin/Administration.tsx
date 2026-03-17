@@ -1,15 +1,17 @@
 import React from 'react'
 import { useTheme } from '../../contexts/ThemeContext'
 import { clsx } from 'clsx'
+import { AdminDatabaseCleanup } from '../../components/admin/AdminDatabaseCleanup'
+import { FetcherMetrics } from '../../components/admin/FetcherMetrics'
+import { CollapsibleSection } from '../../components/shared/CollapsibleSection'
+import ZoneInspector from '../../components/zone/ZoneInspector'
 import {
     ShieldCheckIcon,
     TrashIcon,
     ChartBarIcon,
-    ServerIcon
+    ServerIcon,
+    MagnifyingGlassIcon
 } from '@heroicons/react/24/outline'
-import { AdminDatabaseCleanup } from '../../components/admin/AdminDatabaseCleanup'
-import { FetcherMetrics } from '../../components/admin/FetcherMetrics'
-import { CollapsibleSection } from '../../components/shared/CollapsibleSection'
 
 export const Administration: React.FC = () => {
     const { isDark } = useTheme()
@@ -89,6 +91,27 @@ export const Administration: React.FC = () => {
                         >
                             <div className="mt-4">
                                 <FetcherMetrics />
+                            </div>
+                        </CollapsibleSection>
+                    </div>
+                </div>
+
+                {/* Инспектор зон и адресов (Отладка) */}
+                <div className={clsx(
+                    'rounded-3xl border overflow-hidden transition-all duration-500',
+                    isDark
+                        ? 'bg-gray-800/50 border-gray-700/50 shadow-2xl shadow-black/20'
+                        : 'bg-white border-gray-200 shadow-2xl shadow-blue-100/50'
+                )}>
+                    <div className="p-6">
+                        <CollapsibleSection
+                            isDark={isDark}
+                            icon={<MagnifyingGlassIcon className="h-5 w-5" />}
+                            title="Инспектор зон и адресов (Отладка)"
+                            defaultOpen={false}
+                        >
+                            <div className="mt-4">
+                                <ZoneInspector isDark={isDark} />
                             </div>
                         </CollapsibleSection>
                     </div>

@@ -186,11 +186,11 @@ const createPaymentMethod = (rowData: Record<string, any>, index: number): any =
     };
 };
 
-const parseAddressGeo = (str: string): { lat?: number; lng?: number; address?: string } => {
+export const parseAddressGeo = (str: string): { lat?: number; lng?: number; address?: string } => {
     if (!str) return {};
     const res: any = {};
     
-    // Improved regex to handle various quoting styles and case sensitivity
+    // Format 1: XML-like (Lat="...", Long="...")
     const latMatch = str.match(/Lat=["']?([^"'\s>]+)["']?/i);
     const lngMatch = str.match(/Long=["']?([^"'\s>]+)["']?/i);
     const addrMatch = str.match(/AddressStr=["']?([^"'>]+)["']?/i);
@@ -204,7 +204,62 @@ const parseAddressGeo = (str: string): { lat?: number; lng?: number; address?: s
         if (!isNaN(lng)) res.lng = lng;
     }
     if (addrMatch) res.address = addrMatch[1].trim();
+
+    // Format 2: Plain text (Широта: ..., Долгота: ... or Latitude: ..., Longitude: ...)
+    if (!res.lat || !res.lng) {
+        const latTextMatch = str.match(/(?:Широта|Latitude|Lat)[:\s]+([-+]?\d+\.\d+)/i);
+        const lngTextMatch = str.match(/(?:Долгота|Longitude|Long|Lng)[:\s]+([-+]?\d+\.\d+)/i);
+        
+        if (latTextMatch) {
+            const lat = parseFloat(latTextMatch[1]);
+            if (!isNaN(lat)) res.lat = lat;
+        }
+        if (lngTextMatch) {
+            const lng = parseFloat(lngTextMatch[1]);
+            if (!isNaN(lng)) res.lng = lng;
+        }
+    }
+
+    // Format 3: comma separated (50.45, 30.52)
+    if (!res.lat || !res.lng) {
+        const pairMatch = str.match(/^\s*([-+]?\d+\.\d+)\s*,\s*([-+]?\d+\.\d+)\s*$/);
+        if (pairMatch) {
+            res.lat = parseFloat(pairMatch[1]);
+            res.lng = parseFloat(pairMatch[2]);
+        }
+    }
+
     return res;
+};
+
+/**
+ * v36.2: Universal Geodata Enricher
+ * Extracts coordinates from addressGeo/address_geo/etc. even for raw server data.
+ */
+export const enrichOrderGeodata = (order: any): any => {
+    if (!order) return order;
+    
+    // Skip if already has deep coords and is locked
+    if (order.coords?.lat && order.coords?.lng && order.isAddressLocked) return order;
+
+    const geoRaw = order.addressGeo || order.address_geo || order.coords || 
+                   order['координаты'] || order['широта/долгота'] || order['lat/lng'] || 
+                   order.location || order.point;
+
+    if (geoRaw) {
+        const geoData = parseAddressGeo(String(geoRaw));
+        if (geoData.lat && geoData.lng) {
+            return {
+                ...order,
+                coords: { lat: geoData.lat, lng: geoData.lng },
+                latitude: geoData.lat,
+                longitude: geoData.lng,
+                isAddressLocked: true,
+                addressGeoStr: geoData.address || order.addressGeoStr || String(geoRaw)
+            };
+        }
+    }
+    return order;
 };
 
 const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, index: number): any => {
@@ -214,7 +269,7 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
         'addressStr', 'address_str'
     ]);
 
-    const addressGeoRaw = getValue(rowData, ['addressGeo', 'address_geo']);
+    const addressGeoRaw = getValue(rowData, ['addressGeo', 'address_geo', 'координаты', 'coords', 'geo', 'широта/долгота', 'lat/lng', 'location', 'point']);
     const geoData = addressGeoRaw ? parseAddressGeo(String(addressGeoRaw)) : {};
 
     // v35.9.40: Always prioritize addressGeo string if available
@@ -354,7 +409,7 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
         'delivery_time', 'deliverytime', 'дедлайн', 'deadline', 'deadline_time'
     ], 'плановое время');
 
-    return {
+    return enrichOrderGeodata({
         id: `order_${Date.now()}_${index}`,
         orderNumber,
         address: String(address || '').trim(),
@@ -367,14 +422,8 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
         customerName: getValue(rowData, ['клиент', 'customer', 'имя_клиента', 'имя']) || '',
         isSelected: false,
         isInRoute: false,
-        coords: geoData.lat && geoData.lng ? { lat: geoData.lat, lng: geoData.lng } : undefined,
-        latitude: geoData.lat,
-        longitude: geoData.lng,
-        isAddressLocked: !!(geoData.lat && geoData.lng), // Lock if we have server-side coords
-        addressGeoStr: geoData.address || '', // v35.9.40: Store canonical string
-        addressGeoRaw: addressGeoRaw,        // For debugging
         ...rowData
-    };
+    });
 };
 
 const createOrder = (rowData: Record<string, any>, index: number): any => {

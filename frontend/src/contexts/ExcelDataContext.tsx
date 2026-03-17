@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useRe
 import { localStorageUtils } from '../utils/ui/localStorage'
 import { toast } from 'react-hot-toast'
 import { normalizeCourierName } from '../utils/data/courierName'
+import { enrichOrderGeodata } from '../utils/data/excelProcessor'
 
 interface ExcelData {
   orders: any[]
@@ -372,7 +373,7 @@ function applyCourierVehicleMap(data: any): any {
       bruteNormalizedMap[normalizeCourierName(name).toLowerCase()] = rawMap[name];
     });
 
-    const orders = Array.isArray(data.orders) ? data.orders : []
+    const orders = Array.isArray(data.orders) ? data.orders.map((o: any) => enrichOrderGeodata(o)) : []
     const couriers = Array.isArray(data.couriers) ? [...data.couriers] : []
     const courierNamesInList = new Set(couriers.map(c => c.name || c._id || c.id));
 

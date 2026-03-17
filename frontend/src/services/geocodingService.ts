@@ -214,7 +214,8 @@ export class GeocodingService {
     addresses: string[],
     options: any = {}
   ): Promise<GeocodingResult[]> {
-    const resultsMap = await robustGeocodingService.batchGeocode(addresses, options)
+    const requests = addresses.map(address => ({ address, options }))
+    const resultsMap = await robustGeocodingService.batchGeocode(requests, options)
     
     return addresses.map(addr => {
       const res = resultsMap.get(addr.trim().toLowerCase())

@@ -233,56 +233,58 @@ export const useRoutePlanning = (
             })
 
             // Geocoding
-            setOptimizationProgress({ current: 0, total: validOrders.length, message: 'Геокодирование...' })
+            // setOptimizationProgress({ current: 0, total: validOrders.length, message: 'Геокодирование...' }) // Removed
             const addresses = Array.from(new Set(validOrders.map(o => o.address).filter(Boolean)))
 
-            for (let i = 0; i < addresses.length; i++) {
-                const addr = addresses[i]
-                if (!routeOptimizationCache.getCoordinates(addr)) {
-                    // Try to find the expected zone for this address to enable "Iron Dome" penalties
-                    const orderForAddr = validOrders.find(o => (o.address || o.raw?.address || '') === addr);
-                    const expectedDeliveryZone = orderForAddr?.sector || orderForAddr?.deliveryZone;
-
-                    // Use geocodeWithZones to ensure KML-aware biasing and scoring
-                    const result = await GeocodingService.geocodeWithZones(addr, { 
-                        silent: true,
+            // Parallel Quantum Geocoding (v36.8)
+            setOptimizationProgress({ current: 0, total: addresses.length, message: 'Квантовый геокодинг (Параллельно)...' })
+            
+            const geocodeRequests = addresses.map(addr => {
+                const orderForAddr = validOrders.find(o => (o.address || o.raw?.address || '') === addr);
+                const expectedDeliveryZone = orderForAddr?.sector || orderForAddr?.deliveryZone;
+                return { 
+                    address: addr, 
+                    options: { 
+                        silent: true, 
                         expectedDeliveryZone 
-                    })
-                    if (result.best && result.best.score > -1000) {
-                        routeOptimizationCache.setCoordinates(addr, {
+                    } 
+                };
+            });
+
+            const resultsMap = await robustGeocodingService.batchGeocode(geocodeRequests);
+            
+            // Map results to optimization cache
+            resultsMap.forEach((result, key) => {
+                if (result.best && result.best.score > -900000) { // Respect "Iron Dome"
+                    // Find original address from input list to ensure cache sync
+                    const originalAddr = addresses.find(a => a.trim().toLowerCase() === key);
+                    if (originalAddr) {
+                        routeOptimizationCache.setCoordinates(originalAddr, {
                             lat: result.best.lat,
                             lng: result.best.lng
-                        })
+                        });
                     }
                 }
+            });
 
-                if (i % 5 === 0 || i === addresses.length - 1) {
-                    setOptimizationProgress({
-                        current: i + 1,
-                        total: addresses.length,
-                        message: `Геокодирование... (${i + 1}/${addresses.length})`
-                    })
-                }
+            setOptimizationProgress({
+                current: addresses.length,
+                total: addresses.length,
+                message: `Геокодинг завершен (${addresses.length} адресов)`
+            });
+
+            // Parallel geocode start/end addresses (v36.8)
+            const specialAddresses = [startAddr, endAddr].filter(a => a && !routeOptimizationCache.getCoordinates(a));
+            if (specialAddresses.length > 0) {
+                console.log('[Quantum Planning] Geocoding special addresses:', specialAddresses);
+                const results = await GeocodingService.geocodeAddresses(specialAddresses, { region: 'ua' });
+                results.forEach((res, i) => {
+                    const addr = specialAddresses[i];
+                    if (res.success && res.latitude && res.longitude) {
+                        routeOptimizationCache.setCoordinates(addr, { lat: res.latitude, lng: res.longitude });
+                    }
+                });
             }
-
-            // Explicitly geocode start/end addresses to ensure they are cached and valid
-            // This is critical for DirectionsService to work correctly with ambiguous addresses
-            await (async () => {
-                if (startAddr && !routeOptimizationCache.getCoordinates(startAddr)) {
-                    console.log('Geocoding start address:', startAddr)
-                    const res = await GeocodingService.geocodeAndCleanAddress(startAddr, { region: 'ua' })
-                    if (res.success && res.latitude && res.longitude) {
-                        routeOptimizationCache.setCoordinates(startAddr, { lat: res.latitude, lng: res.longitude })
-                    }
-                }
-                if (endAddr && !routeOptimizationCache.getCoordinates(endAddr)) {
-                    console.log('Geocoding end address:', endAddr)
-                    const res = await GeocodingService.geocodeAndCleanAddress(endAddr, { region: 'ua' })
-                    if (res.success && res.latitude && res.longitude) {
-                        routeOptimizationCache.setCoordinates(endAddr, { lat: res.latitude, lng: res.longitude })
-                    }
-                }
-            })()
 
             // Define depotCoords prioritizing explicit input
             let depotCoords = null;

@@ -110,16 +110,7 @@ export class PhotonService {
         }
 
         const results = await this._query(query, bboxParams, bounds?.center)
-        if (results.length > 0) return results
-
-        // If no results, try stripping everything but the street and house if it was very long
-        if (expanded.split(',').length > 2) {
-             const base = expanded.split(',')[0].trim()
-             const results2 = await this._query(`${base}, ${city}`, bboxParams, bounds?.center)
-             if (results2.length > 0) return results2
-        }
-
-        return []
+        return results
     }
 
     private static async _query(q: string, bboxParams: string, locationBias?: [number, number]): Promise<any[]> {

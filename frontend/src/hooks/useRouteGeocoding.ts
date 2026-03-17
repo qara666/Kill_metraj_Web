@@ -15,9 +15,6 @@ import { robustGeocodingService } from '../services/robust-geocoding/RobustGeoco
 import { distanceBetween } from '../services/robust-geocoding/candidateScoring'
 import { Route } from '../types/route'
 
-/** Yield control back to the browser event loop. Prevents UI jank during heavy loops. */
-const yieldToMain = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0))
-
 interface UseRouteGeocodingProps {
     settings: any
     selectedHubs: string[]
@@ -139,12 +136,8 @@ export const useRouteGeocoding = ({
         }
 
         if (!suspectJump && (silent || !confirmAddresses)) {
-            // v35.9.26: Relaxed threshold for non-silent mode. 
-            // If we are in "confirmAddresses" mode, we want the user to see candidates 
-            // even if they were penalized by Lockdown (-2M), so they can confirm them manually.
-            // Catastrophic rejection (-5M+) still returns null.
             if (strictZoneFallback && best.score < -5000000) return null
-            return best
+            return result
         }
 
         // 3. If confirmation is required OR suspect jump detected
@@ -155,7 +148,7 @@ export const useRouteGeocoding = ({
         const isSuspicious = !houseMatched || !best.isInsideZone || best.isTechnicalZone
 
         if (!isSuspicious && result.allCandidates.length <= 1) {
-            return best
+            return result
         }
 
         // 4. Disambiguation modal
@@ -194,7 +187,10 @@ export const useRouteGeocoding = ({
             processDisambQueue()
         })
 
-        return choice ? { ...best, raw: choice } : best
+        if (choice) {
+            result.best = { ...best, raw: choice };
+        }
+        return result;
     }
 
     // ─── Main route calculation ──────────────────────────────────────────────
@@ -232,11 +228,12 @@ export const useRouteGeocoding = ({
                 originLoc = makeLatLng(startLat as number, startLng as number);
             } else if (route.startAddress) {
                 const cleanedStart = cleanAddressForRoute(route.startAddress).toLowerCase();
-                if (externalCache?.has(cleanedStart)) {
-                    originLoc = toLoc(externalCache.get(cleanedStart).raw);
+                const cachedRes = externalCache?.get(cleanedStart) as any;
+                if (cachedRes && cachedRes.best) {
+                    originLoc = toLoc(cachedRes.best.raw);
                 } else {
                     const res = await robustGeocode(cleanAddressForRoute(route.startAddress), { silent: true, strictZoneFallback: false });
-                    originLoc = res ? toLoc(res.raw) : null;
+                    originLoc = (res && res.best) ? toLoc(res.best.raw) : null;
                     if (res && externalCache) externalCache.set(cleanedStart, res);
                 }
             }
@@ -249,11 +246,10 @@ export const useRouteGeocoding = ({
                 return null;
             }
 
-            // 2. Process Waypoints
+            // 2. Process Waypoints (Lightning Parallel Batch)
             const addrCache = externalCache || new Map<string, any>();
-            const waypointLocs: any[] = [];
             const orderUpdates: any[] = [];
-            let lastLoc = originLoc;
+            const waypointLocs: any[] = [];
 
             // FAST-PATH: If all orders have coordinates and we aren't confirming addresses,
             // we can map them instantly without any yields or geocoding logic.
@@ -279,20 +275,27 @@ export const useRouteGeocoding = ({
                     orderUpdates.push(update);
                 });
             } else {
-                // NORMAL-PATH: Loop with geocoding/cache checks
-                for (const order of route.orders) {
-                    const cleaned = cleanAddressForRoute(order.address)
-                    const key = cleaned.toLowerCase()
+            // NORMAL-PATH (v36 Parallel)
+            // FAST-PATH: Basic bypass for orders with pre-existing coordinates
+            const ordersToGeocode: any[] = [];
+            
+            route.orders.forEach(order => {
+                const cleaned = cleanAddressForRoute(order.address);
+                const key = cleaned.toLowerCase();
+                const addressGeoStr = (order as any).addressGeoStr;
 
-                    const expectedDeliveryZone = order.deliveryZone || order.raw?.deliveryZone || order.raw?.['Зона доставки'] || null
+                // Priority 1: Check internal cache
+                if (addrCache.has(key)) return;
 
-                    // v35.9.30: High-Precision Bypass - If order already has server-provided coords (e.g. from addressGeo)
-                    if (order.coords?.lat && order.coords?.lng && !addrCache.has(key)) {
-                        addrCache.set(key, {
+                // Priority 2: addressGeo bypass (v36: Lightning Transformer)
+                if (order.coords?.lat && order.coords?.lng) {
+                    const loc = { lat: order.coords.lat, lng: order.coords.lng };
+                    addrCache.set(key, {
+                        best: {
                             raw: {
                                 formatted_address: order.address,
                                 geometry: {
-                                    location: { lat: order.coords.lat, lng: order.coords.lng },
+                                    location: loc,
                                     location_type: 'ROOFTOP'
                                 },
                             },
@@ -301,56 +304,66 @@ export const useRouteGeocoding = ({
                             streetNumberMatched: true,
                             score: 1000000,
                             isLocked: true
-                        });
-                    }
-
-                    if (!addrCache.has(key)) {
-                        const res = await robustGeocode(cleaned, { 
-                            silent: !confirmAddresses, 
-                            expectedDeliveryZone,
-                            hintPoint: lastLoc,
-                            addressGeoStr: (order as any).addressGeoStr
-                        })
-                        
-                        if (!res && confirmAddresses) {
-                            toast.error(`Расчет прерван: адрес не был подтвержден (${order.address})`)
-                            if (!skipStateUpdate) setIsCalculating(false)
-                            return null
-                        }
-                        
-                        addrCache.set(key, res)
-                        await yieldToMain()
-                    }
-
-                    const geocodeRes = addrCache.get(key)
-                    if (!geocodeRes || !toLoc(geocodeRes.raw)) {
-                        console.error(`[Расчет] Адрес ОТКЛОНЕН: ${order.address}`, geocodeRes)
-                        toast.error(`Проверьте адрес: ${order.address}. Не удалось найти точку в зоне обслуживания.`, { duration: 10000 })
-                        if (!skipStateUpdate) setIsCalculating(false)
-                        return null
-                    }
-
-                    const loc = toLoc(geocodeRes.raw)
-                    waypointLocs.push(loc)
-                    lastLoc = loc
-                    
-                    const update: any = { id: order.id }
-                    if (loc) {
-                        update.lat = loc.lat
-                        update.lng = loc.lng
-                        update.kmlZone = geocodeRes.kmlZone
-                        update.kmlHub = geocodeRes.hubName || geocodeRes.kmlHub
-                        update.streetNumberMatched = geocodeRes.streetNumberMatched
-                        if (geocodeRes.raw.geometry?.location_type) {
-                            update.locationType = geocodeRes.raw.geometry.location_type
-                        }
-                        update.geocodeRes = geocodeRes.raw; 
-                    }
-                    orderUpdates.push(update)
-
-                    const progress = Math.min(85, 5 + Math.round((orderUpdates.length / route.orders.length) * 80))
-                    if (!skipStateUpdate) setCalcProgress(progress)
+                        },
+                        streetNumberMatched: true,
+                        score: 1000000,
+                        isLocked: true
+                    });
+                    return;
                 }
+
+                // If not matched, add to batch geocode queue
+                ordersToGeocode.push({ order, cleaned, key, addressGeoStr });
+            });
+
+            if (ordersToGeocode.length > 0) {
+                console.log(`[Racing Transformer] Parallel geocoding ${ordersToGeocode.length} unique addresses...`);
+                setCalcProgress(10);
+                
+                // v36.5: Racing Parallel Map (No Batch Layer overhead)
+                await Promise.all(ordersToGeocode.map(async (o) => {
+                    const res = await robustGeocode(o.cleaned, {
+                        addressGeoStr: o.addressGeoStr,
+                        expectedDeliveryZone: o.order.deliveryZone || null,
+                        hintPoint: originLoc,
+                        silent: true
+                    });
+                    if (res) addrCache.set(o.key, res);
+                }));
+            }
+
+            // Map results back to route waypoints
+            for (const order of route.orders) {
+                const cleaned = cleanAddressForRoute(order.address);
+                const key = cleaned.toLowerCase();
+                const geocodeRes = addrCache.get(key);
+
+                const best = geocodeRes?.best;
+
+                if (!best || !toLoc(best.raw)) {
+                     console.error(`[Расчет] Адрес ОТКЛОНЕН (v36.1): ${order.address}`, geocodeRes);
+                     toast.error(`Проверьте адрес: ${order.address}. Не удалось найти точку.`, { duration: 10000 });
+                     if (!skipStateUpdate) setIsCalculating(false);
+                     return null;
+                }
+
+                const loc = toLoc(best.raw);
+                waypointLocs.push(loc);
+                
+                const update: any = { 
+                    id: order.id,
+                    lat: loc.lat, 
+                    lng: loc.lng,
+                    kmlZone: best.kmlZone,
+                    kmlHub: best.kmlHub,
+                    streetNumberMatched: best.streetNumberMatched,
+                    geocodeRes: best.raw
+                };
+                if (best.raw.geometry?.location_type) {
+                    update.locationType = best.raw.geometry.location_type;
+                }
+                orderUpdates.push(update);
+            }
             }
 
             // 2.5 Save GEODATA IMMEDIATELY (v35.9.6: Persistence Priority)
@@ -536,7 +549,7 @@ export const useRouteGeocoding = ({
                 destinLoc = originLoc
             } else {
                 const res = await robustGeocode(cleanAddressForRoute(route.endAddress), { silent: true, strictZoneFallback: false })
-                destinLoc = res ? (toLoc(res.raw) || originLoc) : originLoc
+                destinLoc = (res && res.best) ? (toLoc(res.best.raw) || originLoc) : originLoc
             }
 
             if (!skipStateUpdate) setCalcProgress(90)
@@ -689,14 +702,14 @@ if (!skipStateUpdate) setIsCalculating(false)
                     const addrKey = cleanAddressForRoute(route.orders[idx].address).toLowerCase();
                     const res = addrCache.get(addrKey);
                     const base = typeof loc === 'string' ? { address: loc } : getL(loc);
-                    if (res) {
+                    if (res && res.best) {
                         return {
                             ...base,
-                            zoneName: res.kmlZone,
-                            hubName: res.kmlHub,
-                            locationType: res.raw.geometry?.location_type,
-                            streetNumberMatched: res.streetNumberMatched,
-                            score: res.score
+                            zoneName: res.best.kmlZone,
+                            hubName: res.best.kmlHub,
+                            locationType: res.best.raw.geometry?.location_type,
+                            streetNumberMatched: res.best.streetNumberMatched,
+                            score: res.best.score
                         };
                     }
                     return base;
