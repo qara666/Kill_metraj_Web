@@ -94,7 +94,15 @@ export const useRouteGeocoding = ({
     /**
      * SOTA 5.68: Robust geocoding with centralized service and zone validation.
      */
-    const robustGeocode = async (rawAddress: string, options: { hintPoint?: any; silent?: boolean; strictZoneFallback?: boolean; expectedDeliveryZone?: string | null; addressGeoStr?: string } = {}): Promise<any | null> => {
+    const robustGeocode = async (rawAddress: string, options: { 
+        hintPoint?: any; 
+        silent?: boolean; 
+        strictZoneFallback?: boolean; 
+        expectedDeliveryZone?: string | null; 
+        addressGeoStr?: string;
+        turbo?: boolean;
+        skipNormalization?: boolean;
+    } = {}): Promise<any | null> => {
         const { hintPoint, silent = false, strictZoneFallback = true, expectedDeliveryZone = null, addressGeoStr } = options
         const cityBias = settings.cityBias || 'Киев'
 
@@ -104,7 +112,9 @@ export const useRouteGeocoding = ({
             cityBias,
             silent: silent || !confirmAddresses,
             expectedDeliveryZone,
-            addressGeoStr
+            addressGeoStr,
+            turbo: options.turbo ?? true, // Default to turbo in hook
+            skipNormalization: options.skipNormalization
         })
 
         const best = result.best
@@ -117,10 +127,9 @@ export const useRouteGeocoding = ({
         }
 
         // v35.9.14: Suspect Jump Protection (Iron Curtain)
-        // If the best hit is far (>15km) but there are other candidates much closer (<7km),
-        // we FORCE clarity even if confirmAddresses is off.
+        // Skip in turbo/silent mode to avoid extra provider calls
         let suspectJump = false
-        if (hintPoint && result.allCandidates.length > 1) {
+        if (!options.turbo && hintPoint && result.allCandidates.length > 1) {
             const bestCoords = toLocLocal(best.raw)
             const bestDist = bestCoords ? distanceBetween(bestCoords, hintPoint) : 0
             if (bestDist > 15000) {
@@ -313,23 +322,31 @@ export const useRouteGeocoding = ({
                 }
 
                 // If not matched, add to batch geocode queue
-                ordersToGeocode.push({ order, cleaned, key, addressGeoStr });
+                ordersToGeocode.push({ 
+                    address: cleaned, 
+                    options: { 
+                        addressGeoStr: addressGeoStr,
+                        expectedDeliveryZone: order.deliveryZone || null,
+                        hintPoint: originLoc,
+                        turbo: true,
+                        silent: true
+                    }
+                });
             });
 
             if (ordersToGeocode.length > 0) {
-                console.log(`[Racing Transformer] Parallel geocoding ${ordersToGeocode.length} unique addresses...`);
+                console.log(`[Racing Transformer] Batch geocoding ${ordersToGeocode.length} unique addresses...`);
                 setCalcProgress(10);
                 
-                // v36.5: Racing Parallel Map (No Batch Layer overhead)
-                await Promise.all(ordersToGeocode.map(async (o) => {
-                    const res = await robustGeocode(o.cleaned, {
-                        addressGeoStr: o.addressGeoStr,
-                        expectedDeliveryZone: o.order.deliveryZone || null,
-                        hintPoint: originLoc,
-                        silent: true
-                    });
-                    if (res) addrCache.set(o.key, res);
-                }));
+                // v37: Use optimized batchGeocode
+                const batchResult = await robustGeocodingService.batchGeocode(ordersToGeocode, { turbo: true });
+                
+                // Merge back to addrCache
+                batchResult.forEach((res, addr) => {
+                    addrCache.set(addr.toLowerCase(), res);
+                });
+                
+                setCalcProgress(70); 
             }
 
             // Map results back to route waypoints

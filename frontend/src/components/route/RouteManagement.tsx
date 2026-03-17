@@ -278,8 +278,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           grouped[courierName] = []
         }
 
+        // v37: Universal ID normalization to prevent "Missing Orders"
+        const stableId = String(order.id || order.orderNumber || order._id);
+
         grouped[courierName].push({
-          id: order.id ? String(order.id) : String(order.orderNumber),
+          id: stableId,
           orderNumber: order.orderNumber || 'N/A',
           address: order.address,
           courier: courierName,
@@ -307,7 +310,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     const set = new Set<string>()
       ; (excelData?.routes || []).forEach((route: Route) => {
         route.orders.forEach((order: Order) => {
-          set.add(order.id)
+          // Normalize here too
+          set.add(String(order.id || order.orderNumber || (order as any)._id))
         })
       })
     return set
@@ -647,27 +651,21 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const { availableOrders, ordersInRoutes } = useMemo(() => {
     if (!selectedCourier) return { availableOrders: [], ordersInRoutes: [] }
     
-    // 1. Предварительно вычисляем Set ID заказов в маршрутах для O(1) поиска
-    const orderIdsInRoutes = new Set<string>()
-    allRoutes.forEach(r => {
-      if (r.orders) {
-        r.orders.forEach((o: any) => orderIdsInRoutes.add(o.id || o._id))
-      }
-    })
-
-    // 2. Получаем все заказы выбранного курьера
+    // 1. Получаем все заказы выбранного курьера
     const rawOrders = courierOrders[selectedCourier] || []
+    if (rawOrders.length === 0) return { availableOrders: [], ordersInRoutes: [] }
+
     const ordersWithSearch = searchOrders(rawOrders)
     const sortedAndDeduplicated = sortOrdersByTime(ordersWithSearch).filter((o, idx, self) => 
       self.findIndex(t => t.id === o.id) === idx
     )
 
-    // 3. Распределяем по спискам одним проходом
+    // 2. Распределяем по спискам одним проходом с использованием O(1) set
     const available: Order[] = []
     const inRoutes: Order[] = []
     
     sortedAndDeduplicated.forEach(order => {
-      if (orderIdsInRoutes.has(order.id)) {
+      if (ordersInRoutesSet.has(order.id)) {
         inRoutes.push(order)
       } else {
         available.push(order)
@@ -675,7 +673,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     })
 
     return { availableOrders: available, ordersInRoutes: inRoutes }
-  }, [selectedCourier, courierOrders, searchOrders, sortOrdersByTime, allRoutes])
+  }, [selectedCourier, courierOrders, searchOrders, sortOrdersByTime, ordersInRoutesSet])
+
+  // v37: Defer the list to prevent main-thread blocking on selection
+  const deferredAvailableOrders = useDeferredValue(availableOrders)
 
 
   const handleOrderSelect = useCallback((orderId: string, _multi?: boolean) => {
@@ -1728,7 +1729,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                       <CourierTimeWindows
                         courierId={String(selectedCourier || '')}
                         courierName={isId0CourierName(selectedCourier) ? 'Не назначено' : (String(selectedCourier) || '')}
-                        orders={availableOrders}
+                        orders={deferredAvailableOrders}
                         isDark={isDark}
                         onOrderMoved={handleMoveOrderToGroup}
                         onCreateCustomGroup={handleCreateCustomGroup}
@@ -1879,7 +1880,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
                             <button
                               onClick={() => createRoute()}
-                              disabled={availableOrders.length === 0 || isCalculating || selectedOrders.size === 0}
+                              disabled={deferredAvailableOrders.length === 0 || isCalculating || selectedOrders.size === 0}
                               className={clsx(
                                 "px-6 py-3 rounded-2xl font-black text-sm transition-all shadow-lg flex items-center gap-2 shrink-0 uppercase tracking-widest",
                                 selectedOrders.size > 0
@@ -1917,13 +1918,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                         </div>
 
                         <div className="h-[600px] w-full pr-2 custom-scrollbar" data-tour="order-list">
-                          {availableOrders.length > 0 ? (
+                          {deferredAvailableOrders.length > 0 ? (
                             <div style={{ height: '600px', width: '100%' }}>
                               <AutoSizerAny>
                                 {(props: any) => {
                                   // We group orders into rows of 3 to preserve the grid-like appearance
                                   const columns = props.width > 1536 ? 3 : props.width > 768 ? 2 : 1;
-                                  const rowCount = Math.ceil(availableOrders.length / columns);
+                                  const rowCount = Math.ceil(deferredAvailableOrders.length / columns);
                                   
                                   return (
                                     <List
@@ -1935,7 +1936,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                                     >
                                       {({ index, style }: { index: number; style: React.CSSProperties }) => {
                                         const startIdx = index * columns;
-                                        const rowOrders = availableOrders.slice(startIdx, startIdx + columns);
+                                        const rowOrders = deferredAvailableOrders.slice(startIdx, startIdx + columns);
                                         
                                         return (
                                           <div style={{ ...style, display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: '1rem', paddingBottom: '1rem' }}>

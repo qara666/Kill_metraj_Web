@@ -67,7 +67,6 @@ const OrderItem = memo(({
     isInRoute,
     isDark,
     style,
-    setSize,
     index
 }: {
     order: Order
@@ -79,16 +78,10 @@ const OrderItem = memo(({
     isInRoute: boolean
     isDark: boolean
     style?: React.CSSProperties
-    setSize?: (id: string, index: number, size: number) => void;
     index?: number
 }) => {
     const rowRef = React.useRef<HTMLDivElement>(null);
 
-    React.useEffect(() => {
-        if (setSize && index !== undefined && rowRef.current) {
-            setSize(order.id, index, rowRef.current.getBoundingClientRect().height + 8); // +8 for margin/padding
-        }
-    }, [setSize, index, order.address, order.id]);
 
     return (
         <div style={style} className="pr-1">
@@ -305,7 +298,7 @@ export const OrderList = memo(({
                     <List
                         height={height}
                         itemCount={orders.length}
-                        itemSize={120} // Approximate height of OrderItem
+                        itemSize={110} // Optimized fixed height
                         width={width}
                         className="custom-scrollbar"
                     >
