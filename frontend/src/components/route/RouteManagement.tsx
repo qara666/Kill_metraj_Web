@@ -59,7 +59,7 @@ declare global {
 }
 
 import { Route, Order } from '../../types/route'
-import { useRouteGeocoding } from '../../hooks/useRouteGeocoding'
+import { useRouteGeocoding, hashString } from '../../hooks/useRouteGeocoding'
 import { useKmlData } from '../../hooks/useKmlData'
 import { exportToGoogleMaps, exportToValhalla } from '../../utils/routes/routeExport'
 
@@ -159,9 +159,21 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   }, [localSettings.cityBias])
 
   // Простая очистка адреса + добавление выбранного города/страны
+  // Улучшенная очистка адреса (v38: Noisy String Stripper)
   const cleanAddressForRoute = useCallback((raw: string): string => {
-    const base = cleanAddress(raw).trim()
-    if (!base) return base
+    if (!raw) return '';
+    // v38: Aggressive stripping of noisy substrings like "эт.2, кв.76", "под.3", "д/ф Домофон"
+    let base = raw
+      .replace(/(?:под\.|подъезд|п\.)\s*\d+/gi, '')
+      .replace(/(?:эт\.|этаж|эт)\s*\d+/gi, '')
+      .replace(/(?:кв\.|квартира|кв)\s*\d+/gi, '')
+      .replace(/(?:д\/ф|домофон)\s*[^,]*/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    base = cleanAddress(base).trim();
+    if (!base) return base;
+    
     const lower = base.toLowerCase()
     const { city, country } = getSelectedCity()
     if (!city) return base
@@ -278,8 +290,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
           grouped[courierName] = []
         }
 
-        // v37: Universal ID normalization to prevent "Missing Orders"
-        const stableId = String(order.id || order.orderNumber || order._id);
+        // v38: Ultra-Stable ID Factor (ID > orderNumber > hash)
+        // If order.id is 0 or missing, we MUST use a stringified stable fallback.
+        const orderIdValue = order.id !== undefined && order.id !== null && order.id !== 0 ? String(order.id) : null;
+        const fallbackId = String(order.orderNumber || order._id || `gen_${Math.abs(hashString(order.address))}`);
+        const stableId = orderIdValue || fallbackId;
 
         grouped[courierName].push({
           id: stableId,

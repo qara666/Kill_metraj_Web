@@ -30,6 +30,16 @@ interface UseRouteGeocodingProps {
     cleanAddressForRoute: (raw: string) => string
 }
 
+export const hashString = (str: string): number => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = (hash << 5) - hash + char;
+        hash |= 0;
+    }
+    return hash;
+};
+
 export const useRouteGeocoding = ({
     settings,
     selectedZones,
@@ -102,6 +112,7 @@ export const useRouteGeocoding = ({
         addressGeoStr?: string;
         turbo?: boolean;
         skipNormalization?: boolean;
+        forceManualSelection?: boolean;
     } = {}): Promise<any | null> => {
         const { hintPoint, silent = false, strictZoneFallback = true, expectedDeliveryZone = null, addressGeoStr } = options
         const cityBias = settings.cityBias || 'Киев'
@@ -117,8 +128,34 @@ export const useRouteGeocoding = ({
             skipNormalization: options.skipNormalization
         })
 
+        if (!result.best && options.forceManualSelection) {
+            // v38: Manual Refinement Requested
+            // If no variants found automatically, show modal anyway to allow manual map pick
+             const choice: any = await new Promise(resolve => {
+                disambQueue.current.push({
+                    title: `УТОЧНЕНИЕ: "${rawAddress}" (Автопоиск не дал результатов)`,
+                    options: [], // Empty options triggers map-only mode
+                    resolve
+                })
+                processDisambQueue()
+            })
+            if (choice) {
+                return {
+                    best: {
+                        raw: choice,
+                        score: 1000,
+                        isInsideZone: true,
+                        kmlZone: 'Выбрано вручную',
+                        streetNumberMatched: true
+                    },
+                    allCandidates: [],
+                    resolvedVariant: choice
+                }
+            }
+        }
+
         const best = result.best
-        if (!best) return null
+        if (!best) return result // Return empty result so caller knows it failed
 
         const toLocLocal = (res: any): any => {
             if (!res?.geometry?.location) return null
@@ -356,15 +393,42 @@ export const useRouteGeocoding = ({
                 const geocodeRes = addrCache.get(key);
 
                 const best = geocodeRes?.best;
+                let loc: any = null;
 
                 if (!best || !toLoc(best.raw)) {
-                     console.error(`[Расчет] Адрес ОТКЛОНЕН (v36.1): ${order.address}`, geocodeRes);
-                     toast.error(`Проверьте адрес: ${order.address}. Не удалось найти точку.`, { duration: 10000 });
-                     if (!skipStateUpdate) setIsCalculating(false);
-                     return null;
+                     // v38: Force manual selection if automatic search failed
+                     const manualRes = await robustGeocode(order.address, { 
+                        silent: false, 
+                        forceManualSelection: true,
+                        hintPoint: originLoc 
+                     });
+
+                      if (!manualRes?.best) {
+                         console.error(`[Расчет] Адрес ОТКЛОНЕН (v38): ${order.address}`, geocodeRes);
+                         toast.error(`Проверьте адрес: ${order.address}. Не удалось найти точку.`, { duration: 10000 });
+                         if (!skipStateUpdate) setIsCalculating(false);
+                         return null;
+                      }
+                      
+                      // If manual selection resulted in a choice
+                      const manualBest = manualRes.best;
+                      loc = toLoc(manualBest.raw);
+                      
+                      const update: any = { 
+                        id: order.id,
+                        lat: loc.lat, 
+                        lng: loc.lng,
+                        kmlZone: manualBest.kmlZone,
+                        kmlHub: manualBest.kmlHub,
+                        streetNumberMatched: manualBest.streetNumberMatched,
+                        geocodeRes: manualBest.raw
+                      };
+                      waypointLocs.push(loc);
+                      orderUpdates.push(update);
+                      continue; // Proceed to next order
                 }
 
-                const loc = toLoc(best.raw);
+                loc = toLoc(best.raw);
                 waypointLocs.push(loc);
                 
                 const update: any = { 
