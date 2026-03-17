@@ -121,4 +121,6 @@ export interface RobustGeocodeResult {
   resolvedVariant: string | null
   /** Whether the result came from cache */
   fromCache: boolean
+  /** Whether this result is considered definitive and should not be re-searched (v36) */
+  isLocked?: boolean
 }

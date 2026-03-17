@@ -8,84 +8,24 @@ import { API_URL } from '../config/apiConfig'
  *  ✔ Proper location_type mapping (ROOFTOP / RANGE_INTERPOLATED / GEOMETRIC_CENTER)
  *  ✔ Ukrainian abbreviation normalization (вул. → вулиця, просп. → проспект)
  *  ✔ City-biased search (countrycodes + city in query)
- *  ✔ Rate limiting (1 req/s to respect Nominatim usage policy)
- *  ✔ Multiple query strategies: expanded + freeform fallback
+ *  ✔ Rate limiting handled SERVER-SIDE (v36.9)
+ *  ✔ Multiple query strategies: expanded + street-only fallback
  *  ✔ address_components compatible with RawGeoCandidate format
  */
 
-// ─── Rate limiter (Nominatim policy: max 1 req/s) ────────────────────────────
-let _lastNominatimCall = 0;
-let _nominatimQueue: Array<() => void> = [];
-let _isNominatimProcessing = false;
-
+// ─── Proxy fetch — v36.9: Rate limiting now handled entirely by server ────────
+// Client throws immediately on 429 so RobustGeocodingService falls through to Geoapify
 async function rateLimitedFetch(url: string): Promise<Response> {
-    const maxRetries = 3;
-    let attempt = 0;
-
-    return new Promise((resolve, reject) => {
-        const attemptFetch = async () => {
-            try {
-                const now = Date.now();
-                // Safe 1000ms delay for Nominatim policies
-                const delay = 1000; 
-                const diff = now - _lastNominatimCall;
-                if (diff < delay) {
-                    await new Promise(r => setTimeout(r, delay - diff));
-                }
-                _lastNominatimCall = Date.now();
-                
-                // Add a cache buster parameter to bypass Varnish cache (OSM caches 429 responses)
-                const cacheBuster = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
-                const proxyUrl = `${API_URL}/api/proxy/geocoding?url=${encodeURIComponent(`${url}&_cb=${cacheBuster}`)}`;
-                
-                const response = await fetch(proxyUrl, {
-                    headers: {
-                        'Accept-Language': 'uk,ru,en'
-                    }
-                });
-
-                // Handle 429 Too Many Requests with exponential backoff
-                if (response.status === 429 && attempt < maxRetries) {
-                    attempt++;
-                    const backoff = 1000 * Math.pow(2, attempt) + Math.random() * 500; // Faster exponential + jitter
-                    console.warn(`[Nominatim] 429 detected. Retry attempt ${attempt}/${maxRetries} in ${Math.round(backoff)}ms...`);
-                    
-                    // Wait for backoff period before re-queueing to not block other services instantly
-                    setTimeout(() => {
-                        // Re-queue at the FRONT for priority
-                        _nominatimQueue.unshift(attemptFetch);
-                        _processNominatimQueue();
-                    }, backoff);
-                    return; // Exit this task cleanly to free the queue processor! The outer Promise stays pending.
-                }
-
-                if (!response.ok && response.status !== 429) {
-                    console.warn(`[Nominatim] HTTP Error ${response.status} on ${proxyUrl}`);
-                }
-
-                resolve(response);
-            } catch (e) {
-                reject(e);
-            }
-        };
-        
-        // Push initial attempt to the queue
-        _nominatimQueue.push(attemptFetch);
-        _processNominatimQueue();
+    const proxyUrl = `${API_URL}/api/proxy/geocoding?url=${encodeURIComponent(url)}`;
+    const response = await fetch(proxyUrl, {
+        headers: { 'Accept-Language': 'uk,ru,en' }
     });
+    if (response.status === 429) {
+        throw Object.assign(new Error('Nominatim 429'), { status: 429 });
+    }
+    return response;
 }
 
-async function _processNominatimQueue() {
-    if (_isNominatimProcessing || _nominatimQueue.length === 0) return;
-    _isNominatimProcessing = true;
-    
-    while (_nominatimQueue.length > 0) {
-        const task = _nominatimQueue.shift();
-        if (task) await task();
-    }
-    
-    _isNominatimProcessing = false;
-}
 
 const UA_ABBREV: Array<[string, string]> = [
     ['вул\\.', 'вулиця'],
@@ -229,10 +169,12 @@ export class NominatimService {
         const results = await this._query(query, viewbox, bounded)
         if (results.length > 0) return results
 
-        // Strategy 2: Original address (no expansion) + city
-        if (expanded !== address && !address.toLowerCase().includes(city.toLowerCase())) {
-            const results2 = await this._query(`${address}, ${city}`, viewbox, bounded)
-            if (results2.length > 0) return results2
+        // Strategy 2: street-only (strip apartment/floor info)
+        const streetOnly = expanded.split(',')[0].trim();
+        if (streetOnly.length > 5 && streetOnly !== expanded) {
+            const q2 = `${streetOnly}, ${city}, Україна`;
+            const results2 = await this._query(q2, viewbox, bounded);
+            if (results2.length > 0) return results2;
         }
 
         return []

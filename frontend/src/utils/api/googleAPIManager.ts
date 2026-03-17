@@ -56,7 +56,47 @@ const routeFeasibilityCache = new Map<string, {
 }>()
 
 const CACHE_TTL = 30 * 60 * 1000 // 30 минут
-const MAX_CACHE_SIZE = 2000
+const MAX_CACHE_SIZE = 1000 // v36.8: Reduced for persistent stability
+const PERSISTENT_PTP_KEY = 'km_route_ptp_cache_v36'
+const PERSISTENT_FEAS_KEY = 'km_route_feas_cache_v36'
+
+/**
+ * v36.8: Quantum Persistent Cache Loaders
+ */
+function loadPersistentCaches() {
+  if (typeof window === 'undefined') return
+  try {
+    const ptp = localStorage.getItem(PERSISTENT_PTP_KEY)
+    if (ptp) {
+        const parsed = JSON.parse(ptp)
+        Object.entries(parsed).forEach(([k, v]) => pointToPointCache.set(k, v as any))
+    }
+    const feas = localStorage.getItem(PERSISTENT_FEAS_KEY)
+    if (feas) {
+        const parsed = JSON.parse(feas)
+        Object.entries(parsed).forEach(([k, v]) => routeFeasibilityCache.set(k, v as any))
+    }
+    console.log(`[Quantum Route Cache] Loaded ${pointToPointCache.size} segments and ${routeFeasibilityCache.size} routes.`);
+  } catch (e) {
+    console.warn('[Quantum Route Cache] Load failed:', e)
+  }
+}
+
+function savePersistentCaches() {
+  if (typeof window === 'undefined') return
+  try {
+    const ptpData = Object.fromEntries(Array.from(pointToPointCache.entries()).slice(-MAX_CACHE_SIZE))
+    localStorage.setItem(PERSISTENT_PTP_KEY, JSON.stringify(ptpData))
+    
+    const feasData = Object.fromEntries(Array.from(routeFeasibilityCache.entries()).slice(-MAX_CACHE_SIZE))
+    localStorage.setItem(PERSISTENT_FEAS_KEY, JSON.stringify(feasData))
+  } catch (e) {
+    console.warn('[Quantum Route Cache] Save failed:', e)
+  }
+}
+
+// Initial load
+loadPersistentCaches()
 
 /**
  * Генерирует ключ для пары точек
@@ -134,13 +174,11 @@ function cachePointPair(
 
   // Очистка старых записей
   if (pointToPointCache.size > MAX_CACHE_SIZE) {
-    const now = Date.now()
-    for (const [k, v] of pointToPointCache.entries()) {
-      if (now - v.timestamp > CACHE_TTL) {
-        pointToPointCache.delete(k)
-      }
-    }
+    const keys = Array.from(pointToPointCache.keys())
+    pointToPointCache.delete(keys[0]) // Simple FIFO
   }
+  
+  savePersistentCaches()
 }
 
 /**
@@ -251,13 +289,11 @@ function cacheRouteResult(
 
   // Очистка старых записей
   if (routeFeasibilityCache.size > MAX_CACHE_SIZE) {
-    const now = Date.now()
-    for (const [k, v] of routeFeasibilityCache.entries()) {
-      if (now - v.timestamp > CACHE_TTL) {
-        routeFeasibilityCache.delete(k)
-      }
-    }
+    const keys = Array.from(routeFeasibilityCache.keys())
+    routeFeasibilityCache.delete(keys[0]) // Simple FIFO
   }
+  
+  savePersistentCaches()
 }
 
 // ============================================================================
@@ -354,11 +390,11 @@ class GoogleAPIBatchQueue {
         this.lowPriorityQueue.push(request)
       }
 
-      // Запускаем обработку
+      // Запускаем обработку мгновенно (v36.8 Quantum Speed)
       if (this.highPriorityQueue.length >= 5 || (this.lowPriorityQueue.length >= 10 && !this.processing)) {
         this.processBatch()
       } else if (!this.batchTimeout && !this.processing) {
-        this.batchTimeout = setTimeout(() => this.processBatch(), 50)
+        this.batchTimeout = setTimeout(() => this.processBatch(), 10) // Reduced from 50ms
       }
     })
   }

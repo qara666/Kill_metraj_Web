@@ -99,12 +99,16 @@ export class RobustGeocodingService {
   private ctx: KmlZoneContext = EMPTY_CONTEXT
   private cityBias = 'Київ'
   
+  // v36.8: Quantum Persistent Cache Key
+  private readonly PERSISTENT_CACHE_KEY = 'km_quantum_cache_v36';
+  
   // v35.9.37: GEODASH - L1 Session Memory Cache
   private l1Cache = new Map<string, RobustGeocodeResult>();
   
   // v35.9.37: GEODASH - Global Request Semaphore
   private activeRequestCount = 0;
-  private readonly MAX_CONCURRENT_REQUESTS = 5;
+  private static readonly MAX_CONCURRENT_REQUESTS = 20 // v36.8: Boosted for Quantum speed
+;
   private requestQueue: Array<() => void> = [];
 
   static _slavicNormalize(s: string): string {
@@ -113,20 +117,56 @@ export class RobustGeocodingService {
 
   constructor() {
     this.autoSync()
+    this.loadPersistentCache()
     if (typeof window !== 'undefined') {
       window.addEventListener('km-settings-updated', () => {
         this.autoSync()
-        this.l1Cache.clear() // Clear cache on settings change
+        // Only clear L1 memory cache. Don't wipe persistent cache on every presetSync event.
+        this.l1Cache.clear()
       })
     }
   }
 
-  // Helper to limit concurrency across all geocoding tasks
+  private loadPersistentCache(): void {
+    if (typeof window === 'undefined') return;
+    try {
+      const data = localStorage.getItem(this.PERSISTENT_CACHE_KEY);
+      if (data) {
+        const parsed = JSON.parse(data);
+        Object.entries(parsed).forEach(([key, val]) => {
+          this.l1Cache.set(key, val as RobustGeocodeResult);
+        });
+        console.log(`[Quantum Cache] Загружено ${this.l1Cache.size} адресов из хранилища.`);
+      }
+    } catch (e) {
+      console.warn('[Quantum Cache] Ошибка загрузки кэша:', e);
+    }
+  }
+
+  private savePersistentCache(): void {
+    if (typeof window === 'undefined') return;
+    try {
+      // Keep only last 500 entries to avoid localStorage bloat
+      const entries = Array.from(this.l1Cache.entries()).slice(-500);
+      const data = Object.fromEntries(entries);
+      localStorage.setItem(this.PERSISTENT_CACHE_KEY, JSON.stringify(data));
+    } catch (e) {
+      console.warn('[Quantum Cache] Ошибка сохранения кэша:', e);
+    }
+  }
+
+  clearPersistentCache(): void {
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(this.PERSISTENT_CACHE_KEY);
+  }
+
+  // v36: Enhanced Rate-Limit Protection (Jittered Batch)
   private async _withSemaphore<T>(fn: () => Promise<T>): Promise<T> {
-      if (this.activeRequestCount >= this.MAX_CONCURRENT_REQUESTS) {
+      while (this.activeRequestCount >= RobustGeocodingService.MAX_CONCURRENT_REQUESTS) {
           await new Promise<void>(resolve => this.requestQueue.push(resolve));
       }
       this.activeRequestCount++;
+      
       try {
           return await fn();
       } finally {
@@ -186,56 +226,71 @@ export class RobustGeocodingService {
       const results: ScoredCandidate[] = [];
       const requestedStreets: string[] = scoringOpts.requestedStreetNames || [];
 
-      // v35.9.38: Photon Pre-emption
-      // Photon is extremely fast (<150ms). We check it first and potentially skip Nominatim.
-      try {
-          const photonRaw = await this._withSemaphore(() => PhotonService.geocode(query, city || undefined));
-          if (photonRaw && photonRaw.length > 0) {
-              const norm = photonRaw.map(v => normaliseRaw({...v, _source: 'photon'}));
-              
-              // v35.9.38: Candidate Pre-Filter
-              const filtered = requestedStreets.length > 0
-                ? norm.filter(c => {
-                    const addr = (c.formatted_address || '').toLowerCase();
-                    return requestedStreets.some(root => addr.includes(root.toLowerCase()));
-                  })
-                : norm;
+      // v36: Lightning Fallback Chain (Photon → Nominatim → Geoapify)
+      // If one is busy/fails, we immediately move to the next.
+      
+      const tryProvider = async (name: string, service: any, timeoutMs: number = 3000) => {
+          if ((service as any)._disabled) return null;
+          try {
+              const raw = await Promise.race([
+                  this._withSemaphore(() => service.geocode(query, city || undefined)),
+                  new Promise<any[]>((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs))
+              ]);
 
-              const scored = filtered.map(c => scoreCandidate(c, scoringOpts));
-              results.push(...scored);
-              
-              const p = scored.find(c => isPerfectHit(c, expectedHouse, requestedStreets));
-              if (p) {
-                  // Photon found a perfect match! Skip Nominatim completely.
-                  return { scored: results, perfect: p };
+              if (Array.isArray(raw) && raw.length > 0) {
+                  const norm = raw.map((v: any) => normaliseRaw({...v, _source: name.toLowerCase()}));
+                  const filtered = requestedStreets.length > 0
+                    ? norm.filter((c: any) => {
+                        const addr = (c.formatted_address || '').toLowerCase();
+                        return requestedStreets.some(root => addr.includes(root.toLowerCase()));
+                      })
+                    : norm;
+
+                  const scored = filtered.map((c: any) => scoreCandidate(c, scoringOpts));
+                  results.push(...scored);
+                  
+                  const p = scored.find((c: any) => isPerfectHit(c, expectedHouse, requestedStreets));
+                  if (p) {
+                      console.log(`[${name}] Найдено идеальное совпадение: ${p.score} баллов.`);
+                  }
+                  return p || null;
+              }
+          } catch (e: any) {
+              if (e.message === 'TIMEOUT') {
+                  console.warn(`[${name}] Пропуск по таймауту (${timeoutMs}мс)`);
+              } else {
+                  console.warn(`[${name}] Ошибка: ${e.message}`);
+              }
+              if (e.message?.includes('401') || e.status === 401) {
+                  (service as any)._disabled = true;
               }
           }
-      } catch (e: any) {
-          console.warn(`[Photon] Fail: ${e.message}`);
-      }
+          return null;
+      };
 
-      // If we are here, Photon didn't find a perfect hit or failed. Case for Nominatim.
-      try {
-          const nomRaw = await this._withSemaphore(() => NominatimService.geocode(query, city || undefined));
-          if (nomRaw && nomRaw.length > 0) {
-              const norm = nomRaw.map(v => normaliseRaw({...v, _source: 'nominatim'}));
-              
-              // v35.9.38: Candidate Pre-Filter
-              const filtered = requestedStreets.length > 0
-                ? norm.filter(c => {
-                    const addr = (c.formatted_address || '').toLowerCase();
-                    return requestedStreets.some(root => addr.includes(root.toLowerCase()));
-                  })
-                : norm;
+      // v36.5 Racing Transformer: Parallel Provider Launch
+      // Launch Photon and Nominatim AT THE SAME TIME. First one success is preferred.
+      // v36.9 FIX: Increased timeouts: Photon 3000ms, Nominatim 5000ms
+      const [photonPerfect, nominatimPerfect] = await Promise.all([
+          tryProvider('Photon', PhotonService, 3000),
+          tryProvider('Nominatim', NominatimService, 5000)
+      ]);
 
-              const scored = filtered.map(c => scoreCandidate(c, scoringOpts));
-              results.push(...scored);
+      const perfect = photonPerfect || nominatimPerfect;
+      if (perfect) return { scored: results, perfect };
 
-              const p = scored.find(c => isPerfectHit(c, expectedHouse, requestedStreets));
-              return { scored: results, perfect: p };
-          }
-      } catch (e: any) {
-          console.warn(`[Nominatim] Fail: ${e.message}`);
+      // v36.4: Fast-Match Short-circuit (Legacy logic, now mostly covered by parallel race)
+      const strongHit = results.find(r => r.score > 2500 && r.isInsideZone);
+      if (strongHit) return { scored: results, perfect: strongHit };
+
+      // 3. Geoapify (Premium Fallback - stay sequential as it is expensive/limited)
+      const settings = localStorageUtils.getAllSettings();
+      if (settings.geoapifyApiKey) {
+          try {
+              const { GeoapifyService } = await import('../geoapifyService');
+              const geoapifyPerfect = await tryProvider('Geoapify', GeoapifyService, 3000);
+              if (geoapifyPerfect) return { scored: results, perfect: geoapifyPerfect };
+          } catch {}
       }
 
       return { scored: results };
@@ -251,7 +306,8 @@ export class RobustGeocodingService {
       maxVariants
     } = options
 
-    const cleanQuery = cleanAddressForSearch(rawAddress)
+    const normalizedAddress = rawAddress.replace(/[ʼ`]/g, "'");
+    const cleanQuery = cleanAddressForSearch(normalizedAddress);
     const expectedHouse = extractHouseNumber(rawAddress)
     
     // v35.9.37: GEODASH - L1 Cache Lookup
@@ -259,6 +315,41 @@ export class RobustGeocodingService {
     if (this.l1Cache.has(cacheKey)) {
         console.log(`[Геокодинг] L1 Cache HIT: "${rawAddress}"`);
         return { ...this.l1Cache.get(cacheKey)!, fromCache: true };
+    }
+
+    // v36: addressGeo Quick-Bypass (Lightning Transformer)
+    if (options.addressGeoStr) {
+        const { parseAddressGeo } = await import('../../utils/data/excelProcessor');
+        const extracted = parseAddressGeo(options.addressGeoStr);
+        if (extracted.lat && extracted.lng) {
+            console.log(`[Геокодинг] DIRECT BYPASS (addressGeo): "${rawAddress}"`);
+            const res: RobustGeocodeResult = {
+                best: {
+                    lat: extracted.lat,
+                    lng: extracted.lng,
+                    score: 2000000, // Trusted score
+                    isInsideZone: true,
+                    isTechnicalZone: false,
+                    streetNumberMatched: true,
+                    kmlZone: null,
+                    kmlHub: null,
+                    raw: {
+                        formatted_address: extracted.address || rawAddress,
+                        geometry: {
+                            location: { lat: extracted.lat, lng: extracted.lng },
+                            location_type: 'ROOFTOP'
+                        },
+                        _source: 'addressgeo'
+                    }
+                },
+                allCandidates: [],
+                resolvedVariant: null,
+                fromCache: false,
+                isLocked: true
+            };
+            this.l1Cache.set(cacheKey, res);
+            return res;
+        }
     }
 
     // Zone Gravity
@@ -309,7 +400,8 @@ export class RobustGeocodingService {
     if (searchCity === 'киев') forbidden.add('київ')
 
     all.forEach(v => {
-      const words = v.toLowerCase().split(/[\s,.'"\-]+/)
+      // v36.1: Unified apostrophe splitter
+      const words = v.toLowerCase().replace(/[ʼ`]/g, "'").split(/[\s,.'"\-]+/)
       words.forEach(w => {
         const cleanW = w.replace(/[^a-z0-9а-яёіїєґ]/gi, '')
         const isNumeric = /^\d+$/.test(cleanW)
@@ -361,7 +453,7 @@ export class RobustGeocodingService {
         }
     }
 
-    const candidatesBatch = maxVariants ? primary.slice(0, maxVariants) : primary
+    const candidatesBatch = maxVariants ? primary.slice(0, maxVariants) : primary.slice(0, 3)
 
     // v35.9.38: Short-Circuiting Parallel Sweeps
     // We launch all variants, but we return as soon as ONE returns a perfect hit.
@@ -429,11 +521,11 @@ export class RobustGeocodingService {
       }
     }
 
-    // LEVEL 3: Global Exhaustion + EMERGENCY GOOGLE
-    const hasInZoneAtAll = allCandidates.some(c => c.isInsideZone)
-    if (!hasInZoneAtAll) {
+    // LEVEL 3: Global Exhaustion — only when we have NO candidates at all
+    const hasCandidates = allCandidates.length > 0
+    if (!hasCandidates) {
       try {
-        console.log(`[Геокодинг] Уровень 3: Экстренный поиск для "${cleanQuery}" (Полный перебор бесплатных провайдеров)`)
+        console.log(`[Геокодинг] Уровень 3: Экстренный поиск для "${cleanQuery}" (нет кандидатов)`)
         const { scored } = await this._evaluateProvidersEarlyExit(cleanQuery, null, { ...scoringOpts, expectedDeliveryZone: null }, expectedHouse)
         const penalized = scored.map(s => {
             s.score -= 50000 
@@ -483,33 +575,46 @@ export class RobustGeocodingService {
        })))
     }
 
-    const res = { best, allCandidates: deduped, resolvedVariant: null, fromCache: false };
-    this.l1Cache.set(cacheKey, res);
-    return res;
+    const finalResult = { best, allCandidates: deduped, resolvedVariant: null, fromCache: false };
+    // 5. Save to L1 Cache & Persistence
+    this.l1Cache.set(cacheKey, finalResult);
+    this.savePersistentCache();
+
+    return finalResult;
   }
 
-  async batchGeocode(rawAddresses: string[], options: RobustGeocodeOptions = {}): Promise<Map<string, RobustGeocodeResult>> {
+  async batchGeocode(
+    requests: Array<{ address: string; options?: RobustGeocodeOptions }>, 
+    globalOptions: RobustGeocodeOptions = {}
+  ): Promise<Map<string, RobustGeocodeResult>> {
     const results = new Map<string, RobustGeocodeResult>()
-    const uniqueAddresses = Array.from(new Set(rawAddresses.map(a => a.trim().toLowerCase())));
     
-    // v35.9.37: GEODASH - Parallel Batch Processing
-    // We can now run all batch items in parallel because the internal _withSemaphore
-    // handles rate-limit safety globally.
-    const promises = uniqueAddresses.map(async (addr) => {
+    // Deduplicate requests by address (normalized)
+    const uniqueReqs = new Map<string, { address: string; options?: RobustGeocodeOptions }>();
+    requests.forEach(req => {
+        const key = req.address.trim().toLowerCase();
+        if (!uniqueReqs.has(key)) {
+            uniqueReqs.set(key, req);
+        }
+    });
+    
+    const promises = Array.from(uniqueReqs.values()).map(async (req) => {
+        const key = req.address.trim().toLowerCase();
         try {
-            const result = await this.geocode(addr, options);
-            results.set(addr, result);
+            const combinedOptions = { ...globalOptions, ...(req.options || {}) };
+            const result = await this.geocode(req.address, combinedOptions);
+            results.set(key, result);
         } catch (e) {
-            console.error(`[BatchGeocode] Failed for ${addr}`, e);
+            console.error(`[BatchGeocode] Failed for ${req.address}`, e);
         }
     });
 
     await Promise.all(promises);
     
-    // Map back to the original input array (preserving duplicates with cached results)
+    // Map back to the original input (preserving duplicates with results)
     const finalMap = new Map<string, RobustGeocodeResult>();
-    rawAddresses.forEach(addr => {
-        const key = addr.trim().toLowerCase();
+    requests.forEach(req => {
+        const key = req.address.trim().toLowerCase();
         const res = results.get(key);
         if (res) finalMap.set(key, res);
     });

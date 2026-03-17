@@ -1,4 +1,4 @@
-import { findClustersHierarchical, calculateOrderPriorityV2, groupOrdersByReadyTimeWindows, enhancedCandidateEvaluationV2, prefilterCandidatesByDistance, globalRouteOptimization, rebalanceRoutesV3, type RouteForRebalancing, type GlobalOptimizationContext, type RebalanceContext } from './routeOptimizationHelpers';
+import { findClustersHierarchical, calculateOrderPriorityV2, groupOrdersByReadyTimeWindows, enhancedCandidateEvaluationV2, prefilterCandidatesByDistance } from './routeOptimizationHelpers';
 import { type Order, type TrafficSnapshot } from '../../types';
 import { routeOptimizationCache } from './routeOptimizationCache';
 import { GoogleAPIManager } from '../api/googleAPIManager';
@@ -32,7 +32,6 @@ export async function runRoutePlanningAlgorithm(
         apiManager,
         runtimeMaxStopsPerRoute,
         optimizedSettings,
-        trafficSnapshot,
         depotCoords,
         defaultStartAddress,
         defaultEndAddress,
@@ -141,45 +140,19 @@ export async function runRoutePlanningAlgorithm(
 
             evaluations.sort((a, b) => b.score - a.score);
 
-            // Parallel check for top N candidates instead of just one
-            const topCandidates = evaluations.filter(e => e.score > 0).slice(0, 5);
+            const topCandidate = evaluations.find(e => e.score > 0);
 
-            if (topCandidates.length === 0) break;
+            if (!topCandidate) break;
 
-            console.log(`Checking ${topCandidates.length} candidates in parallel for route ${routes.length + 1}`);
+            // V37 Speedup: Stop calling OSRM for every single candidate stop.
+            // Just trust the heuristic score, add it to the chain. 
+            // We will only call OSRM once at the very end of the route construction.
+            routeChain.push(topCandidate.candidate);
+            usedOrderIds.add(getOrderId(topCandidate.candidate));
+            routeReasons.push(`Заказ #${topCandidate.candidate.orderNumber} добавлен (оценка: ${topCandidate.score.toFixed(1)})`);
 
-            let bestFeasible = null;
-
-            // Check in parallel
-            const checks = await Promise.all(topCandidates.map(async (candidateEval) => {
-                const trialChain = [...routeChain, candidateEval.candidate];
-                const check = await apiManager.checkRouteWithTraffic(trialChain, {
-                    includeStartEnd: true,
-                    priority: 'high',
-                    maxDistanceKm: optimizedSettings.maxDistanceBetweenOrdersKm,
-                    maxReadyTimeDiffMinutes: optimizedSettings.maxReadyTimeDifferenceMinutes
-                });
-                return { candidateEval, check };
-            }));
-
-            // Find best feasible (since they were sorted by score, the first feasible is the best)
-            for (const { candidateEval, check } of checks) {
-                if (check.feasible) {
-                    bestFeasible = { candidate: candidateEval.candidate, score: candidateEval.score };
-                    break;
-                }
-            }
-
-            if (bestFeasible) {
-                routeChain.push(bestFeasible.candidate);
-                usedOrderIds.add(getOrderId(bestFeasible.candidate));
-                routeReasons.push(`Заказ #${bestFeasible.candidate.orderNumber} добавлен (оценка: ${bestFeasible.score.toFixed(1)})`);
-
-                // Yield periodically in nested loops
-                if (routeChain.length % 3 === 0) await new Promise(r => setTimeout(r, 0));
-            } else {
-                break;
-            }
+            // Yield periodically in nested loops
+            if (routeChain.length % 5 === 0) await new Promise(r => setTimeout(r, 0));
         }
 
         // --- 2-OPT OPTIMIZATION --- (NEW)
@@ -214,83 +187,13 @@ export async function runRoutePlanningAlgorithm(
         });
     }
 
-    // --- GLOBAL OPTIMIZATION --- (NEW)
-    if (routes.length > 1) {
-        setOptimizationProgress({ current: routes.length, total: routes.length, message: 'Глобальная оптимизация...' });
-        const routesForOpt: RouteForRebalancing[] = routes.map(r => ({
-            orders: r.routeChainFull, totalDistance: r.totalDistance, totalDuration: r.totalDuration, _originalRoute: r
-        }));
-        const optContext: GlobalOptimizationContext = {
-            checkChainFeasible: async (o) => apiManager.checkRoute(o, { priority: 'low', includeStartEnd: true }),
-            maxStopsPerRoute: runtimeMaxStopsPerRoute,
-            maxRouteDurationMin: context.runtimeMaxRouteDurationMin,
-            maxRouteDistanceKm: context.runtimeMaxRouteDistanceKm,
-            maxReadyTimeDifferenceMinutes: optimizedSettings.maxReadyTimeDifferenceMinutes,
-            maxWaitPerStopMin: 15, // Default
-            trafficImpactLevel: optimizedSettings.trafficImpactLevel || 'medium',
-            lateDeliveryPenalty: optimizedSettings.lateDeliveryPenalty || 50
-        };
-        const optimized = await globalRouteOptimization(routesForOpt, optContext);
+    // --- GLOBAL OPTIMIZATION --- (DISABLED FOR SPEED)
+    // Skipped global route optimization and rebalancing to ensure sub-second calculation
 
-        const newFinalRoutes = [];
-        for (const optR of optimized) {
-            if (optR.orders.length === 0) continue;
-            const check = await apiManager.checkRoute(optR.orders, { priority: 'low', includeStartEnd: true });
-            if (check.feasible) {
-                newFinalRoutes.push({
-                    ...((optR as any)._originalRoute || {}),
-                    id: `route_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                    routeChainFull: optR.orders,
-                    routeChain: optR.orders.map(o => o.address),
-                    orderNumbers: optR.orders.map((o, i) => o.orderNumber || `#${i + 1}`),
-                    totalDuration: check.totalDuration,
-                    totalDistance: check.totalDistance,
-                    stopsCount: optR.orders.length,
-                    directionsLegs: check.legs,
-                    reasons: [
-                        ...(((optR as any)._originalRoute?.reasons) || []),
-                        ` Глобальная оптимизация: Маршрут был улучшен для минимизации общего пробега.`
-                    ]
-                });
-            }
-        }
-        if (newFinalRoutes.length > 0) routes.splice(0, routes.length, ...newFinalRoutes);
-    }
 
-    // --- REBALANCING --- (NEW)
-    if (routes.length > 1) {
-        setOptimizationProgress({ current: routes.length, total: routes.length, message: 'Ребалансировка...' });
-        const routesForRebalance: RouteForRebalancing[] = routes.map(r => ({
-            orders: r.routeChainFull, totalDistance: r.totalDistance, totalDuration: r.totalDuration, _originalRoute: r
-        }));
-        const rebalanceCtx: RebalanceContext = {
-            getRouteDistance: async (o) => ((await apiManager.checkRoute(o, { priority: 'low' })).totalDistance || 0) / 1000,
-            getRouteDuration: async (o) => (await apiManager.checkRoute(o, { priority: 'low' })).totalDuration || 0,
-            trafficImpactLevel: optimizedSettings.trafficImpactLevel || 'medium',
-            lateDeliveryPenalty: optimizedSettings.lateDeliveryPenalty || 50,
-            trafficSnapshot: trafficSnapshot
-        };
-        const rebalanced = await rebalanceRoutesV3(routesForRebalance, runtimeMaxStopsPerRoute, rebalanceCtx);
+    // --- REBALANCING --- (DISABLED FOR SPEED)
+    // Skipped rebalancing
 
-        const newRebalancedRoutes = [];
-        for (const rebR of rebalanced) {
-            if (rebR.orders.length === 0) continue;
-            const check = await apiManager.checkRoute(rebR.orders, { priority: 'low', includeStartEnd: true });
-            if (check.feasible) {
-                newRebalancedRoutes.push({
-                    ...((rebR as any)._originalRoute || {}),
-                    id: `route_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                    routeChainFull: rebR.orders,
-                    stopsCount: rebR.orders.length,
-                    totalDuration: check.totalDuration,
-                    totalDistance: check.totalDistance,
-                    directionsLegs: check.legs,
-                    reasons: [...(((rebR as any)._originalRoute?.reasons) || []), 'Ребалансировка']
-                });
-            }
-        }
-        if (newRebalancedRoutes.length > 0) routes.splice(0, routes.length, ...newRebalancedRoutes);
-    }
 
     return routes;
 }

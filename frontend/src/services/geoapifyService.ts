@@ -1,11 +1,18 @@
 import { API_URL } from '../config/apiConfig'
+import { localStorageUtils } from '../utils/ui/localStorage'
 
 /**
  * GeoapifyService — Secondary Geocoding Provider
  * Highly reliable for outskirts and fuzzy queries.
  */
 
-const GEOAPIFY_KEY = 'e57726487e4d41e7807a00508007a6ec' // FREE key shared across apps
+const FREE_GEOAPIFY_KEY = 'e57726487e4d41e7807a00508007a6ec' // FREE key shared across apps
+
+function getApiKey(): string {
+    if (typeof window === 'undefined') return FREE_GEOAPIFY_KEY
+    const settings = localStorageUtils.getAllSettings()
+    return settings.geoapifyApiKey || FREE_GEOAPIFY_KEY
+}
 
 export class GeoapifyService {
     static async geocode(address: string, cityBias?: string): Promise<any[]> {
@@ -14,7 +21,7 @@ export class GeoapifyService {
             const query = cityBias ? `${address}, ${cityBias}, Ukraine` : `${address}, Ukraine`
             const url = new URL('https://api.geoapify.com/v1/geocode/search')
             url.searchParams.append('text', query)
-            url.searchParams.append('apiKey', GEOAPIFY_KEY)
+            url.searchParams.append('apiKey', getApiKey())
             url.searchParams.append('limit', '5')
             url.searchParams.append('lang', 'uk')
 
@@ -66,7 +73,7 @@ export class GeoapifyService {
             const url = new URL('https://api.geoapify.com/v1/geocode/reverse')
             url.searchParams.append('lat', lat.toString())
             url.searchParams.append('lon', lng.toString())
-            url.searchParams.append('apiKey', GEOAPIFY_KEY)
+            url.searchParams.append('apiKey', getApiKey())
 
             const proxyUrl = `${API_URL}/api/proxy/geocoding?url=${encodeURIComponent(url.toString())}`
             const response = await fetch(proxyUrl)

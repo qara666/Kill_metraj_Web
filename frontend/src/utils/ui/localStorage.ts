@@ -152,9 +152,9 @@ export const localStorageUtils = {
         defaultEndLng: localStorage.getItem('km_default_end_lng') ? parseFloat(localStorage.getItem('km_default_end_lng')!) : (parsedSettings.defaultEndLng || null),
         kmlData: localStorage.getItem('km_kml_data') ? JSON.parse(localStorage.getItem('km_kml_data')!) : (parsedSettings.kmlData || null),
         kmlSourceUrl: localStorage.getItem('km_kml_source_url') || parsedSettings.kmlSourceUrl || '',
-        routingProvider: (localStorage.getItem('km_routing_provider') as any) || parsedSettings.routingProvider || 'valhalla',
+        routingProvider: localStorage.getItem('km_routing_provider') || parsedSettings.routingProvider || 'yapiko_osrm',
         vehicleType: (localStorage.getItem('km_vehicle_type') as any) || parsedSettings.vehicleType || 'auto',
-        geocodingProvider: (localStorage.getItem('km_geocoding_provider') as any) || parsedSettings.geocodingProvider || 'nominatim',
+        geocodingProvider: localStorage.getItem('km_geocoding_provider') || parsedSettings.geocodingProvider || 'nominatim',
         fastopertorApiKey: localStorage.getItem('km_fastopertor_api_key') || parsedSettings.fastopertorApiKey || '',
         generouteApiKey: localStorage.getItem('km_generoute_api_key') || parsedSettings.generouteApiKey || '',
         geoapifyApiKey: localStorage.getItem('km_geoapify_api_key') || parsedSettings.geoapifyApiKey || '',
@@ -163,8 +163,8 @@ export const localStorageUtils = {
         maxCriticalRouteDistanceKm: maxCriticalRouteDistanceKm ? parseFloat(maxCriticalRouteDistanceKm) : (parsedSettings.maxCriticalRouteDistanceKm || 120),
         selectedHubs: localStorage.getItem('km_selected_hubs') ? JSON.parse(localStorage.getItem('km_selected_hubs')!) : (parsedSettings.selectedHubs || []),
         selectedZones: localStorage.getItem('km_selected_zones') ? JSON.parse(localStorage.getItem('km_selected_zones')!) : (parsedSettings.selectedZones || []),
-        distanceMatrixEnabled: localStorage.getItem('km_dm_enabled') === 'true',
-        distanceMatrixProvider: localStorage.getItem('km_dm_provider') || parsedSettings.distanceMatrixProvider || 'valhalla'
+        distanceMatrixEnabled: localStorage.getItem('km_distance_matrix_enabled') !== 'false',
+        distanceMatrixProvider: localStorage.getItem('km_distance_matrix_provider') || parsedSettings.distanceMatrixProvider || 'yapiko_osrm'
       }
     } catch (error) {
       console.error('Error reading settings:', error)
@@ -187,17 +187,17 @@ export const localStorageUtils = {
         autoSyncKml: localStorage.getItem('km_auto_sync_kml') === 'true',
         fastopertorApiKey: localStorage.getItem('km_fastopertor_api_key') || '',
         fastopertorDepartmentId: localStorage.getItem('km_fastopertor_department_id') || '',
-        routingProvider: (localStorage.getItem('km_routing_provider') as any) || 'valhalla',
+        routingProvider: localStorage.getItem('km_routing_provider') || 'yapiko_osrm',
         vehicleType: (localStorage.getItem('km_vehicle_type') as any) || 'auto',
-        geocodingProvider: (localStorage.getItem('km_geocoding_provider') as any) || 'nominatim',
+        geocodingProvider: localStorage.getItem('km_geocoding_provider') || 'nominatim',
         generouteApiKey: localStorage.getItem('km_generoute_api_key') || '',
         geoapifyApiKey: localStorage.getItem('km_geoapify_api_key') || '',
         anomalyFilterEnabled: localStorage.getItem('km_anomaly_filter_enabled') !== 'false',
         anomalyMaxLegDistanceKm: localStorage.getItem('km_anomaly_max_leg_distance') ? parseFloat(localStorage.getItem('km_anomaly_max_leg_distance')!) : 10,
         anomalyMaxTotalDistanceKm: localStorage.getItem('km_anomaly_max_total_distance') ? parseFloat(localStorage.getItem('km_anomaly_max_total_distance')!) : 35,
         anomalyMaxAvgPerOrderKm: localStorage.getItem('km_anomaly_max_avg_per_order') ? parseFloat(localStorage.getItem('km_anomaly_max_avg_per_order')!) : 25,
-        distanceMatrixEnabled: localStorage.getItem('km_dm_enabled') === 'true',
-        distanceMatrixProvider: localStorage.getItem('km_dm_provider') || 'valhalla'
+        distanceMatrixEnabled: localStorage.getItem('km_distance_matrix_enabled') !== 'false',
+        distanceMatrixProvider: localStorage.getItem('km_distance_matrix_provider') || 'yapiko_osrm'
       }
     }
   },

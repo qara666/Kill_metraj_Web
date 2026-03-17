@@ -146,38 +146,158 @@ app.get('/api/health', (req, res) => {
 });
 
 /**
- * Geocoding Proxy to bypass browser CORS for free services (Photon, Nominatim, Geoapify)
+ * ──────────────────────────────────────────────────────────────────────────────
+ * GEOCODING PROXY v2.0 — MULTI-USER SAFE
+ * 
+ * 3-LAYER PROTECTION against Nominatim 429 floods:
+ *   1. SERVER-SIDE LRU CACHE  — same address → instant response, no external call
+ *   2. IN-FLIGHT DEDUP       — 3 users geocode same addr → only 1 real HTTP req
+ *   3. NOMINATIM RATE QUEUE  — serializes Nominatim calls at 1 req/sec server-wide
+ * ──────────────────────────────────────────────────────────────────────────────
  */
+
+// LAYER 1: LRU Cache — 2000 entries, 6 hour TTL
+const GEOCODING_CACHE = new Map(); // url -> { data, ts }
+const GEOCODING_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
+const GEOCODING_CACHE_MAX = 2000;
+
+function getCachedGeocode(cacheKey) {
+  const entry = GEOCODING_CACHE.get(cacheKey);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > GEOCODING_CACHE_TTL) {
+    GEOCODING_CACHE.delete(cacheKey);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCachedGeocode(cacheKey, data) {
+  // Evict oldest entry if at capacity
+  if (GEOCODING_CACHE.size >= GEOCODING_CACHE_MAX) {
+    const oldest = GEOCODING_CACHE.keys().next().value;
+    GEOCODING_CACHE.delete(oldest);
+  }
+  GEOCODING_CACHE.set(cacheKey, { data, ts: Date.now() });
+}
+
+// LAYER 2: In-flight deduplication — map from cacheKey to pending Promise
+const IN_FLIGHT = new Map();
+
+// LAYER 3: Nominatim rate queue — max 1 req/sec server-wide
+let _lastNominatimServerCall = 0;
+let _nominatimServerQueue = [];
+let _nominatimProcessing = false;
+
+function enqueueNominatimFetch(fn) {
+  return new Promise((resolve, reject) => {
+    _nominatimServerQueue.push({ fn, resolve, reject });
+    processNominatimQueue();
+  });
+}
+
+async function processNominatimQueue() {
+  if (_nominatimProcessing || _nominatimServerQueue.length === 0) return;
+  _nominatimProcessing = true;
+  while (_nominatimServerQueue.length > 0) {
+    const { fn, resolve, reject } = _nominatimServerQueue.shift();
+    // Enforce 1100ms between Nominatim calls (server-wide)
+    const now = Date.now();
+    const elapsed = now - _lastNominatimServerCall;
+    if (elapsed < 1100) {
+      await new Promise(r => setTimeout(r, 1100 - elapsed));
+    }
+    _lastNominatimServerCall = Date.now();
+    try {
+      resolve(await fn());
+    } catch (e) {
+      reject(e);
+    }
+  }
+  _nominatimProcessing = false;
+}
+
+function isNominatimUrl(url) {
+  return url && url.includes('nominatim.openstreetmap.org');
+}
+
 app.get('/api/proxy/geocoding', async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: 'Missing URL parameter' });
 
-  try {
-    const axios = require('axios');
+  // Create a stable cache key (strip cache-buster params like _cb=...)
+  const cacheKey = url.replace(/[?&]_cb=[^&]*/g, '');
+
+  // LAYER 1: Serve from cache if available
+  const cached = getCachedGeocode(cacheKey);
+  if (cached) {
+    res.setHeader('X-Geocache', 'HIT');
+    return res.json(cached);
+  }
+
+  // LAYER 2: In-flight deduplication
+  if (IN_FLIGHT.has(cacheKey)) {
+    try {
+      const data = await IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Geocache', 'DEDUP');
+      return res.json(data);
+    } catch (error) {
+      const status = error.response?.status || 500;
+      return res.status(status).json({ error: 'Proxy request failed', message: error.message });
+    }
+  }
+
+  // LAYER 3: Make the actual request
+  const axios = require('axios');
+
+  const doFetch = async () => {
     const response = await axios.get(url, {
-      timeout: 7000,
+      timeout: 8000,
       headers: {
         'User-Agent': 'KillMetraj_DeliveryApp/2.0 (contact@killmetraj.ua)',
         'Referer': 'https://killmetraj.ua/',
         'Accept-Language': 'uk,ru,en'
       }
     });
-    res.json(response.data);
+    return response.data;
+  };
+
+  // Nominatim must go through rate limiter queue; others can go directly
+  const fetchPromise = isNominatimUrl(url) ? enqueueNominatimFetch(doFetch) : doFetch();
+
+  IN_FLIGHT.set(cacheKey, fetchPromise);
+
+  try {
+    const data = await fetchPromise;
+    setCachedGeocode(cacheKey, data);
+    res.setHeader('X-Geocache', 'MISS');
+    res.json(data);
   } catch (error) {
     const status = error.response?.status || 500;
     const errorData = error.response?.data;
-    logger.error('Proxy request failed', { 
-      url, 
-      status, 
-      error: error.message,
-      data: errorData
-    });
-    res.status(status).json({ 
-      error: 'Proxy request failed', 
+    if (status !== 429) { // Don't spam logs on rate-limiting
+      logger.error('Geocoding proxy request failed', {
+        url: cacheKey,
+        status,
+        error: error.message
+      });
+    }
+    res.status(status).json({
+      error: 'Proxy request failed',
       message: error.message,
-      details: errorData 
+      details: errorData
     });
+  } finally {
+    IN_FLIGHT.delete(cacheKey);
   }
+});
+
+// Endpoint to view geocoding cache stats (admin debug)
+app.get('/api/proxy/geocoding/stats', (req, res) => {
+  res.json({
+    cacheSize: GEOCODING_CACHE.size,
+    inFlight: IN_FLIGHT.size,
+    nominatimQueueLength: _nominatimServerQueue.length
+  });
 });
 
 app.use(express.json({ limit: '50mb' }));

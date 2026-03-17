@@ -13,7 +13,6 @@ import {
 } from '@heroicons/react/24/outline'
 import { parseKML } from '../utils/maps/kmlParser'
 import { LoadingSpinner } from '../components/shared/LoadingSpinner'
-import { DashboardSettingsPanel } from '../components/autoplanner/DashboardSettingsPanel'
 import { localStorageUtils } from '../utils/ui/localStorage'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -23,7 +22,6 @@ import { CollapsibleSection } from '../components/shared/CollapsibleSection'
 import { KmlPreviewMap } from '../components/zone/KmlPreviewMap'
 import { authService } from '../utils/auth/authService'
 import KmlManagementPanel from '../components/admin/KmlManagementPanel'
-import ZoneInspector from '../components/zone/ZoneInspector'
 
 interface SettingsForm {
   googleMapsApiKey: string
@@ -597,74 +595,20 @@ export const Settings: React.FC = () => {
             </CollapsibleSection>
           )}
 
-          {/* Zone Inspector (Admin Only) */}
-          {isAdmin && (
-            <CollapsibleSection
-              isDark={isDark}
-              icon={<MagnifyingGlassIcon className="h-5 w-5" />}
-              title="Инспектор зон и адресов (Отладка)"
-              defaultOpen={false}
-            >
-              <div className={clsx(
-                'rounded-xl border',
-                isDark ? 'bg-gray-800/30 border-gray-700' : 'bg-gray-50 border-gray-200'
-              )}>
-                <ZoneInspector isDark={isDark} />
-              </div>
-            </CollapsibleSection>
-          )}
-
-          {isAdmin && (
-            <CollapsibleSection isDark={isDark} icon={<ArrowPathIcon className="h-4 w-4" />} title="Автообновление (API Dashboard)">
-              <DashboardSettingsPanel 
-                isDark={isDark} 
-                initialSettings={watch()} 
-                onSettingsChange={(newS) => {
-                  Object.entries(newS).forEach(([key, val]) => {
-                    setValue(key as any, val);
-                  });
-                }}
-                canModify={canModify}
-              />
-            </CollapsibleSection>
-          )}
 
           {isAdmin && (
             <CollapsibleSection isDark={isDark} icon={<CogIcon className="h-4 w-4" />} title="Фильтр аномалий">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <label className="inline-flex items-center space-x-2">
-                  <input type="checkbox" className="checkbox" {...register('anomalyFilterEnabled')} disabled={!canModify} />
-                  <span>Включить фильтр аномалий</span>
-                </label>
-                <div className="flex items-center justify-between p-4 bg-zinc-800/40 rounded-xl border border-zinc-700/50 hover:border-zinc-600 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-zinc-700/50 flex items-center justify-center text-blue-400">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h4 className="text-zinc-200 font-medium">Провайдер Distance Matrix</h4>
-                      <p className="text-zinc-400 text-sm">Сервис для расчета матрицы расстояний</p>
-                    </div>
-                  </div>
-                  <select
-                    value={watch('distanceMatrixProvider') || 'valhalla'} // Use watch for current value
-                    onChange={(e) => {
-                        const val = e.target.value;
-                        setValue('distanceMatrixProvider', val as any); // Use setValue to update form state
-                        if (val === 'yapiko_osrm' && !watch('distanceMatrixEnabled')) { // Check current state
-                            setValue('distanceMatrixEnabled', true); // Use setValue
-                        }
-                    }}
-                    className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:ring-2 focus:ring-blue-500/40"
-                  >
-                    <option value="valhalla">Valhalla (Бесплатно)</option>
-                    <option value="osrm">OSRM Demo (Медленно)</option>
-                    <option value="yapiko_osrm">Yapiko OSRM (Локально)</option>
-                  </select>
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <label className="inline-flex items-center space-x-2">
+                    <input type="checkbox" className="checkbox" {...register('anomalyFilterEnabled')} disabled={!canModify} />
+                    <span>Включить фильтр аномалий</span>
+                  </label>
+                  <input type="number" className="input" {...register('anomalyMaxAvgPerOrderKm', { valueAsNumber: true })} disabled={!canModify} placeholder="Макс. среднее (км)" />
                 </div>
-                <input type="number" className="input" {...register('anomalyMaxAvgPerOrderKm')} disabled={!canModify} placeholder="Макс. среднее (км)" />
+                <p className="text-[10px] text-gray-500 italic">
+                  Фильтр аномалий блокирует расчеты, если среднее расстояние между заказами превышает указанный порог. Это помогает избежать ошибок геокодирования.
+                </p>
               </div>
             </CollapsibleSection>
           )}
@@ -681,185 +625,102 @@ export const Settings: React.FC = () => {
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер маршрутизации</label>
+                    <label className="text-xs font-semibold text-gray-500 tracking-wider">Основной движок (Маршруты)</label>
                     <select {...register('routingProvider')} className="input w-full" disabled={!canModify}>
-                      <option value="valhalla">🗺 Основной — Valhalla OSM (Бесплатно, Точно)</option>
-                      <option value="yapiko_osrm">🏙 Yapiko OSRM (Локальный сервер компании)</option>
-                      <option value="generoute">⚡ OSRM / Generoute (Оптимизация, Бесплатно)</option>
-                      <option value="google">💳 Резурвный — Google Maps (Платный)</option>
+                      <option value="yapiko_osrm">🚀 Quantum Engine (Yapiko+OSRM)</option>
+                      <option value="osrm">OSRM (Публичный)</option>
+                      <option value="valhalla">Valhalla</option>
                     </select>
-                    <p className="text-xs text-gray-400">
-                      {watch('routingProvider') === 'valhalla'
-                        ? '✅ Рекомендовано: реальные дорожные расстояния через бесплатный OSM-движок Valhalla.'
-                        : watch('routingProvider') === 'yapiko_osrm'
-                        ? '🏙 Yapiko OSRM — расчет через внутренний сервер компании (требуется VPN или корпоративная сеть).'
-                        : watch('routingProvider') === 'generoute'
-                        ? '⚡ OSRM/Generoute — быстро, бесплатно.'
-                        : '⚠️ Платный режим: Google Maps Directions API.'}
-                    </p>
+                    <p className="text-[10px] text-gray-500">Quantum Engine — самый быстрый и приоритетный.</p>
+                  </div>
+                  <div className="space-y-2">
+                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">URL сервера Yapiko OSRM (Локально)</label>
+                     <div className="relative">
+                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                         <MapIcon className="h-4 w-4 text-gray-400" />
+                       </div>
+                       <input
+                         type="text"
+                         {...register('yapikoOsrmUrl')}
+                         className="input w-full pl-10"
+                         placeholder="http://ip-address:port"
+                         disabled={!canModify}
+                       />
+                     </div>
+                     <p className="text-[10px] text-gray-400 font-medium italic">Например: http://app.yaposhka.kh.ua:4999</p>
                   </div>
 
-                  {watch('routingProvider') === 'yapiko_osrm' && (
+                   <div className="space-y-2">
+                     <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Тип транспорта</label>
+                     <select {...register('vehicleType')} className="input w-full" disabled={!canModify}>
+                       <option value="auto">🚗 Автомобиль</option>
+                       <option value="motorcycle">🏍 Мотоцикл</option>
+                       <option value="motor_scooter">🛵 Скутер / Мопед</option>
+                     </select>
+                   </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Провайдер геокодирования</label>
+                    <select {...register('geocodingProvider')} className="input w-full" disabled={!canModify}>
+                      <option value="nominatim">⚡️ Отказоустойчивый (Nominatim+Смешанный)</option>
+                      <option value="photon">Photon</option>
+                      <option value="geoapify">Geoapify</option>
+                      <option value="google">Google Maps</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-indigo-50/30 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-500/10 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-xl bg-indigo-500 text-white shadow-lg shadow-indigo-500/20">
+                      <ArrowPathIcon className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black uppercase tracking-tight text-indigo-700 dark:text-indigo-400">Резервная Матрица</h4>
+                      <p className="text-[10px] text-gray-500 font-medium">Синхронизировано: {watch('routingProvider')}</p>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" {...register('distanceMatrixEnabled')} disabled={!canModify} />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+                  </label>
+                </div>
+
+                <div className="pt-6 mt-6 border-t border-gray-100 dark:border-gray-700">
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-6">Внешние Сервисы (API Ключи)</h4>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
                     <div className="space-y-2">
                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">URL сервера Yapiko OSRM</label>
-                       <div className="relative">
-                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                           <MapIcon className="h-4 w-4 text-gray-400" />
-                         </div>
-                         <input
-                           type="text"
-                           {...register('yapikoOsrmUrl')}
-                           className="input w-full pl-10"
-                           placeholder="http://ip-address:port"
-                           disabled={!canModify}
-                         />
-                       </div>
-                       <p className="text-[10px] text-gray-400">Например: http://app.yaposhka.kh.ua:4999 или http://api.yapiko.ua:5000</p>
+                       <input type="text" className="input" placeholder="http://ip-address:port" {...register('yapikoOsrmUrl')} disabled={!canModify} />
                     </div>
-                  )}
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Тип транспорта (Valhalla)</label>
-                    <select {...register('vehicleType')} className="input w-full" disabled={!canModify}>
-                      <option value="auto">🚗 Автомобиль</option>
-                      <option value="motorcycle">🏍 Мотоцикл</option>
-                      <option value="motor_scooter">🛵 Скутер / Мопед</option>
-                    </select>
-                    <p className="text-xs text-gray-400">Тип транспорта влияет на выбор дорог и скоростной режим в Valhalla.</p>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер геокодирования</label>
-                    <select {...register('geocodingProvider')} className="input w-full" disabled={!canModify}>
-                      <option value="nominatim">⚡ Основной — Photon + OSM + Geoapify (Бесплатно, Высокая скорость)</option>
-                      <option value="google">💳 Резервный — Google Maps (Платный, Точный)</option>
-                    </select>
-                    <p className="text-xs text-gray-400">
-                      {watch('geocodingProvider') === 'nominatim' ? '✅ Рекомендованный режим: геокодирование через высокоскоростной Photon, OpenStreetMap и Geoapify. Включено автоматическое кэширование.' : '⚠️ Платный режим: Google Maps API.'}
-                    </p>
 
-                  </div>
-                </div>
-
-                <div className="p-6 rounded-2xl bg-indigo-50/30 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-500/10 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-xl bg-indigo-500 text-white">
-                        <ArrowPathIcon className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-black uppercase tracking-tight">Резервная Матрица (Distance Matrix)</h4>
-                        <p className="text-[10px] text-gray-500 font-bold">Оптимизация N-to-M расчетов для ускорения планирования</p>
-                      </div>
+                    <div className="space-y-2">
+                       <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Mapbox Token (Трафик)</label>
+                       <input type="text" className="input" placeholder="pk.eyJ1..." {...register('mapboxToken')} disabled={!canModify} />
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input type="checkbox" className="sr-only peer" {...register('distanceMatrixEnabled')} disabled={!canModify} />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
-                    </label>
-                  </div>
 
-                  {watch('distanceMatrixEnabled') && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
-                      <div className="space-y-2">
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Провайдер матрицы</label>
-                        <select {...register('distanceMatrixProvider')} className="input w-full" disabled={!canModify}>
-                          <option value="valhalla">🗺 Valhalla Sources-to-Targets (OSM, Рекомендовано)</option>
-                          <option value="osrm">⚡ OSRM Table (Бесплатно, Высокая скорость)</option>
-                          <option value="google">💳 Google Distance Matrix API (Платный)</option>
-                        </select>
-                      </div>
-                      <div className="p-3 rounded-xl bg-white/50 dark:bg-gray-950/30 border border-white/50 dark:border-gray-800 flex items-center gap-3">
-                         <div className="text-[10px] text-gray-500 italic">
-                           {watch('distanceMatrixProvider') === 'valhalla' 
-                             ? 'Valhalla позволяет рассчитать матрицу 100x100 за один запрос. Идеально для оптимизации курьерских маршрутов.' 
-                             : watch('distanceMatrixProvider') === 'osrm' 
-                             ? 'OSRM Table — самый быстрый способ получить таблицу расстояний, но не учитывает специфику транспорта Valhalla.' 
-                             : 'Google Matrix — максимальная точность, но каждая ячейка таблицы оплачивается отдельно согласно тарифам Google.'}
-                         </div>
-                      </div>
+                    <div className="space-y-2">
+                       <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Generoute Key</label>
+                       <input type="password" className="input" placeholder="API Key..." {...register('generouteApiKey')} disabled={!canModify} />
                     </div>
-                  )}
-                </div>
 
-                <div className="pt-6 mt-6 border-t border-gray-100 dark:border-gray-700 space-y-4">
-                  <h4 className="text-sm font-black uppercase tracking-tight mb-4 text-gray-700 dark:text-gray-300">API Ключи (Только для платных сервисов)</h4>
-                  
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Mapbox Token (для трафика)</label>
-                    <input type="text" className="input" placeholder="pk.eyJ1..." {...register('mapboxToken')} disabled={!canModify} />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">OSRM / Generoute API Key</label>
-                    <input 
-                      type="password" 
-                      className="input" 
-                      placeholder="Оставьте пустым для ключа по умолчанию" 
-                      {...register('generouteApiKey')} 
-                      disabled={!canModify} 
-                    />
-                    <p className="text-[10px] text-gray-400">
-                      Используется только если провайдер маршрутизации установлен на OSRM / Generoute.
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Geoapify API Key</label>
-                    <input 
-                      type="password" 
-                      className="input" 
-                      placeholder="geo_..." 
-                      {...register('geoapifyApiKey')} 
-                      disabled={!canModify} 
-                    />
-                    <p className="text-[10px] text-gray-400">
-                      Необходим для провайдера геокодирования Geoapify.
-                    </p>
-                  </div>
-
-                  <div className="space-y-2 mt-4 p-4 rounded-xl border border-orange-200 bg-orange-50/50 dark:bg-orange-900/10 dark:border-orange-500/20">
-                    <label className="text-xs font-semibold text-orange-600 dark:text-orange-400 uppercase tracking-wider">Google Maps API Ключ (Deprecated)</label>
-                    <div className="flex gap-2 mt-1">
-                      <input type="password" className="input flex-1" placeholder="AIzaSy..." {...register('googleMapsApiKey')} disabled={!canModify} />
+                    <div className="space-y-2">
+                       <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Geoapify Key</label>
+                       <input type="password" className="input" placeholder="geo_..." {...register('geoapifyApiKey')} disabled={!canModify} />
                     </div>
-                    <p className="text-[10px] text-orange-500 mt-1">
-                      Внимание: система разработана для работы без Google Maps API. Этот ключ нужен исключительно если вы принудительно выбрали Google в качестве резервного провайдера. Взимается плата по тарифам Google.
-                    </p>
+                  </div>
+
+                  <div className="space-y-2 mt-4 p-4 rounded-xl border border-orange-200 bg-orange-50/50 dark:bg-orange-900/10 dark:border-orange-500/20 block opacity-60">
+                      <label className="text-xs font-semibold text-orange-600 dark:text-orange-400 uppercase tracking-wider">Google Maps API (Deprecated)</label>
+                      <div className="flex gap-2 mt-1">
+                          <input type="password" className="input flex-1 bg-gray-50/50" placeholder="AIzaSy..." {...register('googleMapsApiKey')} disabled={!canModify} />
+                      </div>
                   </div>
                 </div>
               </div>
             </CollapsibleSection>
           )}
 
-          {(isAdmin || canModify) && (
-            <CollapsibleSection isDark={isDark} icon={<CogIcon className="h-5 w-5" />} title="Интерфейс и Ограничения" defaultOpen={false}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase text-gray-500">Стиль карты Google</label>
-                  <select
-                    {...register('mapStyle')}
-                    className="input"
-                    disabled={!canModify}
-                  >
-                    <option value="standard">Стандартный</option>
-                    <option value="silver">Серебро</option>
-                    <option value="retro">Ретро</option>
-                    <option value="dark">Темный</option>
-                    <option value="night">Ночной</option>
-                    <option value="aubergine">Баклажан</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase text-gray-500">Макс. критическая дистанция (км)</label>
-                  <input 
-                    type="number" 
-                    {...register('maxCriticalRouteDistanceKm', { valueAsNumber: true })}
-                    className="input"
-                    disabled={!canModify}
-                  />
-                  <p className="text-[10px] text-gray-400">Маршруты длиннее этого значения помечаются как критические</p>
-                </div>
-              </div>
-            </CollapsibleSection>
-          )}
 
           {(isAdmin || canModify) && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 bg-gray-50/50 dark:bg-gray-800/20 p-6 rounded-2xl border border-gray-100 dark:border-gray-700/50">

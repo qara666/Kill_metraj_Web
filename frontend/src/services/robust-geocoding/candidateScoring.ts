@@ -433,7 +433,7 @@ export function scoreCandidate(
 
   if (opts.requestedStreetNames && opts.requestedStreetNames.length > 0) {
     let matchedRoot: string | null = null
-    const candidateTokens = candidateFull.split(/[\s,.'"\-]+/).map(t => slavicNormalize(t)).filter(t => t.length > 0)
+    const candidateTokens = candidateFull.replace(/[ʼ`]/g, "'").split(/[\s,.'ʼ`"\-]+/).map(t => slavicNormalize(t)).filter(t => t.length > 0)
 
     for (const req of opts.requestedStreetNames) {
         const reqNormal = slavicNormalize(req)
@@ -500,7 +500,7 @@ export function isPerfectHit(
   
   // v35.9.5: Enhanced street match for "Perfect Hit"
   if (requestedStreetNames && requestedStreetNames.length > 0) {
-    const candidateFull = (candidate.raw.formatted_address || '').toLowerCase()
+    const candidateFull = (candidate.raw.formatted_address || '').toLowerCase().replace(/[ʼ`]/g, "'")
     const candidateRoute = (candidate.raw.address_components || []).find(comp => (comp.types || []).includes('route'))?.long_name?.toLowerCase()
     
     const candNormFull = slavicNormalize(candidateFull)
@@ -518,7 +518,13 @@ export function isPerfectHit(
     const streetNum = (candidate.raw.address_components || []).find(c =>
       c.types.includes('street_number')
     )?.long_name
-    if (!streetNum || streetNum.toLowerCase() !== expectedHouse.toLowerCase()) return false
+    
+    if (!streetNum) return false
+    
+    const sNum = streetNum.toLowerCase().replace(/[^a-z0-9а-яієґ]/g, '')
+    const eHouse = expectedHouse.toLowerCase().replace(/[^a-z0-9а-яієґ]/g, '')
+    
+    if (sNum !== eHouse) return false
   }
   return true
 }

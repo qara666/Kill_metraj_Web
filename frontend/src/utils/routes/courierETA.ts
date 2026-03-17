@@ -7,7 +7,8 @@
  *   rough  → uses order count + vehicle speed heuristic
  */
 
-import { batchGeocode, GeoPoint } from '../maps/geocodeCache'
+import { robustGeocodingService } from '../../services/robust-geocoding/RobustGeocodingService'
+import { GeoPoint } from '../maps/geocodeCache'
 import { isOrderCompleted } from '../data/orderStatus'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -202,16 +203,27 @@ export async function enrichRoutesWithCoords(
 
     if (needGeocode.length === 0) return routes
 
-    const coordMap = await batchGeocode(needGeocode)
-
+    const geocodeRequests = needGeocode.map(address => ({ 
+        address, 
+        options: { silent: true } 
+    }));
+    
+    const coordMap = await robustGeocodingService.batchGeocode(geocodeRequests);
+    
     // Apply results back to orders (immutably)
     return routes.map((route) => ({
         ...route,
         orders: route.orders.map((order) => {
             if (order.coords || !order.address) return order
-            const key = order.address.trim().toLowerCase().replace(/\s+/g, ' ')
-            const coords = coordMap.get(key)
-            return coords ? { ...order, coords } : order
+            const key = order.address.trim().toLowerCase();
+            const res = coordMap.get(key)
+            if (res && res.best) {
+                return { 
+                    ...order, 
+                    coords: { lat: res.best.lat, lng: res.best.lng } 
+                }
+            }
+            return order;
         }),
     }))
 }
