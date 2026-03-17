@@ -160,6 +160,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
   // Простая очистка адреса + добавление выбранного города/страны
   // Улучшенная очистка адреса (v38: Noisy String Stripper)
+  const getStableOrderId = useCallback((order: any): string => {
+    const idVal = order.id !== undefined && order.id !== null && order.id !== 0 ? String(order.id) : null;
+    const fallback = String(order.orderNumber || order._id || `gen_${Math.abs(hashString(order.address || ''))}`);
+    return idVal || fallback;
+  }, []);
+
   const cleanAddressForRoute = useCallback((raw: string): string => {
     if (!raw) return '';
     // v38: Aggressive stripping of noisy substrings like "эт.2, кв.76", "под.3", "д/ф Домофон"
@@ -282,19 +288,28 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
     const grouped: { [courier: string]: Order[] } = {}
 
-    excelData.orders.forEach((order: any) => {
+    console.log(`[RouteManagement] Grouping: Processing ${excelData.orders.length} orders total`);
+    
+    excelData.orders.forEach((order: any, idx: number) => {
       if (order.address) {
-        const courierName = normalizeCourierName(order?.courier) || 'Не назначено'
+        // Advanced courier name extraction
+        const c = order?.courier;
+        const rawName = (typeof c === 'object' && c !== null) 
+          ? (c.name || c._id || c.id || '') 
+          : (typeof c === 'string' ? c : '');
+        
+        const courierName = normalizeCourierName(rawName || order.courierName) || 'Не назначено'
 
         if (!grouped[courierName]) {
           grouped[courierName] = []
         }
 
-        // v38: Ultra-Stable ID Factor (ID > orderNumber > hash)
-        // If order.id is 0 or missing, we MUST use a stringified stable fallback.
-        const orderIdValue = order.id !== undefined && order.id !== null && order.id !== 0 ? String(order.id) : null;
-        const fallbackId = String(order.orderNumber || order._id || `gen_${Math.abs(hashString(order.address))}`);
-        const stableId = orderIdValue || fallbackId;
+        const stableId = getStableOrderId(order);
+        
+        // Debug: Log first 5 orders and their assigned courier/id
+        if (idx < 5) {
+           console.log(`[RouteManagement] Grouping: Order #${order.orderNumber} -> Courier: "${courierName}", ID: "${stableId}"`);
+        }
 
         grouped[courierName].push({
           id: stableId,
@@ -325,12 +340,17 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     const set = new Set<string>()
       ; (excelData?.routes || []).forEach((route: Route) => {
         route.orders.forEach((order: Order) => {
-          // Normalize here too
-          set.add(String(order.id || order.orderNumber || (order as any)._id))
+          const sid = getStableOrderId(order);
+          set.add(sid);
+          
+          // Debug: Log first few orders in existing routes
+          if (set.size < 5) {
+             console.log(`[RouteManagement] Set: Order #${order.orderNumber} in Route "${route.courier}" -> ID: "${sid}"`);
+          }
         })
       })
     return set
-  }, [excelData?.routes])
+  }, [excelData?.routes, getStableOrderId])
 
   // Функция для получения метрик курьера (Optimized with Memoization)
   const courierMetricsMap = useMemo(() => {
@@ -664,16 +684,28 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
   // --- Оптимизированная фильтрация заказов ---
   const { availableOrders, ordersInRoutes } = useMemo(() => {
-    if (!selectedCourier) return { availableOrders: [], ordersInRoutes: [] }
+    if (!selectedCourier) {
+      console.log(`[RouteManagement] Filter: No courier selected`);
+      return { availableOrders: [], ordersInRoutes: [] }
+    }
     
     // 1. Получаем все заказы выбранного курьера
     const rawOrders = courierOrders[selectedCourier] || []
-    if (rawOrders.length === 0) return { availableOrders: [], ordersInRoutes: [] }
+    console.log(`[RouteManagement] Filter: Courier "${selectedCourier}" has ${rawOrders.length} raw orders`);
+    
+    if (rawOrders.length === 0) {
+      // Logic check: Maybe names are slightly different?
+      const keys = Object.keys(courierOrders);
+      console.log(`[RouteManagement] Filter: Available keys in map:`, keys.slice(0, 5));
+      return { availableOrders: [], ordersInRoutes: [] }
+    }
 
     const ordersWithSearch = searchOrders(rawOrders)
     const sortedAndDeduplicated = sortOrdersByTime(ordersWithSearch).filter((o, idx, self) => 
       self.findIndex(t => t.id === o.id) === idx
     )
+
+    console.log(`[RouteManagement] Filter: After search/sort/deduplicate: ${sortedAndDeduplicated.length} orders`);
 
     // 2. Распределяем по спискам одним проходом с использованием O(1) set
     const available: Order[] = []
@@ -686,6 +718,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         available.push(order)
       }
     })
+
+    console.log(`[RouteManagement] Filter: Result -> Available: ${available.length}, In Routes: ${inRoutes.length}`);
 
     return { availableOrders: available, ordersInRoutes: inRoutes }
   }, [selectedCourier, courierOrders, searchOrders, sortOrdersByTime, ordersInRoutesSet])
