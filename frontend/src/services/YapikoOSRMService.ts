@@ -1,10 +1,11 @@
-import { API_URL } from '../config/apiConfig';
-
 /**
  * YapikoOSRMService — Custom OSRM Routing Provider
  * 
  * Uses the Yapiko OSRM server specified in settings.
  */
+
+// v5.51: DYNAMIC IMPORT or lazy access to avoid circular dependency with apiConfig
+import { getApiUrl } from '../config/apiConfig';
 
 export interface OSRMLeg {
   distance: { text: string; value: number }
@@ -22,12 +23,15 @@ export interface OSRMRouteResult {
 
 export class YapikoOSRMService {
   /**
-   * Helper to proxy OSRM requests on Render to avoid Mixed Content blocks
+   * Helper to proxy OSRM requests on Render to avoid Mixed Content blocks.
+   * Uses getApiUrl() lazily to prevent top-level ESM deadlock.
    */
   private static getMaybeProxiedUrl(targetUrl: string): string {
     const isRender = typeof window !== 'undefined' && window.location.hostname.includes('onrender.com');
     if (isRender) {
-      return `${API_URL}/api/proxy/osrm?url=${encodeURIComponent(targetUrl)}`;
+      // Lazy call to getApiUrl() avoids the TDZ (Temporal Dead Zone) 
+      // of top-level constant export in apiConfig.ts
+      return `${getApiUrl()}/api/proxy/osrm?url=${encodeURIComponent(targetUrl)}`;
     }
     return targetUrl;
   }
@@ -62,6 +66,7 @@ export class YapikoOSRMService {
 
       const data = await response.json()
       if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
+        console.error(`[Маршрут] Yapiko OSRM invalid data:`, data);
         return { feasible: false }
       }
 
@@ -69,11 +74,11 @@ export class YapikoOSRMService {
       const legs: OSRMLeg[] = (route.legs || []).map((leg: any, idx: number) => ({
         distance: { 
           value: leg.distance, 
-          text: leg.distance >= 1000 ? `${(leg.distance / 1000).toFixed(1)} km` : `${leg.distance.toFixed(0)} m` 
+          text: leg.distance >= 1000 ? `${(leg.distance / 1000).toFixed(1)} км` : `${leg.distance.toFixed(0)} м` 
         },
         duration: { 
           value: leg.duration, 
-          text: `${Math.round(leg.duration / 60)} min` 
+          text: `${Math.round(leg.duration / 60)} мин` 
         },
         start_location: locations[idx],
         end_location: locations[idx + 1]
@@ -86,22 +91,22 @@ export class YapikoOSRMService {
         totalDuration: route.duration
       }
     } catch (error) {
-      console.warn('[Маршрут] Ошибка Yapiko OSRM:', error)
+      console.error('[Маршрут] Ошибка Yapiko OSRM:', error)
       return { feasible: false }
     }
   }
 
   /**
-   * Calculate a distance/duration matrix for a set of points using Yapiko OSRM.
+   * Calculate a distance/duration matrix for a set of points.
    */
   static async getMatrix(
     sources: { lat: number; lng: number }[],
     targets: { lat: number; lng: number }[],
     baseUrl: string
   ): Promise<{ distance: number; duration: number }[][] | null> {
-    if (!baseUrl) return null;
-    
-    const normalizedUrl = baseUrl.replace(/\/$/, '');
+    if (sources.length === 0 || targets.length === 0 || !baseUrl) return null
+
+    const normalizedUrl = baseUrl.replace(/\/$/, '')
     const allPoints = [...sources, ...targets]
     const sourceIndices = sources.map((_, i) => i).join(';')
     const targetIndices = targets.map((_, i) => sources.length + i).join(';')
@@ -123,12 +128,10 @@ export class YapikoOSRMService {
           duration: data.durations ? data.durations[i][j] : 0
         }))
       )
-    } catch (err) {
-      console.warn('[Маршрут] Ошибка матрицы Yapiko OSRM:', err)
+    } catch {
       return null
     }
   }
-
   /**
    * Quick point-to-point distance estimate using matrix (single leg).
    */
