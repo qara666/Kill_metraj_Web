@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useDeferredValue, useTransition, lazy, Suspense } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useDeferredValue, useTransition, lazy, Suspense, useRef } from 'react'
 import { FixedSizeList as List } from 'react-window'
 import { OrderList } from './OrderList'
 import { RouteCard } from './RouteCard'
@@ -8,8 +8,9 @@ import {
   QuestionMarkCircleIcon,
   InboxIcon,
   ClockIcon,
-  ArrowPathIcon,
+  MagnifyingGlassIcon,
   PlusIcon,
+  ArrowPathIcon,
   TrashIcon,
   ChevronLeftIcon,
   ChevronRightIcon
@@ -56,13 +57,15 @@ import { Route, Order } from '../../types/route'
 import { useRouteGeocoding, hashString } from '../../hooks/useRouteGeocoding'
 import { useKmlData } from '../../hooks/useKmlData'
 import { exportToGoogleMaps, exportToValhalla } from '../../utils/routes/routeExport'
+import { CourierListItem } from './CourierListItem'
+
 
 interface RouteManagementProps {
   excelData?: any
 }
 
 
-import { CourierListItem } from './CourierListItem'
+
 
 export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const { excelData, updateExcelData, saveManualOverrides } = useExcelData()
@@ -653,10 +656,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   }, [deferredOrderSearchTerm])
 
   // --- Оптимизированная фильтрация заказов ---
-  const { availableOrders, ordersInRoutes } = useMemo(() => {
+  const filteredData = useMemo(() => {
     if (!selectedCourier) {
-      console.log(`[RouteManagement] Filter: No courier selected (Current state: ${selectedCourier})`);
-      return { availableOrders: [], ordersInRoutes: [] }
+      console.log(`[RouteManagement] Filter: No courier selected`);
+      return { availableOrders: [], courierAvailableOrders: [], unassignedPool: [], ordersInRoutes: [] }
     }
 
     // 1. Collect orders for selected courier
@@ -682,7 +685,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     const rawOrders = selectedCourierRawOrders
 
     if (rawOrders.length === 0 && unassignedOrders.length === 0) {
-      return { availableOrders: [], ordersInRoutes: [] }
+      return { 
+        availableOrders: [], 
+        courierAvailableOrders: [], 
+        unassignedPool: [], 
+        ordersInRoutes: [] 
+      }
     }
 
     const ordersWithSearch = searchOrders(rawOrders)
@@ -691,33 +699,46 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     )
 
     // 3. Split selected courier's orders into available and in-routes
-    const available: Order[] = []
+    const courierAvailable: Order[] = []
     const inRoutes: Order[] = []
 
     sortedAndDeduplicated.forEach(order => {
       if (ordersInRoutesSet.has(order.id)) {
         inRoutes.push(order)
       } else {
-        available.push(order)
+        courierAvailable.push(order)
       }
     })
 
-    // 4. Merge unassigned orders into "available" (deduplication by id)
-    const seenIds = new Set(available.map(o => o.id))
-    unassignedOrders.forEach(o => {
+    // 4. Truly unassigned orders (for the "pool") - excluding the courier's own orders if they were already included
+    const availablePool = [...unassignedOrders]
+    
+    // Total available for the "list" (to maintain drag/drop capability)
+    const totalAvailable = [...courierAvailable]
+    const seenIds = new Set(courierAvailable.map(o => o.id))
+    availablePool.forEach(o => {
       if (!seenIds.has(o.id)) {
         seenIds.add(o.id)
-        available.push(o)
+        totalAvailable.push(o)
       }
     })
 
-    console.log(`[RouteManagement] Filter Success: ${available.length} available (${unassignedOrders.length} unassigned), ${inRoutes.length} in routes`);
-    return { availableOrders: available, ordersInRoutes: inRoutes }
-  }, [selectedCourier, courierOrders, searchOrders, sortOrdersByTime, ordersInRoutesSet])
+    console.log(`[RouteManagement] Filter Success: ${courierAvailable.length} courier available, ${availablePool.length} unassigned pool, ${inRoutes.length} in routes`);
+    return { 
+      availableOrders: totalAvailable, 
+      courierAvailableOrders: courierAvailable,
+      unassignedPool: availablePool,
+      ordersInRoutes: inRoutes 
+    }
+  }, [selectedCourier, courierOrders, searchOrders, sortOrdersByTime, ordersInRoutesSet]);
+
+  const { availableOrders, courierAvailableOrders, unassignedPool, ordersInRoutes } = filteredData;
 
 
-  // v37: Defer the list to prevent main-thread blocking on selection
+  // v37: Defer the lists to prevent main-thread blocking on selection
   const deferredAvailableOrders = useDeferredValue(availableOrders)
+  const deferredCourierAvailableOrders = useDeferredValue(courierAvailableOrders)
+  const deferredUnassignedPool = useDeferredValue(unassignedPool)
 
   // Debug State
   useEffect(() => {
@@ -803,9 +824,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     )
   }, [filteredCouriers, selectedCourier, handleCourierSelect, getCourierMetrics, getCourierVehicleType, isDark]);
 
-
-
-  // Функции для изменения порядка выбранных заказов
+  // --- v5.7: Виртуализированный список с поддержкой сетки (Grid) ---
+  // Перенесен наружу для стабильности ссылок
   // При виртуализации ручная подгрузка не требуется; функция удалена
 
   const createRoute = async (ordersOverride?: Order[] | any, courierOverride?: string) => {
@@ -1466,9 +1486,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                       "flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border transition-all",
                       isDark ? "bg-black/20 border-white/5 focus-within:border-blue-500/30" : "bg-gray-50 border-gray-100 focus-within:border-blue-200"
                     )}>
-                      <svg className="w-3.5 h-3.5 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
+                      <MagnifyingGlassIcon className="w-3.5 h-3.5 opacity-30" />
                       <input
                         type="text"
                         placeholder="Поиск..."
@@ -1583,7 +1601,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                           </div>
                         </div>
                         <p className={clsx('text-lg font-bold opacity-60', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                          {availableOrders.length} заказов доступно для распределения
+                          {courierAvailableOrders.length} личных + {unassignedPool.length} из пула
                         </p>
                       </div>
                     </div>
@@ -1631,7 +1649,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                       <CourierTimeWindows
                         courierId={String(selectedCourier || '')}
                         courierName={isId0CourierName(selectedCourier) ? 'Не назначено' : (String(selectedCourier) || '')}
-                        orders={deferredAvailableOrders}
+                        orders={deferredCourierAvailableOrders.length > 0 ? deferredCourierAvailableOrders : deferredUnassignedPool}
                         isDark={isDark}
                         onOrderMoved={handleMoveOrderToGroup}
                         onCreateCustomGroup={handleCreateCustomGroup}
@@ -1861,24 +1879,15 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                             </div>
                           )}
 
-                          {deferredAvailableOrders.length > 0 ? (
-                            <div className="overflow-y-auto custom-scrollbar" style={{ maxHeight: '600px' }}>
-                              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pb-4">
-                                {deferredAvailableOrders.map((order) => (
-                                  <GridOrderCard
-                                    key={order.id}
-                                    order={order}
-                                    isDark={isDark}
-                                    isSelected={selectedOrders.has(order.id)}
-                                    onSelect={handleOrderSelect}
-                                    isUnassigned={isId0CourierName(order.courier) || order.courier === 'Не назначено'}
-                                  />
-                                ))}
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="text-center py-20 opacity-30 italic">Список пуст</div>
-                          )}
+                        <div id="available-orders-list-container" className="h-[600px] w-full">
+                          <AvailableOrdersList 
+                            orders={deferredUnassignedPool}
+                            isDark={isDark}
+                            selectedOrders={selectedOrders}
+                            onSelectOrder={handleOrderSelect}
+                            selectedCourier={selectedCourier}
+                          />
+                        </div>
 
 
                           {ordersInRoutes.length > 0 && (
@@ -2258,3 +2267,90 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     </div>
   );
 };
+// --- Helper Components for Virtualization ---
+
+const AvailableOrdersList = React.memo(({ orders, isDark, selectedOrders, onSelectOrder, selectedCourier }: { 
+  orders: Order[], 
+  isDark: boolean, 
+  selectedOrders: Set<string>, 
+  onSelectOrder: (id: string) => void,
+  selectedCourier: string | null
+}) => {
+  const listRef = useRef<any>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  useEffect(() => {
+    const container = document.getElementById('available-orders-list-container');
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver(entries => {
+      for (let entry of entries) {
+         setContainerWidth(entry.contentRect.width);
+      }
+    });
+
+    resizeObserver.observe(container);
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  const columnCount = useMemo(() => {
+    if (containerWidth < 640) return 1;
+    if (containerWidth < 1024) return 2;
+    return 3;
+  }, [containerWidth]);
+
+  const rowCount = Math.ceil(orders.length / columnCount);
+
+  const Row = ({ index, style }: { index: number, style: React.CSSProperties }) => {
+    const rowOrders = orders.slice(index * columnCount, (index + 1) * columnCount);
+    
+    return (
+      <div 
+        style={{ 
+          ...style, 
+          display: 'grid', 
+          gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`,
+          paddingBottom: '16px',
+          height: 'auto'
+        }} 
+        className="grid gap-4"
+      >
+        {rowOrders.map(order => (
+          <div key={order.id} className="h-full">
+            <GridOrderCard 
+              order={order}
+              isDark={isDark}
+              isSelected={selectedOrders.has(order.id)}
+              onSelect={onSelectOrder}
+              isUnassigned={!isId0CourierName(selectedCourier) && (isId0CourierName(order.courier) || order.courier === 'Не назначено')}
+            />
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  if (orders.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+        <TruckIcon className="w-16 h-16 mb-4 opacity-20" />
+        <p className="text-sm font-medium">Нет доступных заказов для выбора</p>
+      </div>
+    );
+  }
+
+  if (containerWidth === 0) return <div className="animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl h-full w-full" />;
+
+  return (
+    <List
+      height={500} 
+      itemCount={rowCount}
+      itemSize={240} 
+      width={containerWidth}
+      ref={listRef}
+      className="custom-scrollbar"
+    >
+      {Row}
+    </List>
+  );
+});
