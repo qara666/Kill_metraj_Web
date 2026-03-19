@@ -26,13 +26,15 @@ export default defineConfig({
     chunkSizeWarningLimit: 2000, //  лимит до 2000 кБ 
     rollupOptions: {
       output: {
-        manualChunks: {
-          // Разделяем vendor библиотеки на отдельные чанки
-          vendor: ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query'],
-          utils: ['clsx', 'axios', 'react-hot-toast'],
-          // Группируем иконки в один чанк, чтобы избежать сотен мелких предзагрузок
-          // Включаем как верхний уровень, так и подпапки для надежной группировки
-          icons: ['@heroicons/react', '@heroicons/react/24/outline', '@heroicons/react/24/solid'],
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('leaflet') || id.includes('react-leaflet')) return 'map-vendor';
+            if (id.includes('@heroicons')) return 'icons';
+            if (id.includes('react-router-dom') || id.includes('@remix-run')) return 'router-vendor';
+            if (id.includes('react') && !id.includes('react-router')) return 'react-core';
+            if (id.includes('@tanstack/react-query')) return 'query-vendor';
+            return 'vendor'; // all other node_modules
+          }
         },
       },
     },

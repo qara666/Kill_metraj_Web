@@ -18,7 +18,6 @@ import { AddressEditModal } from '../modals/AddressEditModal';
 import { RevenueProgressBar } from './financials/RevenueProgressBar';
 import { PaymentMethodCard } from './financials/PaymentMethodCard';
 import { getStatusBadgeProps } from '../../utils/data/statusBadgeHelper';
-import html2pdf from 'html2pdf.js';
 
 interface CourierFinancialsProps {
     courierId: string;
@@ -427,12 +426,19 @@ export function CourierFinancials({
                 jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const }
             };
 
-            html2pdf().set(opt).from(reportRef.current!).save().then(() => {
-                toast.success('PDF успешно скачан', { id: 'pdf-toast' });
-            }).catch((err: any) => {
-                console.error(err);
-                toast.error('Ошибка генерации PDF', { id: 'pdf-toast' });
-            }).finally(() => {
+            import('html2pdf.js').then((module) => {
+                const html2pdf = module.default;
+                html2pdf().set(opt).from(reportRef.current!).save().then(() => {
+                    toast.success('PDF успешно скачан', { id: 'pdf-toast' });
+                }).catch((err: any) => {
+                    console.error(err);
+                    toast.error('Ошибка генерации PDF', { id: 'pdf-toast' });
+                }).finally(() => {
+                    setIsPdfExporting(false);
+                });
+            }).catch(e => {
+                console.error('Ошибка загрузки библиотеки pdf', e);
+                toast.error('Ошибка загрузки компонента PDF', { id: 'pdf-toast' });
                 setIsPdfExporting(false);
             });
         }, 100);

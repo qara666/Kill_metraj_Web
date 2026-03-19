@@ -137,7 +137,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       } catch (e) {
         console.warn('LocalStorage save failed:', e);
       }
-    }, 1000); // 1.0s debounce for disk IO
+    }, 2000); // 2.0s debounce for disk IO (v5.6: increased from 1.0s)
   }, []);
 
   /**
@@ -145,7 +145,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
    * Prevents overwriting local routes with empty server responses if order count is similar.
    */
   const protectData = useCallback((incoming: ExcelData, current: ExcelData | null): ExcelData => {
-    const val = applyCourierVehicleMap(incoming);
+    const val = applyCourierVehicleMap(incoming, current);
     const serverHasRoutes = val.routes && val.routes.length > 0;
     
     // Check local storage for backup if current state is null
@@ -221,9 +221,9 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       
       if (typeof dataOrUpdater === 'function') {
         const updater = dataOrUpdater as (p: ExcelData) => ExcelData;
-        next = applyCourierVehicleMap(updater(prevSafe));
+        next = applyCourierVehicleMap(updater(prevSafe), prevSafe);
       } else {
-        next = applyCourierVehicleMap(dataOrUpdater);
+        next = applyCourierVehicleMap(dataOrUpdater, prevSafe);
       }
       
       // Ensure we don't regress routes if the updater somehow returns empty routes
@@ -361,10 +361,15 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
 
 /**
  * Optimizes the data by mapping vehicle types and ensuring required structures.
- * Memoized via useMemo in the provider.
+ * Fast-path included: skips processing if data identity hasn't changed.
  */
-function applyCourierVehicleMap(data: any): any {
+function applyCourierVehicleMap(data: any, current?: any): any {
   if (!data) return data;
+  
+  // v5.6: Performance Fast-Path
+  // If we're passing the same object reference, skip expensive processing
+  if (current && data === current) return data;
+  
   try {
     const rawMap = localStorageUtils.getCourierVehicleMap()
     // Create a normalized version of the map for lookup
@@ -373,7 +378,12 @@ function applyCourierVehicleMap(data: any): any {
       bruteNormalizedMap[normalizeCourierName(name).toLowerCase()] = rawMap[name];
     });
 
-    const orders = Array.isArray(data.orders) ? data.orders.map((o: any) => enrichOrderGeodata(o)) : []
+    // v5.6: Efficiently process orders: skip expensive enrichment if coords already present
+    const orders = Array.isArray(data.orders) ? data.orders.map((o: any) => {
+        if (o.coords?.lat && o.coords?.lng && o.isAddressLocked) return o;
+        return enrichOrderGeodata(o);
+    }) : []
+    
     const couriers = Array.isArray(data.couriers) ? [...data.couriers] : []
     const courierNamesInList = new Set(couriers.map(c => c.name || c._id || c.id));
 

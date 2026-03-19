@@ -221,7 +221,7 @@ export function findZonesForLoc(
 export function findBestZone(
   loc: any,
   ctx: KmlZoneContext,
-  tolerance: number = 0.005
+  tolerance: number = 0.025 // v38.2: Increased to match wide check in scoring (soft fallout)
 ): ZoneMatch | null {
   // Use active (hub-scoped) polygons first
   if (ctx.activePolygons.length > 0) {

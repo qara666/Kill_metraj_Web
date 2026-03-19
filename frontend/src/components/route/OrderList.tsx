@@ -93,8 +93,8 @@ const OrderItem = memo(({
                     e.dataTransfer.effectAllowed = 'move';
                 }}
                 className={clsx(
-                    'p-3 rounded-xl border-2 transition-all duration-300 ease-in-out transform relative overflow-hidden mb-2',
-                    'hover:shadow-lg active:scale-[0.98]',
+                    'p-3 rounded-xl border-2 transition-colors duration-200 relative overflow-hidden mb-2',
+                    'hover:shadow-lg active:scale-[0.98] transform',
                     isSelected
                         ? isDark
                             ? 'bg-blue-500/10 border-blue-500 shadow-blue-500/20 cursor-pointer'
@@ -126,7 +126,7 @@ const OrderItem = memo(({
                         const statusProps = getStatusBadgeProps(order.status || '', isDark);
                         return (
                             <div className={clsx(
-                                'flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-black transition-all',
+                                'flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-black transition-colors',
                                 isSelected
                                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
                                     : `${statusProps.bgColorClass} ${statusProps.textColorClass}`

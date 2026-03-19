@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react'
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react'
 import { authService } from '../utils/auth/authService'
 import { syncPresetsToLocalStorage } from '../utils/auth/presetSync'
 import type { User } from '../types/auth'
@@ -140,7 +140,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
     }, [user])
 
-    const value: AuthContextType = {
+    const value: AuthContextType = useMemo(() => ({
         user,
         loading,
         login,
@@ -148,7 +148,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         isAuthenticated: !!user,
         isAdmin: user?.role === 'admin',
         refreshUser
-    }
+    }), [user, loading, login, logout, refreshUser])
 
     return (
         <AuthContext.Provider value={value}>

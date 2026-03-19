@@ -37,7 +37,7 @@ export const CourierListItem = memo(({
         <button
           onClick={() => onSelect(courierName)}
           className={clsx(
-            'w-full text-left p-4 rounded-2xl border-2 transition-all duration-200 transform',
+            'w-full text-left p-4 rounded-2xl border-2 transition-colors duration-200 transform',
             'relative overflow-hidden',
             isSelected
               ? (isDark
@@ -84,7 +84,7 @@ export const CourierListItem = memo(({
       <button
         onClick={() => onSelect(courierName)}
         className={clsx(
-          'w-full text-left p-3 rounded-xl border-2 transition-all duration-200 transform mb-2',
+          'w-full text-left p-3 rounded-xl border-2 transition-colors duration-200 transform mb-2',
           'relative overflow-hidden',
           isSelected
             ? (isDark

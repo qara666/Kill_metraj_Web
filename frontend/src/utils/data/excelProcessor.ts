@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx';
 import { ProcessedExcelData } from '../../types';
 
 export type { ProcessedExcelData };
@@ -57,19 +56,24 @@ const processExcelFileInternal = async (file: File): Promise<ProcessedExcelData>
                     throw new Error('Не удалось прочитать файл');
                 }
                 const arrayBuffer = data as ArrayBuffer;
-                const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-                const sheetNames = workbook.SheetNames;
-                if (sheetNames.length === 0) {
-                    throw new Error('В файле нет листов');
-                }
-                const firstSheetName = sheetNames[0];
-                const worksheet = workbook.Sheets[firstSheetName];
-                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
-                if (jsonData.length < 2) {
-                    throw new Error('Файл должен содержать заголовки и данные');
-                }
-                const result = processJsonData(jsonData);
-                resolve(result);
+                import('xlsx').then(XLSX => {
+                    const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+                    const sheetNames = workbook.SheetNames;
+                    if (sheetNames.length === 0) {
+                        return reject(new Error('В файле нет листов'));
+                    }
+                    const firstSheetName = sheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+                    if (jsonData.length < 2) {
+                        return reject(new Error('Файл должен содержать заголовки и данные'));
+                    }
+                    const result = processJsonData(jsonData);
+                    resolve(result);
+                }).catch(error => {
+                    console.error('Ошибка загрузки библиотеки xlsx:', error);
+                    reject(new Error('Не удалось загрузить библиотеку для чтения Excel'));
+                });
             } catch (error) {
                 console.error('Ошибка обработки Excel файла:', error);
                 reject(error);
