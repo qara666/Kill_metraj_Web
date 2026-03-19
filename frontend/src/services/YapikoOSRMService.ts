@@ -1,4 +1,4 @@
-import { OSRM_PROXY_URL } from '../config/apiConfig';
+import { API_URL } from '../config/apiConfig';
 
 /**
  * YapikoOSRMService — Custom OSRM Routing Provider
@@ -27,7 +27,7 @@ export class YapikoOSRMService {
   private static getMaybeProxiedUrl(targetUrl: string): string {
     const isRender = typeof window !== 'undefined' && window.location.hostname.includes('onrender.com');
     if (isRender) {
-      return `${OSRM_PROXY_URL}?url=${encodeURIComponent(targetUrl)}`;
+      return `${API_URL}/api/proxy/osrm?url=${encodeURIComponent(targetUrl)}`;
     }
     return targetUrl;
   }
