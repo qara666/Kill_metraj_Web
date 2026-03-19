@@ -1,3 +1,5 @@
+import { OSRM_PROXY_URL } from '../config/apiConfig';
+
 /**
  * YapikoOSRMService — Custom OSRM Routing Provider
  * 
@@ -20,6 +22,17 @@ export interface OSRMRouteResult {
 
 export class YapikoOSRMService {
   /**
+   * Helper to proxy OSRM requests on Render to avoid Mixed Content blocks
+   */
+  private static getMaybeProxiedUrl(targetUrl: string): string {
+    const isRender = typeof window !== 'undefined' && window.location.hostname.includes('onrender.com');
+    if (isRender) {
+      return `${OSRM_PROXY_URL}?url=${encodeURIComponent(targetUrl)}`;
+    }
+    return targetUrl;
+  }
+
+  /**
    * Calculate a route using a custom OSRM server.
    */
   static async calculateRoute(
@@ -37,10 +50,11 @@ export class YapikoOSRMService {
     
     // OSRM expects coordinates in lng,lat format joined by ';'
     const coordsStr = locations.map(l => `${l.lng},${l.lat}`).join(';')
-    const url = `${normalizedUrl}/route/v1/driving/${coordsStr}?overview=false&steps=false`
+    const targetUrl = `${normalizedUrl}/route/v1/driving/${coordsStr}?overview=false&steps=false`
+    const finalUrl = this.getMaybeProxiedUrl(targetUrl);
 
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(10000) })
+      const response = await fetch(finalUrl, { signal: AbortSignal.timeout(10000) })
       if (!response.ok) {
           console.error(`[Маршрут] Yapiko OSRM error: ${response.status} ${response.statusText}`);
           return { feasible: false };
@@ -93,10 +107,11 @@ export class YapikoOSRMService {
     const targetIndices = targets.map((_, i) => sources.length + i).join(';')
     const coordsStr = allPoints.map(p => `${p.lng},${p.lat}`).join(';')
 
-    const url = `${normalizedUrl}/table/v1/driving/${coordsStr}?sources=${sourceIndices}&destinations=${targetIndices}&annotations=duration,distance`
+    const targetUrl = `${normalizedUrl}/table/v1/driving/${coordsStr}?sources=${sourceIndices}&destinations=${targetIndices}&annotations=duration,distance`
+    const finalUrl = this.getMaybeProxiedUrl(targetUrl);
 
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(10000) })
+      const response = await fetch(finalUrl, { signal: AbortSignal.timeout(10000) })
       if (!response.ok) return null
       
       const data = await response.json()

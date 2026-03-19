@@ -41,4 +41,42 @@ router.get('/kml', async (req, res) => {
     }
 });
 
+// Proxy route for OSRM fetching (bypasses Mixed Content blocks on Render)
+router.get('/osrm', async (req, res) => {
+    const { url } = req.query;
+
+    if (!url) {
+        return res.status(400).json({ success: false, error: 'URL обязателен' });
+    }
+
+    try {
+        // Validation: only allow OSRM-like URLs for security
+        const isOsrmUrl = url.includes('/route/v1/') || url.includes('/table/v1/') || url.includes('/nearest/v1/');
+        if (!isOsrmUrl) {
+            return res.status(400).json({ success: false, error: 'Разрешены только запросы к OSRM' });
+        }
+
+        logger.info('OSRM Proxy: Запрос к', { url });
+
+        const response = await axios.get(url, {
+            timeout: 15000 // OSRM can take time for large matrices
+        });
+
+        // Forward successful response
+        res.json(response.data);
+    } catch (error) {
+        const status = error.response?.status || 500;
+        logger.error('OSRM Proxy Error', {
+            url: url,
+            status,
+            message: error.message
+        });
+        res.status(status).json({
+            success: false,
+            error: 'Ошибка OSRM прокси',
+            details: error.message
+        });
+    }
+});
+
 module.exports = router;

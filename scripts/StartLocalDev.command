@@ -35,7 +35,7 @@ echo "⏳ Ожидание запуска серверов..."
 sleep 5
 
 # Проверяем, что frontend сервер запущен
-FRONTEND_URL="http://localhost:5173"
+FRONTEND_URL="http://localhost:5174"
 MAX_ATTEMPTS=20
 ATTEMPT=0
 

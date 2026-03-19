@@ -15,9 +15,13 @@ import { API_URL } from '../config/apiConfig'
 
 // ─── Proxy fetch — v36.9: Rate limiting now handled entirely by server ────────
 // Client throws immediately on 429 so RobustGeocodingService falls through to Geoapify
+const nominatimCache = new Map<string, any[]>();
+
 async function rateLimitedFetch(url: string): Promise<Response> {
     const proxyUrl = `${API_URL}/api/proxy/geocoding?url=${encodeURIComponent(url)}`;
-    const response = await fetch(proxyUrl, {
+    const safeProxyUrl = proxyUrl;
+
+    const response = await fetch(safeProxyUrl, {
         headers: { 'Accept-Language': 'uk,ru,en' }
     });
     if (response.status === 429) {
@@ -184,6 +188,11 @@ export class NominatimService {
      * Internal query function with error handling.
      */
     private static async _query(q: string, viewbox?: string, bounded?: boolean): Promise<any[]> {
+        const cacheKey = `${q}|${viewbox}|${bounded}`;
+        if (nominatimCache.has(cacheKey)) {
+            return nominatimCache.get(cacheKey)!;
+        }
+
         try {
             const url = new URL(this.BASE_URL)
             url.searchParams.append('q', q)
@@ -203,9 +212,12 @@ export class NominatimService {
             if (!response.ok) throw new Error(`Nominatim ${response.status}`)
 
             const items: NominatimResult[] = await response.json()
-            return items
+            const candidates = items
                 .sort((a, b) => b.importance - a.importance)
                 .map(toRawCandidate)
+            
+            nominatimCache.set(cacheKey, candidates);
+            return candidates;
         } catch (error: any) {
             console.warn('[Геокодинг] Ошибка Nominatim:', error.message)
             throw error // Re-throw to allow Geoapify fallback in RobustGeocodingService
