@@ -14,6 +14,7 @@ import { toast } from 'react-hot-toast'
 import { robustGeocodingService } from '../services/robust-geocoding/RobustGeocodingService'
 import { distanceBetween } from '../services/robust-geocoding/candidateScoring'
 import { Route } from '../types/route'
+import { useCalculationProgress } from '../store/calculationProgressStore'
 
 interface UseRouteGeocodingProps {
     settings: any
@@ -52,7 +53,6 @@ export const useRouteGeocoding = ({
     cleanAddressForRoute
 }: UseRouteGeocodingProps) => {
     const [isCalculating, setIsCalculating] = useState(false)
-    const [calcProgress, setCalcProgress] = useState(0)
     const disambQueue = useRef<Array<{ title: string; options: any[]; resolve: (val: any) => void }>>([])
     const isProcessingQueue = useRef(false)
     const [disambModal, setDisambModal] = useState<{ open: boolean; title: string; options: any[] } | null>(null)
@@ -247,7 +247,7 @@ export const useRouteGeocoding = ({
         externalCache?: Map<string, any>
     ): Promise<Route | null> => {
         if (!skipStateUpdate) setIsCalculating(true)
-        if (!skipStateUpdate) setCalcProgress(0)
+        if (!skipStateUpdate) useCalculationProgress.getState().setProgress(0)
         try {
             // Extract LatLng from geocoder result — handles both LatLng objects and plain {lat,lng}
             const toLoc = (res: any): any => {
@@ -284,7 +284,7 @@ export const useRouteGeocoding = ({
                 }
             }
 
-            if (!skipStateUpdate) setCalcProgress(5);
+            if (!skipStateUpdate) useCalculationProgress.getState().setProgress(5);
 
             if (!originLoc) {
                 toast.error('Не удалось определить адрес старта. Настройте адрес Базы в Настройках.');
@@ -336,6 +336,18 @@ export const useRouteGeocoding = ({
                 // Priority 2: addressGeo bypass (v36: Lightning Transformer)
                 if (order.coords?.lat && order.coords?.lng) {
                     const loc = { lat: order.coords.lat, lng: order.coords.lng };
+                    
+                    // v38.2: Lookup zone if missing but coords exist to ensure badges are visible
+                    let kz = order.kmlZone || order.deliveryZone;
+                    let kh = order.kmlHub;
+                    if (!kz) {
+                        const zoneRes = robustGeocodingService.findZoneForCoords(loc.lat, loc.lng);
+                        if (zoneRes) {
+                            kz = zoneRes.zoneName;
+                            kh = zoneRes.hubName;
+                        }
+                    }
+
                     addrCache.set(key, {
                         best: {
                             raw: {
@@ -345,8 +357,8 @@ export const useRouteGeocoding = ({
                                     location_type: 'ROOFTOP'
                                 },
                             },
-                            kmlZone: order.kmlZone || order.deliveryZone,
-                            kmlHub: order.kmlHub,
+                            kmlZone: kz,
+                            kmlHub: kh,
                             streetNumberMatched: true,
                             score: 1000000,
                             isLocked: true
@@ -373,7 +385,7 @@ export const useRouteGeocoding = ({
 
             if (ordersToGeocode.length > 0) {
                 console.log(`[Racing Transformer] Batch geocoding ${ordersToGeocode.length} unique addresses...`);
-                setCalcProgress(10);
+                if (!skipStateUpdate) useCalculationProgress.getState().setProgress(10);
                 
                 // v37: Use optimized batchGeocode
                 const batchResult = await robustGeocodingService.batchGeocode(ordersToGeocode, { turbo: true });
@@ -383,7 +395,7 @@ export const useRouteGeocoding = ({
                     addrCache.set(addr.toLowerCase(), res);
                 });
                 
-                setCalcProgress(70); 
+                if (!skipStateUpdate) useCalculationProgress.getState().setProgress(70); 
             }
 
             // Map results back to route waypoints
@@ -633,7 +645,7 @@ export const useRouteGeocoding = ({
                 destinLoc = (res && res.best) ? (toLoc(res.best.raw) || originLoc) : originLoc
             }
 
-            if (!skipStateUpdate) setCalcProgress(90)
+            if (!skipStateUpdate) useCalculationProgress.getState().setProgress(90)
 
             // ─── TURBO INSTANT MODE ───────────────────────────────────────────────────
             // When routingProvider is 'turbo_instant':
@@ -725,8 +737,8 @@ export const useRouteGeocoding = ({
                         }))
                         toast.success(`⚡ Turbo: ${(totalDistance / 1000).toFixed(1)} км`)
                         setIsCalculating(false)
-                        setCalcProgress(100)
-                        setTimeout(() => setCalcProgress(0), 1000)
+                        useCalculationProgress.getState().setProgress(100)
+                        setTimeout(() => useCalculationProgress.getState().setProgress(0), 1000)
                     }
                     return updatedRoute
                 }
@@ -752,7 +764,7 @@ export const useRouteGeocoding = ({
             let totalDuration = 0
             let routingSuccess = false
 
-            if (!skipStateUpdate) setCalcProgress(95)
+            if (!skipStateUpdate) useCalculationProgress.getState().setProgress(95)
 
 
             if (routingProvider === 'yapiko_osrm' && yapikoUrl) {
@@ -924,8 +936,8 @@ if (!skipStateUpdate) setIsCalculating(false)
 
             if (!skipStateUpdate) {
                 setIsCalculating(false)
-                setCalcProgress(100)
-                setTimeout(() => setCalcProgress(0), 1000)
+                useCalculationProgress.getState().setProgress(100)
+                setTimeout(() => useCalculationProgress.getState().setProgress(0), 1000)
             }
 
             return updatedRoute;
@@ -934,7 +946,7 @@ if (!skipStateUpdate) setIsCalculating(false)
             console.error('[Расчет] Критическая ошибка:', e)
             if (!skipStateUpdate) toast.error('Произошла критическая ошибка при расчете маршрута.')
             if (!skipStateUpdate) setIsCalculating(false)
-            if (!skipStateUpdate) setCalcProgress(0)
+            if (!skipStateUpdate) useCalculationProgress.getState().setProgress(0)
             return null;
         }
     }
@@ -943,12 +955,11 @@ if (!skipStateUpdate) setIsCalculating(false)
         calculateRouteDistance,
         isCalculating,
         setIsCalculating,
-        calcProgress,
-        setCalcProgress,
         disambModal,
         setDisambModal,
         disambResolver,
         processDisambQueue,
-        robustGeocode
+        robustGeocode,
+        batchGeocode: robustGeocodingService.batchGeocode.bind(robustGeocodingService)
     }
 }

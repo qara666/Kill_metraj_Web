@@ -92,8 +92,8 @@ export const TimeWindowGroupCard = memo(({
                 }
             }}
             className={clsx(
-                'rounded-3xl border transition-all duration-300 relative overflow-hidden flex flex-col',
-                'backdrop-blur-md', // v5.48: Lightened for better performance on weak PCs
+                'rounded-3xl border transition-colors duration-200 relative overflow-hidden flex flex-col',
+                'backdrop-blur-none', // Phase 7: Remove backdrop-blur for fps
                 theme.border,
                 theme.bg,
                 theme.glow,
@@ -172,7 +172,7 @@ export const TimeWindowGroupCard = memo(({
                                     e.dataTransfer.effectAllowed = 'move';
                                 }}
                                 className={clsx(
-                                    'p-3 rounded-xl flex flex-col gap-1.5 cursor-grab active:cursor-grabbing border-2 transition-all', // v5.48: tighter layout
+                                    'p-3 rounded-xl flex flex-col gap-1.5 cursor-grab active:cursor-grabbing border-2 transition-colors', // Phase 7: removed transition-all
                                     'contain-content', // v5.48: Performance optimization
                                     isDark
                                         ? 'bg-slate-800/40 border-slate-700/30 hover:bg-slate-800/60 hover:border-slate-600'

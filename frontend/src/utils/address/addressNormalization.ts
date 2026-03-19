@@ -130,12 +130,14 @@ export function cleanAddressForSearch(address: string): string {
     cleaned = cleaned.replace(/^(?:місто\s+|город\s+|м\.?\s*|г\.?\s*)?(?:київ|киев|kyiv|kiev|харків|харьков|дніпро|ужгород|одеса|одесса|львів|львов|бровари|бровары|бориспіль|борисполь|ірпінь|ирпень|буча|вишневе|вишневое|полтава)\s*,\s*/i, '');
 
     // Step 2: Strip ALL parentheticals for search (they confuse OSM providers)
+    // NOTE: The old street names inside parens (e.g. "(Героїв Сталінграда)") are handled
+    // by `generateStreetVariants` in addressUtils.ts, which already reads the raw address.
     cleaned = cleaned.replace(/\s*\([^)]*\)/g, '').trim();
 
     // Step 3: Identify the primary address part (up to house number) and discard the rest
     const complexHouse = /\d+[а-яієґa-z]*(?:[\/\-]\d*[а-яієґa-z]*)?/i;
     // Look for house number followed by a clear separator (comma, space + technical word, or end)
-    const houseMatch = cleaned.match(new RegExp(`^(.*?(?:,|\\s)\\s*(?:(?:дом|д)\\.?\\s*)?(${complexHouse.source}))(?:\\s+|$|,|\\b(?:под|этаж|кв|д\\/ф|моб|корп|секция|сектор|подъезд|вход|литера|літера)\\b)`, 'iu'));
+    const houseMatch = cleaned.match(new RegExp(`^(.*?(?:,|\\s)\\s*(?:(?:дом|д)\.?\\s*)?(${complexHouse.source}))(?:\\s+|$|,|\\b(?:под|этаж|кв|д\/ф|моб|корп|секция|сектор|подъезд|вход|литера|літера)\\b)`, 'iu'));
     
     if (houseMatch && houseMatch[1]) {
         // v5.66: Double check it didn't strip too much
@@ -146,12 +148,22 @@ export function cleanAddressForSearch(address: string): string {
     }
 
     // Step 4: Recursive suffix stripping (Final Cleanup)
-    let last: string;
-    const suffixRegex = /(?:,|\s)\s*(?:корп\.?|корпус|під\.?|под\.?|підʼїзд|подъезд|эт\.?|этаж|кв\.?|квартира|оф\.?|офіс|офис|вход|вхід|секція|секция|літера|літ\.?|литера|д\/ф|д\s*[\/-]\s*ф|моб|\d{4,5})\b.*$/iu;
+    // v38.4: FIXED SyntaxError and over-aggressive stripping
+    const TechnicalLabels = 'корп|корпус|під|под|підʼїзд|подъезд|эт|этаж|кв|квартира|оф|офіс|офис|вход|вхід|секція|секция|літера|літ|литера|д/ф|д\\s*[\\/-]\\s*ф|моб';
+    
+    // Pattern 1: Standard spaced suffix (e.g., ", под.2")
+    const spacedSuffix = new RegExp(`(?:,|\\s)\\s*(?:${TechnicalLabels}).*$`, 'iu');
+    // Pattern 2: Stuck suffix (e.g., "6под.2")
+    const stuckSuffix = new RegExp(`(\\d)(?:${TechnicalLabels}).*$`, 'iu');
+    // Pattern 3: Postal codes
+    const postalRegex = /(?:,|\s)\s*\d{4,5}\b.*$/;
 
+    let last: string;
     do {
         last = cleaned;
-        cleaned = cleaned.replace(suffixRegex, '');
+        cleaned = cleaned.replace(spacedSuffix, '')
+                         .replace(stuckSuffix, '$1')
+                         .replace(postalRegex, '');
     } while (cleaned !== last);
 
     // Final cleanup: remove trailing commas/spaces, dashes, etc.

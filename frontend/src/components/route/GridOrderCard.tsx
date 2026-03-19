@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import clsx from 'clsx';
 import { CheckBadgeIcon, ClockIcon, MapPinIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
@@ -8,15 +8,37 @@ import { formatTimeLabel } from '../../utils/route/routeCalculationHelpers';
 import { getStatusBadgeProps } from '../../utils/data/statusBadgeHelper';
 import { getPaymentMethodBadgeProps } from '../../utils/data/paymentMethodHelper';
 
-export const GridOrderCard = memo(({ order, isDark, isSelected, onSelect }: { order: Order, isDark: boolean, isSelected: boolean, onSelect: (id: string) => void }) => {
-    const timeLabel = formatTimeLabel(getPlannedTime(order) || 0);
+export const GridOrderCard = memo(({ order, isDark, isSelected, onSelect, isUnassigned }: { order: Order, isDark: boolean, isSelected: boolean, onSelect: (id: string) => void, isUnassigned?: boolean }) => {
+    // v5.6: Memoize labels and props to minimize render-time logic
+    const { timeLabel, statusProps, badgeProps, locationBadge } = useMemo(() => {
+        const t = formatTimeLabel(getPlannedTime(order) || 0);
+        const s = order.status ? getStatusBadgeProps(order.status, isDark) : null;
+        const p = order.paymentMethod ? getPaymentMethodBadgeProps(order.paymentMethod, isDark) : null;
+        
+        let loc = null;
+        if (order.locationType) {
+            const isRooftop = order.locationType === 'ROOFTOP';
+            const isInterpolated = order.locationType === 'RANGE_INTERPOLATED';
+            loc = {
+                text: isRooftop ? 'ТОЧНО' : isInterpolated ? 'ДОМ' : 'ПРИМЕРНО',
+                className: clsx(
+                    "text-[9px] font-black px-2 py-0.5 rounded-lg tracking-widest",
+                    isRooftop ? (isDark ? "bg-green-500/20 text-green-400" : "bg-green-100 text-green-700") :
+                    isInterpolated ? (isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-100 text-blue-700") :
+                    (isDark ? "bg-yellow-500/20 text-yellow-500" : "bg-yellow-100 text-yellow-700")
+                )
+            };
+        }
+
+        return { timeLabel: t, statusProps: s, badgeProps: p, locationBadge: loc };
+    }, [order, isDark]);
 
     return (
         <div
             onClick={() => onSelect(order.id)}
             className={clsx(
-                "p-5 rounded-2xl border-2 cursor-pointer transition-all hover:shadow-md relative overflow-hidden flex flex-col h-full", // v5.48: removed translate-y for better performance
-                "contain-content", // v5.48: performance hint
+                "p-5 rounded-2xl border-2 cursor-pointer transition-all hover:shadow-md relative overflow-hidden flex flex-col h-full", 
+                "contain-content", 
                 isSelected
                     ? (isDark ? "bg-blue-500/10 border-blue-500 shadow-blue-500/20" : "bg-blue-50 border-blue-500 shadow-blue-500/10")
                     : (isDark ? "bg-gray-800/60 border-gray-700/50 hover:bg-gray-800" : "bg-white border-gray-100 hover:border-blue-100")
@@ -31,6 +53,13 @@ export const GridOrderCard = memo(({ order, isDark, isSelected, onSelect }: { or
             <div className="flex flex-wrap items-center gap-2 mb-3 pr-6">
                 <span className={clsx("font-black text-sm", isDark ? "text-gray-300" : "text-gray-700")}>#{order.orderNumber}</span>
 
+                {isUnassigned && (
+                    <span className={clsx(
+                        "text-[9px] font-black uppercase px-2 py-0.5 rounded-lg tracking-widest",
+                        isDark ? "bg-orange-500/20 text-orange-400" : "bg-orange-100 text-orange-700"
+                    )}>НЕ НАЗНАЧЕНО</span>
+                )}
+
                 {timeLabel !== '00:00 - 00:00' && (
                     <span className={clsx(
                         "flex items-center gap-1 text-[9px] font-black tracking-widest px-2 py-0.5 rounded-lg",
@@ -41,41 +70,29 @@ export const GridOrderCard = memo(({ order, isDark, isSelected, onSelect }: { or
                     </span>
                 )}
 
-                {order.status && (() => {
-                    const statusProps = getStatusBadgeProps(order.status, isDark);
-                    return (
-                        <span className={clsx(
-                            "text-[9px] font-black uppercase px-2 py-0.5 rounded-lg tracking-widest",
-                            statusProps.bgColorClass,
-                            statusProps.textColorClass
-                        )}>
-                            {statusProps.text}
-                        </span>
-                    );
-                })()}
-
-                {order.paymentMethod && (() => {
-                    const badgeProps = getPaymentMethodBadgeProps(order.paymentMethod, isDark);
-                    return (
-                        <span className={clsx(
-                            "px-2 py-0.5 rounded-lg font-black uppercase text-[9px] tracking-widest",
-                            badgeProps.bgColorClass,
-                            badgeProps.textColorClass
-                        )}>
-                            {badgeProps.text}
-                        </span>
-                    );
-                })()}
-
-                {order.locationType && (
+                {statusProps && (
                     <span className={clsx(
-                        "text-[9px] font-black px-2 py-0.5 rounded-lg tracking-widest",
-                        order.locationType === 'ROOFTOP' ? (isDark ? "bg-green-500/20 text-green-400" : "bg-green-100 text-green-700") :
-                        order.locationType === 'RANGE_INTERPOLATED' ? (isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-100 text-blue-700") :
-                        (isDark ? "bg-yellow-500/20 text-yellow-500" : "bg-yellow-100 text-yellow-700")
-                    )} title={order.locationType}>
-                        {order.locationType === 'ROOFTOP' ? 'ТОЧНО' : 
-                         order.locationType === 'RANGE_INTERPOLATED' ? 'ДОМ' : 'ПРИМЕРНО'}
+                        "text-[9px] font-black uppercase px-2 py-0.5 rounded-lg tracking-widest",
+                        statusProps.bgColorClass,
+                        statusProps.textColorClass
+                    )}>
+                        {statusProps.text}
+                    </span>
+                )}
+
+                {badgeProps && (
+                    <span className={clsx(
+                        "px-2 py-0.5 rounded-lg font-black uppercase text-[9px] tracking-widest",
+                        badgeProps.bgColorClass,
+                        badgeProps.textColorClass
+                    )}>
+                        {badgeProps.text}
+                    </span>
+                )}
+
+                {locationBadge && (
+                    <span className={locationBadge.className} title={order.locationType}>
+                        {locationBadge.text}
                     </span>
                 )}
             </div>

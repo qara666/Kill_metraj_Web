@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useDeferredValue, useTransition, lazy, Suspense } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useDeferredValue, useTransition, lazy, Suspense, memo } from 'react'
 import { FixedSizeList as List } from 'react-window'
 import { AutoSizer } from 'react-virtualized-auto-sizer'
 const AutoSizerAny = AutoSizer as any
@@ -22,7 +22,9 @@ import { googleMapsLoader } from '../../utils/maps/googleMapsLoader'
 import { useExcelData } from '../../contexts/ExcelDataContext'
 import { useTheme } from '../../contexts/ThemeContext'
 import { clsx } from 'clsx'
-import { AddressEditModal } from '../modals/AddressEditModal'
+import { DisambiguationModal } from './DisambiguationModal'
+import { CalculationOverlay } from '../common/CalculationOverlay'
+import { useCalculationProgress } from '../../store/calculationProgressStore'
 import { AddressValidationService, RouteAnomalyCheck } from '../../services/addressValidation'
 import { toast } from 'react-hot-toast'
 import { Tooltip } from '../shared/Tooltip'
@@ -31,23 +33,17 @@ import { GridOrderCard } from './GridOrderCard'
 import { type TimeWindowGroup, groupOrdersByTimeWindow, formatTimeLabel } from '../../utils/route/routeCalculationHelpers'
 import { isId0CourierName, normalizeCourierName } from '../../utils/data/courierName'
 import { getReturnETA, getAccurateReturnETA, getCourierSpeed, enrichRoutesWithCoords } from '../../utils/routes/courierETA'
-import { ReturningCouriersModal } from './modals/ReturningCouriersModal'
-import { TransitCouriersModal } from './modals/TransitCouriersModal'
 import { calculateDistance } from '../../utils/geoUtils'
-import { loadLeaflet } from '../../utils/maps/leafletLoader'
 import { isOrderCompleted } from '../../utils/data/orderStatus'
-
-const formatDisplayDistance = (meters?: number) => {
-  if (meters === undefined) return undefined;
-  if (meters < 1000) return `${Math.round(meters)} м`;
-  return `${(meters / 1000).toFixed(1)} км`;
-};
 
 // --- Hooks ---
 
 // Ленивая загрузка тяжелых компонентов
 const HelpModalRoutes = lazy(() => import('../modals/HelpModalRoutes').then(m => ({ default: m.HelpModalRoutes })))
 const HelpTour = lazy(() => import('../features/HelpTour').then(m => ({ default: m.HelpTour })))
+const AddressEditModal = lazy(() => import('../modals/AddressEditModal').then(m => ({ default: m.AddressEditModal })))
+const ReturningCouriersModal = lazy(() => import('./modals/ReturningCouriersModal').then(m => ({ default: m.ReturningCouriersModal })))
+const TransitCouriersModal = lazy(() => import('./modals/TransitCouriersModal').then(m => ({ default: m.TransitCouriersModal })))
 
 // Google Maps types
 declare global {
@@ -81,6 +77,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
   const [endAddress] = useState<string>(() => localSettings.defaultEndAddress || '')
   const [orderSearchTerm, setOrderSearchTerm] = useState('')
   const [courierSearchTerm, setCourierSearchTerm] = useState('')
+  
   const [courierSortType, setCourierSortType] = useState<'alpha' | 'load'>('alpha')
   const [googleMapsReady, setGoogleMapsReady] = useState(false)
   const [, startTransition] = useTransition()
@@ -259,12 +256,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     calculateRouteDistance,
     isCalculating,
     setIsCalculating,
-    calcProgress,
-    setCalcProgress,
     disambModal,
     setDisambModal,
     disambResolver,
-    processDisambQueue: _processDisambQueue
+    processDisambQueue: _processDisambQueue,
+    batchGeocode
   } = useRouteGeocoding({
     settings,
     confirmAddresses,
@@ -646,8 +642,94 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     })
   }, [couriers, courierFilter, deferredCourierSearchTerm, courierSortType, getCourierMetrics, getCourierVehicleType])
 
+  // Функция для поиска заказов по номеру
+  const searchOrders = useCallback((orders: Order[]) => {
+    if (!deferredOrderSearchTerm.trim()) return orders
+
+    const searchTerm = deferredOrderSearchTerm.toLowerCase().trim()
+    return orders.filter(order =>
+      String(order.orderNumber).toLowerCase().includes(searchTerm) ||
+      (order.customerName || '').toLowerCase().includes(searchTerm) ||
+      (order.address || '').toLowerCase().includes(searchTerm)
+    )
+  }, [deferredOrderSearchTerm])
+
+  // --- Оптимизированная фильтрация заказов ---
+  const { availableOrders, ordersInRoutes } = useMemo(() => {
+    if (!selectedCourier) {
+      console.log(`[RouteManagement] Filter: No courier selected (Current state: ${selectedCourier})`);
+      return { availableOrders: [], ordersInRoutes: [] }
+    }
+
+    // 1. Collect orders for selected courier
+    const selectedCourierRawOrders = courierOrders[selectedCourier] || []
+    console.log(`[RouteManagement] Filter: Courier "${selectedCourier}" has ${selectedCourierRawOrders.length} raw orders`);
+
+    // 2. For non-"Не назначено" couriers: also include all truly unassigned orders
+    //    so admin can drag them into a route for the current courier.
+    const unassignedOrders: Order[] = []
+    if (!isId0CourierName(selectedCourier) && selectedCourier !== 'Не назначено') {
+      Object.entries(courierOrders).forEach(([courierName, orders]) => {
+        if (isId0CourierName(courierName) || courierName === 'Не назначено') {
+          // Include unassigned orders that are not already in a route
+          orders.forEach(o => {
+            if (!ordersInRoutesSet.has(o.id) && !isOrderCompleted(o.status)) {
+              unassignedOrders.push(o)
+            }
+          })
+        }
+      })
+    }
+
+    const rawOrders = selectedCourierRawOrders
+
+    if (rawOrders.length === 0 && unassignedOrders.length === 0) {
+      return { availableOrders: [], ordersInRoutes: [] }
+    }
+
+    const ordersWithSearch = searchOrders(rawOrders)
+    const sortedAndDeduplicated = sortOrdersByTime(ordersWithSearch).filter((o, idx, self) =>
+      self.findIndex(t => t.id === o.id) === idx
+    )
+
+    // 3. Split selected courier's orders into available and in-routes
+    const available: Order[] = []
+    const inRoutes: Order[] = []
+
+    sortedAndDeduplicated.forEach(order => {
+      if (ordersInRoutesSet.has(order.id)) {
+        inRoutes.push(order)
+      } else {
+        available.push(order)
+      }
+    })
+
+    // 4. Merge unassigned orders into "available" (deduplication by id)
+    const seenIds = new Set(available.map(o => o.id))
+    unassignedOrders.forEach(o => {
+      if (!seenIds.has(o.id)) {
+        seenIds.add(o.id)
+        available.push(o)
+      }
+    })
+
+    console.log(`[RouteManagement] Filter Success: ${available.length} available (${unassignedOrders.length} unassigned), ${inRoutes.length} in routes`);
+    return { availableOrders: available, ordersInRoutes: inRoutes }
+  }, [selectedCourier, courierOrders, searchOrders, sortOrdersByTime, ordersInRoutesSet])
 
 
+  // v37: Defer the list to prevent main-thread blocking on selection
+  const deferredAvailableOrders = useDeferredValue(availableOrders)
+
+  // Debug State
+  useEffect(() => {
+    console.log(`[RouteManagement] Render State:`, {
+      selectedCourier,
+      availableCount: availableOrders.length,
+      deferredCount: deferredAvailableOrders.length,
+      ordersInRoutesCount: ordersInRoutes.length
+    });
+  }, [selectedCourier, availableOrders, deferredAvailableOrders, ordersInRoutes]);
 
   // Сортировка и пагинация маршрутов
   const allRoutes = (excelData?.routes || []) as Route[]
@@ -662,70 +744,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     )
     return { totalRoutePages: total, paginatedRoutes: paginated }
   }, [allRoutes, sortRoutesByNewest, routePage, routesPerPage])
-
-  // Функция для поиска заказов по номеру
-  const searchOrders = useCallback((orders: Order[]) => {
-    if (!deferredOrderSearchTerm.trim()) return orders
-
-    const searchTerm = deferredOrderSearchTerm.toLowerCase().trim()
-    return orders.filter(order =>
-      String(order.orderNumber).toLowerCase().includes(searchTerm) ||
-      (order.customerName || '').toLowerCase().includes(searchTerm) ||
-      (order.address || '').toLowerCase().includes(searchTerm)
-    )
-  }, [deferredOrderSearchTerm])
-
-
-
-
-  // --- Виртуализация с динамической высотой ---
-
-
-
-  // --- Оптимизированная фильтрация заказов ---
-  const { availableOrders, ordersInRoutes } = useMemo(() => {
-    if (!selectedCourier) {
-      console.log(`[RouteManagement] Filter: No courier selected`);
-      return { availableOrders: [], ordersInRoutes: [] }
-    }
-    
-    // 1. Получаем все заказы выбранного курьера
-    const rawOrders = courierOrders[selectedCourier] || []
-    console.log(`[RouteManagement] Filter: Courier "${selectedCourier}" has ${rawOrders.length} raw orders`);
-    
-    if (rawOrders.length === 0) {
-      // Logic check: Maybe names are slightly different?
-      const keys = Object.keys(courierOrders);
-      console.log(`[RouteManagement] Filter: Available keys in map:`, keys.slice(0, 5));
-      return { availableOrders: [], ordersInRoutes: [] }
-    }
-
-    const ordersWithSearch = searchOrders(rawOrders)
-    const sortedAndDeduplicated = sortOrdersByTime(ordersWithSearch).filter((o, idx, self) => 
-      self.findIndex(t => t.id === o.id) === idx
-    )
-
-    console.log(`[RouteManagement] Filter: After search/sort/deduplicate: ${sortedAndDeduplicated.length} orders`);
-
-    // 2. Распределяем по спискам одним проходом с использованием O(1) set
-    const available: Order[] = []
-    const inRoutes: Order[] = []
-    
-    sortedAndDeduplicated.forEach(order => {
-      if (ordersInRoutesSet.has(order.id)) {
-        inRoutes.push(order)
-      } else {
-        available.push(order)
-      }
-    })
-
-    console.log(`[RouteManagement] Filter: Result -> Available: ${available.length}, In Routes: ${inRoutes.length}`);
-
-    return { availableOrders: available, ordersInRoutes: inRoutes }
-  }, [selectedCourier, courierOrders, searchOrders, sortOrdersByTime, ordersInRoutesSet])
-
-  // v37: Defer the list to prevent main-thread blocking on selection
-  const deferredAvailableOrders = useDeferredValue(availableOrders)
 
 
   const handleOrderSelect = useCallback((orderId: string, _multi?: boolean) => {
@@ -760,6 +778,54 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       return newSet
     })
   }, [selectedCourier, isOrderInExistingRoute, orderSearchTerm])
+
+  // v5.5: Optimized row renderers to prevent full list re-mounts
+  const CourierRow = useMemo(() => ({ index, style }: { index: number; style: React.CSSProperties }) => {
+    const courierName = filteredCouriers[index]
+    if (!courierName) return null;
+    
+    // Use component-level memoized state/helpers to avoid re-renders
+    const metric = getCourierMetrics(courierName)
+    const vehicleType = getCourierVehicleType(courierName)
+    
+    return (
+      <div style={style}>
+        <CourierListItem
+          key={courierName}
+          courierName={courierName}
+          vehicleType={vehicleType}
+          isSelected={selectedCourier === courierName}
+          onSelect={handleCourierSelect}
+          availableOrdersCount={metric.available}
+          deliveredOrdersCount={metric.delivered}
+          totalOrdersCount={metric.total}
+          isDark={isDark}
+        />
+      </div>
+    )
+  }, [filteredCouriers, selectedCourier, handleCourierSelect, getCourierMetrics, getCourierVehicleType, isDark]);
+
+  // v5.6: Row renderer for orders grid using itemData for consistent column count
+  const AvailableOrdersGridRow = memo(({ index, style, data }: { index: number; style: React.CSSProperties; data: any }) => {
+    const { orders, columns, isDark, selectedOrders, handleOrderSelect } = data;
+    const startIdx = index * columns;
+    const rowOrders = orders.slice(startIdx, startIdx + columns);
+    
+    return (
+      <div style={{ ...style, display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: '1rem', paddingBottom: '1rem' }}>
+        {rowOrders.map((order: Order) => (
+          <GridOrderCard
+            key={order.id}
+            order={order}
+            isDark={isDark}
+            isSelected={selectedOrders.has(order.id)}
+            onSelect={(id) => handleOrderSelect(id, false)}
+          />
+        ))}
+      </div>
+    );
+  });
+
 
   // Функции для изменения порядка выбранных заказов
   // При виртуализации ручная подгрузка не требуется; функция удалена
@@ -1160,29 +1226,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       return
     }
 
-    // Пробуем загрузить Google Maps API в фоновом режиме
-    if (!googleMapsReady) {
-      googleMapsLoader.load()
-        .then(() => setGoogleMapsReady(true))
-        .catch(() => { /* Silent failure */ })
-    }
-
-
-
-    // Предупреждения не блокируют пересчет — продолжаем автоматически
-    if (anomalyCheck.warnings.length > 0) {
-      console.warn('Route warnings (recalc):', anomalyCheck.warnings)
-    }
-
     // Выполняем пересчет
     await calculateRouteDistance(route)
   }
 
-
   const clearAllRoutes = () => {
     if (window.confirm('Вы уверены, что хотите удалить все маршруты?')) {
       updateExcelData({ ...(excelData || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }), routes: [] }, true)
-      // Также очищаем из localStorage
       try {
         localStorage.removeItem('km_routes')
       } catch (error) {
@@ -1196,15 +1246,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
       const routes = prev?.routes || [];
       const activeRoutes = routes.filter((r: Route) => {
         if (!r.orders || r.orders.length === 0) return true;
-        // Маршрут считается завершенным, если ВСЕ его заказы в статусе 'Исполнен'
-        return !r.orders.every(o => isOrderCompleted(o.status));
+        return !r.orders.every((o: any) => isOrderCompleted(o.status));
       });
-
       if (activeRoutes.length === routes.length) {
         toast.error('Нет завершенных маршрутов для очистки');
         return prev;
       }
-
       toast.success(`Очищено маршрутов: ${routes.length - activeRoutes.length}`);
       return { ...prev, routes: activeRoutes };
     }, true);
@@ -1232,36 +1279,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     if (url) window.open(url, '_blank')
   }
 
-
-  const formatDuration = (minutes: number) => {
-    const hours = Math.floor(minutes / 60)
-    const mins = Math.floor(minutes % 60)
-    return hours > 0 ? `${hours}ч ${mins}мин` : `${mins}мин`
-  }
-
-  // Форматирование расстояния как в Google Maps
-  const formatDistance = (distanceKm: number) => {
-    // Округляем до 1 знака после запятой, как в Google Maps UI
-    const rounded = Math.round(distanceKm * 10) / 10
-    return rounded.toFixed(1).replace('.', ',')
-  }
-
-  const translateLocationType = (locationType: string): string => {
-    const translations: Record<string, string> = {
-      'ROOFTOP': 'Точный адрес до метра',
-      'RANGE_INTERPOLATED': 'Интерполированный',
-      'GEOMETRIC_CENTER': 'Геометрический центр улицы',
-      'APPROXIMATE': 'Приблизительный',
-      'UNKNOWN': 'Неизвестный, взят по соседней'
-    }
-    return translations[locationType] || locationType
-  }
-
-
-
-
-
-
   const handleDeleteRoute = () => {
     if (routeToDelete) {
       updateExcelData(prev => ({
@@ -1273,170 +1290,49 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     }
   }
 
-
-  // Обработчик разрешения неоднозначности (выбор варианта)
-  const handleDisambiguationResolve = (choice: any | null) => {
+  // Обработчик разрешения неоднозначности (выбор варианта) (v38.5: Stable callback)
+  const handleDisambiguationResolve = useCallback((choice: any | null) => {
     if (disambResolver.current) {
       disambResolver.current(choice)
       disambResolver.current = undefined
     }
     setDisambModal(null)
+  }, [setDisambModal]);
+
+  const formatDuration = (minutes: number) => {
+    const hours = Math.floor(minutes / 60)
+    const mins = Math.floor(minutes % 60)
+    return hours > 0 ? `${hours}ч ${mins}мин` : `${mins}мин`
   }
 
-  // v35.9.27: Effect to initialize Leaflet Map in Disambiguation Modal
-  useEffect(() => {
-    if (!disambModal || !disambModal.open) {
-      if ((window as any)._disambMap) {
-        (window as any)._disambMap.remove();
-        (window as any)._disambMap = null;
-      }
-      return;
+  const formatDistance = (distanceKm: number) => {
+    const rounded = Math.round(distanceKm * 10) / 10
+    return rounded.toFixed(1).replace('.', ',')
+  }
+
+  const translateLocationType = (locationType: string): string => {
+    const translations: Record<string, string> = {
+      'ROOFTOP': 'Точный адрес до метра',
+      'RANGE_INTERPOLATED': 'Интерполированный',
+      'GEOMETRIC_CENTER': 'Геометрический центр улицы',
+      'APPROXIMATE': 'Приблизительный',
+      'UNKNOWN': 'Неизвестный'
     }
-
-    const initDisambMap = async () => {
-      // Small delay to ensure container is in DOM
-      await new Promise(r => setTimeout(r, 100));
-      const container = document.getElementById('disamb-map-container');
-      if (!container) return;
-
-      try {
-        const L = await loadLeaflet();
-        if ((window as any)._disambMap) return;
-
-        // Default to first candidate or Kyiv
-        let center: [number, number] = [50.4501, 30.5234];
-        if (disambModal.options && disambModal.options.length > 0) {
-          const first = disambModal.options[0].res;
-          const lat = typeof first.geometry.location.lat === 'function' ? first.geometry.location.lat() : first.geometry.location.lat;
-          const lng = typeof first.geometry.location.lng === 'function' ? first.geometry.location.lng() : first.geometry.location.lng;
-          if (lat && lng) center = [lat, lng];
-        }
-
-        const map = L.map(container, { zoomControl: false }).setView(center, 13);
-        (window as any)._disambMap = map;
-
-        const tileUrl = isDark 
-          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-          : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-        L.tileLayer(tileUrl).addTo(map);
-
-        // Add search result markers
-        disambModal.options.forEach((opt: any, idx: number) => {
-          const res = opt.res;
-          const lat = typeof res.geometry.location.lat === 'function' ? res.geometry.location.lat() : res.geometry.location.lat;
-          const lng = typeof res.geometry.location.lng === 'function' ? res.geometry.location.lng() : res.geometry.location.lng;
-          if (lat && lng) {
-            L.marker([lat, lng], { 
-                icon: L.divIcon({ 
-                    className: 'disamb-candidate-icon',
-                    html: `<div style="background-color: #3b82f6; color: white; border: 2px solid white; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold;">${idx + 1}</div>`,
-                    iconSize: [20, 20]
-                }) 
-            })
-              .addTo(map)
-              .bindPopup(`<b>${idx + 1}.</b> ${opt.label}`);
-          }
-        });
-
-        // Click to select manual point
-        let manualMarker: any = null;
-        map.on('click', (e: any) => {
-          const { lat, lng } = e.latlng;
-          if (manualMarker) manualMarker.remove();
-          
-          manualMarker = L.marker([lat, lng], {
-            icon: L.divIcon({
-              className: 'custom-manual-icon',
-              html: `<div style="background-color: #ef4444; width: 14px; height: 14px; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 10px rgba(239,68,68,0.5);"></div>`,
-              iconSize: [14, 14],
-              iconAnchor: [7, 7]
-            })
-          }).addTo(map);
-
-          // Update UI
-          const coordEl = document.getElementById('manual-selection-coord');
-          const btnEl = document.getElementById('confirm-manual-btn');
-          if (coordEl) coordEl.classList.remove('hidden');
-          if (btnEl) {
-            btnEl.classList.remove('hidden');
-            (btnEl as any).onclick = () => {
-              handleDisambiguationResolve({
-                geometry: { location: { lat, lng } },
-                formatted_address: 'Выбрано вручную на карте',
-                manual: true
-              });
-            };
-          }
-        });
-
-      } catch (err) {
-        console.error('Failed to init disamb map:', err);
-      }
-    };
-
-    initDisambMap();
-
-    return () => {
-      if ((window as any)._disambMap) {
-        (window as any)._disambMap.remove();
-        (window as any)._disambMap = null;
-      }
-    };
-  }, [disambModal, isDark, handleDisambiguationResolve]);
+    return translations[locationType] || locationType
+  }
 
 
 
   return (
     <div className="space-y-6 relative">
-      {/* v5.22: Universal Loading Overlay */}
+      {/* SOTA 5.68: Loading Overlay (Zero-Re-Render UI) */}
       {isCalculating && (
-        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm transition-all duration-300">
-          <div className={clsx(
-            "p-10 rounded-[3rem] shadow-2xl flex flex-col items-center gap-6 animate-in zoom-in-90 duration-300",
-            isDark ? "bg-gray-900 border border-white/10" : "bg-white border border-gray-100"
-          )}>
-            <div className="relative">
-              <div className="w-20 h-20 rounded-3xl bg-blue-500/10 flex items-center justify-center">
-                <ArrowPathIcon className="w-10 h-10 text-blue-500 animate-spin" />
-              </div>
-              <div className="absolute -bottom-2 -right-2 w-8 h-8 rounded-xl bg-purple-500 flex items-center justify-center shadow-lg">
-                <MapIcon className="w-4 h-4 text-white" />
-              </div>
-            </div>
-            <div className="text-center">
-              <h3 className={clsx("text-2xl font-black mb-1", isDark ? "text-white" : "text-gray-900")}>Расчет...</h3>
-              <p className={clsx("text-xs font-bold opacity-60 uppercase tracking-widest", isDark ? "text-blue-400" : "text-blue-600")}>
-                Оптимизация маршрута
-              </p>
-            </div>
-            <div className="w-full max-w-[240px] mt-2">
-              <div className="flex justify-between items-center mb-2 px-1">
-                <span className={clsx("text-[10px] font-black uppercase tracking-widest", isDark ? "text-blue-400" : "text-blue-600")}>
-                  Загрузка
-                </span>
-                <span className={clsx("text-[10px] font-black tracking-tighter", isDark ? "text-white" : "text-gray-900")}>
-                  {calcProgress}%
-                </span>
-              </div>
-              <div className={clsx(
-                "h-2 w-full rounded-full overflow-hidden relative",
-                isDark ? "bg-white/5" : "bg-gray-100"
-              )}>
-                <div 
-                  className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 transition-all duration-500 ease-out relative"
-                  style={{ width: `${calcProgress}%` }}
-                >
-                  <div className="absolute inset-0 bg-white/20 animate-pulse" />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <CalculationOverlay isDark={isDark} />
       )}
 
       {/* Header */}
       <div className={clsx(
-        'rounded-3xl p-8 shadow-2xl border-2 overflow-hidden relative',
+        'rounded-3xl p-8 shadow-lg border-2 overflow-hidden relative',
         isDark
           ? 'bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 border-gray-700'
           : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-blue-200'
@@ -1636,7 +1532,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                       <p className="text-xs text-gray-400 font-bold uppercase tracking-widest px-4">Список пуст</p>
                     </div>
                   ) : (
-                    <div style={{ height: '600px', width: '100%' }}>
                     <div className="h-[600px] w-full">
                       <List
                         height={600}
@@ -1645,29 +1540,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                         width="100%"
                         className="custom-scrollbar"
                       >
-                        {({ index, style }: { index: number; style: React.CSSProperties }) => {
-                          const courierName = filteredCouriers[index]
-                          const metric = getCourierMetrics(courierName)
-                          const vehicleType = getCourierVehicleType(courierName)
-                          return (
-                            <div style={style}>
-                              <CourierListItem
-                                key={courierName}
-                                courierName={courierName}
-                                vehicleType={vehicleType}
-                                isSelected={selectedCourier === courierName}
-                                onSelect={handleCourierSelect}
-                                availableOrdersCount={metric.available}
-                                deliveredOrdersCount={metric.delivered}
-                                totalOrdersCount={metric.total}
-                                isDark={isDark}
-                              />
-                            </div>
-                          )
-                        }}
+                        {CourierRow}
                       </List>
                     </div>
-                      </div>
                   )}
                 </div>
               </div>
@@ -1702,7 +1577,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                   'rounded-3xl p-8 border-2 shadow-2xl relative overflow-hidden',
                   isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-blue-100 shadow-blue-500/5'
                 )}>
-                  <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full -mr-32 -mt-32 blur-3xl opacity-50 lg:visible invisible"></div>
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full -mr-32 -mt-32 opacity-20 lg:visible invisible"></div>
 
                   <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                     <div className="flex items-center gap-6">
@@ -1827,28 +1702,61 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                             setSelectedOrders(new Set());
                             setSelectedOrdersOrder([]);
 
-                            // v35.9.34: Sequential calculation + Atomic Commit
-                            // calculateRouteDistance uses shared hook state, so keep sequential.
-                            // We collect ALL results first and commit in ONE updateExcelData call.
+                            // v35.9.35: Giant Batch Geocoding + Parallel Calculation (Quantum Mode)
                             setIsCalculating(true)
-                            setCalcProgress(5)
+                            useCalculationProgress.getState().setProgress(5)
 
+                            // 1. Collect ALL unique addresses from all groups
+                            const allOrdersInAllGroups = groups.flatMap(g => g.orders as Order[]);
+                            const uniqueAddresses = new Set<string>();
+                            allOrdersInAllGroups.forEach(o => uniqueAddresses.add(cleanAddressForRoute(o.address)));
+                            
+                            // Also include start/end addresses if they need geocoding
+                            if (startAddress) uniqueAddresses.add(cleanAddressForRoute(startAddress));
+                            if (endAddress) uniqueAddresses.add(cleanAddressForRoute(endAddress));
+
+                            console.log(`[Quantum] Starting Giant Batch Geocode for ${uniqueAddresses.size} unique addresses...`);
+                            
+                            // 2. Execute one giant batch geocode for everything
+                            const addrCache = await batchGeocode(
+                                Array.from(uniqueAddresses).map(addr => ({
+                                    address: addr,
+                                    options: { turbo: true, silent: true }
+                                }))
+                            );
+
+                            useCalculationProgress.getState().setProgress(30);
+                            console.log(`[Quantum] Giant Geocode complete. Calculating ${newRoutes.length} routes in parallel...`);
+
+                            // 3. Sequential chunking calculation with shared cache (Phase 7 Extreme Optimization)
+                            // By processing sequentially with a setTimeout yield, we completely unblock
+                            // the main thread, allowing the progress bar to render smoothly and preventing crashes.
+                            let completedRoutes = 0;
                             const calculatedRoutes: (Route | null)[] = [];
-                            for (let i = 0; i < newRoutes.length; i++) {
-                                const route = newRoutes[i];
+
+                            for (const route of newRoutes) {
                                 try {
-                                    // Update progress: 5% to 90% spread across routes
-                                    const progressPct = Math.round(5 + ((i / newRoutes.length) * 85))
-                                    setCalcProgress(progressPct)
-                                    const result = await calculateRouteDistance(route, true /* skipStateUpdate */);
+                                    // Yield main thread to browser to paint UI
+                                    await new Promise(r => setTimeout(r, 10));
+
+                                    const result = await calculateRouteDistance(route, true, addrCache);
                                     calculatedRoutes.push(result);
                                 } catch (e) {
-                                    console.error(`[Батч] Ошибка маршрута ${i}:`, e);
+                                    console.error(`[Quantum] Ошибка маршрута:`, e);
                                     calculatedRoutes.push(null);
+                                } finally {
+                                    completedRoutes++;
+                                    const progressPct = Math.round(30 + ((completedRoutes / newRoutes.length) * 65));
+                                    
+                                    // Phase 7: Zero Re-Render UI Update directly to store
+                                    if (progressPct === 95 || (Date.now() - (window as any)._lastProgressUpdate > 200)) {
+                                        useCalculationProgress.getState().setProgress(progressPct);
+                                        (window as any)._lastProgressUpdate = Date.now();
+                                    }
                                 }
                             }
 
-                            setCalcProgress(95)
+                            useCalculationProgress.getState().setProgress(95)
 
                             // Single atomic state commit for all calculated routes
                             updateExcelData((prev: any) => {
@@ -1899,7 +1807,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                             toast.error('Ошибка при создании группы маршрутов');
                           } finally {
                             setIsCalculating(false)
-                            setTimeout(() => setCalcProgress(0), 1000)
+                            setTimeout(() => useCalculationProgress.getState().setProgress(0), 1000)
                           }
                         }}
                       />
@@ -1912,9 +1820,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                       "rounded-[3rem] p-10 border-2 shadow-2xl relative overflow-hidden",
                       isDark ? "bg-gray-800 border-gray-700 shadow-black/40" : "bg-white border-blue-50 shadow-blue-500/5"
                     )}>
-                      {/* Декоративный фон для списка заказов */}
-                      <div className="absolute top-0 left-0 w-64 h-64 bg-blue-500/5 rounded-full -ml-32 -mt-32 blur-2xl opacity-30"></div>
-
                       <div className="relative z-10">
                         <div className="flex flex-col gap-6 mb-10">
                           <div className="flex items-center justify-between">
@@ -1929,10 +1834,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
 
                             <button
                               onClick={() => createRoute()}
-                              disabled={deferredAvailableOrders.length === 0 || isCalculating || selectedOrders.size === 0}
+                              disabled={deferredAvailableOrders.length === 0 || isCalculating || selectedOrders.size === 0 || isId0CourierName(selectedCourier)}
+                              title={isId0CourierName(selectedCourier) ? 'Выберите курьера для создания маршрута' : undefined}
                               className={clsx(
                                 "px-6 py-3 rounded-2xl font-black text-sm transition-all shadow-lg flex items-center gap-2 shrink-0 uppercase tracking-widest",
-                                selectedOrders.size > 0
+                                selectedOrders.size > 0 && !isId0CourierName(selectedCourier)
                                   ? (isDark ? "bg-blue-600 text-white shadow-blue-900/40 hover:bg-blue-500" : "bg-blue-600 text-white shadow-blue-500/30 hover:bg-blue-700")
                                   : (isDark ? "bg-gray-700 text-gray-500 cursor-not-allowed" : "bg-gray-100 text-gray-400 cursor-not-allowed")
                               )}
@@ -1967,51 +1873,41 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
                         </div>
 
                         <div className="h-[600px] w-full pr-2 custom-scrollbar" data-tour="order-list">
+                          {/* SOTA Debug Log in JSX to catch render-time values */}
+                          {(() => { console.log(`[RouteManagement] JSX Check: deferred=${deferredAvailableOrders.length}, raw=${availableOrders.length}, courier=${selectedCourier}`); return null; })()}
+                          
+                          {/* Temporary debug indicator for the user */}
+                          {availableOrders.length > 0 && deferredAvailableOrders.length === 0 && (
+                            <div className="text-[10px] text-amber-500 font-bold mb-2 animate-pulse">
+                              ⏳ Синхронизация списка ({availableOrders.length} заказов)...
+                            </div>
+                          )}
+
                           {deferredAvailableOrders.length > 0 ? (
-                            <div style={{ height: '600px', width: '100%' }}>
-                              <AutoSizerAny>
-                                {(props: any) => {
-                                  // We group orders into rows of 3 to preserve the grid-like appearance
-                                  const columns = props.width > 1536 ? 3 : props.width > 768 ? 2 : 1;
-                                  const rowCount = Math.ceil(deferredAvailableOrders.length / columns);
-                                  
-                                  return (
-                                    <List
-                                      height={props.height}
-                                      itemCount={rowCount}
-                                      itemSize={240} // Estimated height of a GridOrderCard row
-                                      width={props.width}
-                                      className="custom-scrollbar"
-                                    >
-                                      {({ index, style }: { index: number; style: React.CSSProperties }) => {
-                                        const startIdx = index * columns;
-                                        const rowOrders = deferredAvailableOrders.slice(startIdx, startIdx + columns);
-                                        
-                                        return (
-                                          <div style={{ ...style, display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: '1rem', paddingBottom: '1rem' }}>
-                                            {rowOrders.map((order) => (
-                                              <GridOrderCard
-                                                key={order.id}
-                                                order={order}
-                                                isDark={isDark}
-                                                isSelected={selectedOrders.has(order.id)}
-                                                onSelect={(id) => handleOrderSelect(id, false)}
-                                              />
-                                            ))}
-                                          </div>
-                                        );
-                                      }}
-                                    </List>
-                                  );
-                                }}
-                              </AutoSizerAny>
+                            <div className="overflow-y-auto custom-scrollbar" style={{ maxHeight: '600px' }}>
+                              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pb-4">
+                                {deferredAvailableOrders.map((order) => (
+                                  <GridOrderCard
+                                    key={order.id}
+                                    order={order}
+                                    isDark={isDark}
+                                    isSelected={selectedOrders.has(order.id)}
+                                    onSelect={handleOrderSelect}
+                                    isUnassigned={isId0CourierName(order.courier) || order.courier === 'Не назначено'}
+                                  />
+                                ))}
+                              </div>
                             </div>
                           ) : (
                             <div className="text-center py-20 opacity-30 italic">Список пуст</div>
                           )}
 
+
                           {ordersInRoutes.length > 0 && (
-                            <div className="mt-12 pt-12 border-t-4 border-dotted border-gray-100 dark:border-gray-700/50 opacity-60 grayscale scale-[0.98] origin-top transition-all hover:grayscale-0 hover:opacity-100">
+                            <div 
+                              className="mt-12 pt-12 border-t-4 border-dotted border-gray-100 dark:border-gray-700/50 opacity-60 grayscale scale-[0.98] origin-top transition-all hover:grayscale-0 hover:opacity-100"
+                              style={{ contentVisibility: 'auto', containIntrinsicSize: '0 300px' }}
+                            >
                               <div className="flex items-center gap-3 mb-8 px-4">
                                 <ClockIcon className="w-6 h-6 text-yellow-500" />
                                 <span className={clsx("text-lg font-black uppercase tracking-widest", isDark ? "text-gray-400" : "text-gray-500")}>
@@ -2045,9 +1941,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
             'rounded-[3rem] shadow-2xl border-2 p-10 overflow-hidden relative',
             isDark ? 'bg-gray-800 border-gray-700 shadow-black/40' : 'bg-white border-blue-50 shadow-blue-500/5'
           )}>
-            {/* Декоративный фон */}
-            <div className="absolute top-0 left-0 w-96 h-96 bg-purple-500/5 rounded-full -ml-48 -mt-48 blur-2xl opacity-50"></div>
-
             <div className="relative z-10">
               <div className="flex items-center justify-between mb-10">
                 <div className="flex items-center gap-4">
@@ -2203,7 +2096,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         {/* Модальные окна */}
         {
           showDeleteModal && routeToDelete && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 animate-in fade-in duration-300">
               <div className={clsx(
                 'w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl transform animate-in zoom-in-95 duration-300',
                 isDark ? 'bg-gray-800 border border-gray-700' : 'bg-white'
@@ -2375,182 +2268,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
         />
 
 
-        {/* SOTA 5.0: Disambiguation Modal Implementation */}
-        {
-          disambModal && disambModal.open && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md transition-all duration-300 animate-in fade-in">
-              <div className={clsx(
-                "w-full max-w-xl rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 duration-300",
-                isDark ? "bg-gray-900 border-white/10" : "bg-white border-gray-200"
-              )}>
-                <div className={clsx("px-6 py-4 flex items-center gap-3 border-b", isDark ? "bg-gray-800/50 border-white/5" : "bg-gray-50 border-gray-100")}>
-                  <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center">
-                    <QuestionMarkCircleIcon className="w-6 h-6 text-blue-500" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className={clsx("text-lg font-black uppercase tracking-tight", isDark ? "text-white" : "text-gray-900")}>Уточнение адреса</h3>
-                    <p className={clsx("text-xs font-bold opacity-60", isDark ? "text-gray-400" : "text-gray-500")}>
-                      {disambModal.title}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleDisambiguationResolve(null)}
-                    className={clsx("p-2 rounded-xl transition-colors", isDark ? "hover:bg-white/10 text-gray-400" : "hover:bg-gray-100 text-gray-500")}
-                  >
-                    <TrashIcon className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <div className="p-6 space-y-4 max-h-[85vh] overflow-y-auto custom-scrollbar">
-                  {/* Manual Map Selection (v35.9.27) */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between px-1">
-                       <h4 className={clsx("text-[10px] font-black uppercase tracking-[0.2em] opacity-40")}>Ручной выбор на карте</h4>
-                       {disambModal.options[0]?.res?.geometry?.location && (
-                         <button 
-                            onClick={() => {
-                               // Center map on the first search result
-                               const res = disambModal.options[0].res;
-                               const lat = typeof res.geometry.location.lat === 'function' ? res.geometry.location.lat() : res.geometry.location.lat;
-                               const lng = typeof res.geometry.location.lng === 'function' ? res.geometry.location.lng() : res.geometry.location.lng;
-                               (window as any)._disambMap?.setView([lat, lng], 16);
-                            }}
-                            className="text-[9px] font-bold text-blue-500 hover:underline"
-                         >
-                            Центрировать на результате
-                         </button>
-                       )}
-                    </div>
-                    <div 
-                      id="disamb-map-container"
-                      className={clsx(
-                        "w-full h-64 rounded-xl border-2 overflow-hidden relative",
-                        isDark ? "bg-black/40 border-white/5" : "bg-gray-100 border-gray-100"
-                      )}
-                    >
-                      {/* Leaflet Map will be injected here */}
-                    </div>
-                    <p className={clsx("text-[9px] font-bold opacity-40 px-1 italic")}>
-                      * Кликните на карту, чтобы поставить точку вручную, затем нажмите «ПОДТВЕРДИТЬ МОЮ ТОЧКУ» ниже.
-                    </p>
-                  </div>
-
-                  <div className="space-y-3 pt-2">
-                    <h4 className={clsx("text-[10px] font-black uppercase tracking-[0.2em] opacity-40 px-1")}>Результаты поиска ({disambModal.options.length})</h4>
-                    {disambModal.options.map((option, idx) => {
-                    const isTechnical = option.res?.zone?.name?.toLowerCase().includes('авторозвантаження') ||
-                      option.res?.zone?.name?.toLowerCase().includes('разгрузка');
-
-                    return (
-                      <div key={`disamb-${idx}-${option.label}`} className="group relative">
-                        <button
-                          onClick={() => handleDisambiguationResolve(option.res)}
-                          className={clsx(
-                            "w-full p-4 rounded-xl border text-left transition-all relative overflow-hidden",
-                            isDark
-                              ? "bg-white/5 border-white/10 hover:border-blue-500/50 hover:bg-white/10"
-                              : "bg-gray-50 border-gray-100 hover:border-blue-400 hover:bg-white hover:shadow-lg"
-                          )}
-                        >
-                          <div className="flex items-center justify-between gap-4">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className={clsx("text-sm font-bold", isDark ? "text-gray-200" : "text-gray-800")}>
-                                  {option.label}
-                                </span>
-                                {isTechnical && (
-                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 font-black uppercase">ТЕХНИЧЕСКИЙ</span>
-                                )}
-                                {option.zoneName && (
-                                  <span className={clsx(
-                                    "text-[9px] px-1.5 py-0.5 rounded font-black uppercase",
-                                    isTechnical
-                                      ? "bg-amber-500/5 text-amber-600/70"
-                                      : "bg-blue-500/10 text-blue-500"
-                                  )}>
-                                    {option.zoneName}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-4 text-[10px] font-bold opacity-50">
-                                {option.distanceMeters !== undefined && (
-                                  <span>Дистанция: {formatDisplayDistance(option.distanceMeters)}</span>
-                                )}
-                                {option.res?.geometry?.location_type && (
-                                  <span className={clsx(
-                                    "px-1.5 py-0.5 rounded",
-                                    option.res.geometry.location_type === 'ROOFTOP' 
-                                      ? (isDark ? "bg-green-500/10 text-green-400" : "bg-green-50 text-green-700")
-                                      : option.res.geometry.location_type === 'RANGE_INTERPOLATED'
-                                        ? (isDark ? "bg-blue-500/10 text-blue-400" : "bg-blue-50 text-blue-700")
-                                        : (isDark ? "bg-yellow-500/10 text-yellow-500" : "bg-yellow-50 text-yellow-700")
-                                  )}>
-                                    Тип: {translateLocationType(option.res.geometry.location_type)}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              {option.res?.geometry?.location && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const lat = typeof option.res.geometry.location.lat === 'function' ? option.res.geometry.location.lat() : option.res.geometry.location.lat;
-                                    const lng = typeof option.res.geometry.location.lng === 'function' ? option.res.geometry.location.lng() : option.res.geometry.location.lng;
-                                    window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank');
-                                  }}
-                                  className={clsx(
-                                    "flex items-center justify-center p-2 rounded-xl transition-all",
-                                    isDark
-                                      ? "bg-white/5 hover:bg-white/15 text-blue-400 border border-white/10"
-                                      : "bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-100"
-                                  )}
-                                  title="Посмотреть на карте"
-                                >
-                                  <MapIcon className="w-4 h-4" />
-                                </button>
-                              )}
-                              <ChevronRightIcon className="w-5 h-5 text-blue-500 transition-transform group-hover:translate-x-1" />
-                            </div>
-                          </div>
-                        </button>
-                      </div>
-                    );
-                  })}
-                  </div>
-                </div>
-
-                <div className={clsx("px-6 py-4 border-t flex flex-col sm:flex-row justify-between items-center gap-4", isDark ? "bg-gray-800/30 border-white/5" : "bg-gray-50/50 border-gray-100")}>
-                  {/* Manual Selection Display */}
-                  <div id="manual-selection-coord" className="hidden">
-                    <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                      <span className={clsx("text-[10px] font-black uppercase tracking-widest opacity-60", isDark ? "text-gray-400" : "text-gray-500")}>Точка выбрана вручную</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 w-full sm:w-auto">
-                    <button
-                      id="confirm-manual-btn"
-                      className="hidden flex-1 sm:flex-none px-6 py-2.5 rounded-xl bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/30 hover:bg-blue-700 active:scale-95 transition-all"
-                    >
-                      Подтвердить мою точку
-                    </button>
-                    <button
-                      onClick={() => handleDisambiguationResolve(null)}
-                      className={clsx(
-                        "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border",
-                        isDark ? "text-gray-400 border-white/10 hover:text-white hover:bg-white/10" : "text-gray-500 border-gray-200 hover:text-gray-900 hover:bg-gray-100"
-                      )}
-                    >
-                      Отмена
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+        {/* SOTA 5.0: Disambiguation Modal Implementation (v38.5: External component for performance) */}
+        <DisambiguationModal
+          open={!!(disambModal && disambModal.open)}
+          title={disambModal?.title || ''}
+          options={disambModal?.options || []}
+          isDark={isDark}
+          onResolve={handleDisambiguationResolve}
+        />
       </>
     </div>
   );

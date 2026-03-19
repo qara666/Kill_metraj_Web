@@ -69,8 +69,30 @@ export function expandVariants(raw: string, cityBias: string | null): ExpandedVa
   const cleaned = cleanAddress(raw)
   const all = generateStreetVariants(cleaned, cityBias)
 
-  // ─── Phase 1: Identify high-priority resolved variants ───
+  // ─── Phase 0.5: Parenthetical Old Name Extraction (Phase 7 Fix) ───
+  // cleanAddress strips parens like "(Героїв Сталінграда)". We extract them from `raw`
+  // and force them into the variant pool as high-priority renames.
   const renameResolved = new Set<string>()
+  const parenMatch = raw.match(/\((.*?)\)/);
+  if (parenMatch) {
+      const parenContent = parenMatch[1].trim();
+      // Ignore technical notes inside parens
+      if (parenContent.length > 3 && !parenContent.match(/\b(под|кв|эт|д\/ф|моб|офис|вход|дверь)\b/i)) {
+          const houseNum = extractHouseNumber(raw) || '';
+          const cityPrefix = cityBias ? `${cityBias}, ` : '';
+          const parenVariant = `${cityPrefix}${parenContent} ${houseNum}`.trim();
+          
+          // Generate full variants for the old name too
+          const parenVariants = generateStreetVariants(parenVariant, cityBias);
+          all.push(...parenVariants);
+          
+          // Mark as high-confidence so it gets tried immediately if the main name fails
+          renameResolved.add(parenVariant);
+          if (parenVariants.length > 0) renameResolved.add(parenVariants[0]);
+      }
+  }
+
+  // ─── Phase 1: Identify high-priority resolved variants ───
   const normalised = cleaned.toLowerCase()
 
   for (const [oldName, newName] of STREET_RENAMES) {
