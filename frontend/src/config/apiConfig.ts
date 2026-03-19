@@ -36,18 +36,4 @@ export const getBaseUrl = (): string => {
     return 'http://localhost:5001';
 };
 
-// v5.51: Use a lazy initialization pattern to avoid TDZ (Temporal Dead Zone) 
-// and circular dependency deadlocks during ESM early boot.
-let _cachedApiUrl: string | null = null;
-
-export const getApiUrl = (): string => {
-    if (_cachedApiUrl) return _cachedApiUrl;
-    _cachedApiUrl = getBaseUrl();
-    return _cachedApiUrl;
-};
-
-/**
- * @deprecated Use getApiUrl() for safer access, but keeping this for backward compatibility
- * while ensuring it doesn't trigger a top-level deadlock.
- */
 export const API_URL = getBaseUrl();

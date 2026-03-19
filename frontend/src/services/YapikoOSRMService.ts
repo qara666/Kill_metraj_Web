@@ -4,9 +4,6 @@
  * Uses the Yapiko OSRM server specified in settings.
  */
 
-// v5.51: DYNAMIC IMPORT or lazy access to avoid circular dependency with apiConfig
-import { getApiUrl } from '../config/apiConfig';
-
 export interface OSRMLeg {
   distance: { text: string; value: number }
   duration: { text: string; value: number }
@@ -23,15 +20,29 @@ export interface OSRMRouteResult {
 
 export class YapikoOSRMService {
   /**
-   * Helper to proxy OSRM requests on Render to avoid Mixed Content blocks.
-   * Uses getApiUrl() lazily to prevent top-level ESM deadlock.
+   * Build the backend base URL directly from window.location — NO imports required.
+   * Works on Render (onrender.com) to route OSRM calls through backend proxy,
+   * avoiding Mixed Content blocks. Zero risk of circular ESM dependencies.
    */
+  private static getBackendBaseUrl(): string | null {
+    if (typeof window === 'undefined') return null;
+    const hostname = window.location.hostname;
+    if (!hostname.includes('onrender.com')) return null;
+
+    // Match the backend hostname used in apiConfig.ts runtime logic
+    if (hostname === 'yapiko-auto-km-frontend-live.onrender.com') {
+      return 'https://yapiko-auto-km-backend.onrender.com';
+    }
+    if (hostname.includes('frontend')) {
+      return `https://${hostname.replace('frontend', 'backend')}`;
+    }
+    return null;
+  }
+
   private static getMaybeProxiedUrl(targetUrl: string): string {
-    const isRender = typeof window !== 'undefined' && window.location.hostname.includes('onrender.com');
-    if (isRender) {
-      // Lazy call to getApiUrl() avoids the TDZ (Temporal Dead Zone) 
-      // of top-level constant export in apiConfig.ts
-      return `${getApiUrl()}/api/proxy/osrm?url=${encodeURIComponent(targetUrl)}`;
+    const backendBase = this.getBackendBaseUrl();
+    if (backendBase) {
+      return `${backendBase}/api/proxy/osrm?url=${encodeURIComponent(targetUrl)}`;
     }
     return targetUrl;
   }
