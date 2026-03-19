@@ -1,7 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback, useDeferredValue, useTransition, lazy, Suspense, memo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useDeferredValue, useTransition, lazy, Suspense } from 'react'
 import { FixedSizeList as List } from 'react-window'
-import { AutoSizer } from 'react-virtualized-auto-sizer'
-const AutoSizerAny = AutoSizer as any
 import { OrderList } from './OrderList'
 import { RouteCard } from './RouteCard'
 import {
@@ -805,26 +803,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = () => {
     )
   }, [filteredCouriers, selectedCourier, handleCourierSelect, getCourierMetrics, getCourierVehicleType, isDark]);
 
-  // v5.6: Row renderer for orders grid using itemData for consistent column count
-  const AvailableOrdersGridRow = memo(({ index, style, data }: { index: number; style: React.CSSProperties; data: any }) => {
-    const { orders, columns, isDark, selectedOrders, handleOrderSelect } = data;
-    const startIdx = index * columns;
-    const rowOrders = orders.slice(startIdx, startIdx + columns);
-    
-    return (
-      <div style={{ ...style, display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: '1rem', paddingBottom: '1rem' }}>
-        {rowOrders.map((order: Order) => (
-          <GridOrderCard
-            key={order.id}
-            order={order}
-            isDark={isDark}
-            isSelected={selectedOrders.has(order.id)}
-            onSelect={(id) => handleOrderSelect(id, false)}
-          />
-        ))}
-      </div>
-    );
-  });
 
 
   // Функции для изменения порядка выбранных заказов
