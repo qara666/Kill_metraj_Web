@@ -37,4 +37,3 @@ export const getBaseUrl = (): string => {
 };
 
 export const API_URL = getBaseUrl();
-export const OSRM_PROXY_URL = `${API_URL}/api/proxy/osrm`;
