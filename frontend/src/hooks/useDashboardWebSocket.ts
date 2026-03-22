@@ -43,6 +43,7 @@ export const useDashboardWebSocket = ({
 
     // Refs for stable logic
     const isConnectedRef = useRef(false);
+    const isFetchingRef = useRef(false);
     const lastProcessedTriggerRef = useRef<number | null>(null);
     const lastFetchTimeRef = useRef<number>(0);
     const onDataLoadedRef = useRef(onDataLoaded);
@@ -71,11 +72,19 @@ export const useDashboardWebSocket = ({
         const { isManual = false } = options;
         const now = Date.now();
 
-        // Throttle manual/auto requests
+        // Prevent overlapping fetches
+        if (isFetchingRef.current) {
+            logger.info('Skipping fetch (already in progress)');
+            return;
+        }
+
+        // Throttle manual/auto requests (2s)
         if (now - lastFetchTimeRef.current < 2000) {
             logger.info('Skipping fetch (throttled)');
             return;
         }
+
+        isFetchingRef.current = true;
         lastFetchTimeRef.current = now;
 
         const { apiDateShift: dateShift, apiDepartmentId: deptId, apiKey: key } = stateRef.current;
@@ -91,7 +100,7 @@ export const useDashboardWebSocket = ({
         }
 
         try {
-            logger.info(` Fetching dashboard for ${apiDate} (force=true)`);
+            logger.info(` Fetching dashboard for ${apiDate} (isManual=${isManual})`);
             const response = await dashboardApiService.fetchDataForDate({
                 date: apiDate,
                 divisionId: deptId ? String(deptId) : 'all',
@@ -131,6 +140,8 @@ export const useDashboardWebSocket = ({
 
             // Ensure timer resets even on failure so it retries later
             setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);
+        } finally {
+            isFetchingRef.current = false;
         }
     }, [setApiLastSyncTime, setApiNextSyncTime, setApiSyncStatus, setApiSyncError]);
 

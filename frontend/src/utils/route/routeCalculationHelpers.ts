@@ -2,6 +2,7 @@ import type { Order, CourierRouteStatus, RouteCalculationMode } from '../../type
 import { isOrderCompleted } from '../data/orderStatus';
 import { getPlannedTime, getArrivalTime, getKitchenTime } from '../data/timeUtils';
 import { haversineDistance } from '../routes/routeOptimizationHelpers';
+import { normalizeCourierName } from '../data/courierName';
 
 // ============================================
 // ТИПЫ ДЛЯ ГРУППИРОВКИ ПО ВРЕМЕННЫМ ОКНАМ
@@ -73,7 +74,7 @@ export function getTimeWindowBounds(
 }
 
 // Константы для группировки
-const PROXIMITY_MINUTES = 20;            // Установили строго 20 минут по запросу юзера
+const PROXIMITY_MINUTES = 30;            // Установили 30 минут для более широкой группировки
 const MAX_DELIVERY_SPAN_MINUTES = 60;   // Максимальный разброс доставки в одной группе
 
 /**
@@ -123,17 +124,7 @@ function createNewGroup(
     return group;
 }
 
-/**
- * Нормализует адрес для сравнения
- */
-function normalizeAddress(address: string): string {
-    if (!address) return '';
-    return address
-        .toLowerCase()
-        .replace(/,\s*(под\.|подъезд|д\/ф|эт|этаж|эт\.|под|кв|квартира|оф|офис).*$/i, '')
-        .replace(/[^a-z0-9а-яё]/gi, '')
-        .trim();
-}
+
 
 /**
  * Создает группу для ручного объединения (Phase 4.7)
@@ -302,8 +293,8 @@ export function groupOrdersByTimeWindow(
         o => !isOrderCompleted(o.status)
     ) || [];
 
-    // v5.66: Revert to 20 min to avoid unwanted grouping (user request)
-    const HANDOVER_WINDOW_MS = 20 * 60 * 1000;
+    // v5.66: Increased to 30 min for better grouping
+    const HANDOVER_WINDOW_MS = 30 * 60 * 1000;
 
     function clusterHandoverOrders(hOrdersList: Order[], splitReasonLabel: string) {
         if (hOrdersList.length === 0) return;
@@ -388,15 +379,11 @@ export function groupOrdersByTimeWindow(
             // Сохраняем последнее время кухни в группе для доп. проверки
             (currentGroup as any).lastKitchen = kitchen;
         } else {
-            // Проверяем условия объединения:
-            const sameAddress = normalizeAddress(order.address) === normalizeAddress(currentGroup.orders[0].address);
-            const slaGapOk = Math.abs(planned - currentGroup.windowStart) <= 90 * 60 * 1000;
-            const arrivalGapOk = (arrival - (currentGroup.arrivalEnd || 0)) <= 60 * 60 * 1000;
 
-            // 1. Прилетели близко друг к другу?
-            const arrivedClose = (arrival - (currentGroup.arrivalEnd || 0) <= proximityMs) ||
-                (planned === currentGroup.windowStart) ||
-                (sameAddress && slaGapOk && arrivalGapOk);
+
+
+            // 1. Прилетели близко друг к другу (СТРОГО 15 МИН ОТ ПЕРВОГО ЗАКАЗА)?
+            const arrivedClose = (arrival - (currentGroup.arrivalStart || 0) <= proximityMs);
 
             // 2. Время доставки не слишком сильно разлетается?
             const minDelivery = Math.min(currentGroup.windowStart, planned);
@@ -406,7 +393,7 @@ export function groupOrdersByTimeWindow(
             // 3. Доп. проверка: готовность на кухне
             let kitchenGapOk = true;
             const prevKitchen = (currentGroup as any).lastKitchen;
-            if (prevKitchen && kitchen && Math.abs(kitchen - prevKitchen) > 15 * 60 * 1000) {
+            if (prevKitchen && kitchen && Math.abs(kitchen - prevKitchen) > 30 * 60 * 1000) {
                 kitchenGapOk = false;
             }
 
@@ -428,26 +415,14 @@ export function groupOrdersByTimeWindow(
                 districtOk = false;
             }
 
-            // v5.46: Strong Same-Courier Affinity
-            // If the courier matches, and the gap is up to 20 mins, keep them in one block (trip).
-            // This prevents "trip fragmentation" in the UI.
-            const isSameCourierTrip = (arrival - (currentGroup.arrivalEnd || 0) <= 20 * 60 * 1000);
 
             // ОПРЕДЕЛЕНИЕ ПРИЧИНЫ РАЗДЕЛЕНИЯ (Phase 4.1)
             let newSplitReason = '';
-            // Если адрес совпадает, игнорируем большинство причин для разделения
-            if (sameAddress) {
-                newSplitReason = '';
-            } else if (isSameCourierTrip && deliveryFits) {
-                // v5.46: Force group if it's the same trip (20rd-min gap) and SLA isn't wildly different
-                newSplitReason = '';
-            } else {
-                if (!arrivedClose) newSplitReason = 'Время';
-                else if (!deliveryFits) newSplitReason = 'SLA';
-                else if (!kitchenGapOk) newSplitReason = 'Готовность';
-                else if (!distanceOk) newSplitReason = 'Гео';
-                else if (!districtOk) newSplitReason = 'Район';
-            }
+            if (!arrivedClose) newSplitReason = 'Время';
+            else if (!deliveryFits) newSplitReason = 'SLA';
+            else if (!kitchenGapOk) newSplitReason = 'Готовность';
+            else if (!distanceOk) newSplitReason = 'Гео';
+            else if (!districtOk) newSplitReason = 'Район';
 
             if (newSplitReason === '') {
                 // Добавляем в текущую группу
@@ -515,29 +490,43 @@ export function groupOrdersByTimeWindow(
  */
 export function groupAllOrdersByTimeWindow(
     orders: Order[],
-    couriers: Array<{ _id: string; name: string }>,
+    couriers: any[],
     proximityMinutes: number = PROXIMITY_MINUTES,
     maxDeliverySpan: number = MAX_DELIVERY_SPAN_MINUTES
 ): Map<string, TimeWindowGroup[]> {
     const result = new Map<string, TimeWindowGroup[]>();
 
-    // Сначала группируем по курьерам
-    const ordersByCourier = groupOrdersByCourier(orders);
+    // 1. Сначала группируем по сырым курьерам (как в Excel)
+    const ordersByRawCourier = groupOrdersByCourier(orders);
+    
+    // 2. Объединяем их по нормализованной личности, чтобы один курьер не получал два маршрута
+    interface CourierConsolidation { id: string; name: string; orders: Order[] }
+    const consolidatedMap = new Map<string, CourierConsolidation>();
+    
+    ordersByRawCourier.forEach((courierOrders, rawId) => {
+        const normalizedName = normalizeCourierName(rawId);
+        const courier = couriers.find(c => 
+            normalizeCourierName(c._id || c.id || c.name) === normalizedName
+        );
+        
+        const finalId = courier?._id || courier?.id || rawId;
+        const finalName = courier?.name || rawId || 'Неизвестный курьер';
+        
+        const existing = consolidatedMap.get(finalId) || { id: finalId, name: finalName, orders: [] as Order[] };
+        existing.orders.push(...courierOrders);
+        consolidatedMap.set(finalId, existing);
+    });
 
-    // Затем для каждого курьера группируем по гибридной логике
-    ordersByCourier.forEach((courierOrders, courierId) => {
-        const courier = couriers.find(c => c._id === courierId);
-        const courierName = courier?.name || 'Неизвестный курьер';
-
+    // 3. Для каждого консолидированного курьера группируем по времени
+    consolidatedMap.forEach((info) => {
         const timeGroups = groupOrdersByTimeWindow(
-            courierOrders,
-            courierId,
-            courierName,
+            info.orders,
+            info.id,
+            info.name,
             proximityMinutes,
             maxDeliverySpan
         );
-
-        result.set(courierId, timeGroups);
+        result.set(info.id, timeGroups);
     });
 
     return result;

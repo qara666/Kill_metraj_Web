@@ -11,6 +11,15 @@ import { clsx } from 'clsx'
 import { GeocodingService, GeocodingResult } from '../../services/geocodingService'
 import { AddressValidationService, AddressValidationResult } from '../../services/addressValidation'
 
+import { robustGeocodingService } from '../../services/robust-geocoding/RobustGeocodingService'
+import { getCityBounds } from '../../services/robust-geocoding/cityBounds'
+import {
+  CheckBadgeIcon,
+  HomeIcon,
+  MapIcon,
+  ExclamationCircleIcon
+} from '@heroicons/react/24/solid'
+
 interface AddressEditModalProps {
   isOpen: boolean
   onClose: () => void
@@ -41,6 +50,8 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
   const [isGeocoding, setIsGeocoding] = useState(false)
   const [geocodingResult, setGeocodingResult] = useState<GeocodingResult | null>(null)
   const [validationResult, setValidationResult] = useState<AddressValidationResult | null>(null)
+  const [kmlZone, setKmlZone] = useState<string | null>(null)
+  const [kmlHub, setKmlHub] = useState<string | null>(null)
 
   const [manualCoords, setManualCoords] = useState<{ lat: number; lng: number } | null>(null)
 
@@ -51,6 +62,8 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
       setGeocodingResult(null)
       setValidationResult(null)
       setManualCoords(null)
+      setKmlZone(null)
+      setKmlHub(null)
     }
   }, [isOpen, currentAddress])
 
@@ -80,8 +93,15 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
       try {
         const L = await loadLeaflet();
         
-        // Initial center (Kyiv or current results)
+        // Initial center (Kyiv by default)
         let center: [number, number] = [50.4501, 30.5234];
+        
+        // Try to infer city bounds from context or current address
+        const cityInfo = getCityBounds(cityContext || currentAddress);
+        if (cityInfo && cityInfo.center) {
+           center = [cityInfo.center[1], cityInfo.center[0]];
+        }
+
         if (geocodingResult?.latitude && geocodingResult?.longitude) {
            center = [geocodingResult.latitude, geocodingResult.longitude];
         }
@@ -160,6 +180,17 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
 
       if (result.success) {
         setEditedAddress(result.formattedAddress)
+        
+        // v42: Spatial lookup for KML zones
+        if (result.latitude && result.longitude) {
+          try {
+            const zoneInfo = await robustGeocodingService.findZoneForCoords(result.latitude, result.longitude);
+            setKmlZone(zoneInfo?.zoneName || null);
+            setKmlHub(zoneInfo?.hubName || null);
+          } catch (e) {
+            console.error('KML lookup failed in modal:', e);
+          }
+        }
       }
     } catch (error) {
       console.error('Ошибка геокодирования:', error)
@@ -398,22 +429,85 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
                     <p className="text-sm font-bold break-words">{geocodingResult.formattedAddress}</p>
                     
                     {/* SOTA 5.72: Accuracy Metadata */}
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      <span className={clsx(
-                        "px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest",
-                        geocodingResult.locationType === 'ROOFTOP' ? (isDark ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-700') :
-                        geocodingResult.locationType === 'RANGE_INTERPOLATED' ? (isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700') :
-                        (isDark ? 'bg-yellow-500/20 text-yellow-500' : 'bg-yellow-100 text-yellow-700')
-                      )}>
-                        {geocodingResult.locationType === 'ROOFTOP' ? 'ТОЧНО (ROOFTOP)' : 
-                         geocodingResult.locationType === 'RANGE_INTERPOLATED' ? 'ДОМ (RANGE)' : 
-                         geocodingResult.locationType || 'ПРИМЕРНО'}
-                      </span>
-                      
+                    {/* Unified Badges v42.1 - Premium "Cool" Labels */}
+                    <div className="flex flex-wrap gap-1.5 mt-3">
+                      {/* Verified Status v42.1 */}
+                      {geocodingResult.locationType === 'ROOFTOP' && (
+                        <div className={clsx(
+                          "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                          isDark ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-700"
+                        )}>
+                          <CheckBadgeIcon className="w-3.5 h-3.5" />
+                          ТОЧНИЙ АДРЕС
+                        </div>
+                      )}
+
+                      {/* Manual Selection Flag v42.1 */}
+                      {manualCoords && (
+                        <div className={clsx(
+                          "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                          isDark ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-green-50 border-green-200 text-green-700"
+                        )}>
+                          <CheckBadgeIcon className="w-3.5 h-3.5" />
+                          ПЕРЕВІРЕНО
+                        </div>
+                      )}
+
+                      {/* Sector / KML v42.1 (Full Name) */}
+                      {(kmlZone || kmlHub) && (
+                        <div className={clsx(
+                          "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                          (String(kmlZone || '').toUpperCase().includes('ID:0'))
+                            ? (isDark ? "bg-red-500/20 border-red-500/40 text-red-400 animate-pulse" : "bg-red-50 border-red-200 text-red-600 shadow-red-500/10")
+                            : (isDark ? "bg-indigo-500/10 border-indigo-500/30 text-indigo-300" : "bg-indigo-50 border-indigo-100 text-indigo-700")
+                        )}>
+                          <MapIcon className="w-3.5 h-3.5 opacity-70" />
+                          <span className="opacity-60 mr-0.5">СЕКТОР:</span>
+                          {`KML:${kmlHub ? kmlHub + ' - ' : ''}${kmlZone}`.toUpperCase()}
+                        </div>
+                      )}
+
+                      {/* Street Match v42.1 */}
+                      {geocodingResult.locationType && (
+                        <div className={clsx(
+                          "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                          geocodingResult.locationType !== 'APPROXIMATE'
+                            ? (isDark ? "bg-teal-500/10 border-teal-500/30 text-teal-400" : "bg-teal-50 border-teal-100 text-teal-700")
+                            : (isDark ? "bg-rose-500/10 border-rose-500/30 text-rose-400" : "bg-rose-50 border-rose-200 text-rose-700")
+                        )}>
+                          <MapIcon className="w-3.5 h-3.5 opacity-70" />
+                          <span className="opacity-60 mr-0.5">ВУЛИЦЯ:</span>
+                          {geocodingResult.locationType !== 'APPROXIMATE' ? 'ТАК' : 'НІ'}
+                        </div>
+                      )}
+
+                      {/* House Match v42.1 */}
+                      {(geocodingResult.locationType === 'RANGE_INTERPOLATED' || geocodingResult.locationType === 'ROOFTOP') && (
+                        <div className={clsx(
+                          "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                          isDark ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400" : "bg-cyan-50 border-cyan-100 text-cyan-700"
+                        )}>
+                          <HomeIcon className="w-3.5 h-3.5 opacity-70" />
+                          <span className="opacity-60 mr-0.5">БУДИНОК:</span>
+                          ТАК
+                        </div>
+                      )}
+
+                      {/* Unverified Warning - Only if coordinates are missing */}
+                      {(!(geocodingResult.latitude || (geocodingResult as any).location?.lat) || !(geocodingResult.longitude || (geocodingResult as any).location?.lng)) && (
+                        <div className={clsx(
+                          "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 animate-pulse shadow-sm",
+                          isDark ? "bg-amber-500/10 border-amber-500/30 text-amber-500" : "bg-amber-50 border-amber-200 text-amber-700 shadow-amber-500/10"
+                        )}>
+                          <ExclamationCircleIcon className="w-3.5 h-3.5" />
+                          УТОЧНИТИ АДРЕСУ
+                        </div>
+                      )}
+
                       {geocodingResult.latitude !== undefined && (
                         <span className={clsx(
-                          "px-2 py-0.5 rounded text-[10px] font-bold opacity-60",
-                          isDark ? 'bg-white/5 text-gray-300' : 'bg-gray-100 text-gray-600'
+                          "px-2 py-0.5 rounded-lg border text-[9px] font-bold opacity-60 flex items-center h-6",
+                          isDark ? 'bg-white/5 border-white/10 text-gray-300' : 'bg-gray-100 border-gray-200 text-gray-600'
                         )}>
                           {geocodingResult.latitude.toFixed(6)}, {geocodingResult.longitude?.toFixed(6)}
                         </span>

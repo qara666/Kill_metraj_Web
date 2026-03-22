@@ -210,7 +210,7 @@ export function CourierFinancials({
 
             const isRefused = paymentMethod.includes('отказ');
 
-            const effectiveAmount = isRefused ? changeAmount : (isCash ? (amount + changeAmount) : amount);
+            const effectiveAmount = isRefused ? changeAmount : (isCash && changeAmount > amount ? changeAmount : amount);
 
             const orderData: Order = {
                 ...order,

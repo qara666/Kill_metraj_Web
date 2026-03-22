@@ -239,3 +239,29 @@ export const generateStreetVariants = (raw: string, city: string | null): string
 
     return Array.from(new Set(finalVariants)).filter(Boolean);
 };
+
+/**
+ * v40.1: Refined logic to determine if an address needs manual clarification.
+ * Reduces false positives by allowing GEOMETRIC_CENTER if the street number was matched.
+ */
+export const needsAddressClarification = (params: {
+    locationType?: string;
+    streetNumberMatched?: boolean;
+    hasCoords?: boolean;
+}): boolean => {
+    const { locationType, streetNumberMatched, hasCoords } = params;
+
+    // 1. If no coordinates at all, it definitely needs clarification
+    if (hasCoords === false) return true;
+
+    // 2. APPROXIMATE is always unreliable (usually center of city or extremely vague)
+    if (locationType === 'APPROXIMATE') return true;
+
+    // 3. GEOMETRIC_CENTER is unreliable ONLY if the street number wasn't matched.
+    // If streetNumberMatched is true, it means we found the specific building 
+    // but the provider returned its center point, which is usually accurate enough.
+    if (locationType === 'GEOMETRIC_CENTER' && streetNumberMatched === false) return true;
+
+    // 4. ROOFTOP and RANGE_INTERPOLATED are always considered reliable.
+    return false;
+};

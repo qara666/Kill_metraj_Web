@@ -338,9 +338,12 @@ export const useRouteGeocoding = ({
                     const loc = { lat: order.coords.lat, lng: order.coords.lng };
                     
                     // v38.2: Lookup zone if missing but coords exist to ensure badges are visible
-                    let kz = order.kmlZone || order.deliveryZone;
+                    let kz = order.kmlZone;
                     let kh = order.kmlHub;
-                    if (!kz) {
+                    
+                    // Always try to lookup KML zone if it's missing or ID:0, even if deliveryZone (OP) exists
+                    const isInvalidZone = !kz || (typeof kz === 'string' && kz.toUpperCase().includes('ID:0'));
+                    if (isInvalidZone) {
                         const zoneRes = robustGeocodingService.findZoneForCoords(loc.lat, loc.lng);
                         if (zoneRes) {
                             kz = zoneRes.zoneName;
@@ -463,10 +466,12 @@ export const useRouteGeocoding = ({
             // This ensures KML zones and coordinates are visible even if the routing engine fails.
             // NOTE: Skip in batch mode (skipStateUpdate=true) because routes don't exist in state yet —
             // the geodata will be included in the final atomic commit in RouteManagement.tsx.
-            if (!skipStateUpdate) {
-                updateExcelData((prev: any) => ({
-                    ...prev,
-                    routes: (prev?.routes || []).map((r: Route) => {
+            if (!skipStateUpdate && orderUpdates.length > 0) {
+                updateExcelData((prev: any) => {
+                    const next = { ...prev };
+                    
+                    // 1. Update orders in routes
+                    next.routes = (prev?.routes || []).map((r: Route) => {
                         if (r.id !== route.id) return r;
                         return {
                             ...r,
@@ -475,8 +480,16 @@ export const useRouteGeocoding = ({
                                 return upd ? { ...o, ...upd } : o;
                             })
                         };
-                    })
-                }));
+                    });
+
+                    // 2. Update orders in global list (for consistent badges in Courier tab etc)
+                    next.orders = (prev?.orders || []).map((o: any) => {
+                        const upd = orderUpdates.find(u => String(u.id) === String(o.id));
+                        return upd ? { ...o, ...upd } : o;
+                    });
+
+                    return next;
+                });
             }
 
 

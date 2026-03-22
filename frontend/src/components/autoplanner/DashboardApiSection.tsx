@@ -18,6 +18,8 @@ export const DashboardApiSection: React.FC = () => {
     const apiLastSyncTime = useDashboardStore(s => s.apiLastSyncTime);
     const apiNextSyncTime = useDashboardStore(s => s.apiNextSyncTime);
     const triggerApiManualSync = useDashboardStore(s => s.triggerApiManualSync);
+    const autoRoutingStatus = useDashboardStore(s => s.autoRoutingStatus);
+    const setAutoRoutingStatus = useDashboardStore(s => s.setAutoRoutingStatus);
 
     // Initial selectedDate state removal, use apiDateShift instead
     const selectedDate = apiDateShift;
@@ -194,6 +196,78 @@ export const DashboardApiSection: React.FC = () => {
                             <>
                                 <ArrowPathIcon className="h-5 w-5" />
                                 <span>Загрузить</span>
+                            </>
+                        )}
+                    </button>
+                </div>
+            </div>
+
+            {/* v5.8: Robot Control Center (Centralized) */}
+            <div className={clsx(
+                'mt-6 pt-6 border-t-2 flex flex-col lg:flex-row items-center justify-between gap-4 relative z-10',
+                isDark ? 'border-blue-500/10' : 'border-blue-100'
+            )}>
+                <div className="flex items-center gap-3">
+                    <div className={clsx(
+                        'p-3 rounded-2xl shadow-inner transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-3',
+                        isDark ? 'bg-indigo-900/30 text-indigo-400' : 'bg-indigo-50 text-indigo-600'
+                    )}>
+                        <svg className={clsx("w-6 h-6", autoRoutingStatus.isActive && "animate-pulse")} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 className={clsx(
+                            'font-bold text-lg tracking-tight',
+                            isDark ? 'text-white' : 'text-gray-900'
+                        )}>
+                            Фоновый расчет заказов
+                        </h3>
+                        <div className="flex items-center gap-2 mt-0.5">
+                            <div className={clsx(
+                                "w-2 h-2 rounded-full",
+                                autoRoutingStatus.isActive ? "bg-green-500 animate-pulse" : "bg-gray-400"
+                            )} />
+                            <p className={clsx(
+                                'text-xs font-semibold uppercase tracking-wider',
+                                isDark ? 'text-gray-400' : 'text-gray-500'
+                            )}>
+                                {autoRoutingStatus.isActive
+                                    ? `Активен • Заказы: ${autoRoutingStatus.processedCount}/${autoRoutingStatus.totalCount} • Курьеры: ${autoRoutingStatus.processedCouriers}/${autoRoutingStatus.totalCouriers}`
+                                    : 'Режим ожидания'}
+                            </p>
+                            {autoRoutingStatus.lastUpdate && (
+                                <span className="text-[10px] text-gray-400 ml-1">
+                                    • {format(autoRoutingStatus.lastUpdate, 'HH:mm:ss')}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                    <button
+                        onClick={() => setAutoRoutingStatus({ isActive: !autoRoutingStatus.isActive })}
+                        className={clsx(
+                            'btn flex items-center gap-2 px-6 py-2.5 rounded-2xl font-bold transform transition-all duration-200 active:scale-95 shadow-lg',
+                            autoRoutingStatus.isActive
+                                ? 'bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20'
+                                : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-600/30'
+                        )}
+                    >
+                        {autoRoutingStatus.isActive ? (
+                            <>
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span>Остановить считать этого гения  </span>
+                            </>
+                        ) : (
+                            <>
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                </svg>
+                                <span>Запустить </span>
                             </>
                         )}
                     </button>

@@ -40,6 +40,7 @@ interface ExcelDataProviderProps {
 export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }) => {
   const [excelData, setExcelDataState] = useState<ExcelData | null>(null)
   const hasInit = useRef(false)
+  const bypassSaveRef = useRef(false)
 
   useEffect(() => {
     if (!hasInit.current) {
@@ -88,6 +89,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                     // Don't set state yet, let it fall through to localStorage part below
                   } else if (mapped.orders && mapped.orders.length > 0) {
                     console.log('✅ Данные загружены с сервера (Hybrid Sync)');
+                    bypassSaveRef.current = true;
                     setExcelDataState(mapped);
                     return;
                   }
@@ -106,6 +108,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             const parsed = JSON.parse(stored)
             if (parsed && typeof parsed === 'object') {
               const mapped = applyCourierVehicleMap(parsed)
+              bypassSaveRef.current = true;
               setExcelDataState(mapped)
               console.log('️ Данные загружены из localStorage (legacy)');
             }
@@ -120,25 +123,47 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     }
   }, [])
 
-  const saveTimeoutRef = useRef<any>(null);
-  const localStorageTimeoutRef = useRef<any>(null);
+  const saveTimeoutRef = useRef<any>(null)
+;
 
   /**
    * Universal LocalStorage Sync (Debounced for performance)
    */
   const syncToLocalStorage = useCallback((data: ExcelData) => {
-    if (localStorageTimeoutRef.current) clearTimeout(localStorageTimeoutRef.current);
-    
-    localStorageTimeoutRef.current = setTimeout(() => {
-      try {
-        // High-cost stringify
-        const json = JSON.stringify(data);
-        localStorage.setItem('km_dashboard_processed_data', json);
-      } catch (e) {
-        console.warn('LocalStorage save failed:', e);
-      }
-    }, 2000); // 2.0s debounce for disk IO (v5.6: increased from 1.0s)
+    try {
+      localStorage.setItem('km_dashboard_processed_data', JSON.stringify(data));
+    } catch (e) {
+      console.warn('LocalStorage save failed:', e);
+    }
   }, []);
+
+  /**
+   * Universal Persistence Effect
+   * Watches for excelData changes and handles debounced saving
+   */
+  useEffect(() => {
+    if (!excelData) return;
+    
+    // Check if we should skip this save (e.g., just loaded from server)
+    if (bypassSaveRef.current) {
+      bypassSaveRef.current = false;
+      return;
+    }
+
+    // Immediate sync to localStorage for UI snappiness on reload
+    // We don't debounce this as heavily anymore since Disk IO is usually fine
+    // but we can still use a small timeout if needed.
+    const lsTimeout = setTimeout(() => syncToLocalStorage(excelData), 500);
+
+    // Debounced save to server (2.0s)
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => saveDataToServer(excelData), 2000);
+
+    return () => {
+      clearTimeout(lsTimeout);
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+  }, [excelData, syncToLocalStorage]);
 
   /**
    * Universal Protection Helper:
@@ -199,20 +224,13 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     if (incomingData) {
       setExcelDataState(prev => {
         const val = protectData(incomingData, prev);
-        
-        // Debounced sync to localStorage
-        syncToLocalStorage(val);
-        
-        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-        saveTimeoutRef.current = setTimeout(() => saveDataToServer(val), 2000);
-
         return val;
       });
     } else {
       setExcelDataState(null);
       localStorage.removeItem('km_dashboard_processed_data');
     }
-  }, [protectData, syncToLocalStorage, saveDataToServer]);
+  }, [protectData]);
 
   const updateExcelData = useCallback((dataOrUpdater: ExcelData | ((prev: ExcelData) => ExcelData), force?: boolean) => {
     setExcelDataState(prev => {
@@ -230,11 +248,8 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       // Bypassed if 'force' is true (manual clear)
       const protectedNext = force ? next : protectData(next, prevSafe);
 
-      // Debounced Sync
-      syncToLocalStorage(protectedNext);
-
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = setTimeout(() => saveDataToServer(protectedNext), 2000);
+      // Removed: Debounced Sync and server save from here.
+      // The useEffect hook now handles persistence whenever excelData changes.
 
       return protectedNext;
     });
@@ -272,18 +287,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       const next = prev ? { ...prev, routes: newRoutes } : {
         orders: [], couriers: [], paymentMethods: [], routes: newRoutes, errors: [], summary: undefined
       } as any;
-
-      // Debounced sync to localStorage
-      syncToLocalStorage(next);
-
-      // Clear previous timeout
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-
-      // Debounce API save (2.0s)
-      saveTimeoutRef.current = setTimeout(() => {
-        saveDataToServer(next);
-      }, 2000);
-
       return next;
     })
   }, [])
@@ -432,7 +435,10 @@ function applyCourierVehicleMap(data: any, current?: any): any {
 
     return {
       ...data,
-      routes: Array.isArray(data.routes) ? data.routes : [],
+      routes: Array.isArray(data.routes) ? data.routes.map((r: any) => ({
+        ...r,
+        orders: Array.isArray(r.orders) ? r.orders.map((o: any) => enrichOrderGeodata(o)) : []
+      })) : [],
       orders,
       couriers: processedCouriers,
       paymentMethods,

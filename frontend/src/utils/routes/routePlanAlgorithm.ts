@@ -202,7 +202,15 @@ export async function runRoutePlanningAlgorithm(
             legDurations: (finalCheck.legs || []).map((leg: any) => (leg.duration_in_traffic?.value || leg.duration?.value || 0) / 60),
             trafficInfo: finalCheck.trafficInfo,
             totalTrafficDelay: finalCheck.totalTrafficDelay,
-            hasCriticalTraffic: finalCheck.hasCriticalTraffic
+            hasCriticalTraffic: finalCheck.hasCriticalTraffic,
+            geoMeta: Object.freeze({
+                origin: depotCoords ? { lat: depotCoords.lat, lng: depotCoords.lng } : null,
+                waypoints: routeChain.map(o => ({
+                    lat: Number(o.coords?.lat || o.lat || 0),
+                    lng: Number(o.coords?.lng || o.lng || 0)
+                })).filter(w => w.lat !== 0 && w.lng !== 0),
+                destination: context.endCoords ? { lat: context.endCoords.lat, lng: context.endCoords.lng } : (depotCoords ? { lat: depotCoords.lat, lng: depotCoords.lng } : null)
+            })
         });
     }
 

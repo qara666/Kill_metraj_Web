@@ -1,6 +1,15 @@
 import { ProcessedExcelData } from '../../types';
 
 export type { ProcessedExcelData };
+export const hashString = (str: string): number => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+    }
+    return hash;
+};
 
 export const processExcelFile = async (file: File): Promise<ProcessedExcelData> => {
     const fileName = file.name.toLowerCase();
@@ -413,8 +422,11 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
         'delivery_time', 'deliverytime', 'дедлайн', 'deadline', 'deadline_time'
     ], 'плановое время');
 
+    // v38.2: Stable ID generation (orderNumber + fallback hash)
+    const stableId = orderNumber || `gen_${Math.abs(hashString(address || ''))}_${index}`;
+
     return enrichOrderGeodata({
-        id: `order_${Date.now()}_${index}`,
+        id: stableId,
         orderNumber,
         address: String(address || '').trim(),
         status: status,

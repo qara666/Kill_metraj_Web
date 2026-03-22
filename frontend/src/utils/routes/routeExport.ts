@@ -5,60 +5,99 @@ export interface RouteExportData {
   orders: any[]
   startAddress: string
   endAddress: string
+  startCoords?: { lat: number, lng: number }
+  endCoords?: { lat: number, lng: number }
+}
+
+// Очистка адреса от лишних деталей для карт
+const cleanAddressForMaps = (address: string): string => {
+  if (!address) return ''
+  // Удаляем всё после ключевых слов: под., кв., эт. и т.д.
+  return address
+    .replace(/[,?\s]*(под\.|подъезд|кв\.|квартира|эт\.|этаж|оф\.|офис|д\/ф|код|вход|корп\.|корпус).*$/i, '')
+    .trim()
 }
 
 // Экспорт в Google Maps
 export const exportToGoogleMaps = (data: RouteExportData): string => {
-  const { route, orders, startAddress, endAddress } = data
+  const { route, orders, startAddress, endAddress, startCoords, endCoords } = data
   
-  // v35.9.26: Prefer coordinates (geoMeta) for 100% reliability in Google Maps
-  // This bypasses search errors caused by technical strings like "д/ф моб"
+  const getPoint = (item: any, fallbackStr?: string): string => {
+    if (item?.coords?.lat && item?.coords?.lng) {
+      return `${item.coords.lat},${item.coords.lng}`
+    }
+    const addr = item?.address || fallbackStr || ''
+    return encodeURIComponent(cleanAddressForMaps(addr))
+  }
+
+  // v35.9.27: Using Google Maps Directions API URL format for better stability
   if (route.geoMeta) {
     const origin = `${route.geoMeta.origin.lat},${route.geoMeta.origin.lng}`
     const destination = `${route.geoMeta.destination.lat},${route.geoMeta.destination.lng}`
-    const waypoints = route.geoMeta.waypoints
-      .map((wp: any) => `${wp.lat},${wp.lng}`)
-      .join('/')
     
-    return `https://www.google.com/maps/dir/${origin}/${waypoints}/${destination}`
+    const wpList = route.geoMeta.waypoints
+      .map((wp: any) => `${wp.lat},${wp.lng}`)
+      
+    if (wpList.length > 0) {
+      const waypoints = wpList.join('/')
+      return `https://www.google.com/maps/dir/${origin}/${waypoints}/${destination}`
+    } else {
+      return `https://www.google.com/maps/dir/${origin}/${destination}`
+    }
   }
 
-  // Fallback to addresses if coordinates are missing (legacy or manual routes)
+  // Fallback to addresses/coords if geoMeta is missing
+  const origin = startCoords ? `${startCoords.lat},${startCoords.lng}` : getPoint(null, startAddress)
+  const destination = endCoords ? `${endCoords.lat},${endCoords.lng}` : getPoint(null, endAddress)
   const waypoints = orders
-    .map((order, idx) => {
-      const address = encodeURIComponent(order.address || route.routeChain?.[idx] || '')
-      return address
-    })
+    .map((order, idx) => getPoint(order, route.routeChain?.[idx]))
     .filter(Boolean)
     .join('/')
-
-  const origin = encodeURIComponent(startAddress)
-  const destination = encodeURIComponent(endAddress)
   
   return `https://www.google.com/maps/dir/${origin}/${waypoints}/${destination}`
 }
 
-// Экспорт в OSRM Demo (ранее Valhalla — для надежной визуализации)
+// ЭКСПОРТ В GRAPHHOPPER (Ранее Valhalla/OSRM — GraphHopper лучше поддерживает параметры профиля в URL)
 export const exportToValhalla = (data: RouteExportData): string => {
-  const { route, orders, startAddress, endAddress } = data
+  const { route, orders } = data
+  
+  const locs: {lat: number, lon: number}[] = []
   
   if (route.geoMeta) {
-    const locs = [
-      { lat: route.geoMeta.origin.lat, lon: route.geoMeta.origin.lng },
-      ...route.geoMeta.waypoints.map((wp: any) => ({ lat: wp.lat, lon: wp.lng })),
-      { lat: route.geoMeta.destination.lat, lon: route.geoMeta.destination.lng }
-    ].filter(l => l.lat && l.lon)
+    if (route.geoMeta.origin) {
+      locs.push({ lat: route.geoMeta.origin.lat, lon: route.geoMeta.origin.lng })
+    }
+    route.geoMeta.waypoints.forEach((wp: any) => locs.push({ lat: wp.lat, lon: wp.lon || wp.lng }))
+    if (route.geoMeta.destination) {
+      locs.push({ lat: route.geoMeta.destination.lat, lon: route.geoMeta.destination.lng })
+    }
+  } else {
+    // Добавляем точку старта
+    if (data.startCoords) {
+      locs.push({ lat: data.startCoords.lat, lon: data.startCoords.lng })
+    }
 
-    // Используем 6 знаков после запятой для максимальной точности (ROOFTOP)
-    const locParams = locs.map(l => `loc=${l.lat.toFixed(6)}%2C${l.lon.toFixed(6)}`).join('&')
-    // Добавляем hl=ru для русского языка и alt=0 для одного маршрута. 
-    // К сожалению, OSRM Demo запоминает последний выбранный профиль в браузере.
-    return `https://map.project-osrm.org/?z=14&center=${locs[0].lat.toFixed(6)}%2C${locs[0].lon.toFixed(6)}&${locParams}&hl=ru&alt=0`
+    orders.forEach(o => {
+      if (o.coords?.lat && o.coords?.lng) {
+        locs.push({ lat: Number(o.coords.lat), lon: Number(o.coords.lng) })
+      } else if (o.lat && o.lng) {
+        locs.push({ lat: Number(o.lat), lon: Number(o.lng) })
+      }
+    })
+
+    // Добавляем точку финиша
+    if (data.endCoords) {
+      locs.push({ lat: data.endCoords.lat, lon: data.endCoords.lng })
+    }
   }
 
-  const allAddresses = [startAddress, ...orders.map(o => o.address), endAddress].filter(Boolean)
-  const query = encodeURIComponent(allAddresses[0])
-  return `https://www.openstreetmap.org/search?query=${query}`
+  if (locs.length > 0) {
+    // GraphHopper format: point=lat,lon&profile=car
+    const locParams = locs.map(l => `point=${l.lat.toFixed(6)},${l.lon.toFixed(6)}`).join('&')
+    return `https://graphhopper.com/maps/?${locParams}&profile=car&layer=Omniscale`
+  }
+
+  return 'https://graphhopper.com/maps/'
 }
 
 /**
@@ -66,14 +105,30 @@ export const exportToValhalla = (data: RouteExportData): string => {
  * Показывает номера домов там, где другие сервисы могут ошибаться.
  */
 export const exportToVisicom = (data: RouteExportData): string => {
-  const { route } = data
-  if (!route.geoMeta) return 'https://maps.visicom.ua/'
+  const { route, orders, startCoords, endCoords } = data
+  
+  const locs: {lat: number, lon: number}[] = []
 
-  const locs = [
-    { lat: route.geoMeta.origin.lat, lon: route.geoMeta.origin.lng },
-    ...route.geoMeta.waypoints.map((wp: any) => ({ lat: wp.lat, lon: wp.lng })),
-    { lat: route.geoMeta.destination.lat, lon: route.geoMeta.destination.lng }
-  ].filter(l => l.lat && l.lon)
+  if (route.geoMeta) {
+    if (route.geoMeta.origin) locs.push({ lat: route.geoMeta.origin.lat, lon: route.geoMeta.origin.lng })
+    route.geoMeta.waypoints.forEach((wp: any) => locs.push({ lat: wp.lat, lon: wp.lon || wp.lng }))
+    if (route.geoMeta.destination) locs.push({ lat: route.geoMeta.destination.lat, lon: route.geoMeta.destination.lng })
+  } else {
+    if (startCoords) locs.push({ lat: startCoords.lat, lon: startCoords.lng })
+    
+    orders.forEach(o => {
+      if (o.coords?.lat && o.coords?.lng) {
+        locs.push({ lat: Number(o.coords.lat), lon: Number(o.coords.lng) })
+      } else if (o.lat && o.lng) {
+        locs.push({ lat: Number(o.lat), lon: Number(o.lng) })
+      }
+    })
+    
+    if (endCoords) locs.push({ lat: endCoords.lat, lon: endCoords.lng })
+  }
+
+  const validLocs = locs.filter(l => l.lat && l.lon)
+  if (validLocs.length === 0) return 'https://maps.visicom.ua/'
 
   // Visicom использует формат: lon,lat;lon,lat (разделитель ;)
   const points = locs.map(l => `${l.lon.toFixed(6)},${l.lat.toFixed(6)}`).join(';')

@@ -43,4 +43,6 @@ export interface Route {
     createdAt?: number
     legDurations?: number[]
     accurateETA?: any
+    isVirtual?: boolean
+    title?: string
 }

@@ -108,14 +108,44 @@ export function normalizeAddress(address: string): string {
 }
 
 /**
+ * Detect if a parenthetical string is a street/area name (as opposed to an apartment note).
+ * Returns true for things like "(Гавро)", "(Маршала Тимошенка)" but not "(д/ф моб)" or "(кв.14)".
+ */
+function isStreetParenthetical(inner: string): boolean {
+    if (!inner || inner.length < 3) return false;
+    // Reject pure numbers
+    if (/^\d+$/.test(inner)) return false;
+    // Reject if it starts with a known technical abbreviation
+    if (/^(д\/ф|моб|кв|квартира|під|под|эт|этаж|корп|літера|літ|литера|офис|оф|вход|дверь|\d)/i.test(inner)) return false;
+    // Must have Cyrillic text (street names are Cyrillic)
+    return /[а-яёіїєґА-ЯІЇЄҐ]/.test(inner);
+}
+
+/**
+ * Extract alternative/old street name from parenthetical in Ukrainian addresses.
+ * e.g. "вул. Йорданська (Гавро), 24б" → "Гавро"
+ * e.g. "просп. Європейського Союзу (Правди), 78" → "Правди"
+ */
+export function extractParentheticalStreetName(address: string): string | null {
+    if (!address) return null;
+    const matches = address.match(/\(([^)]+)\)/g);
+    if (!matches) return null;
+    for (const match of matches) {
+        const inner = match.slice(1, -1).trim();
+        if (isStreetParenthetical(inner)) return inner;
+    }
+    return null;
+}
+
+/**
  * Extract the meaningful part of a Ukrainian address for geocoder queries.
  *
  * Input:  "Київ, вул. Левка Лук'яненка (Маршала Тимошенка), 15г, під.2, д/ф моб, эт.16, кв.0"
  * Output: "вул. Левка Лук'яненка, 15г"
  *
  * Algorithm:
- *   1. Strip leading city name "Київ, " 
- *   2. Strip ALL parentheticals (old names, entrance codes, etc.)
+ *   1. Strip leading city name "Київ, "
+ *   2. Strip technical parentheticals (кв, д/ф, под) but KEEP street-name parentheticals for variant generation
  *   3. Detect house number (digits + optional letters)
  *   4. Drop EVERYTHING after the house number
  */
@@ -129,10 +159,14 @@ export function cleanAddressForSearch(address: string): string {
     // Step 1: Remove leading city prefix
     cleaned = cleaned.replace(/^(?:місто\s+|город\s+|м\.?\s*|г\.?\s*)?(?:київ|киев|kyiv|kiev|харків|харьков|дніпро|ужгород|одеса|одесса|львів|львов|бровари|бровары|бориспіль|борисполь|ірпінь|ирпень|буча|вишневе|вишневое|полтава)\s*,\s*/i, '');
 
-    // Step 2: Strip ALL parentheticals for search (they confuse OSM providers)
-    // NOTE: The old street names inside parens (e.g. "(Героїв Сталінграда)") are handled
-    // by `generateStreetVariants` in addressUtils.ts, which already reads the raw address.
-    cleaned = cleaned.replace(/\s*\([^)]*\)/g, '').trim();
+    // Step 2: Smart parenthetical stripping:
+    // - Remove TECHNICAL parentheticals (apartment, entrance info etc.)
+    // - INLINE-REPLACE street-name parentheticals (old name) with a clean space
+    //   so the main name is used for the primary query. The alt name is extracted
+    //   separately by extractParentheticalStreetName() for variant generation.
+    cleaned = cleaned.replace(/\s*\(([^)]*)\)/g, (_match, inner) => {
+        return isStreetParenthetical(inner.trim()) ? '' : '';
+    }).trim();
 
     // Step 3: Identify the primary address part (up to house number) and discard the rest
     const complexHouse = /\d+[а-яієґa-z]*(?:[\/\-]\d*[а-яієґa-z]*)?/i;
@@ -140,7 +174,6 @@ export function cleanAddressForSearch(address: string): string {
     const houseMatch = cleaned.match(new RegExp(`^(.*?(?:,|\\s)\\s*(?:(?:дом|д)\.?\\s*)?(${complexHouse.source}))(?:\\s+|$|,|\\b(?:под|этаж|кв|д\/ф|моб|корп|секция|сектор|подъезд|вход|литера|літера)\\b)`, 'iu'));
     
     if (houseMatch && houseMatch[1]) {
-        // v5.66: Double check it didn't strip too much
         const res = houseMatch[1].trim();
         if (res.length > 5) {
             cleaned = res;
@@ -148,14 +181,10 @@ export function cleanAddressForSearch(address: string): string {
     }
 
     // Step 4: Recursive suffix stripping (Final Cleanup)
-    // v38.4: FIXED SyntaxError and over-aggressive stripping
     const TechnicalLabels = 'корп|корпус|під|под|підʼїзд|подъезд|эт|этаж|кв|квартира|оф|офіс|офис|вход|вхід|секція|секция|літера|літ|литера|д/ф|д\\s*[\\/-]\\s*ф|моб';
     
-    // Pattern 1: Standard spaced suffix (e.g., ", под.2")
     const spacedSuffix = new RegExp(`(?:,|\\s)\\s*(?:${TechnicalLabels}).*$`, 'iu');
-    // Pattern 2: Stuck suffix (e.g., "6под.2")
     const stuckSuffix = new RegExp(`(\\d)(?:${TechnicalLabels}).*$`, 'iu');
-    // Pattern 3: Postal codes
     const postalRegex = /(?:,|\s)\s*\d{4,5}\b.*$/;
 
     let last: string;
