@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense, useDeferredValue } from 'react'
 import { localStorageUtils } from '../../utils/ui/localStorage'
 import {
   UserIcon,
@@ -25,19 +25,20 @@ import { CourierCard } from './CourierCard'
 import { useExcelData } from '../../contexts/ExcelDataContext'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useRouteGeocoding } from '../../hooks/useRouteGeocoding'
+import { Route } from '../../types/route'
 
 import { toast } from 'react-hot-toast'
 import { Tooltip } from '../shared/Tooltip'
 
 import { normalizeCourierName } from '../../utils/data/courierName'
 import { exportToGoogleMaps, exportToValhalla } from '../../utils/routes/routeExport'
-import { AddressEditModal } from '../modals/AddressEditModal'
 import { useKmlData } from '../../hooks/useKmlData'
 import { cleanAddress, needsAddressClarification } from '../../utils/data/addressUtils'
 
 // Ленивая загрузка тяжелых компонентов
 const HelpModalCouriers = lazy(() => import('../modals/HelpModalCouriers').then(m => ({ default: m.HelpModalCouriers })))
 const HelpTour = lazy(() => import('../features/HelpTour').then(m => ({ default: m.HelpTour })))
+const AddressEditModal = lazy(() => import('../modals/AddressEditModal').then(m => ({ default: m.AddressEditModal })))
 
 interface Courier {
   id: string
@@ -77,6 +78,9 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
   const [selectedCourierForDistance, setSelectedCourierForDistance] = useState<Courier | null>(null)
   const [addressEditOrder, setAddressEditOrder] = useState<any | null>(null)
   const [addressEditRouteId, setAddressEditRouteId] = useState<string | null>(null)
+
+  // Defer search to avoid blocking keystrokes on slow hardware
+  const deferredSearchTerm = useDeferredValue(searchTerm)
 
   const {
     settings,
@@ -143,7 +147,15 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
       ...prev,
       orders: (prev?.orders || []).map((o: any) => 
         o.id === addressEditOrder.id 
-          ? { ...o, address: newAddress, lat: coords?.lat || o.lat, lng: coords?.lng || o.lng, coords: coords || o.coords, locationType: coords ? 'ROOFTOP' : o.locationType } 
+          ? { 
+              ...o, 
+              address: newAddress, 
+              lat: coords?.lat ?? o.lat, 
+              lng: coords?.lng ?? o.lng, 
+              coords: coords ?? o.coords, 
+              locationType: coords ? 'ROOFTOP' : o.locationType,
+              isAddressLocked: !!coords // v35.9.28: Avoid background re-geocoding
+            } 
           : o
       ),
       // 2. Update order within the route
@@ -151,7 +163,15 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
         if (r.id === addressEditRouteId) {
           const updatedOrders = r.orders.map((o: any) => 
             o.id === addressEditOrder.id 
-              ? { ...o, address: newAddress, lat: coords?.lat || o.lat, lng: coords?.lng || o.lng, coords: coords || o.coords, locationType: coords ? 'ROOFTOP' : o.locationType }
+              ? { 
+                  ...o, 
+                  address: newAddress, 
+                  lat: coords?.lat ?? o.lat, 
+                  lng: coords?.lng ?? o.lng, 
+                  coords: coords ?? o.coords, 
+                  locationType: coords ? 'ROOFTOP' : o.locationType,
+                  isAddressLocked: !!coords
+                }
               : o
           )
           return { ...r, orders: updatedOrders, isOptimized: false } // Mark as needing recalculation
@@ -262,7 +282,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
 
         const current = stats.get(courierName)!
         const routeOrders = route.orders || []
-        let validOrdersInRoute = 0
+        let uniqueStopsInRoute = 0
+        let lastAddrInRoute = ""
 
         routeOrders.forEach((o: any) => {
           const oid = String(o.id || o.orderNumber || o._id || `gen_${Math.random()}`)
@@ -270,24 +291,44 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
           if (!current.uniqueOrderIds.has(oid)) {
             current.uniqueOrderIds.add(oid)
             current.ordersInRoutes++
-            validOrdersInRoute++
+            
+            // v35.13: Use unique address logic for distance estimation
+            const currentAddr = (o.address || "").trim().toLowerCase();
+            if (currentAddr !== lastAddrInRoute) {
+              uniqueStopsInRoute++
+              lastAddrInRoute = currentAddr
+            }
           }
 
-          // v38.5: If order is in a route, it MUST be counted in totalOrders even if the master list is empty
+          // v35.9.28: If order is in a route, it MUST be counted in totalOrders even if the master list is empty
           if (!current.allAssignedOrderIds.has(oid)) {
             current.allAssignedOrderIds.add(oid)
             current.totalOrders++
           }
+
+          // v36.0: If all routes are calculated, ensure the progress bar shows 100%
+          // We count an order as 'processed' if it has been touched by the router OR if it's geocoded
+          if (!!o.coords?.lat && !current.uniqueOrderIds.has(oid)) {
+             current.uniqueOrderIds.add(oid)
+             current.ordersInRoutes++
+             
+             // v35.13: Double check address uniqueness here too
+             const currentAddr = (o.address || "").trim().toLowerCase();
+             if (currentAddr !== lastAddrInRoute) {
+               uniqueStopsInRoute++
+               lastAddrInRoute = currentAddr
+             }
+          }
         })
 
         if (route.isOptimized && route.totalDistance) {
-          current.totalDistance += route.totalDistance + (validOrdersInRoute * 0.5)
+          current.totalDistance += route.totalDistance + (uniqueStopsInRoute * 0.5)
           current.baseDistance += route.totalDistance
-          current.additionalDistance += (validOrdersInRoute * 0.5)
+          current.additionalDistance += (uniqueStopsInRoute * 0.5)
         } else {
           // Базовая оценка для неоптимизированных/ручных маршрутов (1км + 0.5км/заказ)
           const baseDist = 1.0
-          const addDist = validOrdersInRoute * 0.5
+          const addDist = uniqueStopsInRoute * 0.5
           current.totalDistance += baseDist + addDist
           current.baseDistance += baseDist
           current.additionalDistance += addDist
@@ -351,7 +392,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
 
     const vehicleMap = localStorageUtils.getCourierVehicleMap()
     const list = Array.from(courierNames)
-      .filter(name => name && name !== 'Не назначено')
+      .filter(name => name && name !== 'Не назначено' && name.toLowerCase() !== 'по')
       .map((name, index) => {
         const excelInfo = (excelData?.couriers || []).find((c: any) => normalizeCourierName(c.name) === name)
         const stats = getCourierStats(name)
@@ -422,19 +463,42 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
     }
   }, [])
 
-  const searchCouriers = (courier: Courier) => {
-    if (!searchTerm.trim()) return true
-    const searchLower = searchTerm.toLowerCase()
-    return courier.name.toLowerCase().includes(searchLower) ||
-      courier.phone.includes(searchTerm) ||
-      courier.email.toLowerCase().includes(searchLower)
-  }
-
   const filteredCouriers = useMemo(() => {
+    const searchLower = deferredSearchTerm.toLowerCase();
     return couriers
       .filter(c => filter === 'all' || c.vehicleType === filter)
-      .filter(searchCouriers)
-  }, [couriers, filter, searchTerm])
+      .filter(c => !searchLower || c.name.toLowerCase().includes(searchLower) ||
+        c.phone.toLowerCase().includes(searchLower) ||
+        c.email.toLowerCase().includes(searchLower)
+      )
+  }, [couriers, filter, deferredSearchTerm])
+  // ─── Wire "ЗАПУСТИТЬ РАСЧЕТ" button from CourierCard ──────────────────────
+  // Identical to RouteManagement.tsx listener to ensure button works in both views.
+  useEffect(() => {
+    const handler = async () => {
+      const routes: Route[] = contextData?.routes || [];
+      const incomplete = routes.filter(r =>
+        !r.totalDistance ||
+        r.totalDistance === 0 ||
+        r.orders.some((o: any) => !o.coords?.lat)
+      );
+
+      if (incomplete.length === 0) {
+        toast('✅ Все маршруты уже рассчитаны', { icon: '⚡' });
+        return;
+      }
+
+      toast(`🔄 Запускаю расчёт ${incomplete.length} маршрут(ов)...`);
+      for (const route of incomplete) {
+        await calculateRouteDistance(route);
+        await new Promise(r => setTimeout(r, 50)); // yield to UI
+      }
+      toast.success(`✅ Расчёт завершён`);
+    };
+
+    window.addEventListener('km-force-auto-routing', handler);
+    return () => window.removeEventListener('km-force-auto-routing', handler);
+  }, [contextData?.routes, calculateRouteDistance]);
 
   const getCourierRoutes = (courierName: string) => {
     if (!contextData?.routes) return []
@@ -681,20 +745,24 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8" data-tour="courier-list">
         {filteredCouriers.length > 0 ? (
           filteredCouriers.map((courier, index) => (
-            <CourierCard
+            <div
               key={`${courier.id}-${index}`}
-              courier={courier}
-              isDark={isDark}
-              onEdit={(c) => {
-                setEditingCourier(c)
-                setShowAddModal(true)
-              }}
-              onDelete={handleDeleteCourier}
-              onToggleStatus={toggleCourierStatus}
-              onToggleVehicle={toggleCourierVehicleType}
-              onDistanceClick={handleDistanceClick}
-              distanceDetails={getCourierStats(courier.name)}
-            />
+              style={{ contain: 'content', contentVisibility: 'auto', containIntrinsicSize: '0 280px' }}
+            >
+              <CourierCard
+                courier={courier}
+                isDark={isDark}
+                onEdit={(c) => {
+                  setEditingCourier(c)
+                  setShowAddModal(true)
+                }}
+                onDelete={handleDeleteCourier}
+                onToggleStatus={toggleCourierStatus}
+                onToggleVehicle={toggleCourierVehicleType}
+                onDistanceClick={handleDistanceClick}
+                distanceDetails={getCourierStats(courier.name)}
+              />
+            </div>
           ))
         ) : (
           <div className={clsx(
@@ -948,7 +1016,21 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
                             const routeBaseDistance = route.isOptimized && route.totalDistance
                               ? route.totalDistance
                               : 1.0
-                            const routeAdditionalDistance = ordersCount * 0.5
+                            
+                            // v35.13: Correct distance calculation logic
+                            // Only add 0.5km for DIFFERENT addresses to avoid "nonsense" duplicates
+                            let routeAdditionalDistance = 0;
+                            if (route.orders && route.orders.length > 0) {
+                              let lastAddr = "";
+                              route.orders.forEach((o: any) => {
+                                const currentAddr = (o.address || "").trim().toLowerCase();
+                                if (currentAddr !== lastAddr) {
+                                  routeAdditionalDistance += 0.5;
+                                  lastAddr = currentAddr;
+                                }
+                              });
+                            }
+                            
                             const routeTotalDistance = routeBaseDistance + routeAdditionalDistance
 
                             return (
@@ -1367,6 +1449,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
             currentAddress={addressEditOrder.address}
             orderNumber={addressEditOrder.orderNumber}
             customerName={addressEditOrder.customerName}
+            cityContext={settings.cityBias}
             isDark={isDark}
           />
         </Suspense>

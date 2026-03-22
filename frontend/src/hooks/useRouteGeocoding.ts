@@ -188,16 +188,34 @@ export const useRouteGeocoding = ({
 
         // 3. If confirmation is required OR suspect jump detected
         const expectedHouse = extractHouseNumber(rawAddress)
-        const streetNum = (best.raw.address_components || []).find(c => c.types.includes('street_number'))?.long_name
+        const streetNum = (best.raw.address_components || []).find((c: any) => c.types.includes('street_number'))?.long_name
         const houseMatched = !expectedHouse || (streetNum && streetNum.toLowerCase() === expectedHouse.toLowerCase())
 
         const isSuspicious = !houseMatched || !best.isInsideZone || best.isTechnicalZone
+
+        // ─── Smart Auto-Select: skip modal if top candidate is clearly the best ───
+        // Conditions for auto-skip:
+        //   a) House number matches
+        //   b) Inside delivery zone  
+        //   c) Score is high (above threshold)
+        //   d) Not a suspect jump
+        //   e) Only 1 candidate OR top candidate significantly outscores #2
+        const HIGH_CONFIDENCE_SCORE = -50000; // Tunable threshold
+        const isHighConfidence = houseMatched && best.isInsideZone && !best.isTechnicalZone && (best.score >= HIGH_CONFIDENCE_SCORE);
+        const topScoreLead = result.allCandidates.length >= 2
+            ? (best.score - (result.allCandidates[1]?.score ?? -Infinity))
+            : Infinity;
+        const hasStrongLead = topScoreLead > 50000; // Top candidate clearly wins
+
+        if (!suspectJump && isHighConfidence && (result.allCandidates.length <= 1 || hasStrongLead)) {
+            return result; // Auto-select the best candidate, no modal needed
+        }
 
         if (!isSuspicious && result.allCandidates.length <= 1) {
             return result
         }
 
-        // 4. Disambiguation modal
+        // 4. Disambiguation modal (only when genuinely ambiguous)
         const modalOptions = result.allCandidates
             .map((c: any) => {
                 const lat = c.lat
@@ -238,6 +256,7 @@ export const useRouteGeocoding = ({
         }
         return result;
     }
+
 
     // ─── Main route calculation ──────────────────────────────────────────────
 

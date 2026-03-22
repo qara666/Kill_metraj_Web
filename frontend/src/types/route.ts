@@ -1,6 +1,7 @@
 export interface Order {
     id: string
     orderNumber: string
+    orderType?: string
     address: string
     courier: string
     amount: number
@@ -28,6 +29,7 @@ export interface Order {
     locationType?: 'ROOFTOP' | 'RANGE_INTERPOLATED' | 'GEOMETRIC_CENTER' | 'APPROXIMATE'
     deliveryZone?: string
     streetNumberMatched?: boolean
+    isAddressLocked?: boolean
 }
 
 export interface Route {

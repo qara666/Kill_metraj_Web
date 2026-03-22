@@ -21,6 +21,7 @@ interface SettlementModalProps {
     updateExcelData: (callback: (prev: any) => any) => void;
     setShowSettlementModal: (show: boolean) => void;
     fetchFinancialSummary: () => Promise<void>;
+    saveManualOverrides: (orders: any[]) => void;
 }
 
 export function SettlementModal({
@@ -29,6 +30,7 @@ export function SettlementModal({
     isDark,
     onClose,
     updateExcelData,
+    saveManualOverrides,
     setShowSettlementModal,
     fetchFinancialSummary
 }: SettlementModalProps) {
@@ -224,10 +226,10 @@ export function SettlementModal({
                     return order;
                 });
                 const next = { ...prev, orders: updatedOrders };
-                const excelDataCtx = (window as any).excelDataContext;
-                if (excelDataCtx && excelDataCtx.saveManualOverrides) {
-                    excelDataCtx.saveManualOverrides(next.orders);
-                }
+                
+                // v35.10: Use passed persistence function instead of window hack
+                saveManualOverrides(next.orders);
+                
                 return next;
             });
 

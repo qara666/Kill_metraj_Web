@@ -422,6 +422,10 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
         'delivery_time', 'deliverytime', 'дедлайн', 'deadline', 'deadline_time'
     ], 'плановое время');
 
+    const orderType = getFieldByKeywords([
+        'тип заказа', 'order_type', 'type', 'order type'
+    ], 'тип заказа');
+
     // v38.2: Stable ID generation (orderNumber + fallback hash)
     const stableId = orderNumber || `gen_${Math.abs(hashString(address || ''))}_${index}`;
 
@@ -430,6 +434,7 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
         orderNumber,
         address: String(address || '').trim(),
         status: status,
+        orderType: orderType,
         kitchenTime: kitchenTime,
         plannedTime: plannedTime,
         courier: getValue(rowData, ['курьер', 'courier', 'курьер_имя']) || '',

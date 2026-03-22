@@ -9,6 +9,7 @@ interface TimeWindowGroupCardProps {
     group: TimeWindowGroup;
     isDark?: boolean;
     isCalculating?: boolean;
+    ordersInRoutesSet?: Set<string>;
     onOrderMoved?: (orderId: string, targetGroup: TimeWindowGroup) => void;
     onCalculateRoute?: (group: TimeWindowGroup) => void;
 }
@@ -17,6 +18,7 @@ export const TimeWindowGroupCard = memo(({
     group,
     isDark = false,
     isCalculating = false,
+    ordersInRoutesSet = new Set(),
     onOrderMoved,
     onCalculateRoute
 }: TimeWindowGroupCardProps) => {
@@ -160,23 +162,30 @@ export const TimeWindowGroupCard = memo(({
                     {group.orders.map((order: any, idx: number) => {
                         const statusProps = getStatusBadgeProps(order.status || '', isDark);
                         const isReady = statusProps.text === 'СОБРАН' || statusProps.text === 'ИСПОЛНЕН';
+                        const isRouted = ordersInRoutesSet.has(String(order.id || order.orderNumber));
 
                         return (
                             <div
                                 key={order.id || idx}
-                                draggable
+                                draggable={!isRouted}
                                 onDragStart={(e) => {
+                                    if (isRouted) {
+                                      e.preventDefault();
+                                      return;
+                                    }
                                     const ordId = String(order.id || order.orderNumber);
                                     e.dataTransfer.setData('orderId', ordId);
                                     e.dataTransfer.setData('text/plain', ordId);
                                     e.dataTransfer.effectAllowed = 'move';
                                 }}
                                 className={clsx(
-                                    'p-3 rounded-xl flex flex-col gap-1.5 cursor-grab active:cursor-grabbing border-2 transition-colors', // Phase 7: removed transition-all
-                                    'contain-content', // v5.48: Performance optimization
-                                    isDark
-                                        ? 'bg-slate-800/40 border-slate-700/30 hover:bg-slate-800/60 hover:border-slate-600'
-                                        : 'bg-white border-slate-50 hover:border-blue-100 shadow-sm'
+                                    'p-3 rounded-xl flex flex-col gap-1.5 border-2 transition-colors relative overflow-hidden',
+                                    'contain-content',
+                                    isRouted 
+                                        ? (isDark ? 'opacity-40 cursor-not-allowed bg-gray-900 border-gray-800' : 'opacity-50 cursor-not-allowed bg-gray-100 border-gray-200')
+                                        : (isDark 
+                                            ? 'cursor-grab active:cursor-grabbing bg-slate-800/40 border-slate-700/30 hover:bg-slate-800/60 hover:border-slate-600'
+                                            : 'cursor-grab active:cursor-grabbing bg-white border-slate-50 hover:border-blue-100 shadow-sm')
                                 )}
                             >
                                 <div className="flex items-center justify-between">
@@ -190,6 +199,14 @@ export const TimeWindowGroupCard = memo(({
                                         )}>
                                             #{order.orderNumber}
                                         </span>
+                                        {isRouted && (
+                                            <span className={clsx(
+                                                "px-1.5 py-0.5 rounded-lg border text-[8px] font-black tracking-widest leading-none shadow-sm",
+                                                isDark ? "bg-purple-500/20 border-purple-500/30 text-purple-300" : "bg-purple-50 border-purple-200 text-purple-700"
+                                            )}>
+                                                В МАРШРУТЕ
+                                            </span>
+                                        )}
                                     </div>
 
                                     <div className="flex items-center gap-1.5">
@@ -214,7 +231,7 @@ export const TimeWindowGroupCard = memo(({
 
                 <div className={clsx("p-3 mt-auto border-t", isDark ? "border-slate-800/50 bg-slate-900/30" : "border-slate-50 bg-slate-50/20")}>
                     <button
-                        disabled={isCalculating}
+                        disabled={isCalculating || group.orders.every(o => ordersInRoutesSet.has(String(o.id || o.orderNumber)))}
                         onClick={(e) => { e.stopPropagation(); onCalculateRoute && onCalculateRoute(group); }}
                         className={clsx(
                             'w-full py-2.5 rounded-xl flex items-center justify-center gap-2.5 text-[10px] font-black uppercase tracking-[0.1em] transition-all',

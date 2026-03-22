@@ -79,11 +79,17 @@ export function useContinuousAutoRouting() {
                 );
 
                 const totalOrders = realOrders.length;
-                let routedCount = 0;
-                routedOrderIds.forEach(id => {
-                    if (realOrders.some((o: any) => getStableOrderId(o) === id)) {
-                        routedCount++;
-                    }
+                let processedGeocodedCount = 0;
+                
+                // Count orders that are both in a route AND geocoded
+                (excelData.routes || []).forEach((r: any) => {
+                    (r.orders || []).forEach((o: any) => {
+                        const stableId = getStableOrderId(o);
+                        const isRealOrder = realOrders.some((ro: any) => getStableOrderId(ro) === stableId);
+                        if (isRealOrder && o.coords?.lat) {
+                            processedGeocodedCount++;
+                        }
+                    });
                 });
                 
                 const totalSystemCouriers = realCouriersSet.size;
@@ -95,7 +101,7 @@ export function useContinuousAutoRouting() {
 
                 if (unroutedOrders.length === 0) {
                     setAutoRoutingStatus({ 
-                        processedCount: routedCount, 
+                        processedCount: processedGeocodedCount, 
                         totalCount: totalOrders, 
                         processedCouriers: couriersWithRoutesCount, 
                         totalCouriers: totalSystemCouriers, 
@@ -127,7 +133,7 @@ export function useContinuousAutoRouting() {
                 setAutoRoutingStatus({ 
                     totalCount: totalOrders, 
                     totalCouriers: totalSystemCouriers,
-                    processedCount: routedCount,
+                    processedCount: processedGeocodedCount,
                     processedCouriers: couriersWithRoutesCount,
                     lastUpdate: Date.now() 
                 });
@@ -289,7 +295,7 @@ export function useContinuousAutoRouting() {
                             }
 
                             setAutoRoutingStatus({ 
-                                processedCount: routedCount + processedOrdersInBatch,
+                                processedCount: processedGeocodedCount + processedOrdersInBatch,
                                 processedCouriers: couriersWithRoutesCount + processedCouriersCount,
                                 lastUpdate: Date.now()
                             });

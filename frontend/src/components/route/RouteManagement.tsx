@@ -74,12 +74,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
   const { excelData: contextExcelData, updateExcelData, saveManualOverrides } = useExcelData()
   const excelData = propExcelData || contextExcelData
 
-  // v5.73: Debug logging for data population
+  // Data loaded — no verbose debug logging in production path
   useEffect(() => {
-    if (excelData) {
-      console.log(`[RouteManagement] Data loaded: ${excelData.orders?.length || 0} orders, ${excelData.couriers?.length || 0} couriers`);
-    } else {
-      console.log('[RouteManagement] No excelData available');
+    if (!excelData) {
+      console.warn('[RouteManagement] No excelData available');
     }
   }, [excelData]);
   const { isDark } = useTheme()
@@ -100,6 +98,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
   // v5.41: Robust Normalization - trim all inputs to prevent mismatch
   const [courierFilter, setCourierFilter] = useState<string>('all')
+  const [unassignedStatusFilter, setUnassignedStatusFilter] = useState<'all' | 'оформление' | 'в работе' | 'другое'>('all')
+  const [isGroupedExpanded, setIsGroupedExpanded] = useState(true)
   const [routePage, setRoutePage] = useState(0)
   const [routesPerPage] = useState(5) // Количество маршрутов на странице
   const [sortRoutesByNewest] = useState(true)
@@ -138,6 +138,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     }
     return false
   })
+  
+  // --- Сайдбар: Пагинация курьеров ---
+  const [courierPage, setCourierPage] = useState(1);
+  const couriersPerPage = 7;
 
   // --- Helper Functions (Moved up to avoid TDZ errors) ---
 
@@ -151,7 +155,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       const mappedEntry = Object.entries(localSettings.courierVehicleMap).find(([name]) =>
         normalizeCourierName(name).toLowerCase() === normName
       )
-      if (mappedEntry) return mappedEntry[1]
+      if (mappedEntry) return String(mappedEntry[1]).toLowerCase().trim()
     }
 
     // 2. Проверяем в списке курьеров (уже нормализованных в ExcelDataContext)
@@ -159,11 +163,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       const courier = excelData.couriers.find((c: any) =>
         normalizeCourierName(c.name).toLowerCase() === normName
       )
-      if (courier?.vehicleType) return courier.vehicleType
+      if (courier?.vehicleType) return String(courier.vehicleType).toLowerCase().trim()
     }
 
     return 'car'
-  }, [excelData?.couriers])
+  }, [localSettings.courierVehicleMap, excelData?.couriers])
 
   // Выбранный город обязателен; используем только его для bias/нормализации
   const getSelectedCity = useCallback((): { city: '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'; country: 'Украина'; region: 'UA' } => {
@@ -307,6 +311,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
         const courierName = normalizeCourierName(rawName || order.courierName) || 'Не назначено'
 
+        // v35.15: Global Exclusion of "ПО" (trash)
+        if (courierName.toLowerCase() === 'по') {
+          return;
+        }
+
         if (!grouped[courierName]) {
           grouped[courierName] = []
         }
@@ -385,7 +394,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     const allCouriers = new Set([
       ...Object.keys(courierOrders),
       ...(excelData?.couriers?.map((c: any) => c.name) || [])
-    ])
+    ].filter(name => normalizeCourierName(name).toLowerCase() !== 'по'))
 
     allCouriers.forEach(name => {
       if (!name) return
@@ -469,7 +478,38 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     }
   }, [courierOrders, excelData?.couriers, courierMetricsMap])
 
+  // ─── Wire "ЗАПУСТИТЬ РАСЧЕТ" button from CourierCard ──────────────────────
+  // The button fires this event globally. We listen here and recalculate
+  // any routes that do not yet have a totalDistance (i.e. not geocoded).
+  useEffect(() => {
+    const handler = async () => {
+      const routes: Route[] = excelData?.routes || [];
+      const incomplete = routes.filter(r =>
+        !r.totalDistance ||
+        r.totalDistance === 0 ||
+        r.orders.some((o: any) => !o.coords?.lat)
+      );
+
+      if (incomplete.length === 0) {
+        toast('✅ Все маршруты уже рассчитаны', { icon: '⚡' });
+        return;
+      }
+
+      toast(`🔄 Запускаю расчёт ${incomplete.length} маршрут(ов)...`);
+      for (const route of incomplete) {
+        await recalculateRoute(route);
+        await new Promise(r => setTimeout(r, 50)); // yield to UI
+      }
+      toast.success(`✅ Расчёт завершён`);
+    };
+
+    window.addEventListener('km-force-auto-routing', handler);
+    return () => window.removeEventListener('km-force-auto-routing', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [excelData?.routes]);
+
   // Trigger on-demand geocoding when the returning modal is opened
+
   useEffect(() => {
     if (!showReturningModal) return
 
@@ -641,7 +681,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     Object.keys(courierOrders).forEach(name => {
       const norm = normalizeCourierName(name)
       const key = norm.toLowerCase()
-      if (key && !courierMap.has(key)) {
+      // v35.15: Skip "ПО"
+      if (key && key !== 'по' && !courierMap.has(key)) {
         courierMap.set(key, norm)
       }
     })
@@ -652,7 +693,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         if (!c?.name) return;
         const norm = normalizeCourierName(c.name)
         const key = norm.toLowerCase()
-        if (key && !courierMap.has(key)) {
+        // v35.15: Skip "ПО"
+        if (key && key !== 'по' && !courierMap.has(key)) {
           courierMap.set(key, norm)
         }
       })
@@ -671,11 +713,22 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
   const filteredCouriers = useMemo(() => {
     let result = couriers
 
-    // Filter by type
+    // Filter by type or status
     if (courierFilter !== 'all') {
       result = result.filter(courierName => {
-        const vehicleType = getCourierVehicleType(courierName)
-        return vehicleType === courierFilter
+        if (courierFilter === 'car' || courierFilter === 'moto') {
+          const vehicleType = getCourierVehicleType(courierName)
+          return vehicleType === courierFilter
+        }
+        if (courierFilter === 'delivering') {
+          const metrics = getCourierMetrics(courierName)
+          return metrics.total > 0 && metrics.delivered < metrics.total
+        }
+        if (courierFilter === 'completed') {
+          const metrics = getCourierMetrics(courierName)
+          return metrics.total > 0 && metrics.delivered === metrics.total
+        }
+        return true
       })
     }
 
@@ -692,10 +745,15 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       if (b === 'Не назначено' || b === 'ID:0') return 1;
 
       if (courierSortType === 'load') {
-        const loadA = getCourierMetrics(a).available
-        const loadB = getCourierMetrics(b).available
-        // Sort descending by load
-        if (loadA !== loadB) return loadB - loadA
+        const metricsA = getCourierMetrics(a)
+        const metricsB = getCourierMetrics(b)
+        const remA = metricsA.total - metricsA.delivered
+        const remB = metricsB.total - metricsB.delivered
+        // Sort descending by remaining (active tasks) first
+        if (remA !== remB) return remB - remA;
+        
+        // If remaining is same, sort by total descending
+        if (metricsA.total !== metricsB.total) return metricsB.total - metricsA.total;
       }
 
       return a.localeCompare(b, 'ru');
@@ -749,8 +807,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       Object.entries(courierOrders).forEach(([courierName, orders]) => {
         if (isId0CourierName(courierName) || courierName === 'Не назначено') {
           orders.forEach(o => {
-            const sid = getStableOrderId(o);
-            if (!ordersInRoutesSet.has(sid) && !isOrderCompleted(o.status)) {
+            if (!isOrderCompleted(o.status)) {
               unassignedOrders.push(o)
             }
           })
@@ -783,13 +840,33 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       const sid = getStableOrderId(order);
       if (ordersInRoutesSet.has(sid)) {
         inRoutes.push(order)
-      } else {
-        courierAvailable.push(order)
       }
+      courierAvailable.push(order)
     })
 
     // 4. Truly unassigned orders (for the "pool")
-    const availablePool = [...unassignedOrders]
+    let availablePool = [...unassignedOrders]
+
+    // v35.12: Filter unassigned orders by specific business status
+    if (unassignedStatusFilter !== 'all') {
+      availablePool = availablePool.filter(o => {
+        const s = (o.status || '').toLowerCase().trim();
+        if (unassignedStatusFilter === 'оформление') {
+          // Broad variants for "Оформление"
+          return s.includes('оформлен') || s.includes('оформление') || s.includes('сформирован') || s.includes('формируется') || s.includes('новый') || s.includes('new') || s.includes('draft');
+        }
+        if (unassignedStatusFilter === 'в работе') {
+          // Broad variants for "В работе"
+          return s.includes('в работе') || s.includes('собирается') || s.includes('собран') || s.includes('в сборке') || s.includes('уточнение') || s.includes('work') || s.includes('processing');
+        }
+        if (unassignedStatusFilter === 'другое') {
+          const isDraft = s.includes('оформлен') || s.includes('оформление') || s.includes('сформирован') || s.includes('формируется') || s.includes('новый') || s.includes('new') || s.includes('draft');
+          const isInProgress = s.includes('в работе') || s.includes('собирается') || s.includes('собран') || s.includes('в сборке') || s.includes('уточнение') || s.includes('work') || s.includes('processing');
+          return !isDraft && !isInProgress;
+        }
+        return true;
+      });
+    }
 
     // RESTRICTED: Real couriers should see ONLY their own orders.
     // The "unassigned pool" orders are only visible when "Не назначено" is selected.
@@ -801,17 +878,41 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       availableOrders: totalAvailable,
       courierAvailableOrders: courierAvailable,
       unassignedPool: availablePool,
+      ordersInRoutesSet: ordersInRoutesSet,
       ordersInRoutes: inRoutes
     }
-  }, [selectedCourier, courierOrders, searchOrders, sortOrdersByTime, ordersInRoutesSet]);
+  }, [selectedCourier, courierOrders, searchOrders, sortOrdersByTime, ordersInRoutesSet, unassignedStatusFilter]);
 
   const { availableOrders, courierAvailableOrders, unassignedPool, ordersInRoutes } = filteredData;
+
+  // v35.14: Auto-collapse grouped orders if everything is already in routes (assigned/calculated)
+  useEffect(() => {
+    if (availableOrders.length > 0) {
+      const allCalculated = availableOrders.every(o => ordersInRoutesSet.has(getStableOrderId(o)));
+      if (allCalculated) {
+        setIsGroupedExpanded(false);
+      }
+    }
+  }, [availableOrders, ordersInRoutesSet]);
 
 
   // v37: Defer the lists to prevent main-thread blocking on selection
   const deferredAvailableOrders = useDeferredValue(availableOrders)
   const deferredCourierAvailableOrders = useDeferredValue(courierAvailableOrders)
   const deferredUnassignedPool = useDeferredValue(unassignedPool)
+
+  // v35.13: Auto-collapse grouped orders if none available to route
+  const ordersForGroupingCount = (isId0CourierName(selectedCourier) || selectedCourier === 'Не назначено')
+    ? (deferredUnassignedPool?.length || 0)
+    : (deferredCourierAvailableOrders?.length || 0);
+
+  useEffect(() => {
+    if (ordersForGroupingCount === 0) {
+      setIsGroupedExpanded(false);
+    } else {
+      setIsGroupedExpanded(true);
+    }
+  }, [ordersForGroupingCount, selectedCourier]);
 
   // Сортировка и пагинация маршрутов (v40: Enriched with master data for badges)
   const allRoutes = useMemo(() => {
@@ -1315,35 +1416,76 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
   }, [updateExcelData, selectedCourier])
 
   // Функция для сохранения измененного адреса
-  const handleAddressUpdate = (newAddress: string) => {
+  const handleAddressUpdate = (newAddress: string, coords?: { lat: number; lng: number }) => {
     if (!editingOrder) return
 
-    // Обновляем только маршруты, содержащие этот заказ
-    updateExcelData({
-      ...(excelData || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
-      routes: (excelData?.routes || []).map((route: Route) => {
-        const orderIndex = route.orders.findIndex((order: Order) => order.id === editingOrder.id)
-        if (orderIndex !== -1) {
-          const updatedRouteOrders = [...route.orders]
-          updatedRouteOrders[orderIndex] = { ...editingOrder, address: newAddress }
-          return {
-            ...route,
-            orders: updatedRouteOrders,
-            isOptimized: false,
-            totalDistance: 0,
-            totalDuration: 0
-          }
-        }
-        return route
-      }),
-      orders: (excelData?.orders || []).map((order: any) =>
-        order.id === editingOrder.id ? { ...order, address: newAddress } : order
-      )
-    })
+    const affectedRouteIds: string[] = [];
 
-    setShowAddressEditModal(false)
-    setEditingOrder(null)
-  }
+    // 1. Calculate next orders state
+    const nextOrders = (excelData?.orders || []).map((order: any) =>
+      order.id === editingOrder.id ? { 
+        ...order, 
+        address: newAddress,
+        // v35.9.28: Save coordinates if provided manually
+        lat: coords?.lat ?? order.lat,
+        lng: coords?.lng ?? order.lng,
+        coords: coords ?? order.coords,
+        isAddressLocked: !!coords,
+        locationType: coords ? 'ROOFTOP' : order.locationType
+      } : order
+    );
+
+    // 2. Calculate next routes state and track affected ones
+    const nextRoutes = (excelData?.routes || []).map((route: Route) => {
+      const orderId = editingOrder.id;
+      const orderIndex = route.orders.findIndex((o: Order) => o.id === orderId);
+      
+      if (orderIndex !== -1) {
+        affectedRouteIds.push(route.id);
+        const updatedRouteOrders = [...route.orders];
+        const updatedOrder = { 
+          ...editingOrder, 
+          address: newAddress,
+          lat: coords?.lat ?? editingOrder.lat,
+          lng: coords?.lng ?? editingOrder.lng,
+          coords: coords ?? editingOrder.coords,
+          isAddressLocked: !!coords,
+          locationType: coords ? 'ROOFTOP' : editingOrder.locationType
+        };
+        updatedRouteOrders[orderIndex] = updatedOrder;
+        
+        return {
+          ...route,
+          orders: updatedRouteOrders,
+          isOptimized: false,
+          totalDistance: 0,
+          totalDuration: 0
+        };
+      }
+      return route;
+    });
+
+    const nextState = {
+      ...(excelData || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
+      routes: nextRoutes,
+      orders: nextOrders
+    };
+
+    // 3. Save and Update
+    updateExcelData(nextState);
+    saveManualOverrides(nextOrders); // Ensure persistence after refresh
+
+    // 4. Trigger auto-recalculation for affected routes
+    affectedRouteIds.forEach(routeId => {
+      const updatedRoute = nextRoutes.find((r: any) => r.id === routeId);
+      if (updatedRoute) {
+        recalculateRoute(updatedRoute);
+      }
+    });
+
+    setShowAddressEditModal(false);
+    setEditingOrder(null);
+  };
 
   // Функция для пересчета конкретного маршрута
   const recalculateRoute = async (route: Route) => {
@@ -1541,29 +1683,33 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
               <div className="relative z-10 flex flex-col h-full">
                 <div className="flex flex-col gap-4 mb-6">
+                  {/* SOTA 5.9: Harmonious Header Layout (v35.12: Prevent overlapping) */}
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <h2 className={clsx(
-                        'text-xl font-black tracking-tight',
-                        isDark ? 'text-gray-100' : 'text-gray-900'
-                      )}>Курьеры</h2>
+                    <h2 className={clsx(
+                      'text-xl font-black tracking-tight',
+                      isDark ? 'text-gray-100' : 'text-gray-900'
+                    )}>Курьеры</h2>
+                    
+                    <div className="flex items-center gap-1.5">
+                      {/* Sort/Toggle can go here if needed */}
                     </div>
-                    <div className="flex bg-gray-100 dark:bg-black/40 p-1 rounded-xl border dark:border-white/5 shadow-inner">
-                      {['all', 'car', 'moto'].map((f) => (
-                        <button
-                          key={f}
-                          onClick={() => setCourierFilter(f as any)}
-                          className={clsx(
-                            'px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all',
-                            courierFilter === f
-                              ? (isDark ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-white text-blue-600 shadow-md')
-                              : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-800')
-                          )}
-                        >
-                          {f === 'all' ? 'Все' : f === 'car' ? 'Авто' : 'Мото'}
-                        </button>
-                      ))}
-                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 bg-gray-100 dark:bg-black/40 p-1 rounded-xl border dark:border-white/5 shadow-inner overflow-x-auto no-scrollbar scroll-smooth">
+                    {['all', 'delivering', 'completed', 'car', 'moto'].map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => setCourierFilter(f as any)}
+                        className={clsx(
+                          'px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all whitespace-nowrap flex-shrink-0',
+                          courierFilter === f
+                            ? (isDark ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-white text-blue-600 shadow-md')
+                            : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-800')
+                        )}
+                      >
+                        {f === 'all' ? 'Все' : f === 'delivering' ? 'Доставл' : f === 'completed' ? 'Завершил' : f === 'car' ? 'Авто' : 'Мото'}
+                      </button>
+                    ))}
                   </div>
 
                   {/* Fleet Dashboard Mini stats */}
@@ -1675,24 +1821,75 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                     </div>
                   ) : (
                     <div className="flex flex-col gap-3 pb-8">
-                      {filteredCouriers.map((name) => {
-                        const metric = getCourierMetrics(name);
-                        const vehicleType = getCourierVehicleType(name);
+                      {(() => {
+                        const totalPages = Math.ceil(filteredCouriers.length / couriersPerPage);
+                        const safePage = Math.min(Math.max(1, courierPage), Math.max(1, totalPages));
+                        const startIndex = (safePage - 1) * couriersPerPage;
+                        const visibleCouriers = filteredCouriers.slice(startIndex, startIndex + couriersPerPage);
+                        
                         return (
-                          <CourierListItem
-                            key={name}
-                            courierName={name}
-                            vehicleType={vehicleType}
-                            isSelected={selectedCourier === name}
-                            onSelect={handleCourierSelect}
-                            deliveredOrdersCount={metric.delivered}
-                            totalOrdersCount={metric.total}
-                            calculatedCount={metric.activeInRoute}
-                            unassignedCount={metric.unassigned}
-                            isDark={isDark}
-                          />
+                          <>
+                            {visibleCouriers.map((name) => {
+                              const metric = getCourierMetrics(name);
+                              const vehicleType = getCourierVehicleType(name);
+                              return (
+                                <div
+                                  key={name}
+                                  style={{ contain: 'content', contentVisibility: 'auto', containIntrinsicSize: '0 80px' }}
+                                >
+                                  <CourierListItem
+                                    courierName={name}
+                                    vehicleType={vehicleType}
+                                    isSelected={selectedCourier === name}
+                                    onSelect={handleCourierSelect}
+                                    deliveredOrdersCount={metric.delivered}
+                                    totalOrdersCount={metric.total}
+                                    calculatedCount={metric.activeInRoute}
+                                    unassignedCount={metric.unassigned}
+                                    isDark={isDark}
+                                  />
+                                </div>
+                              );
+                            })}
+                            
+                            {/* Pagination Controls */}
+                            {totalPages > 1 && (
+                              <div className={clsx(
+                                "flex items-center justify-between p-2 mt-2 rounded-xl border transition-colors",
+                                isDark ? "bg-gray-800/50 border-gray-700" : "bg-gray-50 border-gray-200"
+                              )}>
+                                <button
+                                  onClick={() => setCourierPage(p => Math.max(1, p - 1))}
+                                  disabled={safePage === 1}
+                                  className={clsx(
+                                    "px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all",
+                                    safePage === 1
+                                      ? "opacity-30 cursor-not-allowed"
+                                      : isDark ? "hover:bg-gray-700 bg-gray-800" : "hover:bg-white bg-gray-100"
+                                  )}
+                                >
+                                  Назад
+                                </button>
+                                <span className="text-[10px] font-black opacity-50">
+                                  {safePage} из {totalPages}
+                                </span>
+                                <button
+                                  onClick={() => setCourierPage(p => Math.min(totalPages, p + 1))}
+                                  disabled={safePage === totalPages}
+                                  className={clsx(
+                                    "px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all",
+                                    safePage === totalPages
+                                      ? "opacity-30 cursor-not-allowed"
+                                      : isDark ? "hover:bg-gray-700 bg-gray-800" : "hover:bg-white bg-gray-100"
+                                  )}
+                                >
+                                  Далее
+                                </button>
+                              </div>
+                            )}
+                          </>
                         );
-                      })}
+                      })()}
                     </div>
                   )}
                 </div>
@@ -1744,7 +1941,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                       <div className="flex flex-col gap-1">
                         <div className="flex items-center gap-3">
                           <h2 className={clsx('text-3xl font-black tracking-tight uppercase', isDark ? 'text-white' : 'text-gray-900')}>
-                            {isId0CourierName(selectedCourier) || selectedCourier === 'Не назначено' ? 'Бассейн заказов' : selectedCourier}
+                            {isId0CourierName(selectedCourier) || selectedCourier === 'Не назначено' ? 'НЕ НАЗНАЧЕННЫЕ ЗАКАЗЫ' : selectedCourier}
                           </h2>
                           <div className={clsx(
                             "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-2",
@@ -1757,10 +1954,35 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                         <p className={clsx('text-sm font-bold opacity-60 uppercase tracking-widest', isDark ? 'text-gray-400' : 'text-gray-500')}>
                           {isId0CourierName(selectedCourier) || selectedCourier === 'Не назначено'
                             ? `Доступно ${availableOrders.length} заказов`
-                            : `Личный кабинет курьера`}
+                            : `Заказы курьера`}
                         </p>
                       </div>
                     </div>
+
+                    {/* v35.12: Status Filtering for Unassigned Pool */}
+                    {(isId0CourierName(selectedCourier) || selectedCourier === 'Не назначено') && (
+                      <div className="flex items-center gap-1.5 bg-gray-100/50 dark:bg-black/40 p-1 rounded-2xl border dark:border-white/5 shadow-inner">
+                        {([
+                          { id: 'all', label: 'ВСЕ' },
+                          { id: 'оформление', label: 'ОФОРМЛЕНИЕ' },
+                          { id: 'в работе', label: 'В РАБОТЕ' },
+                          { id: 'другое', label: 'ПРОЧИЕ' }
+                        ] as const).map((filter) => (
+                          <button
+                            key={filter.id}
+                            onClick={() => setUnassignedStatusFilter(filter.id as any)}
+                            className={clsx(
+                              "px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all whitespace-nowrap",
+                              unassignedStatusFilter === filter.id
+                                ? (isDark ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20" : "bg-white text-blue-600 shadow-md")
+                                : (isDark ? "text-gray-500 hover:text-gray-300" : "text-gray-400 hover:text-gray-600")
+                            )}
+                          >
+                            {filter.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
                     {!isId0CourierName(selectedCourier) && selectedCourier !== 'Не назначено' && (
                       <div className="flex items-center gap-4">
@@ -1823,6 +2045,17 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                         <h4 className={clsx("text-sm font-black uppercase tracking-widest", isDark ? "text-gray-300" : "text-gray-700")}>
                           Сгруппировано по времени
                         </h4>
+                        
+                        <button
+                          onClick={() => setIsGroupedExpanded(!isGroupedExpanded)}
+                          className={clsx(
+                            "p-1.5 rounded-lg transition-all",
+                            isDark ? "hover:bg-gray-700 text-gray-400" : "hover:bg-gray-100 text-gray-500"
+                          )}
+                        >
+                          <ChevronLeftIcon className={clsx("w-4 h-4 transition-transform duration-300", isGroupedExpanded ? "-rotate-90" : "rotate-0")} />
+                        </button>
+
                         <div className="ml-auto flex items-center gap-2">
                           <span className={clsx("text-[10px] font-bold uppercase tracking-tighter", isDark ? "text-gray-500" : "text-gray-400")}>
                             {confirmAddresses ? 'Уточнять адреса' : 'Автовыбор (Silent)'}
@@ -1844,11 +2077,16 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                         </div>
                       </div>
 
-                      <CourierTimeWindows
+                      <div className={clsx(
+                        "transition-all duration-500 overflow-hidden",
+                        isGroupedExpanded ? "max-h-[8000px] opacity-100 mt-6" : "max-h-0 opacity-0 mt-0"
+                      )}>
+                        <CourierTimeWindows
                         courierId={String(selectedCourier || '')}
                         courierName={isId0CourierName(selectedCourier) ? 'Не назначено' : (String(selectedCourier) || '')}
                         orders={(isId0CourierName(selectedCourier) || selectedCourier === 'Не назначено') ? deferredUnassignedPool : deferredCourierAvailableOrders}
                         isDark={isDark}
+                        ordersInRoutesSet={ordersInRoutesSet}
                         onOrderMoved={handleMoveOrderToGroup}
                         onCreateCustomGroup={handleCreateCustomGroup}
                         onCalculateRoute={async (group) => {
@@ -2004,7 +2242,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                             setTimeout(() => useCalculationProgress.getState().setProgress(0), 1000)
                           }
                         }}
-                      />
+                        />
+                      </div>
                     </div>
                   )}
 
@@ -2076,6 +2315,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                               selectedOrders={selectedOrders}
                               onSelectOrder={handleOrderSelect}
                               selectedCourier={selectedCourier}
+                              ordersInRoutesSet={ordersInRoutesSet}
                             />
                           </div>
 
@@ -2320,10 +2560,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                 setShowAddressEditModal(false)
                 setEditingOrder(null)
               }}
-              onSave={(newAddress) => handleAddressUpdate(newAddress)}
+              onSave={(newAddress, coords) => handleAddressUpdate(newAddress, coords)}
               currentAddress={editingOrder.address}
               orderNumber={editingOrder.orderNumber}
               customerName={editingOrder.customerName}
+              cityContext={localSettings.cityBias}
               isDark={isDark}
             />
           )
@@ -2458,12 +2699,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 };
 // --- Helper Components for Virtualization ---
 
-const AvailableOrdersList = React.memo(({ orders, isDark, selectedOrders, onSelectOrder, selectedCourier }: {
+const AvailableOrdersList = React.memo(({ orders, isDark, selectedOrders, onSelectOrder, selectedCourier, ordersInRoutesSet }: {
   orders: Order[],
   isDark: boolean,
   selectedOrders: Set<string>,
   onSelectOrder: (id: string) => void,
-  selectedCourier: string | null
+  selectedCourier: string | null,
+  ordersInRoutesSet: Set<string>
 }) => {
   const listRef = useRef<any>(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -2512,6 +2754,7 @@ const AvailableOrdersList = React.memo(({ orders, isDark, selectedOrders, onSele
               isSelected={selectedOrders.has(order.id)}
               onSelect={onSelectOrder}
               isUnassigned={!isId0CourierName(selectedCourier) && (isId0CourierName(order.courier) || order.courier === 'Не назначено')}
+              isRouted={ordersInRoutesSet.has(getStableOrderId(order))}
             />
           </div>
         ))}

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback, useMemo } from 'react';
 import { clsx } from 'clsx';
 import {
   QuestionMarkCircleIcon,
@@ -11,6 +11,9 @@ import {
   ExclamationCircleIcon as ExclamationCircleIconSolid 
 } from '@heroicons/react/24/solid';
 import { loadLeaflet } from '../../utils/maps/leafletLoader';
+
+// Preload Leaflet immediately when module loads so it's ready for first modal open
+loadLeaflet().catch(() => {});
 
 interface DisambiguationModalProps {
   open: boolean;
@@ -26,8 +29,6 @@ const formatDisplayDistance = (meters?: number) => {
   return `${(meters / 1000).toFixed(1)} км`;
 };
 
-
-
 export const DisambiguationModal: React.FC<DisambiguationModalProps> = React.memo(({
   open,
   title,
@@ -36,66 +37,65 @@ export const DisambiguationModal: React.FC<DisambiguationModalProps> = React.mem
   onResolve
 }) => {
   const mapInstanceRef = useRef<any>(null);
+  const mapMarkersRef = useRef<any[]>([]);
   const lastTitleRef = useRef<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) {
+  // Stable onResolve callback to avoid re-running effects
+  const onResolveRef = useRef(onResolve);
+  useEffect(() => { onResolveRef.current = onResolve; }, [onResolve]);
+
+  // Memoize first-option coords for stable center
+  const mapCenter = useMemo<[number, number]>(() => {
+    if (options && options.length > 0) {
+      const first = options[0].res;
+      const lat = typeof first.geometry.location.lat === 'function' ? first.geometry.location.lat() : first.geometry.location.lat;
+      const lng = typeof first.geometry.location.lng === 'function' ? first.geometry.location.lng() : first.geometry.location.lng;
+      if (lat && lng) return [lat, lng];
+    }
+    return [50.4501, 30.5234];
+  }, [options]);
+
+  const initMap = useCallback(async () => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    try {
+      const L = await loadLeaflet();
       if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
-      lastTitleRef.current = null;
-      return;
-    }
-
-    // Skip re-init if title is the same (prevents jitter from parent re-renders)
-    if (lastTitleRef.current === title && mapInstanceRef.current) {
-      return;
-    }
-    lastTitleRef.current = title;
-
-    const initMap = async () => {
-      // Small delay to ensure container is in DOM
-      await new Promise(r => setTimeout(r, 100));
-      const container = document.getElementById('disamb-map-container');
-      if (!container) return;
-
-      try {
-        const L = await loadLeaflet();
-        if (mapInstanceRef.current) return;
-
-        let center: [number, number] = [50.4501, 30.5234];
-        if (options && options.length > 0) {
-          const first = options[0].res;
-          const lat = typeof first.geometry.location.lat === 'function' ? first.geometry.location.lat() : first.geometry.location.lat;
-          const lng = typeof first.geometry.location.lng === 'function' ? first.geometry.location.lng() : first.geometry.location.lng;
-          if (lat && lng) center = [lat, lng];
-        }
-
-        const map = L.map(container, { zoomControl: false }).setView(center, 13);
+        // Map already exists — just re-center and update markers
+        mapInstanceRef.current.setView(mapCenter, 14, { animate: false });
+        // Remove old option markers
+        mapMarkersRef.current.forEach(m => m.remove());
+        mapMarkersRef.current = [];
+      } else {
+        // First init
+        const map = L.map(container, {
+          zoomControl: false,
+          preferCanvas: true,     // GPU-accelerated canvas renderer
+          renderer: L.canvas(),   // Force canvas for perf
+          fadeAnimation: false,   // Disable fade for speed
+          zoomAnimation: true,
+          markerZoomAnimation: false,
+        }).setView(mapCenter, 14);
         mapInstanceRef.current = map;
 
         const tileUrl = isDark 
           ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-          : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-        L.tileLayer(tileUrl).addTo(map);
+          : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
 
-        options.forEach((opt: any, idx: number) => {
-          const res = opt.res;
-          const lat = typeof res.geometry.location.lat === 'function' ? res.geometry.location.lat() : res.geometry.location.lat;
-          const lng = typeof res.geometry.location.lng === 'function' ? res.geometry.location.lng() : res.geometry.location.lng;
-          if (lat && lng) {
-            L.marker([lat, lng], { 
-                icon: L.divIcon({ 
-                    className: 'disamb-candidate-icon',
-                    html: `<div style="background-color: #3b82f6; color: white; border: 2px solid white; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold;">${idx + 1}</div>`,
-                    iconSize: [20, 20]
-                }) 
-            })
-              .addTo(map)
-              .bindPopup(`<b>${idx + 1}.</b> ${opt.label}`);
-          }
-        });
+        L.tileLayer(tileUrl, {
+          attribution: '',
+          maxZoom: 19,
+          subdomains: 'abcd',
+          updateWhenIdle: false,   // Load tiles during pan for fluidity
+          updateWhenZooming: false,
+          keepBuffer: 4,           // Pre-fetch more tiles
+          crossOrigin: 'anonymous'
+        }).addTo(map);
+
+        // ⚡ Fix tile misalignment caused by modal animation transforms
+        setTimeout(() => { map.invalidateSize({ animate: false }); }, 120);
 
         let manualMarker: any = null;
         map.on('click', (e: any) => {
@@ -105,7 +105,7 @@ export const DisambiguationModal: React.FC<DisambiguationModalProps> = React.mem
           manualMarker = L.marker([lat, lng], {
             icon: L.divIcon({
               className: 'custom-manual-icon',
-              html: `<div style="background-color: #ef4444; width: 14px; height: 14px; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 10px rgba(239,68,68,0.5);"></div>`,
+              html: `<div style="background-color:#ef4444;width:14px;height:14px;border:2px solid white;border-radius:50%;box-shadow:0 0 10px rgba(239,68,68,0.5);"></div>`,
               iconSize: [14, 14],
               iconAnchor: [7, 7]
             })
@@ -117,7 +117,7 @@ export const DisambiguationModal: React.FC<DisambiguationModalProps> = React.mem
           if (btnEl) {
             btnEl.classList.remove('hidden');
             (btnEl as any).onclick = () => {
-              onResolve({
+              onResolveRef.current({
                 geometry: { location: { lat, lng } },
                 formatted_address: 'Выбрано вручную на карте',
                 manual: true
@@ -125,20 +125,59 @@ export const DisambiguationModal: React.FC<DisambiguationModalProps> = React.mem
             };
           }
         });
-      } catch (err) {
-        console.error('Failed to init disamb map:', err);
       }
-    };
+
+      // Add new option markers
+      const L2 = (window as any).L;
+      options.forEach((opt: any, idx: number) => {
+        const res = opt.res;
+        const lat = typeof res.geometry.location.lat === 'function' ? res.geometry.location.lat() : res.geometry.location.lat;
+        const lng = typeof res.geometry.location.lng === 'function' ? res.geometry.location.lng() : res.geometry.location.lng;
+        if (lat && lng) {
+          const m = L2.marker([lat, lng], { 
+            icon: L2.divIcon({ 
+              className: 'disamb-candidate-icon',
+              html: `<div style="background-color:#3b82f6;color:white;border:2px solid white;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,0.3);">${idx + 1}</div>`,
+              iconSize: [22, 22],
+              iconAnchor: [11, 11]
+            }) 
+          }).addTo(mapInstanceRef.current)
+            .bindPopup(`<b>${idx + 1}.</b> ${opt.label}`);
+          mapMarkersRef.current.push(m);
+        }
+      });
+    } catch (err) {
+      console.error('Failed to init disamb map:', err);
+    }
+  }, [mapCenter, isDark, options]);
+
+  useEffect(() => {
+    if (!open) {
+      // Don't destroy the map — just reset markers for next use
+      mapMarkersRef.current.forEach(m => m.remove());
+      mapMarkersRef.current = [];
+      lastTitleRef.current = null;
+      return;
+    }
+
+    // Skip re-init if title is the same
+    if (lastTitleRef.current === title && mapInstanceRef.current) {
+      return;
+    }
+    lastTitleRef.current = title;
 
     initMap();
+  }, [open, title, initMap]);
 
+  // Destroy only on component unmount
+  useEffect(() => {
     return () => {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
       }
     };
-  }, [open, title, options, isDark, onResolve]);
+  }, []);
 
   if (!open) return null;
 
@@ -188,6 +227,7 @@ export const DisambiguationModal: React.FC<DisambiguationModalProps> = React.mem
             </div>
             <div 
               id="disamb-map-container"
+              ref={containerRef}
               className={clsx(
                 "w-full h-64 rounded-xl border-2 overflow-hidden relative",
                 isDark ? "bg-black/40 border-white/5" : "bg-gray-100 border-gray-100"

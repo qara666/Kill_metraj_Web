@@ -3,6 +3,7 @@ import { localStorageUtils } from '../utils/ui/localStorage'
 import { toast } from 'react-hot-toast'
 import { normalizeCourierName } from '../utils/data/courierName'
 import { enrichOrderGeodata } from '../utils/data/excelProcessor'
+import { isOrderCompleted } from '../utils/data/orderStatus'
 
 interface ExcelData {
   orders: any[]
@@ -59,17 +60,26 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                 const json = await response.json();
                 if (json.success && json.data) {
                   const serverData = json.data;
-                  // Hybrid Sync: Merge server data with local manual overrides
                   const localOverrides = localStorage.getItem('km_manual_overrides');
                   if (localOverrides && serverData.orders) {
-                    const overrides = JSON.parse(localOverrides);
-                    serverData.orders = serverData.orders.map((o: any) => {
-                      const id = String(o.id || o.orderNumber);
-                      if (overrides[id]) {
-                        return { ...o, ...overrides[id] };
-                      }
-                      return o;
-                    });
+                    try {
+                      const overrides = JSON.parse(localOverrides);
+                      serverData.orders = serverData.orders.map((o: any) => {
+                        // v35.13: Robust ID matching (ID first, then Number)
+                        const id = o.id ? String(o.id) : null;
+                        const num = o.orderNumber ? String(o.orderNumber) : null;
+                        
+                        const override = (id && overrides[id]) || (num && overrides[num]);
+                        
+                        if (override) {
+                          // Hybrid Sync: Merge ALL manual overrides from local storage
+                          return { ...o, ...override };
+                        }
+                        return o;
+                      });
+                    } catch (e) {
+                      console.warn('Failed to parse or apply local overrides:', e);
+                    }
                   }
 
                   const mapped = applyCourierVehicleMap(serverData);
@@ -137,33 +147,88 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     }
   }, []);
 
-  /**
-   * Universal Persistence Effect
-   * Watches for excelData changes and handles debounced saving
-   */
   useEffect(() => {
     if (!excelData) return;
     
     // Check if we should skip this save (e.g., just loaded from server)
     if (bypassSaveRef.current) {
+      // NOTE: We reset this in the manual overrides effect or at the end of this one
+      // to ensure both effects can see the "new" data without bypassing it.
+    } else {
+      // Immediate sync to localStorage for UI snappiness on reload
+      const lsTimeout = setTimeout(() => syncToLocalStorage(excelData), 500);
+
+      // Debounced save to server (2.0s)
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = setTimeout(() => saveDataToServer(excelData), 2000);
+
+      return () => {
+        clearTimeout(lsTimeout);
+        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      };
+    }
+  }, [excelData, syncToLocalStorage]);
+
+  /**
+   * Automatic Manual Overrides Persistence
+   * v35.12: Watch excelData.orders and auto-persist dirty orders to km_manual_overrides
+   */
+  useEffect(() => {
+    if (!excelData?.orders) return;
+    
+    // SOTA 3.12/13: If we are bypassing (just loaded from server), we just reset the flag
+    // and wait for the NEXT change to trigger real persistence.
+    if (bypassSaveRef.current) {
       bypassSaveRef.current = false;
       return;
     }
 
-    // Immediate sync to localStorage for UI snappiness on reload
-    // We don't debounce this as heavily anymore since Disk IO is usually fine
-    // but we can still use a small timeout if needed.
-    const lsTimeout = setTimeout(() => syncToLocalStorage(excelData), 500);
+    try {
+      const overrides: Record<string, any> = {};
+      // Scan for any manual modification or settled state
+      excelData.orders.forEach((o: any) => {
+        // v35.13: Use standard isOrderCompleted for broader settlement detection
+        const isSettled = isOrderCompleted(o.status);
+        if (o.manualGroupId || o.deadlineAt || o.isAddressLocked || o.settledDate || o.paymentMethodOverridden || isSettled) {
+          const id = String(o.id || o.orderNumber);
+          overrides[id] = {
+            // Routing
+            manualGroupId: o.manualGroupId,
+            deadlineAt: o.deadlineAt,
+            plannedTime: o.plannedTime,
+            courier: o.courier,
+            
+            // Address & Geodata
+            address: o.address,
+            lat: o.lat,
+            lng: o.lng,
+            coords: o.coords,
+            isAddressLocked: o.isAddressLocked,
+            locationType: o.locationType,
+            
+            // Settlement (Financials)
+            status: o.status,
+            paymentMethod: o.paymentMethod,
+            paymentMethodOverridden: o.paymentMethodOverridden,
+            settlementNote: o.settlementNote,
+            settledAmount: o.settledAmount,
+            settledDate: o.settledDate,
+            settlementSessionId: o.settlementSessionId,
+            sessionTotalReceived: o.sessionTotalReceived,
+            sessionTotalDifference: o.sessionTotalDifference,
+            sessionTotalExpected: o.sessionTotalExpected,
+            untakenChange: o.untakenChange,
+            originalChangeAmount: o.originalChangeAmount
+          };
+        }
+      });
 
-    // Debounced save to server (2.0s)
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => saveDataToServer(excelData), 2000);
-
-    return () => {
-      clearTimeout(lsTimeout);
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    };
-  }, [excelData, syncToLocalStorage]);
+      // Always update if we have ANY orders, to keep it in sync (even if empty)
+      localStorage.setItem('km_manual_overrides', JSON.stringify(overrides));
+    } catch (e) {
+      console.warn('Auto-save manual overrides failed:', e);
+    }
+  }, [excelData?.orders]);
 
   /**
    * Universal Protection Helper:
@@ -305,24 +370,9 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     toast.success(`Способ оплаты изменен на ${newPaymentMethod}`, { duration: 2000 });
   }, [updateExcelData])
 
-  const saveManualOverrides = useCallback((orders: any[]) => {
-    try {
-      const overrides: Record<string, any> = {};
-      orders.forEach(o => {
-        if (o.manualGroupId || o.deadlineAt) {
-          const id = String(o.id || o.orderNumber);
-          overrides[id] = {
-            manualGroupId: o.manualGroupId,
-            deadlineAt: o.deadlineAt,
-            plannedTime: o.plannedTime,
-            courier: o.courier
-          };
-        }
-      });
-      localStorage.setItem('km_manual_overrides', JSON.stringify(overrides));
-    } catch (e) {
-      console.warn('Error saving overrides:', e);
-    }
+  const saveManualOverrides = useCallback((_orders: any[]) => {
+    // v35.11: Now handled automatically by useEffect on [excelData.orders]
+    // Keeping as no-op for backward compatibility
   }, []);
 
   const contextValue = useMemo(() => ({
@@ -387,8 +437,11 @@ function applyCourierVehicleMap(data: any, current?: any): any {
         return enrichOrderGeodata(o);
     }) : []
     
-    const couriers = Array.isArray(data.couriers) ? [...data.couriers] : []
-    const courierNamesInList = new Set(couriers.map(c => c.name || c._id || c.id));
+    const couriers = Array.isArray(data.couriers) ? data.couriers.map((c: any) => ({
+        ...c,
+        vehicleType: String(c.vehicleType || 'car').toLowerCase().trim()
+    })) : []
+    const courierNamesInList = new Set(couriers.map((c: any) => c.name || c._id || c.id));
 
     // 1. Process Couriers from orders (efficiently)
     for (let i = 0; i < orders.length; i++) {
