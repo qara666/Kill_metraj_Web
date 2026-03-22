@@ -1,19 +1,21 @@
 import React, { memo } from 'react';
-import { 
-  TruckIcon, 
-  MapIcon, 
-  CheckBadgeIcon, 
-  TrashIcon, 
-  PencilIcon, 
-  ExclamationTriangleIcon,
-  ExclamationCircleIcon,
+import {
+  TruckIcon,
+  PencilIcon,
+  TrashIcon,
   ClockIcon,
   PlayIcon,
   ArrowPathIcon
 } from '@heroicons/react/24/outline';
+import {
+  ExclamationTriangleIcon,
+  CheckBadgeIcon,
+  HomeIcon,
+  MapIcon,
+  ExclamationCircleIcon
+} from '@heroicons/react/24/solid';
 import { clsx } from 'clsx';
 import { Route, Order } from '../../types/route';
-import { getPaymentMethodBadgeProps } from '../../utils/data/paymentMethodHelper';
 import { isOrderCompleted } from '../../utils/data/orderStatus';
 
 interface RouteCardProps {
@@ -23,7 +25,6 @@ interface RouteCardProps {
   anomalyCheck: any;
   formatDistance: (dist: number) => string;
   formatDuration: (dur: number) => string;
-  translateLocationType: (type: string) => string;
   onOpenGoogleMaps: (route: Route) => void;
   onOpenValhalla: (route: Route) => void;
   onRecalculate: (route: Route) => void;
@@ -39,7 +40,6 @@ export const RouteCard: React.FC<RouteCardProps> = memo(({
   anomalyCheck,
   formatDistance,
   formatDuration,
-  translateLocationType,
   onOpenGoogleMaps,
   onOpenValhalla,
   onRecalculate,
@@ -50,9 +50,10 @@ export const RouteCard: React.FC<RouteCardProps> = memo(({
   return (
     <div className={clsx(
       'group rounded-[2.5rem] border-2 p-8 transition-all duration-200 relative overflow-hidden',
+      route.isVirtual ? 'animate-pulse-slow shadow-blue-500/10' : '',
       isDark
-        ? 'bg-gray-800/40 border-gray-700 hover:border-blue-500/50 hover:bg-gray-800/80 shadow-black/20'
-        : 'bg-white border-blue-50 shadow-blue-500/5 hover:shadow-2xl hover:border-blue-400'
+        ? clsx('bg-gray-800/40 border-gray-700 hover:border-blue-500/50 hover:bg-gray-800/80 shadow-black/20', route.isVirtual && 'border-blue-500/40 bg-blue-500/5')
+        : clsx('bg-white border-blue-50 shadow-blue-500/5 hover:shadow-2xl hover:border-blue-400', route.isVirtual && 'border-blue-200 bg-blue-50/30')
     )}>
       {/* Линия-акцент */}
       <div className={clsx(
@@ -85,7 +86,15 @@ export const RouteCard: React.FC<RouteCardProps> = memo(({
               )}>
                 {courierVehicle === 'car' ? 'Авто' : 'Мото'}
               </span>
-              {route.orders.every(o => isOrderCompleted(o.status)) && (
+              {route.isVirtual && (
+                <span className={clsx(
+                  "text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-widest animate-pulse",
+                  isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
+                )}>
+                  НОВИЙ БЛОК
+                </span>
+              )}
+              {route.orders.every(o => isOrderCompleted(o.status)) && !route.isVirtual && (
                 <span className="bg-green-500 text-white text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-widest flex items-center gap-1">
                   <CheckBadgeIcon className="w-3 h-3" />
                   ГОТОВ
@@ -152,42 +161,185 @@ export const RouteCard: React.FC<RouteCardProps> = memo(({
         </div>
       </div>
 
+      {/* Prominent Address Warning Block v41 */}
+      {(() => {
+        const missingCoordsOrders = route.orders.filter(o => !o.coords?.lat || !o.coords?.lng);
+        if (missingCoordsOrders.length === 0) return null;
+
+        return (
+          <div className={clsx(
+            "mb-8 p-6 rounded-[2rem] border-2 animate-pulse-slow transition-all duration-300",
+            isDark 
+              ? "bg-red-500/10 border-red-500/30 text-red-400 shadow-[0_8px_32px_rgba(239,68,68,0.1)]" 
+              : "bg-red-50 border-red-100 text-red-600 shadow-[0_8px_32px_rgba(239,68,68,0.05)]"
+          )}>
+            <div className="flex items-center gap-4 mb-4">
+              <div className={clsx(
+                "p-2 rounded-xl",
+                isDark ? "bg-red-500/20" : "bg-red-100"
+              )}>
+                <ExclamationTriangleIcon className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black uppercase tracking-[0.15em] leading-tight">
+                  Потребує уточнення адреси
+                </h4>
+                <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mt-0.5">
+                  Відсутні координати для {missingCoordsOrders.length} {missingCoordsOrders.length === 1 ? 'замовлення' : 'замовлень'}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {missingCoordsOrders.map((order, pIdx) => (
+                <div 
+                  key={`missing-coords-${order.id || pIdx}`}
+                  className={clsx(
+                    "flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl border border-dashed transition-all group/item",
+                    isDark ? "border-red-500/20 bg-red-500/5 hover:bg-red-500/10" : "border-red-200 bg-white hover:bg-red-50/50"
+                  )}
+                >
+                  <div className="flex items-center gap-3 min-w-0 mb-3 sm:mb-0">
+                    <div className={clsx(
+                      "w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-xs font-black",
+                      isDark ? "bg-red-500/20" : "bg-red-50"
+                    )}>
+                      {pIdx + 1}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                         <span className="font-black text-sm">#{order.orderNumber}</span>
+                      </div>
+                      <p className="text-xs truncate opacity-70 leading-tight mt-0.5" title={order.address}>{order.address}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => onEditAddress(order)}
+                    className={clsx(
+                      "group flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-[0.1em] transition-all transform active:scale-95 shadow-md",
+                      isDark 
+                        ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" 
+                        : "bg-red-600 text-white hover:bg-red-700 shadow-red-500/20"
+                    )}
+                  >
+                    <PencilIcon className="w-4 h-4" />
+                    УТОЧНИТИ
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="space-y-4">
         {route.orders.map((order: Order, index: number) => {
-          const meta = (route as any).geoMeta?.waypoints?.[index]
-          const metaBadge = (meta || order.kmlZone) ? (
-            <div className="mt-2 flex items-center flex-wrap gap-2 text-[10px] font-black uppercase tracking-widest">
-              {(meta?.locationType) && (
-                <span className={clsx(
-                  'px-2 py-0.5 rounded-lg border',
-                  meta.locationType === 'ROOFTOP'
-                    ? (isDark ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-green-50 text-green-700 border-green-200')
-                    : meta.locationType === 'RANGE_INTERPOLATED'
-                      ? (isDark ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : 'bg-yellow-50 text-yellow-700 border-yellow-200')
-                      : (isDark ? 'bg-gray-700 text-gray-400 border-gray-600' : 'bg-gray-50 text-gray-600 border-gray-200')
-                )}>{translateLocationType(meta.locationType)}</span>
-              )}
-              {(typeof meta?.streetNumberMatched === 'boolean' || typeof order.streetNumberMatched === 'boolean') && (
-                <span className={clsx(
-                  'px-2 py-0.5 rounded-lg border',
-                  (meta?.streetNumberMatched ?? order.streetNumberMatched)
-                    ? (isDark ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-blue-50 text-blue-700 border-blue-200')
-                    : (isDark ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-red-50 text-red-700 border-red-200')
+          const raw = (order as any).raw || {};
+          const coords = (order as any).coords || {};
+          const meta = (order as any).locationMeta || {};
+
+          const routeMeta = (route as any).geoMeta?.waypoints?.[index];
+          const locType = routeMeta?.locationType || order.locationType || coords.locationType || raw.locationType;
+          const isRooftop = locType === 'ROOFTOP';
+          const isInterpolated = locType === 'RANGE_INTERPOLATED';
+          
+          const streetMatched = routeMeta?.streetNumberMatched ?? (order as any)?.masterOrder?.streetNumberMatched ?? order.streetNumberMatched ?? raw.streetNumberMatched ?? coords.streetNumberMatched;
+
+          const opZone = routeMeta?.zoneName || order.deliveryZone || raw.deliveryZone;
+          const kmlZone = order.kmlZone || meta.kmlZone || coords.kmlZone;
+          const hub = order.kmlHub || meta.hubName || coords.kmlHub;
+          
+          const metaBadge = (
+            <div className="mt-2 flex items-center flex-wrap gap-1">
+              {/* Verified Status v42.1 */}
+              {(isRooftop) && (
+                <div className={clsx(
+                  "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                  isDark ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-700"
                 )}>
-                  {(meta?.streetNumberMatched ?? order.streetNumberMatched) ? ' Найден номер дома' : ' Не нашел номера дома'}
-                </span>
+                  <CheckBadgeIcon className="w-3.5 h-3.5" />
+                  ТОЧНИЙ АДРЕС
+                </div>
               )}
-              {(meta?.zoneName || order.kmlZone) && (
-                <span className={clsx(
-                  'px-2 py-0.5 rounded-lg border shadow-sm flex items-center gap-1',
-                  isDark ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+
+              {/* Locked/Verified Status v42.1 */}
+              {(order as any).isLocked && (
+                <div className={clsx(
+                  "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                  isDark ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-green-50 border-green-200 text-green-700"
                 )}>
-                  <MapIcon className="w-3 h-3" />
-                  {order.kmlZone || meta?.zoneName}{(order.kmlHub || meta?.hubName) ? ` / ${order.kmlHub || meta?.hubName}` : ''}
-                </span>
+                  <CheckBadgeIcon className="w-3.5 h-3.5" />
+                  ПЕРЕВІРЕНО
+                </div>
+              )}
+
+              {(() => {
+                const kmlFull = kmlZone ? `${hub ? hub + ' - ' : ''}${kmlZone}` : null;
+                const same = opZone && kmlFull && opZone.trim().toLowerCase() === kmlFull.trim().toLowerCase();
+                
+                return (
+                  <div className={clsx(
+                    "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                    ((String(opZone || '').includes('ID:0') || String(kmlZone || '').includes('ID:0')) && !same)
+                      ? (isDark ? "bg-red-500/20 border-red-500/40 text-red-400 animate-pulse" : "bg-red-50 border-red-200 text-red-600 shadow-red-500/10")
+                      : (isDark ? "bg-indigo-500/10 border-indigo-500/30 text-indigo-300" : "bg-indigo-50 border-indigo-100 text-indigo-700")
+                  )}>
+                    <MapIcon className="w-3.5 h-3.5 opacity-70" />
+                    <span className="opacity-60 mr-0.5">СЕКТОР:</span>
+                    {(() => {
+                      if (same) return `FO/KML:${opZone.trim()}`.toUpperCase();
+                      
+                      const zones = [
+                        opZone ? `FO:${opZone}` : null,
+                        kmlFull ? `KML:${kmlFull}` : null
+                      ].filter(Boolean).join(' | ').toUpperCase();
+                      return zones || '—';
+                    })()}
+                  </div>
+                );
+              })()}
+
+              {/* Street Match v42.1 */}
+              <div className={clsx(
+                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                locType && locType !== 'APPROXIMATE' && !isInterpolated
+                  ? (isDark ? "bg-teal-500/10 border-teal-500/30 text-teal-400" : "bg-teal-50 border-teal-100 text-teal-700")
+                  : (isDark ? "bg-rose-500/10 border-rose-500/30 text-rose-400" : "bg-rose-50 border-rose-200 text-rose-700")
+              )}>
+                <MapIcon className="w-3.5 h-3.5 opacity-70" />
+                <span className="opacity-60 mr-0.5">ВУЛИЦЯ:</span>
+                {locType && locType !== 'APPROXIMATE' && !isInterpolated ? 'ТАК' : 'НІ'}
+              </div>
+
+              {/* House Match v42.1 */}
+              {(() => {
+                const houseMatched = streetMatched || isInterpolated || isRooftop;
+                return (
+                  <div className={clsx(
+                    "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                    houseMatched
+                      ? (isDark ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400" : "bg-cyan-50 border-cyan-100 text-cyan-700")
+                      : (isDark ? "bg-orange-500/10 border-orange-500/30 text-orange-400" : "bg-orange-50 border-orange-200 text-orange-700")
+                  )}>
+                    <HomeIcon className="w-3.5 h-3.5 opacity-70" />
+                    <span className="opacity-60 mr-0.5">БУДИНОК:</span>
+                    {houseMatched ? 'ТАК' : 'НІ'}
+                  </div>
+                );
+              })()}
+
+              {(!(order.lat || (order as any).coords?.lat) || !(order.lng || (order as any).coords?.lng)) && (
+                <div className={clsx(
+                  "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 animate-pulse shadow-sm",
+                  isDark ? "bg-amber-500/10 border-amber-500/30 text-amber-500" : "bg-amber-50 border-amber-200 text-amber-700 shadow-amber-500/10"
+                )}>
+                   <ExclamationCircleIcon className="w-3.5 h-3.5" />
+                   УТОЧНИТИ АДРЕСУ
+                </div>
               )}
             </div>
-          ) : null
+          );
+
 
           const hasAddressIssues = anomalyCheck?.errors.some((error: string) =>
             error.includes('адрес') || error.includes('адресов')
@@ -195,7 +347,7 @@ export const RouteCard: React.FC<RouteCardProps> = memo(({
 
           return (
             <div
-              key={order.id}
+              key={`${order.id || order.orderNumber || 'order'}-${index}`}
               draggable
               onDragStart={(e) => {
                 e.dataTransfer.setData('orderId', order.id);
@@ -224,20 +376,13 @@ export const RouteCard: React.FC<RouteCardProps> = memo(({
                     )}>#{order.orderNumber}</span>
                     {order.plannedTime && order.plannedTime !== '00:00' && order.plannedTime !== '00:00:00' && order.plannedTime !== 'Без времени' && (
                       <span className={clsx(
-                        'px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider',
-                        isDark ? 'bg-purple-600/20 text-purple-300' : 'bg-purple-50 text-purple-700 border border-purple-100'
+                        'flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider',
+                        isDark ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'bg-purple-50 text-purple-700 border border-purple-200 shadow-sm'
                       )}>
+                        <ClockIcon className="w-3.5 h-3.5 opacity-70" />
                         {order.plannedTime}
                       </span>
                     )}
-                    {order.paymentMethod && (() => {
-                      const badgeProps = getPaymentMethodBadgeProps(order.paymentMethod, isDark)
-                      return (
-                        <span className={clsx('px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider', badgeProps.bgColorClass, badgeProps.textColorClass)}>
-                          {badgeProps.text}
-                        </span>
-                      )
-                    })()}
                   </div>
                   <div className={clsx(
                     'truncate text-sm font-medium',
@@ -278,7 +423,7 @@ export const RouteCard: React.FC<RouteCardProps> = memo(({
               isDark ? "bg-blue-500/10 text-blue-300" : "bg-blue-50 text-blue-700"
             )}>
               <MapIcon className="w-5 h-5" />
-              <span className="text-sm font-black tracking-tight">{formatDistance(Number(route.totalDistance || 0))}</span>
+              <span className="text-sm font-black tracking-tight">{formatDistance(Number(route.totalDistance || 0))} км</span>
             </div>
             <div className={clsx(
               "flex items-center gap-3 px-4 py-2 rounded-2xl",
@@ -291,7 +436,7 @@ export const RouteCard: React.FC<RouteCardProps> = memo(({
         ) : (
           <div className="flex items-center gap-3 text-sm font-bold opacity-30 uppercase tracking-widest px-4">
             <ExclamationCircleIcon className="w-5 h-5" />
-            <span>Расстояние не рассчитано</span>
+            <span>{route.isVirtual ? 'Потрібен розрахунок' : 'Расстояние не рассчитано'}</span>
           </div>
         )}
       </div>

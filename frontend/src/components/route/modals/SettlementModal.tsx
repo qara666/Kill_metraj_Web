@@ -106,25 +106,29 @@ export function SettlementModal({
         const order = orders.find((o: any) => String(o.id || o.orderNumber) === id);
         if (!order) return;
 
-        const changeVal = parseFloat(order.changeAmount || 0);
-        if (changeVal === 0) return;
+        const billVal = parseFloat(order.changeAmount || 0);     // e.g. 700
+        const orderVal = parseFloat(order.amount || order.totalAmount || 0); // e.g. 652
+        
+        if (billVal <= orderVal) return;
+
+        const advance = billVal - orderVal; // e.g. 48 UAH
 
         const newSet = new Set(untakenChanges);
         const isNowUntaken = !newSet.has(id);
 
         if (isNowUntaken) {
             newSet.add(id);
-            // Subtract change from order amount
+            // Subtract advance because courier didn't take the change money from the till
             setOrderAmounts(prev => ({
                 ...prev,
-                [id]: (parseFloat(prev[id]) - changeVal).toString()
+                [id]: (parseFloat(prev[id] || '0') - advance).toString()
             }));
         } else {
             newSet.delete(id);
-            // Add change back to order amount
+            // Revert advance subtraction
             setOrderAmounts(prev => ({
                 ...prev,
-                [id]: (parseFloat(prev[id]) + changeVal).toString()
+                [id]: (parseFloat(prev[id] || '0') + advance).toString()
             }));
         }
         setUntakenChanges(newSet);

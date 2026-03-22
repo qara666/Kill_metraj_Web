@@ -28,6 +28,16 @@ interface DashboardStoreState {
     apiTimeFilterEnabled: boolean;
     apiManualSyncTrigger: number | null;
 
+    // Background Auto-Routing Status
+    autoRoutingStatus: {
+        isActive: boolean;
+        lastUpdate: number | null;
+        processedCount: number;
+        totalCount: number;
+        processedCouriers: number;
+        totalCouriers: number;
+    };
+
     // Actions
     setApiKey: (apiKey: string) => void;
     setApiDepartmentId: (departmentId: number | null) => void;
@@ -42,6 +52,7 @@ interface DashboardStoreState {
     setApiDateShiftFilterEnabled: (enabled: boolean) => void;
     setApiTimeFilterEnabled: (enabled: boolean) => void;
     triggerApiManualSync: () => void;
+    setAutoRoutingStatus: (status: Partial<DashboardStoreState['autoRoutingStatus']>) => void;
 }
 
 export const useDashboardStore = create<DashboardStoreState>()(
@@ -76,6 +87,15 @@ export const useDashboardStore = create<DashboardStoreState>()(
             apiTimeFilterEnabled: false,
             apiManualSyncTrigger: null,
 
+            autoRoutingStatus: {
+                isActive: false,
+                lastUpdate: null,
+                processedCount: 0,
+                totalCount: 0,
+                processedCouriers: 0,
+                totalCouriers: 0,
+            },
+
             setApiKey: (key) => set({ apiKey: key }),
             setApiDepartmentId: (id) => set({ apiDepartmentId: id }),
             setApiAutoRefreshEnabled: (enabled) => set({ apiAutoRefreshEnabled: enabled }),
@@ -89,6 +109,9 @@ export const useDashboardStore = create<DashboardStoreState>()(
             setApiDateShiftFilterEnabled: (enabled) => set({ apiDateShiftFilterEnabled: enabled }),
             setApiTimeFilterEnabled: (enabled) => set({ apiTimeFilterEnabled: enabled }),
             triggerApiManualSync: () => set({ apiManualSyncTrigger: Date.now() }),
+            setAutoRoutingStatus: (status: Partial<DashboardStoreState['autoRoutingStatus']>) => set((state) => ({
+                autoRoutingStatus: { ...state.autoRoutingStatus, ...status }
+            })),
         }),
         {
             name: 'dashboard-sync-storage-v1',

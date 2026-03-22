@@ -4,6 +4,12 @@ import {
   QuestionMarkCircleIcon,
   TrashIcon
 } from '@heroicons/react/24/outline';
+import { 
+  CheckBadgeIcon as CheckBadgeIconSolid, 
+  HomeIcon as HomeIconSolid, 
+  MapIcon as MapIconSolid, 
+  ExclamationCircleIcon as ExclamationCircleIconSolid 
+} from '@heroicons/react/24/solid';
 import { loadLeaflet } from '../../utils/maps/leafletLoader';
 
 interface DisambiguationModalProps {
@@ -20,15 +26,7 @@ const formatDisplayDistance = (meters?: number) => {
   return `${(meters / 1000).toFixed(1)} км`;
 };
 
-const translateLocationType = (locationType: string): string => {
-  switch (locationType) {
-    case 'ROOFTOP': return 'Точный дом';
-    case 'RANGE_INTERPOLATED': return 'Приблизительно (интерполяция)';
-    case 'GEOMETRIC_CENTER': return 'Центр улицы/квартала';
-    case 'APPROXIMATE': return 'Приблизительно';
-    default: return locationType;
-  }
-};
+
 
 export const DisambiguationModal: React.FC<DisambiguationModalProps> = React.memo(({
   open,
@@ -243,33 +241,79 @@ export const DisambiguationModal: React.FC<DisambiguationModalProps> = React.mem
                           {isTechnical && (
                             <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 font-black uppercase">ТЕХНИЧЕСКИЙ</span>
                           )}
-                          {option.zoneName && (
-                            <span className={clsx(
-                              "text-[9px] px-1.5 py-0.5 rounded font-black uppercase",
-                              isTechnical
-                                ? "bg-amber-500/5 text-amber-600/70"
-                                : "bg-blue-500/10 text-blue-500"
-                            )}>
-                              {option.zoneName}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-4 text-[10px] font-bold opacity-50">
-                          {option.distanceMeters !== undefined && (
-                            <span>Дистанция: {formatDisplayDistance(option.distanceMeters)}</span>
-                          )}
-                          {option.res?.geometry?.location_type && (
-                            <span className={clsx(
-                              "px-1.5 py-0.5 rounded",
-                              option.res.geometry.location_type === 'ROOFTOP' 
-                                ? (isDark ? "bg-green-500/10 text-green-400" : "bg-green-50 text-green-700")
-                                : option.res.geometry.location_type === 'RANGE_INTERPOLATED'
-                                  ? (isDark ? "bg-blue-500/10 text-blue-400" : "bg-blue-50 text-blue-700")
-                                  : (isDark ? "bg-yellow-500/10 text-yellow-500" : "bg-yellow-50 text-yellow-700")
-                            )}>
-                              Тип: {translateLocationType(option.res.geometry.location_type)}
-                            </span>
-                          )}
+                          {/* Unified Badges v42.1 - Premium "Cool" Labels */}
+                          <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                            {/* Verified Status v42.1 */}
+                            {option.res.geometry.location_type === 'ROOFTOP' && (
+                              <div className={clsx(
+                                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                                isDark ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-700"
+                              )}>
+                                <CheckBadgeIconSolid className="w-3.5 h-3.5" />
+                                ТОЧНИЙ АДРЕС
+                              </div>
+                            )}
+
+                            {/* Sector / Zone Info v42.3 (Smart Deduplication) */}
+                            {option.res.kmlZone && (
+                              <div className={clsx(
+                                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                                isTechnical
+                                  ? (isDark ? "bg-amber-500/10 border-amber-500/30 text-amber-500" : "bg-amber-50 border-amber-200 text-amber-600")
+                                  : (isDark ? "bg-indigo-500/10 border-indigo-500/30 text-indigo-300" : "bg-indigo-50 border-indigo-100 text-indigo-700")
+                              )}>
+                                <MapIconSolid className="w-3.5 h-3.5 opacity-70" />
+                                <span className="opacity-60 mr-0.5">СЕКТОР:</span>
+                                {`KML:${option.res.kmlHub ? option.res.kmlHub + ' - ' : ''}${option.res.kmlZone}`.toUpperCase()}
+                              </div>
+                            )}
+
+                            {/* Street Match v42.1 */}
+                            {option.res.geometry.location_type && (
+                              <div className={clsx(
+                                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                                option.res.geometry.location_type !== 'APPROXIMATE'
+                                  ? (isDark ? "bg-teal-500/10 border-teal-500/30 text-teal-400" : "bg-teal-50 border-teal-100 text-teal-700")
+                                  : (isDark ? "bg-rose-500/10 border-rose-500/30 text-rose-400" : "bg-rose-50 border-rose-200 text-rose-700")
+                              )}>
+                                <MapIconSolid className="w-3.5 h-3.5 opacity-70" />
+                                <span className="opacity-60 mr-0.5">ВУЛИЦЯ:</span>
+                                {option.res.geometry.location_type !== 'APPROXIMATE' ? 'ТАК' : 'НІ'}
+                              </div>
+                            )}
+
+                            {/* House Match v42.1 */}
+                            {(option.res.geometry.location_type === 'RANGE_INTERPOLATED' || option.res.geometry.location_type === 'ROOFTOP') && (
+                              <div className={clsx(
+                                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                                isDark ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400" : "bg-cyan-50 border-cyan-100 text-cyan-700"
+                              )}>
+                                <HomeIconSolid className="w-3.5 h-3.5 opacity-70" />
+                                <span className="opacity-60 mr-0.5">БУДИНОК:</span>
+                                ТАК
+                              </div>
+                            )}
+
+                            {/* Unverified Warning - Only if coordinates are missing */}
+                            {(!(option.res.geometry.location.lat || (option.res as any).coords?.lat) || !(option.res.geometry.location.lng || (option.res as any).coords?.lng)) && (
+                              <div className={clsx(
+                                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 shadow-sm",
+                                isDark ? "bg-amber-500/10 border-amber-500/30 text-amber-500" : "bg-amber-50 border-amber-200 text-amber-700 shadow-amber-500/10"
+                              )}>
+                                <ExclamationCircleIconSolid className="w-3.5 h-3.5" />
+                                УТОЧНИТИ АДРЕСУ
+                              </div>
+                            )}
+
+                            {option.distanceMeters !== undefined && (
+                              <div className={clsx(
+                                "px-2 py-0.5 rounded-lg border text-[9px] font-bold opacity-60 flex items-center h-6 transition-all duration-300 shadow-sm",
+                                isDark ? 'bg-white/5 border-white/10 text-gray-300' : 'bg-gray-100 border-gray-200 text-gray-600'
+                              )}>
+                                ДИСТАНЦІЯ: {formatDisplayDistance(option.distanceMeters)}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>

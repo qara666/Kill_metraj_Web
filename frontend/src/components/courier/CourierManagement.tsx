@@ -7,22 +7,33 @@ import {
   QuestionMarkCircleIcon,
   MagnifyingGlassIcon,
   XMarkIcon,
-  MapIcon,
-  ClockIcon,
   PlusIcon,
   TrashIcon,
-  PlayIcon
+  PlayIcon,
+  ExclamationTriangleIcon,
+  BoltIcon,
+  PencilIcon
 } from '@heroicons/react/24/outline'
+import {
+  CheckBadgeIcon,
+  HomeIcon,
+  MapIcon,
+  ExclamationCircleIcon
+} from '@heroicons/react/24/solid'
 import { clsx } from 'clsx'
 import { CourierCard } from './CourierCard'
 import { useExcelData } from '../../contexts/ExcelDataContext'
 import { useTheme } from '../../contexts/ThemeContext'
+import { useRouteGeocoding } from '../../hooks/useRouteGeocoding'
 
 import { toast } from 'react-hot-toast'
 import { Tooltip } from '../shared/Tooltip'
 
 import { normalizeCourierName } from '../../utils/data/courierName'
 import { exportToGoogleMaps, exportToValhalla } from '../../utils/routes/routeExport'
+import { AddressEditModal } from '../modals/AddressEditModal'
+import { useKmlData } from '../../hooks/useKmlData'
+import { cleanAddress, needsAddressClarification } from '../../utils/data/addressUtils'
 
 // Ленивая загрузка тяжелых компонентов
 const HelpModalCouriers = lazy(() => import('../modals/HelpModalCouriers').then(m => ({ default: m.HelpModalCouriers })))
@@ -37,8 +48,10 @@ interface Courier {
   location: string
   isActive: boolean
   orders: number
+  ordersInRoutes?: number
   totalDistance: number
   totalAmount?: number
+  hasErrors?: boolean
 }
 
 interface CourierManagementProps {
@@ -62,6 +75,114 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
   const [routeToDelete, setRouteToDelete] = useState<any | null>(null)
   const [showDistanceModal, setShowDistanceModal] = useState(false)
   const [selectedCourierForDistance, setSelectedCourierForDistance] = useState<Courier | null>(null)
+  const [addressEditOrder, setAddressEditOrder] = useState<any | null>(null)
+  const [addressEditRouteId, setAddressEditRouteId] = useState<string | null>(null)
+
+  const {
+    settings,
+    selectedHubs,
+    selectedZones,
+    cachedHubPolygons,
+    cachedAllKmlPolygons
+  } = useKmlData()
+
+  const [confirmAddresses] = useState<boolean>(() => {
+    const saved = localStorage.getItem('confirmAddresses');
+    return saved !== null ? JSON.parse(saved) : false;
+  });
+
+  const getSelectedCity = useCallback((): { city: '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'; country: 'Украина'; region: 'UA' } => {
+    const city = (settings.cityBias || '') as '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'
+    return { city, country: 'Украина', region: 'UA' }
+  }, [settings.cityBias])
+
+  const cleanAddressForRoute = useCallback((raw: string): string => {
+    if (!raw) return '';
+    let base = raw
+      .replace(/(?:под\.|подъезд|п\.)\s*\d+/gi, '')
+      .replace(/(?:эт\.|этаж|эт)\s*\d+/gi, '')
+      .replace(/(?:кв\.|квартира|кв)\s*\d+/gi, '')
+      .replace(/(?:д\/ф|домофон)\s*[^,]*/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    base = cleanAddress(base).trim();
+    if (!base) return base;
+    
+    const lower = base.toLowerCase()
+    const { city, country } = getSelectedCity()
+    if (!city) return base
+    const cityOrRegion = city
+
+    if (!lower.includes(city.toLowerCase()) && !lower.includes('область') && !lower.includes('украина')) {
+      return `${base}, ${cityOrRegion}, ${country}`
+    }
+    return base
+  }, [getSelectedCity])
+
+  const { calculateRouteDistance } = useRouteGeocoding({
+    settings,
+    confirmAddresses,
+    selectedHubs,
+    selectedZones,
+    cachedHubPolygons,
+    cachedAllKmlPolygons,
+    updateExcelData,
+    setShowCorrectionModal: () => { },
+    setShowBatchPanel: () => { },
+    startAddress: settings.defaultStartAddress || '',
+    endAddress: settings.defaultEndAddress || '',
+    cleanAddressForRoute
+  })
+
+  const handleAddressSave = async (newAddress: string, coords?: { lat: number; lng: number }) => {
+    if (!addressEditOrder || !addressEditRouteId) return
+
+    // 1. Update order in master list
+    updateExcelData((prev: any) => ({
+      ...prev,
+      orders: (prev?.orders || []).map((o: any) => 
+        o.id === addressEditOrder.id 
+          ? { ...o, address: newAddress, lat: coords?.lat || o.lat, lng: coords?.lng || o.lng, coords: coords || o.coords, locationType: coords ? 'ROOFTOP' : o.locationType } 
+          : o
+      ),
+      // 2. Update order within the route
+      routes: (prev?.routes || []).map((r: any) => {
+        if (r.id === addressEditRouteId) {
+          const updatedOrders = r.orders.map((o: any) => 
+            o.id === addressEditOrder.id 
+              ? { ...o, address: newAddress, lat: coords?.lat || o.lat, lng: coords?.lng || o.lng, coords: coords || o.coords, locationType: coords ? 'ROOFTOP' : o.locationType }
+              : o
+          )
+          return { ...r, orders: updatedOrders, isOptimized: false } // Mark as needing recalculation
+        }
+        return r
+      })
+    }))
+
+    // 3. Trigger recalculation
+    const targetRoute = contextData?.routes?.find((r: any) => r.id === addressEditRouteId)
+    if (targetRoute) {
+      // Create a temporary route object with the new address for immediate calculation
+      const tempRoute = {
+        ...targetRoute,
+        orders: targetRoute.orders.map((o: any) => 
+          o.id === addressEditOrder.id 
+            ? { ...o, address: newAddress, lat: coords?.lat || o.lat, lng: coords?.lng || o.lng, coords: coords || o.coords }
+            : o
+        )
+      }
+      
+      toast.promise(calculateRouteDistance(tempRoute), {
+        loading: 'Перерахунок дистанції...',
+        success: 'Дистанцію оновлено',
+        error: 'Помилка перерахунку'
+      })
+    }
+
+    setAddressEditOrder(null)
+    setAddressEditRouteId(null)
+  }
 
 
   const [hasSeenHelp, setHasSeenHelp] = useState(() => {
@@ -74,55 +195,136 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
   const [showHelpTour, setShowHelpTour] = useState(false)
 
   // Оптимизированный расчет статистики всех курьеров (O(N + M))
+  // --- Helpers ---
+  
+  const getCourierName = useCallback((c: any): string => {
+    if (!c) return ''
+    if (typeof c === 'string') return c
+    if (typeof c === 'object') return (c.name || c._id || c.id || '')
+    return String(c)
+  }, [])
+
   const courierStatsMap = useMemo(() => {
     const stats = new Map<string, {
       ordersInRoutes: number,
+      totalOrders: number,
       baseDistance: number,
       additionalDistance: number,
-      totalDistance: number
+      totalDistance: number,
+      uniqueOrderIds: Set<string>,
+      allAssignedOrderIds: Set<string>
     }>()
 
-    if (!contextData?.routes || !Array.isArray(contextData.routes)) {
-      return stats
+    // 1. Сначала считаем ВСЕ заказы, назначенные курьеру (из общего списка заказов)
+    if (excelData?.orders && Array.isArray(excelData.orders)) {
+      excelData.orders.forEach((o: any) => {
+        const courierName = normalizeCourierName(getCourierName(o.courier))
+        if (!courierName || courierName === 'Не назначено' || courierName === 'ID:0') return
+
+        if (!stats.has(courierName)) {
+          stats.set(courierName, {
+            ordersInRoutes: 0,
+            totalOrders: 0,
+            baseDistance: 0,
+            additionalDistance: 0,
+            totalDistance: 0,
+            uniqueOrderIds: new Set<string>(),
+            allAssignedOrderIds: new Set<string>()
+          })
+        }
+
+        const current = stats.get(courierName)!
+        const oid = String(o.id || o.orderNumber)
+        if (!current.allAssignedOrderIds.has(oid)) {
+          current.allAssignedOrderIds.add(oid)
+          current.totalOrders++
+        }
+      })
     }
 
-    contextData.routes.forEach((route: any) => {
-      const courierName = normalizeCourierName(route.courier)
-      if (!courierName) return
+    // 2. Затем считаем только те, что в активных маршрутах + дистанцию
+    if (contextData?.routes && Array.isArray(contextData.routes)) {
+      contextData.routes.forEach((route: any) => {
+        const courierName = normalizeCourierName(getCourierName(route.courier))
+        if (!courierName) return
 
-      const current = stats.get(courierName) || {
-        ordersInRoutes: 0,
-        baseDistance: 0,
-        additionalDistance: 0,
-        totalDistance: 0
+        if (!stats.has(courierName)) {
+          stats.set(courierName, {
+            ordersInRoutes: 0,
+            totalOrders: 0,
+            baseDistance: 0,
+            additionalDistance: 0,
+            totalDistance: 0,
+            uniqueOrderIds: new Set<string>(),
+            allAssignedOrderIds: new Set<string>()
+          })
+        }
+
+        const current = stats.get(courierName)!
+        const routeOrders = route.orders || []
+        let validOrdersInRoute = 0
+
+        routeOrders.forEach((o: any) => {
+          const oid = String(o.id || o.orderNumber || o._id || `gen_${Math.random()}`)
+          
+          if (!current.uniqueOrderIds.has(oid)) {
+            current.uniqueOrderIds.add(oid)
+            current.ordersInRoutes++
+            validOrdersInRoute++
+          }
+
+          // v38.5: If order is in a route, it MUST be counted in totalOrders even if the master list is empty
+          if (!current.allAssignedOrderIds.has(oid)) {
+            current.allAssignedOrderIds.add(oid)
+            current.totalOrders++
+          }
+        })
+
+        if (route.isOptimized && route.totalDistance) {
+          current.totalDistance += route.totalDistance + (validOrdersInRoute * 0.5)
+          current.baseDistance += route.totalDistance
+          current.additionalDistance += (validOrdersInRoute * 0.5)
+        } else {
+          // Базовая оценка для неоптимизированных/ручных маршрутов (1км + 0.5км/заказ)
+          const baseDist = 1.0
+          const addDist = validOrdersInRoute * 0.5
+          current.totalDistance += baseDist + addDist
+          current.baseDistance += baseDist
+          current.additionalDistance += addDist
+        }
+
+        stats.set(courierName, current)
+      })
+    }
+
+    // 3. Добавляем оценку для еще не распределенных по маршрутам заказов
+    stats.forEach((current, name) => {
+      const ordersInRoutesIds = current.uniqueOrderIds
+      const unroutedOrderIds = Array.from(current.allAssignedOrderIds).filter(id => !ordersInRoutesIds.has(id))
+      
+      if (unroutedOrderIds.length > 0) {
+        // База 1км + по 0.5км за каждый еще не распределенный заказ
+        const estimate = 1.0 + (unroutedOrderIds.length * 0.5)
+        current.totalDistance += estimate
+        current.additionalDistance += estimate
       }
 
-      const ordersCount = (route.orders || []).length
-      current.ordersInRoutes += ordersCount
-
-      if (route.isOptimized && route.totalDistance) {
-        current.totalDistance += route.totalDistance + (ordersCount * 0.5)
-        current.baseDistance += route.totalDistance
-        current.additionalDistance += (ordersCount * 0.5)
-      } else {
-        const routeBase = 1.0
-        const routeAdd = ordersCount * 0.5
-        current.totalDistance += routeBase + routeAdd
-        current.baseDistance += routeBase
-        current.additionalDistance += routeAdd
+      // 4. Добавляем УЖЕ выполненный километр (из истории)
+      if (excelData?.fulfilledDistance && excelData.fulfilledDistance[name]) {
+        current.totalDistance += (excelData.fulfilledDistance[name] || 0)
+        current.baseDistance += (excelData.fulfilledDistance[name] || 0)
       }
-
-      stats.set(courierName, current)
     })
 
     return stats
-  }, [contextData?.routes])
+  }, [excelData?.orders, excelData?.fulfilledDistance, contextData?.routes])
 
   const getCourierStats = (courierName: string) => {
     const normalized = normalizeCourierName(courierName)
-    if (!normalized) return { ordersInRoutes: 0, baseDistance: 0, additionalDistance: 0, totalDistance: 0 }
+    if (!normalized) return { ordersInRoutes: 0, totalOrders: 0, baseDistance: 0, additionalDistance: 0, totalDistance: 0 }
     return courierStatsMap.get(normalized) || {
       ordersInRoutes: 0,
+      totalOrders: 0,
       baseDistance: 0,
       additionalDistance: 0,
       totalDistance: 0
@@ -142,14 +344,14 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
 
     if (excelData?.orders && Array.isArray(excelData.orders)) {
       excelData.orders.forEach((o: any) => {
-        const name = normalizeCourierName(o.courier)
+        const name = normalizeCourierName(getCourierName(o.courier))
         if (name) courierNames.add(name)
       })
     }
 
     const vehicleMap = localStorageUtils.getCourierVehicleMap()
     const list = Array.from(courierNames)
-      .filter(name => name && name !== 'Не назначено' && name !== 'ID:0')
+      .filter(name => name && name !== 'Не назначено')
       .map((name, index) => {
         const excelInfo = (excelData?.couriers || []).find((c: any) => normalizeCourierName(c.name) === name)
         const stats = getCourierStats(name)
@@ -162,9 +364,14 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
           vehicleType: (vehicleMap[name] || excelInfo?.vehicleType || 'car') as 'car' | 'motorcycle',
           location: excelInfo?.location || 'Київ',
           isActive: excelInfo?.isActive !== false,
-          orders: stats.ordersInRoutes,
+          orders: stats.totalOrders, // Показываем ОБЩЕЕ кол-во заказов курьера за день
+          ordersInRoutes: stats.ordersInRoutes, // Для справки (в маршрутах)
           totalDistance: stats.totalDistance,
-          totalAmount: excelInfo?.totalAmount || 0
+          totalAmount: excelInfo?.totalAmount || 0,
+          hasErrors: (excelData?.routes || []).some(
+            (r: any) => normalizeCourierName(r.courier) === name && 
+                       (r.hasGeoErrors || (r.orders?.length > 0 && !r.isOptimized))
+          )
         }
       })
 
@@ -231,12 +438,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
 
   const getCourierRoutes = (courierName: string) => {
     if (!contextData?.routes) return []
-    return contextData.routes.filter((r: any) => normalizeCourierName(r.courier) === normalizeCourierName(courierName))
+    return contextData.routes.filter((r: any) => normalizeCourierName(getCourierName(r.courier)) === normalizeCourierName(courierName))
   }
-
-
-
-
 
   const openRouteInGoogleMaps = (route: any) => {
     if (!route) return
@@ -306,8 +509,6 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
     setSelectedCourierForDistance(courier)
     setShowDistanceModal(true)
   }
-
-
 
   return (
     <div className="space-y-6">
@@ -479,9 +680,9 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
       {/* Couriers Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8" data-tour="courier-list">
         {filteredCouriers.length > 0 ? (
-          filteredCouriers.map(courier => (
+          filteredCouriers.map((courier, index) => (
             <CourierCard
-              key={courier.id}
+              key={`${courier.id}-${index}`}
               courier={courier}
               isDark={isDark}
               onEdit={(c) => {
@@ -582,60 +783,166 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
         </div>
       )}
 
-      {/* Модальное окно с подробной информацией о пробеге */}
+      {/* Модальное окно с подробной информацией о пробеге - REDESIGNED v40 */}
       {showDistanceModal && selectedCourierForDistance && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-medium text-gray-900">
-                  Детальна інформація про пробіг - {selectedCourierForDistance.name}
-                </h3>
-                <button
-                  onClick={() => setShowDistanceModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <XMarkIcon className="h-6 w-6" />
-                </button>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div 
+            className="absolute inset-0 bg-black/60 backdrop-blur-md transition-opacity"
+            onClick={() => setShowDistanceModal(false)}
+          />
+          
+          <div className={clsx(
+            "relative w-full max-w-4xl overflow-hidden rounded-[2.5rem] border-2 shadow-2xl transition-all flex flex-col max-h-[90vh]",
+            isDark 
+              ? "bg-[#1e1e1e]/90 border-white/10 text-white" 
+              : "bg-white/90 border-blue-100 text-gray-900"
+          )}>
+            {/* Header */}
+            <div className={clsx(
+              "flex items-center justify-between p-8 border-b transition-colors",
+              isDark ? "border-white/5" : "border-slate-100"
+            )}>
+              <div className="flex items-center gap-4">
+                <div className={clsx(
+                  "p-3 rounded-2xl",
+                  selectedCourierForDistance.vehicleType === 'car'
+                    ? "bg-blue-500/10 text-blue-400"
+                    : "bg-orange-500/10 text-orange-400"
+                )}>
+                  <TruckIcon className="w-8 h-8" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-black tracking-tight leading-tight">
+                    {selectedCourierForDistance.name}
+                  </h2>
+                  <p className={clsx(
+                    "text-xs font-bold uppercase tracking-widest opacity-50",
+                    isDark ? "text-gray-400" : "text-gray-500"
+                  )}>Детальна інформація про пробіг</p>
+                </div>
               </div>
+              
+              <button
+                onClick={() => setShowDistanceModal(false)}
+                className={clsx(
+                  "p-3 rounded-2xl transition-all hover:rotate-90 hover:scale-110",
+                  isDark ? "bg-white/5 text-gray-400 hover:text-white" : "bg-gray-100 text-gray-500 hover:text-gray-900"
+                )}
+              >
+                <XMarkIcon className="w-6 h-6" />
+              </button>
             </div>
 
-            <div className="px-6 py-4">
+            {/* Content Scroll Area */}
+            <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
               {(() => {
                 const distanceStats = getCourierStats(selectedCourierForDistance.name)
                 const courierRoutes = getCourierRoutes(selectedCourierForDistance.name)
 
                 return (
-                  <div className="space-y-6">
-                    {/* Общая статистика */}
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="text-center p-4 bg-blue-50 rounded-lg">
-                        <div className="text-2xl font-bold text-blue-600">
-                          {distanceStats.totalDistance.toFixed(1)} км
+                  <div className="space-y-10">
+                    {/* Hero Stats Card - Enhanced v40 */}
+                    <div className={clsx(
+                      "grid grid-cols-1 md:grid-cols-2 gap-8 rounded-[2.5rem] p-8 border relative overflow-hidden",
+                      isDark ? "bg-white/5 border-white/5" : "bg-slate-50 border-slate-100"
+                    )}>
+                      {/* Distance Section */}
+                      <div className="space-y-6">
+                        <div className="flex items-center gap-3">
+                          <div className={clsx("w-8 h-8 rounded-lg flex items-center justify-center", isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-100 text-blue-600")}>
+                            <MapIcon className="w-5 h-5" />
+                          </div>
+                          <h3 className="text-sm font-black uppercase tracking-[0.2em] opacity-50">Метрики пробігу</h3>
                         </div>
-                        <div className="text-sm text-blue-600">Загальний пробіг</div>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                          <div className="flex flex-col">
+                            <span className="text-[10px] font-black uppercase tracking-wider opacity-30 mb-1">Загальний</span>
+                            <div className="text-3xl font-black tabular-nums">
+                              {distanceStats.totalDistance.toFixed(1)} <span className="text-sm opacity-30">км</span>
+                            </div>
+                          </div>
+                          <div className="flex flex-col border-l border-white/10 pl-4">
+                            <span className="text-[10px] font-black uppercase tracking-wider opacity-30 mb-1">База</span>
+                            <div className="text-3xl font-black tabular-nums opacity-60">
+                              {distanceStats.baseDistance.toFixed(1)} <span className="text-sm opacity-30">км</span>
+                            </div>
+                          </div>
+                          <div className="flex flex-col border-l border-white/10 pl-4">
+                            <span className="text-[10px] font-black uppercase tracking-wider opacity-30 mb-1">Додана</span>
+                            <div className="text-3xl font-black tabular-nums opacity-60">
+                              {distanceStats.additionalDistance.toFixed(1)} <span className="text-sm opacity-30">км</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-center p-4 bg-green-50 rounded-lg">
-                        <div className="text-2xl font-bold text-green-600">
-                          {distanceStats.baseDistance.toFixed(1)} км
+
+                      {/* Orders Calculation Progress Section - NEW v40 */}
+                      <div className="space-y-6">
+                        <div className="flex items-center gap-3">
+                          <div className={clsx("w-8 h-8 rounded-lg flex items-center justify-center", isDark ? "bg-emerald-500/20 text-emerald-400" : "bg-emerald-100 text-emerald-600")}>
+                            <BoltIcon className="w-5 h-5" />
+                          </div>
+                          <h3 className="text-sm font-black uppercase tracking-[0.2em] opacity-50">Статус розрахунку</h3>
                         </div>
-                        <div className="text-sm text-green-600">Базова відстань</div>
-                      </div>
-                      <div className="text-center p-4 bg-orange-50 rounded-lg">
-                        <div className="text-2xl font-bold text-orange-600">
-                          {distanceStats.additionalDistance.toFixed(1)} км
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                          <div className="flex flex-col">
+                            <span className="text-[10px] font-black uppercase tracking-wider opacity-30 mb-1">Всього</span>
+                            <div className="text-3xl font-black tabular-nums text-blue-500">
+                              {distanceStats.totalOrders}
+                            </div>
+                          </div>
+                          <div className="flex flex-col border-l border-white/10 pl-4">
+                            <span className="text-[10px] font-black uppercase tracking-wider opacity-30 mb-1">Розраховано</span>
+                            <div className={clsx(
+                              "text-3xl font-black tabular-nums",
+                              distanceStats.ordersInRoutes === distanceStats.totalOrders ? "text-emerald-500" : "text-blue-400"
+                            )}>
+                              {distanceStats.ordersInRoutes}
+                            </div>
+                          </div>
+                          <div className="flex flex-col border-l border-white/10 pl-4">
+                            <span className="text-[10px] font-black uppercase tracking-wider opacity-30 mb-1">Залишилось</span>
+                            <div className={clsx(
+                              "text-3xl font-black tabular-nums",
+                              (distanceStats.totalOrders - distanceStats.ordersInRoutes) > 0 ? "text-orange-500" : "text-gray-400 opacity-30"
+                            )}>
+                              {distanceStats.totalOrders - distanceStats.ordersInRoutes}
+                            </div>
+                          </div>
                         </div>
-                        <div className="text-sm text-orange-600">Додаткова відстань</div>
+                        
+                        {/* Progress Bar in Detail */}
+                        <div className="mt-4">
+                           <div className={clsx("h-1.5 w-full rounded-full overflow-hidden", isDark ? "bg-white/5" : "bg-gray-100")}>
+                              <div 
+                                className={clsx(
+                                  "h-full transition-all duration-1000",
+                                  distanceStats.ordersInRoutes === distanceStats.totalOrders ? "bg-emerald-500" : "bg-blue-500"
+                                )}
+                                style={{ width: `${(distanceStats.ordersInRoutes / distanceStats.totalOrders) * 100}%` }}
+                              />
+                           </div>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Детали по маршрутам */}
-                    {courierRoutes.length > 0 ? (
-                      <div>
-                        <h4 className="text-lg font-medium text-gray-900 mb-4">
-                          Деталі по маршрутах ({courierRoutes.length})
-                        </h4>
-                        <div className="space-y-3">
+                    {/* Timeline of Routes */}
+                    <div className="space-y-8">
+                      <div className="flex items-center gap-4">
+                        <h3 className="text-sm font-black uppercase tracking-[0.2em] opacity-50">Історія маршрутів ({courierRoutes.length})</h3>
+                        <div className="flex-1 h-px bg-white/5"></div>
+                      </div>
+
+                      {courierRoutes.length > 0 ? (
+                        <div className="space-y-12 relative pl-8">
+                          {/* Vertical timeline line */}
+                          <div className={clsx(
+                            "absolute left-[1.125rem] top-2 bottom-2 w-0.5",
+                            isDark ? "bg-white/5" : "bg-slate-200"
+                          )} />
+
                           {courierRoutes.map((route: any, index: number) => {
                             const ordersCount = route.orders?.length || 0
                             const routeBaseDistance = route.isOptimized && route.totalDistance
@@ -645,156 +952,355 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
                             const routeTotalDistance = routeBaseDistance + routeAdditionalDistance
 
                             return (
-                              <div key={route.id || index} className="border border-gray-200 rounded-lg p-4">
-                                <div className="flex items-start justify-between mb-3">
-                                  <div className="flex items-center space-x-2">
-                                    <TruckIcon className={`h-5 w-5 ${selectedCourierForDistance.vehicleType === 'car' ? 'text-green-600' : 'text-orange-600'
-                                      }`} />
-                                    <div>
-                                      <h5 className="font-medium text-gray-900">
-                                        Маршрут #{index + 1}
-                                      </h5>
-                                      <span className="text-sm text-gray-500">
-                                        {ordersCount} замовлень
-                                      </span>
+                              <div key={`${route.id || 'route'}-${index}`} className="relative group">
+                                {/* Timeline Dot */}
+                                <div className={clsx(
+                                  "absolute -left-[1.625rem] top-4 w-4 h-4 rounded-full border-4 z-10 transition-transform group-hover:scale-125",
+                                  isDark ? "bg-[#1e1e1e] border-blue-500" : "bg-white border-blue-500"
+                                )} />
+
+                                <div className={clsx(
+                                  "rounded-[2rem] border transition-all duration-300",
+                                  isDark ? "bg-white/5 border-white/5 hover:bg-white/[0.08]" : "bg-white border-slate-100 hover:shadow-xl"
+                                )}>
+                                  {/* Route Header */}
+                                  <div className="flex items-center justify-between p-6 pb-4 border-b border-white/5">
+                                    <div className="flex items-center gap-4">
+                                      <div className={clsx(
+                                        "w-10 h-10 rounded-xl flex items-center justify-center",
+                                        isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-50 text-blue-600"
+                                      )}>
+                                        <TruckIcon className="w-5 h-5" />
+                                      </div>
+                                      <div>
+                                        <h4 className="font-black text-lg">Маршрут #{index + 1}</h4>
+                                        <p className="text-xs font-bold opacity-40 uppercase tracking-widest">{ordersCount} замовлень</p>
+                                      </div>
                                     </div>
-                                    <span className={`text-xs px-2 py-1 rounded-full ${selectedCourierForDistance.vehicleType === 'car'
-                                      ? 'bg-green-100 text-green-800'
-                                      : 'bg-orange-100 text-orange-800'
-                                      }`}>
-                                      {selectedCourierForDistance.vehicleType === 'car' ? 'Авто' : 'Мото'}
-                                    </span>
-                                  </div>
-                                  <div className="flex space-x-2">
+                                    
+                                    <div className="flex items-center gap-2">
                                       <button
                                         onClick={() => openRouteInGoogleMaps(route)}
-                                        disabled={!route.isOptimized}
                                         className={clsx(
-                                          'p-2 rounded-lg transition-all duration-200',
-                                          route.isOptimized
-                                            ? 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
-                                            : 'text-gray-400 cursor-not-allowed'
+                                          "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all",
+                                          isDark ? "bg-blue-500/10 text-blue-400 hover:bg-blue-500/20" : "bg-blue-50 text-blue-600 hover:bg-blue-100"
                                         )}
-                                        title={route.isOptimized ? "Відкрити маршрут у Google Maps" : "Маршрут не розрахований"}
                                       >
-                                        <PlayIcon className="h-4 w-4" />
+                                        <MapIcon className="w-4 h-4" />
+                                        Google
                                       </button>
-
                                       <button
                                         onClick={() => openRouteInValhalla(route)}
-                                        disabled={!route.isOptimized}
                                         className={clsx(
-                                          'p-2 rounded-lg transition-all duration-200',
-                                          route.isOptimized
-                                            ? 'text-green-600 hover:text-green-800 hover:bg-green-50'
-                                            : 'text-gray-400 cursor-not-allowed'
+                                          "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all",
+                                          isDark ? "bg-green-500/10 text-green-400 hover:bg-green-500/20" : "bg-green-50 text-green-600 hover:bg-green-100"
                                         )}
-                                        title={route.isOptimized ? "Відкрити маршрут у Valhalla" : "Маршрут не розрахований"}
                                       >
-                                        <MapIcon className="h-4 w-4" />
+                                        <PlayIcon className="w-4 h-4" />
+                                        Valhalla
                                       </button>
-
-                                    <button
-                                      onClick={() => deleteRoute(route.id)}
-                                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200"
-                                      title="Видалити маршрут"
-                                    >
-                                      <TrashIcon className="h-4 w-4" />
-                                    </button>
-                                  </div>
-                                </div>
-
-                                <div className="grid grid-cols-3 gap-3 text-sm">
-                                  <div className="text-center">
-                                    <div className="font-semibold text-gray-900">
-                                      {routeTotalDistance.toFixed(1)} км
-                                    </div>
-                                    <div className="text-gray-500">Загальний пробіг</div>
-                                  </div>
-                                  <div className="text-center">
-                                    <div className="font-semibold text-gray-900">
-                                      {routeBaseDistance.toFixed(1)} км
-                                    </div>
-                                    <div className="text-gray-500">
-                                      {route.isOptimized ? 'Розрахована' : 'Базова'} відстань
+                                      <button
+                                        onClick={() => deleteRoute(route.id)}
+                                        className={clsx(
+                                          "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all",
+                                          isDark ? "bg-red-500/10 text-red-400 hover:bg-red-500/20" : "bg-red-50 text-red-600 hover:bg-red-100"
+                                        )}
+                                        title="Видалити маршрут"
+                                      >
+                                        <TrashIcon className="w-4 h-4" />
+                                      </button>
                                     </div>
                                   </div>
-                                  <div className="text-center">
-                                    <div className="font-semibold text-gray-900">
-                                      {routeAdditionalDistance.toFixed(1)} км
-                                    </div>
-                                    <div className="text-gray-500">Додаткова</div>
-                                  </div>
-                                </div>
 
-                                {/* Заказы в маршруте */}
-                                {route.orders && route.orders.length > 0 && (
-                                  <div className="mt-4">
-                                    <div className="flex items-center justify-between mb-2">
-                                      <h6 className="text-sm font-medium text-gray-700">Замовлення у маршруті:</h6>
+                                  {/* Address Clarification Warning Block v40 */}
+                                  {(() => {
+                                    const problematicOrders = route.orders?.filter((order: any) => {
+                                      const meta = (route as any).geoMeta?.waypoints?.[route.orders.indexOf(order)]
+                                      const locType = meta?.locationType || order.locationType
+                                      const streetMatched = meta?.streetNumberMatched ?? order.streetNumberMatched
+                                      
+                                      // v40.1: Precision logic to avoid "nearly every order" warnings
+                                      return needsAddressClarification({
+                                         locationType: locType,
+                                         streetNumberMatched: streetMatched,
+                                         hasCoords: !!(order.coords?.lat || meta?.location?.lat)
+                                      })
+                                    }) || []
 
-                                    </div>
-                                    <div className="space-y-1">
-                                      {route.orders.map((order: any, orderIndex: number) => (
-                                        <div key={orderIndex} className="flex items-center space-x-2 text-sm group">
-                                          <span className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium">
-                                            {orderIndex + 1}
-                                          </span>
-                                          <span className="text-gray-600 font-medium">#{order.orderNumber}</span>
-                                          <span className="text-gray-500 truncate flex-1">{order.address}</span>
-                                          {order.customerName && (
-                                            <span className="text-gray-400 text-xs">({order.customerName})</span>
-                                          )}
-                                          {/* Address editing removed as requested */}
+                                    if (problematicOrders.length === 0) return null
+
+                                    return (
+                                      <div className={clsx(
+                                        "mx-6 mb-6 p-6 rounded-[2rem] border-2 animate-pulse-slow",
+                                        isDark 
+                                          ? "bg-red-500/10 border-red-500/30 text-red-400" 
+                                          : "bg-red-50 border-red-100 text-red-600"
+                                      )}>
+                                        <div className="flex items-center gap-4 mb-4">
+                                          <div className={clsx(
+                                            "p-2 rounded-xl",
+                                            isDark ? "bg-red-500/20" : "bg-red-100"
+                                          )}>
+                                            <ExclamationTriangleIcon className="w-6 h-6" />
+                                          </div>
+                                          <h4 className="text-sm font-black uppercase tracking-widest">
+                                            Требує уточнення адреси
+                                          </h4>
                                         </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
 
-                                {route.isOptimized && (
-                                  <div className="mt-3 pt-3 border-t border-gray-200">
-                                    <div className="flex items-center justify-center space-x-4 text-sm">
-                                      <div className="flex items-center space-x-1">
-                                        <MapPinIcon className="h-4 w-4 text-gray-400" />
-                                        <span className="text-gray-600">Відстань:</span>
-                                        <span className="font-medium text-gray-900">
-                                          {route.totalDistance ? `${route.totalDistance.toFixed(1)} км` : 'N/A'}
+                                        <div className="space-y-3">
+                                          {problematicOrders.map((order: any, pIdx: number) => (
+                                            <div 
+                                              key={`problem-${order.id || pIdx}`}
+                                              className={clsx(
+                                                "flex items-center justify-between p-3 rounded-xl border border-dashed transition-all",
+                                                isDark ? "border-red-500/20 bg-red-500/5 hover:bg-red-500/10" : "border-red-200 bg-white hover:bg-red-50/50"
+                                              )}
+                                            >
+                                              <div className="flex items-center gap-3 min-w-0">
+                                                <span className="font-black text-xs">#{order.orderNumber}</span>
+                                                <span className="text-xs truncate opacity-70">{order.address}</span>
+                                              </div>
+                                              <button
+                                                onClick={() => {
+                                                  setAddressEditOrder(order)
+                                                  setAddressEditRouteId(route.id)
+                                                }}
+                                                className={clsx(
+                                                  "px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-sm active:scale-95",
+                                                  isDark 
+                                                    ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" 
+                                                    : "bg-red-600 text-white hover:bg-red-700 shadow-red-500/20"
+                                                )}
+                                              >
+                                                Уточнити
+                                              </button>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )
+                                  })()}
+
+                                  {/* Route Orders List */}
+                                  <div className="p-6 space-y-3">
+                                    {route.orders?.map((order: any, orderIndex: number) => {
+                                      const meta = (route as any).geoMeta?.waypoints?.[orderIndex]
+                                      const locType = meta?.locationType || order.locationType
+                                      const streetMatched = meta?.streetNumberMatched ?? order.streetNumberMatched
+                                      const opZone = meta?.zoneName || order.deliveryZone
+                                      const kmlZone = order.kmlZone || (order as any).locationMeta?.kmlZone
+                                      const hub = order.kmlHub || meta?.hubName || (order as any).locationMeta?.hubName
+                                      const hasZones = opZone || kmlZone
+
+                                      return (
+                                        <div 
+                                          key={`${order.id || 'order'}-${orderIndex}`}
+                                          className={clsx(
+                                            "flex items-center justify-between p-3 rounded-2xl transition-all",
+                                            isDark ? "bg-white/[0.03] hover:bg-white/10" : "bg-slate-50 hover:bg-slate-100"
+                                          )}
+                                        >
+                                          <div className="flex items-center gap-4 flex-1 min-w-0">
+                                            <div className={clsx(
+                                              "w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black",
+                                              isDark ? "bg-white/5 text-gray-400" : "bg-white text-gray-500 border border-slate-100"
+                                            )}>
+                                              {orderIndex + 1}
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                              <div className="flex items-center justify-between gap-2 mb-0.5">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                  <span className="font-black text-sm">#{order.orderNumber}</span>
+                                                  <span className="text-[12px] opacity-40 truncate">{order.address}</span>
+                                                </div>
+                                                <button
+                                                  onClick={() => {
+                                                    setAddressEditOrder(order)
+                                                    setAddressEditRouteId(route.id)
+                                                  }}
+                                                  className={clsx(
+                                                    "p-1.5 rounded-lg transition-all active:scale-95",
+                                                    isDark ? "hover:bg-white/5 text-blue-400" : "hover:bg-blue-50 text-blue-600"
+                                                  )}
+                                                  title="Редагувати адресу"
+                                                >
+                                                  <PencilIcon className="w-3.5 h-3.5" />
+                                                </button>
+                                              </div>
+                                              
+                                              {/* Unified Badges v42.1 - Premium "Cool" Labels (Synced with RouteCard) */}
+                                              <div className="mt-2 flex items-center flex-wrap gap-1.5">
+                                                {/* Verified Status v42.1 */}
+                                                {(locType === 'ROOFTOP') && (
+                                                  <div className={clsx(
+                                                    "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                                                    isDark ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-700"
+                                                  )}>
+                                                    <CheckBadgeIcon className="w-3.5 h-3.5" />
+                                                    ТОЧНИЙ АДРЕС
+                                                  </div>
+                                                )}
+
+                                                {/* Locked/Verified Status v42.1 */}
+                                                {order.isLocked && (
+                                                  <div className={clsx(
+                                                    "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                                                    isDark ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-green-50 border-green-200 text-green-700"
+                                                  )}>
+                                                    <CheckBadgeIcon className="w-3.5 h-3.5" />
+                                                    ПЕРЕВІРЕНО
+                                                  </div>
+                                                )}
+
+                                                {/* Sector / KML v42.3 (Smart Deduplication) */}
+                                                {(() => {
+                                                  const kmlFull = kmlZone ? `${hub ? hub + ' - ' : ''}${kmlZone}` : null;
+                                                  const same = opZone && kmlFull && opZone.trim().toLowerCase() === kmlFull.trim().toLowerCase();
+
+                                                  return hasZones && (
+                                                    <div className={clsx(
+                                                      "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                                                      ((String(opZone || '').includes('ID:0') || String(kmlZone || '').includes('ID:0')) && !same)
+                                                        ? (isDark ? "bg-red-500/20 border-red-500/40 text-red-400 animate-pulse" : "bg-red-50 border-red-200 text-red-600 shadow-red-500/10")
+                                                        : (isDark ? "bg-indigo-500/10 border-indigo-500/30 text-indigo-300" : "bg-indigo-50 border-indigo-100 text-indigo-700")
+                                                    )}>
+                                                      <MapIcon className="w-3.5 h-3.5 opacity-70" />
+                                                      <span className="opacity-60 mr-0.5">СЕКТОР:</span>
+                                                      {(() => {
+                                                        if (same) return `FO/KML:${opZone.trim()}`.toUpperCase();
+
+                                                        const zones = [
+                                                          opZone ? `FO:${opZone}` : null,
+                                                          kmlFull ? `KML:${kmlFull}` : null
+                                                        ].filter(Boolean).join(' | ').toUpperCase();
+                                                        return zones || '—';
+                                                      })()}
+                                                    </div>
+                                                  );
+                                                })()}
+
+                                                {/* Street Match v42.1 */}
+                                                {locType && (
+                                                  <div className={clsx(
+                                                    "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                                                    locType !== 'APPROXIMATE'
+                                                      ? (isDark ? "bg-teal-500/10 border-teal-500/30 text-teal-400" : "bg-teal-50 border-teal-100 text-teal-700")
+                                                      : (isDark ? "bg-rose-500/10 border-rose-500/30 text-rose-400" : "bg-rose-50 border-rose-200 text-rose-700")
+                                                  )}>
+                                                    <MapIcon className="w-3.5 h-3.5 opacity-70" />
+                                                    <span className="opacity-60 mr-0.5">ВУЛИЦЯ:</span>
+                                                    {locType !== 'APPROXIMATE' ? 'ТАК' : 'НІ'}
+                                                  </div>
+                                                )}
+
+                                                {/* House Match v42.1 */}
+                                                {streetMatched !== undefined && (
+                                                  <div className={clsx(
+                                                    "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                                                    streetMatched 
+                                                      ? (isDark ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400" : "bg-cyan-50 border-cyan-100 text-cyan-700")
+                                                      : (isDark ? "bg-orange-500/10 border-orange-500/30 text-orange-400" : "bg-orange-50 border-orange-200 text-orange-700")
+                                                  )}>
+                                                    <HomeIcon className="w-3.5 h-3.5 opacity-70" />
+                                                    <span className="opacity-60 mr-0.5">БУДИНОК:</span>
+                                                    {streetMatched ? 'ТАК' : 'НІ'}
+                                                  </div>
+                                                )}
+
+                                                {/* Interpolated fallback info */}
+
+                                                {/* Unverified Warning - Only if coordinates are missing */}
+                                                {(!(order.lat || (order as any).coords?.lat) || !(order.lng || (order as any).coords?.lng)) && (
+                                                  <div className={clsx(
+                                                    "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 animate-pulse shadow-sm",
+                                                    isDark ? "bg-amber-500/10 border-amber-500/30 text-amber-500" : "bg-amber-50 border-amber-200 text-amber-700 shadow-amber-500/10"
+                                                  )}>
+                                                     <ExclamationCircleIcon className="w-3.5 h-3.5" />
+                                                     УТОЧНИТИ АДРЕСУ
+                                                  </div>
+                                                )}
+
+                                              </div>
+                                            </div>
+                                          </div>
+                                          <div className="text-sm font-black opacity-30 px-3 uppercase tracking-widest hidden sm:block">
+                                            +0.5 км
+                                          </div>
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+
+                                  {/* Route Metrics Summary (Footer within Route) */}
+                                  <div className={clsx(
+                                    "px-6 py-4 rounded-b-[2rem] flex items-center justify-between",
+                                    isDark ? "bg-white/[0.02]" : "bg-slate-50/50"
+                                  )}>
+                                    <div className="flex gap-6">
+                                      <div className="flex flex-col">
+                                        <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">Разом</span>
+                                        <span className="text-sm font-black">{routeTotalDistance.toFixed(1)} км</span>
+                                      </div>
+                                      <div className="flex flex-col">
+                                        <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">База</span>
+                                        <span className="text-sm font-black opacity-60">{routeBaseDistance.toFixed(1)} км</span>
+                                      </div>
+                                      <div className="flex flex-col">
+                                        <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">Час</span>
+                                        <span className="text-sm font-black opacity-60">
+                                          {route.totalDuration ? formatDuration(route.totalDuration) : '—'}
                                         </span>
                                       </div>
-                                      <div className="flex items-center space-x-1">
-                                        <ClockIcon className="h-4 w-4 text-gray-400" />
-                                        <span className="text-gray-600">Час:</span>
-                                        <span className="font-medium text-gray-900">
-                                          {route.totalDuration ? formatDuration(route.totalDuration) : 'N/A'}
-                                        </span>
-                                      </div>
                                     </div>
-
-                                    {/* Warnings block hidden as requested */}
+                                    {!route.isOptimized && (
+                                      <div className={clsx(
+                                        "flex items-center gap-2 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest",
+                                        route.hasGeoErrors 
+                                          ? (isDark ? "bg-red-500/20 text-red-500" : "bg-red-50 text-red-600")
+                                          : (isDark ? "bg-amber-500/10 text-amber-500" : "bg-amber-50 text-amber-700")
+                                      )}>
+                                        {route.hasGeoErrors ? <ExclamationTriangleIcon className="w-3 h-3" /> : <ExclamationCircleIcon className="w-3 h-3" />}
+                                        {route.hasGeoErrors ? 'ПОМИЛКА (АДРЕСА)' : 'Потребує уточнення'}
+                                      </div>
+                                    )}
                                   </div>
-                                )}
+                                </div>
                               </div>
                             )
                           })}
                         </div>
-                      </div>
-                    ) : (
-                      <div className="text-center py-8">
-                        <MapPinIcon className="mx-auto h-12 w-12 text-gray-400" />
-                        <p className="mt-2 text-sm text-gray-500">У цього кур'єра немає маршрутів</p>
-                      </div>
-                    )}
-
+                      ) : (
+                        <div className={clsx(
+                          "flex flex-col items-center justify-center p-20 rounded-[3rem] border-2 border-dashed",
+                          isDark ? "bg-white/5 border-white/5" : "bg-slate-50 border-slate-100"
+                        )}>
+                          <div className={clsx(
+                            "w-20 h-20 rounded-full flex items-center justify-center mb-6",
+                            isDark ? "bg-white/5 text-gray-700" : "bg-white text-gray-200"
+                          )}>
+                            <MapPinIcon className="w-10 h-10" />
+                          </div>
+                          <p className="font-bold opacity-30 uppercase tracking-[0.2em] text-center">У цього кур'єра<br/>ще немає маршрутів</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )
               })()}
             </div>
 
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+            {/* Footer */}
+            <div className={clsx(
+              "p-8 border-t bg-black/5 flex justify-end",
+              isDark ? "border-white/5" : "border-slate-100"
+            )}>
               <button
                 onClick={() => setShowDistanceModal(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg"
+                className={clsx(
+                  "px-8 py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] transition-all transform active:scale-95 shadow-lg shadow-blue-500/10",
+                  isDark ? "bg-blue-600 text-white hover:bg-blue-500" : "bg-blue-600 text-white hover:bg-blue-700"
+                )}
               >
                 Закрити
               </button>
@@ -834,7 +1340,6 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
         </div>
       )}
 
-
       {/* Help Modal */}
       {showHelpModal && (
         <Suspense fallback={null}>
@@ -849,14 +1354,34 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
         </Suspense>
       )}
 
+      {/* Address Edit Modal */}
+      {addressEditOrder && (
+        <Suspense fallback={null}>
+          <AddressEditModal
+            isOpen={!!addressEditOrder}
+            onClose={() => {
+              setAddressEditOrder(null)
+              setAddressEditRouteId(null)
+            }}
+            onSave={handleAddressSave}
+            currentAddress={addressEditOrder.address}
+            orderNumber={addressEditOrder.orderNumber}
+            customerName={addressEditOrder.customerName}
+            isDark={isDark}
+          />
+        </Suspense>
+      )}
+
       {/* Help Tour */}
-      <Suspense fallback={null}>
-        <HelpTour
-          steps={[]} // Will be populated from a config
-          isOpen={showHelpTour}
-          onClose={() => setShowHelpTour(false)}
-        />
-      </Suspense>
+      {showHelpTour && (
+        <Suspense fallback={null}>
+          <HelpTour
+            steps={[]} // Will be populated from a config
+            isOpen={showHelpTour}
+            onClose={() => setShowHelpTour(false)}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }

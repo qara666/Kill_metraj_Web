@@ -11,8 +11,13 @@ import {
     ClockIcon,
     MapPinIcon
 } from '@heroicons/react/24/outline';
+import { 
+    CheckBadgeIcon as CheckBadgeIconSolid, 
+    HomeIcon as HomeIconSolid, 
+    MapIcon as MapIconSolid, 
+    ExclamationCircleIcon as ExclamationCircleIconSolid
+} from '@heroicons/react/24/solid';
 import { getStatusBadgeProps } from '../../utils/data/statusBadgeHelper';
-import { getPaymentMethodBadgeProps } from '../../utils/data/paymentMethodHelper';
 
 // Types
 interface Order {
@@ -40,6 +45,7 @@ interface Order {
     kmlZone?: string;
     kmlHub?: string;
     locationType?: 'ROOFTOP' | 'RANGE_INTERPOLATED' | 'GEOMETRIC_CENTER' | 'APPROXIMATE';
+    streetNumberMatched?: boolean;
 }
 
 interface OrderListProps {
@@ -80,6 +86,14 @@ const OrderItem = memo(({
 }) => {
     const rowRef = React.useRef<HTMLDivElement>(null);
 
+    const raw = (order as any).raw || {};
+    const coords = (order as any).coords || {};
+    const meta = (order as any).locationMeta || {};
+
+    const locType = order.locationType || coords.locationType || raw.locationType;
+    const isRooftop = locType === 'ROOFTOP';
+    const isInterpolated = locType === 'RANGE_INTERPOLATED';
+    const streetMatched = order.streetNumberMatched ?? raw.streetNumberMatched ?? coords.streetNumberMatched;
 
     return (
         <div style={style} className="pr-1">
@@ -89,7 +103,7 @@ const OrderItem = memo(({
                 draggable
                 onDragStart={(e) => {
                     e.dataTransfer.setData('orderId', order.id);
-                    e.dataTransfer.setData('text/plain', order.id); // SOTA fallback
+                    e.dataTransfer.setData('text/plain', order.id);
                     e.dataTransfer.effectAllowed = 'move';
                 }}
                 className={clsx(
@@ -194,45 +208,121 @@ const OrderItem = memo(({
 
                         <p className={clsx('text-sm leading-snug mb-2 font-medium', isDark ? 'text-gray-300' : 'text-gray-600')}>
                             {order.address}
-                            {order.kmlZone && (
-                                <span className={clsx(
-                                    "ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-tighter",
-                                    isDark ? "bg-purple-500/20 text-purple-300" : "bg-purple-100 text-purple-700"
-                                )}>
-                                    {order.kmlHub ? `${order.kmlHub}: ` : ''}{order.kmlZone}
-                                </span>
-                            )}
                         </p>
 
-                        <div className="flex items-center gap-3 text-xs">
-                            <div className={clsx(
-                                'font-bold px-2 py-0.5 rounded flex items-center gap-1.5',
-                                isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
-                            )}>
-                                <ClockIcon className="w-3.5 h-3.5" />
-                                {(order.plannedTime && order.plannedTime !== '00:00' && order.plannedTime !== '00:00:00' && order.plannedTime !== 'Без времени') ? order.plannedTime : '—'}
-                            </div>
-                            {order.paymentMethod && (() => {
-                                const badgeProps = getPaymentMethodBadgeProps(order.paymentMethod, isDark);
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs mb-2">
+                            {/* Verified Status v42.1 */}
+                            {isRooftop && (
+                                <div className={clsx(
+                                    "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                                    isDark ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-700"
+                                )}>
+                                    <CheckBadgeIconSolid className="w-3.5 h-3.5" />
+                                    ТОЧНИЙ АДРЕС
+                                </div>
+                            )}
+
+                            {/* Locked Status v42.1 */}
+                            {(order as any).isLocked && (
+                                <div className={clsx(
+                                    "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                                    isDark ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-green-50 border-green-200 text-green-700"
+                                )}>
+                                    <CheckBadgeIconSolid className="w-3.5 h-3.5" />
+                                    ПЕРЕВІРЕНО
+                                </div>
+                            )}
+
+                            {/* Sector / KML v42.3 */}
+                            {(() => {
+                                const opZone = (order as any).deliveryZone || raw.deliveryZone;
+                                const kmlZone = order.kmlZone || meta.kmlZone || coords.kmlZone;
+                                const hub = order.kmlHub || meta.hubName || coords.kmlHub;
+                                
+                                const kmlFull = kmlZone ? `${hub ? hub + ' - ' : ''}${kmlZone}` : null;
+                                const same = opZone && kmlFull && opZone.trim().toLowerCase() === kmlFull.trim().toLowerCase();
+
                                 return (
-                                    <span className={clsx(
-                                        "px-2 py-0.5 rounded font-bold uppercase text-[10px] tracking-wider",
-                                        badgeProps.bgColorClass,
-                                        badgeProps.textColorClass
+                                    <div className={clsx(
+                                        "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                                        ((String(opZone || '').includes('ID:0') || String(kmlZone || '').includes('ID:0')) && !same)
+                                            ? (isDark ? "bg-red-500/20 border-red-500/40 text-red-400 animate-pulse" : "bg-red-50 border-red-200 text-red-600 shadow-red-500/10")
+                                            : (isDark ? "bg-indigo-500/10 border-indigo-500/30 text-indigo-300" : "bg-indigo-50 border-indigo-100 text-indigo-700")
                                     )}>
-                                        {badgeProps.text}
-                                    </span>
+                                        <MapIconSolid className="w-3.5 h-3.5 opacity-70" />
+                                        <span className="opacity-60 mr-0.5">СЕКТОР:</span>
+                                        {(() => {
+                                            if (same) return `FO/KML:${opZone.trim()}`.toUpperCase();
+                                            const zones = [
+                                                opZone ? `FO:${opZone}` : null,
+                                                kmlFull ? `KML:${kmlFull}` : null
+                                            ].filter(Boolean).join(' | ').toUpperCase();
+                                            return zones || '—';
+                                        })()}
+                                    </div>
                                 );
                             })()}
-                            {order.locationType && (
-                                <span className={clsx(
-                                    "px-2 py-0.5 rounded font-black text-[9px] tracking-wider",
-                                    order.locationType === 'ROOFTOP' ? (isDark ? "bg-green-500/20 text-green-400" : "bg-green-100 text-green-700") :
-                                    order.locationType === 'RANGE_INTERPOLATED' ? (isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-100 text-blue-700") :
-                                    (isDark ? "bg-yellow-500/20 text-yellow-500" : "bg-yellow-100 text-yellow-700")
+
+                            {/* Street Match v42.1 */}
+                            <div className={clsx(
+                                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                                locType && !isInterpolated && locType !== 'APPROXIMATE'
+                                    ? (isDark ? "bg-teal-500/10 border-teal-500/30 text-teal-400" : "bg-teal-50 border-teal-100 text-teal-700")
+                                    : (isDark ? "bg-rose-500/10 border-rose-500/30 text-rose-400" : "bg-rose-50 border-rose-200 text-rose-700")
+                            )}>
+                                <MapIconSolid className="w-3.5 h-3.5 opacity-70" />
+                                <span className="opacity-60 mr-0.5">ВУЛИЦЯ:</span>
+                                {locType && !isInterpolated && locType !== 'APPROXIMATE' ? 'ТАК' : 'НІ'}
+                            </div>
+
+                            {/* House Match v42.1 */}
+                            {(() => {
+                                const houseMatched = streetMatched || isInterpolated || isRooftop;
+                                return (
+                                    <div className={clsx(
+                                        "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
+                                        houseMatched
+                                            ? (isDark ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400" : "bg-cyan-50 border-cyan-100 text-cyan-700")
+                                            : (isDark ? "bg-orange-500/10 border-orange-500/30 text-orange-400" : "bg-orange-50 border-orange-200 text-orange-700")
+                                    )}>
+                                        <HomeIconSolid className="w-3.5 h-3.5 opacity-70" />
+                                        <span className="opacity-60 mr-0.5">БУДИНОК:</span>
+                                        {houseMatched ? 'ТАК' : 'НІ'}
+                                    </div>
+                                );
+                            })()}
+
+                            {/* Unverified Warning */}
+                            {(!(order.lat || (order as any).coords?.lat) || !(order.lng || (order as any).coords?.lng)) && (
+                                <div className={clsx(
+                                    "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 animate-pulse shadow-sm",
+                                    isDark ? "bg-amber-500/10 border-amber-500/30 text-amber-500" : "bg-amber-50 border-amber-200 text-amber-700 shadow-amber-500/10"
                                 )}>
-                                    {order.locationType === 'ROOFTOP' ? 'ТОЧНО' : 
-                                     order.locationType === 'RANGE_INTERPOLATED' ? 'ДОМ' : 'ПРИМЕРНО'}
+                                    <ExclamationCircleIconSolid className="w-3.5 h-3.5" />
+                                    УТОЧНИТИ АДРЕСУ
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex items-center gap-3 text-xs">
+                            {order.plannedTime && order.plannedTime !== '00:00' && order.plannedTime !== '00:00:00' && order.plannedTime !== 'Без времени' && (
+                                <div className={clsx(
+                                    'font-bold px-2 py-0.5 rounded flex items-center gap-1.5 shadow-sm border',
+                                    isDark ? 'bg-gray-700 text-gray-300 border-gray-600' : 'bg-gray-50 text-gray-600 border-gray-100'
+                                )}>
+                                    <ClockIcon className="w-3.5 h-3.5 opacity-70" />
+                                    {order.plannedTime}
+                                </div>
+                            )}
+                            {locType && (
+                                <span className={clsx(
+                                    "px-2 py-0.5 rounded font-black text-[9px] tracking-wider border shadow-sm",
+                                    locType === 'ROOFTOP' ? (isDark ? "bg-green-500/20 text-green-400 border-green-500/30" : "bg-green-50 text-green-700 border-green-200") :
+                                    locType === 'RANGE_INTERPOLATED' ? (isDark ? "bg-blue-500/20 text-blue-400 border-blue-500/30" : "bg-blue-50 text-blue-700 border-blue-200") :
+                                    (isDark ? "bg-yellow-500/20 text-yellow-500 border-yellow-500/30" : "bg-yellow-50 text-yellow-700 border-yellow-200")
+                                )}>
+                                    {locType === 'ROOFTOP' ? 'ТОЧНО' : 
+                                     locType === 'RANGE_INTERPOLATED' ? 'ДОМ' : 'ПРИМЕРНО'}
                                 </span>
                             )}
                             <span className={clsx('font-black ml-auto', isDark ? 'text-white' : 'text-gray-900')}>
@@ -253,7 +343,9 @@ const OrderItem = memo(({
         prev.isDark === next.isDark &&
         prev.style === next.style &&
         prev.order.status === next.order.status &&
-        prev.order.orderNumber === next.order.orderNumber
+        prev.order.orderNumber === next.order.orderNumber &&
+        prev.order.lat === next.order.lat &&
+        prev.order.lng === next.order.lng
     );
 });
 
@@ -292,37 +384,37 @@ export const OrderList = memo(({
             {AutoSizerAny && (
                 <AutoSizerAny>
                     {({ width, height }: { width: number; height: number }) => (
-                    <List
-                        height={height}
-                        itemCount={orders.length}
-                        itemSize={110} // Optimized fixed height
-                        width={width}
-                        className="custom-scrollbar"
-                    >
-                        {({ index, style }: { index: number; style: React.CSSProperties }) => {
-                            const order = orders[index];
-                            const isSelected = selectedOrders.has(order.id);
-                            const selectionIndex = isSelected ? (selectionOrderMap.get(order.id) || 0) : 0;
+                        <List
+                            height={height}
+                            itemCount={orders.length}
+                            itemSize={110}
+                            width={width}
+                            className="custom-scrollbar"
+                        >
+                            {({ index, style }: { index: number; style: React.CSSProperties }) => {
+                                const order = orders[index];
+                                const isSelected = selectedOrders.has(order.id);
+                                const selectionIndex = isSelected ? (selectionOrderMap.get(order.id) || 0) : 0;
 
-                            return (
-                                <OrderItem
-                                    key={order.id}
-                                    order={order}
-                                    isDark={isDark}
-                                    isSelected={isSelected}
-                                    selectionOrder={selectionIndex}
-                                    onSelect={(id: string) => onSelectOrder(id, false)}
-                                    onMoveUp={onMoveUp}
-                                    onMoveDown={onMoveDown}
-                                    isInRoute={isInRoute || false}
-                                    style={style}
-                                />
-                            );
-                        }}
-                    </List>
-                )}
-            </AutoSizerAny>
-          )}
+                                return (
+                                    <OrderItem
+                                        key={order.id}
+                                        order={order}
+                                        isDark={isDark}
+                                        isSelected={isSelected}
+                                        selectionOrder={selectionIndex}
+                                        onSelect={(id: string) => onSelectOrder(id, false)}
+                                        onMoveUp={onMoveUp}
+                                        onMoveDown={onMoveDown}
+                                        isInRoute={isInRoute || false}
+                                        style={style}
+                                    />
+                                );
+                            }}
+                        </List>
+                    )}
+                </AutoSizerAny>
+            )}
         </div>
     );
 });

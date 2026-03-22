@@ -1,24 +1,22 @@
 import React from 'react';
 import { useExcelData } from '../../contexts/ExcelDataContext';
 import { useDashboardWebSocket } from '../../hooks/useDashboardWebSocket';
+import { useContinuousAutoRouting } from '../../hooks/useContinuousAutoRouting';
 
-/**
- * Headless component that maintains a background WebSocket connection 
- * for dashboard updates. It ensures that data remains synchronized
- * across all sections of the application.
- */
 export const GlobalDashboardFetcher: React.FC = () => {
     const { setExcelData } = useExcelData();
 
-    // The logic is encapsulated in the useDashboardWebSocket hook.
-    // We provide a callback to update the global Excel Data context.
+    // 1. WebSocket for Dashboard updates
     useDashboardWebSocket({
         onDataLoaded: (data) => {
             console.log('🔄 Global background sync: Data updated');
             setExcelData(data);
         },
-        enabled: true // Always enabled if the component is mounted
+        enabled: true
     });
+
+    // 2. Background Continuous Auto-Routing engine
+    useContinuousAutoRouting();
 
     return null;
 };

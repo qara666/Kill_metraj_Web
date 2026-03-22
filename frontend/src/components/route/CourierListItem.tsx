@@ -1,16 +1,18 @@
 import { memo } from 'react';
 import { clsx } from 'clsx';
-import { TruckIcon } from '@heroicons/react/24/outline';
+import { TruckIcon, BoltIcon } from '@heroicons/react/24/outline';
 import { isId0CourierName } from '../../utils/data/courierName';
+import { useDashboardStore } from '../../stores/useDashboardStore';
 
 interface CourierListItemProps {
   courierName: string;
   vehicleType: string;
   isSelected: boolean;
   onSelect: (name: string) => void;
-  availableOrdersCount: number;
   deliveredOrdersCount: number;
   totalOrdersCount: number;
+  calculatedCount?: number;
+  unassignedCount?: number;
   isDark: boolean;
 }
 
@@ -19,59 +21,83 @@ export const CourierListItem = memo(({
   vehicleType,
   isSelected,
   onSelect,
-  availableOrdersCount,
   deliveredOrdersCount,
   totalOrdersCount,
+  calculatedCount = 0,
   isDark
 }: CourierListItemProps) => {
+  const setAutoRoutingStatus = useDashboardStore(s => s.setAutoRoutingStatus);
+  const autoRoutingIsActive = useDashboardStore(s => s.autoRoutingStatus.isActive);
+
   const isUnassigned = courierName === 'Не назначено' || isId0CourierName(courierName)
   const progress = totalOrdersCount > 0 ? (deliveredOrdersCount / totalOrdersCount) * 100 : 0
   const isFinished = totalOrdersCount > 0 && deliveredOrdersCount === totalOrdersCount
-  const remaining = totalOrdersCount - deliveredOrdersCount
-  const isReturning = totalOrdersCount > 0 && deliveredOrdersCount > 0 && remaining > 0 && remaining <= 2
-  const isOnRoute = totalOrdersCount > 0 && (deliveredOrdersCount === 0 || remaining > 2) && deliveredOrdersCount < totalOrdersCount
+  const remainingTasks = totalOrdersCount - deliveredOrdersCount
+
+  const handleStartRobot = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setAutoRoutingStatus({ isActive: true });
+  };
 
   if (isUnassigned) {
     return (
-      <div className="group/item relative mb-2">
+      <div className="group/item relative">
         <button
           onClick={() => onSelect(courierName)}
           className={clsx(
-            'w-full text-left p-4 rounded-2xl border-2 transition-colors duration-200 transform',
+            'w-full text-left p-4 rounded-2xl border-2 transition-all duration-300 transform',
             'relative overflow-hidden',
             isSelected
               ? (isDark
-                ? 'bg-blue-600/20 border-blue-500 shadow-lg shadow-blue-500/10'
-                : 'bg-blue-50/80 border-blue-500 shadow-md shadow-blue-500/5')
+                ? 'bg-gradient-to-br from-indigo-600/20 to-blue-600/20 border-indigo-500 shadow-xl shadow-indigo-500/20'
+                : 'bg-gradient-to-br from-indigo-50/90 to-blue-50/90 border-indigo-500 shadow-xl shadow-indigo-500/10')
               : (isDark
-                ? 'bg-blue-500/5 border-blue-500/20 hover:border-blue-500/40'
-                : 'bg-blue-50/30 border-blue-100 hover:border-blue-300')
+                ? 'bg-indigo-500/5 border-indigo-500/10 hover:border-indigo-500/40 hover:bg-indigo-500/10'
+                : 'bg-indigo-50/20 border-indigo-100 hover:border-indigo-300 hover:bg-white')
           )}
         >
-          <div className="flex items-center gap-4 relative z-10">
-            <div className={clsx(
-              'w-12 h-12 rounded-xl flex flex-shrink-0 items-center justify-center transition-colors',
-              isSelected
-                ? 'bg-blue-500 text-white shadow-md shadow-blue-500/30'
-                : (isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-600')
-            )}>
-              <TruckIcon className="w-6 h-6" />
-            </div>
-            <div className="flex flex-col">
-              <span className={clsx(
-                'text-base font-black',
+          {/* Decorative background shape */}
+          <div className="absolute -right-4 -top-4 w-24 h-24 bg-indigo-500/10 rounded-full blur-2xl group-hover/item:bg-indigo-500/20 transition-all" />
+
+          <div className="flex items-center justify-between relative z-10">
+            <div className="flex items-center gap-4">
+              <div className={clsx(
+                'w-12 h-12 rounded-xl flex flex-shrink-0 items-center justify-center transition-all duration-300',
                 isSelected
-                  ? (isDark ? 'text-white' : 'text-blue-900')
-                  : (isDark ? 'text-blue-300' : 'text-blue-700')
+                  ? 'bg-gradient-to-br from-indigo-500 to-blue-600 text-white shadow-lg shadow-indigo-500/30 rotate-3'
+                  : (isDark ? 'bg-indigo-500/20 text-indigo-400 group-hover/item:rotate-6' : 'bg-indigo-100 text-indigo-600 group-hover/item:rotate-6')
               )}>
-                Не назначено
-              </span>
-              <span className={clsx(
-                'text-[11px] font-bold mt-0.5',
-                isDark ? 'text-blue-400/60' : 'text-blue-600/60'
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+              </div>
+              <div className="flex flex-col">
+                <span className={clsx(
+                  'text-base font-black tracking-tight uppercase',
+                  isSelected
+                    ? (isDark ? 'text-white' : 'text-indigo-900')
+                    : (isDark ? 'text-indigo-300' : 'text-indigo-700')
+                )}>
+                  Не назначенные заказы
+                </span>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className={clsx(
+                    'text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md',
+                    isDark ? 'bg-indigo-900/40 text-indigo-400/80' : 'bg-indigo-100 text-indigo-600/80'
+                  )}>
+                    {totalOrdersCount} доступно
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className={clsx(
+                "p-2.5 rounded-xl border border-dashed transition-all",
+                isDark ? "bg-black/20 border-white/5" : "bg-white/50 border-indigo-200"
               )}>
-                {totalOrdersCount} заказов
-              </span>
+                <BoltIcon className="w-5 h-5 text-gray-300 dark:text-gray-600" />
+              </div>
             </div>
           </div>
         </button>
@@ -81,128 +107,130 @@ export const CourierListItem = memo(({
 
   return (
     <div className="group/item relative">
-      <button
+      <div
         onClick={() => onSelect(courierName)}
         className={clsx(
-          'w-full text-left p-3 rounded-xl border-2 transition-colors duration-200 transform mb-2',
-          'relative overflow-hidden',
+          'cursor-pointer w-full text-left p-4 rounded-2xl border-2 transition-all duration-300 transform',
+          'relative overflow-hidden group/card',
           isSelected
             ? (isDark
-              ? 'bg-blue-600/10 border-blue-500 shadow-lg shadow-blue-500/10'
-              : 'bg-[#f0f7ff] border-blue-500 shadow-md shadow-blue-500/5')
-            : isReturning
-              ? (isDark
-                ? 'bg-purple-500/10 border-purple-500/30 shadow-lg shadow-purple-500/5'
-                : 'bg-purple-50 border-purple-200 shadow-md shadow-purple-500/5')
-              : isUnassigned
-                ? (isDark
-                  ? 'bg-amber-500/10 border-amber-500/30'
-                  : 'bg-amber-50 border-amber-200')
-                : (isDark
-                  ? 'bg-black/20 border-white/[0.03] hover:border-white/10 opacity-70 hover:opacity-100'
-                  : 'bg-white border-gray-100/80 hover:border-blue-200 shadow-sm opacity-60 hover:opacity-100')
+              ? 'bg-blue-600/10 border-blue-500 shadow-2xl shadow-blue-500/20'
+              : 'bg-white border-blue-500 shadow-2xl shadow-blue-500/10')
+            : (isDark
+              ? 'bg-gray-900/40 border-white/5 hover:border-blue-500/40 hover:bg-gray-800/60'
+              : 'bg-white border-gray-100 shadow-sm hover:border-blue-300 hover:shadow-md')
         )}
       >
-        <div className="flex items-center gap-3.5 relative z-10">
-          <div className="relative shrink-0">
-            <div className={clsx(
-              'w-10 h-10 rounded-xl flex items-center justify-center transition-colors',
-              isSelected
-                ? 'bg-blue-600 text-white'
-                : isUnassigned
-                  ? (isDark ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-600')
-                  : vehicleType === 'car'
-                    ? (isDark ? 'bg-green-600/20 text-green-400' : 'bg-green-100 text-green-600')
-                    : (isDark ? 'bg-orange-600/20 text-orange-400' : 'bg-orange-100 text-orange-600')
-            )}>
-              <TruckIcon className="w-5 h-5" />
-            </div>
-            {(isOnRoute || isReturning || isFinished) && (
-              <div className={clsx(
-                'absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2',
-                isDark ? 'border-gray-800' : 'border-white',
-                isFinished ? 'bg-green-500' : isReturning ? 'bg-purple-500' : 'bg-blue-500'
-              )} />
-            )}
-          </div>
+        {/* Progress Background Accent */}
+        <div
+          className={clsx(
+            "absolute inset-0 pointer-events-none transition-all duration-1000 origin-left opacity-[0.03]",
+            isFinished ? "bg-green-500" : "bg-blue-500"
+          )}
+          style={{ transform: `scaleX(${progress / 100})` }}
+        />
 
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-col gap-3 relative z-10">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className={clsx(
+                'w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-300 shrink-0 shadow-inner',
+                isSelected
+                  ? 'bg-blue-600 text-white shadow-lg'
+                  : vehicleType === 'car'
+                    ? (isDark ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-100 text-emerald-600')
+                    : (isDark ? 'bg-orange-500/20 text-orange-400' : 'bg-orange-100 text-orange-600')
+              )}>
+                <TruckIcon className={clsx("w-6 h-6", isSelected && "animate-pulse")} />
+              </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h4 className={clsx(
-                    'text-sm font-black truncate leading-tight',
+                    'text-md font-black truncate leading-tight tracking-tight',
                     isSelected
-                      ? (isDark ? 'text-blue-100' : 'text-blue-700')
-                      : isUnassigned
-                        ? (isDark ? 'text-amber-200' : 'text-amber-700')
-                        : (isDark ? 'text-gray-200' : 'text-gray-800')
+                      ? (isDark ? 'text-white' : 'text-blue-900')
+                      : (isDark ? 'text-gray-100' : 'text-gray-800')
                   )}>
                     {courierName}
                   </h4>
-                  {vehicleType !== 'car' && !isUnassigned && (
+                  {vehicleType !== 'car' && (
                     <span className={clsx(
-                      'px-1.5 py-0.5 text-[7px] rounded-md font-black uppercase tracking-widest',
+                      'px-1.5 py-0.5 text-[8px] rounded-md font-black uppercase tracking-wider',
                       isDark ? 'bg-orange-500/20 text-orange-400' : 'bg-orange-100 text-orange-600'
                     )}>МОТО</span>
                   )}
                 </div>
-
-                <div className={clsx(
-                  'text-[10px] font-bold mt-0.5 flex items-center gap-2',
-                  isDark ? 'text-gray-400' : 'text-gray-500'
-                )}>
-                  <span className={clsx(totalOrdersCount > 0 ? (isDark ? 'text-blue-400/80' : 'text-blue-600/80') : '')}>
-                    {totalOrdersCount > 0
-                      ? `${deliveredOrdersCount}/${totalOrdersCount} доставлено`
-                      : `${availableOrdersCount} заказов`}
+                <div className="flex items-center gap-2 mt-1">
+                  <span className={clsx(
+                    "text-[10px] font-bold px-2 py-0.5 rounded-lg flex items-center gap-1.5",
+                    isFinished
+                      ? (isDark ? "bg-green-500/20 text-green-400" : "bg-green-100 text-green-700")
+                      : (isDark ? "bg-blue-500/10 text-blue-400" : "bg-blue-50 text-blue-600")
+                  )}>
+                    <span className={clsx("w-1.5 h-1.5 rounded-full", isFinished ? "bg-green-500" : "bg-blue-500 animate-pulse")} />
+                    {isFinished ? 'Завершено' : remainingTasks > 0 ? 'Есть задачи' : 'На маршруте'}
                   </span>
                 </div>
               </div>
+            </div>
 
-              <div className="flex flex-col items-end gap-1.5 shrink-0">
-                <div className="text-right">
-                  <div className={clsx(
-                    'text-[11px] font-black leading-none',
-                    isSelected
-                      ? (isDark ? 'text-blue-200' : 'text-blue-700')
-                      : (isDark ? 'text-gray-200' : 'text-gray-700')
-                  )}>
-                    {Math.round(progress)}%
-                  </div>
-                  <div className={clsx(
-                    'text-[8px] font-bold uppercase tracking-tighter opacity-50 mt-0.5',
-                    isDark ? 'text-gray-400' : 'text-gray-500'
-                  )}>
-                    {isFinished ? 'Готов' : isOnRoute ? 'В пути' : 'Свободен'}
-                  </div>
-                </div>
+            <div className="flex flex-col items-end gap-1">
+              <button
+                onClick={handleStartRobot}
+                disabled={autoRoutingIsActive && remainingTasks === 0}
+                className={clsx(
+                  "p-2.5 rounded-xl transition-all duration-300 transform active:scale-90 shadow-md group/btn",
+                  autoRoutingIsActive && remainingTasks > 0
+                    ? "bg-blue-500 text-white animate-pulse"
+                    : "bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-blue-500 hover:text-white"
+                )}
+                title="Запустить расчет роботом"
+              >
+                <BoltIcon className={clsx("w-5 h-5", autoRoutingIsActive && remainingTasks > 0 && "animate-bounce")} />
+              </button>
+            </div>
+          </div>
 
-                <div className={clsx(
-                  'w-12 h-1 rounded-full overflow-hidden p-[1px]',
-                  isDark ? 'bg-white/5' : 'bg-gray-100'
-                )}>
-                  <div
-                    className={clsx(
-                      'h-full rounded-full transition-all duration-300',
-                      isFinished ? 'bg-green-500' : isOnRoute ? 'bg-blue-500' : 'bg-gray-300/50'
-                    )}
-                    style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
-                  />
-                </div>
-              </div>
+          <div className={clsx(
+            'grid grid-cols-3 gap-2 p-2.5 rounded-xl border border-dashed transition-colors',
+            isDark ? 'bg-black/20 border-white/5' : 'bg-gray-50/50 border-gray-200'
+          )}>
+            <div className="flex flex-col items-center justify-center">
+              <span className={clsx("text-[9px] font-bold uppercase tracking-widest opacity-50", isDark ? "text-gray-400" : "text-gray-500")}>ВСЕГО</span>
+              <span className={clsx("text-sm font-black mt-0.5", isDark ? "text-white" : "text-gray-900")}>{totalOrdersCount}</span>
+            </div>
+            <div className="flex flex-col items-center justify-center border-x border-dashed border-gray-300 dark:border-white/10">
+              <span className={clsx("text-[9px] font-bold uppercase tracking-widest opacity-50", isDark ? "text-gray-400" : "text-gray-500")}>В ПУТИ</span>
+              <span className={clsx("text-sm font-black mt-0.5", isDark ? "text-blue-400" : "text-blue-600")}>{calculatedCount}</span>
+            </div>
+            <div className="flex flex-col items-center justify-center">
+              <span className={clsx("text-[9px] font-bold uppercase tracking-widest opacity-50", isDark ? "text-gray-400" : "text-gray-500")}>ОСТАЛОСЬ</span>
+              <span className={clsx("text-sm font-black mt-0.5", remainingTasks > 0 ? (isDark ? "text-orange-400" : "text-orange-600") : (isDark ? "text-gray-500" : "text-gray-400"))}>
+                {remainingTasks}
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-1.5 px-0.5">
+            <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-tighter">
+              <span className={isDark ? "text-gray-500" : "text-gray-400"}>Прогресс доставки</span>
+              <span className={isDark ? "text-gray-300" : "text-gray-700"}>{Math.round(progress)}%</span>
+            </div>
+            <div className={clsx(
+              'w-full h-1.5 rounded-full overflow-hidden p-[1px] shadow-inner',
+              isDark ? 'bg-white/5' : 'bg-gray-100'
+            )}>
+              <div
+                className={clsx(
+                  'h-full rounded-full transition-all duration-700 ease-out shadow-[0_0_10px_rgba(59,130,246,0.5)]',
+                  isFinished ? 'bg-green-500' : 'bg-gradient-to-r from-blue-600 to-blue-400'
+                )}
+                style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+              />
             </div>
           </div>
         </div>
-      </button>
-
-      {/* Background glow */}
-      {isSelected && (
-        <div className={clsx(
-          'absolute inset-0 opacity-10 pointer-events-none transition-opacity duration-300',
-          isDark ? 'bg-gradient-to-br from-blue-500 to-transparent' : 'bg-gradient-to-br from-blue-100 to-transparent'
-        )} />
-      )}
+      </div>
     </div>
   )
 })

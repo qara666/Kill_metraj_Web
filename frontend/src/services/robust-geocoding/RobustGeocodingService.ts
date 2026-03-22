@@ -16,7 +16,7 @@
 import { PhotonService } from '../photonService'
 import { NominatimService } from '../nominatimService'
 import { localStorageUtils } from '../../utils/ui/localStorage'
-import { cleanAddressForSearch, slavicNormalize } from '../../utils/address/addressNormalization'
+import { cleanAddressForSearch, slavicNormalize, extractParentheticalStreetName } from '../../utils/address/addressNormalization'
 import { ALL_STREET_RENAMES as STREET_RENAMES } from '../../utils/data/streetRenamesData'
 import type {
   KmlZoneContext,
@@ -415,8 +415,8 @@ export class RobustGeocodingService {
     const allCandidates: ScoredCandidate[] = []
 
     // LEVEL 1: Primary Variants
-    // v37: Turbo - use only the original query if maxVariants not specified
-    const variantCount = turbo ? (maxVariants || 1) : (maxVariants || 3);
+    // v39: Increased to 5 variants (was 3) to ensure alt-name variants from parens are tried
+    const variantCount = turbo ? (maxVariants || 1) : (maxVariants || 5);
     // PASS rawAddress to expandVariants so it can parse parens!
     const { primary, all } = expandVariants(rawAddress, cityBias)
     const variantsToTry = primary.slice(0, variantCount);
@@ -450,6 +450,16 @@ export class RobustGeocodingService {
         }
       })
     })
+    
+    // v39: Also add the parenthetical alt name words explicitly to prevent filter rejection
+    // e.g. for "Йорданська (Гавро)" → add "гавро" so OSM results for "Гавро" aren't killed
+    const altStreetName = extractParentheticalStreetName(rawAddress);
+    if (altStreetName) {
+        altStreetName.toLowerCase().split(/[\s,.'"\-]+/).forEach(w => {
+            const cw = w.replace(/[^a-z0-9а-яёіїєґ]/gi, '');
+            if (cw.length > 2 && !forbidden.has(cw)) requestedStreetNames.add(cw);
+        });
+    }
 
     const expandedRoots = new Set(requestedStreetNames)
     if (!turbo) {

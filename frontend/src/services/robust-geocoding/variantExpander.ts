@@ -10,8 +10,10 @@ import {
   generateStreetVariants,
   STREET_RENAMES,
 } from '../../utils/data/addressUtils'
+import { extractParentheticalStreetName } from '../../utils/address/addressNormalization'
 
 export { cleanAddress }
+
 
 // ─── House number + postal extraction ────────────────────────────────────────
 
@@ -69,26 +71,59 @@ export function expandVariants(raw: string, cityBias: string | null): ExpandedVa
   const cleaned = cleanAddress(raw)
   const all = generateStreetVariants(cleaned, cityBias)
 
-  // ─── Phase 0.5: Parenthetical Old Name Extraction (Phase 7 Fix) ───
-  // cleanAddress strips parens like "(Героїв Сталінграда)". We extract them from `raw`
-  // and force them into the variant pool as high-priority renames.
+  // ─── Phase 0.5: Parenthetical Alternative Name (v39: PRIMARY-FIRST) ───────
+  // For Ukrainian addresses like "вул. Йорданська (Гавро), 24б":
+  //   - "Гавро" is the OLD/POPULAR name OSM knows better
+  //   - We extract it and make it a TOP-PRIORITY PRIMARY variant
   const renameResolved = new Set<string>()
-  const parenMatch = raw.match(/\((.*?)\)/);
-  if (parenMatch) {
-      const parenContent = parenMatch[1].trim();
-      // Ignore technical notes inside parens
-      if (parenContent.length > 3 && !parenContent.match(/\b(под|кв|эт|д\/ф|моб|офис|вход|дверь)\b/i)) {
-          const houseNum = extractHouseNumber(raw) || '';
-          const cityPrefix = cityBias ? `${cityBias}, ` : '';
-          const parenVariant = `${cityPrefix}${parenContent} ${houseNum}`.trim();
-          
-          // Generate full variants for the old name too
-          const parenVariants = generateStreetVariants(parenVariant, cityBias);
-          all.push(...parenVariants);
-          
-          // Mark as high-confidence so it gets tried immediately if the main name fails
-          renameResolved.add(parenVariant);
-          if (parenVariants.length > 0) renameResolved.add(parenVariants[0]);
+  
+  const altName = extractParentheticalStreetName(raw);
+  if (altName) {
+      const houseNum = extractHouseNumber(raw) || '';
+      const cityPrefix = cityBias ? `${cityBias}, ` : '';
+      
+      // Build multiple query forms for the alternative name
+      const altQueries: string[] = [
+          // Bare name (works best with Photon/Nominatim for common names)
+          `${cityPrefix}${altName}${houseNum ? ', ' + houseNum : ''}`.trim(),
+          // With вул. prefix (most common street type in Kyiv)
+          `${cityPrefix}вул. ${altName}${houseNum ? ', ' + houseNum : ''}`.trim(),
+          // With просп. prefix (for avenues)
+          `${cityPrefix}просп. ${altName}${houseNum ? ', ' + houseNum : ''}`.trim(),
+          // With пров. prefix (for side streets)
+          `${cityPrefix}пров. ${altName}${houseNum ? ', ' + houseNum : ''}`.trim(),
+      ];
+      
+      for (const q of altQueries) {
+          if (q && !all.includes(q)) {
+              all.unshift(q); // ADD TO FRONT - highest priority
+          }
+          renameResolved.add(q);
+      }
+      
+      // Also generate full variants from the alt name for renames
+      const altClean = cleanAddress(`${altName}${houseNum ? ', ' + houseNum : ''}`);
+      const altVariants = generateStreetVariants(altClean, cityBias);
+      for (const av of altVariants) {
+          if (!all.includes(av)) all.push(av);
+          renameResolved.add(av);
+      }
+      
+      console.log(`[VariantExpander] Alt name found: "${altName}" from "${raw}". Querying as primary.`);
+  } else {
+      // Legacy fallback: detect via raw paren regex (for complex inner content)
+      const parenMatch = raw.match(/\((.*?)\)/);
+      if (parenMatch) {
+          const parenContent = parenMatch[1].trim();
+          if (parenContent.length > 3 && !parenContent.match(/\b(під|кв|эт|д\/ф|моб|офис|вход|дверь)\b/i)) {
+              const houseNum = extractHouseNumber(raw) || '';
+              const cityPrefix = cityBias ? `${cityBias}, ` : '';
+              const parenVariant = `${cityPrefix}${parenContent} ${houseNum}`.trim();
+              const parenVariants = generateStreetVariants(parenVariant, cityBias);
+              all.push(...parenVariants);
+              renameResolved.add(parenVariant);
+              if (parenVariants.length > 0) renameResolved.add(parenVariants[0]);
+          }
       }
   }
 

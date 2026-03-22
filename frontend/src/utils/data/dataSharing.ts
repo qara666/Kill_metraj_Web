@@ -180,7 +180,7 @@ export const dataSharingUtils: DataSharingUtils = {
           return encodeURIComponent(compressed)
         }
       } catch (compressError) {
-        console.log('Сжатие не удалось, используем base64')
+        // Fallback to base64 handled below
       }
       
       // Fallback: base64 кодирование
@@ -198,49 +198,29 @@ export const dataSharingUtils: DataSharingUtils = {
    */
   decodeData: (encodedData: string): ShareableData | null => {
     try {
-      console.log('Начинаем декодирование данных...')
-      
-      // Декодируем из URL
       const decoded = decodeURIComponent(encodedData)
-      console.log('Данные декодированы из URL, длина:', decoded.length)
       
-      // Пробуем сначала распаковать как сжатые данные
       try {
         const jsonString = decompress(decoded)
         if (jsonString) {
-          console.log('Данные распакованы, длина JSON:', jsonString.length)
           const data = JSON.parse(jsonString)
-          console.log('JSON распарсен, структура:', Object.keys(data))
           const expandedData = dataSharingUtils.expandSimpleData(data)
-          console.log('Данные расширены:', {
-            orders: expandedData.excelData?.orders?.length || 0,
-            couriers: expandedData.excelData?.couriers?.length || 0,
-            routes: expandedData.routes?.length || 0
-          })
           return expandedData
         }
       } catch (decompressError) {
-        console.log('Не удалось распаковать как сжатые данные, пробуем base64:', decompressError)
+        // Fallback to base64
       }
       
-      // Если не получилось, пробуем как base64
       try {
         const jsonString = decodeURIComponent(escape(atob(decoded)))
-        console.log('Данные декодированы как base64, длина JSON:', jsonString.length)
         const data = JSON.parse(jsonString)
-        console.log('JSON распарсен, структура:', Object.keys(data))
         const expandedData = dataSharingUtils.expandSimpleData(data)
-        console.log('Данные расширены:', {
-          orders: expandedData.excelData?.orders?.length || 0,
-          couriers: expandedData.excelData?.couriers?.length || 0,
-          routes: expandedData.routes?.length || 0
-        })
         return expandedData
       } catch (base64Error) {
-        console.log('Не удалось декодировать как base64:', base64Error)
+        // Fallback
       }
       
-      throw new Error('Не удалось декодировать данные ни одним методом')
+      throw new Error('Не удалось декодировать данные')
     } catch (error) {
       console.error('Ошибка декодирования данных:', error)
       return null
@@ -251,12 +231,10 @@ export const dataSharingUtils: DataSharingUtils = {
    * Расширяет простые данные в полный формат
    */
   expandSimpleData: (simpleData: any): ShareableData => {
-    // Если данные уже в полном формате, возвращаем как есть
     if (simpleData.excelData && simpleData.routes) {
       return simpleData
     }
 
-    // Расширяем простые данные
     return {
       excelData: {
         orders: simpleData.o?.map((order: any) => ({

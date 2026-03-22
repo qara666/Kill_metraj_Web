@@ -7,6 +7,8 @@ services:
     buildCommand: cd backend && npm ci
     startCommand: cd backend && node simple_server.js
     envVars:
+      - key: NODE_VERSION
+        value: 20.x
       - key: NODE_ENV
         value: production
       - key: PORT
@@ -55,13 +57,17 @@ services:
   - type: web
     name: yapiko-auto-km-frontend-live
     env: static
-    buildCommand: cd frontend && npm install && npm run build
+    buildCommand: cd frontend && npm install && npx vite build
     staticPublishPath: frontend/dist
     routes:
       - type: rewrite
         source: /*
         destination: /index.html
     envVars:
+      - key: NODE_VERSION
+        value: 20.x
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=400
       - key: VITE_API_URL
         value: https://yapiko-auto-km-backend.onrender.com
 
