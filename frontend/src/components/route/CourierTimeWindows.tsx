@@ -12,6 +12,7 @@ interface CourierTimeWindowsProps {
     isDark?: boolean;
     isCalculating?: boolean;
     calculatingGroupId?: string | null;
+    ordersInRoutesSet?: Set<string>;
     onOrderMoved?: (orderId: string, targetGroup: TimeWindowGroup) => void;
     onCreateCustomGroup?: (orderId: string) => void;
     onCalculateRoute?: (group: TimeWindowGroup) => void;
@@ -29,6 +30,7 @@ export const CourierTimeWindows = memo(({
     onCreateCustomGroup,
     onCalculateRoute,
     onCalculateAllRoutes,
+    ordersInRoutesSet = new Set(),
 }: CourierTimeWindowsProps) => {
     const timeGroups = useMemo(() => {
         return groupOrdersByTimeWindow(orders, courierId, courierName);
@@ -107,6 +109,7 @@ export const CourierTimeWindows = memo(({
                         group={group}
                         isDark={isDark}
                         isCalculating={isCalculating && calculatingGroupId === group.id}
+                        ordersInRoutesSet={ordersInRoutesSet}
                         onOrderMoved={onOrderMoved}
                         onCalculateRoute={onCalculateRoute}
                     />

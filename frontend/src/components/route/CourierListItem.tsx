@@ -1,8 +1,8 @@
-import { memo } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { clsx } from 'clsx';
-import { TruckIcon, BoltIcon } from '@heroicons/react/24/outline';
+import { TruckIcon } from '@heroicons/react/24/outline';
 import { isId0CourierName } from '../../utils/data/courierName';
-import { useDashboardStore } from '../../stores/useDashboardStore';
+
 
 interface CourierListItemProps {
   courierName: string;
@@ -26,18 +26,19 @@ export const CourierListItem = memo(({
   calculatedCount = 0,
   isDark
 }: CourierListItemProps) => {
-  const setAutoRoutingStatus = useDashboardStore(s => s.setAutoRoutingStatus);
-  const autoRoutingIsActive = useDashboardStore(s => s.autoRoutingStatus.isActive);
 
   const isUnassigned = courierName === 'Не назначено' || isId0CourierName(courierName)
   const progress = totalOrdersCount > 0 ? (deliveredOrdersCount / totalOrdersCount) * 100 : 0
   const isFinished = totalOrdersCount > 0 && deliveredOrdersCount === totalOrdersCount
   const remainingTasks = totalOrdersCount - deliveredOrdersCount
 
-  const handleStartRobot = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setAutoRoutingStatus({ isActive: true });
-  };
+  const [isExpanded, setIsExpanded] = useState(isSelected);
+
+  useEffect(() => {
+    setIsExpanded(isSelected);
+  }, [isSelected]);
+
+
 
   if (isUnassigned) {
     return (
@@ -92,12 +93,6 @@ export const CourierListItem = memo(({
             </div>
 
             <div className="flex items-center gap-2">
-              <div className={clsx(
-                "p-2.5 rounded-xl border border-dashed transition-all",
-                isDark ? "bg-black/20 border-white/5" : "bg-white/50 border-indigo-200"
-              )}>
-                <BoltIcon className="w-5 h-5 text-gray-300 dark:text-gray-600" />
-              </div>
             </div>
           </div>
         </button>
@@ -108,7 +103,12 @@ export const CourierListItem = memo(({
   return (
     <div className="group/item relative">
       <div
-        onClick={() => onSelect(courierName)}
+        onClick={() => {
+          onSelect(courierName);
+          if (isSelected) {
+            setIsExpanded(!isExpanded);
+          }
+        }}
         className={clsx(
           'cursor-pointer w-full text-left p-4 rounded-2xl border-2 transition-all duration-300 transform',
           'relative overflow-hidden group/card',
@@ -143,7 +143,7 @@ export const CourierListItem = memo(({
               )}>
                 <TruckIcon className={clsx("w-6 h-6", isSelected && "animate-pulse")} />
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <h4 className={clsx(
                     'text-md font-black truncate leading-tight tracking-tight',
@@ -168,67 +168,68 @@ export const CourierListItem = memo(({
                       : (isDark ? "bg-blue-500/10 text-blue-400" : "bg-blue-50 text-blue-600")
                   )}>
                     <span className={clsx("w-1.5 h-1.5 rounded-full", isFinished ? "bg-green-500" : "bg-blue-500 animate-pulse")} />
-                    {isFinished ? 'Завершено' : remainingTasks > 0 ? 'Есть задачи' : 'На маршруте'}
+                    {isFinished ? 'Завершено' : remainingTasks > 0 ? 'Доставляет' : 'На маршруте'}
+                  </span>
+                </div>
+
+                {!isExpanded && (
+                  <div className="mt-2.5 w-full h-1 bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden">
+                    <div
+                      className={clsx(
+                        'h-full rounded-full transition-all duration-700 ease-out',
+                        isFinished ? 'bg-green-500' : 'bg-gradient-to-r from-blue-600 to-blue-400'
+                      )}
+                      style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {isExpanded && (
+            <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className={clsx(
+                'grid grid-cols-3 gap-2 p-2.5 rounded-xl border border-dashed transition-colors',
+                isDark ? 'bg-black/20 border-white/5' : 'bg-gray-50/50 border-gray-200'
+              )}>
+                <div className="flex flex-col items-center justify-center">
+                  <span className={clsx("text-[9px] font-bold uppercase tracking-widest opacity-50", isDark ? "text-gray-400" : "text-gray-500")}>ВСЕГО</span>
+                  <span className={clsx("text-sm font-black mt-0.5", isDark ? "text-white" : "text-gray-900")}>{totalOrdersCount}</span>
+                </div>
+                <div className="flex flex-col items-center justify-center border-x border-dashed border-gray-300 dark:border-white/10">
+                  <span className={clsx("text-[9px] font-bold uppercase tracking-widest opacity-50", isDark ? "text-gray-400" : "text-gray-500")}>В ПУТИ</span>
+                  <span className={clsx("text-sm font-black mt-0.5", isDark ? "text-blue-400" : "text-blue-600")}>{calculatedCount}</span>
+                </div>
+                <div className="flex flex-col items-center justify-center">
+                  <span className={clsx("text-[9px] font-bold uppercase tracking-widest opacity-50", isDark ? "text-gray-400" : "text-gray-500")}>ОСТАЛОСЬ</span>
+                  <span className={clsx("text-sm font-black mt-0.5", remainingTasks > 0 ? (isDark ? "text-orange-400" : "text-orange-600") : (isDark ? "text-gray-500" : "text-gray-400"))}>
+                    {remainingTasks}
                   </span>
                 </div>
               </div>
-            </div>
 
-            <div className="flex flex-col items-end gap-1">
-              <button
-                onClick={handleStartRobot}
-                disabled={autoRoutingIsActive && remainingTasks === 0}
-                className={clsx(
-                  "p-2.5 rounded-xl transition-all duration-300 transform active:scale-90 shadow-md group/btn",
-                  autoRoutingIsActive && remainingTasks > 0
-                    ? "bg-blue-500 text-white animate-pulse"
-                    : "bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-blue-500 hover:text-white"
-                )}
-                title="Запустить расчет роботом"
-              >
-                <BoltIcon className={clsx("w-5 h-5", autoRoutingIsActive && remainingTasks > 0 && "animate-bounce")} />
-              </button>
+              <div className="space-y-1.5 px-0.5">
+                <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-tighter">
+                  <span className={isDark ? "text-gray-500" : "text-gray-400"}>Прогресс доставки</span>
+                  <span className={isDark ? "text-gray-300" : "text-gray-700"}>{Math.round(progress)}%</span>
+                </div>
+                <div className={clsx(
+                  'w-full h-1.5 rounded-full overflow-hidden p-[1px] shadow-inner',
+                  isDark ? 'bg-white/5' : 'bg-gray-100'
+                )}>
+                  <div
+                    className={clsx(
+                      'h-full rounded-full transition-all duration-700 ease-out shadow-[0_0_10px_rgba(59,130,246,0.5)]',
+                      isFinished ? 'bg-green-500' : 'bg-gradient-to-r from-blue-600 to-blue-400'
+                    )}
+                    style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+                  />
+                </div>
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className={clsx(
-            'grid grid-cols-3 gap-2 p-2.5 rounded-xl border border-dashed transition-colors',
-            isDark ? 'bg-black/20 border-white/5' : 'bg-gray-50/50 border-gray-200'
-          )}>
-            <div className="flex flex-col items-center justify-center">
-              <span className={clsx("text-[9px] font-bold uppercase tracking-widest opacity-50", isDark ? "text-gray-400" : "text-gray-500")}>ВСЕГО</span>
-              <span className={clsx("text-sm font-black mt-0.5", isDark ? "text-white" : "text-gray-900")}>{totalOrdersCount}</span>
-            </div>
-            <div className="flex flex-col items-center justify-center border-x border-dashed border-gray-300 dark:border-white/10">
-              <span className={clsx("text-[9px] font-bold uppercase tracking-widest opacity-50", isDark ? "text-gray-400" : "text-gray-500")}>В ПУТИ</span>
-              <span className={clsx("text-sm font-black mt-0.5", isDark ? "text-blue-400" : "text-blue-600")}>{calculatedCount}</span>
-            </div>
-            <div className="flex flex-col items-center justify-center">
-              <span className={clsx("text-[9px] font-bold uppercase tracking-widest opacity-50", isDark ? "text-gray-400" : "text-gray-500")}>ОСТАЛОСЬ</span>
-              <span className={clsx("text-sm font-black mt-0.5", remainingTasks > 0 ? (isDark ? "text-orange-400" : "text-orange-600") : (isDark ? "text-gray-500" : "text-gray-400"))}>
-                {remainingTasks}
-              </span>
-            </div>
-          </div>
-
-          <div className="space-y-1.5 px-0.5">
-            <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-tighter">
-              <span className={isDark ? "text-gray-500" : "text-gray-400"}>Прогресс доставки</span>
-              <span className={isDark ? "text-gray-300" : "text-gray-700"}>{Math.round(progress)}%</span>
-            </div>
-            <div className={clsx(
-              'w-full h-1.5 rounded-full overflow-hidden p-[1px] shadow-inner',
-              isDark ? 'bg-white/5' : 'bg-gray-100'
-            )}>
-              <div
-                className={clsx(
-                  'h-full rounded-full transition-all duration-700 ease-out shadow-[0_0_10px_rgba(59,130,246,0.5)]',
-                  isFinished ? 'bg-green-500' : 'bg-gradient-to-r from-blue-600 to-blue-400'
-                )}
-                style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
-              />
-            </div>
-          </div>
         </div>
       </div>
     </div>

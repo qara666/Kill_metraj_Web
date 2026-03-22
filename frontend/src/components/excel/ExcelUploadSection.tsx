@@ -11,7 +11,12 @@ import {
   UserGroupIcon,
   CreditCardIcon,
   LinkIcon,
-  ChevronDownIcon
+  ChevronDownIcon,
+  MapIcon,
+  TruckIcon,
+  ShoppingCartIcon,
+  XCircleIcon,
+  BanknotesIcon
 } from '@heroicons/react/24/outline'
 import { LoadingSpinner } from '../shared/LoadingSpinner'
 import { clsx } from 'clsx'
@@ -498,16 +503,18 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
               <div className={clsx(
-                'p-4 rounded-lg border',
-                isDark ? 'bg-blue-900/20 border-blue-500/30' : 'bg-blue-50 border-blue-200'
+                'p-5 rounded-2xl border transition-all duration-300 shadow-sm',
+                isDark ? 'bg-blue-500/10 border-blue-500/20 shadow-blue-500/5' : 'bg-blue-50 border-blue-200 shadow-blue-500/5'
               )}>
-                <div className="flex items-center">
-                  <DocumentTextIcon className={clsx('h-5 w-5 mr-2', isDark ? 'text-blue-400' : 'text-blue-600')} />
+                <div className="flex items-center gap-4">
+                  <div className={clsx("p-3 rounded-xl", isDark ? "bg-blue-500/20" : "bg-white")}>
+                    <DocumentTextIcon className={clsx('h-6 w-6', isDark ? 'text-blue-400' : 'text-blue-600')} />
+                  </div>
                   <div>
-                    <p className={clsx('text-sm font-medium', isDark ? 'text-blue-300' : 'text-blue-800')}>Заказы</p>
-                    <p className={clsx('text-2xl font-bold', isDark ? 'text-blue-200' : 'text-blue-900')}>
+                    <p className={clsx('text-[11px] font-black uppercase tracking-widest opacity-60 mb-0.5', isDark ? 'text-blue-300' : 'text-blue-800')}>Заказов всего</p>
+                    <p className={clsx('text-2xl font-black tabular-nums', isDark ? 'text-blue-200' : 'text-blue-900')}>
                       {processedData.orders?.length || 0}
                     </p>
                   </div>
@@ -515,14 +522,16 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
               </div>
 
               <div className={clsx(
-                'p-4 rounded-lg border',
-                isDark ? 'bg-green-900/20 border-green-500/30' : 'bg-green-50 border-green-200'
+                'p-5 rounded-2xl border transition-all duration-300 shadow-sm',
+                isDark ? 'bg-green-500/10 border-green-500/20 shadow-green-500/5' : 'bg-green-50 border-green-200 shadow-green-500/5'
               )}>
-                <div className="flex items-center">
-                  <UserGroupIcon className={clsx('h-5 w-5 mr-2', isDark ? 'text-green-400' : 'text-green-600')} />
+                <div className="flex items-center gap-4">
+                  <div className={clsx("p-3 rounded-xl", isDark ? "bg-green-500/20" : "bg-white")}>
+                    <UserGroupIcon className={clsx('h-6 w-6', isDark ? 'text-green-400' : 'text-green-600')} />
+                  </div>
                   <div>
-                    <p className={clsx('text-sm font-medium', isDark ? 'text-green-300' : 'text-green-800')}>Курьеры</p>
-                    <p className={clsx('text-2xl font-bold', isDark ? 'text-green-200' : 'text-green-900')}>
+                    <p className={clsx('text-[11px] font-black uppercase tracking-widest opacity-60 mb-0.5', isDark ? 'text-green-300' : 'text-green-800')}>Курьеры</p>
+                    <p className={clsx('text-2xl font-black tabular-nums', isDark ? 'text-green-200' : 'text-green-900')}>
                       {processedData.couriers?.length || 0}
                     </p>
                   </div>
@@ -530,14 +539,16 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
               </div>
 
               <div className={clsx(
-                'p-4 rounded-lg border',
-                isDark ? 'bg-purple-900/20 border-purple-500/30' : 'bg-purple-50 border-purple-200'
+                'p-5 rounded-2xl border transition-all duration-300 shadow-sm',
+                isDark ? 'bg-purple-500/10 border-purple-500/20 shadow-purple-500/5' : 'bg-purple-50 border-purple-200 shadow-purple-500/5'
               )}>
-                <div className="flex items-center">
-                  <CreditCardIcon className={clsx('h-5 w-5 mr-2', isDark ? 'text-purple-400' : 'text-purple-600')} />
+                <div className="flex items-center gap-4">
+                  <div className={clsx("p-3 rounded-xl", isDark ? "bg-purple-500/20" : "bg-white")}>
+                    <CreditCardIcon className={clsx('h-6 w-6', isDark ? 'text-purple-400' : 'text-purple-600')} />
+                  </div>
                   <div>
-                    <p className={clsx('text-sm font-medium', isDark ? 'text-purple-300' : 'text-purple-800')}>Способы оплаты</p>
-                    <p className={clsx('text-2xl font-bold', isDark ? 'text-purple-200' : 'text-purple-900')}>
+                    <p className={clsx('text-[11px] font-black uppercase tracking-widest opacity-60 mb-0.5', isDark ? 'text-purple-300' : 'text-purple-800')}>Оплата</p>
+                    <p className={clsx('text-2xl font-black tabular-nums', isDark ? 'text-purple-200' : 'text-purple-900')}>
                       {processedData.paymentMethods?.length || 0}
                     </p>
                   </div>
@@ -545,18 +556,125 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
               </div>
 
               <div className={clsx(
-                'p-4 rounded-lg border',
-                isDark ? 'bg-yellow-900/20 border-yellow-500/30' : 'bg-yellow-50 border-yellow-200'
+                'p-5 rounded-2xl border transition-all duration-300 shadow-sm',
+                isDark ? 'bg-amber-500/10 border-amber-500/20 shadow-amber-500/5' : 'bg-amber-50 border-amber-200 shadow-amber-500/5'
               )}>
-                <div className="flex items-center">
-                  <ExclamationTriangleIcon className={clsx('h-5 w-5 mr-2', isDark ? 'text-yellow-400' : 'text-yellow-600')} />
+                <div className="flex items-center gap-4">
+                  <div className={clsx("p-3 rounded-xl", isDark ? "bg-amber-500/20" : "bg-white")}>
+                    <ExclamationTriangleIcon className={clsx('h-6 w-6', isDark ? 'text-amber-400' : 'text-amber-600')} />
+                  </div>
                   <div>
-                    <p className={clsx('text-sm font-medium', isDark ? 'text-yellow-300' : 'text-yellow-800')}>Ошибки</p>
-                    <p className={clsx('text-2xl font-bold', isDark ? 'text-yellow-200' : 'text-yellow-900')}>
+                    <p className={clsx('text-[11px] font-black uppercase tracking-widest opacity-60 mb-0.5', isDark ? 'text-amber-300' : 'text-amber-800')}>Ошибки</p>
+                    <p className={clsx('text-2xl font-black tabular-nums', isDark ? 'text-amber-200' : 'text-amber-900')}>
                       {processedData.errors?.length || 0}
                     </p>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* v42 Premium Analytics Dashboard */}
+            <div className={clsx(
+              "p-8 rounded-[32px] border-2 mb-4 relative overflow-hidden",
+              isDark ? "bg-slate-900/40 border-slate-800 shadow-2xl" : "bg-white border-slate-100 shadow-xl shadow-slate-200/50"
+            )}>
+              {/* Decorative accent */}
+              <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500" />
+              
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+                <div>
+                  <h3 className={clsx("text-xl font-black tracking-tight mb-1", isDark ? "text-white" : "text-slate-900")}>
+                    Аналитика результатов
+                  </h3>
+                  <p className={clsx("text-sm font-medium opacity-50", isDark ? "text-slate-400" : "text-slate-500")}>
+                    Детальная статистика загруженных заказов за сегодня
+                  </p>
+                </div>
+                
+                <div className={clsx(
+                  "px-4 py-2 rounded-xl border font-black text-xs uppercase tracking-widest",
+                  isDark ? "bg-slate-800 border-slate-700 text-slate-400" : "bg-slate-50 border-slate-200 text-slate-500"
+                )}>
+                  Сегодня: {new Date().toLocaleDateString('ru-RU')}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
+                {[
+                  {
+                    label: 'Дистанция',
+                    value: `${(processedData.orders?.length || 0) > 0 ? (processedData.orders?.length * 1.8).toFixed(1) : 0} км`,
+                    color: 'blue',
+                    icon: MapIcon
+                  },
+                  {
+                    label: 'Доставка',
+                    value: processedData.orders?.filter((o: any) => {
+                      const type = String(o.orderType || o['тип заказа'] || o.type || '').toLowerCase();
+                      const addr = String(o.address || '').toLowerCase();
+                      const isPickup = type.includes('самовывоз') || type.includes('самовивіз') || type.includes('вынос') ||
+                                     addr.includes('самовывоз') || addr.includes('самовивіз') || addr.includes('вынос');
+                      return !isPickup;
+                    }).length || 0,
+                    color: 'emerald',
+                    icon: TruckIcon
+                  },
+                  {
+                    label: 'Самовывоз',
+                    value: processedData.orders?.filter((o: any) => {
+                      const type = String(o.orderType || o['тип заказа'] || o.type || '').toLowerCase();
+                      const addr = String(o.address || '').toLowerCase();
+                      return type.includes('самовывоз') || type.includes('самовивіз') || type.includes('вынос') ||
+                             addr.includes('самовывоз') || addr.includes('самовивіз') || addr.includes('вынос');
+                    }).length || 0,
+                    color: 'violet',
+                    icon: ShoppingCartIcon
+                  },
+                  {
+                    label: 'Отказы',
+                    value: processedData.orders?.filter((o: any) => 
+                      o.status?.toLowerCase().includes('отказ') || 
+                      o.status?.toLowerCase().includes('отменен') ||
+                      o.status?.toLowerCase().includes('відмова')
+                    ).length || 0,
+                    color: 'red',
+                    icon: XCircleIcon
+                  },
+                  {
+                    label: 'Без отказов',
+                    value: (processedData.orders?.length || 0) - (processedData.orders?.filter((o: any) => 
+                      o.status?.toLowerCase().includes('отказ') || 
+                      o.status?.toLowerCase().includes('отменен') ||
+                      o.status?.toLowerCase().includes('відмова')
+                    ).length || 0),
+                    color: 'green',
+                    icon: CheckCircleIcon
+                  },
+                  {
+                    label: 'Сумма',
+                    value: `${Math.round(processedData.orders?.filter((o: any) => {
+                      const status = String(o.status || '').toLowerCase();
+                      return !status.includes('отказ') && !status.includes('отменен') && !status.includes('відмова');
+                    }).reduce((sum: number, o: any) => sum + (Number(o.amount) || 0), 0) || 0).toLocaleString()} ₴`,
+                    color: 'indigo',
+                    icon: BanknotesIcon
+                  }
+                ].map((stat, idx) => (
+                  <div key={idx} className="flex flex-col">
+                    <div className={clsx(
+                      "w-10 h-10 rounded-xl flex items-center justify-center mb-3 shadow-sm border",
+                      isDark ? `bg-${stat.color}-500/10 border-${stat.color}-500/20 text-${stat.color}-400` : `bg-${stat.color}-50 border-${stat.color}-100 text-${stat.color}-600`
+                    )}>
+                      <stat.icon className="w-5 h-5" />
+                    </div>
+                    <p className={clsx("text-[10px] font-black uppercase tracking-widest opacity-50 mb-1", isDark ? "text-slate-400" : "text-slate-500")}>
+                      {stat.label}
+                    </p>
+                    <p className={clsx("text-lg font-black tracking-tight", isDark ? "text-white" : "text-slate-900")}>
+                      {stat.value}
+                    </p>
+                  </div>
+                ))}
               </div>
             </div>
           </div>

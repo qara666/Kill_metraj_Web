@@ -99,7 +99,7 @@ export function CourierFinancials({
     // For PDF Export
     const reportRef = useRef<HTMLDivElement>(null);
 
-    const { excelData, updateOrderPaymentMethod, updateExcelData } = useExcelData();
+    const { excelData, updateOrderPaymentMethod, updateExcelData, saveManualOverrides } = useExcelData();
 
     useEffect(() => {
         const storageKey = `shift_notes_${courierId}_${targetDate || new Date().toISOString().split('T')[0]}`;
@@ -210,13 +210,19 @@ export function CourierFinancials({
 
             const isRefused = paymentMethod.includes('отказ');
 
-            const effectiveAmount = isRefused ? changeAmount : (isCash && changeAmount > amount ? changeAmount : amount);
+            // effectiveAmount = что курьер должен внести в кассу (цена заказа без сдачи)
+            // changeAmount = сколько дал клиент (часто больше суммы)
+            // changeDue = сколько курьер должен отдать сдачи клиенту
+            const cashTendered = changeAmount; // так назван в данных, вводящее название
+            const changeDue = isCash && cashTendered > amount ? Math.round((cashTendered - amount) * 100) / 100 : 0;
+            const effectiveAmount = isRefused ? 0 : amount;
 
             const orderData: Order = {
                 ...order,
                 id: order.id || order.orderNumber,
                 amount,
-                changeAmount,
+                changeAmount: cashTendered,  // сколько дал клиент
+                changeDue,                   // сколько сдачи курьер отдал клиенту
                 effectiveAmount
             };
 
@@ -478,21 +484,44 @@ export function CourierFinancials({
         }
     };
 
-    const handleAddressUpdate = async (newAddress: string) => {
+    const handleAddressUpdate = async (newAddress: string, coords?: { lat: number; lng: number }) => {
       if (!editingOrder) return;
       
       try {
-        updateExcelData((prev: any) => ({
-          ...prev,
-          orders: prev.orders.map((o: any) => 
-            String(o.orderNumber) === String(editingOrder.orderNumber)
-              ? { ...o, address: newAddress, geocodingError: null, geoMeta: null, lat: undefined, lng: undefined }
+        const orderId = String(editingOrder.id || editingOrder.orderNumber);
+        
+        let nextOrders: any[] = [];
+        updateExcelData((prev: any) => {
+          nextOrders = prev.orders.map((o: any) => 
+            String(o.id || o.orderNumber) === orderId
+              ? { 
+                  ...o, 
+                  address: newAddress, 
+                  geocodingError: null, 
+                  geoMeta: null, 
+                  lat: coords?.lat ?? o.lat, 
+                  lng: coords?.lng ?? o.lng,
+                  coords: coords ?? o.coords,
+                  isAddressLocked: !!coords,
+                  locationType: coords ? 'ROOFTOP' : o.locationType
+                }
               : o
-          )
-        }));
+          );
+          return { ...prev, orders: nextOrders };
+        });
+        
+        // v35.10: Persist to manual overrides immediately
+        if (nextOrders.length > 0) {
+          saveManualOverrides(nextOrders);
+        }
+
         setShowAddressEditModal(false);
         setEditingOrder(null);
         toast.success('Адрес обновлен. Пересчитайте маршруты.');
+        
+        // Trigger background calculation if needed
+        window.dispatchEvent(new CustomEvent('km-force-auto-routing'));
+        
         await fetchFinancialSummary();
       } catch (err) {
         toast.error('Ошибка при обновлении адреса');
@@ -881,9 +910,9 @@ export function CourierFinancials({
                                                                         <p className={clsx('text-lg font-black tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>
                                                                             {formatCurrency((order as any).settledAmount || order.amount)}
                                                                         </p>
-                                                                        {(order as any).changeAmount > 0 && (
+                                                                        {(order as any).changeDue > 0 && (
                                                                             <p className="text-[10px] font-bold opacity-30 mt-0.5">
-                                                                                Сдача: {(order as any).changeAmount}₴
+                                                                                Сдача: {(order as any).changeDue}₴
                                                                             </p>
                                                                         )}
                                                                         {order.settlementNote && (
@@ -1083,11 +1112,6 @@ export function CourierFinancials({
                                                 )}
                                             </div>
                                             <div className="flex items-start gap-3">
-                                                {(order.geocodingError || (!order.geoMeta && !order.lat)) && (
-                                                    <div className="mt-1">
-                                                        <ExclamationTriangleIcon className="w-4 h-4 text-red-500 animate-pulse" />
-                                                    </div>
-                                                )}
                                                 <p className={clsx('text-sm font-bold leading-relaxed', isDark ? 'text-gray-300' : 'text-gray-800')} title={order.address}>
                                                     {order.address}
                                                 </p>
@@ -1108,9 +1132,9 @@ export function CourierFinancials({
                                                 )}>
                                                     {formatCurrency((order as any).settledAmount || (order as any).effectiveAmount || order.amount)}
                                                 </p>
-                                                {activeTab === 'cash' && (order as any).changeAmount > 0 && (
+                                                {activeTab === 'cash' && (order as any).changeDue > 0 && (
                                                     <p className="text-[10px] font-bold opacity-30 mt-1">
-                                                        Сдача: {(order as any).changeAmount}₴
+                                                        Сдача: {(order as any).changeDue}₴
                                                     </p>
                                                 )}
                                             </div>
@@ -1161,6 +1185,7 @@ export function CourierFinancials({
                     isDark={isDark}
                     onClose={() => setShowSettlementModal(false)}
                     updateExcelData={updateExcelData}
+                    saveManualOverrides={saveManualOverrides}
                     setShowSettlementModal={setShowSettlementModal}
                     fetchFinancialSummary={fetchFinancialSummary}
                 />
@@ -1173,7 +1198,7 @@ export function CourierFinancials({
                         setShowAddressEditModal(false);
                         setEditingOrder(null);
                     }}
-                    onSave={(newAddress) => handleAddressUpdate(newAddress)}
+                    onSave={(newAddress, coords) => handleAddressUpdate(newAddress, coords)}
                     currentAddress={editingOrder.address}
                     orderNumber={editingOrder.orderNumber}
                     customerName={editingOrder.customerName}
