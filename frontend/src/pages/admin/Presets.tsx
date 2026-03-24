@@ -31,6 +31,7 @@ export const AdminPresets: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('')
     const [zoneSearchTerm, setZoneSearchTerm] = useState('')
     const [userFields, setUserFields] = useState({ divisionId: '', canModifySettings: true })
+    const [isSyncingKml, setIsSyncingKml] = useState(false)
 
     // If not admin, force selection to current user's ID
     React.useEffect(() => {
@@ -130,6 +131,54 @@ export const AdminPresets: React.FC = () => {
                 userId: selectedUserId, 
                 data: userFields 
             })
+        }
+    }
+
+    const syncKmlFromUrl = async (url: string) => {
+        if (!url.trim()) {
+            toast.error('Пожалуйста, введите ссылку на Google My Maps')
+            return
+        }
+
+        setIsSyncingKml(true)
+        try {
+            const midMatch = url.match(/mid=([^&\s]+)/)
+            if (!midMatch) {
+                throw new Error(`Не удалось найти ID карты (mid) в ссылке.`)
+            }
+
+            const mid = midMatch[1]
+            const exportUrl = `https://www.google.com/maps/d/u/0/kml?mid=${mid}&forcekml=1`
+
+            const { API_URL } = await import('../../config/apiConfig')
+            const proxyUrl = `${API_URL}/api/proxy/kml?url=${encodeURIComponent(exportUrl)}`
+
+            const response = await fetch(proxyUrl)
+            if (!response.ok) throw new Error('Ошибка сети при загрузке карты')
+
+            const json = await response.json()
+            const kmlText = json.contents
+
+            if (!kmlText || !kmlText.includes('<kml')) {
+                throw new Error('Получены некорректные данные.')
+            }
+
+            const parsed = parseKML(kmlText)
+            const now = new Date().toLocaleString('ru-RU')
+            
+            setSettings(prev => ({
+                ...prev,
+                kmlData: parsed,
+                kmlSourceUrl: url,
+                lastKmlSync: now
+            }))
+
+            toast.success(`Синхронизировано успешно: ${parsed.polygons.length} зон`)
+        } catch (error: any) {
+            console.error('KML Sync Error:', error)
+            toast.error(error.message || 'Ошибка при синхронизации KML')
+        } finally {
+            setIsSyncingKml(false)
         }
     }
 
@@ -550,9 +599,27 @@ export const AdminPresets: React.FC = () => {
                                             type="text"
                                             value={settings.kmlSourceUrl || ''}
                                             onChange={(e) => setSettings({ ...settings, kmlSourceUrl: e.target.value })}
-                                            className="input flex-1"
+                                            className="input flex-1 h-[42px]"
                                             placeholder="Ссылка Google My Maps..."
                                         />
+                                        <button
+                                            type="button"
+                                            onClick={() => syncKmlFromUrl(settings.kmlSourceUrl)}
+                                            disabled={isSyncingKml || !settings.kmlSourceUrl}
+                                            className={clsx(
+                                                "px-6 py-2 rounded-xl font-bold transition-all flex items-center gap-2 h-[42px]",
+                                                isDark 
+                                                    ? "bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-gray-800" 
+                                                    : "bg-indigo-500 hover:bg-indigo-600 text-white disabled:bg-gray-100 disabled:text-gray-400"
+                                            )}
+                                        >
+                                            {isSyncingKml ? (
+                                                <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                                            ) : (
+                                                <ArrowPathIcon className="h-4 w-4" />
+                                            )}
+                                            Применить
+                                        </button>
                                     </div>
                                     <div className="flex items-center gap-4 mt-2">
                                         <label className="inline-flex items-center space-x-2 cursor-pointer">
