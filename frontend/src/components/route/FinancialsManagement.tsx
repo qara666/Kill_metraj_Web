@@ -47,9 +47,14 @@ export const FinancialsManagement: React.FC = () => {
             const isSettled = !!o.settledDate
             const pMethod = String(o.paymentMethod || '').toLowerCase()
 
-            const isOnline = pMethod.includes('онлайн') || pMethod.includes('online') || pMethod.includes('сайт') || pMethod.includes('qr') || pMethod.includes('безготівка');
-            const isCard = pMethod.includes('карт') || pMethod.includes('card') || pMethod.includes('терминал');
-            const isCash = !isOnline && !isCard;
+            const isRefused = pMethod.includes('отказ')
+            const isCash = !isRefused && (
+                pMethod.includes('готівка') || 
+                pMethod.includes('наличные') || 
+                pMethod.includes('налич') || 
+                pMethod === 'cash' || 
+                pMethod === ''
+            ) && !pMethod.includes('безготів')
 
             if (isComp && !isSettled && isCash) {
                 stats[name].debt += (Number(o.amount) || 0)

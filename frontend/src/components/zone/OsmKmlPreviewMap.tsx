@@ -2,15 +2,17 @@ import React, { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { loadLeaflet } from '../../utils/maps/leafletLoader'
 import { KMLData } from '../../utils/maps/kmlParser'
+import { getCityBounds } from '../../services/robust-geocoding/cityBounds'
 
 interface OsmKmlPreviewMapProps {
     isDark: boolean
     kmlData: KMLData | null
     selectedHubs: string[]
     selectedZones?: string[]
+    city?: string
 }
 
-export const OsmKmlPreviewMap: React.FC<OsmKmlPreviewMapProps> = ({ isDark, kmlData, selectedHubs, selectedZones = [] }) => {
+export const OsmKmlPreviewMap: React.FC<OsmKmlPreviewMapProps> = ({ isDark, kmlData, selectedHubs, selectedZones = [], city }) => {
     const mapRef = useRef<HTMLDivElement>(null)
     const mapInstance = useRef<any>(null)
     const polygonsRef = useRef<any[]>([])
@@ -24,7 +26,14 @@ export const OsmKmlPreviewMap: React.FC<OsmKmlPreviewMapProps> = ({ isDark, kmlD
                 if (!mapRef.current || !kmlData) return
 
                 if (!mapInstance.current) {
-                    mapInstance.current = L.map(mapRef.current).setView([50.4501, 30.5234], 10)
+                    let center: [number, number] = [50.4501, 30.5234]; // Kyiv default
+                    if (city) {
+                        const bounds = getCityBounds(city);
+                        if (bounds && bounds.center) {
+                            center = [bounds.center[1], bounds.center[0]];
+                        }
+                    }
+                    mapInstance.current = L.map(mapRef.current).setView(center, 10);
                 }
 
                 const map = mapInstance.current

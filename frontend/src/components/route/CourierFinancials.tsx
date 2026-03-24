@@ -41,12 +41,7 @@ interface FinancialSummary {
             totalAmount: number;
             orders: Order[];
         };
-        cardOrders: {
-            count: number;
-            totalAmount: number;
-            orders: Order[];
-        };
-        onlineOrders: {
+        cashlessOrders: {
             count: number;
             totalAmount: number;
             orders: Order[];
@@ -82,11 +77,11 @@ export function CourierFinancials({
     targetDate,
     isDark = false
 }: CourierFinancialsProps) {
-    const [summary, setSummary] = useState<FinancialSummary | null>(null);
+    const [remoteSummary, setRemoteSummary] = useState<FinancialSummary | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showSettlementModal, setShowSettlementModal] = useState(false);
-    const [activeTab, setActiveTab] = useState<'cash' | 'online' | 'history' | 'general'>('cash');
+    const [activeTab, setActiveTab] = useState<'cash' | 'cashless' | 'history' | 'general'>('cash');
     const [switchingOrderId, setSwitchingOrderId] = useState<string | null>(null);
     const [notes, setNotes] = useState('');
     const [historySearchTerm, setHistorySearchTerm] = useState('');
@@ -134,8 +129,7 @@ export function CourierFinancials({
                     totalOrders: 0,
                     completedOrders: 0,
                     cashOrders: { count: 0, totalAmount: 0, orders: [] },
-                    cardOrders: { count: 0, totalAmount: 0, orders: [] },
-                    onlineOrders: { count: 0, totalAmount: 0, orders: [] },
+                    cashlessOrders: { count: 0, totalAmount: 0, orders: [] },
                     refusedOrders: { count: 0, totalAmount: 0, orders: [] },
                     totalExpected: 0
                 },
@@ -154,8 +148,7 @@ export function CourierFinancials({
                     isOrderCompleted(o.status)
                 ).length,
                 cashOrders: { count: 0, totalAmount: 0, orders: [] },
-                cardOrders: { count: 0, totalAmount: 0, orders: [] },
-                onlineOrders: { count: 0, totalAmount: 0, orders: [] },
+                cashlessOrders: { count: 0, totalAmount: 0, orders: [] },
                 refusedOrders: { count: 0, totalAmount: 0, orders: [] },
                 totalExpected: 0
             },
@@ -191,39 +184,24 @@ export function CourierFinancials({
 
             // IMPORTANT: Check "безготівка" (cashless) BEFORE "готівка" (cash)
             // because "безготівка" contains the substring "готівка"
-            const isOnline =
-                paymentMethod.includes('безготівка') ||
-                paymentMethod.includes('онлайн') ||
-                paymentMethod.includes('online') ||
-                paymentMethod.includes('liqpay') ||
-                paymentMethod.includes('site') ||
-                paymentMethod.includes('сайт') ||
-                paymentMethod.includes('qr') ||
-                paymentMethod.includes('портмоне') ||
-                paymentMethod.includes('переказ') ||
-                paymentMethod.includes('перевод');
-
-            const isCard =
-                paymentMethod.includes('карт') ||
-                paymentMethod.includes('card') ||
-                paymentMethod.includes('терминал') ||
-                paymentMethod.includes('terminal') ||
-                paymentMethod.includes('pos');
-
-            const isCash = !isOnline && !isCard && (
-                paymentMethod.includes('готівка') ||
-                paymentMethod.includes('наличные') ||
-                paymentMethod.includes('налич') ||
-                paymentMethod === 'cash' ||
+            const isRefused = paymentMethod.includes('отказ');
+            
+            // 🔑 STRICT CASH IDENTIFICATION
+            const isCash = !isRefused && (
+                paymentMethod.includes('готівка') || 
+                paymentMethod.includes('наличные') || 
+                paymentMethod.includes('налич') || 
+                paymentMethod === 'cash' || 
                 paymentMethod === ''
+            ) && (
+                // "безготівка" contains "готівка", so exclude it to be safe
+                !paymentMethod.includes('безготів')
             );
 
-            const isRefused = paymentMethod.includes('отказ');
+            // 🔑 UNIVERSAL CASHLESS: Anything that isn't Нал or Отказ becomes Безнал.
+            const isCashless = !isCash && !isRefused;
 
-            // effectiveAmount = что курьер должен внести в кассу (цена заказа без сдачи)
-            // changeAmount = сколько дал клиент (часто больше суммы)
-            // changeDue = сколько курьер должен отдать сдачи клиенту
-            const cashTendered = changeAmount; // так назван в данных, вводящее название
+            const cashTendered = changeAmount;
             const changeDue = isCash && cashTendered > amount ? Math.round((cashTendered - amount) * 100) / 100 : 0;
             const effectiveAmount = isRefused ? 0 : amount;
 
@@ -231,19 +209,15 @@ export function CourierFinancials({
                 ...order,
                 id: order.id || order.orderNumber,
                 amount,
-                changeAmount: cashTendered,  // сколько дал клиент
-                changeDue,                   // сколько сдачи курьер отдал клиенту
+                changeAmount: cashTendered,
+                changeDue,
                 effectiveAmount
             };
 
-            if (isOnline) {
-                summary.currentShift.onlineOrders.count++;
-                summary.currentShift.onlineOrders.totalAmount += amount;
-                summary.currentShift.onlineOrders.orders.push(orderData);
-            } else if (isCard) {
-                summary.currentShift.cardOrders.count++;
-                summary.currentShift.cardOrders.totalAmount += amount;
-                summary.currentShift.cardOrders.orders.push(orderData);
+            if (isCashless) {
+                summary.currentShift.cashlessOrders.count++;
+                summary.currentShift.cashlessOrders.totalAmount += amount;
+                summary.currentShift.cashlessOrders.orders.push(orderData);
             } else if (isCash) {
                 summary.currentShift.cashOrders.count++;
                 summary.currentShift.cashOrders.totalAmount += effectiveAmount;
@@ -257,23 +231,21 @@ export function CourierFinancials({
 
         summary.currentShift.totalExpected =
             summary.currentShift.cashOrders.totalAmount +
-            summary.currentShift.cardOrders.totalAmount +
-            summary.currentShift.onlineOrders.totalAmount;
+            summary.currentShift.cashlessOrders.totalAmount;
 
         return summary;
     }, [excelData, courierId, courierName, targetDate]);
 
+    // Unified Source of Truth: local calculation preferred over remote state
+    const summary = localSummary || remoteSummary;
 
     const fetchFinancialSummary = useCallback(async () => {
         setLoading(true);
         setError(null);
 
         if (excelData && excelData.orders.length > 0) {
-            if (localSummary) {
-                setSummary(localSummary);
-                setLoading(false);
-                return;
-            }
+            setLoading(false);
+            return;
         }
 
         if (!courierId) {
@@ -309,7 +281,7 @@ export function CourierFinancials({
 
             const data = await response.json();
             if (data && typeof data === 'object') {
-                setSummary(data);
+                setRemoteSummary(data);
             } else {
                 throw new Error('Получен пустой или некорректный ответ от сервера');
             }
@@ -319,7 +291,7 @@ export function CourierFinancials({
         } finally {
             setLoading(false);
         }
-    }, [courierId, divisionId, targetDate, excelData, localSummary]);
+    }, [courierId, divisionId, targetDate, excelData]);
 
     useEffect(() => {
         fetchFinancialSummary();
@@ -332,8 +304,8 @@ export function CourierFinancials({
         switch (activeTab) {
             case 'cash':
                 return currentShift.cashOrders.orders;
-            case 'online':
-                return currentShift.onlineOrders.orders;
+            case 'cashless':
+                return currentShift.cashlessOrders.orders;
             case 'history':
                 return historyOrders;
             default:
@@ -413,8 +385,8 @@ export function CourierFinancials({
             `📅 Дата: ${new Date().toLocaleDateString('ru-RU')}\n` +
             `✅ Выполнено: ${currentShift.completedOrders}/${currentShift.totalOrders}\n` +
             `-------------------\n` +
-            `💵 Наличные: ${formatCurrency(currentShift.cashOrders.totalAmount)}\n` +
-            `💳 Онлайн: ${formatCurrency(currentShift.onlineOrders.totalAmount)}\n` +
+            `💵 Нал: ${formatCurrency(currentShift.cashOrders.totalAmount)}\n` +
+            `💳 Безнал: ${formatCurrency(currentShift.cashlessOrders.totalAmount)}\n` +
             `💰 Всего выручка: ${formatCurrency(currentShift.totalExpected)}\n` +
             (notes ? `📝 Заметка: ${notes}\n` : '') +
             `-------------------`;
@@ -466,7 +438,7 @@ export function CourierFinancials({
             lowerMethod.includes('cash') ||
             lowerMethod.includes('готівка');
 
-        const newMethod = isCash ? 'Онлайн' : 'Наличные';
+        const newMethod = isCash ? 'Безнал' : 'Нал';
 
         setSwitchingOrderId(orderNumber);
         try {
@@ -657,7 +629,7 @@ export function CourierFinancials({
                     <div className="flex items-center">
                         <RevenueProgressBar
                             cashAmount={currentShift.cashOrders.totalAmount}
-                            onlineAmount={currentShift.onlineOrders.totalAmount}
+                            cashlessAmount={currentShift.cashlessOrders.totalAmount}
                             totalAmount={currentShift.totalExpected}
                             isDark={isDark}
                         />
@@ -667,7 +639,7 @@ export function CourierFinancials({
                 {/* Sub Cards: Detailed breakdown */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
                     <PaymentMethodCard
-                        label="Готівка"
+                        label="Нал"
                         amount={currentShift.cashOrders.totalAmount}
                         orderCount={currentShift.cashOrders.count}
                         percentage={currentShift.totalExpected > 0 ? Math.round((currentShift.cashOrders.totalAmount / currentShift.totalExpected) * 100) : 0}
@@ -676,10 +648,10 @@ export function CourierFinancials({
                         isDark={isDark}
                     />
                     <PaymentMethodCard
-                        label="Онлайн"
-                        amount={currentShift.onlineOrders.totalAmount}
-                        orderCount={currentShift.onlineOrders.count}
-                        percentage={currentShift.totalExpected > 0 ? Math.round((currentShift.onlineOrders.totalAmount / currentShift.totalExpected) * 100) : 0}
+                        label="Безнал"
+                        amount={currentShift.cashlessOrders.totalAmount}
+                        orderCount={currentShift.cashlessOrders.count}
+                        percentage={currentShift.totalExpected > 0 ? Math.round((currentShift.cashlessOrders.totalAmount / currentShift.totalExpected) * 100) : 0}
                         color="purple"
                         icon={GlobeAltIcon}
                         isDark={isDark}
@@ -760,7 +732,7 @@ export function CourierFinancials({
                         "p-1.5 rounded-2xl flex gap-1",
                         isDark ? "bg-gray-900" : "bg-white shadow-sm border border-gray-100"
                     )}>
-                        {(['cash', 'online', 'history', 'general'] as const).map((tab) => (
+                        {(['cash', 'cashless', 'history', 'general'] as const).map((tab) => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
@@ -771,8 +743,8 @@ export function CourierFinancials({
                                         : 'opacity-40 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/5'
                                 )}
                             >
-                                {tab === 'cash' ? `Наличные (${currentShift.cashOrders.count})` :
-                                    tab === 'online' ? `Онлайн (${currentShift.onlineOrders.count})` :
+                                {tab === 'cash' ? `Нал (${currentShift.cashOrders.count})` :
+                                    tab === 'cashless' ? `Безнал (${currentShift.cashlessOrders.count})` :
                                             tab === 'history' ? `История (${summary.historyOrders.length})` :
                                                 `Общий отчет`}
                             </button>
@@ -1164,7 +1136,7 @@ export function CourierFinancials({
                                             <div className="text-right">
                                                 <p className={clsx('text-xl font-black tracking-tight',
                                                     activeTab === 'cash' ? 'text-[#10b981]' :
-                                                        activeTab === 'online' ? 'text-[#8b5cf6]' :
+                                                        activeTab === 'cashless' ? 'text-[#8b5cf6]' :
                                                             (isDark ? 'text-white' : 'text-gray-900')
                                                 )}>
                                                     {formatCurrency((order as any).settledAmount || (order as any).effectiveAmount || order.amount)}
@@ -1224,7 +1196,6 @@ export function CourierFinancials({
                     updateExcelData={updateExcelData}
                     saveManualOverrides={saveManualOverrides}
                     setShowSettlementModal={setShowSettlementModal}
-                    fetchFinancialSummary={fetchFinancialSummary}
                 />
             )}
 

@@ -4,6 +4,8 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { loadLeaflet } from '../../utils/maps/leafletLoader';
 import { GeocodingService } from '../../services/geocodingService';
 import { routeOptimizationCache } from '../../utils/routes/routeOptimizationCache';
+import { localStorageUtils } from '../../utils/ui/localStorage';
+import { getCityBounds } from '../../services/robust-geocoding/cityBounds';
 
 interface OsmMapProps {
     route: any;
@@ -28,7 +30,17 @@ export const OsmMap: React.FC<OsmMapProps> = React.memo(({ route, onMarkerClick 
 
                 // Create map instance if not exists
                 if (!mapInstanceRef.current) {
-                    const map = L.map(mapContainerRef.current).setView([50.4501, 30.5234], 12);
+                    const cityBias = localStorageUtils.getAllSettings().cityBias || '';
+                    let center: [number, number] = [50.4501, 30.5234]; // Kyiv default
+                    
+                    if (cityBias) {
+                        const bounds = getCityBounds(cityBias);
+                        if (bounds && bounds.center) {
+                            center = [bounds.center[1], bounds.center[0]];
+                        }
+                    }
+
+                    const map = L.map(mapContainerRef.current).setView(center, 12);
                     mapInstanceRef.current = map;
                 }
 

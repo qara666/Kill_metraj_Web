@@ -176,21 +176,48 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
         bounds: activeBounds
       })
 
-      setGeocodingResult(result)
+      // v5.80: MANDATORY KML ZONE & CITY BINDING (User Request)
+      if (result.success && result.latitude && result.longitude) {
+        // 1. Check City Context
+        const cityMatch = !cityContext || 
+                         result.formattedAddress.toLowerCase().includes(cityContext.toLowerCase()) ||
+                         (cityContext.toLowerCase() === 'київ' && result.formattedAddress.toLowerCase().includes('киев')) ||
+                         (cityContext.toLowerCase() === 'киев' && result.formattedAddress.toLowerCase().includes('київ'));
 
-      if (result.success) {
-        setEditedAddress(result.formattedAddress)
-        
-        // v42: Spatial lookup for KML zones
-        if (result.latitude && result.longitude) {
-          try {
-            const zoneInfo = await robustGeocodingService.findZoneForCoords(result.latitude, result.longitude);
-            setKmlZone(zoneInfo?.zoneName || null);
-            setKmlHub(zoneInfo?.hubName || null);
-          } catch (e) {
-            console.error('KML lookup failed in modal:', e);
-          }
+        if (!cityMatch) {
+          setGeocodingResult({
+            success: false,
+            formattedAddress: result.formattedAddress,
+            error: `Найден адрес в другом городе. Пожалуйста, укажите "${cityContext}" в поиске.`
+          });
+          setIsGeocoding(false);
+          return;
         }
+
+        // 2. Check KML Zones
+        const zoneInfo = await robustGeocodingService.findZoneForCoords(result.latitude, result.longitude);
+        const hasActiveZones = (robustGeocodingService.getZoneContext()?.activePolygons?.length || 0) > 0;
+
+        // If user has active zones, address MUST be in one of them
+        if (hasActiveZones && !zoneInfo) {
+          setGeocodingResult({
+            success: false,
+            formattedAddress: result.formattedAddress,
+            error: 'Адрес вне активных зон доставки. Используйте ручной выбор на карте.'
+          });
+          setKmlZone(null);
+          setKmlHub(null);
+          setIsGeocoding(false);
+          return;
+        }
+
+        // Success - valid and in zone
+        setGeocodingResult(result);
+        setEditedAddress(result.formattedAddress);
+        setKmlZone(zoneInfo?.zoneName || null);
+        setKmlHub(zoneInfo?.hubName || null);
+      } else {
+        setGeocodingResult(result);
       }
     } catch (error) {
       console.error('Ошибка геокодирования:', error)

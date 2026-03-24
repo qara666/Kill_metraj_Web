@@ -6,6 +6,7 @@ import { clsx } from 'clsx';
 import { useTheme } from '../../contexts/ThemeContext';
 import { localStorageUtils } from '../../utils/ui/localStorage';
 import { RobustGeocodingService } from '../../services/robust-geocoding/RobustGeocodingService';
+import { getCityBounds } from '../../services/robust-geocoding/cityBounds';
 
 // Fix Leaflet marker icons
 // @ts-ignore
@@ -97,10 +98,20 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = React.memo(({ rou
                     <div className={clsx('text-xs text-center p-4', isDark ? 'text-gray-400' : 'text-gray-500')}>
                         Загрузка геоданных и карты...
                     </div>
-                ) : points.length > 0 ? (
+                ) : (
                     <MapContainer
-                        center={points[0]}
-                        zoom={13}
+                        center={(() => {
+                            if (points.length > 0) return points[0];
+                            const cityBias = localStorageUtils.getAllSettings().cityBias || '';
+                            if (cityBias) {
+                                const bounds = getCityBounds(cityBias);
+                                if (bounds && bounds.center) {
+                                    return [bounds.center[1], bounds.center[0]] as [number, number];
+                                }
+                            }
+                            return [50.4501, 30.5234]; // Kyiv default
+                        })()}
+                        zoom={points.length > 0 ? 13 : 11}
                         style={{ height: '100%', width: '100%' }}
                         zoomControl={false}
                     >
@@ -112,36 +123,47 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = React.memo(({ rou
                             }
                         />
                         <ZoomControl position="bottomright" />
-                        <Polyline positions={points} color="#2563eb" weight={4} opacity={0.7} dashArray="5, 8" />
                         
-                        {points.map((pos, idx) => (
-                            <Marker 
-                                key={idx} 
-                                position={pos} 
-                                icon={markerIcon(idx)}
-                                eventHandlers={{
-                                    click: () => {
-                                        if (onMarkerClick && idx > 0 && idx < points.length - 1) {
-                                            const orderIdx = idx - 1;
-                                            const fullOrder = (route.routeChainFull || [])[orderIdx];
-                                            if (fullOrder) onMarkerClick(fullOrder);
-                                        }
-                                    }
-                                }}
-                            >
-                                <Popup>
-                                    <div className="text-xs">
-                                        {idx === 0 ? 'Начало' : idx === points.length - 1 ? 'Конец' : `Заказ ${idx}`}
-                                    </div>
-                                </Popup>
-                            </Marker>
-                        ))}
-                        <BoundsUpdater points={points} />
+                        {points.length > 0 && (
+                            <>
+                                <Polyline positions={points} color="#2563eb" weight={4} opacity={0.7} dashArray="5, 8" />
+                                {points.map((pos, idx) => (
+                                    <Marker 
+                                        key={idx} 
+                                        position={pos} 
+                                        icon={markerIcon(idx)}
+                                        eventHandlers={{
+                                            click: () => {
+                                                if (onMarkerClick && idx > 0 && idx < points.length - 1) {
+                                                    const orderIdx = idx - 1;
+                                                    const fullOrder = (route.routeChainFull || [])[orderIdx];
+                                                    if (fullOrder) onMarkerClick(fullOrder);
+                                                }
+                                            }
+                                        }}
+                                    >
+                                        <Popup>
+                                            <div className="text-xs">
+                                                {idx === 0 ? 'Начало' : idx === points.length - 1 ? 'Конец' : `Заказ ${idx}`}
+                                            </div>
+                                        </Popup>
+                                    </Marker>
+                                ))}
+                                <BoundsUpdater points={points} />
+                            </>
+                        )}
+
+                        {points.length === 0 && !isLoading && (
+                             <div className="absolute inset-x-0 bottom-4 z-[1000] flex justify-center pointer-events-none">
+                                <div className={clsx(
+                                    "px-4 py-2 rounded-xl text-xs font-bold shadow-lg backdrop-blur-md border",
+                                    isDark ? "bg-gray-800/90 border-gray-700 text-gray-400" : "bg-white/90 border-gray-200 text-gray-500"
+                                )}>
+                                    Ожидание данных маршрута...
+                                </div>
+                             </div>
+                        )}
                     </MapContainer>
-                ) : (
-                    <div className={clsx('text-xs text-center p-4', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                        Не удалось загрузить координаты маршрута.
-                    </div>
                 )}
             </div>
         </div>

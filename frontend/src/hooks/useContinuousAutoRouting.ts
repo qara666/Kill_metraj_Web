@@ -31,6 +31,28 @@ export function useContinuousAutoRouting() {
             return;
         }
 
+        // v5.102: Initialization Guard - Wait for data to be "settled" from sync
+        // If orders exist but routes are missing AND it's the first few seconds of a session, wait.
+        if (excelData.orders.length > 0 && (!excelData.routes || excelData.routes.length === 0)) {
+            const now = Date.now();
+            const lastMod = excelData.lastModified || 0;
+            if (now - lastMod < 5000) { // 5s grace period for Hybrid Sync to settle
+                console.log('[AutoRouting] Waiting for Hybrid Sync to restore routes...');
+                return;
+            }
+        }
+
+        // v5.102: Initialization Guard - Wait for data to be "settled" from sync
+        // If orders exist but routes are missing AND it's the first few seconds of a session, wait.
+        if (excelData.orders.length > 0 && (!excelData.routes || excelData.routes.length === 0)) {
+            const now = Date.now();
+            const lastMod = excelData.lastModified || 0;
+            if (now - lastMod < 5000) { // 5s grace period for Hybrid Sync to settle
+                console.log('[AutoRouting] Waiting for Hybrid Sync to restore routes...');
+                return;
+            }
+        }
+
         const runAutoRouting = async () => {
             if (isProcessingRef.current || !autoRoutingStatus.isActive) return;
             isProcessingRef.current = true;
@@ -291,7 +313,7 @@ export function useContinuousAutoRouting() {
                             // v5.93: Correctly calculate processed couriers by deduplicating
                             const allCouriersWithRoutes = new Set([
                                 ...Array.from(realCouriersSet).filter(name => 
-                                    (excelData.routes || []).some((r: any) => (r.courier?.name || r.courier) === name) ||
+                                    (excelData?.routes || []).some((r: any) => (r.courier?.name || r.courier) === name) ||
                                     processedCouriersThisBatch.has(name)
                                 )
                             ]);

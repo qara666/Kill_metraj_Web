@@ -17,6 +17,8 @@ export const DashboardApiSection: React.FC = () => {
     const setApiAutoRefreshEnabled = useDashboardStore(s => s.setApiAutoRefreshEnabled);
     const apiLastSyncTime = useDashboardStore(s => s.apiLastSyncTime);
     const apiNextSyncTime = useDashboardStore(s => s.apiNextSyncTime);
+    const apiLastVisitDate = useDashboardStore(s => s.apiLastVisitDate);
+    const setApiLastVisitDate = useDashboardStore(s => s.setApiLastVisitDate);
     const triggerApiManualSync = useDashboardStore(s => s.triggerApiManualSync);
     const autoRoutingStatus = useDashboardStore(s => s.autoRoutingStatus);
     const setAutoRoutingStatus = useDashboardStore(s => s.setAutoRoutingStatus);
@@ -27,14 +29,14 @@ export const DashboardApiSection: React.FC = () => {
 
     const [timeLeft, setTimeLeft] = useState<string>('--:--');
 
-    // v5.92: Ensure date is today on load if it's a new day
+    // v5.96: New Day Detection - only auto-set today on first run of the day
     React.useEffect(() => {
         const today = format(new Date(), 'yyyy-MM-dd');
-        // Only auto-update IF the stored date is different from today 
-        // AND this is the first run (we use a ref or just empty deps for mount-only)
-        if (apiDateShift !== today) {
-            console.log('[DashboardApiSection] Auto-updating date to today:', today);
+        // Only set Today if it's a new day OR no date is set yet
+        if (apiLastVisitDate !== today) {
             setApiDateShift(today);
+            setApiLastVisitDate(today);
+            console.log(`📅 Новая сессия: установлена дата ${today}`);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Only run ONCE on component mount
