@@ -19,6 +19,7 @@ interface DashboardStoreState {
     apiAutoRefreshEnabled: boolean;
     apiLastSyncTime: number | null;
     apiNextSyncTime: number | null;
+    apiLastVisitDate: string | null; // v5.96: New Day Detection
     apiSyncStatus: 'idle' | 'syncing' | 'error';
     apiSyncError: string | null;
     apiTimeDeliveryBeg: string; // datetime-local format
@@ -26,7 +27,7 @@ interface DashboardStoreState {
     apiDateShift: string; // YYYY-MM-DD
     apiDateShiftFilterEnabled: boolean;
     apiTimeFilterEnabled: boolean;
-    apiManualSyncTrigger: number | null;
+    apiManualSyncTrigger: number;
 
     // Background Auto-Routing Status
     autoRoutingStatus: {
@@ -46,11 +47,13 @@ interface DashboardStoreState {
     setApiNextSyncTime: (time: number | null) => void;
     setApiSyncStatus: (status: 'idle' | 'syncing' | 'error') => void;
     setApiSyncError: (error: string | null) => void;
+    setApiLastVisitDate: (date: string) => void;
     setApiTimeDeliveryBeg: (time: string) => void;
     setApiTimeDeliveryEnd: (time: string) => void;
     setApiDateShift: (date: string) => void;
     setApiDateShiftFilterEnabled: (enabled: boolean) => void;
     setApiTimeFilterEnabled: (enabled: boolean) => void;
+    setApiManualSyncTrigger: (trigger: number) => void;
     triggerApiManualSync: () => void;
     setAutoRoutingStatus: (status: Partial<DashboardStoreState['autoRoutingStatus']>) => void;
 }
@@ -64,6 +67,7 @@ export const useDashboardStore = create<DashboardStoreState>()(
             apiAutoRefreshEnabled: false,
             apiLastSyncTime: null,
             apiNextSyncTime: null,
+            apiLastVisitDate: null,
             apiSyncStatus: 'idle',
             apiSyncError: null,
             apiTimeDeliveryBeg: (() => {
@@ -85,7 +89,7 @@ export const useDashboardStore = create<DashboardStoreState>()(
             })(),
             apiDateShiftFilterEnabled: true,
             apiTimeFilterEnabled: false,
-            apiManualSyncTrigger: null,
+            apiManualSyncTrigger: 0,
 
             autoRoutingStatus: {
                 isActive: false,
@@ -103,11 +107,13 @@ export const useDashboardStore = create<DashboardStoreState>()(
             setApiNextSyncTime: (time) => set({ apiNextSyncTime: time }),
             setApiSyncStatus: (status) => set({ apiSyncStatus: status }),
             setApiSyncError: (error) => set({ apiSyncError: error }),
+            setApiLastVisitDate: (date) => set({ apiLastVisitDate: date }),
             setApiTimeDeliveryBeg: (time) => set({ apiTimeDeliveryBeg: time }),
             setApiTimeDeliveryEnd: (time) => set({ apiTimeDeliveryEnd: time }),
             setApiDateShift: (date) => set({ apiDateShift: date }),
             setApiDateShiftFilterEnabled: (enabled) => set({ apiDateShiftFilterEnabled: enabled }),
             setApiTimeFilterEnabled: (enabled) => set({ apiTimeFilterEnabled: enabled }),
+            setApiManualSyncTrigger: (trigger) => set({ apiManualSyncTrigger: trigger }),
             triggerApiManualSync: () => set({ apiManualSyncTrigger: Date.now() }),
             setAutoRoutingStatus: (status: Partial<DashboardStoreState['autoRoutingStatus']>) => set((state) => {
                 const newStatus = { ...state.autoRoutingStatus, ...status };
@@ -123,6 +129,10 @@ export const useDashboardStore = create<DashboardStoreState>()(
                     apiSyncError,
                     ...persistentState
                 } = state;
+                // v5.103: Explicitly log persistence to trace isActive loss
+                if (persistentState.autoRoutingStatus.isActive) {
+                    console.log('💾 Persistence: Saving isActive = true');
+                }
                 return persistentState;
             }
         }

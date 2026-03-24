@@ -714,20 +714,34 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
             </div>
 
             <div className="p-5 space-y-3">
-              {['Готівка', 'Карта', 'Эл. оплата'].map(method => {
-                const totalByMethod = processedData.orders?.filter((o: any) => {
+              {[
+                { label: 'Нал' },
+                { label: 'Безнал' }
+              ].map(methodObj => {
+                const totalByMethod = (processedData.orders || []).filter((o: any) => {
                   const status = String(o.status || '').toLowerCase();
-                  if (status.includes('отказ') || status.includes('отменен') || status.includes('відмова')) return false;
-                  const m = String(o.paymentMethod || o['способ оплаты'] || '').toLowerCase();
-                  return m.includes(method.toLowerCase());
+                  const m = String(o.paymentMethod || o['способ оплаты'] || o.payment_method || '').toLowerCase();
+                  
+                  const isRefused = m.includes('отказ') || status.includes('отказ') || status.includes('отменен') || status.includes('відмова');
+                  if (isRefused) return false;
+                  
+                  // 🔑 STRICT CASH IDENTIFICATION
+                  const isCash = (
+                    m.includes('нал') || 
+                    m.includes('готівка') || 
+                    m === '' || 
+                    m === 'cash'
+                  ) && !m.includes('безготів');
+                  
+                  return methodObj.label === 'Нал' ? isCash : !isCash;
                 }).reduce((sum: number, o: any) => sum + (Number(o.amount) || 0), 0) || 0;
 
                 return (
-                  <div key={method} className={clsx(
+                  <div key={methodObj.label} className={clsx(
                     "flex items-center justify-between p-3 rounded-xl border",
                     isDark ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
                   )}>
-                    <span className="text-xs font-bold opacity-60 uppercase tracking-widest">{method}</span>
+                    <span className="text-xs font-bold opacity-60 uppercase tracking-widest">{methodObj.label}</span>
                     <span className="text-base font-black tabular-nums">{totalByMethod.toLocaleString()} ₴</span>
                   </div>
                 );

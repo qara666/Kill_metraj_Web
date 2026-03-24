@@ -361,12 +361,31 @@ export const Settings: React.FC = () => {
                     placeholder="https://www.google.com/maps/d/viewer?mid=..."
                     {...register('kmlSourceUrl')}
                   />
+                  <button
+                    type="button"
+                    onClick={() => syncKmlFromUrl(watch('kmlSourceUrl'))}
+                    className={clsx(
+                      "px-6 py-2 rounded-xl font-bold transition-all flex items-center gap-2",
+                      isDark ? "bg-indigo-600 hover:bg-indigo-700 text-white" : "bg-indigo-500 hover:bg-indigo-600 text-white"
+                    )}
+                  >
+                    <ArrowPathIcon className="h-4 w-4" />
+                    Применить
+                  </button>
                 </div>
-                {watch('lastKmlSync') && (
-                  <div className="flex items-center gap-4 mt-2">
-                    <span className="text-[10px] text-gray-500 italic">Последнее обновление: {watch('lastKmlSync')}</span>
-                  </div>
-                )}
+                <div className="flex items-center gap-4 mt-2">
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      className="checkbox"
+                      {...register('autoSyncKml')}
+                    />
+                    <span className="text-xs font-medium opacity-60 group-hover:opacity-100 transition-opacity">Обновлять автоматически при загрузке страницы</span>
+                  </label>
+                  {watch('lastKmlSync') && (
+                    <span className="text-[10px] text-gray-500 italic ml-auto">Последнее обновление: {watch('lastKmlSync')}</span>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-center gap-4 pt-2">
@@ -572,6 +591,7 @@ export const Settings: React.FC = () => {
                     kmlData={watch('kmlData')}
                     selectedHubs={watch('selectedHubs') || []}
                     selectedZones={watch('selectedZones') || []}
+                    city={watch('cityBias')}
                   />
                 </div>
               )}

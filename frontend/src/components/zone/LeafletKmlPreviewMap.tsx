@@ -4,15 +4,23 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { clsx } from 'clsx'
 import { KMLData } from '../../utils/maps/kmlParser'
+import { getCityBounds } from '../../services/robust-geocoding/cityBounds'
 
 interface LeafletKmlPreviewMapProps {
     isDark: boolean
     kmlData: KMLData | null
     selectedHubs: string[]
     selectedZones?: string[]
+    city?: string
 }
 
-export const LeafletKmlPreviewMap: React.FC<LeafletKmlPreviewMapProps> = ({ isDark, kmlData, selectedHubs, selectedZones = [] }) => {
+export const LeafletKmlPreviewMap: React.FC<LeafletKmlPreviewMapProps> = ({ 
+    isDark, 
+    kmlData, 
+    selectedHubs, 
+    selectedZones = [],
+    city = ''
+}) => {
     if (!kmlData) {
         return (
             <div className={clsx(
@@ -34,7 +42,17 @@ export const LeafletKmlPreviewMap: React.FC<LeafletKmlPreviewMapProps> = ({ isDa
         ? kmlData.markers.filter(m => selectedHubs.includes((m.folderName || '').trim()))
         : kmlData.markers
 
-    const center: [number, number] = [50.4501, 30.5234]
+    // Determine center based on city. Fallback to Kiev [50.4501, 30.5234]
+    const center: [number, number] = (() => {
+        if (city) {
+            const bounds = getCityBounds(city);
+            if (bounds && bounds.center) {
+                // cityBounds uses [lng, lat], Leaflet uses [lat, lng]
+                return [bounds.center[1], bounds.center[0]];
+            }
+        }
+        return [50.4501, 30.5234];
+    })();
 
     return (
         <div className="relative">

@@ -22,7 +22,7 @@ export function ServiceStatusDashboard() {
 
     useEffect(() => {
         const checkStatus = async () => {
-            // Check Photon
+            // чек Photon
             const photonStart = Date.now();
             try {
                 const res = await fetch('https://photon.komoot.io/api/?q=kyiv&limit=1', { method: 'HEAD' });
@@ -31,7 +31,7 @@ export function ServiceStatusDashboard() {
                 updateService('Photon (Free)', 'offline');
             }
 
-            // Check Nominatim
+            // чек Nominatim
             const nominatimStart = Date.now();
             try {
                 const res = await fetch('https://nominatim.openstreetmap.org/search?q=kyiv&format=json&limit=1', { method: 'HEAD' });
@@ -40,7 +40,7 @@ export function ServiceStatusDashboard() {
                 updateService('Nominatim (Free)', 'offline');
             }
 
-            // Check Google Maps
+            // Чек гугла (оут)
             if ((window as any).google && (window as any).google.maps) {
                 updateService('Google Maps', 'online', 0);
             } else {
@@ -98,11 +98,7 @@ export function ServiceStatusDashboard() {
                             )}>
                                 {service.name.replace(' (Free)', '')}
                             </span>
-                            {/* Optional: Add tiny badge for Free/Premium */}
-                            {/* <span className={clsx(
-                                "text-[8px] font-semibold tracking-wider font-mono uppercase mt-0.5",
-                                service.type === 'free' ? "text-emerald-500" : "text-amber-500"
-                            )}>{service.type}</span> */}
+
                         </div>
                     </div>
                 ))}

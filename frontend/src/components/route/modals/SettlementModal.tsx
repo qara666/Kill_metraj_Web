@@ -20,7 +20,6 @@ interface SettlementModalProps {
     onClose: () => void;
     updateExcelData: (callback: (prev: any) => any) => void;
     setShowSettlementModal: (show: boolean) => void;
-    fetchFinancialSummary: () => Promise<void>;
     saveManualOverrides: (orders: any[]) => void;
 }
 
@@ -31,8 +30,7 @@ export function SettlementModal({
     onClose,
     updateExcelData,
     saveManualOverrides,
-    setShowSettlementModal,
-    fetchFinancialSummary
+    setShowSettlementModal
 }: SettlementModalProps) {
     const [notes, setNotes] = useState('');
     const [loading, setLoading] = useState(false);
@@ -235,7 +233,8 @@ export function SettlementModal({
 
             toast.success(`Расчет выполнен!`, { duration: 3000 });
             setShowSettlementModal(false);
-            await fetchFinancialSummary();
+            // v5.103: Deleted redundant fetchFinancialSummary() that uses stale context state.
+            // parent will re-render naturally from updateExcelData context changes.
         } catch (err: any) {
             setError(err.message || 'Ошибка при расчете');
         } finally {

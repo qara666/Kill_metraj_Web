@@ -765,6 +765,7 @@ export const AdminPresets: React.FC = () => {
                                                     kmlData={settings.kmlData}
                                                     selectedHubs={settings.selectedHubs || []}
                                                     selectedZones={settings.selectedZones || []}
+                                                    city={settings.cityBias}
                                                 />
                                             </div>
                                         </div>

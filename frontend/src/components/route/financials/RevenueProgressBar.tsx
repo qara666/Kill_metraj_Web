@@ -2,14 +2,14 @@ import { clsx } from 'clsx';
 
 interface RevenueProgressBarProps {
     cashAmount: number;
-    onlineAmount: number;
+    cashlessAmount: number;
     totalAmount: number;
     isDark?: boolean;
 }
 
-export function RevenueProgressBar({ cashAmount, onlineAmount, totalAmount, isDark }: RevenueProgressBarProps) {
+export function RevenueProgressBar({ cashAmount, cashlessAmount, totalAmount, isDark }: RevenueProgressBarProps) {
     const cashPercent = totalAmount > 0 ? (cashAmount / totalAmount) * 100 : 0;
-    const onlinePercent = totalAmount > 0 ? (onlineAmount / totalAmount) * 100 : 0;
+    const cashlessPercent = totalAmount > 0 ? (cashlessAmount / totalAmount) * 100 : 0;
 
     const formatCurrency = (value: number) => {
         return new Intl.NumberFormat('uk-UA', {
@@ -48,7 +48,7 @@ export function RevenueProgressBar({ cashAmount, onlineAmount, totalAmount, isDa
                 />
                 <div
                     className="h-full bg-[#8b5cf6] transition-all duration-1000 ease-out"
-                    style={{ width: `${onlinePercent}%` }}
+                    style={{ width: `${cashlessPercent}%` }}
                 />
             </div>
 
@@ -56,10 +56,10 @@ export function RevenueProgressBar({ cashAmount, onlineAmount, totalAmount, isDa
             <div className="flex justify-between mt-3 text-[10px] font-bold">
                 <div className="flex items-center gap-1.5">
                     <div className="w-2 h-2 rounded-full bg-[#10b981]" />
-                    <span className={isDark ? "text-gray-400" : "text-gray-500"}>Наличные</span>
+                    <span className={isDark ? "text-gray-400" : "text-gray-500"}>Нал</span>
                 </div>
                 <div className="flex items-center gap-1.5 text-right">
-                    <span className={isDark ? "text-gray-400" : "text-gray-500"}>Онлайн</span>
+                    <span className={isDark ? "text-gray-400" : "text-gray-500"}>Безнал</span>
                     <div className="w-2 h-2 rounded-full bg-[#8b5cf6]" />
                 </div>
             </div>
