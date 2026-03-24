@@ -139,7 +139,6 @@ export function useContinuousAutoRouting() {
                 });
 
                 let processedOrdersInBatch = 0;
-                let processedCouriersCount = 0;
                 const processedCouriersThisBatch = new Set<string>();
 
                 for (const group of eligibleGroups) {
@@ -289,14 +288,17 @@ export function useContinuousAutoRouting() {
 
                             processedOrdersInBatch += chunkOrders.length;
                             
-                            if (!processedCouriersThisBatch.has(actualCourierName)) {
-                                processedCouriersThisBatch.add(actualCourierName);
-                                processedCouriersCount++;
-                            }
+                            // v5.93: Correctly calculate processed couriers by deduplicating
+                            const allCouriersWithRoutes = new Set([
+                                ...Array.from(realCouriersSet).filter(name => 
+                                    (excelData.routes || []).some((r: any) => (r.courier?.name || r.courier) === name) ||
+                                    processedCouriersThisBatch.has(name)
+                                )
+                            ]);
 
                             setAutoRoutingStatus({ 
                                 processedCount: processedGeocodedCount + processedOrdersInBatch,
-                                processedCouriers: couriersWithRoutesCount + processedCouriersCount,
+                                processedCouriers: allCouriersWithRoutes.size,
                                 lastUpdate: Date.now()
                             });
 

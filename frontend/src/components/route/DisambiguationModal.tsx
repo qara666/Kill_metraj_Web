@@ -182,7 +182,7 @@ export const DisambiguationModal: React.FC<DisambiguationModalProps> = React.mem
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md transition-all duration-300 animate-in fade-in">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70">
       <div className={clsx(
         "w-full max-w-xl rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 duration-300",
         isDark ? "bg-gray-900 border-white/10" : "bg-white border-gray-200"

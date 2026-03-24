@@ -61,6 +61,7 @@ import { robustGeocodingService } from '../../services/robust-geocoding/RobustGe
 import { useKmlData } from '../../hooks/useKmlData'
 import { exportToGoogleMaps, exportToValhalla } from '../../utils/routes/routeExport'
 import { CourierListItem } from './CourierListItem'
+import { ServiceStatusDashboard } from './ServiceStatusDashboard'
 
 
 interface RouteManagementProps {
@@ -491,7 +492,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       );
 
       if (incomplete.length === 0) {
-        toast('✅ Все маршруты уже рассчитаны', { icon: '⚡' });
+        toast.success('Все маршруты рассчитаны');
         return;
       }
 
@@ -1634,7 +1635,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                 'flex items-center space-x-4 text-sm',
                 isDark ? 'text-gray-400' : 'text-gray-500'
               )}>
-                <span>{couriers.length} курьеров, {(excelData?.routes?.length ?? 0)} маршрутов</span>
+                <span>{fleetStats.total} курьеров, {(excelData?.routes?.length ?? 0)} маршрутов</span>
               </div>
               <Tooltip
                 content="Открыть справку и инструкции по управлению маршрутами"
@@ -1660,7 +1661,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
               </Tooltip>
               <div className="flex items-center space-x-1">
                 <div className={`w-2 h-2 rounded-full ${googleMapsReady ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
-                <span>{googleMapsReady ? 'Google Maps готов' : 'Загрузка Google Maps...'}</span>
+              <div className="flex items-center gap-4">
+                <ServiceStatusDashboard />
+              </div>
               </div>
 
             </div>

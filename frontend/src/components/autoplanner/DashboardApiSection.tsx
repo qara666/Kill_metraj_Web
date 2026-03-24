@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';
-import { ArrowPathIcon, CalendarIcon } from '@heroicons/react/24/outline';
+import { ArrowPathIcon, CalendarIcon, CpuChipIcon } from '@heroicons/react/24/outline';
 import { clsx } from 'clsx';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useDashboardStore } from '../../stores/useDashboardStore';
@@ -26,6 +26,18 @@ export const DashboardApiSection: React.FC = () => {
     const setSelectedDate = setApiDateShift;
 
     const [timeLeft, setTimeLeft] = useState<string>('--:--');
+
+    // v5.92: Ensure date is today on load if it's a new day
+    React.useEffect(() => {
+        const today = format(new Date(), 'yyyy-MM-dd');
+        // Only auto-update IF the stored date is different from today 
+        // AND this is the first run (we use a ref or just empty deps for mount-only)
+        if (apiDateShift !== today) {
+            console.log('[DashboardApiSection] Auto-updating date to today:', today);
+            setApiDateShift(today);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Only run ONCE on component mount
 
     // Countdown logic
     React.useEffect(() => {
@@ -58,7 +70,26 @@ export const DashboardApiSection: React.FC = () => {
             toast.error('Выберите дату');
             return;
         }
+
+        // v5.91: Warning when loading different date with auto-update on
+        const today = format(new Date(), 'yyyy-MM-dd');
+        if (apiAutoRefreshEnabled && selectedDate !== today) {
+            const confirmed = window.confirm(
+                `ВНИМАНИЕ: У вас включено автообновление за сегодня, но вы пытаетесь загрузить данные за ${selectedDate}.\n\n` +
+                `Это ПЕРЕЗАПИШЕТ текущие данные в системе. Вы уверены?\n\n` +
+                `Если вы просто хотели обновить текущий день, нажмите на иконку «Обновить» рядом с таймером.`
+            );
+            if (!confirmed) return;
+        }
+
         triggerApiManualSync();
+    };
+
+    // v5.94: Special handler for quick refresh that skips date warnings
+    const handleQuickRefresh = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        triggerApiManualSync();
+        toast.success('Запрос на обновление отправлен');
     };
 
     // Toggle handler
@@ -112,17 +143,21 @@ export const DashboardApiSection: React.FC = () => {
                                 {apiLastSyncTime ? `Обновлено: ${format(apiLastSyncTime, 'HH:mm:ss')}` : 'Ожидание первого обновления...'}
                             </p>
                             {apiAutoRefreshEnabled && apiNextSyncTime && (
-                                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 group/timer">
-                                    <span className="text-[10px] text-blue-500 font-bold tabular-nums">
+                                <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-blue-500/5 dark:bg-blue-400/10 border border-blue-500/20 dark:border-blue-400/20 shadow-sm transition-all hover:border-blue-500/40">
+                                    <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold tabular-nums tracking-tight">
                                         След: {timeLeft}
                                     </span>
+                                    <div className="w-px h-3 bg-blue-500/20 dark:bg-blue-400/20 mx-0.5" />
                                     <button
-                                        onClick={handleSync}
+                                        onClick={handleQuickRefresh}
                                         disabled={apiSyncStatus === 'syncing'}
-                                        className="hover:scale-110 active:rotate-180 transition-all duration-300"
+                                        className={clsx(
+                                            "hover:scale-110 active:rotate-180 transition-all duration-300 p-0.5 rounded-full hover:bg-blue-500/10",
+                                            apiSyncStatus === 'syncing' && "cursor-not-allowed opacity-50"
+                                        )}
                                         title="Обновить сейчас"
                                     >
-                                        <ArrowPathIcon className={clsx("w-3 h-3 text-blue-400", (apiSyncStatus === 'syncing') && "animate-spin")} />
+                                        <ArrowPathIcon className={clsx("w-3 h-3 text-blue-500 dark:text-blue-400", (apiSyncStatus === 'syncing') && "animate-spin")} />
                                     </button>
                                 </div>
                             )}
@@ -209,12 +244,12 @@ export const DashboardApiSection: React.FC = () => {
             )}>
                 <div className="flex items-center gap-3">
                     <div className={clsx(
-                        'p-3 rounded-2xl shadow-inner transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-3',
-                        isDark ? 'bg-indigo-900/30 text-indigo-400' : 'bg-indigo-50 text-indigo-600'
+                        'p-3.5 rounded-2xl shadow-lg transition-all duration-500 group-hover:scale-105',
+                        autoRoutingStatus.isActive 
+                            ? (isDark ? 'bg-blue-600 shadow-blue-500/20 text-white' : 'bg-blue-600 shadow-blue-500/30 text-white')
+                            : (isDark ? 'bg-indigo-900/20 text-indigo-400' : 'bg-indigo-50 text-indigo-600')
                     )}>
-                        <svg className={clsx("w-6 h-6", autoRoutingStatus.isActive && "animate-pulse")} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-                        </svg>
+                        <CpuChipIcon className={clsx("w-6 h-6", autoRoutingStatus.isActive && "animate-pulse")} />
                     </div>
                     <div>
                         <h3 className={clsx(

@@ -115,8 +115,8 @@ function isStreetParenthetical(inner: string): boolean {
     if (!inner || inner.length < 3) return false;
     // Reject pure numbers
     if (/^\d+$/.test(inner)) return false;
-    // Reject if it starts with a known technical abbreviation
-    if (/^(д\/ф|моб|кв|квартира|під|под|эт|этаж|корп|літера|літ|литера|офис|оф|вход|дверь|\d)/i.test(inner)) return false;
+    // Reject if it starts with a known technical abbreviation (using word boundary)
+    if (/^(д\/ф|моб|кв|квартира|під|под|эт|этаж|корп|літера|літ|литера|офис|оф|вход|дверь|\d)\b/i.test(inner)) return false;
     // Must have Cyrillic text (street names are Cyrillic)
     return /[а-яёіїєґА-ЯІЇЄҐ]/.test(inner);
 }
@@ -164,9 +164,7 @@ export function cleanAddressForSearch(address: string): string {
     // - INLINE-REPLACE street-name parentheticals (old name) with a clean space
     //   so the main name is used for the primary query. The alt name is extracted
     //   separately by extractParentheticalStreetName() for variant generation.
-    cleaned = cleaned.replace(/\s*\(([^)]*)\)/g, (_match, inner) => {
-        return isStreetParenthetical(inner.trim()) ? '' : '';
-    }).trim();
+    cleaned = cleaned.replace(/\s*\([^)]*\)/g, '').trim();
 
     // Step 3: Identify the primary address part (up to house number) and discard the rest
     const complexHouse = /\d+[а-яієґa-z]*(?:[\/\-]\d*[а-яієґa-z]*)?/i;

@@ -22,6 +22,10 @@ interface Courier {
   totalDistance: number;
   totalAmount?: number;
   hasErrors?: boolean;
+  // Event tracking
+  cancelledCount?: number;
+  reassignedOutCount?: number;
+  reassignedInCount?: number;
 }
 
 interface CourierCardProps {
@@ -265,10 +269,47 @@ export const CourierCard = memo(({
             </div>
           </div>
         </div>
+        {/* Event Badges: Cancelled / Reassigned out / Reassigned in */}
+        {((courier.cancelledCount ?? 0) > 0 || (courier.reassignedOutCount ?? 0) > 0 || (courier.reassignedInCount ?? 0) > 0) && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {(courier.cancelledCount ?? 0) > 0 && (
+              <div className={clsx(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-widest',
+                isDark
+                  ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                  : 'bg-red-50 border-red-200 text-red-600'
+              )}>
+                <span>❌</span>
+                <span>Скас.: {courier.cancelledCount}</span>
+              </div>
+            )}
+            {(courier.reassignedOutCount ?? 0) > 0 && (
+              <div className={clsx(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-widest',
+                isDark
+                  ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                  : 'bg-amber-50 border-amber-200 text-amber-700'
+              )}>
+                <span>↗️</span>
+                <span>Перед.: {courier.reassignedOutCount}</span>
+              </div>
+            )}
+            {(courier.reassignedInCount ?? 0) > 0 && (
+              <div className={clsx(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-widest',
+                isDark
+                  ? 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+                  : 'bg-blue-50 border-blue-200 text-blue-700'
+              )}>
+                <span>↘️</span>
+                <span>Принял: {courier.reassignedInCount}</span>
+              </div>
+            )}
+          </div>
+        )}
 
-        {/* Action Button: START CALCULATION */}
         <button
-          onClick={() => window.dispatchEvent(new CustomEvent('km-force-auto-routing'))}
+          onClick={() => window.dispatchEvent(new CustomEvent('km-force-auto-routing', { detail: { courierName: courier.name } }))}
           disabled={isFullyCalculated}
           className={clsx(
             'w-full py-4 rounded-2xl font-black text-[13px] uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-3 active:scale-[0.98]',

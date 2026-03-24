@@ -409,6 +409,10 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
     const status = getFieldByKeywords([
         'состояние', 'status', 'статус', 'state', 'статус заказа', 'состояние заказа'
     ], 'состояние');
+    
+    const deliveryZone = getFieldByKeywords([
+        'зона доставки', 'delivery_zone', 'zone', 'sector', 'сектор', 'зона', 'зона до', 'сектор до'
+    ], 'delivery_zone');
 
     const kitchenTime = getFieldByKeywords([
         'время на кухню', 'время_на_кухню', 'временакухню', 'времянакухню', 'kitchen time',
@@ -426,14 +430,15 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
         'тип заказа', 'order_type', 'type', 'order type'
     ], 'тип заказа');
 
-    // v38.2: Stable ID generation (orderNumber + fallback hash)
-    const stableId = orderNumber || `gen_${Math.abs(hashString(address || ''))}_${index}`;
+    // v38.3: CRITICAL - Include index in stableId to prevent collisions if orderNumber is the same in different rows.
+    const stableId = orderNumber ? `${orderNumber}_${index}` : `gen_${Math.abs(hashString(address || ""))}_${index}`;
 
     return enrichOrderGeodata({
         id: stableId,
         orderNumber,
         address: String(address || '').trim(),
         status: status,
+        deliveryZone: deliveryZone,
         orderType: orderType,
         kitchenTime: kitchenTime,
         plannedTime: plannedTime,
@@ -553,6 +558,12 @@ export const processJsonData = (jsonData: any[][]): ProcessedExcelData => {
             }
 
             const rowData = createRowData(row, headers);
+            
+            // v38.3: Filter out "ПО" (extra/junk entries) at the very source
+            const rawCourier = getValue(rowData, ['курьер', 'courier', 'курьер_имя']);
+            if (rawCourier && (rawCourier.toLowerCase().trim() === 'по' || rawCourier.toLowerCase().trim() === 'п.о')) {
+                return;
+            }
 
             // Заказ
             const orderNumber = findOrderNumber(rowData);
