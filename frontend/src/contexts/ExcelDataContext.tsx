@@ -12,6 +12,7 @@ interface ExcelData {
   routes: any[]
   errors: any[]
   summary: any
+  lastModified?: number
 }
 
 interface ExcelDataContextType {
@@ -65,42 +66,57 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                     try {
                       const overrides = JSON.parse(localOverrides);
                       serverData.orders = serverData.orders.map((o: any) => {
-                        // v35.13: Robust ID matching (ID first, then Number)
                         const id = o.id ? String(o.id) : null;
                         const num = o.orderNumber ? String(o.orderNumber) : null;
                         
-                        const override = (id && overrides[id]) || (num && overrides[num]);
+                        // v40.2: Ultra-Robust Multi-Stage Lookup
+                        let override = id ? overrides[id] : null;
+                        if (!override && num) override = overrides[num];
                         
+                        if (!override && num) {
+                            // Try to find ANY override that starts with this order number
+                            const keys = Object.keys(overrides);
+                            const bestKey = keys.find(k => k === num || k.startsWith(`${num}_`));
+                            if (bestKey) override = overrides[bestKey];
+                        }
+                        
+                        if (!override && id && id.includes('_')) {
+                            const baseId = id.split('_')[0];
+                            override = overrides[baseId];
+                        }
+
                         if (override) {
-                          // Hybrid Sync: Merge ALL manual overrides from local storage
-                          return { ...o, ...override };
+                            // SOTA 5.95: Merge and protect mission-critical financial fields
+                            return { 
+                                ...o, 
+                                ...override,
+                                // Re-ensure status consistency if settled
+                                status: override.settledDate ? (override.status || 'Исполнен') : (o.status || override.status)
+                            };
                         }
                         return o;
                       });
-                    } catch (e) {
-                      console.warn('Failed to parse or apply local overrides:', e);
-                    }
+                    } catch (e) { console.warn('Sync overrides failed:', e); }
                   }
 
-                  const mapped = applyCourierVehicleMap(serverData);
-                  
-                  // LOGIC IMPROVEMENT: 
-                  // If the server data has NO routes but our local copy DOES (for similar order count),
-                  // we prefer the local copy because it probably contains the last calculated state.
                   const localStored = localStorage.getItem('km_dashboard_processed_data');
                   let localData: any = null;
                   try { if (localStored) localData = JSON.parse(localStored); } catch(e) {}
 
-                  const serverHasRoutes = mapped.routes && mapped.routes.length > 0;
-                  const localHasRoutes = localData?.routes && localData.routes.length > 0;
+                  // v38.5: HYBRID PRIORITY - Prefer local data if it has more settled orders or is newer
+                  const localSettledCount = (localData?.orders || []).filter((o: any) => !!o.settledDate).length;
+                  const serverSettledCount = (serverData?.orders || []).filter((o: any) => !!o.settledDate).length;
                   
-                  if (!serverHasRoutes && localHasRoutes) {
-                    console.log('⚠️ Сервер прислал пустой список маршрутов, используем локальную копию с маршрутами.');
-                    // Don't set state yet, let it fall through to localStorage part below
-                  } else if (mapped.orders && mapped.orders.length > 0) {
+                  const isLocalFresher = (localData?.lastModified || 0) > (serverData?.lastModified || 0);
+                  const isLocalMoreComplete = localSettledCount > serverSettledCount;
+
+                  if ((isLocalFresher || isLocalMoreComplete) && localSettledCount > 0) {
+                    console.log(`🛡️ Hybrid Sync: Using local data (Settled: ${localSettledCount} vs Server: ${serverSettledCount})`);
+                    // Falling through to localStorage load below
+                  } else {
                     console.log('✅ Данные загружены с сервера (Hybrid Sync)');
                     bypassSaveRef.current = true;
-                    setExcelDataState(mapped);
+                    setExcelDataState(applyCourierVehicleMap(serverData));
                     return;
                   }
                   
@@ -117,6 +133,34 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
           if (stored) {
             const parsed = JSON.parse(stored)
             if (parsed && typeof parsed === 'object') {
+              // v35.16: Apply manual overrides to local fallback too (helps with race conditions on refresh)
+              const localOverrides = localStorage.getItem('km_manual_overrides');
+              if (localOverrides && parsed.orders) {
+                try {
+                  const overrides = JSON.parse(localOverrides);
+                  parsed.orders = (parsed.orders || []).map((o: any) => {
+                    const id = o.id ? String(o.id) : null;
+                    const num = o.orderNumber ? String(o.orderNumber) : null;
+                    
+                    // v40.1: Robust Multi-Stage Lookup
+                    let override = id ? overrides[id] : null;
+
+                    if (!override && num) override = overrides[num];
+                    
+                    if (!override && id && id.includes('_')) {
+                        const baseId = id.split('_')[0];
+                        override = overrides[baseId];
+                    }
+
+                    if (!override && num) {
+                        const matchingKey = Object.keys(overrides).find(k => k === num || k.startsWith(`${num}_`));
+                        if (matchingKey) override = overrides[matchingKey];
+                    }
+                    
+                    return override ? { ...o, ...override } : o;
+                  });
+                } catch (e) { console.warn('Local fallback override failed:', e); }
+              }
               const mapped = applyCourierVehicleMap(parsed)
               bypassSaveRef.current = true;
               setExcelDataState(mapped)
@@ -133,102 +177,41 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     }
   }, [])
 
-  const saveTimeoutRef = useRef<any>(null)
-;
+  const saveTimeoutRef = useRef<any>(null);
+  const excelDataRef = useRef<ExcelData | null>(null);
 
   /**
    * Universal LocalStorage Sync (Debounced for performance)
    */
   const syncToLocalStorage = useCallback((data: ExcelData) => {
     try {
-      localStorage.setItem('km_dashboard_processed_data', JSON.stringify(data));
+      const dataToSave = { ...data, lastModified: Date.now() };
+      localStorage.setItem('km_dashboard_processed_data', JSON.stringify(dataToSave));
     } catch (e) {
       console.warn('LocalStorage save failed:', e);
     }
   }, []);
 
   useEffect(() => {
+    excelDataRef.current = excelData;
     if (!excelData) return;
     
     // Check if we should skip this save (e.g., just loaded from server)
     if (bypassSaveRef.current) {
-      // NOTE: We reset this in the manual overrides effect or at the end of this one
-      // to ensure both effects can see the "new" data without bypassing it.
-    } else {
+      bypassSaveRef.current = false;
+      return;
+    }
       // Immediate sync to localStorage for UI snappiness on reload
-      const lsTimeout = setTimeout(() => syncToLocalStorage(excelData), 500);
+      syncToLocalStorage(excelData);
 
       // Debounced save to server (2.0s)
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = setTimeout(() => saveDataToServer(excelData), 2000);
 
       return () => {
-        clearTimeout(lsTimeout);
         if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      };
-    }
-  }, [excelData, syncToLocalStorage]);
-
-  /**
-   * Automatic Manual Overrides Persistence
-   * v35.12: Watch excelData.orders and auto-persist dirty orders to km_manual_overrides
-   */
-  useEffect(() => {
-    if (!excelData?.orders) return;
-    
-    // SOTA 3.12/13: If we are bypassing (just loaded from server), we just reset the flag
-    // and wait for the NEXT change to trigger real persistence.
-    if (bypassSaveRef.current) {
-      bypassSaveRef.current = false;
-      return;
-    }
-
-    try {
-      const overrides: Record<string, any> = {};
-      // Scan for any manual modification or settled state
-      excelData.orders.forEach((o: any) => {
-        // v35.13: Use standard isOrderCompleted for broader settlement detection
-        const isSettled = isOrderCompleted(o.status);
-        if (o.manualGroupId || o.deadlineAt || o.isAddressLocked || o.settledDate || o.paymentMethodOverridden || isSettled) {
-          const id = String(o.id || o.orderNumber);
-          overrides[id] = {
-            // Routing
-            manualGroupId: o.manualGroupId,
-            deadlineAt: o.deadlineAt,
-            plannedTime: o.plannedTime,
-            courier: o.courier,
-            
-            // Address & Geodata
-            address: o.address,
-            lat: o.lat,
-            lng: o.lng,
-            coords: o.coords,
-            isAddressLocked: o.isAddressLocked,
-            locationType: o.locationType,
-            
-            // Settlement (Financials)
-            status: o.status,
-            paymentMethod: o.paymentMethod,
-            paymentMethodOverridden: o.paymentMethodOverridden,
-            settlementNote: o.settlementNote,
-            settledAmount: o.settledAmount,
-            settledDate: o.settledDate,
-            settlementSessionId: o.settlementSessionId,
-            sessionTotalReceived: o.sessionTotalReceived,
-            sessionTotalDifference: o.sessionTotalDifference,
-            sessionTotalExpected: o.sessionTotalExpected,
-            untakenChange: o.untakenChange,
-            originalChangeAmount: o.originalChangeAmount
-          };
-        }
-      });
-
-      // Always update if we have ANY orders, to keep it in sync (even if empty)
-      localStorage.setItem('km_manual_overrides', JSON.stringify(overrides));
-    } catch (e) {
-      console.warn('Auto-save manual overrides failed:', e);
-    }
-  }, [excelData?.orders]);
+      }
+    }, [excelData, syncToLocalStorage]);
 
   /**
    * Universal Protection Helper:
@@ -258,6 +241,69 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     }
     return val;
   }, []);
+
+  /**
+   * Core logic for manual overrides persistence
+   */
+  const performManualOverridesSave = useCallback((orders: any[]) => {
+    if (!orders) return;
+    try {
+      const overrides: Record<string, any> = {};
+      orders.forEach((o: any) => {
+        const isSettled = isOrderCompleted(o.status);
+        if (o.manualGroupId || o.deadlineAt || o.isAddressLocked || o.settledDate || o.paymentMethodOverridden || isSettled) {
+          const id = String(o.id || o.orderNumber);
+          overrides[id] = {
+            manualGroupId: o.manualGroupId,
+            deadlineAt: o.deadlineAt,
+            plannedTime: o.plannedTime,
+            courier: o.courier,
+            address: o.address,
+            lat: o.lat,
+            lng: o.lng,
+            coords: o.coords,
+            isAddressLocked: o.isAddressLocked,
+            locationType: o.locationType,
+            status: o.status,
+            paymentMethod: o.paymentMethod,
+            paymentMethodOverridden: o.paymentMethodOverridden,
+            settlementNote: o.settlementNote,
+            settledAmount: o.settledAmount,
+            settledDate: o.settledDate,
+            settlementSessionId: o.settlementSessionId,
+            sessionTotalReceived: o.sessionTotalReceived,
+            sessionTotalDifference: o.sessionTotalDifference,
+            sessionTotalExpected: o.sessionTotalExpected,
+            untakenChange: o.untakenChange,
+            originalChangeAmount: o.originalChangeAmount
+          };
+        }
+      });
+      localStorage.setItem('km_manual_overrides', JSON.stringify(overrides));
+      
+      // v35.19: CRITICAL - Force immediate sync of the entire state to localStorage
+      // v35.20: Use CURRENT orders passed to this function instead of stale ref
+      // v38.6: Save to localStorage ONLY if next orders actually exist
+      if (excelDataRef.current && excelDataRef.current.orders) {
+        const fullData = { ...excelDataRef.current, orders: orders };
+        fullData.lastModified = Date.now(); // FORCE freshening of local data
+        localStorage.setItem('km_dashboard_processed_data', JSON.stringify(fullData));
+      }
+    } catch (e) {
+      console.warn('Manual overrides save failed:', e);
+    }
+  }, []);
+
+  /**
+   * Automatic Manual Overrides Persistence
+   * v35.16: Decoupled from bypassSaveRef to ensure first change is ALWAYS saved.
+   */
+  useEffect(() => {
+    if (!excelData?.orders) return;
+    performManualOverridesSave(excelData.orders);
+  }, [excelData?.orders, performManualOverridesSave]);
+
+
 
   const saveDataToServer = async (data: ExcelData) => {
     const token = localStorage.getItem('km_access_token');
@@ -370,11 +416,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     toast.success(`Способ оплаты изменен на ${newPaymentMethod}`, { duration: 2000 });
   }, [updateExcelData])
 
-  const saveManualOverrides = useCallback((_orders: any[]) => {
-    // v35.11: Now handled automatically by useEffect on [excelData.orders]
-    // Keeping as no-op for backward compatibility
-  }, []);
-
   const contextValue = useMemo(() => ({
     excelData,
     setExcelData,
@@ -382,8 +423,8 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     clearExcelData,
     updateRouteData,
     updateOrderPaymentMethod,
-    saveManualOverrides
-  }), [excelData, setExcelData, updateExcelData, clearExcelData, updateRouteData, updateOrderPaymentMethod, saveManualOverrides]);
+    saveManualOverrides: performManualOverridesSave
+  }), [excelData, setExcelData, updateExcelData, clearExcelData, updateRouteData, updateOrderPaymentMethod, performManualOverridesSave]);
 
   // Handle unsaved changes on refresh/close
   useEffect(() => {

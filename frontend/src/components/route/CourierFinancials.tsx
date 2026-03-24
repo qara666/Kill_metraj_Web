@@ -10,7 +10,8 @@ import {
     ArrowsRightLeftIcon,
     CheckBadgeIcon,
     ExclamationTriangleIcon,
-    XMarkIcon
+    XMarkIcon,
+    CheckIcon
 } from '@heroicons/react/24/outline';
 import type { Order } from '../../types';
 import { SettlementModal } from './modals/SettlementModal';
@@ -170,6 +171,15 @@ export function CourierFinancials({
                     id: order.id || order.orderNumber,
                     amount: parseFloat(order.amount || order.totalAmount || 0)
                 });
+                
+                // Track most recent settlement
+                if (!summary.lastSettlement || new Date(order.settledDate) > new Date(summary.lastSettlement.date)) {
+                    summary.lastSettlement = {
+                        date: order.settledDate,
+                        cashReceived: parseFloat(order.sessionTotalReceived || 0),
+                        status: 'Завершено'
+                    };
+                }
                 return;
             }
 
@@ -689,6 +699,33 @@ export function CourierFinancials({
                 >
                     {cashToCollect > 0 ? 'Расчет налички у курьера' : 'Нет средств для расчета'}
                 </button>
+
+                {summary.lastSettlement && cashToCollect === 0 && (
+                    <div className={clsx(
+                        "mt-4 p-4 rounded-3xl flex items-center justify-between animate-in slide-in-from-top-2 duration-500",
+                        isDark ? "bg-emerald-500/10 border border-emerald-500/20" : "bg-emerald-50 bg-opacity-50 border border-emerald-100"
+                    )}>
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-white">
+                                <CheckIcon className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h4 className={clsx("text-[10px] font-black uppercase tracking-widest", isDark ? "text-emerald-400" : "text-emerald-600")}>
+                                    Расчет выполнен!
+                                </h4>
+                                <p className={clsx("text-xs font-bold", isDark ? "text-white/60" : "text-gray-500")}>
+                                    Сегодня в {new Date(summary.lastSettlement.date).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="text-right">
+                            <p className={clsx("text-[10px] font-black uppercase tracking-widest opacity-40")}>Сдано</p>
+                            <p className={clsx("text-lg font-black tabular-nums text-emerald-500")}>
+                                {summary.lastSettlement.cashReceived.toLocaleString('ru-RU')} ₴
+                            </p>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Shift Notes Section */}

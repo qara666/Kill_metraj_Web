@@ -109,12 +109,13 @@ export const useDashboardStore = create<DashboardStoreState>()(
             setApiDateShiftFilterEnabled: (enabled) => set({ apiDateShiftFilterEnabled: enabled }),
             setApiTimeFilterEnabled: (enabled) => set({ apiTimeFilterEnabled: enabled }),
             triggerApiManualSync: () => set({ apiManualSyncTrigger: Date.now() }),
-            setAutoRoutingStatus: (status: Partial<DashboardStoreState['autoRoutingStatus']>) => set((state) => ({
-                autoRoutingStatus: { ...state.autoRoutingStatus, ...status }
-            })),
+            setAutoRoutingStatus: (status: Partial<DashboardStoreState['autoRoutingStatus']>) => set((state) => {
+                const newStatus = { ...state.autoRoutingStatus, ...status };
+                return { autoRoutingStatus: newStatus };
+            }),
         }),
         {
-            name: 'dashboard-sync-storage-v1',
+            name: 'dashboard-sync-storage-v2', // v5.95: Bumped version to clear potentially stuck states
             partialize: (state) => {
                 const {
                     apiManualSyncTrigger,

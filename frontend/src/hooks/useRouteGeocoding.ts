@@ -319,7 +319,7 @@ export const useRouteGeocoding = ({
             // FAST-PATH: If all orders have coordinates and we aren't confirming addresses,
             // we can map them instantly without any yields or geocoding logic.
             if (allOrdersHaveCoords && !confirmAddresses) {
-                console.log(`[Fast-Path] Processing ${route.orders.length} orders bypass mode`);
+                console.log(`[Прямой-Путь] Обработка ${route.orders.length} заказов в режиме обхода`);
                 route.orders.forEach(order => {
                     const loc = { lat: order.coords!.lat, lng: order.coords!.lng };
                     waypointLocs.push(loc);
@@ -406,7 +406,7 @@ export const useRouteGeocoding = ({
             });
 
             if (ordersToGeocode.length > 0) {
-                console.log(`[Racing Transformer] Batch geocoding ${ordersToGeocode.length} unique addresses...`);
+                console.log(`[Пакетный-Геокодер] Геокодирование ${ordersToGeocode.length} уникальных адресов...`);
                 if (!skipStateUpdate) useCalculationProgress.getState().setProgress(10);
                 
                 // v37: Use optimized batchGeocode
@@ -728,7 +728,7 @@ export const useRouteGeocoding = ({
                 if (winner) {
                     const totalDistance = winner.value.dist
                     const totalDuration = winner.value.dur
-                    console.log(`[Turbo] Winner: ${winner.value.src} — ${(totalDistance / 1000).toFixed(1)} km`)
+                    console.log(`[Выбор] Победитель: ${winner.value.src} — ${(totalDistance / 1000).toFixed(1)} км`)
 
                     const geoMeta = {
                         origin: originLoc,
@@ -777,7 +777,7 @@ export const useRouteGeocoding = ({
 
                 // All engines failed
                 if (!skipStateUpdate) {
-                    toast.error('Turbo: Все провайдеры недоступны. Проверьте сеть.')
+                    toast.error('Ошибка: Все провайдеры недоступны. Проверьте сеть.')
                     setIsCalculating(false)
                 }
                 return null
@@ -950,6 +950,7 @@ if (!skipStateUpdate) setIsCalculating(false)
                 totalDuration: totalDuration / 60,
                 geoMeta,
                 isOptimized: true,
+                hasGeoErrors: false, // Ensure the warning triangle disappears
                 // Merge geocoded coordinates into orders for persistence
                 orders: route.orders.map((o: any) => {
                     const upd = orderUpdates.find((u: any) => u.id === o.id);

@@ -246,7 +246,7 @@ export function SettlementModal({
     const difference = (parseFloat(manualTotal) || 0) - currentExpectedSum;
 
     return (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center z-[100] animate-in fade-in duration-300 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
             <div className={clsx(
                 'rounded-[2.5rem] max-w-5xl w-full mx-auto shadow-[0_32px_128px_-16px_rgba(0,0,0,0.3)] transition-all flex flex-col max-h-[92vh] border overflow-hidden',
                 isDark ? 'bg-[#1a1c1e] border-white/5 text-white' : 'bg-white border-gray-100 text-gray-900'

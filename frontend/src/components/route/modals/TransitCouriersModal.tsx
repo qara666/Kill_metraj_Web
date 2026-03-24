@@ -28,7 +28,7 @@ export const TransitCouriersModal = memo(({
     if (!show) return null;
 
     return (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md transition-all ease-out duration-300">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60">
             <div className={clsx(
                 "w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden border-2 transform scale-100 animate-in fade-in zoom-in duration-300",
                 isDark ? "bg-slate-900 border-white/5 shadow-black/50" : "bg-white border-blue-100 shadow-blue-500/20"

@@ -21,9 +21,9 @@ export const SCORE = {
   GEOMETRIC_CENTER: 10,
   APPROXIMATE: 0,
 
-  // Zone bonuses
-  INSIDE_DELIVERY_ZONE: 500,  // Increased
-  INSIDE_ACTIVE_ZONE: 200,    // Increased
+  // Zone bonuses (v44: MASSIVE BOOST to guarantee points inside KML zones always win)
+  INSIDE_DELIVERY_ZONE: 5000000,  
+  INSIDE_ACTIVE_ZONE: 3000000,    
 
   // Technical zone kills
   TECHNICAL_ZONE_PENALTY: -99999,
@@ -46,11 +46,11 @@ export const SCORE = {
   // House number match
   HOUSE_MATCH_EXACT: 2000,
 
-  // IRON DOME PENALTIES - RESTORED & TUNED FOR FAIRNESS
+  // IRON DOME PENALTIES - RESTORED & TUNED FOR FAIRNESS (v35.18 Lockdown)
   DELIVERY_ZONE_MATCH: 15000,         
-  WRONG_ZONE_FATAL_PENALTY: -40000,  
-  OUT_OF_ZONE_FATAL_PENALTY: -25000, 
-  MAX_DISTANCE_QUARANTINE: -1000000,  // Fatal
+  WRONG_ZONE_FATAL_PENALTY: -5000000,  
+  OUT_OF_ZONE_FATAL_PENALTY: -2000000, 
+  MAX_DISTANCE_QUARANTINE: -10000000,  // Fatal
   LOGICAL_CONTINUITY_GAP: -600000,      // Fatal for Iron Dome (-500k)
   HARD_ZONE_EXCLUSION: -100000,        
 
@@ -220,25 +220,41 @@ export function scoreCandidate(
 
   // 2.2 Expected Delivery Zone Match (IRON DOME LOGIC)
   if (opts.expectedDeliveryZone) {
-    const eName = opts.expectedDeliveryZone.toLowerCase().replace(/зона\s*/g, '').trim()
+    // Helper for Latin-Cyrillic visual lookalikes and punctuation stripping
+    const normalizeLookalikes = (s: string) => {
+      return s.replace(/[ABCEHKMOPTXYa-zA-Z]/g, (match) => {
+        const map: any = {
+          'A': 'А', 'B': 'В', 'C': 'С', 'E': 'Е', 'H': 'Н', 'K': 'К', 'M': 'М', 'O': 'О', 'P': 'Р', 'T': 'Т', 'X': 'Х', 'Y': 'У',
+          'a': 'а', 'b': 'в', 'c': 'с', 'e': 'е', 'h': 'н', 'k': 'к', 'm': 'м', 'o': 'о', 'p': 'р', 't': 'т', 'x': 'х', 'y': 'у'
+        };
+        return map[match] || match;
+      }).replace(/['"«»‘’“”""ʼ`\s\.\,\-]/g, '').toLowerCase(); // Strip ALL punctuation and spaces
+    };
+
+    const rawExpected = normalizeLookalikes(opts.expectedDeliveryZone);
+    const eParts = rawExpected.replace(/зона/g, '').split(/[:\-]/).map(p => p.trim()).filter(Boolean);
     
     if (kmlZone) {
-      const kName = kmlZone.toLowerCase().replace(/зона\s*/g, '').trim()
-      const isMatch = kName === eName || kName.includes(eName) || eName.includes(kName)
+      const kName = normalizeLookalikes(kmlZone).replace(/зона/g, '').trim();
+      const kHub = kmlHub ? normalizeLookalikes(kmlHub) : '';
+      
+      const isMatch = eParts.some(p => kName === p || kName.includes(p) || p.includes(kName)) ||
+                      (kHub && eParts.some(p => kHub === p || kHub.includes(p) || p.includes(kHub)));
       
       if (isMatch) {
         score += SCORE.DELIVERY_ZONE_MATCH
       } else if (isInside && !isTech) {
-        // Point is in a DIFFERENT active delivery zone -> Fatal penalty
-        score += SCORE.WRONG_ZONE_FATAL_PENALTY
+        // Point is in a DIFFERENT active delivery zone
+        // v42: Replaced fatal penalty with a minor penalty to allow cross-zone matches
+        score += -5000 
       } else {
          // In technical or disabled zone near expected zone
-         score += SCORE.OUT_OF_ZONE_FATAL_PENALTY
+         score += SCORE.OUT_OF_ZONE_PENALTY
       }
     } else {
       // No KML zone found for this candidate, but we have an expected zone!
-      // This is a "Suburb Misfire" or "Fields Misfire".
-      score += SCORE.OUT_OF_ZONE_FATAL_PENALTY
+      // v42: Changed from FATAL to strong penalty. We MUST find it if it's anywhere inside!
+      score += -20000
     }
 
     }
@@ -250,18 +266,20 @@ export function scoreCandidate(
     const cityData = getCityBounds(cityKey);
     const cityCenter = cityData?.center;
     
-    if (cityCenter) {
+    // v45: If the candidate actually landed inside our active delivery zone, 
+    // we NEVER reject it for being far from center! Suburbs exist.
+    if (cityCenter && !isInside) {
       const cLat = cityCenter[1];
       const cLng = cityCenter[0];
       const distToCity = distanceBetween({ lat, lng }, { lat: cLat, lng: cLng });
       
-      if (distToCity > 25000) { 
+      // v40: Tightened distance violation
+      if (distToCity > 20000) { 
         score += SCORE.CITY_RADIUS_VIOLATION; 
-        (raw as any)._rejectReason = `Fatal distance: ${(distToCity/1000).toFixed(1)}km from city center (v35.9.14)`;
-      } else if (distToCity > 18000) {
-        score += SCORE.CITY_RADIUS_QUARANTINE;
+        (raw as any)._rejectReason = `Fatal distance: ${(distToCity/1000).toFixed(1)}km from city center (v40)`;
       } else if (distToCity > 12000) {
-        score += SCORE.SUSPICIOUS_DISTANCE;
+        // v40: Severe penalty for suspicious distance if expected zone present
+        score += (opts.expectedDeliveryZone ? SCORE.SUSPICIOUS_DISTANCE * 5 : SCORE.SUSPICIOUS_DISTANCE);
       }
     }
 

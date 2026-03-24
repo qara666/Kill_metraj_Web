@@ -12,7 +12,6 @@ import {
   CreditCardIcon,
   LinkIcon,
   ChevronDownIcon,
-  MapIcon,
   TruckIcon,
   ShoppingCartIcon,
   XCircleIcon,
@@ -47,6 +46,8 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
   const [isProcessingHtml, setIsProcessingHtml] = useState<boolean>(false)
   const [showHtmlUpload, setShowHtmlUpload] = useState<boolean>(false)
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
+  const [selectedStat, setSelectedStat] = useState<any | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState<boolean>(false)
 
   const processLocalHtmlFile = useCallback(async (file: File) => {
     if (!onHtmlDataLoad) {
@@ -599,15 +600,10 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
                 {[
                   {
-                    label: 'Дистанция',
-                    value: `${(processedData.orders?.length || 0) > 0 ? (processedData.orders?.length * 1.8).toFixed(1) : 0} км`,
-                    color: 'blue',
-                    icon: MapIcon
-                  },
-                  {
+                    type: 'delivery',
                     label: 'Доставка',
                     value: processedData.orders?.filter((o: any) => {
                       const type = String(o.orderType || o['тип заказа'] || o.type || '').toLowerCase();
@@ -617,9 +613,11 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
                       return !isPickup;
                     }).length || 0,
                     color: 'emerald',
-                    icon: TruckIcon
+                    icon: TruckIcon,
+                    detail: `Все заказы за исключением самовывозов и выносов`
                   },
                   {
+                    type: 'pickup',
                     label: 'Самовывоз',
                     value: processedData.orders?.filter((o: any) => {
                       const type = String(o.orderType || o['тип заказа'] || o.type || '').toLowerCase();
@@ -628,9 +626,11 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
                              addr.includes('самовывоз') || addr.includes('самовивіз') || addr.includes('вынос');
                     }).length || 0,
                     color: 'violet',
-                    icon: ShoppingCartIcon
+                    icon: ShoppingCartIcon,
+                    detail: `Заказы с пометкой "Самовывоз", "Винос" или "Самовивіз"`
                   },
                   {
+                    type: 'cancelled',
                     label: 'Отказы',
                     value: processedData.orders?.filter((o: any) => 
                       o.status?.toLowerCase().includes('отказ') || 
@@ -638,9 +638,11 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
                       o.status?.toLowerCase().includes('відмова')
                     ).length || 0,
                     color: 'red',
-                    icon: XCircleIcon
+                    icon: XCircleIcon,
+                    detail: `Заказы со статусом "Отказ", "Отменен" или "Відмова"`
                   },
                   {
+                    type: 'success',
                     label: 'Без отказов',
                     value: (processedData.orders?.length || 0) - (processedData.orders?.filter((o: any) => 
                       o.status?.toLowerCase().includes('отказ') || 
@@ -648,23 +650,31 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
                       o.status?.toLowerCase().includes('відмова')
                     ).length || 0),
                     color: 'green',
-                    icon: CheckCircleIcon
+                    icon: CheckCircleIcon,
+                    detail: `Успешно выполненные заказы без учета отмен`
                   },
                   {
+                    type: 'amount',
                     label: 'Сумма',
                     value: `${Math.round(processedData.orders?.filter((o: any) => {
                       const status = String(o.status || '').toLowerCase();
                       return !status.includes('отказ') && !status.includes('отменен') && !status.includes('відмова');
                     }).reduce((sum: number, o: any) => sum + (Number(o.amount) || 0), 0) || 0).toLocaleString()} ₴`,
                     color: 'indigo',
-                    icon: BanknotesIcon
+                    icon: BanknotesIcon,
+                    detail: `Общая сумма выручки по способам оплаты`,
+                    isClickable: true
                   }
                 ].map((stat, idx) => (
                   <div key={idx} className="flex flex-col">
-                    <div className={clsx(
-                      "w-10 h-10 rounded-xl flex items-center justify-center mb-3 shadow-sm border",
-                      isDark ? `bg-${stat.color}-500/10 border-${stat.color}-500/20 text-${stat.color}-400` : `bg-${stat.color}-50 border-${stat.color}-100 text-${stat.color}-600`
-                    )}>
+                    <div 
+                      onClick={() => { if (stat.isClickable) { setSelectedStat(stat); setIsModalOpen(true); } }}
+                      className={clsx(
+                        "w-10 h-10 rounded-xl flex items-center justify-center mb-3 shadow-sm border transition-all duration-300",
+                        stat.isClickable ? "cursor-pointer active:scale-95 hover:bg-opacity-80" : "cursor-default",
+                        isDark ? `bg-${stat.color}-500/10 border-${stat.color}-500/20 text-${stat.color}-400` : `bg-${stat.color}-50 border-${stat.color}-100 text-${stat.color}-600`
+                      )}
+                    >
                       <stat.icon className="w-5 h-5" />
                     </div>
                     <p className={clsx("text-[10px] font-black uppercase tracking-widest opacity-50 mb-1", isDark ? "text-slate-400" : "text-slate-500")}>
@@ -680,7 +690,62 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
           </div>
         )
       }
-    </div >
+      {/* Simplified Analytics Modal - Payment Breakdown Only */}
+      {isModalOpen && selectedStat && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div 
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => setIsModalOpen(false)}
+          />
+          <div className={clsx(
+            "relative w-full max-w-sm overflow-hidden rounded-2xl border shadow-xl animate-in fade-in zoom-in-95 duration-200",
+            isDark ? "bg-gray-900 border-gray-800 text-white" : "bg-white border-gray-100 text-gray-900"
+          )}>
+            <div className="p-5 border-b border-gray-100/10 flex items-center justify-between bg-gray-50/30 dark:bg-white/5">
+              <h3 className="text-sm font-black uppercase tracking-widest opacity-70">
+                Детализация оплаты
+              </h3>
+              <button 
+                onClick={() => setIsModalOpen(false)}
+                className="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded-lg transition-colors"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3">
+              {['Готівка', 'Карта', 'Эл. оплата'].map(method => {
+                const totalByMethod = processedData.orders?.filter((o: any) => {
+                  const status = String(o.status || '').toLowerCase();
+                  if (status.includes('отказ') || status.includes('отменен') || status.includes('відмова')) return false;
+                  const m = String(o.paymentMethod || o['способ оплаты'] || '').toLowerCase();
+                  return m.includes(method.toLowerCase());
+                }).reduce((sum: number, o: any) => sum + (Number(o.amount) || 0), 0) || 0;
+
+                return (
+                  <div key={method} className={clsx(
+                    "flex items-center justify-between p-3 rounded-xl border",
+                    isDark ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
+                  )}>
+                    <span className="text-xs font-bold opacity-60 uppercase tracking-widest">{method}</span>
+                    <span className="text-base font-black tabular-nums">{totalByMethod.toLocaleString()} ₴</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="p-5 border-t border-gray-100/10">
+              <button 
+                onClick={() => setIsModalOpen(false)}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-blue-500/20"
+              >
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 

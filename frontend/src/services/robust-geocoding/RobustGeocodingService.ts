@@ -136,7 +136,7 @@ export class RobustGeocodingService {
         Object.entries(parsed).forEach(([key, val]) => {
           this.l1Cache.set(key, val as RobustGeocodeResult);
         });
-        console.log(`[Quantum Cache] Загружено ${this.l1Cache.size} адресов из хранилища.`);
+        console.log(`[Кэш] Загружено ${this.l1Cache.size} адресов из локального хранилища.`);
       }
     } catch (e) {
       console.warn('[Quantum Cache] Ошибка загрузки кэша:', e);
@@ -258,7 +258,7 @@ export class RobustGeocodingService {
                   if (p || isGoodEnough) {
                       const hit = p || isGoodEnough;
                       if (hit) {
-                        console.log(`[${name}] ${turbo ? 'TURBO ' : ''}HIT: ${hit.score} баллов.`);
+                        console.log(`[${name}] ${turbo ? 'УСКОРЕННЫЙ ' : ''}УСПЕХ: ${hit.score} баллов.`);
                         return hit;
                       }
                   }
@@ -354,7 +354,7 @@ export class RobustGeocodingService {
     if (geoStr) {
         const extracted = this._parseAddressGeo(geoStr);
         if (extracted && extracted.lat && extracted.lng) {
-            console.log(`[Геокодинг] INSTANT BYPASS (addressGeo): "${rawAddress}"`);
+            console.log(`[Геокодинг] ИСПОЛЬЗУЮТСЯ КООРДИНАТЫ ИЗ БД: "${rawAddress}"`);
             
             // v38.1: Perform zone lookup even for bypass to ensure badges show in UI
             const zoneInfo = this.findZoneForCoords(extracted.lat, extracted.lng);
@@ -555,7 +555,7 @@ export class RobustGeocodingService {
                     );
                     allCandidates.push(...scored);
                     if (perfect) {
-                        console.log(`[Turbo Fallback] HIT: "${variant}" → ${perfect.score} pts`);
+                        console.log(`[Резервный Поиск] УСПЕХ: "${variant}" → ${perfect.score} баллов`);
                         const res = { best: perfect, allCandidates: dedupeByCoord(allCandidates), resolvedVariant: variant, fromCache: false };
                         this.l1Cache.set(cacheKey, res);
                         return res;
@@ -619,7 +619,7 @@ export class RobustGeocodingService {
     if ((!best || best.score < 2000) && options.expectedDeliveryZone && !turbo) {
         const zoneHint = options.expectedDeliveryZone.toLowerCase().replace(/зона\s*/g, '').trim();
         const hintedQuery = `${cleanQuery}, ${zoneHint}`;
-        console.log(`[Геокодинг] FALLBACK (Zone Hinted): "${hintedQuery}"`);
+        console.log(`[Геокодинг] ПОВТОРНЫЙ ПОИСК (с учетом зон): "${hintedQuery}"`);
         
         try {
             const { scored, perfect: hintedPerfect } = await this._evaluateProvidersEarlyExit(

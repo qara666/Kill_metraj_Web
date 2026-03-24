@@ -12,8 +12,8 @@ export function asNonEmptyString(value: unknown): string {
 }
 
 export function isId0CourierName(value: unknown): boolean {
-  const name = asNonEmptyString(value)
-  return name === 'ID:0' || name.startsWith('ID:0')
+  const name = asNonEmptyString(value).trim().toUpperCase()
+  return name === 'ID:0' || name.startsWith('ID:0') || name === 'НЕ НАЗНАЧЕНО' || name === 'НЕ НАЗНАЧЕННЫЕ ЗАКАЗЫ'
 }
 
 export function normalizeCourierName(value: unknown): string {

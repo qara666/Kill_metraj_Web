@@ -30,6 +30,10 @@ export interface Order {
     deliveryZone?: string
     streetNumberMatched?: boolean
     isAddressLocked?: boolean
+    /** If set, this order was transferred to another courier. Original courier loses this order from stats. */
+    reassignedToCourier?: string
+    /** The courier who originally had this order before it was transferred here. */
+    reassignedFromCourier?: string
 }
 
 export interface Route {
@@ -47,4 +51,5 @@ export interface Route {
     accurateETA?: any
     isVirtual?: boolean
     title?: string
+    hasGeoErrors?: boolean
 }

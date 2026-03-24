@@ -107,6 +107,7 @@ export interface Route {
   legDurations?: number[];
   orders: Order[]; // Added to match usage in RouteManagement
   isOptimized?: boolean; // Added to match usage in RouteManagement
+  hasGeoErrors?: boolean;
 }
 
 export interface ProcessedOrder {
