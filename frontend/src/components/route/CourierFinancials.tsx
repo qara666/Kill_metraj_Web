@@ -1059,9 +1059,9 @@ export function CourierFinancials({
                                                             <p className={clsx('text-lg font-black tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>
                                                                 {formatCurrency((order as any).settledAmount || order.amount)}
                                                             </p>
-                                                            {(order as any).changeAmount > 0 && (
+                                                            {(order as any).changeDue > 0 && (
                                                                 <p className="text-[10px] font-bold opacity-30 mt-0.5">
-                                                                    Сдача: {(order as any).changeAmount}₴
+                                                                    Сдача: {(order as any).changeDue}₴
                                                                 </p>
                                                             )}
                                                             {order.settlementNote && (
