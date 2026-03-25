@@ -56,7 +56,10 @@ export const CourierCard = memo(({
   const calculatedCount = courier.ordersInRoutes || 0;
   const totalCount = courier.orders || 0;
   const calculationProgress = totalCount > 0 ? (calculatedCount / totalCount) * 100 : 0;
+  
+  // v5.113: Improved status logic for empty couriers
   const isFullyCalculated = totalCount > 0 && calculatedCount === totalCount;
+  const hasNoOrders = totalCount === 0;
 
   return (
     <div className={clsx(
@@ -310,10 +313,10 @@ export const CourierCard = memo(({
 
         <button
           onClick={() => window.dispatchEvent(new CustomEvent('km-force-auto-routing', { detail: { courierName: courier.name } }))}
-          disabled={isFullyCalculated}
+          disabled={isFullyCalculated || hasNoOrders}
           className={clsx(
             'w-full py-4 rounded-2xl font-black text-[13px] uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-3 active:scale-[0.98]',
-            isFullyCalculated
+            (isFullyCalculated || hasNoOrders)
               ? (isDark ? 'bg-gray-800 text-gray-500 cursor-default grayscale' : 'bg-gray-100 text-gray-400 cursor-default grayscale')
               : (isDark
                 ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20'
