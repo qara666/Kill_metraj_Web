@@ -2,7 +2,6 @@ import React, { useState, useEffect, Suspense, lazy, useCallback } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
 import { LoadingSpinner } from '../components/shared/LoadingSpinner'
-import { ApiKeyNotification } from '../components/modals/ApiKeyNotification'
 import { ExcelUploadSection } from '../components/excel/ExcelUploadSection'
 import { DashboardApiSection } from '../components/autoplanner/DashboardApiSection'
 import { ExcelResultsDisplay } from '../components/excel/ExcelResultsDisplay'
@@ -302,8 +301,6 @@ export const Dashboard: React.FC = () => {
       'space-y-6 transition-colors duration-300',
       isDark ? 'text-gray-100' : 'text-gray-900'
     )}>
-      <ApiKeyNotification />
-
       <div className="space-y-8">
         <DashboardApiSection />
 

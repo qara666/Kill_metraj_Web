@@ -18,6 +18,7 @@ export function useContinuousAutoRouting() {
     const { excelData, updateExcelData } = useExcelData();
     const isProcessingRef = useRef(false);
     const processedGroupSignatures = useRef<Set<string>>(new Set());
+    const processedRefinements = useRef<Set<string>>(new Set()); // v5.106: Avoid infinite refinement loops
     
     // v5.80: Global Store Integration
     const autoRoutingStatus = useDashboardStore(s => s.autoRoutingStatus);
@@ -110,7 +111,211 @@ export function useContinuousAutoRouting() {
                         .filter((name: any) => isRealCourierName(name))
                 ).size;
 
-                if (unroutedOrders.length === 0) {
+                if (unroutedOrders.length > 0) {
+                    // 2. Grouping & Selection
+                    const groupsMap = groupAllOrdersByTimeWindow(unroutedOrders, excelData.couriers);
+                    const updatedCouriersNames = new Set<string>();
+                    const eligibleGroups: any[] = [];
+
+                    for (const [courierId, timeGroups] of Array.from(groupsMap.entries())) {
+                        for (const group of timeGroups) {
+                            const actualCourierName = group.courierName && group.courierName !== 'Неизвестный курьер' 
+                                ? group.courierName 
+                                : courierId;
+
+                            if (!actualCourierName || isId0CourierName(actualCourierName) || isId0CourierName(courierId)) {
+                                continue;
+                            }
+
+                            eligibleGroups.push({ ...group, actualCourierName });
+                        }
+                    }
+
+                    setAutoRoutingStatus({ 
+                        totalCount: totalOrders, 
+                        totalCouriers: totalSystemCouriers,
+                        processedCount: processedGeocodedCount,
+                        processedCouriers: couriersWithRoutesCount,
+                        lastUpdate: Date.now() 
+                    });
+
+                    let processedOrdersInBatch = 0;
+                    const processedCouriersThisBatch = new Set<string>();
+
+                    for (const group of eligibleGroups) {
+                        const { actualCourierName, orders } = group;
+
+                        // Chunking
+                        const MAX_ORDERS = 20;
+                        const groupChunks: any[] = [];
+                        for (let i = 0; i < orders.length; i += MAX_ORDERS) {
+                            groupChunks.push(orders.slice(i, i + MAX_ORDERS));
+                        }
+
+                        for (const chunkOrders of groupChunks) {
+                            const groupSignature = chunkOrders
+                                .map((o: any) => `${getStableOrderId(o)}_${o.address}_${actualCourierName}`)
+                                .sort()
+                                .join('|');
+
+                            if (processedGroupSignatures.current.has(groupSignature)) {
+                                processedOrdersInBatch += chunkOrders.length;
+                                continue;
+                            }
+                            
+                            try {
+                                const allOrderUpdates = new Map<string, any>();
+                                const ordersToGeocode = chunkOrders.filter((o: any) => !o.coords?.lat);
+                                
+                                if (ordersToGeocode.length > 0) {
+                                    const uniqueAddresses = new Set<string>(ordersToGeocode.map((o: any) => cleanAddressForRoute(o.address)));
+                                    const batchRequests = Array.from(uniqueAddresses).map(addr => ({
+                                        address: addr,
+                                        options: { silent: true, turbo: true }
+                                    }));
+                                    
+                                    const batchResults = await robustGeocodingService.batchGeocode(batchRequests, { turbo: true });
+                                    
+                                    chunkOrders.forEach((o: any) => {
+                                        if (!o.coords?.lat) {
+                                            const cleanAddr = cleanAddressForRoute(o.address).toLowerCase();
+                                            const res = batchResults.get(cleanAddr);
+                                            if (res?.best?.raw?.geometry?.location) {
+                                                const loc = res.best.raw.geometry.location;
+                                                o.coords = { lat: Number(loc.lat), lng: Number(loc.lng) };
+                                                o.kmlZone = res.best.kmlZone || undefined;
+                                                o.kmlHub = res.best.kmlHub || undefined;
+                                                o.locationType = res.best.raw.geometry.location_type || undefined;
+                                                o.streetNumberMatched = res.best.streetNumberMatched;
+                                                allOrderUpdates.set(getStableOrderId(o), { ...o });
+                                            }
+                                        }
+                                    });
+                                }
+
+                                // Route Calculation
+                                const newRoute: any = {
+                                    id: `autoroute_${Date.now()}_rnd${Math.floor(Math.random() * 10000)}`,
+                                    courier: actualCourierName,
+                                    orders: chunkOrders.map((o: any) => {
+                                        const up = allOrderUpdates.get(getStableOrderId(o));
+                                        return up ? { ...o, ...up } : o;
+                                    }),
+                                    totalDistance: 0,
+                                    totalDuration: 0,
+                                    isOptimized: false,
+                                    createdAt: Date.now(),
+                                    isAutoGenerated: true,
+                                    hasGeoErrors: chunkOrders.some((o: any) => 
+                                        needsAddressClarification({
+                                            locationType: o.locationType,
+                                            streetNumberMatched: o.streetNumberMatched,
+                                            hasCoords: !!o.coords?.lat
+                                        })
+                                    )
+                                };
+
+                                if (!newRoute.hasGeoErrors) {
+                                    const points: any[] = [];
+                                    const startLat = settings?.defaultStartLat ? Number(settings.defaultStartLat) : null;
+                                    const startLng = settings?.defaultStartLng ? Number(settings.defaultStartLng) : null;
+                                    
+                                    if (startLat && startLng) points.push({ lat: startLat, lng: startLng });
+                                    chunkOrders.forEach((o: any) => {
+                                        if (o.coords?.lat) points.push({ lat: Number(o.coords.lat), lng: Number(o.coords.lng) });
+                                    });
+                                    
+                                    const endLat = settings?.defaultEndLat ? Number(settings.defaultEndLat) : null;
+                                    const endLng = settings?.defaultEndLng ? Number(settings.defaultEndLng) : null;
+                                    if (endLat && endLng) points.push({ lat: endLat, lng: endLng });
+                                    else if (points.length > 0) points.push(points[0]);
+
+                                    if (points.length >= 2) {
+                                        let calculatedDist = 0;
+                                        let calculatedDur = 0;
+
+                                        if (settings?.yapikoOsrmUrl) {
+                                            try {
+                                                const { YapikoOSRMService } = await import('../services/YapikoOSRMService');
+                                                const r = await YapikoOSRMService.calculateRoute(points, settings.yapikoOsrmUrl);
+                                                if (r.feasible) {
+                                                    calculatedDist = r.totalDistance || 0;
+                                                    calculatedDur = r.totalDuration || 0;
+                                                }
+                                            } catch {}
+                                        }
+
+                                        if (!calculatedDist) {
+                                            try {
+                                                const { ValhallaService } = await import('../services/valhallaService');
+                                                const r = await ValhallaService.calculateRoute(points);
+                                                if (r.feasible) {
+                                                    calculatedDist = r.totalDistance || 0;
+                                                    calculatedDur = r.totalDuration || 0;
+                                                }
+                                            } catch {}
+                                        }
+
+                                        newRoute.totalDistance = calculatedDist / 1000;
+                                        newRoute.totalDuration = calculatedDur / 60;
+                                        newRoute.isOptimized = calculatedDist > 0;
+
+                                        newRoute.geoMeta = {
+                                            origin: (startLat && startLng) ? { lat: startLat, lng: startLng } : null,
+                                            waypoints: chunkOrders.map((o: any) => ({
+                                                lat: Number(o.coords?.lat || o.lat || 0),
+                                                lng: Number(o.coords?.lng || o.lng || 0)
+                                            })).filter((w: any) => w.lat !== 0 && w.lng !== 0),
+                                            destination: (endLat && endLng) ? { lat: endLat, lng: endLng } : ((startLat && startLng) ? { lat: startLat, lng: startLng } : null)
+                                        };
+                                    }
+                                }
+
+                                updateExcelData((prev: any) => {
+                                    const currentOrders = prev?.orders || [];
+                                    const updatedOrders = currentOrders.map((order: any) => {
+                                        const updated = allOrderUpdates.get(getStableOrderId(order));
+                                        return updated ? { ...order, ...updated } : order;
+                                    });
+
+                                    return {
+                                        ...(prev || { orders: [], routes: [] }),
+                                        orders: updatedOrders,
+                                        routes: [...(prev?.routes || []), newRoute]
+                                    };
+                                }, true);
+
+                                processedGroupSignatures.current.add(groupSignature);
+                                processedOrdersInBatch += chunkOrders.length;
+                                
+                                const allCouriersWithRoutes = new Set([
+                                    ...Array.from(realCouriersSet).filter(name => 
+                                        (excelData.routes || []).some((r: any) => (r.courier?.name || r.courier) === name) ||
+                                        processedCouriersThisBatch.has(name)
+                                    )
+                                ]);
+
+                                setAutoRoutingStatus({ 
+                                    processedCount: processedGeocodedCount + processedOrdersInBatch,
+                                    processedCouriers: allCouriersWithRoutes.size,
+                                    lastUpdate: Date.now()
+                                });
+
+                                if (newRoute.isOptimized) {
+                                    updatedCouriersNames.add(actualCourierName);
+                                }
+                            } catch (e) {
+                                console.error(`[AutoRouting] Ошибка для ${actualCourierName}:`, e);
+                            }
+                        }
+                    }
+
+                    if (updatedCouriersNames.size > 0) {
+                        const names = Array.from(updatedCouriersNames).join(', ');
+                        toast.success(`Маршруты рассчитаны: ${names}`, { icon: '🤖', duration: 3000 });
+                    }
+                } else {
+                    // Even if no orders to route, keep status updated
                     setAutoRoutingStatus({ 
                         processedCount: processedGeocodedCount, 
                         totalCount: totalOrders, 
@@ -118,217 +323,90 @@ export function useContinuousAutoRouting() {
                         totalCouriers: totalSystemCouriers, 
                         lastUpdate: Date.now() 
                     });
-                    isProcessingRef.current = false;
-                    return;
                 }
 
-                // 2. Grouping & Selection
-                const groupsMap = groupAllOrdersByTimeWindow(unroutedOrders, excelData.couriers);
-                const updatedCouriersNames = new Set<string>();
-                const eligibleGroups: any[] = [];
-
-                for (const [courierId, timeGroups] of Array.from(groupsMap.entries())) {
-                    for (const group of timeGroups) {
-                        const actualCourierName = group.courierName && group.courierName !== 'Неизвестный курьер' 
-                            ? group.courierName 
-                            : courierId;
-
-                        if (!actualCourierName || isId0CourierName(actualCourierName) || isId0CourierName(courierId)) {
-                            continue;
-                        }
-
-                        eligibleGroups.push({ ...group, actualCourierName });
-                    }
-                }
-
-                setAutoRoutingStatus({ 
-                    totalCount: totalOrders, 
-                    totalCouriers: totalSystemCouriers,
-                    processedCount: processedGeocodedCount,
-                    processedCouriers: couriersWithRoutesCount,
-                    lastUpdate: Date.now() 
-                });
-
-                let processedOrdersInBatch = 0;
-                const processedCouriersThisBatch = new Set<string>();
-
-                for (const group of eligibleGroups) {
-                    const { actualCourierName, orders } = group;
-
-                    // Chunking
-                    const MAX_ORDERS = 20;
-                    const groupChunks: any[] = [];
-                    for (let i = 0; i < orders.length; i += MAX_ORDERS) {
-                        groupChunks.push(orders.slice(i, i + MAX_ORDERS));
-                    }
-
-                    for (const chunkOrders of groupChunks) {
-                        const groupSignature = chunkOrders
-                            .map((o: any) => `${getStableOrderId(o)}_${o.address}_${actualCourierName}`)
-                            .sort()
-                            .join('|');
-
-                        if (processedGroupSignatures.current.has(groupSignature)) {
-                            processedOrdersInBatch += chunkOrders.length;
-                            continue;
-                        }
-
-                        // v5.106: DO NOT add to processedGroupSignatures here.
-                        // Wait until the calculation successfully updates the state.
+                // 3. REFINEMENT PASS (Isolated from main routing phase)
+                try {
+                    const needsRefine = excelData.orders.filter((o: any) => {
+                        const stableId = getStableOrderId(o);
+                        const refKey = `${stableId}_${o.address}`;
+                        if (processedRefinements.current.has(refKey)) return false;
                         
-                        try {
-                            const allOrderUpdates = new Map<string, any>();
-                            const ordersToGeocode = chunkOrders.filter((o: any) => !o.coords?.lat);
-                            
-                            if (ordersToGeocode.length > 0) {
-                                const uniqueAddresses = new Set<string>(ordersToGeocode.map((o: any) => cleanAddressForRoute(o.address)));
-                                const batchRequests = Array.from(uniqueAddresses).map(addr => ({
-                                    address: addr,
-                                    options: { silent: true, turbo: true } // v5.106: Enable TURBO for background
-                                }));
-                                
-                                const batchResults = await robustGeocodingService.batchGeocode(batchRequests, { turbo: true });
-                                
-                                chunkOrders.forEach((o: any) => {
-                                    if (!o.coords?.lat) {
-                                        const cleanAddr = cleanAddressForRoute(o.address).toLowerCase();
-                                        const res = batchResults.get(cleanAddr);
-                                        if (res?.best?.raw?.geometry?.location) {
-                                            const loc = res.best.raw.geometry.location;
-                                            o.coords = { lat: Number(loc.lat), lng: Number(loc.lng) };
-                                            o.kmlZone = res.best.kmlZone || undefined;
-                                            o.kmlHub = res.best.kmlHub || undefined;
-                                            o.locationType = res.best.raw.geometry.location_type || undefined;
-                                            o.streetNumberMatched = res.best.streetNumberMatched;
-                                            allOrderUpdates.set(getStableOrderId(o), { ...o });
-                                        }
-                                    }
+                        return needsAddressClarification({
+                            locationType: o.locationType,
+                            streetNumberMatched: o.streetNumberMatched,
+                            hasCoords: !!o.coords?.lat
+                        });
+                    });
+
+                    if (needsRefine.length > 0) {
+                        const batchToRefine = needsRefine.slice(0, 5); 
+                        console.log(`[AutoRouting] Refining ${batchToRefine.length} problematic addresses...`);
+                        
+                        const refineUpdates = new Map<string, any>();
+                        
+                        for (const o of batchToRefine) {
+                            const sid = getStableOrderId(o);
+                            const refKey = `${sid}_${o.address}`;
+                            processedRefinements.current.add(refKey);
+
+                            try {
+                                const res = await robustGeocodingService.geocode(o.address, {
+                                    turbo: false, 
+                                    forceCityBias: true, 
+                                    silent: true
                                 });
-                            }
 
-                            // Route Calculation
-                            const newRoute: any = {
-                                id: `autoroute_${Date.now()}_rnd${Math.floor(Math.random() * 10000)}`,
-                                courier: actualCourierName,
-                                orders: chunkOrders.map((o: any) => {
-                                    const up = allOrderUpdates.get(getStableOrderId(o));
-                                    return up ? { ...o, ...up } : o;
-                                }),
-                                totalDistance: 0,
-                                totalDuration: 0,
-                                isOptimized: false,
-                                createdAt: Date.now(),
-                                isAutoGenerated: true,
-                                hasGeoErrors: chunkOrders.some((o: any) => 
-                                    needsAddressClarification({
-                                        locationType: o.locationType,
-                                        streetNumberMatched: o.streetNumberMatched,
-                                        hasCoords: !!o.coords?.lat
-                                    })
-                                )
-                            };
+                                if (res.best?.raw?.geometry?.location) {
+                                    const loc = res.best.raw.geometry.location;
+                                    const isBetter = !needsAddressClarification({
+                                        locationType: res.best.raw.geometry.location_type,
+                                        streetNumberMatched: res.best.streetNumberMatched,
+                                        hasCoords: true
+                                    });
 
-                            if (!newRoute.hasGeoErrors) {
-                                const points: any[] = [];
-                                const startLat = settings?.defaultStartLat ? Number(settings.defaultStartLat) : null;
-                                const startLng = settings?.defaultStartLng ? Number(settings.defaultStartLng) : null;
-                                
-                                if (startLat && startLng) points.push({ lat: startLat, lng: startLng });
-                                chunkOrders.forEach((o: any) => {
-                                    if (o.coords?.lat) points.push({ lat: Number(o.coords.lat), lng: Number(o.coords.lng) });
-                                });
-                                
-                                const endLat = settings?.defaultEndLat ? Number(settings.defaultEndLat) : null;
-                                const endLng = settings?.defaultEndLng ? Number(settings.defaultEndLng) : null;
-                                if (endLat && endLng) points.push({ lat: endLat, lng: endLng });
-                                else if (points.length > 0) points.push(points[0]);
-
-                                if (points.length >= 2) {
-                                    let calculatedDist = 0;
-                                    let calculatedDur = 0;
-
-                                    if (settings?.yapikoOsrmUrl) {
-                                        try {
-                                            const { YapikoOSRMService } = await import('../services/YapikoOSRMService');
-                                            const r = await YapikoOSRMService.calculateRoute(points, settings.yapikoOsrmUrl);
-                                            if (r.feasible) {
-                                                calculatedDist = r.totalDistance || 0;
-                                                calculatedDur = r.totalDuration || 0;
-                                            }
-                                        } catch {}
+                                    if (isBetter || (!o.coords?.lat)) {
+                                        refineUpdates.set(sid, {
+                                            ...o,
+                                            coords: { lat: Number(loc.lat), lng: Number(loc.lng) },
+                                            kmlZone: res.best.kmlZone || undefined,
+                                            kmlHub: res.best.kmlHub || undefined,
+                                            locationType: res.best.raw.geometry.location_type || undefined,
+                                            streetNumberMatched: res.best.streetNumberMatched
+                                        });
                                     }
-
-                                    if (!calculatedDist) {
-                                        try {
-                                            const { ValhallaService } = await import('../services/valhallaService');
-                                            const r = await ValhallaService.calculateRoute(points);
-                                            if (r.feasible) {
-                                                calculatedDist = r.totalDistance || 0;
-                                                calculatedDur = r.totalDuration || 0;
-                                            }
-                                        } catch {}
-                                    }
-
-                                    newRoute.totalDistance = calculatedDist / 1000;
-                                    newRoute.totalDuration = calculatedDur / 60;
-                                    newRoute.isOptimized = calculatedDist > 0;
-
-                                    newRoute.geoMeta = {
-                                        origin: (startLat && startLng) ? { lat: startLat, lng: startLng } : null,
-                                        waypoints: chunkOrders.map((o: any) => ({
-                                            lat: Number(o.coords?.lat || o.lat || 0),
-                                            lng: Number(o.coords?.lng || o.lng || 0)
-                                        })).filter((w: any) => w.lat !== 0 && w.lng !== 0),
-                                        destination: (endLat && endLng) ? { lat: endLat, lng: endLng } : ((startLat && startLng) ? { lat: startLat, lng: startLng } : null)
-                                    };
                                 }
+                            } catch (e) {
+                                console.warn(`[AutoRouting] Refinement failed for ${o.address}:`, e);
                             }
+                        }
 
+                        if (refineUpdates.size > 0) {
                             updateExcelData((prev: any) => {
                                 const currentOrders = prev?.orders || [];
                                 const updatedOrders = currentOrders.map((order: any) => {
-                                    const updated = allOrderUpdates.get(getStableOrderId(order));
+                                    const updated = refineUpdates.get(getStableOrderId(order));
                                     return updated ? { ...order, ...updated } : order;
                                 });
+                                
+                                const updatedRoutes = (prev?.routes || []).map((route: any) => ({
+                                    ...route,
+                                    orders: route.orders.map((ro: any) => {
+                                        const updated = refineUpdates.get(getStableOrderId(ro));
+                                        return updated ? { ...ro, ...updated } : ro;
+                                    })
+                                }));
 
                                 return {
                                     ...(prev || { orders: [], routes: [] }),
                                     orders: updatedOrders,
-                                    routes: [...(prev?.routes || []), newRoute]
+                                    routes: updatedRoutes
                                 };
                             }, true);
-
-                            // v5.106: SUCCESS PATH - Only now we mark this group as processed
-                            processedGroupSignatures.current.add(groupSignature);
-
-                            processedOrdersInBatch += chunkOrders.length;
-                            
-                            // v5.93: Correctly calculate processed couriers by deduplicating
-                            const allCouriersWithRoutes = new Set([
-                                ...Array.from(realCouriersSet).filter(name => 
-                                    (excelData?.routes || []).some((r: any) => (r.courier?.name || r.courier) === name) ||
-                                    processedCouriersThisBatch.has(name)
-                                )
-                            ]);
-
-                            setAutoRoutingStatus({ 
-                                processedCount: processedGeocodedCount + processedOrdersInBatch,
-                                processedCouriers: allCouriersWithRoutes.size,
-                                lastUpdate: Date.now()
-                            });
-
-                            if (newRoute.isOptimized) {
-                                updatedCouriersNames.add(actualCourierName);
-                            }
-                        } catch (e) {
-                            console.error(`[AutoRouting] Ошибка для ${actualCourierName}:`, e);
                         }
                     }
-                }
-
-                if (updatedCouriersNames.size > 0) {
-                    const names = Array.from(updatedCouriersNames).join(', ');
-                    toast.success(`Маршруты рассчитаны: ${names}`, { icon: '🤖', duration: 3000 });
+                } catch (refineErr) {
+                    console.error('[AutoRouting] Ошибка в фазе уточнения адресов:', refineErr);
                 }
             } catch (err) {
                 console.error('[AutoRouting] Критическая ошибка авто-роутинга:', err);
