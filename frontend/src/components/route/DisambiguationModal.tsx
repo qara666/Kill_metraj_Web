@@ -116,9 +116,12 @@ export const DisambiguationModal: React.FC<DisambiguationModalProps> = React.mem
           if (coordEl) coordEl.classList.remove('hidden');
           if (btnEl) {
             btnEl.classList.remove('hidden');
-            (btnEl as any).onclick = () => {
+            btnEl.onclick = () => {
               onResolveRef.current({
-                geometry: { location: { lat, lng } },
+                geometry: { 
+                  location: { lat, lng },
+                  location_type: 'ROOFTOP' 
+                },
                 formatted_address: 'Выбрано вручную на карте',
                 manual: true
               });

@@ -41,6 +41,8 @@ export interface ScoredCandidate {
   isInsideZone: boolean
   /** Whether the house number was an exact match */
   streetNumberMatched?: boolean
+  /** Google location type (ROOFTOP, etc.) */
+  locationType?: string
 }
 
 // ─── KML Zone context ─────────────────────────────────────────────────────────
@@ -123,6 +125,13 @@ export interface RobustGeocodeOptions {
    * is already considered clean or comes from a trusted source.
    */
   skipNormalization?: boolean
+
+  /**
+   * v5.106: Force city prefix in query.
+   * If true, the service will prepend the cityBias to the query string to
+   * ensure high-quality matching (prevents cross-city "jumping").
+   */
+  forceCityBias?: boolean
 }
 
 export interface RobustGeocodeResult {

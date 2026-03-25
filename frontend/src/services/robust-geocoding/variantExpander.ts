@@ -67,9 +67,19 @@ export interface ExpandedVariants {
  * 4. Parenthetical old names
  * 5. District/neighbourhood hints
  */
-export function expandVariants(raw: string, cityBias: string | null): ExpandedVariants {
+export function expandVariants(raw: string, cityBias: string | null, forceCity: boolean = false): ExpandedVariants {
   const cleaned = cleanAddress(raw)
-  const all = generateStreetVariants(cleaned, cityBias)
+  let all = generateStreetVariants(cleaned, cityBias)
+
+  // v5.106: Force City Prefix
+  if (forceCity && cityBias) {
+      all = all.map(v => {
+          const lv = v.toLowerCase();
+          const lc = cityBias.toLowerCase();
+          if (!lv.includes(lc)) return `${cityBias}, ${v}`;
+          return v;
+      });
+  }
 
   // ─── Phase 0.5: Parenthetical Alternative Name (v39: PRIMARY-FIRST) ───────
   // For Ukrainian addresses like "вул. Йорданська (Гавро), 24б":

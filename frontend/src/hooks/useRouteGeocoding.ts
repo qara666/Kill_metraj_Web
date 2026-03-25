@@ -146,7 +146,8 @@ export const useRouteGeocoding = ({
                         score: 1000,
                         isInsideZone: true,
                         kmlZone: 'Выбрано вручную',
-                        streetNumberMatched: true
+                        streetNumberMatched: true,
+                        locationType: 'ROOFTOP'
                     },
                     allCandidates: [],
                     resolvedVariant: choice
@@ -252,7 +253,11 @@ export const useRouteGeocoding = ({
         })
 
         if (choice) {
-            result.best = { ...best, raw: choice };
+            result.best = { 
+                ...best, 
+                raw: choice,
+                locationType: choice.geometry?.location_type || 'ROOFTOP'
+            };
         }
         return result;
     }
@@ -455,6 +460,7 @@ export const useRouteGeocoding = ({
                         kmlZone: manualBest.kmlZone,
                         kmlHub: manualBest.kmlHub,
                         streetNumberMatched: manualBest.streetNumberMatched,
+                        locationType: manualBest.raw.geometry?.location_type || 'ROOFTOP',
                         geocodeRes: manualBest.raw
                       };
                       waypointLocs.push(loc);

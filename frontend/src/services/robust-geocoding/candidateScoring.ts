@@ -131,6 +131,7 @@ export function scoreCandidate(
       kmlHub: null,
       isTechnicalZone: false,
       isInsideZone: false,
+      locationType: raw.geometry?.location_type
     }
   }
 
@@ -497,7 +498,7 @@ export function scoreCandidate(
   const streetNumNormal = (raw.address_components || []).find(c => c.types.includes('street_number'))?.long_name?.toLowerCase().replace(/[^a-z0-9а-яієґ]/g, '')
   const streetNumberMatched = !!expectedHouseNormal && streetNumNormal === expectedHouseNormal
 
-  return { raw, lat, lng, score, kmlZone, kmlHub, isTechnicalZone: isTech, isInsideZone: isInside, streetNumberMatched }
+  return { raw, lat, lng, score, kmlZone, kmlHub, isTechnicalZone: isTech, isInsideZone: isInside, streetNumberMatched, locationType: raw.geometry?.location_type }
 }
 
 // ─── Perfect hit detection ────────────────────────────────────────────────────
