@@ -102,11 +102,13 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                   const isLocalMoreComplete = localSettledCount > serverSettledCount;
 
                   // v5.106: Date-aware comparison. Ensure we don't prefer yesterday's settled orders over today's new ones.
-                  const serverDateCode = (serverData?.orders?.[0]?.creationDate || "").split(' ')[0];
-                  const localDateCode = (localData?.orders?.[0]?.creationDate || "").split(' ')[0];
+                  const serverOrders = serverData?.orders || [];
+                  const localOrders = localData?.orders || [];
+                  const serverDateCode = serverOrders.length > 0 ? (serverOrders[0].creationDate || "").split(' ')[0] : "";
+                  const localDateCode = localOrders.length > 0 ? (localOrders[0].creationDate || "").split(' ')[0] : "";
                   const sameDay = !!serverDateCode && !!localDateCode && serverDateCode === localDateCode;
 
-                  if (sameDay && (isLocalFresher || isLocalMoreComplete) && localSettledCount > 0) {
+                  if (sameDay && (isLocalFresher || isLocalMoreComplete) && localSettledCount > serverSettledCount && localSettledCount > 0) {
                     console.log(`🛡️ Hybrid Sync: Using local data (Settled: ${localSettledCount} vs Server: ${serverSettledCount})`);
                     // v5.101: ACTUALLY LOAD LOCAL DATA AND EXIT to prevent server overwrite
                     setExcelData(localData);
@@ -216,11 +218,11 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     // v5.99: AGGRESSIVE ROUTE PROTECTION
     // If incoming is empty or has fewer routes/orders than backup, RESTORE FROM BACKUP
     if (backupHasRoutes) {
-      const incomingOrderInRoutes = (val.routes || []).reduce((acc: number, r: any) => acc + (r.orders?.length || 0), 0);
       const backupOrderInRoutes = (backupData.routes || []).reduce((acc: number, r: any) => acc + (r.orders?.length || 0), 0);
       
-      const shouldRestore = (!incomingHasRoutes && backupOrderInRoutes > 0 && Math.abs(val.orders?.length - backupData.orders?.length) < 3) || 
-                           (backupOrderInRoutes > incomingOrderInRoutes && Math.abs(val.orders?.length - backupData.orders?.length) < 2);
+      // v5.107: RELAXED ROUTE PROTECTION
+      // Only restore if incoming has NO routes at all and backup has some
+      const shouldRestore = !incomingHasRoutes && backupHasRoutes && backupOrderInRoutes > 0;
 
       if (shouldRestore) {
         console.log(`🛡️ Защита данных: восстановление маршрутов (${backupOrderInRoutes} заказов)`);
