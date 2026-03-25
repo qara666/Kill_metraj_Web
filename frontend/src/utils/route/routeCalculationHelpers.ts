@@ -315,7 +315,8 @@ export function groupOrdersByTimeWindow(
                 currentHandoverGroup.push(order);
             } else {
                 // v5.106: Fixed Window - any order within 15min of the FIRST order in group
-                const groupStartTime = getArrivalTime(currentHandoverGroup[0]) || 0;
+                // v5.107: Robust fallback to prevent 0-value gaps splitting everything
+                const groupStartTime = getArrivalTime(currentHandoverGroup[0]) || getPlannedTime(currentHandoverGroup[0]) || Date.now();
                 const diffMs = time - groupStartTime;
                 if (diffMs <= HANDOVER_WINDOW_MS) {
                     currentHandoverGroup.push(order);
