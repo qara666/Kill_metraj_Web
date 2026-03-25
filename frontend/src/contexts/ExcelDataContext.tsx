@@ -567,11 +567,15 @@ function applyCourierVehicleMap(data: any, current?: any): any {
       routes: Array.isArray(data.routes) ? data.routes.map((r: any) => {
         // v5.101: Route identity preservation enhanced with stable order IDs comparison
         const existingRoute = (current?.routes || []).find((cr: any) => cr.id === r.id);
+        
         if (existingRoute) {
             const currentRIds = (existingRoute.orders || []).map((o: any) => getStableOrderId(o)).sort().join('|');
             const incomingRIds = (r.orders || []).map((o: any) => getStableOrderId(o)).sort().join('|');
             
-            if (currentRIds === incomingRIds) {
+            if (currentRIds === incomingRIds && 
+                existingRoute.totalDistance === r.totalDistance && 
+                existingRoute.totalDuration === r.totalDuration &&
+                existingRoute.isOptimized === r.isOptimized) {
                return existingRoute;
             }
         }
