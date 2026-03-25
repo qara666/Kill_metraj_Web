@@ -16,7 +16,7 @@ import { useDashboardStore } from '../stores/useDashboardStore';
 import { socketService } from '../services/socketService';
 import { ProcessedExcelData } from '../types';
 import { logger } from '../utils/ui/logger';
-import { formatDateForApi } from '../utils/data/apiDataTransformer';
+import { formatDateForApi, transformDashboardData } from '../utils/data/apiDataTransformer';
 import { dashboardApiService } from '../utils/api/dashboardApiService';
 import { normalizeDateToIso } from '../utils/data/dateUtils';
 
@@ -25,7 +25,7 @@ interface DashboardWebSocketParams {
     enabled?: boolean;
 }
 
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const REFRESH_INTERVAL_MS = 60 * 1000; // v5.115: 1 minute (Faster auto-update)
 
 export const useDashboardWebSocket = ({
     onDataLoaded,
@@ -118,10 +118,14 @@ export const useDashboardWebSocket = ({
                 setApiSyncStatus('idle');
                 setApiSyncError(null);
                 
-                // v5.110: Ensure the data is tagged with the date it was requested for
+                // v5.115: Always run through transformDashboardData to ensure numeric timestamps 
+                // for routing (readyAtSource/deadlineAt) are populated correctly.
+                const fallbackDate = apiDate;
+                const transformed = transformDashboardData(response.data, apiDate, fallbackDate);
+                
                 const enrichedData = {
-                    ...response.data,
-                    creationDate: response.data.creationDate || apiDate
+                    ...transformed,
+                    creationDate: transformed.creationDate || apiDate
                 };
 
                 if (isManual) {
@@ -170,8 +174,12 @@ export const useDashboardWebSocket = ({
         setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);
         setApiSyncStatus('idle');
         setApiSyncError(null);
+        
         if (onDataLoadedRef.current && update.data) {
-            onDataLoadedRef.current(update.data);
+            // v5.115: Also transform WebSocket updates to maintain consistency
+            const apiDate = stateRef.current.apiDateShift || formatDateForApi(new Date());
+            const transformed = transformDashboardData(update.data, apiDate);
+            onDataLoadedRef.current(transformed);
         }
     }, [setApiLastSyncTime, setApiNextSyncTime, setApiSyncStatus, setApiSyncError]);
 

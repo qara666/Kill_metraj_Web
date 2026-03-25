@@ -137,6 +137,8 @@ export interface ProcessedExcelData {
     paymentMethods: number;
     errors: any[];
   };
+  creationDate?: string;
+  lastModified?: number;
 }
 
 export interface RoutePlanningSettings {
