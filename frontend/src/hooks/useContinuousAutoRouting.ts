@@ -42,17 +42,6 @@ export function useContinuousAutoRouting() {
             }
         }
 
-        // v5.102: Initialization Guard - Wait for data to be "settled" from sync
-        // If orders exist but routes are missing AND it's the first few seconds of a session, wait.
-        if (excelData.orders.length > 0 && (!excelData.routes || excelData.routes.length === 0)) {
-            const now = Date.now();
-            const lastMod = excelData.lastModified || 0;
-            if (now - lastMod < 5000) { // 5s grace period for Hybrid Sync to settle
-                console.log('[AutoRouting] Waiting for Hybrid Sync to restore routes...');
-                return;
-            }
-        }
-
         const runAutoRouting = async () => {
             if (isProcessingRef.current || !autoRoutingStatus.isActive) return;
             isProcessingRef.current = true;
@@ -184,8 +173,9 @@ export function useContinuousAutoRouting() {
                             continue;
                         }
 
-                        processedGroupSignatures.current.add(groupSignature);
-
+                        // v5.106: DO NOT add to processedGroupSignatures here.
+                        // Wait until the calculation successfully updates the state.
+                        
                         try {
                             const allOrderUpdates = new Map<string, any>();
                             const ordersToGeocode = chunkOrders.filter((o: any) => !o.coords?.lat);
@@ -194,10 +184,10 @@ export function useContinuousAutoRouting() {
                                 const uniqueAddresses = new Set<string>(ordersToGeocode.map((o: any) => cleanAddressForRoute(o.address)));
                                 const batchRequests = Array.from(uniqueAddresses).map(addr => ({
                                     address: addr,
-                                    options: { silent: true, turbo: false }
+                                    options: { silent: true, turbo: true } // v5.106: Enable TURBO for background
                                 }));
                                 
-                                const batchResults = await robustGeocodingService.batchGeocode(batchRequests, { turbo: false });
+                                const batchResults = await robustGeocodingService.batchGeocode(batchRequests, { turbo: true });
                                 
                                 chunkOrders.forEach((o: any) => {
                                     if (!o.coords?.lat) {
@@ -308,6 +298,9 @@ export function useContinuousAutoRouting() {
                                 };
                             }, true);
 
+                            // v5.106: SUCCESS PATH - Only now we mark this group as processed
+                            processedGroupSignatures.current.add(groupSignature);
+
                             processedOrdersInBatch += chunkOrders.length;
                             
                             // v5.93: Correctly calculate processed couriers by deduplicating
@@ -345,7 +338,9 @@ export function useContinuousAutoRouting() {
         };
 
         const intervalId = setInterval(runAutoRouting, 10000);
-        runAutoRouting();
+        // v5.106: DO NOT call runAutoRouting() here. 
+        // Let setInterval handle it to avoid "double-hit" on same orders.
+        // runAutoRouting();
 
         return () => clearInterval(intervalId);
     }, [excelData, updateExcelData, autoRoutingStatus.isActive, setAutoRoutingStatus]);

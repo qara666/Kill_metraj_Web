@@ -104,6 +104,9 @@ export class RobustGeocodingService {
   
   // v35.9.37: GEODASH - L1 Session Memory Cache
   private l1Cache = new Map<string, RobustGeocodeResult>();
+
+  // v5.106: Provider cool-down map (ProviderName -> ExpiryTimestamp)
+  private disabledProviders = new Map<string, number>();
   
   // v35.9.37: GEODASH - Global Request Semaphore
   private activeRequestCount = 0;
@@ -233,6 +236,13 @@ export class RobustGeocodingService {
       
       const tryProvider = async (name: string, service: any, timeoutMs: number) => {
           if ((service as any)._disabled) return null;
+          
+          // v5.106: Cool-down check
+          const disabledUntil = this.disabledProviders.get(name);
+          if (disabledUntil && Date.now() < disabledUntil) {
+              return null;
+          }
+
           try {
               const raw = await Promise.race([
                   this._withSemaphore(() => service.geocode(query, city || undefined)),
@@ -265,9 +275,14 @@ export class RobustGeocodingService {
                   return null;
               }
           } catch (e: any) {
-              if (e.message !== 'TIMEOUT') {
+              const is429 = e.message?.includes('429') || e.status === 429;
+              if (is429) {
+                  console.warn(`[${name}] Rate Limited (429). Disabling for 2 minutes.`);
+                  this.disabledProviders.set(name, Date.now() + 120000);
+              } else if (e.message !== 'TIMEOUT') {
                   console.warn(`[${name}] Ошибка: ${e.message}`);
               }
+
               if (e.message?.includes('401') || e.status === 401) {
                   (service as any)._disabled = true;
               }
@@ -288,15 +303,17 @@ export class RobustGeocodingService {
       const strongHit = results.find(r => r.score > 2500 && r.isInsideZone);
       if (strongHit) return { scored: results, perfect: strongHit };
 
-      // v37: Skip expensive fallbacks in TURBO mode
-      if (turbo) return { scored: results };
+      // v5.106: Allow Premium fallbacks in Turbo mode if no strong hit found and keys exist
+      const settings = localStorageUtils.getAllSettings();
+      const hasPremiumKeys = !!(settings.geoapifyApiKey || settings.googleMapsApiKey);
+
+      if (turbo && !hasPremiumKeys) return { scored: results };
 
       // 3. Geoapify (Premium Fallback)
-      const settings = localStorageUtils.getAllSettings();
       if (settings.geoapifyApiKey) {
           try {
               const { GeoapifyService } = await import('../geoapifyService');
-              const geoapifyPerfect = await tryProvider('Geoapify', GeoapifyService, 3000);
+              const geoapifyPerfect = await tryProvider('Geoapify', GeoapifyService, turbo ? 2000 : 3000);
               if (geoapifyPerfect) return { scored: results, perfect: geoapifyPerfect };
           } catch {}
       }
