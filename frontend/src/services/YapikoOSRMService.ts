@@ -65,46 +65,61 @@ export class YapikoOSRMService {
     
     // OSRM expects coordinates in lng,lat format joined by ';'
     const coordsStr = locations.map(l => `${l.lng},${l.lat}`).join(';')
-    const targetUrl = `${normalizedUrl}/route/v1/driving/${coordsStr}?overview=false&steps=false`
-    const finalUrl = this.getMaybeProxiedUrl(targetUrl);
+    
+    // v5.106: Try 'driving' first, then 'car' if needed
+    const profiles = ['driving', 'car'];
+    let lastError = '';
 
-    try {
-      const response = await fetch(finalUrl, { signal: AbortSignal.timeout(10000) })
-      if (!response.ok) {
-          console.error(`[Маршрут] Yapiko OSRM error: ${response.status} ${response.statusText}`);
-          return { feasible: false };
-      }
+    for (const profile of profiles) {
+        const targetUrl = `${normalizedUrl}/route/v1/${profile}/${coordsStr}?overview=false&steps=false`
+        const finalUrl = this.getMaybeProxiedUrl(targetUrl);
 
-      const data = await response.json()
-      if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
-        console.error(`[Маршрут] Yapiko OSRM invalid data:`, data);
-        return { feasible: false }
-      }
+        try {
+          const response = await fetch(finalUrl, { signal: AbortSignal.timeout(10000) })
+          if (!response.ok) {
+              lastError = `HTTP ${response.status} ${response.statusText}`;
+              if (response.status === 404) continue; // Profile might not exist, try next
+              console.error(`[Маршрут] Yapiko OSRM error (${profile}): ${lastError}`);
+              return { feasible: false };
+          }
 
-      const route = data.routes[0]
-      const legs: OSRMLeg[] = (route.legs || []).map((leg: any, idx: number) => ({
-        distance: { 
-          value: leg.distance, 
-          text: leg.distance >= 1000 ? `${(leg.distance / 1000).toFixed(1)} км` : `${leg.distance.toFixed(0)} м` 
-        },
-        duration: { 
-          value: leg.duration, 
-          text: `${Math.round(leg.duration / 60)} мин` 
-        },
-        start_location: locations[idx],
-        end_location: locations[idx + 1]
-      }))
+          const data = await response.json()
+          if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
+            lastError = `Code: ${data.code}`;
+            console.error(`[Маршрут] Yapiko OSRM invalid data (${profile}):`, data);
+            continue;
+          }
 
-      return {
-        feasible: true,
-        legs,
-        totalDistance: route.distance,
-        totalDuration: route.duration
-      }
-    } catch (error) {
-      console.error('[Маршрут] Ошибка Yapiko OSRM:', error)
-      return { feasible: false }
+          const route = data.routes[0]
+          const legs: OSRMLeg[] = (route.legs || []).map((leg: any, idx: number) => ({
+            distance: { 
+              value: leg.distance, 
+              text: leg.distance >= 1000 ? `${(leg.distance / 1000).toFixed(1)} км` : `${leg.distance.toFixed(0)} м` 
+            },
+            duration: { 
+              value: leg.duration, 
+              text: `${Math.round(leg.duration / 60)} мин` 
+            },
+            start_location: locations[idx],
+            end_location: locations[idx + 1]
+          }))
+
+          return {
+            feasible: true,
+            legs,
+            totalDistance: route.distance,
+            totalDuration: route.duration
+          }
+        } catch (error) {
+          console.error(`[Маршрут] Ошибка Yapiko OSRM (${profile}):`, error)
+          lastError = String(error);
+        }
     }
+
+    if (lastError) {
+        console.warn(`[Маршрут] Yapiko OSRM не удалось рассчитать ни по одному профилю. Последняя ошибка: ${lastError}`);
+    }
+    return { feasible: false }
   }
 
   /**
