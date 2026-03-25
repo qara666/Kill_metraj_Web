@@ -74,7 +74,7 @@ export function getTimeWindowBounds(
 }
 
 // Константы для группировки
-const PROXIMITY_MINUTES = 30;            // Установили 30 минут для более широкой группировки
+const PROXIMITY_MINUTES = 15;            // v5.106: Set to 15m as per user requirement
 const MAX_DELIVERY_SPAN_MINUTES = 60;   // Максимальный разброс доставки в одной группе
 
 /**
@@ -294,7 +294,7 @@ export function groupOrdersByTimeWindow(
     ) || [];
 
     // v5.66: Increased to 30 min for better grouping
-    const HANDOVER_WINDOW_MS = 30 * 60 * 1000;
+    const HANDOVER_WINDOW_MS = 15 * 60 * 1000; // v5.106: Set to 15m
 
     function clusterHandoverOrders(hOrdersList: Order[], splitReasonLabel: string) {
         if (hOrdersList.length === 0) return;
@@ -307,25 +307,21 @@ export function groupOrdersByTimeWindow(
         });
 
         let currentHandoverGroup: Order[] = [];
-        let groupEndTime = 0; // FIX: track the LAST order's time, not the first
 
         hOrdersList.forEach((order) => {
             const time = getArrivalTime(order) || 0;
 
             if (currentHandoverGroup.length === 0) {
                 currentHandoverGroup.push(order);
-                groupEndTime = time;
             } else {
-                // v5.46 Rolling Window: If order status changed within 20min of the LAST order in block, keep them together.
-                const diffMs = time - groupEndTime;
+                // v5.106: Fixed Window - any order within 15min of the FIRST order in group
+                const groupStartTime = getArrivalTime(currentHandoverGroup[0]) || 0;
+                const diffMs = time - groupStartTime;
                 if (diffMs <= HANDOVER_WINDOW_MS) {
                     currentHandoverGroup.push(order);
-                    // Update the group "heartbeat" time
-                    if (time > groupEndTime) groupEndTime = time;
                 } else {
                     createHandoverGroup(currentHandoverGroup, splitReasonLabel);
                     currentHandoverGroup = [order];
-                    groupEndTime = time;
                 }
             }
         });
@@ -334,10 +330,15 @@ export function groupOrdersByTimeWindow(
         }
     }
 
-    clusterHandoverOrders(completedHandoverOrders, 'Завершён');
-    clusterHandoverOrders(activeHandoverOrders, 'Маршрут');
+    // v5.106: Merge completed and active handover orders into a single list
+    // This prevents splitting a single delivery trip into separate blocks just because 
+    // some orders are already finished.
+    const allHandoverOrders = [...completedHandoverOrders, ...activeHandoverOrders];
+    clusterHandoverOrders(allHandoverOrders, 'Маршрут');
 
-    function createHandoverGroup(hOrders: Order[], splitReasonLabel: string = 'Маршрут') {
+    function createHandoverGroup(hOrders: Order[], _unusedLabel?: string) {
+        const isAllCompleted = hOrders.every(o => isOrderCompleted(o.status));
+        const splitReasonLabel = isAllCompleted ? 'Завершён' : 'Маршрут';
         const handoverTimes = hOrders
             .map(o => o.statusTimings?.deliveringAt || o.statusTimings?.assembledAt || o.handoverAt || getPlannedTime(o))
             .filter((t): t is number => !!t);
@@ -382,7 +383,7 @@ export function groupOrdersByTimeWindow(
 
 
 
-            // 1. Прилетели близко друг к другу (СТРОГО 15 МИН ОТ ПЕРВОГО ЗАКАЗА)?
+            // 1. Прилетели близко друг к другу (v5.106: Fixed Window - 15 min from FIRST order in group)?
             const arrivedClose = (arrival - (currentGroup.arrivalStart || 0) <= proximityMs);
 
             // 2. Время доставки не слишком сильно разлетается?

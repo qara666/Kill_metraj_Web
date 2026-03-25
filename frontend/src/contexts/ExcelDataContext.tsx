@@ -101,7 +101,12 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                   const isLocalFresher = (localData?.lastModified || 0) > (serverData?.lastModified || 0);
                   const isLocalMoreComplete = localSettledCount > serverSettledCount;
 
-                  if ((isLocalFresher || isLocalMoreComplete) && localSettledCount > 0) {
+                  // v5.106: Date-aware comparison. Ensure we don't prefer yesterday's settled orders over today's new ones.
+                  const serverDateCode = (serverData?.orders?.[0]?.creationDate || "").split(' ')[0];
+                  const localDateCode = (localData?.orders?.[0]?.creationDate || "").split(' ')[0];
+                  const sameDay = !!serverDateCode && !!localDateCode && serverDateCode === localDateCode;
+
+                  if (sameDay && (isLocalFresher || isLocalMoreComplete) && localSettledCount > 0) {
                     console.log(`🛡️ Hybrid Sync: Using local data (Settled: ${localSettledCount} vs Server: ${serverSettledCount})`);
                     // v5.101: ACTUALLY LOAD LOCAL DATA AND EXIT to prevent server overwrite
                     setExcelData(localData);
@@ -214,8 +219,8 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       const incomingOrderInRoutes = (val.routes || []).reduce((acc: number, r: any) => acc + (r.orders?.length || 0), 0);
       const backupOrderInRoutes = (backupData.routes || []).reduce((acc: number, r: any) => acc + (r.orders?.length || 0), 0);
       
-      const shouldRestore = !incomingHasRoutes || 
-                           (backupOrderInRoutes > incomingOrderInRoutes && Math.abs(val.orders?.length - backupData.orders?.length) < 5);
+      const shouldRestore = (!incomingHasRoutes && backupOrderInRoutes > 0 && Math.abs(val.orders?.length - backupData.orders?.length) < 3) || 
+                           (backupOrderInRoutes > incomingOrderInRoutes && Math.abs(val.orders?.length - backupData.orders?.length) < 2);
 
       if (shouldRestore) {
         console.log(`🛡️ Защита данных: восстановление маршрутов (${backupOrderInRoutes} заказов)`);
@@ -585,7 +590,7 @@ function applyCourierVehicleMap(data: any, current?: any): any {
         };
       }) : [],
       orders,
-      couriers: processedCouriers,
+      couriers: processedCouriers.length > 0 ? processedCouriers : (current?.couriers || []),
       paymentMethods,
       errors: Array.isArray(data.errors) ? data.errors : []
     }
