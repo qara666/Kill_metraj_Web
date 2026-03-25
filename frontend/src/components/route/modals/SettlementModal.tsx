@@ -109,26 +109,25 @@ export function SettlementModal({
         const billVal = parseFloat(order.changeAmount || 0);     // e.g. 700
         const orderVal = parseFloat(order.amount || order.totalAmount || 0); // e.g. 652
         
-        if (billVal <= orderVal) return;
-
-        const advance = billVal - orderVal; // e.g. 48 UAH
+        const advance = billVal - orderVal; // e.g. 1000 - 751 = 249 UAH
+        if (advance <= 0) return;
 
         const newSet = new Set(untakenChanges);
         const isNowUntaken = !newSet.has(id);
 
         if (isNowUntaken) {
             newSet.add(id);
-            // Subtract advance because courier didn't take the change money from the till
-            setOrderAmounts(prev => ({
-                ...prev,
-                [id]: (parseFloat(prev[id] || '0') - advance).toString()
-            }));
-        } else {
-            newSet.delete(id);
-            // Revert advance subtraction
+            // v5.111: If customer didn't take change, courier has MORE money (bill size 1000 instead of price 751)
             setOrderAmounts(prev => ({
                 ...prev,
                 [id]: (parseFloat(prev[id] || '0') + advance).toString()
+            }));
+        } else {
+            newSet.delete(id);
+            // Revert advance addition
+            setOrderAmounts(prev => ({
+                ...prev,
+                [id]: (parseFloat(prev[id] || '0') - advance).toString()
             }));
         }
         setUntakenChanges(newSet);
@@ -339,7 +338,9 @@ export function SettlementModal({
                                                                         : "bg-amber-500/10 text-amber-600 border-amber-500/20 hover:bg-amber-500/20"
                                                                 )}
                                                             >
-                                                                {untakenChanges.has(orderId) ? "БЕЗ СДАЧИ" : `Сдача: ${order.changeAmount}₴`}
+                                                                {untakenChanges.has(orderId) 
+                                                                    ? "БЕЗ СДАЧИ" 
+                                                                    : `Сдача: ${Math.round((parseFloat(order.changeAmount || 0) - parseFloat(order.amount || 0)) * 100) / 100}₴`}
                                                             </button>
                                                         )}
                                                         {order.paymentMethod && (() => {
