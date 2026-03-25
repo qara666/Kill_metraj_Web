@@ -593,10 +593,19 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
                 </div>
                 
                 <div className={clsx(
-                  "px-4 py-2 rounded-xl border font-black text-xs uppercase tracking-widest",
+                  "px-4 py-2 rounded-xl border font-black text-xs uppercase tracking-widest text-center",
                   isDark ? "bg-slate-800 border-slate-700 text-slate-400" : "bg-slate-50 border-slate-200 text-slate-500"
                 )}>
-                  Сегодня: {new Date().toLocaleDateString('ru-RU')}
+                  Дата данных: {(() => {
+                    const d = processedData.creationDate || (processedData.orders?.[0]?.creationDate);
+                    if (!d) return '—';
+                    try {
+                      const dateObj = new Date(String(d).split(' ')[0]);
+                      return dateObj.toLocaleDateString('ru-RU');
+                    } catch {
+                      return String(d).split(' ')[0];
+                    }
+                  })()}
                 </div>
               </div>
 

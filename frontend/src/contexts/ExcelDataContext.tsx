@@ -5,6 +5,7 @@ import { normalizeCourierName } from '../utils/data/courierName'
 import { enrichOrderGeodata } from '../utils/data/excelProcessor'
 import { isOrderCompleted } from '../utils/data/orderStatus'
 import { getStableOrderId } from '../utils/data/orderId'
+import { normalizeDateToIso } from '../utils/data/dateUtils'
 
 interface ExcelData {
   orders: any[]
@@ -14,13 +15,14 @@ interface ExcelData {
   errors: any[]
   summary: any
   lastModified?: number
+  creationDate?: string
 }
 
 interface ExcelDataContextType {
   excelData: ExcelData | null
   setExcelData: (data: ExcelData | null) => void
   updateExcelData: (dataOrUpdater: ExcelData | ((prev: ExcelData) => ExcelData), force?: boolean) => void
-  clearExcelData: () => void
+  clearExcelData: (options?: { skipServerWipe?: boolean }) => void;
   updateRouteData: (routes: any[]) => void
   updateOrderPaymentMethod: (orderNumber: string, newPaymentMethod: string) => void
   saveManualOverrides: (orders: any[]) => void
@@ -58,6 +60,14 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
               const response = await fetch('/api/v1/state', {
                 headers: { 'Authorization': `Bearer ${token}` }
               });
+              
+              // v5.108: Prevent HTML parse error if backend is misconfigured
+              const contentType = response.headers.get('content-type');
+              if (contentType && contentType.includes('text/html')) {
+                  console.warn('[ExcelSync] Server returned HTML instead of JSON. Assuming offline/local mode.');
+                  throw new Error('API returned HTML');
+              }
+
               if (response.ok) {
                 const json = await response.json();
                 if (json.success && json.data) {
@@ -215,20 +225,27 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     const backupHasRoutes = backupData?.routes && backupData.routes.length > 0;
     const incomingHasRoutes = val.routes && val.routes.length > 0;
     
-    // v5.99: AGGRESSIVE ROUTE PROTECTION
-    // If incoming is empty or has fewer routes/orders than backup, RESTORE FROM BACKUP
+    // v5.108: DATE-AWARE ROUTE PROTECTION
+    // Only restore if dates match and incoming is missing routes
+    let sameDay = false;
     if (backupHasRoutes) {
       const backupOrderInRoutes = (backupData.routes || []).reduce((acc: number, r: any) => acc + (r.orders?.length || 0), 0);
       
-      // v5.107: RELAXED ROUTE PROTECTION
-      // Only restore if incoming has NO routes at all and backup has some
-      const shouldRestore = !incomingHasRoutes && backupHasRoutes && backupOrderInRoutes > 0;
+      const backupDate = backupData.creationDate || (backupData.orders?.[0]?.creationDate);
+      const incomingDate = val.creationDate || (val.orders?.[0]?.creationDate);
+      
+      sameDay = !!backupDate && !!incomingDate && 
+                      (normalizeDateToIso(backupDate) === normalizeDateToIso(incomingDate));
+
+      const shouldRestore = !incomingHasRoutes && backupHasRoutes && backupOrderInRoutes > 0 && sameDay;
 
       if (shouldRestore) {
         console.log(`🛡️ Защита данных: восстановление маршрутов (${backupOrderInRoutes} заказов)`);
         val.routes = [...backupData.routes];
       }
     }
+    
+    console.log(`[ExcelDataContext] protectData applied. Incoming orders: ${incoming.orders?.length}, Output orders: ${val.orders?.length}. Routes preserved: ${backupHasRoutes && (!incomingHasRoutes && sameDay) ? 'YES' : 'NO'}`);
     return val;
   }, []);
 
@@ -326,8 +343,10 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     if (window && (window as any).debugExcel) console.warn('[ExcelDataProvider:SET]', incomingData, (new Error()).stack)
     
     if (incomingData) {
+      console.log(`[ExcelDataContext] setExcelData triggered with ${incomingData.orders?.length} orders!!!`);
       setExcelDataState(prev => {
         const val = protectData(incomingData, prev);
+        console.log(`[ExcelDataContext] setExcelDataState updater executed. Prev orders: ${prev?.orders?.length}, Next orders: ${val.orders?.length}`);
         return val;
       });
     } else {
@@ -358,7 +377,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     });
   }, [protectData]);
 
-  const clearExcelData = useCallback(() => {
+  const clearExcelData = useCallback((options?: { skipServerWipe?: boolean }) => {
     if (window && (window as any).debugExcel) console.warn('[ExcelDataProvider:CLEAR]', (new Error()).stack)
 
     if (saveTimeoutRef.current) {
@@ -369,18 +388,20 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     setExcelDataState(null)
     localStorage.removeItem('km_dashboard_processed_data')
 
-    // Also clear on server
-    const token = localStorage.getItem('km_access_token');
-    if (token) {
-      const emptyState = { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: {} };
-      fetch('/api/v1/state', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ data: emptyState })
-      }).catch(err => console.error('Error clearing server state:', err));
+    // Also clear on server if not skipped
+    if (!options?.skipServerWipe) {
+      const token = localStorage.getItem('km_access_token');
+      if (token) {
+        const emptyState = { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: {} };
+        fetch('/api/v1/state', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ data: emptyState })
+        }).catch(err => console.error('Error clearing server state:', err));
+      }
     }
   }, [])
 
@@ -508,7 +529,18 @@ function applyCourierVehicleMap(data: any, current?: any): any {
         if (!ovr && num) ovr = persistedOverrides[num] ?? null;
         if (!ovr && id)  ovr = persistedOverrides[Number(id)] ?? null;
 
-        if (ovr) {
+        // v5.109: Cross-Day Override Protection!
+        // Prevent applying today's overrides to yesterday's orders (which have same ID)
+        let isSafeToApplyOverride = !!ovr;
+        if (ovr && ovr.creationDate && o.creationDate) {
+             const ovrNorm = normalizeDateToIso(ovr.creationDate);
+             const ordNorm = normalizeDateToIso(o.creationDate);
+             if (ovrNorm !== ordNorm) {
+                 isSafeToApplyOverride = false;
+             }
+        }
+
+        if (isSafeToApplyOverride) {
             return {
                 ...base,
                 ...ovr,
@@ -519,6 +551,8 @@ function applyCourierVehicleMap(data: any, current?: any): any {
 
         return base;
     }) : []
+    
+    console.log(`[ExcelDataContext] applyCourierVehicleMap processed ${orders.length} orders.`);
     
     const couriers = Array.isArray(data.couriers) ? data.couriers.map((c: any) => ({
         ...c,
