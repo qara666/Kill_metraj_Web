@@ -35,7 +35,7 @@ import { type TimeWindowGroup, groupOrdersByTimeWindow, formatTimeLabel } from '
 import { isId0CourierName, normalizeCourierName } from '../../utils/data/courierName'
 import { getReturnETA, getAccurateReturnETA, getCourierSpeed, enrichRoutesWithCoords } from '../../utils/routes/courierETA'
 import { calculateDistance } from '../../utils/geoUtils'
-import { isOrderCompleted } from '../../utils/data/orderStatus'
+import { isOrderCompleted, isOrderCancelled } from '../../utils/data/orderStatus'
 
 // --- Hooks ---
 
@@ -408,8 +408,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         const sid = getStableOrderId(order);
         const inRoute = ordersInRoutesSet.has(sid);
         const completed = isOrderCompleted(order.status);
+        const isCancelled = isOrderCancelled(order.status);
+        
+        // v5.114: Only count orders as 'available' if they are NOT in a route AND (Active or not completed/cancelled)
+        const isActionable = !completed && !isCancelled;
 
-        if (!inRoute) {
+        if (!inRoute && isActionable) {
           available++
         }
         if (completed) {
@@ -423,7 +427,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       map.set(name, { 
         available, 
         delivered, 
-        total: orders.length, 
+        // v5.114: Use filtered total for actionable orders ONLY if it's the unassigned pool
+        // to keep the badge accurate, otherwise use physical total.
+        total: (name === 'Не назначено' || isId0CourierName(name)) ? available : orders.length, 
         activeInRoute,
         unassigned: available
       })
@@ -810,9 +816,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
           orders.forEach(o => {
             const s = (o.status || '').toLowerCase().trim();
             const isInProgress = s === 'доставляется' || s === 'в пути';
+            const isCompleted = isOrderCompleted(o.status);
+            const isCancelled = isOrderCancelled(o.status);
             
-            // v5.112: Exclude already delivering orders from unassigned pool
-            if (!isOrderCompleted(o.status) && !isInProgress) {
+            // v5.114: Exclude already delivering, completed, and canceled orders from unassigned pool
+            if (!isCompleted && !isCancelled && !isInProgress) {
               unassignedOrders.push(o)
             }
           })
