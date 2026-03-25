@@ -18,6 +18,7 @@ import { ProcessedExcelData } from '../types';
 import { logger } from '../utils/ui/logger';
 import { formatDateForApi } from '../utils/data/apiDataTransformer';
 import { dashboardApiService } from '../utils/api/dashboardApiService';
+import { normalizeDateToIso } from '../utils/data/dateUtils';
 
 interface DashboardWebSocketParams {
     onDataLoaded: (data: ProcessedExcelData) => void;
@@ -116,13 +117,19 @@ export const useDashboardWebSocket = ({
                 setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);
                 setApiSyncStatus('idle');
                 setApiSyncError(null);
+                
+                // v5.110: Ensure the data is tagged with the date it was requested for
+                const enrichedData = {
+                    ...response.data,
+                    creationDate: response.data.creationDate || apiDate
+                };
 
                 if (isManual) {
                     toast.success(`Данные обновлены! Загружено ${ordersCount} заказов.`, { id: toastId });
                 }
 
                 if (onDataLoadedRef.current) {
-                    onDataLoadedRef.current(response.data);
+                    onDataLoadedRef.current(enrichedData);
                 }
             } else {
                 throw new Error(response.error || 'Failed to fetch data');
@@ -146,6 +153,18 @@ export const useDashboardWebSocket = ({
     }, [setApiLastSyncTime, setApiNextSyncTime, setApiSyncStatus, setApiSyncError]);
 
     const handleDashboardUpdate = useCallback((update: any) => {
+        // v5.110: WebSocket Date Guard
+        const { apiDateShift } = stateRef.current;
+        const currentStoreDate = normalizeDateToIso(apiDateShift);
+        
+        const updateDate = update.data?.creationDate || (update.data?.orders?.[0]?.creationDate);
+        const updateDateStr = normalizeDateToIso(updateDate);
+
+        if (currentStoreDate && updateDateStr && currentStoreDate !== updateDateStr) {
+            logger.info(`Ignoring WebSocket update for mismatched date: Update is ${updateDateStr}, UI is ${currentStoreDate}`);
+            return;
+        }
+
         logger.info(' Received dashboard update via WebSocket');
         setApiLastSyncTime(Date.now());
         setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);

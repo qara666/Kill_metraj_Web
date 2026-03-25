@@ -5,6 +5,7 @@ import { ArrowPathIcon, CalendarIcon, CpuChipIcon } from '@heroicons/react/24/ou
 import { clsx } from 'clsx';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useDashboardStore } from '../../stores/useDashboardStore';
+import { useExcelData } from '../../contexts/ExcelDataContext';
 
 export const DashboardApiSection: React.FC = () => {
     const { isDark } = useTheme();
@@ -22,6 +23,8 @@ export const DashboardApiSection: React.FC = () => {
     const triggerApiManualSync = useDashboardStore(s => s.triggerApiManualSync);
     const autoRoutingStatus = useDashboardStore(s => s.autoRoutingStatus);
     const setAutoRoutingStatus = useDashboardStore(s => s.setAutoRoutingStatus);
+
+    const { clearExcelData } = useExcelData();
 
     // Initial selectedDate state removal, use apiDateShift instead
     const selectedDate = apiDateShift;
@@ -67,26 +70,6 @@ export const DashboardApiSection: React.FC = () => {
         return () => clearInterval(interval);
     }, [apiNextSyncTime, apiAutoRefreshEnabled]);
 
-    const handleSync = () => {
-        if (!selectedDate) {
-            toast.error('Выберите дату');
-            return;
-        }
-
-        // v5.91: Warning when loading different date with auto-update on
-        const today = format(new Date(), 'yyyy-MM-dd');
-        if (apiAutoRefreshEnabled && selectedDate !== today) {
-            const confirmed = window.confirm(
-                `ВНИМАНИЕ: У вас включено автообновление за сегодня, но вы пытаетесь загрузить данные за ${selectedDate}.\n\n` +
-                `Это ПЕРЕЗАПИШЕТ текущие данные в системе. Вы уверены?\n\n` +
-                `Если вы просто хотели обновить текущий день, нажмите на иконку «Обновить» рядом с таймером.`
-            );
-            if (!confirmed) return;
-        }
-
-        triggerApiManualSync();
-    };
-
     // v5.94: Special handler for quick refresh that skips date warnings
     const handleQuickRefresh = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -97,17 +80,32 @@ export const DashboardApiSection: React.FC = () => {
     // Toggle handler
     const handleToggleAutoUpdate = () => {
         const today = format(new Date(), 'yyyy-MM-dd');
-        if (selectedDate !== today && !apiAutoRefreshEnabled) {
-            toast.error('Автообновление доступно только за сегодня');
-            return;
+        const willBeEnabled = !apiAutoRefreshEnabled;
+        
+        if (willBeEnabled) {
+            // Включаем автообновление: ставим сегодняшнюю дату и сразу синхронизируем
+            setApiDateShift(today);
+            setApiAutoRefreshEnabled(true);
+            setTimeout(() => triggerApiManualSync(), 100);
+            toast.success('Автообновление включено');
+        } else {
+            // Выключаем автообновление
+            setApiAutoRefreshEnabled(false);
+            toast.success('Автообновление выключено');
         }
-        setApiAutoRefreshEnabled(!apiAutoRefreshEnabled);
     };
 
     const handleDateChange = (date: string) => {
-        // Stop auto-clearing! This causes data loss.
-        // clearExcelData();
         setSelectedDate(date);
+        
+        // v5.109: User requested immediate visual clear of old data while fetching new date
+        // Note: Using clearExcelData with a flag to prevent full localStorage wipe might be safer, 
+        // but for now we wipe everything so the UI correctly resets to "0 orders"
+        clearExcelData({ skipServerWipe: true }); 
+
+        // Сразу загружаем данные при смене даты
+        setTimeout(() => triggerApiManualSync(), 100);
+        toast.success(`Загрузка данных за ${date}...`);
     };
 
     return (
@@ -205,37 +203,16 @@ export const DashboardApiSection: React.FC = () => {
                         <input
                             type="date"
                             value={selectedDate}
+                            disabled={apiAutoRefreshEnabled}
                             onChange={(e) => handleDateChange(e.target.value)}
+                            title={apiAutoRefreshEnabled ? "Отключите автообновление для выбора другой даты" : ""}
                             className={clsx(
                                 'input pl-10 w-full sm:w-48 rounded-2xl font-bold transition-all duration-300',
+                                apiAutoRefreshEnabled && 'opacity-60 cursor-not-allowed',
                                 isDark ? 'bg-gray-800/40 border-white/5 text-white hover:bg-gray-800/60 focus:bg-gray-800/80 outline-none' : 'bg-white border-gray-200 text-gray-900 hover:border-blue-300'
                             )}
                         />
                     </div>
-
-                    <button
-                        onClick={handleSync}
-                        disabled={apiSyncStatus === 'syncing'}
-                        className={clsx(
-                            'btn btn-primary flex items-center gap-2 whitespace-nowrap min-w-[140px] justify-center px-6 py-2.5 rounded-2xl font-bold transform transition-all duration-200 active:scale-95 shadow-xl',
-                            (apiSyncStatus === 'syncing') && 'opacity-70 cursor-not-allowed grayscale'
-                        )}
-                    >
-                        {apiSyncStatus === 'syncing' ? (
-                            <>
-                                <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                <span>Синхрон...</span>
-                            </>
-                        ) : (
-                            <>
-                                <ArrowPathIcon className="h-5 w-5" />
-                                <span>Загрузить</span>
-                            </>
-                        )}
-                    </button>
                 </div>
             </div>
 
