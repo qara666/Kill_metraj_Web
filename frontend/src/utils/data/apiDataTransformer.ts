@@ -185,6 +185,11 @@ const transformDashboardOrder = (apiOrder: DashboardOrderResponse, baseDate: str
         handoverAt = new Date(apiOrder.statusTimings.deliveringAt).getTime();
     }
 
+    // v5.112: Extract courier name with fallback to deliveryCourier
+    // (Cast to any to access potential API fields not in the strictly typed interface)
+    const rawCourier = (apiOrder as any).deliveryCourier || apiOrder.courier;
+    const courierName = (rawCourier && isId0CourierName(rawCourier)) ? 'Не назначено' : asNonEmptyString(rawCourier);
+
     return {
         idx: index,
         address: apiOrder.address,
@@ -193,7 +198,7 @@ const transformDashboardOrder = (apiOrder: DashboardOrderResponse, baseDate: str
         deadlineAt,
         handoverAt, // Добавлено (Phase 4.4)
         plannedTime: deadlineStr || 'Без времени',
-        courier: (apiOrder.courier && isId0CourierName(apiOrder.courier)) ? 'Не назначено' : asNonEmptyString(apiOrder.courier),
+        courier: courierName,
         amount: apiOrder.amount,
         paymentMethod: apiOrder.paymentMethod,
         status: apiOrder.status,

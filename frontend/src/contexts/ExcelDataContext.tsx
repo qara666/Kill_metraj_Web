@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback, useMemo } from 'react'
 import { localStorageUtils } from '../utils/ui/localStorage'
 import { toast } from 'react-hot-toast'
-import { normalizeCourierName } from '../utils/data/courierName'
+import { normalizeCourierName, isId0CourierName } from '../utils/data/courierName'
 import { enrichOrderGeodata } from '../utils/data/excelProcessor'
 import { isOrderCompleted } from '../utils/data/orderStatus'
 import { getStableOrderId } from '../utils/data/orderId'
@@ -258,7 +258,10 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       const overrides: Record<string, any> = {};
       orders.forEach((o: any) => {
         const isSettled = isOrderCompleted(o.status);
-        if (o.manualGroupId || o.deadlineAt || o.isAddressLocked || o.settledDate || o.paymentMethodOverridden || isSettled) {
+        const isDelivering = o.status === 'Доставляется' || o.status === 'В пути';
+        const hasCourier = o.courier && !isId0CourierName(o.courier) && o.courier !== 'Не назначено';
+
+        if (o.manualGroupId || o.deadlineAt || o.isAddressLocked || o.settledDate || o.paymentMethodOverridden || isSettled || (isDelivering && hasCourier)) {
           const overrideData = {
             manualGroupId: o.manualGroupId,
             deadlineAt: o.deadlineAt,
@@ -501,11 +504,21 @@ function applyCourierVehicleMap(data: any, current?: any): any {
         const sid = getStableOrderId(o);
         const existing = currentOrdersMap.get(sid) as any;
 
-        // 🔐 SETTLEMENT GUARD (highest priority):
-        // If the existing in-memory order is settled but the incoming order isn't,
-        // ALWAYS keep the settled version. Server/Socket data can never erase a local settlement.
+        // 🔐 SETTLEMENT & DELIVERY GUARD (highest priority):
+        // 1. If the existing in-memory order is settled but the incoming order isn't, ALWAYS keep the settled version. 
+        // 2. If the existing order is Delivering and has a courier, but incoming has NO courier (ID:0), PRESERVE the courier.
+        const isExistingDelivering = existing?.status === 'Доставляется' || existing?.status === 'В пути';
+        const isIncomingUnassigned = !o.courier || isId0CourierName(o.courier) || o.courier === 'Не назначено';
+        const existingHasCourier = existing?.courier && !isId0CourierName(existing.courier) && existing.courier !== 'Не назначено';
+
         if (existing?.settledDate && !o.settledDate) {
             return existing;
+        }
+
+        if (isExistingDelivering && existingHasCourier && isIncomingUnassigned) {
+            // v5.113: Keep the courier assignment for active deliveries even if API loses it
+            o.courier = existing.courier;
+            o.courierId = existing.courierId;
         }
 
         // Fast-path: if the order hasn't changed at all, keep existing reference

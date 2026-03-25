@@ -808,7 +808,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       Object.entries(courierOrders).forEach(([courierName, orders]) => {
         if (isId0CourierName(courierName) || courierName === 'Не назначено') {
           orders.forEach(o => {
-            if (!isOrderCompleted(o.status)) {
+            const s = (o.status || '').toLowerCase().trim();
+            const isInProgress = s === 'доставляется' || s === 'в пути';
+            
+            // v5.112: Exclude already delivering orders from unassigned pool
+            if (!isOrderCompleted(o.status) && !isInProgress) {
               unassignedOrders.push(o)
             }
           })
@@ -985,11 +989,18 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       const isAlreadyInRoute = ordersInCalculatedRoutes.has(`id_${order.id}`) || 
                                (order.orderNumber && ordersInCalculatedRoutes.has(`num_${order.orderNumber}`));
 
-      if (courierId && !isId0CourierName(courierId) && courierId !== 'Не назначено' && !isAlreadyInRoute) {
-        if (!orphanedOrdersByCourier.has(String(courierId))) {
-          orphanedOrdersByCourier.set(String(courierId), []);
+      const status = (order.status || '').toLowerCase().trim();
+      const isInProgress = status === 'доставляется' || status === 'в пути';
+      const isUnassigned = !courierId || isId0CourierName(courierId) || courierId === 'Не назначено';
+
+      // v5.112: Include delivering orders in orphans even if courier is ID:0 / Unassigned
+      // This ensures they stay visible on the dashboard in a special block block.
+      if (courierId && (!isUnassigned || isInProgress) && !isAlreadyInRoute) {
+        const effectiveCourier = isUnassigned ? 'НЕИЗВЕСТНЫЙ (В ПУТИ)' : String(courierId);
+        if (!orphanedOrdersByCourier.has(effectiveCourier)) {
+          orphanedOrdersByCourier.set(effectiveCourier, []);
         }
-        orphanedOrdersByCourier.get(String(courierId))?.push(order);
+        orphanedOrdersByCourier.get(effectiveCourier)?.push(order);
       }
     });
 

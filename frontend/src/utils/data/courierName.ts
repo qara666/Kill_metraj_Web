@@ -13,7 +13,9 @@ export function asNonEmptyString(value: unknown): string {
 
 export function isId0CourierName(value: unknown): boolean {
   const name = asNonEmptyString(value).trim().toUpperCase()
-  return name === 'ID:0' || name.startsWith('ID:0') || name === 'НЕ НАЗНАЧЕНО' || name === 'НЕ НАЗНАЧЕННЫЕ ЗАКАЗЫ'
+  // v5.112: Precise check for 'ID:0'. Must not match 'ID:01' or 'ID:059' which are real IDs.
+  const isExactId0 = name === 'ID:0' || /^ID:0($|\s|[^0-9])/.test(name);
+  return isExactId0 || name === 'НЕ НАЗНАЧЕНО' || name === 'НЕ НАЗНАЧЕННЫЕ ЗАКАЗЫ' || name === ''
 }
 
 export function normalizeCourierName(value: unknown): string {
