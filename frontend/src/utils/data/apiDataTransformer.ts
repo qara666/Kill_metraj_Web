@@ -145,25 +145,33 @@ const transformDashboardOrder = (apiOrder: DashboardOrderResponse, baseDate: str
     // Вспомогательная функция для проверки на "пустое" или "нулевое" время
     const isTimeEmpty = (t?: string) => {
         if (!t) return true;
-        const trimmed = t.trim();
+        const trimmed = String(t).trim();
         // Treat any variant of zero time as empty
         return /^0?0:00(:00)?$/.test(trimmed) || trimmed === '';
     };
 
-    // Парсинг времени готовности на кухне
-    const readyAtSource = parseTimeToTimestamp(baseDate, apiOrder.kitchenTime);
+    // v5.115: Robust check for kitchen time (handle partially transformed data)
+    const rawKitchen = apiOrder.kitchenTime || (apiOrder as any).readyAt || (apiOrder as any).ready_at;
+    const readyAtSource = parseTimeToTimestamp(baseDate, rawKitchen);
 
     // Парсинг дедлайна доставки. 
     // Приоритет: plannedTime, затем deliverBy (SLA). Игнорируем 00:00.
     let deadlineAt = null;
     let deadlineStr = '';
 
-    if (!isTimeEmpty(apiOrder.plannedTime)) {
-        deadlineAt = parseTimeToTimestamp(baseDate, apiOrder.plannedTime);
-        deadlineStr = apiOrder.plannedTime;
-    } else if (!isTimeEmpty(apiOrder.deliverBy)) {
-        deadlineAt = parseTimeToTimestamp(baseDate, apiOrder.deliverBy);
-        deadlineStr = apiOrder.deliverBy;
+    // Check if deadlineAt already exists as a number (from some other source)
+    if (typeof (apiOrder as any).deadlineAt === 'number') {
+        deadlineAt = (apiOrder as any).deadlineAt;
+    }
+
+    if (!deadlineAt) {
+        if (!isTimeEmpty(apiOrder.plannedTime)) {
+            deadlineAt = parseTimeToTimestamp(baseDate, apiOrder.plannedTime);
+            deadlineStr = apiOrder.plannedTime;
+        } else if (!isTimeEmpty(apiOrder.deliverBy)) {
+            deadlineAt = parseTimeToTimestamp(baseDate, apiOrder.deliverBy);
+            deadlineStr = apiOrder.deliverBy;
+        }
     }
 
     // Если все еще пусто — пробуем получить хоть что-то (даже 00:00) или вычисляем дефолт
@@ -175,19 +183,26 @@ const transformDashboardOrder = (apiOrder: DashboardOrderResponse, baseDate: str
 
     // FINAL FAIL-SAFE: Якщо в результаті вийшло нульове або порожнє час — замінюємо
     if (!deadlineStr || /^0?0:00(:00)?$/.test(deadlineStr.trim())) {
-        deadlineStr = 'Без времени';
-        deadlineAt = null;
+        if (deadlineAt) {
+            const d = new Date(deadlineAt);
+            deadlineStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        } else {
+            deadlineStr = 'Без времени';
+            deadlineAt = null;
+        }
     }
 
     // Извлечение времени перехода в доставку (Phase 4.4)
     let handoverAt = null;
     if (apiOrder.statusTimings?.deliveringAt) {
         handoverAt = new Date(apiOrder.statusTimings.deliveringAt).getTime();
+    } else if (typeof (apiOrder as any).handoverAt === 'number') {
+        handoverAt = (apiOrder as any).handoverAt;
     }
 
     // v5.112: Extract courier name with fallback to deliveryCourier
     // (Cast to any to access potential API fields not in the strictly typed interface)
-    const rawCourier = (apiOrder as any).deliveryCourier || apiOrder.courier;
+    const rawCourier = (apiOrder as any).deliveryCourier || apiOrder.courier || (apiOrder as any).courier_name || (apiOrder as any).driver || '';
     const courierName = (rawCourier && isId0CourierName(rawCourier)) ? 'Не назначено' : asNonEmptyString(rawCourier);
 
     return {
@@ -208,7 +223,7 @@ const transformDashboardOrder = (apiOrder: DashboardOrderResponse, baseDate: str
         deliveryTime: apiOrder.deliveryTime,
         changeAmount: apiOrder.changeAmount,
         totalTime: apiOrder.totalTime,
-        coords: null,
+        coords: (apiOrder as any).coords || null,
         isSelected: false,
         isInRoute: false,
         raw: apiOrder,
