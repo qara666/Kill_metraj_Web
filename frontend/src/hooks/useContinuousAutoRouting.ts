@@ -21,36 +21,36 @@ export function useContinuousAutoRouting() {
     const processedGroupSignatures = useRef<Set<string>>(new Set());
     const processedRefinements = useRef<Set<string>>(new Set()); 
     
+    // v5.117: Keep a stable ref to excelData so the routing loop does NOT
+    // restart (teardown+setup) every time data updates.
+    const excelDataRef = useRef(excelData);
+    const updateExcelDataRef = useRef(updateExcelData);
+    useEffect(() => { excelDataRef.current = excelData; }, [excelData]);
+    useEffect(() => { updateExcelDataRef.current = updateExcelData; }, [updateExcelData]);
+
     const autoRoutingStatus = useDashboardStore(s => s.autoRoutingStatus);
     const setAutoRoutingStatus = useDashboardStore(s => s.setAutoRoutingStatus);
+    const autoRoutingStatusRef = useRef(autoRoutingStatus);
+    useEffect(() => { autoRoutingStatusRef.current = autoRoutingStatus; }, [autoRoutingStatus]);
+
+    // Stable routing function (captured once, reads data from refs)
+    const runAutoRoutingRef = useRef<(() => Promise<void>) | null>(null);
 
     useEffect(() => {
-        if (!excelData?.orders || !excelData?.couriers || !autoRoutingStatus.isActive) {
-            if (!autoRoutingStatus.isActive && isProcessingRef.current) {
-                isProcessingRef.current = false;
-            }
-            return;
-        }
+        runAutoRoutingRef.current = async () => {
+            const currentData = excelDataRef.current;
+            const currentStatus = autoRoutingStatusRef.current;
 
-        if (excelData.orders.length > 0 && (!excelData.routes || excelData.routes.length === 0)) {
-            const now = Date.now();
-            const lastMod = excelData.lastModified || 0;
-            if (now - lastMod < 5000) { 
-                console.log('[AutoRouting] Waiting for Hybrid Sync to restore routes...');
-                return;
-            }
-        }
+            if (!currentData?.orders || !currentData?.couriers || !currentStatus.isActive) return;
+            if (isProcessingRef.current) return;
 
-        const runAutoRouting = async () => {
-            if (isProcessingRef.current || !autoRoutingStatus.isActive) return;
-            
-            // v5.110: Date-aware execution guard (Normalized comparison)
+            // v5.110: Date-aware execution guard
             const currentStoreDate = normalizeDateToIso(useDashboardStore.getState().apiDateShift);
-            const dataDate = excelData?.creationDate || (excelData?.orders?.[0]?.creationDate);
+            const dataDate = currentData?.creationDate || (currentData?.orders?.[0]?.creationDate);
             const dataDateStr = normalizeDateToIso(dataDate);
             
             if (currentStoreDate && dataDateStr && currentStoreDate !== dataDateStr) {
-                console.warn(`[AutoRouting] Date mismatch: Store is ${currentStoreDate}, Data is ${dataDateStr}. Skipping calculation.`);
+                console.warn(`[AutoRouting] Date mismatch: Store=${currentStoreDate}, Data=${dataDateStr}. Skipping.`);
                 return;
             }
 
@@ -72,49 +72,43 @@ export function useContinuousAutoRouting() {
                     return o.courierName || o.courierId || o.courier || '';
                 };
 
-                // 1. Фильтруем заказы, которые могут быть рассчитаны (не отменены и имеют РЕАЛЬНОГО курьера)
                 const isEligibleForRouting = (o: any) => {
                     const status = String(o.status || '').toLowerCase();
                     const isNotCanceled = status !== 'отменен' && status !== 'отмена' && status !== 'удален';
                     return isNotCanceled && isRealCourierName(getOrderCourierName(o));
                 };
 
-                const eligibleOrders = excelData.orders.filter(isEligibleForRouting);
+                const eligibleOrders = currentData.orders.filter(isEligibleForRouting);
                 
                 const realCouriersSet = new Set(
-                    excelData.couriers
+                    currentData.couriers
                         .map((c: any) => c.name)
                         .filter((name: any) => isRealCourierName(name))
                 );
 
-                const totalOrders = eligibleOrders.length;
                 let processedGeocodedCount = 0;
-                
-                (excelData.routes || []).forEach((r: any) => {
+                (currentData.routes || []).forEach((r: any) => {
                     (r.orders || []).forEach((o: any) => {
-                        if (o.coords?.lat) {
-                            processedGeocodedCount++;
-                        }
+                        if (o.coords?.lat) processedGeocodedCount++;
                     });
                 });
                 
                 const totalSystemCouriers = realCouriersSet.size;
                 const courierNamesWithRoutes = new Set(
-                    (excelData.routes || [])
+                    (currentData.routes || [])
                         .map((r: any) => r.courier?.name || r.courier)
                         .filter(n => !!n && n !== 'Не назначено')
                 );
-                const couriersWithRoutesCount = courierNamesWithRoutes.size;
 
                 setAutoRoutingStatus({ 
-                    totalCount: totalOrders, 
+                    totalCount: eligibleOrders.length, 
                     totalCouriers: totalSystemCouriers,
                     processedCount: processedGeocodedCount,
-                    processedCouriers: couriersWithRoutesCount,
+                    processedCouriers: courierNamesWithRoutes.size,
                     lastUpdate: Date.now() 
                 });
 
-                const groupsMap = groupAllOrdersByTimeWindow(eligibleOrders, excelData.couriers);
+                const groupsMap = groupAllOrdersByTimeWindow(eligibleOrders, currentData.couriers);
                 const eligibleGroups: any[] = [];
 
                 for (const [courierId, timeGroups] of Array.from(groupsMap.entries())) {
@@ -144,12 +138,31 @@ export function useContinuousAutoRouting() {
                     }
 
                     for (const chunkOrders of groupChunks) {
+                        // v5.119: Stable signature (ID + Address + Courier)
+                        // Status and Time are excluded to prevent redundant recalculation on state-only changes.
                         const groupSignature = chunkOrders
-                            .map((o: any) => `${getStableOrderId(o)}_${o.address}_${actualCourierName}_${o.status}`)
+                            .map((o: any) => `${getStableOrderId(o)}_${o.address}_${actualCourierName}`)
                             .sort()
                             .join('|');
 
+                        const chunkOrderIds = chunkOrders.map((o: any) => getStableOrderId(o)).sort().join('|');
+
+                        // v5.119: Skip if signature already processed in this context
                         if (processedGroupSignatures.current.has(groupSignature)) {
+                            processedOrdersInBatch += chunkOrders.length;
+                            continue;
+                        }
+
+                        // v5.117: Skip if a route with same orders already exists with distance calculated
+                        const existingOptimalRoute = (currentData.routes || []).find((r: any) => {
+                            const sameOrders = r.orders.map((ro: any) => getStableOrderId(ro)).sort().join('|') === chunkOrderIds;
+                            const sameCourier = normalizeCourierName(r.courier) === normalizeCourierName(actualCourierName);
+                            return sameOrders && sameCourier && r.totalDistance > 0;
+                        });
+
+                        if (existingOptimalRoute) {
+                            console.log(`[AutoRouting] Skipping ${actualCourierName} — optimised route already exists.`);
+                            processedGroupSignatures.current.add(groupSignature);
                             processedOrdersInBatch += chunkOrders.length;
                             continue;
                         }
@@ -206,15 +219,13 @@ export function useContinuousAutoRouting() {
                             };
 
                             if (!newRoute.hasGeoErrors) {
-                                // v5.115: Check if we already have a calculated route for exactly these orders
-                                const chunkOrderIds = chunkOrders.map((o: any) => getStableOrderId(o)).sort().join('|');
-                                const prevRoute = (excelData.routes || []).find((r: any) => 
+                                // Check if previous auto-route with same orders already has geometry
+                                const prevRoute = (currentData.routes || []).find((r: any) => 
                                     r.isAutoGenerated && 
                                     r.orders.map((ro: any) => getStableOrderId(ro)).sort().join('|') === chunkOrderIds
                                 );
 
                                 if (prevRoute && prevRoute.isOptimized && prevRoute.totalDistance > 0) {
-                                    // Reuse geometry and distance if the orders are exactly the same (only status/metadata changed)
                                     newRoute.totalDistance = prevRoute.totalDistance;
                                     newRoute.totalDuration = prevRoute.totalDuration;
                                     newRoute.isOptimized = prevRoute.isOptimized;
@@ -235,34 +246,19 @@ export function useContinuousAutoRouting() {
                                     else if (points.length > 0) points.push(points[0]);
 
                                     if (points.length >= 2) {
-                                        let calculatedDist = 0;
-                                        let calculatedDur = 0;
+                                        // v5.118: Use centralised routing helper with Turbo Race if standard mode fails
+                                        const { calculateTurboRace } = await import('../services/routingService');
+                                        const routeResult = await calculateTurboRace(points, {
+                                            yapikoOsrmUrl: settings?.yapikoOsrmUrl,
+                                            generouteApiKey: settings?.generouteApiKey,
+                                            maxDistanceKm: settings?.maxRouteDistanceKm,
+                                            verbose: true
+                                        });
 
-                                        if (settings?.yapikoOsrmUrl) {
-                                            try {
-                                                const { YapikoOSRMService } = await import('../services/YapikoOSRMService');
-                                                const r = await YapikoOSRMService.calculateRoute(points, settings.yapikoOsrmUrl);
-                                                if (r.feasible) {
-                                                    calculatedDist = r.totalDistance || 0;
-                                                    calculatedDur = r.totalDuration || 0;
-                                                }
-                                            } catch {}
-                                        }
-
-                                        if (!calculatedDist) {
-                                            try {
-                                                const { ValhallaService } = await import('../services/valhallaService');
-                                                const r = await ValhallaService.calculateRoute(points);
-                                                if (r.feasible) {
-                                                    calculatedDist = r.totalDistance || 0;
-                                                    calculatedDur = r.totalDuration || 0;
-                                                }
-                                            } catch {}
-                                        }
-
-                                        newRoute.totalDistance = calculatedDist / 1000;
-                                        newRoute.totalDuration = calculatedDur / 60;
-                                        newRoute.isOptimized = calculatedDist > 0;
+                                        newRoute.totalDistance = routeResult.feasible ? (routeResult.totalDistance || 0) / 1000 : 0;
+                                        newRoute.totalDuration = routeResult.feasible ? (routeResult.totalDuration || 0) / 60 : 0;
+                                        newRoute.isOptimized = routeResult.feasible && (routeResult.totalDistance || 0) > 0;
+                                        newRoute.routingEngine = routeResult.usedEngine;
 
                                         newRoute.geoMeta = {
                                             origin: (startLat && startLng) ? { lat: startLat, lng: startLng } : null,
@@ -283,7 +279,7 @@ export function useContinuousAutoRouting() {
                                 return;
                             }
 
-                            updateExcelData((prev: any) => {
+                            updateExcelDataRef.current((prev: any) => {
                                 const currentOrders = prev?.orders || [];
                                 const updatedOrders = currentOrders.map((order: any) => {
                                     const updated = allOrderUpdates.get(getStableOrderId(order));
@@ -291,19 +287,18 @@ export function useContinuousAutoRouting() {
                                 });
 
                                 const autogeneratedIdsInChunk = new Set(chunkOrders.map((o: any) => getStableOrderId(o)));
-                                // v5.116: Strict Deduplication - remove any existing route for this courier
-                                // to ensure the new optimized path is the only one active.
+                                
+                                // v5.117: Protect manual routes — only remove AUTO-generated routes for same courier
                                 const filteredRoutes = (prev?.routes || []).filter((r: any) => {
-                                    // 1. If it contains the same orders, remove it
-                                    const hasSomeOrders = r.orders.some((ro: any) => autogeneratedIdsInChunk.has(getStableOrderId(ro)));
-                                    if (hasSomeOrders) return false;
+                                    // Remove any route (manual or auto) containing these exact orders
+                                    const hasSameOrders = r.orders.some((ro: any) => autogeneratedIdsInChunk.has(getStableOrderId(ro)));
+                                    if (hasSameOrders) return false;
                                     
-                                    // 2. If it's for the same courier, remove it (Avoid dual-routing)
-                                    if (normalizeCourierName(r.courier) === normalizeCourierName(actualCourierName)) {
-                                        return false;
-                                    }
+                                    // Only remove auto-generated routes for the same courier (not manual ones)
+                                    const sameCourier = normalizeCourierName(r.courier) === normalizeCourierName(actualCourierName);
+                                    if (sameCourier && r.isAutoGenerated) return false;
                                     
-                                    return true;
+                                    return true; // preserve manual routes
                                 });
 
                                 return {
@@ -318,7 +313,7 @@ export function useContinuousAutoRouting() {
                             processedCouriersThisBatch.add(actualCourierName);
                             
                             const allCouriersWithRoutes = new Set([
-                                ...(excelData.routes || []).map((r: any) => r.courier?.name || r.courier),
+                                ...(currentData.routes || []).map((r: any) => r.courier?.name || r.courier),
                                 ...Array.from(processedCouriersThisBatch)
                             ].filter(name => isRealCourierName(name)));
 
@@ -344,7 +339,7 @@ export function useContinuousAutoRouting() {
                 
                 // 3. REFINEMENT PASS (Isolated)
                 try {
-                    const needsRefine = excelData.orders.filter((o: any) => {
+                    const needsRefine = currentData.orders.filter((o: any) => {
                         const stableId = getStableOrderId(o);
                         const refKey = `${stableId}_${o.address}`;
                         if (processedRefinements.current.has(refKey)) return false;
@@ -357,7 +352,7 @@ export function useContinuousAutoRouting() {
                     });
 
                     if (needsRefine.length > 0) {
-                        const batchToRefine = needsRefine.slice(0, 5); 
+                        const batchToRefine = needsRefine.slice(0, 10); // v5.119: boosted from 3 to 10 for faster cleanup
                         const refineUpdates = new Map<string, any>();
                         
                         for (const o of batchToRefine) {
@@ -387,11 +382,10 @@ export function useContinuousAutoRouting() {
                         }
 
                         if (refineUpdates.size > 0) {
-                            // v5.110: Final safety check before state injection
                             const latestDate = normalizeDateToIso(useDashboardStore.getState().apiDateShift);
                             if (latestDate !== dataDateStr) return;
 
-                            updateExcelData((prev: any) => {
+                            updateExcelDataRef.current((prev: any) => {
                                 const currentOrders = prev?.orders || [];
                                 const updatedOrders = currentOrders.map((order: any) => {
                                     const updated = refineUpdates.get(getStableOrderId(order));
@@ -423,19 +417,36 @@ export function useContinuousAutoRouting() {
                 isProcessingRef.current = false;
             }
         };
+    }); // No deps — we always want the latest version of runAutoRouting
 
+    // v5.119: EVENT-DRIVEN TRIGGER (Hyper-Reactivity)
+    // Runs when orders change (count, courier assignments, or statuses)
+    const lastOrdersSignatureRef = useRef('');
+    useEffect(() => {
         if (!autoRoutingStatus.isActive) return;
+        
+        const currentOrders = excelData?.orders || [];
+        const sig = currentOrders.map(o => `${getStableOrderId(o)}|${o.courier}|${o.status}`).join(',');
+        
+        if (sig !== lastOrdersSignatureRef.current) {
+            console.log(`[AutoRouting] Orders change detected. Triggering instant calculation.`);
+            lastOrdersSignatureRef.current = sig;
+            // Debounce 500ms to let multiple updates (e.g. batch FO sync) settle
+            const tid = setTimeout(() => runAutoRoutingRef.current?.(), 500);
+            return () => clearTimeout(tid);
+        }
+    }, [excelData?.orders, autoRoutingStatus.isActive]);
 
-        // v5.116: Execute FIRST run immediately when excelData changes (or on mount)
-        // We use a small timeout to debounce rapid changes (e.g. multi-order updates)
-        const immediateId = setTimeout(runAutoRouting, 1000);
+    // Main interval loop remains as a fail-safe (slower frequency)
+    useEffect(() => {
+        if (!autoRoutingStatus.isActive) {
+            isProcessingRef.current = false;
+            return;
+        }
 
-        // Then continue with the background interval
-        const intervalId = setInterval(runAutoRouting, 10000);
+        const run = () => runAutoRoutingRef.current?.();
+        const intervalId = setInterval(run, 30000); // 30s fail-safe since we are now event-driven
 
-        return () => {
-            clearTimeout(immediateId);
-            clearInterval(intervalId);
-        };
-    }, [excelData, updateExcelData, autoRoutingStatus.isActive, setAutoRoutingStatus]);
+        return () => clearInterval(intervalId);
+    }, [autoRoutingStatus.isActive]);
 }
