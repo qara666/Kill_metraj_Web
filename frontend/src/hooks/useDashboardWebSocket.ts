@@ -47,6 +47,7 @@ export const useDashboardWebSocket = ({
     const isFetchingRef = useRef(false);
     const lastProcessedTriggerRef = useRef<number | null>(null);
     const lastFetchTimeRef = useRef<number>(0);
+    const lastDataSignatureRef = useRef<string | null>(null);
     const onDataLoadedRef = useRef(onDataLoaded);
     const intervalRef = useRef<any>(null);
 
@@ -110,7 +111,28 @@ export const useDashboardWebSocket = ({
             });
 
             if (response.success && response.data) {
-                const ordersCount = response.data.orders?.length || 0;
+                const ordersRaw = response.data.orders || [];
+                const ordersCount = ordersRaw.length;
+
+                // v5.119: Content-based Diffing (Hyper-Drive Sync)
+                // Filter out volatile fields like 'updatedAt' if they exist, to only trigger on real changes.
+                const currentSignature = JSON.stringify(ordersRaw.map((o: any) => ({
+                    id: o.orderNumber || o.id,
+                    s: o.status,
+                    c: o.courier || o.driver,
+                    a: o.address,
+                    t: o.plannedTime || o.deliverBy
+                })));
+
+                if (currentSignature === lastDataSignatureRef.current && !isManual) {
+                    logger.info(`[Sync] Skipping update — no content change detected (${ordersCount} orders)`);
+                    setApiLastSyncTime(Date.now());
+                    setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);
+                    setApiSyncStatus('idle');
+                    return;
+                }
+                lastDataSignatureRef.current = currentSignature;
+
                 logger.info(` Loaded dashboard data (${ordersCount} orders)`);
 
                 setApiLastSyncTime(Date.now());

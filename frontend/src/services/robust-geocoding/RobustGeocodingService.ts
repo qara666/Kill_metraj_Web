@@ -99,11 +99,18 @@ export class RobustGeocodingService {
 
   // v5.106: Provider cool-down map (ProviderName -> ExpiryTimestamp)
   private disabledProviders = new Map<string, number>();
-  
-  // v35.9.37: GEODASH - Global Request Semaphore
+
+  // v5.117: Per-provider last request timestamp for rate limiting
+  private providerLastRequest = new Map<string, number>();
+  // Minimum delay between requests to the same free provider (ms)
+  private static readonly PROVIDER_MIN_DELAY: Record<string, number> = {
+    Nominatim: 1100, // Nominatim ToS: max 1 req/sec
+    Photon: 300,     // Photon: relatively lenient
+  };
+
+  // v36.8 (revised): Lower concurrency — free providers can't handle 20 concurrent requests
   private activeRequestCount = 0;
-  private static readonly MAX_CONCURRENT_REQUESTS = 20 // v36.8: Boosted for Quantum speed
-;
+  private static readonly MAX_CONCURRENT_REQUESTS = 3; // safe for Nominatim (1 req/sec)
   private requestQueue: Array<() => void> = [];
 
   static _slavicNormalize(s: string): string {
@@ -155,12 +162,26 @@ export class RobustGeocodingService {
     localStorage.removeItem(this.PERSISTENT_CACHE_KEY);
   }
 
-  // v36: Enhanced Rate-Limit Protection (Jittered Batch)
-  private async _withSemaphore<T>(fn: () => Promise<T>): Promise<T> {
+  // v5.117: Semaphore + per-provider rate-limit delay
+  private async _withSemaphore<T>(fn: () => Promise<T>, providerName?: string): Promise<T> {
+      // Global concurrency gate
       while (this.activeRequestCount >= RobustGeocodingService.MAX_CONCURRENT_REQUESTS) {
           await new Promise<void>(resolve => this.requestQueue.push(resolve));
       }
       this.activeRequestCount++;
+
+      // Per-provider minimum delay
+      if (providerName) {
+          const minDelay = RobustGeocodingService.PROVIDER_MIN_DELAY[providerName] ?? 0;
+          if (minDelay > 0) {
+              const lastReq = this.providerLastRequest.get(providerName) ?? 0;
+              const elapsed = Date.now() - lastReq;
+              if (elapsed < minDelay) {
+                  await new Promise<void>(resolve => setTimeout(resolve, minDelay - elapsed));
+              }
+              this.providerLastRequest.set(providerName, Date.now());
+          }
+      }
       
       try {
           return await fn();
@@ -237,7 +258,7 @@ export class RobustGeocodingService {
 
           try {
               const raw = await Promise.race([
-                  this._withSemaphore(() => service.geocode(query, city || undefined)),
+                  this._withSemaphore(() => service.geocode(query, city || undefined), name),
                   new Promise<any[]>((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs))
               ]);
 
@@ -675,19 +696,38 @@ export class RobustGeocodingService {
     requests: Array<{ address: string; options?: RobustGeocodeOptions }>, 
     globalOptions: RobustGeocodeOptions = {}
   ): Promise<Map<string, RobustGeocodeResult>> {
-    const results = new Map<string, RobustGeocodeResult>()
+    const results = new Map<string, RobustGeocodeResult>();
     const { turbo = false } = globalOptions;
     
-    // v37: Bulk Performance - Deduplicate and run in parallel
+    // v5.117: Deduplicate addresses first
     const uniqueReqs = new Map<string, { address: string; options?: RobustGeocodeOptions }>();
     requests.forEach(req => {
         const key = req.address.trim().toLowerCase();
         if (!uniqueReqs.has(key)) uniqueReqs.set(key, req);
     });
-    
-    // v37: Turbo - Use a larger concurrency pool or just fire all (with semaphore safety)
-    const promises = Array.from(uniqueReqs.values()).map(async (req) => {
+
+    // v5.117: Sequential processing instead of Promise.all
+    // This prevents 429 rate-limit storms on Nominatim/Photon.
+    // Cache hits are instant so only uncached addresses add delay.
+    const INTER_REQUEST_DELAY_MS = turbo ? 100 : 200;
+
+    let first = true;
+    for (const req of Array.from(uniqueReqs.values())) {
         const key = req.address.trim().toLowerCase();
+
+        // Check L1 cache first — if cached, no delay needed
+        const cacheKey = `${key}:${(globalOptions.cityBias || this.cityBias).toLowerCase()}`;
+        if (this.l1Cache.has(cacheKey)) {
+            results.set(key, { ...this.l1Cache.get(cacheKey)!, fromCache: true });
+            continue;
+        }
+
+        // Small delay between actual API calls to respect rate limits
+        if (!first) {
+            await new Promise<void>(resolve => setTimeout(resolve, INTER_REQUEST_DELAY_MS));
+        }
+        first = false;
+
         try {
             const combinedOptions = { 
                 ...globalOptions, 
@@ -699,9 +739,7 @@ export class RobustGeocodingService {
         } catch (e) {
             console.error(`[BatchGeocode] Failed for ${req.address}`, e);
         }
-    });
-
-    await Promise.all(promises);
+    }
     
     const finalMap = new Map<string, RobustGeocodeResult>();
     requests.forEach(req => {

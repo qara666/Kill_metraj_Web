@@ -75,22 +75,26 @@ export class YapikoOSRMService {
         const finalUrl = this.getMaybeProxiedUrl(targetUrl);
 
         try {
-          const response = await fetch(finalUrl, { signal: AbortSignal.timeout(10000) })
+          console.log(`[YapikoOSRM] Запрос к ${profile}...`);
+          const response = await fetch(finalUrl, { signal: AbortSignal.timeout(8000) })
+          
           if (!response.ok) {
-              lastError = `HTTP ${response.status} ${response.statusText}`;
-              if (response.status === 404) continue; // Profile might not exist, try next
-              console.error(`[Маршрут] Yapiko OSRM error (${profile}): ${lastError}`);
+              const errText = await response.text().catch(() => '');
+              lastError = `HTTP ${response.status}: ${errText || response.statusText}`;
+              console.warn(`[YapikoOSRM] ⚠️ Ошибка ${profile}: ${lastError}`);
+              if (response.status === 404 || response.status === 400) continue; 
               return { feasible: false };
           }
 
           const data = await response.json()
           if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
-            lastError = `Code: ${data.code}`;
-            console.error(`[Маршрут] Yapiko OSRM invalid data (${profile}):`, data);
+            lastError = `OSRMR_CODE: ${data.code}`;
+            console.warn(`[YapikoOSRM] ⚠️ Невалидный ответ (${profile}):`, data.code);
             continue;
           }
 
           const route = data.routes[0]
+          console.log(`[YapikoOSRM] ✅ Успех (${profile}): ${Math.round(route.distance/1000)} km`);
           const legs: OSRMLeg[] = (route.legs || []).map((leg: any, idx: number) => ({
             distance: { 
               value: leg.distance, 

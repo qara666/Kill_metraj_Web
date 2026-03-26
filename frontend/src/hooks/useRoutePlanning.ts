@@ -197,65 +197,42 @@ export const useRoutePlanning = (
                 
                 const yapikoUrl = appSettings.yapikoOsrmUrl
 
-                // TURBO INSTANT: Race all engines in parallel for the Auto-Planner phase too
+                // TURBO INSTANT (v5.118)
+                // Race all engines in parallel using the centralised helper.
                 if (appSettings.routingProvider === 'turbo_instant') {
-                    const raceResults = await Promise.allSettled([
-                        // 1. Yapiko OSRM
-                        yapikoUrl ? (async () => {
-                            const { YapikoOSRMService } = await import('../services/YapikoOSRMService')
-                            const r = await YapikoOSRMService.calculateRoute(locations, yapikoUrl)
-                            if (r.feasible && (r.totalDistance ?? 0) > 0) return r
-                            throw new Error('Yapiko empty')
-                        })() : Promise.reject('No yapikoUrl'),
-                        
-                        // 2. Valhalla
-                        (async () => {
-                            const { ValhallaService } = await import('../services/valhallaService')
-                            const r = await ValhallaService.calculateRoute(locations)
-                            if (r.feasible && (r.totalDistance ?? 0) > 0) return r
-                            throw new Error('Valhalla empty')
-                        })(),
-
-                        // 3. OSRM / Generoute
-                        (async () => {
-                            const r = await GenerouteService.calculateRoute(locations, generouteKey)
-                            if (r.feasible && (r.totalDistance ?? 0) > 0) return r
-                            throw new Error('Generoute empty')
-                        })()
-                    ])
-
-                    const winner = raceResults.find(r => r.status === 'fulfilled') as PromiseFulfilledResult<any> | undefined
-                    if (winner) return winner.value
-                    return { feasible: false }
+                    try {
+                        const { calculateTurboRace } = await import('../services/routingService');
+                        const r = await calculateTurboRace(locations, {
+                            yapikoOsrmUrl: yapikoUrl,
+                            generouteApiKey: generouteKey,
+                            maxDistanceKm: appSettings.maxRouteDistanceKm,
+                            verbose: true
+                        });
+                        if (r.feasible) return r;
+                    } catch (e) {
+                        console.warn('[AutoPlanner] Turbo Race failed:', e);
+                    }
+                    return { feasible: false };
                 }
 
-                // STANDARD SEQUENTIAL FLOW
-                // 1. Try Yapiko OSRM if it's the selected provider
-                if (appSettings.routingProvider === 'yapiko_osrm' && yapikoUrl) {
-                  try {
-                    const { YapikoOSRMService } = await import('../services/YapikoOSRMService')
-                    const res = await YapikoOSRMService.calculateRoute(locations, yapikoUrl)
-                    if (res.feasible) return res
-                  } catch (e) {
-                     console.warn('[AutoPlanner] Yapiko OSRM failed fallback to others:', e)
-                  }
-                }
-
-                // 2. Try Valhalla (supports vehicle costing)
-                if (appSettings.routingProvider === 'valhalla') {
-                  try {
-                      const { ValhallaService } = await import('../services/valhallaService')
-                      const res = await ValhallaService.calculateRoute(locations)
-                      if (res.feasible) return res
-                  } catch {}
-                }
-
-                // 3. Try OSRM / Generoute (default or fallback)
+                // STANDARD SEQUENTIAL FLOW (v5.118)
+                // Always try OSRM first, then Valhalla with Anomaly Shield.
                 try {
-                    const res = await GenerouteService.calculateRoute(locations, generouteKey)
-                    return res
+                    const { calculateRouteWithFallback } = await import('../services/routingService');
+                    const r = await calculateRouteWithFallback(locations, {
+                        yapikoOsrmUrl: yapikoUrl,
+                        maxDistanceKm: appSettings.maxRouteDistanceKm,
+                        verbose: true
+                    });
+                    if (r.feasible) return r;
+                } catch {}
+
+                // Final fallback: Generoute
+                try {
+                    const res = await GenerouteService.calculateRoute(locations, generouteKey);
+                    return res;
                 } catch {
-                    return { feasible: false }
+                    return { feasible: false };
                 }
             }
 

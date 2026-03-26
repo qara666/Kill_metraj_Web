@@ -46,13 +46,14 @@ export const SCORE = {
   // House number match
   HOUSE_MATCH_EXACT: 2000,
 
-  // IRON DOME PENALTIES - RESTORED & TUNED FOR FAIRNESS (v35.18 Lockdown)
+  // IRON DOME PENALTIES - RESTORED & TUNED FOR FAIRNESS (v5.118 Lockdown)
   DELIVERY_ZONE_MATCH: 15000,         
   WRONG_ZONE_FATAL_PENALTY: -5000000,  
   OUT_OF_ZONE_FATAL_PENALTY: -2000000, 
   MAX_DISTANCE_QUARANTINE: -10000000,  // Fatal
   LOGICAL_CONTINUITY_GAP: -600000,      // Fatal for Iron Dome (-500k)
   HARD_ZONE_EXCLUSION: -100000,        
+  STRICT_CITY_LOCKDOWN: -15000000,     // v5.118: Fatal kill for 35km+ anomalies
 
   // Proximity to hint point (Chain Logic - MASSIVE WEIGHT)
   PROXIMITY_500M: 2000, // Now stronger than ROOFTOP difference
@@ -165,9 +166,8 @@ export function scoreCandidate(
 
   // Strict check (for bonuses)
   const strictTolerance = 0.001 
-  // Wide check (for detection of disabled zones and near-misses)
-  // Increased to ~2.7km (0.025) as per user request to allow "small fallout"
-  const wideTolerance = 0.025 
+  // v5.118: Reduced from 0.025 (~2.7km) to 0.005 (~550m) to prevent "wide fallout" hijacking.
+  const wideTolerance = 0.005 
 
   const locForZones = { lat, lng }
   
@@ -274,8 +274,11 @@ export function scoreCandidate(
       const cLng = cityCenter[0];
       const distToCity = distanceBetween({ lat, lng }, { lat: cLat, lng: cLng });
       
-      // v40: Tightened distance violation
-      if (distToCity > 20000) { 
+      // v5.118: Hard 35km Lockdown (Prevent 80km anomalies)
+      if (distToCity > 35000) {
+        score += SCORE.STRICT_CITY_LOCKDOWN;
+        (raw as any)._rejectReason = `Fatal anomaly: ${(distToCity/1000).toFixed(1)}km is way outside Kyiv metro area (v5.118)`;
+      } else if (distToCity > 20000) { 
         score += SCORE.CITY_RADIUS_VIOLATION; 
         (raw as any)._rejectReason = `Fatal distance: ${(distToCity/1000).toFixed(1)}km from city center (v40)`;
       } else if (distToCity > 12000) {
