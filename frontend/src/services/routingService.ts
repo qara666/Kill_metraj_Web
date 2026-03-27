@@ -10,6 +10,7 @@
  */
 
 import { localStorageUtils } from '../utils/ui/localStorage';
+import { calculateDistance } from '../utils/geoUtils';
 
 export interface RoutingResult {
   feasible: boolean;
@@ -76,11 +77,28 @@ export async function calculateTurboRace(
     const r = winner.value;
     const distKm = (r.totalDistance || 0) / 1000;
 
-    // v5.118: ANOMALY SHIELD
-    // If route is > maxDistanceKm (e.g. 80km), we KILL it even if it's "feasible" by OSRM.
+    // Считаем 직선 (haversine) дистанцию через все точки для проверки на адекватность
+    // v5.128: SINGLE LEG ANOMALY SHIELD
+    // If any single leg is > 35km straight-line, it's definitely a geocoding error (Makariv vs Kyiv)
+    let maxSingleLegStraightKm = 0;
+    let straightLineKm = 0;
+    for (let i = 0; i < points.length - 1; i++) {
+        const d = calculateDistance(points[i], points[i+1]) / 1000;
+        straightLineKm += d;
+        if (d > maxSingleLegStraightKm) maxSingleLegStraightKm = d;
+    }
+
+    if (maxSingleLegStraightKm > 35) {
+        console.error(`[TurboRace] 🛑 КРИТИЧЕСКАЯ АНОМАЛИЯ: Сегмент ${maxSingleLegStraightKm.toFixed(1)} км (>35км). ОТКЛОНЕНО.`);
+        return { feasible: false };
+    }
+
+    // v5.129: ANOMALY SHIELD — ratio restored to x3.5 (city hub routes regularly exceed x2.5)
     const maxDist = options.maxDistanceKm || 100;
-    if (distKm > maxDist * 1.5) { // Allow 50% buffer for detours
-      console.warn(`[TurboRace] 🛡️ АНОМАЛИЯ ОТКЛОНЕНА: Длина ${distKm.toFixed(1)} км превышает лимит ${maxDist} км. Сорян!`);
+    const dynamicMaxDist = Math.max(maxDist, straightLineKm * 3.5 + 5); 
+    
+    if (distKm > maxDist * 1.5 || distKm > dynamicMaxDist) {
+      console.warn(`[TurboRace] 🛡️ АНОМАЛИЯ ОТКЛОНЕНА: Длина ${distKm.toFixed(1)} км (прямая ~${straightLineKm.toFixed(1)} км). Лимиты: ${maxDist}/${dynamicMaxDist.toFixed(1)} км.`);
       return { feasible: false };
     }
 
@@ -128,9 +146,27 @@ export async function calculateRouteWithFallback(
       const r = await YapikoOSRMService.calculateRoute(points, osrmUrl);
       if (r.feasible && r.totalDistance != null) {
         const distKm = r.totalDistance / 1000;
+        
+        // Хаверсин для fallback
+        // v5.128: SINGLE LEG ANOMALY SHIELD
+        let maxStepStraightKm = 0;
+        let slKm = 0;
+        for (let i = 0; i < points.length - 1; i++) {
+            const d = calculateDistance(points[i], points[i+1]) / 1000;
+            slKm += d;
+            if (d > maxStepStraightKm) maxStepStraightKm = d;
+        }
+        if (maxStepStraightKm > 35) {
+          console.error(`[Fallback] 🛑 КРИТИЧЕСКАЯ АНОМАЛИЯ: Сегмент ${maxStepStraightKm.toFixed(1)} км (>35км).`);
+          return { feasible: false };
+        }
+
         const maxDist = options.maxDistanceKm || 100;
-        if (distKm > maxDist * 1.5) {
-          console.warn(`[Fallback] 🛡️ Yapiko OSRM АНОМАЛИЯ: ${distKm.toFixed(1)} км отклонено.`);
+        const dynMax = Math.max(maxDist, slKm * 3.5 + 5);
+
+        if (distKm > maxDist * 1.5 || distKm > dynMax) {
+          console.warn(`[Fallback] 🛡️ Yapiko OSRM АНОМАЛИЯ: ${distKm.toFixed(1)} км отклонено (прямая ~${slKm.toFixed(1)} км).`);
+          return { feasible: false };
         } else {
           if (options.verbose !== false) {
             console.log(`[Маршрут] ✅ YapikoOSRM: ${distKm.toFixed(1)} km / ${Math.round((r.totalDuration || 0) / 60)} min`);

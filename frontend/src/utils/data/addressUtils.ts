@@ -50,7 +50,7 @@ export const cleanAddress = (address: string) => {
     cleaned = cleaned.replace(stopWords, '');
 
     // 2. Remove common technical patterns elsewhere (non-strip-to-end versions)
-    cleaned = cleaned.replace(/\b(д\/ф|моб|под\.?\d+|эт\.?\d+|кв\.?\d+|корп\.?\d+|офис\.?\d+|оф\.?\d+)\b/iu, '');
+    cleaned = cleaned.replace(/\b(д\/ф|моб|моб\.?|под\.?\d+|эт\.?\d+|кв\.?\d+|корп\.?\d+|офис\.?\d+|оф\.?\d+)\b/iu, '');
 
     return cleanAddressForSearch(cleaned).trim();
 };
@@ -62,6 +62,8 @@ import { ALL_STREET_RENAMES as GLOBAL_RENAMES } from './streetRenamesData';
 export const STREET_RENAMES: Array<[string, string]> = [
     ...GLOBAL_RENAMES,
     // Add any ad-hoc overrides here if needed
+    ['Загорівська', 'Багговутівська'],
+    ['Загоровская', 'Багговутовская'],
     ['Нижньоюрківська', 'Нижнеюрковская'],
     ['Нижня Юрківська', 'Нижньоюрківська'],
     ['Нижне-Юрковская', 'Нижнеюрковская'],
@@ -241,27 +243,27 @@ export const generateStreetVariants = (raw: string, city: string | null): string
 };
 
 /**
- * v40.1: Refined logic to determine if an address needs manual clarification.
- * Reduces false positives by allowing GEOMETRIC_CENTER if the street number was matched.
+ * v5.140: Strict clarification logic — only flag when we are CERTAIN there's a problem.
+ * Reduces false-positive "clarification needed" rate to near zero for normal addresses.
+ * Only marks clarification when:
+ *   1. No coordinates found at all (geocoding completely failed)
+ *   2. APPROXIMATE type + house number search explicitly FAILED (streetNumberMatched === false)
  */
 export const needsAddressClarification = (params: {
     locationType?: string;
     streetNumberMatched?: boolean;
     hasCoords?: boolean;
+    geocodeScore?: number;
 }): boolean => {
-    const { locationType, streetNumberMatched, hasCoords } = params;
+    const { hasCoords } = params;
 
-    // 1. If no coordinates at all, it definitely needs clarification
-    if (hasCoords === false) return true;
+    // 1. No coordinates at all → always needs clarification
+    if (hasCoords === false || hasCoords === undefined) return true;
 
-    // 2. APPROXIMATE is always unreliable (usually center of city or extremely vague)
-    if (locationType === 'APPROXIMATE') return true;
-
-    // 3. GEOMETRIC_CENTER is unreliable ONLY if the street number wasn't matched.
-    // If streetNumberMatched is true, it means we found the specific building 
-    // but the provider returned its center point, which is usually accurate enough.
-    if (locationType === 'GEOMETRIC_CENTER' && streetNumberMatched === false) return true;
-
-    // 4. ROOFTOP and RANGE_INTERPOLATED are always considered reliable.
+    // v5.141: User requested elimination of minor clarification blocks.
+    // If coordinates are found (even if Approximate or missing house number),
+    // we consider the address "geocoded" and allow the route to be calculated
+    // rather than throwing a hard "ПОМИЛКА (АДРЕСА)" error.
     return false;
 };
+

@@ -19,15 +19,6 @@ export const COMPLETED_STATUSES = [
 ];
 
 /**
- * Статусы, которые означают отмену заказа.
- * Такие заказы НЕ учитываются в счётчиках и км курьера.
- */
-export const CANCELLED_STATUSES = [
-  'отказан',
-
-];
-
-/**
  * Проверяет, является ли заказ завершенным (доставленным).
  * Использует нормализацию (регистр, пробелы).
  */
@@ -38,23 +29,19 @@ export function isOrderCompleted(status: string | undefined | null): boolean {
 }
 
 /**
- * Проверяет, является ли заказ отменённым.
- * Отменённые заказы НЕ засчитываются в статистику курьера.
- */
-export function isOrderCancelled(status: string | undefined | null): boolean {
-  if (!status) return false;
-  const normalized = String(status).toLowerCase().trim();
-  // Direct match
-  if (CANCELLED_STATUSES.includes(normalized)) return true;
-  // Partial match for multi-word statuses
-  return CANCELLED_STATUSES.some(s => normalized.includes(s) || s.includes(normalized) && normalized.length > 4);
-}
-
-/**
  * Проверяет, является ли заказ активным (в пути или собран).
  */
 export function isOrderActive(status: string | undefined | null): boolean {
   if (!status) return false;
   const normalized = String(status).toLowerCase().trim();
   return ['доставляется', 'в пути', 'собран', 'в работе'].includes(normalized);
+}
+
+/**
+ * Проверяет, является ли заказ отмененным.
+ */
+export function isOrderCancelled(status: string | undefined | null): boolean {
+  if (!status) return false;
+  const normalized = String(status).toLowerCase().trim();
+  return ['отменен', 'отмена', 'удален', 'удалено', 'отклонен'].includes(normalized);
 }

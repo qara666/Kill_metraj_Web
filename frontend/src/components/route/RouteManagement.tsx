@@ -33,6 +33,7 @@ import { CourierTimeWindows } from './CourierTimeWindows'
 import { GridOrderCard } from './GridOrderCard'
 import { type TimeWindowGroup, groupOrdersByTimeWindow, formatTimeLabel } from '../../utils/route/routeCalculationHelpers'
 import { isId0CourierName, normalizeCourierName } from '../../utils/data/courierName'
+import { CourierIdResolver } from '../../utils/data/courierIdMap'
 import { getReturnETA, getAccurateReturnETA, getCourierSpeed, enrichRoutesWithCoords } from '../../utils/routes/courierETA'
 import { calculateDistance } from '../../utils/geoUtils'
 import { isOrderCompleted, isOrderCancelled } from '../../utils/data/orderStatus'
@@ -299,16 +300,35 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       return {}
     }
 
-    const grouped: { [courier: string]: Order[] } = {}
+    // v5.134: Build ID→name map first so ObjectId courier refs are resolved to names
+    const courierIdToNameMap = new Map<string, string>();
+    (excelData?.couriers || []).forEach((c: any) => {
+      const cId = String(c._id || c.id || '');
+      const cName = normalizeCourierName(String(c.name || ''));
+      if (cId && cName) courierIdToNameMap.set(cId, cName);
+    });
 
+    const grouped: { [courier: string]: Order[] } = {}
 
     excelData.orders.forEach((order: any) => {
       if (order.address) {
         // Advanced courier name extraction
-        const c = order?.courier;
+        let c = order?.courier;
+
+        // v5.134: Resolve ObjectId (24-char hex) to courier name
+        if (typeof c === 'string' && /^[0-9a-f]{24}$/i.test(c)) {
+          const resolvedName = courierIdToNameMap.get(c) || CourierIdResolver.resolve(c);
+          if (resolvedName) c = resolvedName;
+        }
+
         const rawName = (typeof c === 'object' && c !== null)
           ? (c.name || c._id || c.id || '')
           : (typeof c === 'string' ? c : '');
+
+        // If still an ObjectId after resolution — skip, don't pollute the map
+        if (typeof rawName === 'string' && /^[0-9a-f]{24}$/i.test(rawName)) {
+          return;
+        }
 
         const courierName = normalizeCourierName(rawName || order.courierName) || 'Не назначено'
 
@@ -373,8 +393,75 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       }
     })
 
+    // v5.135: CRITICAL — Supplement courierOrders from route data.
+    // Problem: FastOperator API often sends orders with courier=null.
+    // These orders end up in "Не назначено" even though routes are created.
+    // Solution: For each route, find its orders in excelData.orders (for fresh status)
+    // and add them to the correct courier's group if not already there.
+    const orderByStableId = new Map<string, any>();
+    excelData.orders.forEach((order: any) => {
+      orderByStableId.set(getStableOrderId(order), order);
+    });
+
+    (excelData?.routes || []).forEach((route: any) => {
+      if (!route?.orders?.length) return;
+
+      // v5.132: Resolve courier name from ID if needed
+      const rawCourier = route.courier || route.courierId || route.courierName || '';
+      const routeCourierName = CourierIdResolver.resolve(rawCourier) || normalizeCourierName(rawCourier);
+      
+      if (!routeCourierName || isId0CourierName(routeCourierName) || routeCourierName.toLowerCase() === 'по') return;
+
+      if (!grouped[routeCourierName]) grouped[routeCourierName] = [];
+
+      route.orders.forEach((routeOrder: any) => {
+        const sid = getStableOrderId(routeOrder);
+        if (!sid) return;
+
+        // Already in this courier's group — skip duplication
+        if (grouped[routeCourierName].some((o: any) => o.id === sid)) return;
+
+        // Prefer the fresh version of the order from excelData.orders (has latest status from API)
+        const freshOrder = orderByStableId.get(sid);
+        const orderSource = freshOrder || routeOrder;
+
+        const lat = orderSource.lat || orderSource.coords?.lat;
+        const lng = orderSource.lng || orderSource.coords?.lng;
+
+        grouped[routeCourierName].push({
+          id: sid,
+          orderNumber: orderSource.orderNumber || routeOrder.orderNumber || 'N/A',
+          address: orderSource.address || routeOrder.address || '',
+          courier: routeCourierName,          // corrected courier name from route
+          amount: orderSource.amount || 0,
+          phone: orderSource.phone || '',
+          customerName: orderSource.customerName || '',
+          plannedTime: orderSource.plannedTime || '',
+          paymentMethod: orderSource.paymentMethod || '',
+          manualGroupId: orderSource.manualGroupId,
+          deadlineAt: orderSource.deadlineAt,
+          handoverAt: orderSource.handoverAt,
+          status: orderSource.status,
+          statusTimings: orderSource.statusTimings,
+          kmlZone: orderSource.kmlZone || orderSource.deliveryZone,
+          kmlHub: orderSource.kmlHub,
+          lat,
+          lng,
+          coords: orderSource.coords || (lat && lng ? { lat, lng } : undefined),
+          locationType: orderSource.locationType,
+          deliveryZone: orderSource.deliveryZone,
+          streetNumberMatched: orderSource.streetNumberMatched,
+          raw: orderSource,
+          isSelected: false,
+        });
+      });
+    });
+
+    const keys = Object.keys(grouped);
+    console.log(`[CourierOrders] Built ${keys.length} courier groups. Keys: ${keys.slice(0, 10).join(' | ')}`);
+
     return grouped
-  }, [excelData?.orders])
+  }, [excelData?.orders, excelData?.couriers, excelData?.routes])
 
   // Precompute set of orders in routes for O(1) lookups
   const ordersInRoutesSet = useMemo(() => {
@@ -390,6 +477,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
   // Функция для получения метрик курьера (Optimized with Memoization)
   const courierMetricsMap = useMemo(() => {
+    // Build lookup: normalized-uppercase-name -> orders[]
+    // Keys in courierOrders are UPPERCASE (normalizeCourierName output)
+    // We build a secondary index: normalized-uppercase -> orders
+    const nameToOrders = new Map<string, any[]>();
+    Object.entries(courierOrders).forEach(([k, v]) => {
+      nameToOrders.set(normalizeCourierName(k), v);
+    });
+
     const map = new Map<string, { available: number; delivered: number; total: number; activeInRoute: number; unassigned: number }>()
 
     const allCouriers = new Set([
@@ -399,7 +494,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
     allCouriers.forEach(name => {
       if (!name) return
-      const orders = courierOrders[name] || []
+      const normUpperKey = normalizeCourierName(name); // UPPERCASE normalized
+      // Skip if already processed this courier (dedup)
+      if (map.has(normUpperKey)) return;
+
+      // v5.134: Look up via UPPERCASE key (matches courierOrders keys)
+      const orders = nameToOrders.get(normUpperKey) || []
+
       let available = 0
       let delivered = 0
       let activeInRoute = 0
@@ -424,12 +525,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         }
       }
 
-      map.set(name, { 
+      map.set(normUpperKey, { 
         available, 
         delivered, 
         // v5.114: Use filtered total for actionable orders ONLY if it's the unassigned pool
         // to keep the badge accurate, otherwise use physical total.
-        total: (name === 'Не назначено' || isId0CourierName(name)) ? available : orders.length, 
+        total: (normUpperKey === 'НЕ НАЗНАЧЕНО' || isId0CourierName(name)) ? available : orders.length, 
         activeInRoute,
         unassigned: available
       })
@@ -439,7 +540,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
   }, [courierOrders, ordersInRoutesSet, excelData?.couriers])
 
   const getCourierMetrics = useCallback((courierName: string) => {
-    return courierMetricsMap.get(courierName) || { available: 0, delivered: 0, total: 0, activeInRoute: 0, unassigned: 0 }
+    // v5.134: Always look up by UPPERCASE-normalized key to match courierMetricsMap storage
+    const normKey = normalizeCourierName(courierName);
+    return courierMetricsMap.get(normKey) || { available: 0, delivered: 0, total: 0, activeInRoute: 0, unassigned: 0 }
   }, [courierMetricsMap])
 
   // Aggregate Fleet Stats
@@ -609,7 +712,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         const route = rawRoute ? (enrichedById.get(rawRoute.id) ?? rawRoute) : (enrichedById.get(virtualId))
 
         // v42.1: Tracking calculated vs total
-        const routeOrdersCount = route?.orders?.length || 0;
+        const routeOrdersCount = (excelData?.routes || [])
+          .filter((r: any) => normalizeCourierName(r.courier) === name)
+          .reduce((sum: number, r: any) => sum + (r.orders?.length || 0), 0);
         
         const m = courierMetricsMap.get(name) || { available: 0, delivered: 0, total: 0 }
         const remaining = m.total - m.delivered;
@@ -658,9 +763,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       const m = courierMetricsMap.get(name) || { available: 0, delivered: 0, total: 0 }
       const remaining = m.total - m.delivered;
       
-      // Get calculated count (orders in routes)
-      const routeIdx = (excelData?.routes || []).findIndex((r: any) => normalizeCourierName(r.courier) === name);
-      const calculatedCount = routeIdx !== -1 ? (excelData!.routes[routeIdx].orders?.length || 0) : 0;
+      // Get calculated count (orders in routes) across ALL routes for this courier
+      const calculatedCount = (excelData?.routes || [])
+        .filter((r: any) => normalizeCourierName(r.courier) === name)
+        .reduce((sum: number, r: any) => sum + (r.orders?.length || 0), 0);
 
       // Refined: "In Transit" if started but > 2 left, or haven't started yet
       if (m.total > 0 && (m.delivered === 0 || (m.delivered > 0 && remaining > 2))) {
@@ -802,7 +908,17 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     }
 
     // 1. Collect orders for selected courier
-    const selectedCourierRawOrders = courierOrders[selectedCourier] || []
+    // v5.134: courierOrders keys are UPPERCASE-normalized, selectedCourier may be any case
+    const normSelected = normalizeCourierName(selectedCourier);
+    let selectedCourierRawOrders: Order[] = courierOrders[normSelected] || [];
+
+    // Fallback: if selected is an ObjectId, resolve it to a name and try again
+    if (selectedCourierRawOrders.length === 0 && /^[0-9a-f]{24}$/i.test(String(selectedCourier))) {
+        const resolved = CourierIdResolver.resolve(String(selectedCourier));
+        if (resolved) {
+            selectedCourierRawOrders = courierOrders[normalizeCourierName(resolved)] || [];
+        }
+    }
 
     // 2. Aggregate unassigned orders ONLY if viewing the unassigned pool
     const unassignedOrders: Order[] = []

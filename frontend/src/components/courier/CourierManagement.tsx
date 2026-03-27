@@ -18,8 +18,10 @@ import { useRouteGeocoding } from '../../hooks/useRouteGeocoding'
 import { Route } from '../../types/route'
 import { toast } from 'react-hot-toast'
 import { Tooltip } from '../shared/Tooltip'
-import { normalizeCourierName } from '../../utils/data/courierName'
+import { normalizeCourierName, getCourierName } from '../../utils/data/courierName'
 import { isOrderCancelled } from '../../utils/data/orderStatus'
+import { getStableOrderId } from '../../utils/data/orderId'
+import { CourierIdResolver } from '../../utils/data/courierIdMap'
 // Unused export functions removed
 import { useKmlData } from '../../hooks/useKmlData'
 import { cleanAddress } from '../../utils/data/addressUtils'
@@ -210,14 +212,14 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
   // Оптимизированный расчет статистики всех курьеров (O(N + M))
   // --- Helpers ---
 
-  const getCourierName = useCallback((c: any): string => {
-    if (!c) return ''
-    if (typeof c === 'string') return c
-    if (typeof c === 'object') return (c.name || c._id || c.id || '')
-    return String(c)
-  }, [])
-
   const courierStatsMap = useMemo(() => {
+    const courierIdToNameMap = new Map<string, string>();
+    (excelData?.couriers || []).forEach((c: any) => {
+      const cId = String(c._id || c.id || '');
+      const cName = normalizeCourierName(String(c.name || ''));
+      if (cId && cName) courierIdToNameMap.set(cId, cName);
+    });
+
     const stats = new Map<string, {
       ordersInRoutes: number,
       totalOrders: number,
@@ -258,7 +260,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
         if (!originalCourier || originalCourier === 'Не назначено' || originalCourier === 'ID:0') return
 
         const current = ensureEntry(originalCourier)
-        const oid = String(o.id || o.orderNumber)
+        const oid = getStableOrderId(o)
 
         // Track cancelled separately — they never count toward totals
         if (isOrderCancelled(o.status)) {
@@ -299,8 +301,11 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
     // ──────────────────────────────────────────────────────────────────────
     if (contextData?.routes && Array.isArray(contextData.routes)) {
       contextData.routes.forEach((route: any) => {
-        const routeCourier = normalizeCourierName(getCourierName(route.courier))
-        if (!routeCourier) return
+        // v5.132: Resolve courier name from ID if needed
+        const rawCourier = getCourierName(route.courier);
+        let routeCourier = courierIdToNameMap.get(rawCourier) || CourierIdResolver.resolve(rawCourier) || normalizeCourierName(rawCourier);
+        
+        if (!routeCourier || routeCourier === 'Не назначено') return;
 
         const current = ensureEntry(routeCourier)
         const routeOrders = route.orders || []
@@ -308,7 +313,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
         let lastActiveAddr = ""
 
         routeOrders.forEach((o: any) => {
-          const oid = String(o.id || o.orderNumber || o._id || `gen_${Math.random()}`)
+          const oid = getStableOrderId(o)
 
           // SKIP: cancelled orders don't count as route stops
           if (isOrderCancelled(o.status)) {

@@ -152,7 +152,7 @@ export const localStorageUtils = {
         defaultEndLng: localStorage.getItem('km_default_end_lng') ? parseFloat(localStorage.getItem('km_default_end_lng')!) : (parsedSettings.defaultEndLng || null),
         kmlData: localStorage.getItem('km_kml_data') ? JSON.parse(localStorage.getItem('km_kml_data')!) : (parsedSettings.kmlData || null),
         kmlSourceUrl: localStorage.getItem('km_kml_source_url') || parsedSettings.kmlSourceUrl || '',
-        routingProvider: localStorage.getItem('km_routing_provider') || parsedSettings.routingProvider || 'yapiko_osrm',
+        routingProvider: localStorage.getItem('km_routing_provider') || parsedSettings.routingProvider || 'turbo_instant',
         vehicleType: (localStorage.getItem('km_vehicle_type') as any) || parsedSettings.vehicleType || 'auto',
         geocodingProvider: localStorage.getItem('km_geocoding_provider') || parsedSettings.geocodingProvider || 'nominatim',
         fastopertorApiKey: localStorage.getItem('km_fastopertor_api_key') || parsedSettings.fastopertorApiKey || '',
@@ -164,7 +164,8 @@ export const localStorageUtils = {
         selectedHubs: localStorage.getItem('km_selected_hubs') ? JSON.parse(localStorage.getItem('km_selected_hubs')!) : (parsedSettings.selectedHubs || []),
         selectedZones: localStorage.getItem('km_selected_zones') ? JSON.parse(localStorage.getItem('km_selected_zones')!) : (parsedSettings.selectedZones || []),
         distanceMatrixEnabled: localStorage.getItem('km_distance_matrix_enabled') !== 'false',
-        distanceMatrixProvider: localStorage.getItem('km_distance_matrix_provider') || parsedSettings.distanceMatrixProvider || 'yapiko_osrm'
+        distanceMatrixProvider: localStorage.getItem('km_distance_matrix_provider') || parsedSettings.distanceMatrixProvider || 'yapiko_osrm',
+        yapikoOsrmUrl: localStorage.getItem('km_yapiko_osrm_url') || parsedSettings.yapikoOsrmUrl || ''
       }
     } catch (error) {
       console.error('Error reading settings:', error)
@@ -187,7 +188,7 @@ export const localStorageUtils = {
         autoSyncKml: localStorage.getItem('km_auto_sync_kml') === 'true',
         fastopertorApiKey: localStorage.getItem('km_fastopertor_api_key') || '',
         fastopertorDepartmentId: localStorage.getItem('km_fastopertor_department_id') || '',
-        routingProvider: localStorage.getItem('km_routing_provider') || 'yapiko_osrm',
+        routingProvider: localStorage.getItem('km_routing_provider') || 'turbo_instant',
         vehicleType: (localStorage.getItem('km_vehicle_type') as any) || 'auto',
         geocodingProvider: localStorage.getItem('km_geocoding_provider') || 'nominatim',
         generouteApiKey: localStorage.getItem('km_generoute_api_key') || '',
@@ -197,7 +198,8 @@ export const localStorageUtils = {
         anomalyMaxTotalDistanceKm: localStorage.getItem('km_anomaly_max_total_distance') ? parseFloat(localStorage.getItem('km_anomaly_max_total_distance')!) : 35,
         anomalyMaxAvgPerOrderKm: localStorage.getItem('km_anomaly_max_avg_per_order') ? parseFloat(localStorage.getItem('km_anomaly_max_avg_per_order')!) : 25,
         distanceMatrixEnabled: localStorage.getItem('km_distance_matrix_enabled') !== 'false',
-        distanceMatrixProvider: localStorage.getItem('km_distance_matrix_provider') || 'yapiko_osrm'
+        distanceMatrixProvider: localStorage.getItem('km_distance_matrix_provider') || 'yapiko_osrm',
+        yapikoOsrmUrl: localStorage.getItem('km_yapiko_osrm_url') || ''
       }
     }
   },
@@ -266,6 +268,9 @@ export const localStorageUtils = {
       }
       if (settings.geoapifyApiKey !== undefined) {
         localStorage.setItem('km_geoapify_api_key', settings.geoapifyApiKey)
+      }
+      if (settings.yapikoOsrmUrl !== undefined) {
+        localStorage.setItem('km_yapiko_osrm_url', settings.yapikoOsrmUrl)
       }
       if (settings.anomalyFilterEnabled !== undefined) {
         localStorage.setItem('km_anomaly_filter_enabled', settings.anomalyFilterEnabled ? 'true' : 'false')
@@ -349,7 +354,8 @@ export const localStorageUtils = {
       'km_map_style',
       'km_max_critical_route_distance_km',
       'km_fastopertor_api_key',
-      'km_fastopertor_department_id'
+      'km_fastopertor_department_id',
+      'km_yapiko_osrm_url'
     ]
     keysToRemove.forEach(key => localStorage.removeItem(key))
 

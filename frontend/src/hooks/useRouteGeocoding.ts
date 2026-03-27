@@ -690,7 +690,7 @@ export const useRouteGeocoding = ({
             //   - Immediately use order.coords (skip geocoding chain entirely)
             //   - Race all 3 routing engines in parallel — take the first valid result
             //   - Skip ALL anomaly checks, per-leg disambiguation, etc.
-            const routingProvider = settings.routingProvider || 'valhalla'
+            const routingProvider = settings.routingProvider || 'turbo_instant'
             
             if (routingProvider === 'turbo_instant') {
                 // Super-fast path: use raw cached coords directly
