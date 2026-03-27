@@ -320,7 +320,7 @@ export const AdminPresets: React.FC = () => {
                                     <div className="space-y-2">
                                         <label className="text-xs font-semibold text-gray-500 tracking-wider">Основной движок (Маршруты)</label>
                                         <select
-                                            value={settings.routingProvider || 'yapiko_osrm'}
+                                            value={settings.routingProvider || 'turbo_instant'}
                                             onChange={(e) => isAdmin && setSettings({ ...settings, routingProvider: e.target.value })}
                                             className="input w-full"
                                             disabled={!isAdmin}

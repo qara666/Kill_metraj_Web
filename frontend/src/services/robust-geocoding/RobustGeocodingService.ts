@@ -1,23 +1,23 @@
 /**
- * RobustGeocodingService — v2.0 (Free-First Architecture)
+ * RobustGeocodingService — v3.0 (Direct-First Architecture)
  *
- * Production-grade geocoding with:
- *  ✔ FREE-FIRST Priority (Photon → Nominatim → Geoapify → Google)
+ * TWO clear modes:
+ *  🟢 TURBO (fast):  Direct address → Photon + Nominatim in parallel. No variants. No filters.
+ *                     Used for first-pass batch geocoding. Target: <2s per address.
+ *  🔵 FULL (deep):   VariantExpander + all providers + fallbacks.
+ *                     Used ONLY for refinement pass (addresses that need clarification).
+ *
  *  ✔ KML zone validation & prioritisation
- *  ✔ Technical zone rejection (автор-розвантаження)
- *  ✔ Street rename expansion (both directions)
  *  ✔ ROOFTOP / RANGE_INTERPOLATED priority
  *  ✔ House number exact-match bonus
- *  ✔ Proximity hint scoring
  *  ✔ In-flight deduplication (same address → 1 call)
- *  ✔ L1 / L2 / L3 cache via googleApiCache
+ *  ✔ L1 / L2 / L3 cache (memory + localStorage)
  */
 
 import { PhotonService } from '../photonService'
 import { NominatimService } from '../nominatimService'
 import { localStorageUtils } from '../../utils/ui/localStorage'
-import { cleanAddressForSearch, slavicNormalize, extractParentheticalStreetName } from '../../utils/address/addressNormalization'
-import { ALL_STREET_RENAMES as STREET_RENAMES } from '../../utils/data/streetRenamesData'
+import { cleanAddressForSearch, slavicNormalize } from '../../utils/address/addressNormalization'
 import type {
   KmlZoneContext,
   RobustGeocodeOptions,
@@ -68,7 +68,8 @@ function normaliseRaw(r: any): RawGeoCandidate {
         lat: typeof locRaw.lat === 'function' ? locRaw.lat() : Number(locRaw.lat),
         lng: typeof locRaw.lng === 'function' ? locRaw.lng() : Number(locRaw.lng),
       },
-      location_type: r.geometry.location_type || 'APPROXIMATE',
+      location_type: r.geometry.location_type ||
+        (components.some((c: any) => c.types?.includes('street_number')) ? 'RANGE_INTERPOLATED' : 'APPROXIMATE'),
     },
     address_components: components,
     place_id: r.place_id || r.osm_id,
@@ -91,26 +92,19 @@ export class RobustGeocodingService {
   private ctx: KmlZoneContext = EMPTY_CONTEXT
   private cityBias = 'Київ'
   
-  // v36.8: Quantum Persistent Cache Key
-  private readonly PERSISTENT_CACHE_KEY = 'km_quantum_cache_v36';
-  
-  // v35.9.37: GEODASH - L1 Session Memory Cache
+  private readonly PERSISTENT_CACHE_KEY = 'km_geocache_v40';
   private l1Cache = new Map<string, RobustGeocodeResult>();
 
-  // v5.106: Provider cool-down map (ProviderName -> ExpiryTimestamp)
+  // Provider cooldown (ProviderName -> ExpiryTimestamp)
   private disabledProviders = new Map<string, number>();
-
-  // v5.117: Per-provider last request timestamp for rate limiting
   private providerLastRequest = new Map<string, number>();
-  // Minimum delay between requests to the same free provider (ms)
   private static readonly PROVIDER_MIN_DELAY: Record<string, number> = {
-    Nominatim: 1100, // Nominatim ToS: max 1 req/sec
-    Photon: 300,     // Photon: relatively lenient
+    Nominatim: 1100,
+    Photon: 200,
   };
 
-  // v36.8 (revised): Lower concurrency — free providers can't handle 20 concurrent requests
   private activeRequestCount = 0;
-  private static readonly MAX_CONCURRENT_REQUESTS = 3; // safe for Nominatim (1 req/sec)
+  private static readonly MAX_CONCURRENT_REQUESTS = 8;
   private requestQueue: Array<() => void> = [];
 
   static _slavicNormalize(s: string): string {
@@ -123,7 +117,6 @@ export class RobustGeocodingService {
     if (typeof window !== 'undefined') {
       window.addEventListener('km-settings-updated', () => {
         this.autoSync()
-        // Only clear L1 memory cache. Don't wipe persistent cache on every presetSync event.
         this.l1Cache.clear()
       })
     }
@@ -141,19 +134,18 @@ export class RobustGeocodingService {
         console.log(`[Кэш] Загружено ${this.l1Cache.size} адресов из локального хранилища.`);
       }
     } catch (e) {
-      console.warn('[Quantum Cache] Ошибка загрузки кэша:', e);
+      console.warn('[Cache] Ошибка загрузки кэша:', e);
     }
   }
 
   private savePersistentCache(): void {
     if (typeof window === 'undefined') return;
     try {
-      // Keep only last 500 entries to avoid localStorage bloat
-      const entries = Array.from(this.l1Cache.entries()).slice(-500);
+      const entries = Array.from(this.l1Cache.entries()).slice(-600);
       const data = Object.fromEntries(entries);
       localStorage.setItem(this.PERSISTENT_CACHE_KEY, JSON.stringify(data));
     } catch (e) {
-      console.warn('[Quantum Cache] Ошибка сохранения кэша:', e);
+      console.warn('[Cache] Ошибка сохранения кэша:', e);
     }
   }
 
@@ -162,15 +154,12 @@ export class RobustGeocodingService {
     localStorage.removeItem(this.PERSISTENT_CACHE_KEY);
   }
 
-  // v5.117: Semaphore + per-provider rate-limit delay
   private async _withSemaphore<T>(fn: () => Promise<T>, providerName?: string): Promise<T> {
-      // Global concurrency gate
       while (this.activeRequestCount >= RobustGeocodingService.MAX_CONCURRENT_REQUESTS) {
           await new Promise<void>(resolve => this.requestQueue.push(resolve));
       }
       this.activeRequestCount++;
 
-      // Per-provider minimum delay
       if (providerName) {
           const minDelay = RobustGeocodingService.PROVIDER_MIN_DELAY[providerName] ?? 0;
           if (minDelay > 0) {
@@ -210,8 +199,6 @@ export class RobustGeocodingService {
         }
         clearSpatialCache()
       }
-      const CACHE_CLEAN_KEY = 'km_cache_v31_cleared'
-      localStorage.setItem(CACHE_CLEAN_KEY, 'true')
     } catch (e) {
       console.warn('[Геокодинг] Ошибка синхронизации настроек:', e)
     }
@@ -232,111 +219,151 @@ export class RobustGeocodingService {
     return this.ctx
   }
 
-  private async _evaluateProvidersEarlyExit(
-    query: string, 
-    city: string | null, 
-    scoringOpts: any, 
+  // ─── TURBO: Direct query to a single provider, no filtering ──────────────────
+  private async _queryProvider(
+    name: string,
+    service: any,
+    query: string,
+    city: string,
+    scoringOpts: any,
     expectedHouse: string | null,
-    turbo: boolean = false
-  ): Promise<{scored: ScoredCandidate[], perfect?: ScoredCandidate}> {
-      
-      const results: ScoredCandidate[] = [];
-      const requestedStreets: string[] = scoringOpts.requestedStreetNames || [];
+    timeoutMs: number
+  ): Promise<{ scored: ScoredCandidate[]; perfect?: ScoredCandidate }> {
+    if ((service as any)._disabled) return { scored: [] };
+    
+    const disabledUntil = this.disabledProviders.get(name);
+    if (disabledUntil && Date.now() < disabledUntil) return { scored: [] };
 
-      // v37: Turbo Timeouts (1.5s/2.5s) vs Standard (3s/5s)
-      const pTimeout = turbo ? 1500 : 3000;
-      const nTimeout = turbo ? 2500 : 5000;
-      
-      const tryProvider = async (name: string, service: any, timeoutMs: number) => {
-          if ((service as any)._disabled) return null;
-          
-          // v5.106: Cool-down check
-          const disabledUntil = this.disabledProviders.get(name);
-          if (disabledUntil && Date.now() < disabledUntil) {
-              return null;
-          }
-
-          try {
-              const raw = await Promise.race([
-                  this._withSemaphore(() => service.geocode(query, city || undefined), name),
-                  new Promise<any[]>((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs))
-              ]);
-
-              if (Array.isArray(raw) && raw.length > 0) {
-                  const norm = raw.map((v: any) => normaliseRaw({...v, _source: name.toLowerCase()}));
-                  const filtered = requestedStreets.length > 0
-                    ? norm.filter((c: any) => {
-                        const addrN = RobustGeocodingService._slavicNormalize(c.formatted_address || '');
-                        return requestedStreets.some(root => addrN.includes(RobustGeocodingService._slavicNormalize(root)));
-                      })
-                    : norm;
-
-                  const scored = filtered.map((c: any) => scoreCandidate(c, scoringOpts));
-                  results.push(...scored);
-                  
-                  const p = scored.find((c: any) => isPerfectHit(c, expectedHouse, requestedStreets));
-                  // v37: In Turbo mode, any match inside zone with > 10000 points is "perfect enough"
-                  const isGoodEnough = turbo && !p && scored.find((c: any) => c.isInsideZone && c.score > 10000);
-                  
-                  if (p || isGoodEnough) {
-                      const hit = p || isGoodEnough;
-                      if (hit) {
-                        console.log(`[${name}] ${turbo ? 'УСКОРЕННЫЙ ' : ''}УСПЕХ: ${hit.score} баллов.`);
-                        return hit;
-                      }
-                  }
-                  return null;
-              }
-          } catch (e: any) {
-              const is429 = e.message?.includes('429') || e.status === 429;
-              if (is429) {
-                  console.warn(`[${name}] Rate Limited (429). Disabling for 2 minutes.`);
-                  this.disabledProviders.set(name, Date.now() + 120000);
-              } else if (e.message !== 'TIMEOUT') {
-                  console.warn(`[${name}] Ошибка: ${e.message}`);
-              }
-
-              if (e.message?.includes('401') || e.status === 401) {
-                  (service as any)._disabled = true;
-              }
-          }
-          return null;
-      };
-
-      // v37: Parallel race with turbo logic
-      const [photonPerfect, nominatimPerfect] = await Promise.all([
-          tryProvider('Photon', PhotonService, pTimeout),
-          tryProvider('Nominatim', NominatimService, nTimeout)
+    try {
+      const raw = await Promise.race([
+        this._withSemaphore(() => service.geocode(query, city || undefined), name),
+        new Promise<any[]>((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs))
       ]);
 
-      const perfect = photonPerfect || nominatimPerfect;
-      if (perfect) return { scored: results, perfect };
+      if (!Array.isArray(raw) || raw.length === 0) return { scored: [] };
 
-      // v36.4: Fast-Match Short-circuit
-      const strongHit = results.find(r => r.score > 2500 && r.isInsideZone);
-      if (strongHit) return { scored: results, perfect: strongHit };
-
-      // v5.106: Allow Premium fallbacks in Turbo mode if no strong hit found and keys exist
-      const settings = localStorageUtils.getAllSettings();
-      const hasPremiumKeys = !!(settings.geoapifyApiKey || settings.googleMapsApiKey);
-
-      if (turbo && !hasPremiumKeys) return { scored: results };
-
-      // 3. Geoapify (Premium Fallback)
-      if (settings.geoapifyApiKey) {
-          try {
-              const { GeoapifyService } = await import('../geoapifyService');
-              const geoapifyPerfect = await tryProvider('Geoapify', GeoapifyService, turbo ? 2000 : 3000);
-              if (geoapifyPerfect) return { scored: results, perfect: geoapifyPerfect };
-          } catch {}
+      const norm = raw.map((v: any) => normaliseRaw({ ...v, _source: name.toLowerCase() }));
+      const scored = norm.map((c: any) => scoreCandidate(c, scoringOpts));
+      const perfect = scored.find((c: any) => isPerfectHit(c, expectedHouse, []));
+      
+      if (perfect) {
+        console.log(`[${name}] ✅ Точное попадание: "${query}" → ${perfect.score} баллов`);
+        return { scored, perfect };
       }
+      return { scored };
+    } catch (e: any) {
+      if (e.message === 'TIMEOUT') {
+        // silent timeout
+      } else if (e.status === 429 || e.message?.includes('429')) {
+        console.warn(`[${name}] Rate Limited. Пауза 2 мин.`);
+        this.disabledProviders.set(name, Date.now() + 120000);
+      } else if (e.status === 401 || e.message?.includes('401')) {
+        (service as any)._disabled = true;
+      } else {
+        console.warn(`[${name}] Ошибка: ${e.message}`);
+      }
+      return { scored: [] };
+    }
+  }
 
-      return { scored: results };
+  // ─── TURBO geocode: Fast, direct, no VariantExpander ─────────────────────────
+  private async _geocodeTurbo(
+    cleanQuery: string,
+    city: string,
+    scoringOpts: any,
+    expectedHouse: string | null,
+  ): Promise<{ scored: ScoredCandidate[]; perfect?: ScoredCandidate }> {
+    // Run Photon + Nominatim in strict parallel
+    const [photonResult, nominatimResult] = await Promise.all([
+      this._queryProvider('Photon', PhotonService, cleanQuery, city, scoringOpts, expectedHouse, 2000),
+      this._queryProvider('Nominatim', NominatimService, cleanQuery, city, scoringOpts, expectedHouse, 3500),
+    ]);
+
+    const allScored = [...photonResult.scored, ...nominatimResult.scored];
+    const perfect = photonResult.perfect || nominatimResult.perfect;
+    
+    if (perfect) return { scored: allScored, perfect };
+    
+    // Accept best candidate if it's not a total catastrophe (no KML context = everything valid)
+    const best = pickBest(dedupeByCoord(allScored));
+    if (best && best.score > -100000) {
+      return { scored: allScored, perfect: best };
+    }
+
+    return { scored: allScored };
+
+  }
+
+  // ─── FULL geocode: VariantExpander + all providers ────────────────────────────
+  private async _geocodeFull(
+    rawAddress: string,
+    cleanQuery: string,
+    city: string,
+    scoringOpts: any,
+    expectedHouse: string | null,
+  ): Promise<{ scored: ScoredCandidate[]; perfect?: ScoredCandidate }> {
+    const allCandidates: ScoredCandidate[] = [];
+    const settings = localStorageUtils.getAllSettings();
+
+    // Generate variants via VariantExpander
+    const { primary, secondary } = expandVariants(rawAddress, city);
+    const variants = [...primary.slice(0, 5), ...secondary.slice(0, 3)];
+
+    // Run all variants in parallel against both free providers
+    const variantPromises = variants.map(async (variant) => {
+      const [ph, nm] = await Promise.all([
+        this._queryProvider('Photon', PhotonService, variant, city, scoringOpts, expectedHouse, 3000),
+        this._queryProvider('Nominatim', NominatimService, variant, city, scoringOpts, expectedHouse, 5000),
+      ]);
+      return [...ph.scored, ...nm.scored];
+    });
+
+    const variantResults = await Promise.allSettled(variantPromises);
+    for (const r of variantResults) {
+      if (r.status === 'fulfilled') allCandidates.push(...r.value);
+    }
+
+    // Check for early perfect hit
+    let perfect = pickBest(dedupeByCoord(allCandidates));
+    if (perfect && (perfect.isInsideZone || perfect.score > 5000)) {
+      return { scored: allCandidates, perfect };
+    }
+
+    // Geoapify fallback
+    if (settings.geoapifyApiKey) {
+      try {
+        const { GeoapifyService } = await import('../geoapifyService');
+        const geoRaw = await Promise.race([
+          GeoapifyService.geocode(cleanQuery, city),
+          new Promise<any[]>((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 4000))
+        ]);
+        if (Array.isArray(geoRaw) && geoRaw.length > 0) {
+          const geoScored = geoRaw.map((c: any) => {
+            const s = scoreCandidate(normaliseRaw(c), scoringOpts);
+            return s;
+          });
+          allCandidates.push(...geoScored);
+        }
+      } catch {}
+    }
+
+    // Street-only fallback (if house number is unknown to OSM)
+    if (expectedHouse) {
+      const streetOnly = cleanQuery.replace(/\b\d+[а-яієґa-z]*\b/gi, '').trim();
+      if (streetOnly && streetOnly !== cleanQuery) {
+        const [ph2] = await Promise.all([
+          this._queryProvider('Photon', PhotonService, `${streetOnly}, ${city}`, city, scoringOpts, null, 3000),
+        ]);
+        allCandidates.push(...ph2.scored.map(s => { s.score -= 3000; return s; }));
+      }
+    }
+
+    perfect = pickBest(dedupeByCoord(allCandidates));
+    return { scored: allCandidates, perfect: perfect || undefined };
   }
 
   private _parseAddressGeo(geoStr: string): { lat: number; lng: number; address?: string; city?: string } | null {
     try {
-      // Robust regex for Lat="...", Long="...", AddressStr="...", CityName="..."
       const latMatch = geoStr.match(/Lat=["']?([\d.]+)["']?/i);
       const lngMatch = geoStr.match(/Long=["']?([\d.]+)["']?/i);
       const addrMatch = geoStr.match(/AddressStr=["']?([^"']+)["']?/i);
@@ -361,39 +388,31 @@ export class RobustGeocodingService {
     options: RobustGeocodeOptions = {}
   ): Promise<RobustGeocodeResult> {
     const {
-      hintPoint,
       cityBias = this.cityBias,
-      maxVariants,
       turbo = false,
-      skipNormalization = false
     } = options
 
     const normalizedAddress = rawAddress.replace(/[ʼ`]/g, "'");
-    const cleanQuery = skipNormalization ? rawAddress : cleanAddressForSearch(normalizedAddress);
-    const expectedHouse = extractHouseNumber(rawAddress)
+    const cleanQuery = cleanAddressForSearch(normalizedAddress);
+    const expectedHouse = extractHouseNumber(rawAddress);
     
-    // v35.9.37: GEODASH - L1 Cache Lookup
-    const cacheKey = `${cleanQuery.toLowerCase()}:${cityBias.toLowerCase()}`
+    // L1 Cache Lookup
+    const cacheKey = `${cleanQuery.toLowerCase()}:${cityBias.toLowerCase()}:${turbo ? 'T' : 'F'}`;
     if (this.l1Cache.has(cacheKey)) {
         return { ...this.l1Cache.get(cacheKey)!, fromCache: true };
     }
 
-    // v37: addressGeo DIRECT BYPASS (Instant Mode)
-    // We check both the options string and the raw address for embedded coordinates
+    // addressGeo DIRECT BYPASS — use coordinates embedded in address string
     const geoStr = options.addressGeoStr || (rawAddress.includes('Lat=') ? rawAddress : null);
     if (geoStr) {
         const extracted = this._parseAddressGeo(geoStr);
         if (extracted && extracted.lat && extracted.lng) {
-            console.log(`[Геокодинг] ИСПОЛЬЗУЮТСЯ КООРДИНАТЫ ИЗ БД: "${rawAddress}"`);
-            
-            // v38.1: Perform zone lookup even for bypass to ensure badges show in UI
             const zoneInfo = this.findZoneForCoords(extracted.lat, extracted.lng);
-            
             const res: RobustGeocodeResult = {
                 best: {
                     lat: extracted.lat,
                     lng: extracted.lng,
-                    score: 2000000, 
+                    score: 2000000,
                     isInsideZone: true,
                     isTechnicalZone: false,
                     streetNumberMatched: true,
@@ -418,276 +437,74 @@ export class RobustGeocodingService {
         }
     }
 
-    // Zone Gravity
-    let gravityHint = hintPoint ?? null
+    // Zone Gravity Hint
+    let gravityHint = options.hintPoint ?? null;
     if (!gravityHint && options.expectedDeliveryZone && this.ctx.allPolygons.length > 0) {
-      const eZoneName = options.expectedDeliveryZone.toLowerCase().replace(/зона\s*/g, '').trim()
-      let targetPoly = this.ctx.allPolygons.find(p => p.name.toLowerCase().includes(eZoneName))
-      if (targetPoly && targetPoly.bounds) {
+      const eZoneName = options.expectedDeliveryZone.toLowerCase().replace(/зона\s*/g, '').trim();
+      const targetPoly = this.ctx.allPolygons.find(p => p.name.toLowerCase().includes(eZoneName));
+      if (targetPoly?.bounds) {
         try {
-          const b = targetPoly.bounds
-          let centerLat: number, centerLng: number
+          const b = targetPoly.bounds;
+          let centerLat: number, centerLng: number;
           if (typeof b.getCenter === 'function') {
-            const c = b.getCenter()
-            centerLat = Number(typeof c.lat === 'function' ? c.lat() : c.lat)
-            centerLng = Number(typeof c.lng === 'function' ? c.lng() : c.lng)
+            const c = b.getCenter();
+            centerLat = Number(typeof c.lat === 'function' ? c.lat() : c.lat);
+            centerLng = Number(typeof c.lng === 'function' ? c.lng() : c.lng);
           } else {
-            const s = Number(b.south ?? 0), n = Number(b.north ?? 0), w = Number(b.west ?? 0), e = Number(b.east ?? 0)
-            centerLat = (s + n) / 2
-            centerLng = (w + e) / 2
+            const s = Number(b.south ?? 0), n = Number(b.north ?? 0), w = Number(b.west ?? 0), e = Number(b.east ?? 0);
+            centerLat = (s + n) / 2;
+            centerLng = (w + e) / 2;
           }
-          gravityHint = { lat: centerLat, lng: centerLng }
+          gravityHint = { lat: centerLat, lng: centerLng };
         } catch {}
       }
     }
 
-    const baseScoringOpts = { ctx: this.ctx, expectedHouse, hintPoint: gravityHint, cityBias, expectedDeliveryZone: options.expectedDeliveryZone || null }
-    const allCandidates: ScoredCandidate[] = []
+    const scoringOpts = {
+      ctx: this.ctx,
+      expectedHouse,
+      hintPoint: gravityHint,
+      cityBias,
+      expectedDeliveryZone: options.expectedDeliveryZone || null,
+      // IMPORTANT: Do NOT pass requestedStreetNames at all in turbo mode.
+      // candidateScoring penalizes -400k when requestedStreetNames=[] but expectedHouse is set.
+      // By omitting it (undefined), scoring falls through to standard checks without penalty.
+    };
 
-    // LEVEL 1: Primary Variants
-    // v39: Increased to 5 variants (was 3) to ensure alt-name variants from parens are tried
-    const variantCount = turbo ? (maxVariants || 1) : (maxVariants || 5);
-    // PASS rawAddress to expandVariants so it can parse parens!
-    const { primary, all } = expandVariants(rawAddress, cityBias, options.forceCityBias)
-    const variantsToTry = primary.slice(0, variantCount);
-    
-    // v38.5 FIX: Allow the smartest variant generated by expandVariants instead of blindly forcing cleanQuery
-    const finalVariants = turbo ? [variantsToTry[0] || cleanQuery] : variantsToTry;
+    let allCandidates: ScoredCandidate[] = [];
+    let bestResult: ScoredCandidate | null = null;
 
-    // Extract base street names for validation
-    const requestedStreetNames = new Set<string>()
-    const searchStrings = turbo ? finalVariants : all;
-    
-    const forbidden = new Set([
-        'київ', 'киев', 'kyiv', 'kiev', 'україна', 'украина', 'ukraine', 'ua', 
-        'вул', 'вулиця', 'ул', 'улица', 'пров', 'провулок', 'переулок', 'просп', 'проспект', 'пр', 'пр-т',
-        'бул', 'бульвар', 'шосе', 'шоссе', 'набережна', 'набережная', 'пл', 'площа', 'площадь',
-        'street', 'st', 'avenue', 'ave', 'road', 'rd', 'square', 'sq', 'lane', 'ln',
-        'под', 'подъезд', 'під', 'підʼїзд', 'эт', 'этаж', 'кв', 'квартира', 'корп', 'корпус', 'секция', 'вход', 'вхід',
-        'києва', 'київа', 'киевская', 'київська', 'область', 'район', 'рн', 'village', 'town', 'city'
-    ])
-    
-    const searchCity = (cityBias || 'Київ').toLowerCase()
-    forbidden.add(searchCity)
-    if (searchCity === 'київ') forbidden.add('киев')
-    
-    searchStrings.forEach(v => {
-      const words = v.toLowerCase().replace(/[ʼ`]/g, "'").split(/[\s,.'"\-]+/)
-      words.forEach(w => {
-        const cleanW = w.replace(/[^a-z0-9а-яёіїєґ]/gi, '')
-        if (cleanW.length > 2 && !forbidden.has(cleanW) && !/^\d+$/.test(cleanW)) {
-          requestedStreetNames.add(cleanW)
-        }
-      })
-    })
-    
-    // v39: Also add the parenthetical alt name words explicitly to prevent filter rejection
-    // e.g. for "Йорданська (Гавро)" → add "гавро" so OSM results for "Гавро" aren't killed
-    const altStreetName = extractParentheticalStreetName(rawAddress);
-    if (altStreetName) {
-        altStreetName.toLowerCase().split(/[\s,.'"\-]+/).forEach(w => {
-            const cw = w.replace(/[^a-z0-9а-яёіїєґ]/gi, '');
-            if (cw.length > 2 && !forbidden.has(cw)) requestedStreetNames.add(cw);
-        });
-    }
-
-    const expandedRoots = new Set(requestedStreetNames)
-    if (!turbo) {
-        const allRenames = [...STREET_RENAMES]
-        requestedStreetNames.forEach(root => {
-            const rootN = slavicNormalize(root)
-            if (rootN.length < 3) return
-            allRenames.forEach(([oldN, newN]) => {
-                const oldWordsN = oldN.split(/[\s,.'"\-]+/).map(w => slavicNormalize(w))
-                const newWordsN = newN.split(/[\s,.'"\-]+/).map(w => slavicNormalize(w))
-                if (oldWordsN.includes(rootN) || newWordsN.includes(rootN)) {
-                    [...oldN.split(/[\s,.'"\-]+/), ...newN.split(/[\s,.'"\-]+/)].forEach(w => {
-                        const cw = w.toLowerCase().replace(/[^a-z0-9а-яёіїєґ]/gi, '')
-                        if (cw.length > 2 && !forbidden.has(cw)) expandedRoots.add(cw)
-                    })
-                }
-            })
-        })
-    }
-
-    const scoringOpts = { ...baseScoringOpts, requestedStreetNames: Array.from(expandedRoots) }
-    
-    // v35.9.40: AddressGeo Fast-Path Bypass
-    if (options.addressGeoStr) {
-        try {
-            const { scored, perfect } = await this._evaluateProvidersEarlyExit(options.addressGeoStr, cityBias, scoringOpts, expectedHouse, turbo);
-            if (perfect || scored.length > 0) {
-                const best = perfect || pickBest(scored);
-                if (best && best.score > -500000) {
-                    const res = { best, allCandidates: scored, resolvedVariant: options.addressGeoStr, fromCache: false };
-                    this.l1Cache.set(cacheKey, res);
-                    return res;
-                }
-            }
-        } catch {}
-    }
-
-    // v35.9.38: Short-Circuiting Parallel Sweeps
-    const result = await new Promise<{scored: ScoredCandidate[], perfect?: ScoredCandidate}>(resolve => {
-        let completed = 0;
-        const allScored: ScoredCandidate[] = [];
-        let found = false;
-
-        finalVariants.forEach(async (variant) => {
-            try {
-                const variantRes = await this._evaluateProvidersEarlyExit(variant, cityBias, scoringOpts, expectedHouse, turbo);
-                if (found) return;
-
-                allScored.push(...variantRes.scored);
-                if (variantRes.perfect) {
-                    found = true;
-                    resolve({ scored: allScored, perfect: variantRes.perfect });
-                    return;
-                }
-            } catch (e) {
-            } finally {
-                completed++;
-                if (completed === finalVariants.length && !found) {
-                    resolve({ scored: allScored });
-                }
-            }
-        });
-    });
-
-    const { scored: finalScored, perfect } = result;
-    allCandidates.push(...finalScored);
-
-    if (perfect) {
-        const res = { best: perfect, allCandidates, resolvedVariant: null, fromCache: false };
-        this.l1Cache.set(cacheKey, res);
-        return res;
-    }
-
-    // v38.6 Phase 6: Turbo Rename Fallback
-    // If turbo mode found no strong candidates, retry with rename / paren variants
-    // (high-priority secondary variants from expandVariants). This prevents permanent
-    // failures for addresses with renamed streets, even in fast/batch mode.
     if (turbo) {
-        const currentBest = pickBest(dedupeByCoord(allCandidates));
-        const needsFallback = !currentBest || currentBest.score < 2000;
-        
-        if (needsFallback) {
-            // Grab the rename-resolved secondary variants that were skipped in turbo
-            const { primary, secondary } = expandVariants(rawAddress, cityBias);
-            // Try up to 2 most promising fallback variants (rename-resolved ones)
-            const fallbackVariants = [...primary.slice(1), ...secondary].slice(0, 2);
-            
-            for (const variant of fallbackVariants) {
-                if (variant === finalVariants[0]) continue; // skip already tried
-                try {
-                    const { scored, perfect } = await this._evaluateProvidersEarlyExit(
-                        variant, cityBias, scoringOpts, expectedHouse, true
-                    );
-                    allCandidates.push(...scored);
-                    if (perfect) {
-                        console.log(`[Резервный Поиск] УСПЕХ: "${variant}" → ${perfect.score} баллов`);
-                        const res = { best: perfect, allCandidates: dedupeByCoord(allCandidates), resolvedVariant: variant, fromCache: false };
-                        this.l1Cache.set(cacheKey, res);
-                        return res;
-                    }
-                } catch {}
-            }
-        }
-        
-        const best = pickBest(dedupeByCoord(allCandidates));
-        const finalResult = { best, allCandidates: dedupeByCoord(allCandidates), resolvedVariant: null, fromCache: false };
-        if (best) this.l1Cache.set(cacheKey, finalResult);
-        return finalResult;
+      // ── TURBO MODE: Fast, direct, parallel Photon+Nominatim ──────────────────
+      const { scored, perfect } = await this._geocodeTurbo(cleanQuery, cityBias, scoringOpts, expectedHouse);
+      allCandidates = scored;
+      bestResult = perfect || pickBest(dedupeByCoord(scored)) || null;
+    } else {
+      // ── FULL MODE: VariantExpander + all providers (refinement only) ──────────
+      const { scored, perfect } = await this._geocodeFull(rawAddress, cleanQuery, cityBias, scoringOpts, expectedHouse);
+      allCandidates = scored;
+      bestResult = perfect || pickBest(dedupeByCoord(scored)) || null;
     }
 
-
-    // LEVEL 2: Street-Only Fallback
-    const hasAnyInZoneResult = allCandidates.some(c => c.isInsideZone && c.score > 2000)
-    if (!hasAnyInZoneResult && expectedHouse) {
-      const streetOnly = cleanQuery.replace(/\b\d+[а-яієґa-z]*\b/gi, '').trim()
-      if (streetOnly && streetOnly !== cleanQuery) {
-        const svars = expandVariants(streetOnly, cityBias).primary.slice(0, 2)
-        for (const sv of svars) {
-          try {
-            const { scored, perfect } = await this._evaluateProvidersEarlyExit(sv, cityBias, { ...scoringOpts, expectedHouse: null }, null)
-            allCandidates.push(...scored.map(s => { s.score -= 5000; return s; }))
-            if (perfect) break
-          } catch {}
-        }
-      }
+    // Iron Dome: reject obvious anomalies
+    if (bestResult && bestResult.score < -900000) {
+      console.warn(`[Геокодинг] ОТКЛОНЕНО (аномалия): ${bestResult.raw.formatted_address} | Score: ${bestResult.score}`);
+      bestResult = null;
     }
 
-    // LEVEL 3: Global Exhaustion
-    if (allCandidates.length === 0) {
-      try {
-        const { scored } = await this._evaluateProvidersEarlyExit(cleanQuery, null, { ...scoringOpts, expectedDeliveryZone: null }, expectedHouse)
-        allCandidates.push(...scored.map(s => { s.score -= 50000; return s; }))
-      } catch {}
+    const finalCandidates = dedupeByCoord(allCandidates);
+    const finalResult: RobustGeocodeResult = {
+      best: bestResult,
+      allCandidates: finalCandidates,
+      resolvedVariant: null,
+      fromCache: false,
+    };
+
+    if (bestResult) {
+      this.l1Cache.set(cacheKey, finalResult);
+      // Save periodically (not on every call to avoid blocking)
+      if (this.l1Cache.size % 10 === 0) this.savePersistentCache();
     }
-
-    // LEVEL 4: Premium Fallbacks
-    if (allCandidates.length === 0 || allCandidates.every(c => c.score < -100000)) {
-      try {
-        const settings = localStorageUtils.getAllSettings();
-        if (settings.geoapifyApiKey) {
-            const { GeoapifyService } = await import('../geoapifyService')
-            const geoResults = await GeoapifyService.geocode(cleanQuery, cityBias)
-            allCandidates.push(...geoResults.map((c: any) => {
-              const s = scoreCandidate(normaliseRaw(c), scoringOpts)
-              s.score -= 15000
-              return s
-                        }))
-        }
-      } catch {}
-    }
-
-    const deduped = dedupeByCoord(allCandidates);
-    let best = pickBest(deduped);
-
-    // v38.3: Zone-Hinted Fallback (Final Effort)
-    // If we 100% know it's in a zone but geocoding fails, append zone name to search
-    if ((!best || best.score < 2000) && options.expectedDeliveryZone && !turbo) {
-        const zoneHint = options.expectedDeliveryZone.toLowerCase().replace(/зона\s*/g, '').trim();
-        const hintedQuery = `${cleanQuery}, ${zoneHint}`;
-        console.log(`[Геокодинг] ПОВТОРНЫЙ ПОИСК (с учетом зон): "${hintedQuery}"`);
-        
-        try {
-            const { scored, perfect: hintedPerfect } = await this._evaluateProvidersEarlyExit(
-                hintedQuery, 
-                cityBias, 
-                { ...scoringOpts, expectedHouse: expectedHouse || null }, 
-                expectedHouse || null
-            );
-            
-            const picked = pickBest(scored);
-            if (hintedPerfect || (picked && picked.score > 2000)) {
-                const hintedBest = hintedPerfect || picked!;
-
-                // Merge candidates
-                const mergedCandidates = dedupeByCoord([...deduped, ...scored]);
-                const res = { 
-                    best: hintedBest, 
-                    allCandidates: mergedCandidates, 
-                    resolvedVariant: hintedQuery, 
-                    fromCache: false 
-                };
-                this.l1Cache.set(cacheKey, res);
-                return res;
-            }
-        } catch (e) {
-            console.warn(`[Геокодинг] Fallback failed:`, e);
-        }
-    }
-
-    // v35.9.37: IRON DOME (Anomaly Protection)
-    if (best && best.score < -900000) {
-      console.warn(`[Геокодинг] ОТКЛОНЕНО (Аномалия):`, best.raw.formatted_address, 'Score:', best.score);
-      best = null;
-    }
-
-    const finalResult = { best, allCandidates: deduped, resolvedVariant: null, fromCache: false };
-    this.l1Cache.set(cacheKey, finalResult);
-    this.savePersistentCache();
 
     return finalResult;
   }
@@ -699,34 +516,23 @@ export class RobustGeocodingService {
     const results = new Map<string, RobustGeocodeResult>();
     const { turbo = false } = globalOptions;
     
-    // v5.117: Deduplicate addresses first
+    // Deduplicate addresses
     const uniqueReqs = new Map<string, { address: string; options?: RobustGeocodeOptions }>();
     requests.forEach(req => {
         const key = req.address.trim().toLowerCase();
         if (!uniqueReqs.has(key)) uniqueReqs.set(key, req);
     });
 
-    // v5.117: Sequential processing instead of Promise.all
-    // This prevents 429 rate-limit storms on Nominatim/Photon.
-    // Cache hits are instant so only uncached addresses add delay.
-    const INTER_REQUEST_DELAY_MS = turbo ? 100 : 200;
-
-    let first = true;
-    for (const req of Array.from(uniqueReqs.values())) {
+    const reqArray = Array.from(uniqueReqs.values());
+    
+    await Promise.all(reqArray.map(async (req) => {
         const key = req.address.trim().toLowerCase();
-
-        // Check L1 cache first — if cached, no delay needed
-        const cacheKey = `${key}:${(globalOptions.cityBias || this.cityBias).toLowerCase()}`;
+        
+        const cacheKey = `${cleanAddressForSearch(req.address).toLowerCase()}:${(globalOptions.cityBias || this.cityBias).toLowerCase()}:${turbo ? 'T' : 'F'}`;
         if (this.l1Cache.has(cacheKey)) {
             results.set(key, { ...this.l1Cache.get(cacheKey)!, fromCache: true });
-            continue;
+            return;
         }
-
-        // Small delay between actual API calls to respect rate limits
-        if (!first) {
-            await new Promise<void>(resolve => setTimeout(resolve, INTER_REQUEST_DELAY_MS));
-        }
-        first = false;
 
         try {
             const combinedOptions = { 
@@ -739,7 +545,7 @@ export class RobustGeocodingService {
         } catch (e) {
             console.error(`[BatchGeocode] Failed for ${req.address}`, e);
         }
-    }
+    }));
     
     const finalMap = new Map<string, RobustGeocodeResult>();
     requests.forEach(req => {
@@ -769,7 +575,6 @@ export class RobustGeocodingService {
 
   toGoogleLatLng(result: RobustGeocodeResult): { lat: () => number; lng: () => number } | null {
     if (!result.best) return null
-    // window.google.maps.LatLng usage removed
     return { lat: () => result.best!.lat, lng: () => result.best!.lng }
   }
 

@@ -7,6 +7,15 @@
  */
 export const normalizeDateToIso = (d: any): string => {
     if (!d) return '';
+    // Handle numerical timestamps (milliseconds)
+    if (typeof d === 'number' || (!isNaN(Number(d)) && String(d).length > 10)) {
+        const date = new Date(Number(d));
+        const yyyy = date.getFullYear();
+        const mm = String(date.getMonth() + 1).padStart(2, '0');
+        const dd = String(date.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    }
+
     const s = String(d).split(' ')[0].split('T')[0];
     
     // DD.MM.YYYY -> YYYY-MM-DD

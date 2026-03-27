@@ -101,7 +101,7 @@ export const DashboardApiSection: React.FC = () => {
         // v5.109: User requested immediate visual clear of old data while fetching new date
         // Note: Using clearExcelData with a flag to prevent full localStorage wipe might be safer, 
         // but for now we wipe everything so the UI correctly resets to "0 orders"
-        clearExcelData({ skipServerWipe: true }); 
+        clearExcelData(); 
 
         // Сразу загружаем данные при смене даты
         setTimeout(() => triggerApiManualSync(), 100);
@@ -247,7 +247,18 @@ export const DashboardApiSection: React.FC = () => {
                                 isDark ? 'text-gray-400' : 'text-gray-500'
                             )}>
                                 {autoRoutingStatus.isActive
-                                    ? `Активен • Заказы: ${autoRoutingStatus.processedCount}/${autoRoutingStatus.totalCount} • Курьеры: ${autoRoutingStatus.processedCouriers}/${autoRoutingStatus.totalCouriers}`
+                                    ? (
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex items-center gap-2">
+                                                <span>АКТИВЕН • Заказы: {autoRoutingStatus.processedCount}/{autoRoutingStatus.totalCount} • Курьеры: {autoRoutingStatus.processedCouriers}/{autoRoutingStatus.totalCouriers}</span>
+                                            </div>
+                                            <div className="flex items-center gap-3 text-[10px] text-gray-500 font-medium">
+                                                {autoRoutingStatus.skippedInRoutes > 0 && <span className="text-emerald-600/70">В маршрутах: {autoRoutingStatus.skippedInRoutes}</span>}
+                                                {autoRoutingStatus.skippedGeocoding > 0 && <span className="text-red-500/70">Ошибка гео: {autoRoutingStatus.skippedGeocoding}</span>}
+                                                {autoRoutingStatus.skippedNoCourier > 0 && <span className="text-orange-500/70">Без курьера: {autoRoutingStatus.skippedNoCourier}</span>}
+                                            </div>
+                                        </div>
+                                    )
                                     : 'Режим ожидания'}
                             </p>
                             {autoRoutingStatus.lastUpdate && (

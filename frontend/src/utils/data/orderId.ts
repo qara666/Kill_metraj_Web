@@ -10,11 +10,8 @@ export const getStableOrderId = (order: any): string => {
 
   const idVal = !isInvalidId ? String(rawId) : null;
   
-  const orderDate = order.creationDate ? String(order.creationDate).split(' ')[0] : '';
-  const datePrefix = orderDate ? `${orderDate}_` : '';
-  
   // Use orderNumber or _id as secondary fallback, otherwise hash the address
   const fallback = String(order.orderNumber || order._id || `gen_${Math.abs(hashString(order.address || ''))}`);
   
-  return datePrefix + (idVal || fallback);
+  return idVal || fallback;
 };

@@ -145,33 +145,25 @@ const transformDashboardOrder = (apiOrder: DashboardOrderResponse, baseDate: str
     // Вспомогательная функция для проверки на "пустое" или "нулевое" время
     const isTimeEmpty = (t?: string) => {
         if (!t) return true;
-        const trimmed = String(t).trim();
+        const trimmed = t.trim();
         // Treat any variant of zero time as empty
         return /^0?0:00(:00)?$/.test(trimmed) || trimmed === '';
     };
 
-    // v5.115: Robust check for kitchen time (handle partially transformed data)
-    const rawKitchen = apiOrder.kitchenTime || (apiOrder as any).readyAt || (apiOrder as any).ready_at;
-    const readyAtSource = parseTimeToTimestamp(baseDate, rawKitchen);
+    // Парсинг времени готовности на кухне
+    const readyAtSource = parseTimeToTimestamp(baseDate, apiOrder.kitchenTime);
 
     // Парсинг дедлайна доставки. 
     // Приоритет: plannedTime, затем deliverBy (SLA). Игнорируем 00:00.
     let deadlineAt = null;
     let deadlineStr = '';
 
-    // Check if deadlineAt already exists as a number (from some other source)
-    if (typeof (apiOrder as any).deadlineAt === 'number') {
-        deadlineAt = (apiOrder as any).deadlineAt;
-    }
-
-    if (!deadlineAt) {
-        if (!isTimeEmpty(apiOrder.plannedTime)) {
-            deadlineAt = parseTimeToTimestamp(baseDate, apiOrder.plannedTime);
-            deadlineStr = apiOrder.plannedTime;
-        } else if (!isTimeEmpty(apiOrder.deliverBy)) {
-            deadlineAt = parseTimeToTimestamp(baseDate, apiOrder.deliverBy);
-            deadlineStr = apiOrder.deliverBy;
-        }
+    if (!isTimeEmpty(apiOrder.plannedTime)) {
+        deadlineAt = parseTimeToTimestamp(baseDate, apiOrder.plannedTime);
+        deadlineStr = apiOrder.plannedTime;
+    } else if (!isTimeEmpty(apiOrder.deliverBy)) {
+        deadlineAt = parseTimeToTimestamp(baseDate, apiOrder.deliverBy);
+        deadlineStr = apiOrder.deliverBy;
     }
 
     // Если все еще пусто — пробуем получить хоть что-то (даже 00:00) или вычисляем дефолт
@@ -183,27 +175,15 @@ const transformDashboardOrder = (apiOrder: DashboardOrderResponse, baseDate: str
 
     // FINAL FAIL-SAFE: Якщо в результаті вийшло нульове або порожнє час — замінюємо
     if (!deadlineStr || /^0?0:00(:00)?$/.test(deadlineStr.trim())) {
-        if (deadlineAt) {
-            const d = new Date(deadlineAt);
-            deadlineStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-        } else {
-            deadlineStr = 'Без времени';
-            deadlineAt = null;
-        }
+        deadlineStr = 'Без времени';
+        deadlineAt = null;
     }
 
     // Извлечение времени перехода в доставку (Phase 4.4)
     let handoverAt = null;
     if (apiOrder.statusTimings?.deliveringAt) {
         handoverAt = new Date(apiOrder.statusTimings.deliveringAt).getTime();
-    } else if (typeof (apiOrder as any).handoverAt === 'number') {
-        handoverAt = (apiOrder as any).handoverAt;
     }
-
-    // v5.112: Extract courier name with fallback to deliveryCourier
-    // (Cast to any to access potential API fields not in the strictly typed interface)
-    const rawCourier = (apiOrder as any).deliveryCourier || apiOrder.courier || (apiOrder as any).courier_name || (apiOrder as any).driver || '';
-    const courierName = (rawCourier && isId0CourierName(rawCourier)) ? 'Не назначено' : asNonEmptyString(rawCourier);
 
     return {
         idx: index,
@@ -213,17 +193,27 @@ const transformDashboardOrder = (apiOrder: DashboardOrderResponse, baseDate: str
         deadlineAt,
         handoverAt, // Добавлено (Phase 4.4)
         plannedTime: deadlineStr || 'Без времени',
-        courier: courierName,
+        courier: (apiOrder.courier && isId0CourierName(apiOrder.courier)) ? 'Не назначено' : asNonEmptyString(apiOrder.courier),
+        reassignedToCourier: (apiOrder as any).reassignedToCourier ? asNonEmptyString((apiOrder as any).reassignedToCourier) : null,
         amount: apiOrder.amount,
         paymentMethod: apiOrder.paymentMethod,
         status: apiOrder.status,
         orderComment: apiOrder.orderComment,
         orderType: apiOrder.orderType,
-        creationDate: apiOrder.creationDate,
+        creationDate: (() => {
+            if (!apiOrder.creationDate) return Date.now();
+            // Safe parse DD.MM.YYYY
+            if (/^\d{2}\.\d{2}\.\d{4}/.test(apiOrder.creationDate)) {
+                const [d, m, y] = apiOrder.creationDate.split(' ')[0].split('.').map(Number);
+                return new Date(y, m - 1, d).getTime();
+            }
+            const d = new Date(apiOrder.creationDate).getTime();
+            return isNaN(d) ? Date.now() : d;
+        })(),
         deliveryTime: apiOrder.deliveryTime,
         changeAmount: apiOrder.changeAmount,
         totalTime: apiOrder.totalTime,
-        coords: (apiOrder as any).coords || null,
+        coords: (apiOrder as any).coords || ((apiOrder as any).lat && (apiOrder as any).lng ? { lat: Number((apiOrder as any).lat), lng: Number((apiOrder as any).lng) } : null),
         isSelected: false,
         isInRoute: false,
         raw: apiOrder,

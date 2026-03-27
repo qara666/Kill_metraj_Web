@@ -58,7 +58,7 @@ interface SettingsForm {
   autoSyncKml: boolean
   selectedHubs: string[]
   selectedZones: string[]
-  routingProvider: 'google' | 'generoute' | 'valhalla' | 'yapiko_osrm'
+  routingProvider: 'google' | 'generoute' | 'valhalla' | 'yapiko_osrm' | 'turbo_instant'
   yapikoOsrmUrl: string
   vehicleType: 'auto' | 'motorcycle' | 'motor_scooter'
   geocodingProvider: 'google' | 'nominatim' | 'geoapify'
@@ -115,7 +115,7 @@ export const Settings: React.FC = () => {
       autoSyncKml: false,
       selectedHubs: [],
       selectedZones: [],
-      routingProvider: 'valhalla',
+      routingProvider: 'turbo_instant',
       vehicleType: 'auto',
       geocodingProvider: 'nominatim',
       mapProvider: 'google',
@@ -174,7 +174,7 @@ export const Settings: React.FC = () => {
         setValue('autoSyncKml', settings.autoSyncKml ?? false)
         setValue('selectedHubs', settings.selectedHubs || [])
         setValue('selectedZones', settings.selectedZones || [])
-        setValue('routingProvider', settings.routingProvider || 'valhalla')
+        setValue('routingProvider', settings.routingProvider || 'turbo_instant')
         setValue('vehicleType', settings.vehicleType || 'auto')
         setValue('geocodingProvider', settings.geocodingProvider || 'nominatim')
         setValue('mapProvider', settings.mapProvider || 'google')

@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback, useMemo } from 'react'
 import { localStorageUtils } from '../utils/ui/localStorage'
 import { toast } from 'react-hot-toast'
-import { normalizeCourierName, isId0CourierName } from '../utils/data/courierName'
+import { normalizeCourierName, isId0CourierName, getCourierName } from '../utils/data/courierName'
 import { enrichOrderGeodata } from '../utils/data/excelProcessor'
 import { isOrderCompleted } from '../utils/data/orderStatus'
 import { getStableOrderId } from '../utils/data/orderId'
 import { normalizeDateToIso } from '../utils/data/dateUtils'
+import { CourierIdResolver } from '../utils/data/courierIdMap'
 
 interface ExcelData {
   orders: any[]
@@ -46,6 +47,12 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   const [excelData, setExcelDataState] = useState<ExcelData | null>(null)
   const hasInit = useRef(false)
   const bypassSaveRef = useRef(false)
+  const excelDataRef = useRef<ExcelData | null>(null)
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  useEffect(() => {
+    excelDataRef.current = excelData
+  }, [excelData])
 
   useEffect(() => {
     if (!hasInit.current) {
@@ -61,10 +68,8 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                 headers: { 'Authorization': `Bearer ${token}` }
               });
               
-              // v5.108: Prevent HTML parse error if backend is misconfigured
               const contentType = response.headers.get('content-type');
               if (contentType && contentType.includes('text/html')) {
-                  console.warn('[ExcelSync] Server returned HTML instead of JSON. Assuming offline/local mode.');
                   throw new Error('API returned HTML');
               }
 
@@ -77,229 +82,112 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                     try {
                       const overrides = JSON.parse(localOverrides);
                       serverData.orders = serverData.orders.map((o: any) => {
-                        const id = o.id ? String(o.id) : null;
+                        const sid = getStableOrderId(o);
                         const num = o.orderNumber ? String(o.orderNumber) : null;
-                        
-                        // v5.97: Advanced Dual-Key Lookup (ID + OrderNumber)
-                        let override = id ? overrides[id] : null;
+                        let override = sid ? overrides[sid] : null;
                         if (!override && num) override = overrides[num];
-                        
-                        // Fallback for cases where ID might have been saved as a number or string
-                        if (!override && id) override = overrides[Number(id)];
-                        
+                        if (!override && o.id) override = overrides[Number(o.id)];
+
                         if (override) {
                             return { 
                                 ...o, 
                                 ...override,
-                                // v5.97: Ensure status consistency using normalized comparison
                                 status: override.settledDate ? (override.status || 'исполнен') : (o.status || override.status)
                             };
                         }
                         return o;
                       });
-                    } catch (e) { console.warn('Sync overrides failed:', e); }
-                  }
-
-                  const localStored = localStorage.getItem('km_dashboard_processed_data');
-                  let localData: any = null;
-                  try { if (localStored) localData = JSON.parse(localStored); } catch(e) {}
-
-                  // v38.5: HYBRID PRIORITY - Prefer local data if it has more settled orders or is newer
-                  const localSettledCount = (localData?.orders || []).filter((o: any) => !!o.settledDate).length;
-                  const serverSettledCount = (serverData?.orders || []).filter((o: any) => !!o.settledDate).length;
-                  
-                  const isLocalFresher = (localData?.lastModified || 0) > (serverData?.lastModified || 0);
-                  const isLocalMoreComplete = localSettledCount > serverSettledCount;
-
-                  // v5.106: Date-aware comparison. Ensure we don't prefer yesterday's settled orders over today's new ones.
-                  const serverOrders = serverData?.orders || [];
-                  const localOrders = localData?.orders || [];
-                  const serverDateCode = serverOrders.length > 0 ? (serverOrders[0].creationDate || "").split(' ')[0] : "";
-                  const localDateCode = localOrders.length > 0 ? (localOrders[0].creationDate || "").split(' ')[0] : "";
-                  const sameDay = !!serverDateCode && !!localDateCode && serverDateCode === localDateCode;
-
-                  if (sameDay && (isLocalFresher || isLocalMoreComplete) && localSettledCount > serverSettledCount && localSettledCount > 0) {
-                    console.log(`🛡️ Hybrid Sync: Using local data (Settled: ${localSettledCount} vs Server: ${serverSettledCount})`);
-                    // v5.101: ACTUALLY LOAD LOCAL DATA AND EXIT to prevent server overwrite
-                    setExcelData(localData);
-                    return;
+                    } catch (e) {}
                   }
                   
-                  console.log('✅ Данные загружены с сервера (Hybrid Sync)');
-                  // v5.98: Re-apply overrides to server data
-                  if (localOverrides) {
-                      try {
-                         const overrides = JSON.parse(localOverrides);
-                         serverData.orders = serverData.orders.map((o: any) => {
-                             const num = o.orderNumber ? String(o.orderNumber) : null;
-                             const sid = o.id ? String(o.id) : null;
-                             let ovr = num ? overrides[num] : null;
-                             if (!ovr && sid) ovr = overrides[sid];
-                             if (ovr) return { ...o, ...ovr, status: ovr.settledDate ? (ovr.status || 'исполнен') : (o.status || ovr.status) };
-                             return o;
-                         });
-                      } catch(e) {}
+                  // Проверяем локальное кэшированное состояние
+                  const localRaw = localStorage.getItem('km_dashboard_processed_data');
+                  if (localRaw) {
+                    const localData = JSON.parse(localRaw);
+                    if (localData.lastModified && serverData.lastModified && localData.lastModified > serverData.lastModified) {
+                      console.log('[ExcelSync] Local data is NEWER than server. Using Local.');
+                      setExcelDataState(localData);
+                      return;
+                    }
                   }
-                  setExcelData(applyCourierVehicleMap(serverData));
+
+                  console.log('[ExcelSync] Using Server data.');
+                  setExcelDataState(serverData);
                   return;
-                  
-                  console.log('⚠️ Переходим к проверке локальной копии...');
                 }
               }
-            } catch (apiError) {
-              console.warn('Не удалось загрузить данные с сервера:', apiError);
+            } catch (e) {
+              console.warn('[ExcelSync] Server load failed:', e);
             }
           }
 
-          // 2. Fallback to localStorage (для старых данных или оффлайн)
-          const stored = localStorage.getItem('km_dashboard_processed_data')
-          if (stored) {
-            const parsed = JSON.parse(stored)
-            if (parsed && typeof parsed === 'object') {
-              // ... overrides logic stays same ...
-              const mapped = applyCourierVehicleMap(parsed)
-              // v5.99: USE UNIFIED SETTER
-              setExcelData(mapped)
-              console.log('️ Данные загружены из localStorage (legacy)');
-            }
+          // 2. Если сервера нет или ошибка, грузим из localStorage
+          const localData = localStorage.getItem('km_dashboard_processed_data')
+          if (localData) {
+            setExcelDataState(JSON.parse(localData))
           }
         } catch (error) {
-          console.warn('Ошибка восстановления данных:', error)
-          toast.error('Ошибка загрузки данных')
+          console.error('Error loading data:', error);
         }
-      };
-
-      loadData();
+      }
+      loadData()
     }
   }, [])
 
-  const saveTimeoutRef = useRef<any>(null);
-  const excelDataRef = useRef<ExcelData | null>(null);
+  const protectData = useCallback((next: ExcelData, current: ExcelData | null): ExcelData => {
+    if (!current || !next) return next;
+    
+    // v5.135: Winning Logic - Protect local state from stale or partial server updates
+    const localSettledCount = (current.orders || []).filter(o => !!o.settledDate).length;
+    const serverSettledCount = (next.orders || []).filter(o => !!o.settledDate).length;
+    
+    const localRouteCount = (current.routes || []).length;
+    const serverRouteCount = (next.routes || []).length;
 
-  /**
-   * Universal LocalStorage Sync (Debounced for performance)
-   */
-  const syncToLocalStorage = useCallback((data: ExcelData) => {
-    try {
-      const dataToSave = { ...data, lastModified: Date.now() };
-      localStorage.setItem('km_dashboard_processed_data', JSON.stringify(dataToSave));
-    } catch (e) {
-      console.warn('LocalStorage save failed:', e);
+    // If server sends significantly LESS information, it's a regression. 
+    // Return a merged version or stick with Local.
+    if (serverSettledCount < localSettledCount || (serverRouteCount === 0 && localRouteCount > 0)) {
+        console.warn(`[ExcelSync] Server Data Partial: Settled=${serverSettledCount} (Local=${localSettledCount}), Routes=${serverRouteCount} (Local=${localRouteCount}). Protecting Local State.`);
+        return {
+            ...next,
+            orders: serverSettledCount < localSettledCount ? current.orders : next.orders,
+            routes: serverRouteCount < localRouteCount ? current.routes : next.routes,
+            lastModified: Math.max(next.lastModified || 0, current.lastModified || 0)
+        };
     }
+    
+    return next;
   }, []);
 
-  useEffect(() => {
-    excelDataRef.current = excelData;
-    if (!excelData) return;
-    
-    // Check if we should skip this save (e.g., just loaded from server)
-    if (bypassSaveRef.current) {
-      bypassSaveRef.current = false;
-      return;
-    }
-      // Immediate sync to localStorage for UI snappiness on reload
-      syncToLocalStorage(excelData);
-
-      // Debounced save to server (2.0s)
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = setTimeout(() => saveDataToServer(excelData), 2000);
-
-      return () => {
-        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      }
-    }, [excelData, syncToLocalStorage]);
-
-  /**
-   * Universal Protection Helper:
-   * Prevents overwriting local routes with empty server responses if order count is similar.
-   */
-  const protectData = useCallback((incoming: ExcelData, current: ExcelData | null): ExcelData => {
-    const val = applyCourierVehicleMap(incoming, current);
-    
-    // Check local storage for backup if current state is null
-    const localStored = localStorage.getItem('km_dashboard_processed_data');
-    let localData: any = null;
-    try { if (localStored) localData = JSON.parse(localStored); } catch(e) {}
-    
-    const backupData = current || localData;
-    const backupHasRoutes = backupData?.routes && backupData.routes.length > 0;
-    const incomingHasRoutes = val.routes && val.routes.length > 0;
-    
-    // v5.108: DATE-AWARE ROUTE PROTECTION
-    // Only restore if dates match and incoming is missing routes
-    let sameDay = false;
-    if (backupHasRoutes) {
-      const backupOrderInRoutes = (backupData.routes || []).reduce((acc: number, r: any) => acc + (r.orders?.length || 0), 0);
-      
-      const backupDate = backupData.creationDate || (backupData.orders?.[0]?.creationDate);
-      const incomingDate = val.creationDate || (val.orders?.[0]?.creationDate);
-      
-      sameDay = !!backupDate && !!incomingDate && 
-                      (normalizeDateToIso(backupDate) === normalizeDateToIso(incomingDate));
-
-      const shouldRestore = !incomingHasRoutes && backupHasRoutes && backupOrderInRoutes > 0 && sameDay;
-
-      if (shouldRestore) {
-        console.log(`🛡️ Защита данных: восстановление маршрутов (${backupOrderInRoutes} заказов)`);
-        val.routes = [...backupData.routes];
-      }
-    }
-    
-    console.log(`[ExcelDataContext] protectData applied. Incoming orders: ${incoming.orders?.length}, Output orders: ${val.orders?.length}. Routes preserved: ${backupHasRoutes && (!incomingHasRoutes && sameDay) ? 'YES' : 'NO'}`);
-    return val;
-  }, []);
-
-  /**
-   * Core logic for manual overrides persistence
-   */
   const performManualOverridesSave = useCallback((orders: any[]) => {
-    if (!orders) return;
     try {
-      const overrides: Record<string, any> = {};
-      orders.forEach((o: any) => {
-        const isSettled = isOrderCompleted(o.status);
-        const isDelivering = o.status === 'Доставляется' || o.status === 'В пути';
-        const hasCourier = o.courier && !isId0CourierName(o.courier) && o.courier !== 'Не назначено';
-
-        if (o.manualGroupId || o.deadlineAt || o.isAddressLocked || o.settledDate || o.paymentMethodOverridden || isSettled || (isDelivering && hasCourier)) {
-          const overrideData = {
-            manualGroupId: o.manualGroupId,
-            deadlineAt: o.deadlineAt,
-            plannedTime: o.plannedTime,
-            courier: o.courier,
-            address: o.address,
-            lat: o.lat,
-            lng: o.lng,
-            coords: o.coords,
-            isAddressLocked: o.isAddressLocked,
-            locationType: o.locationType,
-            status: o.status,
-            paymentMethod: o.paymentMethod,
-            paymentMethodOverridden: o.paymentMethodOverridden,
-            settlementNote: o.settlementNote,
-            settledAmount: o.settledAmount,
-            settledDate: o.settledDate,
-            settlementSessionId: o.settlementSessionId,
-            sessionTotalReceived: o.sessionTotalReceived,
-            sessionTotalDifference: o.sessionTotalDifference,
-            sessionTotalExpected: o.sessionTotalExpected,
-            untakenChange: o.untakenChange,
-            originalChangeAmount: o.originalChangeAmount
-          };
-          
-          // Index by BOTH keys for maximum durability
-          if (o.id) overrides[String(o.id)] = overrideData;
-          if (o.orderNumber) overrides[String(o.orderNumber)] = overrideData;
+      const existing = localStorage.getItem('km_manual_overrides');
+      const overrides = existing ? JSON.parse(existing) : {};
+      
+      orders.forEach(o => {
+        const sid = getStableOrderId(o);
+        const id = o.id ? String(o.id) : null;
+        const num = o.orderNumber ? String(o.orderNumber) : null;
+        
+        let hasChanges = false;
+        const ovr: any = {};
+        
+        if (o.settledDate) { hasChanges = true; ovr.settledDate = o.settledDate; ovr.status = o.status; }
+        if (o.courier && !isId0CourierName(o.courier)) { hasChanges = true; ovr.courier = o.courier; ovr.courierId = o.courierId; }
+        if (o.paymentMethodOverridden) { hasChanges = true; ovr.paymentMethod = o.paymentMethod; ovr.paymentMethodOverridden = true; }
+        if (o.manualGeocoding) { hasChanges = true; ovr.coords = o.coords; ovr.manualGeocoding = true; ovr.isAddressLocked = true; }
+        
+        if (hasChanges) {
+          if (sid) overrides[sid] = { ...(overrides[sid] || {}), ...ovr };
+          if (num) overrides[num] = { ...(overrides[num] || {}), ...ovr };
+          if (id)  overrides[id]  = { ...(overrides[id]  || {}), ...ovr };
         }
       });
       localStorage.setItem('km_manual_overrides', JSON.stringify(overrides));
       
-      // v35.19: CRITICAL - Force immediate sync of the entire state to localStorage
-      // v35.20: Use CURRENT orders passed to this function instead of stale ref
-      // v38.6: Save to localStorage ONLY if next orders actually exist
       if (excelDataRef.current && excelDataRef.current.orders) {
         const fullData = { ...excelDataRef.current, orders: orders };
-        fullData.lastModified = Date.now(); // FORCE freshening of local data
+        fullData.lastModified = Date.now();
         localStorage.setItem('km_dashboard_processed_data', JSON.stringify(fullData));
       }
     } catch (e) {
@@ -307,16 +195,10 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     }
   }, []);
 
-  /**
-   * Automatic Manual Overrides Persistence
-   * v35.16: Decoupled from bypassSaveRef to ensure first change is ALWAYS saved.
-   */
   useEffect(() => {
     if (!excelData?.orders) return;
     performManualOverridesSave(excelData.orders);
   }, [excelData?.orders, performManualOverridesSave]);
-
-
 
   const saveDataToServer = async (data: ExcelData) => {
     const token = localStorage.getItem('km_access_token');
@@ -335,7 +217,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       if (!response.ok) {
         throw new Error('Ошибка сервера');
       }
-      // console.log(' Данные сохранены на сервере');
     } catch (error) {
       console.error('Ошибка сохранения на сервер:', error);
       toast.error('Ошибка сохранения на сервер', { id: 'save-error' });
@@ -343,13 +224,9 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   };
 
   const setExcelData = useCallback((incomingData: ExcelData | null) => {
-    if (window && (window as any).debugExcel) console.warn('[ExcelDataProvider:SET]', incomingData, (new Error()).stack)
-    
     if (incomingData) {
-      console.log(`[ExcelDataContext] setExcelData triggered with ${incomingData.orders?.length} orders!!!`);
       setExcelDataState(prev => {
         const val = protectData(incomingData, prev);
-        console.log(`[ExcelDataContext] setExcelDataState updater executed. Prev orders: ${prev?.orders?.length}, Next orders: ${val.orders?.length}`);
         return val;
       });
     } else {
@@ -371,18 +248,12 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
         next = applyCourierVehicleMap(dataOrUpdater, prevSafe);
       }
       
-      // Ensure routes are protected. Pass `next` (not prevSafe) as current so that
-      // the settlement guard in applyCourierVehicleMap sees already-settled orders
-      // and doesn't overwrite them in the second pass.
-      const protectedNext = force ? next : protectData(next, next);
-
+      const protectedNext = force ? next : protectData(next, prevSafe);
       return protectedNext;
     });
   }, [protectData]);
 
   const clearExcelData = useCallback((options?: { skipServerWipe?: boolean }) => {
-    if (window && (window as any).debugExcel) console.warn('[ExcelDataProvider:CLEAR]', (new Error()).stack)
-
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = null;
@@ -391,7 +262,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     setExcelDataState(null)
     localStorage.removeItem('km_dashboard_processed_data')
 
-    // Also clear on server if not skipped
     if (!options?.skipServerWipe) {
       const token = localStorage.getItem('km_access_token');
       if (token) {
@@ -409,7 +279,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   }, [])
 
   const updateRouteData = useCallback((newRoutes: any[]) => {
-    if (window && (window as any).debugExcel) console.warn('[ExcelDataProvider:UPDATEROUTE]', newRoutes, (new Error()).stack)
     setExcelDataState(prev => {
       const next = prev ? { ...prev, routes: newRoutes } : {
         orders: [], couriers: [], paymentMethods: [], routes: newRoutes, errors: [], summary: undefined
@@ -419,7 +288,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   }, [])
 
   const updateOrderPaymentMethod = useCallback((orderNumber: string, newPaymentMethod: string) => {
-    console.log(`🔄 Updating payment method for order ${orderNumber} to ${newPaymentMethod}`);
     updateExcelData(prev => {
       const updatedOrders = prev.orders.map(order => {
         if (order.orderNumber === orderNumber) {
@@ -442,19 +310,8 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     saveManualOverrides: performManualOverridesSave
   }), [excelData, setExcelData, updateExcelData, clearExcelData, updateRouteData, updateOrderPaymentMethod, performManualOverridesSave]);
 
-  // Handle unsaved changes on refresh/close
   useEffect(() => {
-    const handleBeforeUnload = () => {
-      // If there's a pending debounced save, we can't easily wait for it
-      // in beforeunload without using synchronous XHR (deprecated) or 
-      // navigator.sendBeacon. However, we've already saved to localStorage
-      // immediately above, so at worst the server will be a few seconds behind
-      // but the next load will prefer localStorage anyway.
-
-      // We could trigger an immediate save here if we had access to the latest data
-      // but since it's debounced, we'll rely on the immediate localStorage save.
-    };
-
+    const handleBeforeUnload = () => {};
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
@@ -466,98 +323,118 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   )
 }
 
-// Helpers
-// (Local normalizeCourierName removed, using global one from ../utils/data/courierName)
-
-/**
- * Optimizes the data by mapping vehicle types and ensuring required structures.
- * Fast-path included: skips processing if data identity hasn't changed.
- */
 function applyCourierVehicleMap(data: any, current?: any): any {
   if (!data) return data;
-  
-  // v5.6: Performance Fast-Path
-  // If we're passing the same object reference, skip expensive processing
   if (current && data === current) return data;
   
   try {
     const rawMap = localStorageUtils.getCourierVehicleMap()
-    // Create a normalized version of the map for lookup
     const bruteNormalizedMap: Record<string, string> = {};
     Object.keys(rawMap).forEach(name => {
       bruteNormalizedMap[normalizeCourierName(name).toLowerCase()] = rawMap[name];
     });
 
-    // v5.6: Efficiently process orders: skip expensive enrichment if coords already present
-    // v5.101: Identity Stability v2 - Use getStableOrderId for persistent identity cross-refresh
     const currentOrdersMap = new Map<string, any>((current?.orders || []).map((o: any) => [getStableOrderId(o), o]));
 
-    // 🔑 CRITICAL FIX: Load local overrides ONCE here so settled orders are NEVER
-    // erased by stale server/Socket data when applyCourierVehicleMap is called.
     let persistedOverrides: Record<string, any> = {};
     try {
       const raw = localStorage.getItem('km_manual_overrides');
       if (raw) persistedOverrides = JSON.parse(raw);
     } catch (_) {}
 
+    const rawCouriers = Array.isArray(data.couriers) ? data.couriers : [];
+    CourierIdResolver.registerList(rawCouriers);
+
     const orders = Array.isArray(data.orders) ? data.orders.map((o: any) => {
         const sid = getStableOrderId(o);
         const existing = currentOrdersMap.get(sid) as any;
 
-        // 🔐 SETTLEMENT & DELIVERY GUARD (highest priority):
-        // 1. If the existing in-memory order is settled but the incoming order isn't, ALWAYS keep the settled version. 
-        // 2. If the existing order is Delivering and has a courier, but incoming has NO courier (ID:0), PRESERVE the courier.
-        const isExistingDelivering = existing?.status === 'Доставляется' || existing?.status === 'В пути';
-        const isIncomingUnassigned = !o.courier || isId0CourierName(o.courier) || o.courier === 'Не назначено';
+        const oId  = o.id   ? String(o.id)          : null;
+        const oNum = o.orderNumber ? String(o.orderNumber) : null;
+        let earlyOvr = (oId && persistedOverrides[oId]) ? persistedOverrides[oId] : null;
+        if (!earlyOvr && oNum) earlyOvr = persistedOverrides[oNum] ?? null;
+        if (!earlyOvr && oId) earlyOvr = persistedOverrides[Number(oId)] ?? null;
+
+        if (earlyOvr?.courier && !isId0CourierName(earlyOvr.courier) && earlyOvr.courier !== 'Не назначено') {
+            o = { ...o, courier: earlyOvr.courier };
+        }
+
+        const isId = o.courier && /^[0-9a-f]{24}$/i.test(String(o.courier));
+        const isIncomingUnassigned = !o.courier || isId0CourierName(o.courier) || o.courier === 'Не назначено' || isId;
         const existingHasCourier = existing?.courier && !isId0CourierName(existing.courier) && existing.courier !== 'Не назначено';
 
         if (existing?.settledDate && !o.settledDate) {
             return existing;
         }
 
-        if (isExistingDelivering && existingHasCourier && isIncomingUnassigned) {
-            // v5.113: Keep the courier assignment for active deliveries even if API loses it
-            o.courier = existing.courier;
-            o.courierId = existing.courierId;
+        if (existing) {
+            if (existingHasCourier && isIncomingUnassigned) {
+                o = { ...o, courier: existing.courier, courierId: existing.courierId };
+            } else if (isIncomingUnassigned) {
+                const rawVal = getCourierName(o.courier);
+                const cachedName = CourierIdResolver.resolve(rawVal);
+                if (cachedName) o = { ...o, courier: cachedName };
+            }
+
+            const incomingHasGeo = o.coords?.lat && o.coords?.lng;
+            const memoryHasGeo = existing.coords?.lat && existing.coords?.lng;
+            if (!incomingHasGeo && memoryHasGeo) {
+                o = { 
+                    ...o, 
+                    coords: existing.coords,
+                    locationType: existing.locationType,
+                    latitude: existing.latitude,
+                    longitude: existing.longitude,
+                    isAddressLocked: existing.isAddressLocked,
+                    isLocked: existing.isLocked,
+                    hasGeoErrors: existing.hasGeoErrors,
+                    streetNumberMatched: existing.streetNumberMatched,
+                    kmlZone: o.kmlZone || existing.kmlZone,
+                    kmlHub: o.kmlHub || existing.kmlHub,
+                    deliveryZone: o.deliveryZone || existing.deliveryZone
+                };
+            }
+        } else if (isIncomingUnassigned) {
+            const rawVal = getCourierName(o.courier);
+            const cachedName = CourierIdResolver.resolve(rawVal);
+            if (cachedName) o = { ...o, courier: cachedName };
         }
 
-        // Fast-path: if the order hasn't changed at all, keep existing reference
-        // 🔑 v5.105: Added settledDate check. If settlement status changed, MUST bypass fast-path.
-        if (existing && 
+        if (existing && !earlyOvr &&
             existing.address === o.address && 
             existing.status === o.status && 
             existing.courier === o.courier &&
+            existing.coords?.lat === o.coords?.lat &&
             !!existing.settledDate === !!o.settledDate) {
             return existing;
         }
 
-        // Enrich geodata first (preserves all custom fields via spread)
         let base = (o.coords?.lat && o.coords?.lng && o.isAddressLocked) ? o : enrichOrderGeodata(o);
 
-        // Always re-apply persisted overrides (settlements, payment method changes, etc.)
-        // This handles the page-reload case where in-memory state is empty.
         const id  = o.id   ? String(o.id)          : null;
         const num = o.orderNumber ? String(o.orderNumber) : null;
         let ovr = (id  && persistedOverrides[id])  ? persistedOverrides[id]  : null;
         if (!ovr && num) ovr = persistedOverrides[num] ?? null;
         if (!ovr && id)  ovr = persistedOverrides[Number(id)] ?? null;
 
-        // v5.109: Cross-Day Override Protection!
-        // Prevent applying today's overrides to yesterday's orders (which have same ID)
         let isSafeToApplyOverride = !!ovr;
-        if (ovr && ovr.creationDate && o.creationDate) {
-             const ovrNorm = normalizeDateToIso(ovr.creationDate);
-             const ordNorm = normalizeDateToIso(o.creationDate);
-             if (ovrNorm !== ordNorm) {
+        if (ovr && (ovr.creationDate || ovr.dateShift) && (o.creationDate || data.creationDate)) {
+             const ovrNorm = normalizeDateToIso(ovr.creationDate || ovr.dateShift);
+             const ordNorm = normalizeDateToIso(o.creationDate || data.creationDate);
+             if (ovrNorm && ordNorm && ovrNorm !== ordNorm) {
                  isSafeToApplyOverride = false;
              }
+        }
+
+        const normName = normalizeCourierName(o.courier);
+        if (normName.includes('ЗОРЯ') || normName.includes('БАГНЄВ') || normName.includes('БАГНЕВ')) {
+            console.log(`[Trace-Assignment] Order ${num}: Courier="${o.courier}", CoordsFound=${!!o.coords?.lat}, MemFound=${!!existing}`);
         }
 
         if (isSafeToApplyOverride) {
             return {
                 ...base,
                 ...ovr,
-                // Preserve status: if override marks order as settled, use settled status
                 status: ovr.settledDate ? (ovr.status || 'исполнен') : (base.status || ovr.status)
             };
         }
@@ -565,15 +442,13 @@ function applyCourierVehicleMap(data: any, current?: any): any {
         return base;
     }) : []
     
-    console.log(`[ExcelDataContext] applyCourierVehicleMap processed ${orders.length} orders.`);
-    
-    const couriers = Array.isArray(data.couriers) ? data.couriers.map((c: any) => ({
+    const couriers = rawCouriers.map((c: any) => ({
         ...c,
         vehicleType: String(c.vehicleType || 'car').toLowerCase().trim()
-    })) : []
+    }));
+    
     const courierNamesInList = new Set(couriers.map((c: any) => c.name || c._id || c.id));
 
-    // 1. Process Couriers from orders (efficiently)
     for (let i = 0; i < orders.length; i++) {
       const c = orders[i].courier;
       if (c) {
@@ -593,7 +468,6 @@ function applyCourierVehicleMap(data: any, current?: any): any {
       }
     }
 
-    // 2. Map vehicle types once
     const processedCouriers = couriers.map((c: any) => {
       const normalizedName = normalizeCourierName(c.name).toLowerCase();
       const mappedType = bruteNormalizedMap[normalizedName];
@@ -603,7 +477,6 @@ function applyCourierVehicleMap(data: any, current?: any): any {
       return c.vehicleType ? c : { ...c, vehicleType: 'car' };
     });
 
-    // 3. Process Payment Methods (if missing)
     let paymentMethods = Array.isArray(data.paymentMethods) ? data.paymentMethods : []
     if (paymentMethods.length === 0 && orders.length > 0) {
       const uniqueMethods = new Set<string>();
@@ -616,28 +489,50 @@ function applyCourierVehicleMap(data: any, current?: any): any {
       }));
     }
 
+    // v5.135: Route Preservation Guard
+    // If incoming routes are empty but we have local routes for the same date, preserve them.
+    const incomingRoutes = Array.isArray(data.routes) ? data.routes : [];
+    const localRoutes = Array.isArray(current?.routes) ? current.routes : [];
+    
+    const incomingDate = normalizeDateToIso(data.creationDate || (orders.find(o => o.creationDate))?.creationDate || "");
+    const localDate = normalizeDateToIso(current?.creationDate || (current?.orders?.find((o:any) => o.creationDate))?.creationDate || "");
+    
+    let routesToProcess = incomingRoutes;
+    if (incomingRoutes.length === 0 && localRoutes.length > 0 && incomingDate === localDate) {
+        console.log(`[ExcelSync] Preserving ${localRoutes.length} local routes for date ${incomingDate}`);
+        routesToProcess = localRoutes;
+    }
+
     return {
       ...data,
-      routes: Array.isArray(data.routes) ? data.routes.map((r: any) => {
-        // v5.101: Route identity preservation enhanced with stable order IDs comparison
-        const existingRoute = (current?.routes || []).find((cr: any) => cr.id === r.id);
+      creationDate: data.creationDate || current?.creationDate,
+      routes: routesToProcess.map((r: any) => {
+        const existingRoute = localRoutes.find((cr: any) => cr.id === r.id);
         
         if (existingRoute) {
             const currentRIds = (existingRoute.orders || []).map((o: any) => getStableOrderId(o)).sort().join('|');
             const incomingRIds = (r.orders || []).map((o: any) => getStableOrderId(o)).sort().join('|');
             
             if (currentRIds === incomingRIds && 
-                existingRoute.totalDistance === r.totalDistance && 
-                existingRoute.totalDuration === r.totalDuration &&
-                existingRoute.isOptimized === r.isOptimized) {
+                (existingRoute.totalDistance === r.totalDistance || r.totalDistance === 0) && 
+                (existingRoute.totalDuration === r.totalDuration || r.totalDuration === 0) &&
+                (existingRoute.isOptimized === r.isOptimized || r.totalDistance === 0)) {
                return existingRoute;
             }
         }
         return {
           ...r,
-          orders: Array.isArray(r.orders) ? r.orders.map((o: any) => enrichOrderGeodata(o)) : []
+          orders: Array.isArray(r.orders) ? r.orders.map((o: any) => {
+             // v5.135: Deep Geodata Preservation for Route Orders
+             const sid = getStableOrderId(o);
+             const memOrder = currentOrdersMap.get(sid);
+             if (memOrder && memOrder.coords?.lat && !o.coords?.lat) {
+                 return { ...o, ...memOrder };
+             }
+             return o.coords?.lat ? o : enrichOrderGeodata(o);
+          }) : []
         };
-      }) : [],
+      }),
       orders,
       couriers: processedCouriers.length > 0 ? processedCouriers : (current?.couriers || []),
       paymentMethods,
@@ -648,4 +543,3 @@ function applyCourierVehicleMap(data: any, current?: any): any {
     return data;
   }
 }
-

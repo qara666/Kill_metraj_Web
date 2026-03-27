@@ -37,6 +37,11 @@ interface DashboardStoreState {
         totalCount: number;
         processedCouriers: number;
         totalCouriers: number;
+        // v5.133: Detailed stats for transparency
+        skippedGeocoding: number;
+        skippedInRoutes: number;
+        skippedNoCourier: number;
+        skippedOther: number;
     };
 
     // Actions
@@ -98,6 +103,10 @@ export const useDashboardStore = create<DashboardStoreState>()(
                 totalCount: 0,
                 processedCouriers: 0,
                 totalCouriers: 0,
+                skippedGeocoding: 0,
+                skippedInRoutes: 0,
+                skippedNoCourier: 0,
+                skippedOther: 0,
             },
 
             setApiKey: (key) => set({ apiKey: key }),
@@ -129,11 +138,23 @@ export const useDashboardStore = create<DashboardStoreState>()(
                     apiSyncError,
                     ...persistentState
                 } = state;
-                // v5.103: Explicitly log persistence to trace isActive loss
-                if (persistentState.autoRoutingStatus.isActive) {
-                    console.log('💾 Persistence: Saving isActive = true');
-                }
-                return persistentState;
+                // v5.128: Reset transient counters on persist — only keep isActive/lastUpdate
+                // Counts are recalculated at runtime from real data, not from stale localStorage
+                return {
+                    ...persistentState,
+                    autoRoutingStatus: {
+                        isActive: persistentState.autoRoutingStatus.isActive,
+                        lastUpdate: persistentState.autoRoutingStatus.lastUpdate,
+                        processedCount: 0,
+                        totalCount: 0,
+                        processedCouriers: 0,
+                        totalCouriers: 0,
+                        skippedGeocoding: 0,
+                        skippedInRoutes: 0,
+                        skippedNoCourier: 0,
+                        skippedOther: 0,
+                    }
+                };
             }
         }
     )

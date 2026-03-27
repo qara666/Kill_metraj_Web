@@ -54,6 +54,7 @@ export const SCORE = {
   LOGICAL_CONTINUITY_GAP: -600000,      // Fatal for Iron Dome (-500k)
   HARD_ZONE_EXCLUSION: -100000,        
   STRICT_CITY_LOCKDOWN: -15000000,     // v5.118: Fatal kill for 35km+ anomalies
+  OUT_OF_ZONE_FATAL: -15000000,        // v5.128: Hard KML enforcement
 
   // Proximity to hint point (Chain Logic - MASSIVE WEIGHT)
   PROXIMITY_500M: 2000, // Now stronger than ROOFTOP difference
@@ -164,10 +165,38 @@ export function scoreCandidate(
   let isTech = false
   let isInside = false
 
+  // v5.129: HARD CITY RADIUS PRE-GUARD (independent of KML)
+  // Catches Makariv/Boryspil class errors BEFORE expensive zone checks.
+  // Fires for Kyiv bias regardless of whether KML zones are loaded.
+  const cityBiasLower = (opts.cityBias || '').toLowerCase();
+  if (cityBiasLower === 'київ' || cityBiasLower === 'киев' || cityBiasLower === 'kyiv') {
+    // Kyiv city center
+    const KYIV_LAT = 50.4501;
+    const KYIV_LNG = 30.5234;
+    const dLat = (lat - KYIV_LAT) * Math.PI / 180;
+    const dLng = (lng - KYIV_LNG) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(KYIV_LAT * Math.PI/180) * Math.cos(lat * Math.PI/180) * Math.sin(dLng/2)**2;
+    const distFromKyivKm = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    
+    if (distFromKyivKm > 30) {
+      // v5.133: Trust KML zones over city center distance. 
+      // If the user drew a zone, they mean it.
+      const belongsInZone = opts.ctx.allPolygons.length > 0 && findZonesForLoc({ lat, lng }, opts.ctx.allPolygons, 0.01).some(m => !m.isTechnical && isPolygonActive(m.polygon, opts.ctx));
+      
+      if (!belongsInZone) {
+        // Fatal: Makariv (50km), Boryspil (35km), Vasylkiv (30km) etc.
+        score += SCORE.STRICT_CITY_LOCKDOWN; // -15,000,000
+        (raw as any)._rejectReason = `Hard city radius: ${distFromKyivKm.toFixed(1)}km from Kyiv center (>30km limit)`;
+      } else {
+        console.log(`[Геокодинг] ПРОВЕРКА ДИСТАНЦИИ ПРОЙДЕНА: точка ${distFromKyivKm.toFixed(1)}км находится в активной KML зоне. Блокировка Lockdown отменена.`);
+      }
+    }
+  }
+
   // Strict check (for bonuses)
   const strictTolerance = 0.001 
-  // v5.118: Reduced from 0.025 (~2.7km) to 0.005 (~550m) to prevent "wide fallout" hijacking.
-  const wideTolerance = 0.005 
+  // v5.129: Widened back from 0.005 to 0.01 (~1.1km) for better near-boundary matching
+  const wideTolerance = 0.01 
 
   const locForZones = { lat, lng }
   
@@ -207,8 +236,8 @@ export function scoreCandidate(
         score += SCORE.INSIDE_DELIVERY_ZONE - 300 
         isInside = true 
       } else if (opts.ctx.activePolygons.length > 0) {
-        // TRULY OUT OF ALL ZONES
-        score += SCORE.OUT_OF_ZONE_PENALTY
+        // TRULY OUT OF ALL ZONES - v5.128: Hard KML logic as requested
+        score += SCORE.OUT_OF_ZONE_FATAL
       } else {
         // Free roam (no active polygons)
         isInside = true
@@ -218,6 +247,7 @@ export function scoreCandidate(
     // No polygons at all -> everything is "inside"
     isInside = true
   }
+
 
   // 2.2 Expected Delivery Zone Match (IRON DOME LOGIC)
   if (opts.expectedDeliveryZone) {
@@ -254,8 +284,8 @@ export function scoreCandidate(
       }
     } else {
       // No KML zone found for this candidate, but we have an expected zone!
-      // v42: Changed from FATAL to strong penalty. We MUST find it if it's anywhere inside!
-      score += -20000
+      // v5.128: If we have active zones, this is a fatal mismatch - must be in a zone.
+      score += opts.ctx.activePolygons.length > 0 ? SCORE.OUT_OF_ZONE_FATAL : -20000
     }
 
     }
@@ -499,9 +529,23 @@ export function scoreCandidate(
 
   const expectedHouseNormal = opts.expectedHouse?.toLowerCase().replace(/[^a-z0-9а-яієґ]/g, '')
   const streetNumNormal = (raw.address_components || []).find(c => c.types.includes('street_number'))?.long_name?.toLowerCase().replace(/[^a-z0-9а-яієґ]/g, '')
-  const streetNumberMatched = !!expectedHouseNormal && streetNumNormal === expectedHouseNormal
+  
+  // v5.129: Also check formatted_address for the house number —
+  // Photon/Nominatim often omit address_components.street_number even when
+  // they return the correct address. A regex match against the display string
+  // prevents false "needs clarification" flags for most urban addresses.
+  let streetNumberMatched = !!expectedHouseNormal && streetNumNormal === expectedHouseNormal
+  if (!streetNumberMatched && expectedHouseNormal && raw.formatted_address) {
+    const addrLower = raw.formatted_address.toLowerCase()
+    // Match "26", "26а", "26/1" etc. in the formatted address
+    const houseRegex = new RegExp(`\\b${expectedHouseNormal}[а-яієґa-z\\/\\-]*\\b`)
+    if (houseRegex.test(addrLower)) {
+      streetNumberMatched = true
+    }
+  }
 
   return { raw, lat, lng, score, kmlZone, kmlHub, isTechnicalZone: isTech, isInsideZone: isInside, streetNumberMatched, locationType: raw.geometry?.location_type }
+
 }
 
 // ─── Perfect hit detection ────────────────────────────────────────────────────

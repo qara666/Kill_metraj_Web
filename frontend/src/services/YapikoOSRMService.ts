@@ -21,15 +21,12 @@ export interface OSRMRouteResult {
 export class YapikoOSRMService {
   /**
    * Build the backend base URL directly from window.location — NO imports required.
-   * Works on Render (onrender.com) to route OSRM calls through backend proxy,
-   * avoiding Mixed Content blocks. Zero risk of circular ESM dependencies.
    */
   private static getBackendBaseUrl(): string | null {
     if (typeof window === 'undefined') return null;
     const hostname = window.location.hostname;
     if (!hostname.includes('onrender.com')) return null;
 
-    // Match the backend hostname used in apiConfig.ts runtime logic
     if (hostname === 'yapiko-auto-km-frontend-live.onrender.com') {
       return 'https://yapiko-auto-km-backend.onrender.com';
     }
@@ -52,49 +49,55 @@ export class YapikoOSRMService {
    */
   static async calculateRoute(
     locations: { lat: number; lng: number }[],
-    baseUrl: string
+    baseUrl: string,
+    profileType: string = 'driving'
   ): Promise<OSRMRouteResult> {
     if (locations.length < 2) return { feasible: false }
     if (!baseUrl) {
-        console.warn('[Маршрут] Yapiko OSRM URL не задан в настройках');
+        console.warn('[YapikoOSRM] URL не задан');
         return { feasible: false };
     }
 
-    // Ensure baseUrl doesn't have trailing slash
-    const normalizedUrl = baseUrl.replace(/\/$/, '');
+    const normalizedUrl = baseUrl.trim().replace(/\/+$/, '');
+    const profile = profileType === 'car' ? 'driving' : (profileType || 'driving');
     
-    // OSRM expects coordinates in lng,lat format joined by ';'
-    const coordsStr = locations.map(l => `${l.lng},${l.lat}`).join(';')
+    // Use toFixed(7) for maximum coordinate precision in OSRM
+    const coordsStr = locations.map(l => `${Number(l.lng).toFixed(7)},${Number(l.lat).toFixed(7)}`).join(';');
     
-    // v5.106: Try 'driving' first, then 'car' if needed
-    const profiles = ['driving', 'car'];
+    // We try multiple profiles if needed, but primary is the requested one
+    const tryProfiles = [profile];
+    if (profile !== 'driving') tryProfiles.push('driving');
+    
     let lastError = '';
 
-    for (const profile of profiles) {
-        const targetUrl = `${normalizedUrl}/route/v1/${profile}/${coordsStr}?overview=false&steps=false`
+    for (const p of tryProfiles) {
+        const targetUrl = `${normalizedUrl}/route/v1/${p}/${coordsStr}?overview=full&steps=true&annotations=true`;
         const finalUrl = this.getMaybeProxiedUrl(targetUrl);
 
         try {
-          console.log(`[YapikoOSRM] Запрос к ${profile}...`);
-          const response = await fetch(finalUrl, { signal: AbortSignal.timeout(8000) })
+          const response = await fetch(finalUrl, { signal: AbortSignal.timeout(10000) });
           
           if (!response.ok) {
               const errText = await response.text().catch(() => '');
-              lastError = `HTTP ${response.status}: ${errText || response.statusText}`;
-              console.warn(`[YapikoOSRM] ⚠️ Ошибка ${profile}: ${lastError}`);
-              if (response.status === 404 || response.status === 400) continue; 
-              return { feasible: false };
+              lastError = `HTTP ${response.status}: ${errText}`;
+              console.warn(`[YapikoOSRM] ⚠️ Ошибка (${p}): ${lastError}`);
+              continue;
           }
 
-          const data = await response.json()
+          const data = await response.json();
           if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
             lastError = `OSRMR_CODE: ${data.code}`;
-            console.warn(`[YapikoOSRM] ⚠️ Невалидный ответ (${profile}):`, data.code);
+            console.warn(`[YapikoOSRM] ⚠️ Невалидный ответ (${p}):`, data.code);
             continue;
           }
 
-          const route = data.routes[0]
-          console.log(`[YapikoOSRM] ✅ Успех (${profile}): ${Math.round(route.distance/1000)} km`);
+          const route = data.routes[0];
+          const distKm = route.distance / 1000;
+          
+          // Improved logging for small distances
+          const distLog = distKm < 1 ? `${Math.round(route.distance)} м` : `${distKm.toFixed(2)} км`;
+          console.log(`[YapikoOSRM] ✅ Успех (${p}): ${distLog} | Точек: ${locations.length}`);
+
           const legs: OSRMLeg[] = (route.legs || []).map((leg: any, idx: number) => ({
             distance: { 
               value: leg.distance, 
@@ -106,24 +109,21 @@ export class YapikoOSRMService {
             },
             start_location: locations[idx],
             end_location: locations[idx + 1]
-          }))
+          }));
 
           return {
             feasible: true,
             legs,
             totalDistance: route.distance,
             totalDuration: route.duration
-          }
-        } catch (error) {
-          console.error(`[Маршрут] Ошибка Yapiko OSRM (${profile}):`, error)
+          };
+        } catch (error: any) {
+          console.error(`[YapikoOSRM] Ошибка (${p}):`, error);
           lastError = String(error);
         }
     }
 
-    if (lastError) {
-        console.warn(`[Маршрут] Yapiko OSRM не удалось рассчитать ни по одному профилю. Последняя ошибка: ${lastError}`);
-    }
-    return { feasible: false }
+    return { feasible: false };
   }
 
   /**
@@ -133,45 +133,46 @@ export class YapikoOSRMService {
     sources: { lat: number; lng: number }[],
     targets: { lat: number; lng: number }[],
     baseUrl: string
-  ): Promise<{ distance: number; duration: number }[][] | null> {
-    if (sources.length === 0 || targets.length === 0 || !baseUrl) return null
+  ): Promise<any[][] | null> {
+    if (sources.length === 0 || targets.length === 0 || !baseUrl) return null;
 
-    const normalizedUrl = baseUrl.replace(/\/$/, '')
-    const allPoints = [...sources, ...targets]
-    const sourceIndices = sources.map((_, i) => i).join(';')
-    const targetIndices = targets.map((_, i) => sources.length + i).join(';')
-    const coordsStr = allPoints.map(p => `${p.lng},${p.lat}`).join(';')
+    const normalizedUrl = baseUrl.trim().replace(/\/+$/, '');
+    const allPoints = [...sources, ...targets];
+    const sourceIndices = sources.map((_, i) => i).join(';');
+    const targetIndices = targets.map((_, i) => sources.length + i).join(';');
+    const coordsStr = allPoints.map(p => `${Number(p.lng).toFixed(7)},${Number(p.lat).toFixed(7)}`).join(';');
 
-    const targetUrl = `${normalizedUrl}/table/v1/driving/${coordsStr}?sources=${sourceIndices}&destinations=${targetIndices}&annotations=duration,distance`
+    const targetUrl = `${normalizedUrl}/table/v1/driving/${coordsStr}?sources=${sourceIndices}&destinations=${targetIndices}&annotations=duration,distance`;
     const finalUrl = this.getMaybeProxiedUrl(targetUrl);
 
     try {
-      const response = await fetch(finalUrl, { signal: AbortSignal.timeout(10000) })
-      if (!response.ok) return null
+      const response = await fetch(finalUrl, { signal: AbortSignal.timeout(15000) });
+      if (!response.ok) return null;
       
-      const data = await response.json()
-      if (data.code !== 'Ok' || !data.distances) return null
+      const data = await response.json();
+      if (data.code !== 'Ok' || !data.distances) return null;
 
       return data.distances.map((row: number[], i: number) => 
         row.map((dist: number, j: number) => ({
           distance: dist,
           duration: data.durations ? data.durations[i][j] : 0
         }))
-      )
+      );
     } catch {
-      return null
+      return null;
     }
   }
+
   /**
-   * Quick point-to-point distance estimate using matrix (single leg).
+   * Quick point-to-point distance estimate.
    */
   static async getPointDistance(
     from: { lat: number; lng: number },
     to: { lat: number; lng: number },
     baseUrl: string
   ): Promise<{ distanceM: number; durationS: number } | null> {
-    const result = await this.calculateRoute([from, to], baseUrl)
-    if (!result.feasible || result.totalDistance === undefined) return null
-    return { distanceM: result.totalDistance, durationS: result.totalDuration ?? 0 }
+    const result = await this.calculateRoute([from, to], baseUrl);
+    if (!result.feasible || result.totalDistance === undefined) return null;
+    return { distanceM: result.totalDistance, durationS: result.totalDuration ?? 0 };
   }
 }

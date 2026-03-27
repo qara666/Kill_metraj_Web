@@ -10,7 +10,8 @@
 import { NominatimService } from './nominatimService'
 import { GeoapifyService } from './geoapifyService'
 import { localStorageUtils } from '../utils/ui/localStorage'
-import { robustGeocodingService, RobustGeocodeResult } from './robust-geocoding/RobustGeocodingService'
+import { robustGeocodingService } from './robust-geocoding/RobustGeocodingService'
+import type { RobustGeocodeResult } from './robust-geocoding/types'
 
 // Google Maps types
 declare global {
