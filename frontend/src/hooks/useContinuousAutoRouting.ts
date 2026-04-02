@@ -575,8 +575,8 @@ export function useContinuousAutoRouting() {
             return;
         }
         const run = () => runAutoRoutingRef.current?.();
-        const intervalId = setInterval(run, 30000);
-        const t = setTimeout(run, 800);
+        const intervalId = setInterval(run, 60000); // v19.0: Polling reduced (Backend Robot handles primary calculations)
+        const t = setTimeout(run, 2000); // Initial delay increased to allow backend push first
         return () => { clearInterval(intervalId); clearTimeout(t); };
     }, [autoRoutingStatus.isActive]);
 

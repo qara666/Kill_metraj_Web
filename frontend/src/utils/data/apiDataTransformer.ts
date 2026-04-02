@@ -53,6 +53,8 @@ export const transformDashboardData = (
             name: courierName,
             isActive: apiCourier.isActive,
             vehicleType: vehicleType,
+            distanceKm: apiCourier.distanceKm || 0, // v5.136: Map calculated distance
+            calculatedOrders: apiCourier.calculatedOrders || 0
         });
     });
 
@@ -124,16 +126,17 @@ export const transformDashboardData = (
         orders,
         couriers,
         paymentMethods: [],
-        routes: [],
+        routes: apiData.routes || [], // v5.136: PRESERVE BACKEND ROUTES (fix "Empty Routes" bug)
         errors,
+        lastModified: apiData.lastModified ? Number(apiData.lastModified) : Date.now(),
         summary: {
             totalRows: apiData.orders.length,
-            successfulGeocoding: 0, // Будет обновлено после геокодирования
+            successfulGeocoding: 0, 
             failedGeocoding: 0,
             orders: orders.length,
             couriers: couriers.length,
             paymentMethods: 0,
-            errors: errors.map((e) => e.message),
+            errors: errors.map((e: any) => e.message),
         },
     };
 };

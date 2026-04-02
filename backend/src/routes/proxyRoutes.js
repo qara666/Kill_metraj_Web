@@ -79,4 +79,47 @@ router.get('/osrm', async (req, res) => {
     }
 });
 
+// Proxy route for Geocoding (Nominatim, Photon, etc.)
+router.get('/geocoding', async (req, res) => {
+    const { url } = req.query;
+
+    if (!url) {
+        return res.status(400).json({ success: false, error: 'URL обязателен' });
+    }
+
+    try {
+        // Validation: only allow geocoding-like URLs for security
+        const isGeocodingUrl = url.includes('nominatim.openstreetmap.org') || 
+                              url.includes('photon.komoot.io') || 
+                              url.includes('api.mapbox.com/geocoding') ||
+                              url.includes('maps.googleapis.com/maps/api/geocode');
+                              
+        if (!isGeocodingUrl) {
+            return res.status(400).json({ success: false, error: 'Разрешены только запросы к доверенным геокодерам' });
+        }
+
+        logger.info('Geocoding Proxy: Запрос к', { url: url.substring(0, 100) + '...' });
+
+        const response = await axios.get(url, {
+            headers: { 'Accept-Language': 'ru-RU,ru;q=0.9,uk-UA;q=0.8,uk;q=0.7,en-US;q=0.6,en;q=0.5' },
+            timeout: 10000 
+        });
+
+        // Forward successful response
+        res.json(response.data);
+    } catch (error) {
+        const status = error.response?.status || 500;
+        logger.error('Geocoding Proxy Error', {
+            url: url.substring(0, 100) + '...',
+            status,
+            message: error.message
+        });
+        res.status(status).json({
+            success: false,
+            error: 'Ошибка Геокодинг прокси',
+            details: error.message
+        });
+    }
+});
+
 module.exports = router;

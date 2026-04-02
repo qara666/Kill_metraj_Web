@@ -145,12 +145,109 @@ class SocketService {
             return;
         }
 
+        // v30.0: dashboard:update now carries enriched courier data from Turbo Robot
+        // Apply the enriched data directly into ExcelDataContext via custom DOM event
         this.socket.on('dashboard:update', (data) => {
-            console.log('[SocketService]  Dashboard update received:', {
-                timestamp: data.timestamp,
-                status: data.status
+            console.log('[SocketService] 🤖 Dashboard:update received', {
+                source: data?.source,
+                hasCouriers: !!(data?.data?.couriers?.length),
+                divisionId: data?.divisionId
             });
-            callback(data);
+            
+            // v30.0: If turbo robot sent enriched data, push it directly to React state
+            if (data?.data && data?.source === 'turbo_calculator_enrichment') {
+                console.log('[SocketService] 🚀 Applying enriched data from Turbo Robot:', {
+                    couriers: data.data.couriers?.length,
+                    orders: data.data.orders?.length
+                });
+                // Dispatch custom event — ExcelDataContext listens to this in the same tab
+                window.dispatchEvent(new CustomEvent('km:turbo:dashboard_update', { detail: data.data }));
+            }
+            
+            callback({ data: data?.data || null, timestamp: new Date().toISOString(), status: 200 });
+        });
+
+        // v19.0: Support Turbo Robot events
+        this.socket.on('dashboard_update', (data) => {
+            console.log('[SocketService] 🤖 Turbo Robot: Dashboard data changed', data);
+            callback({ data: null, timestamp: new Date().toISOString(), status: 200 }); // Trigger refetch
+        });
+
+        // Per-division status updates (for multi-division UI)
+        this.socket.on('division_status', (payload) => {
+            console.log('[SocketService] division_status', payload);
+            try {
+                // Attach division status to a simple in-memory store
+                window.__divisionStatuses = window.__divisionStatuses || {};
+                window.__divisionStatuses[payload.divisionId] = payload;
+                
+                // v25.0: Emit local event for real-time UI updates
+                this.emit('division_status_update', payload);
+            } catch (e) {
+                console.warn('Failed to store division_status', e);
+            }
+        });
+
+        this.socket.on('routes_update', (data) => {
+            console.log('[SocketService] 🤖 Turbo Robot: Routes recalculated', {
+                divisionId: data.divisionId,
+                date: data.date,
+                count: data.routes?.length
+            });
+            
+            // v25.0: Sanity check - Ignore updates for other divisions
+            try {
+                const { useDashboardStore } = require('../stores/useDashboardStore');
+                const store = useDashboardStore.getState();
+                const currentDivisionStr = String(store.divisionId || 'all');
+                
+                if (currentDivisionStr !== 'all' && String(data.divisionId) !== currentDivisionStr) {
+                    console.log(`[SocketService] 🛑 Ignoring routes_update for division ${data.divisionId} (currently on ${currentDivisionStr})`);
+                    return;
+                }
+            } catch (e) {
+                // Ignore division check errors
+            }
+            
+            // Try to trigger a direct refresh via global function
+            try {
+                if (typeof window !== 'undefined' && (window as any).__refreshTurboRoutes) {
+                    console.log('[SocketService] 🔄 Triggering route refresh via global function');
+                    setTimeout(() => (window as any).__refreshTurboRoutes(), 100);
+                }
+            } catch (e) {
+                console.warn('[SocketService] Failed to trigger global refresh:', e);
+            }
+
+            // v30.0: Dispatch DOM CustomEvent for SAME-TAB React state update
+            // localStorage 'storage' events DON'T fire in the same browser tab!
+            if (data.routes && Array.isArray(data.routes)) {
+                console.log('[SocketService] 📡 Dispatching km:turbo:routes_update:', data.routes.length, 'routes');
+                window.dispatchEvent(new CustomEvent('km:turbo:routes_update', {
+                    detail: { routes: data.routes, date: data.date, divisionId: data.divisionId }
+                }));
+                // Also persist for cross-tab sync / page reload recovery
+                try {
+                    localStorage.setItem('km_routes', JSON.stringify(data.routes));
+                    localStorage.setItem('km_routes_last_updated', new Date().toISOString());
+                } catch (e) {
+                    console.warn('[SocketService] Failed to persist routes to localStorage:', e);
+                }
+            }
+            
+            callback({ data: null, timestamp: new Date().toISOString(), status: 200 }); // Trigger refetch
+        });
+
+        
+        // v22.6: Live status updates for the Robot counter (0/126)
+        this.socket.on('robot_status', (data) => {
+            console.log('[SocketService] 🤖 Turbo Robot: Status update', data);
+            try {
+                const { useDashboardStore } = require('../stores/useDashboardStore');
+                useDashboardStore.getState().setAutoRoutingStatus(data);
+            } catch (e) {
+                // Secondary fallback if direct import fails in this context
+            }
         });
 
         // Store callback for cleanup

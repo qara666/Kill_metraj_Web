@@ -298,22 +298,48 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
 
     // ──────────────────────────────────────────────────────────────────────
     // PASS 2: Routes — calculate actual km (excluding cancelled stops)
+    // Count orders from BOTH calculated (DB) and manual routes, avoiding duplicates
     // ──────────────────────────────────────────────────────────────────────
+    
+    // First: collect all order IDs from CALCULATED routes (DB/Turbo Robot)
+    const calculatedRouteOrderIds = new Set<string>();
+    if (contextData?.routes && Array.isArray(contextData.routes)) {
+      contextData.routes.forEach((route: any) => {
+        if (!route.isOptimized) return; // Only from calculated routes
+        (route.orders || []).forEach((o: any) => {
+          const oid = getStableOrderId(o);
+          if (oid) calculatedRouteOrderIds.add(oid);
+        });
+      });
+    }
+    
+    // Second: process all routes, counting unique orders
     if (contextData?.routes && Array.isArray(contextData.routes)) {
       contextData.routes.forEach((route: any) => {
         // v5.132: Resolve courier name from ID if needed
         const rawCourier = getCourierName(route.courier);
         let routeCourier = courierIdToNameMap.get(rawCourier) || CourierIdResolver.resolve(rawCourier) || normalizeCourierName(rawCourier);
         
-        if (!routeCourier || routeCourier === 'Не назначено') return;
+        if (!routeCourier || routeCourier === 'Не назначено' || routeCourier === 'НЕ НАЗНАЧЕНО') return;
 
         const current = ensureEntry(routeCourier)
         const routeOrders = route.orders || []
         let uniqueActiveStops = 0
         let lastActiveAddr = ""
 
+        // v5.149: Also track orderNumbers for deduplication
+        const seenOrderNumbers = new Set<string>();
+        
         routeOrders.forEach((o: any) => {
           const oid = getStableOrderId(o)
+          const orderNum = String(o.orderNumber || '');
+          
+          // v5.149: CRITICAL - Skip if we've seen this orderNumber before
+          // Same order may have different IDs from different sources
+          if (orderNum && seenOrderNumbers.has(orderNum)) {
+            return; // Skip duplicate orderNumber
+          }
+          if (orderNum) seenOrderNumbers.add(orderNum);
 
           // SKIP: cancelled orders don't count as route stops
           if (isOrderCancelled(o.status)) {
@@ -341,6 +367,12 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
             return
           }
 
+          // Skip orders that are already in calculated (DB) routes
+          // This prevents double counting when user manually routes an order
+          if (!route.isOptimized && calculatedRouteOrderIds.has(oid)) {
+            return; // Skip - this order is already counted from DB route
+          }
+
           if (!current.uniqueOrderIds.has(oid)) {
             current.uniqueOrderIds.add(oid)
             current.ordersInRoutes++
@@ -355,16 +387,6 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
           if (!current.allAssignedOrderIds.has(oid)) {
             current.allAssignedOrderIds.add(oid)
             current.totalOrders++
-          }
-
-          if (!!o.coords?.lat && !current.uniqueOrderIds.has(oid)) {
-            current.uniqueOrderIds.add(oid)
-            current.ordersInRoutes++
-            const currentAddr = (o.address || "").trim().toLowerCase();
-            if (currentAddr !== lastActiveAddr) {
-              uniqueActiveStops++
-              lastActiveAddr = currentAddr
-            }
           }
         })
 
@@ -409,8 +431,45 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
       }
     })
 
+    // ──────────────────────────────────────────────────────────────────────
+    // PASS 4: Override with Turbo Robot enriched distanceKm (highest priority)
+    // The robot writes distanceKm directly to excelData.couriers via dashboard:update.
+    // This beats any estimate or route-computed value.
+    // ──────────────────────────────────────────────────────────────────────
+    if (excelData?.couriers && Array.isArray(excelData.couriers)) {
+      excelData.couriers.forEach((c: any) => {
+        const robotKm = c.distanceKm;
+        if (!robotKm || robotKm <= 0) return;
+        const nm = normalizeCourierName(c.name || c.courierName || '');
+        if (!nm) return;
+        const entry = stats.get(nm);
+        if (entry && robotKm > entry.totalDistance) {
+          // Robot distance overrides estimated / route-summed distance
+          const delta = robotKm - entry.baseDistance;
+          entry.totalDistance = robotKm;
+          entry.baseDistance = robotKm;
+          entry.additionalDistance = Math.max(0, delta);
+        } else if (!entry) {
+          // Courier only exists in cache (no local orders) — create entry
+          stats.set(nm, {
+            ordersInRoutes: c.calculatedOrders || 0,
+            totalOrders: c.calculatedOrders || 0,
+            baseDistance: robotKm,
+            additionalDistance: 0,
+            totalDistance: robotKm,
+            uniqueOrderIds: new Set(),
+            allAssignedOrderIds: new Set(),
+            cancelledCount: 0, reassignedOutCount: 0, reassignedInCount: 0,
+            cancelledOrderIds: new Set(),
+            reassignedOutIds: new Set(),
+          });
+        }
+      });
+    }
+
     return stats
-  }, [excelData?.orders, excelData?.fulfilledDistance, contextData?.routes])
+  }, [excelData?.orders, excelData?.fulfilledDistance, excelData?.couriers, contextData?.routes])
+
 
   const getCourierStats = (courierName: string) => {
     const normalized = normalizeCourierName(courierName)
@@ -564,8 +623,14 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
 
   const getCourierRoutes = (courierName: string) => {
     if (!contextData?.routes) return []
-    return contextData.routes.filter((r: any) => normalizeCourierName(getCourierName(r.courier)) === normalizeCourierName(courierName))
+    const normTarget = normalizeCourierName(courierName)
+    return contextData.routes.filter((r: any) => {
+      // Robot routes use courier_id (UPPERCASE), manual routes use courier
+      const routeCourier = r.courier || r.courier_id || ''
+      return normalizeCourierName(getCourierName(routeCourier)) === normTarget
+    })
   }
+
 
   const deleteRoute = (routeId: string) => {
     const route = contextData?.routes?.find((r: any) => r.id === routeId)

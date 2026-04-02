@@ -7,6 +7,9 @@ const DashboardState = require('./DashboardState');
 const DashboardCache = require('./DashboardCache');
 const KmlHub = require('./KmlHub');
 const KmlZone = require('./KmlZone');
+const Route = require('./Route');
+const GeoCache = require('./GeoCache');
+const DashboardDivisionState = require('./DashboardDivisionState');
 
 // Define associations
 User.hasOne(UserPreset, {
@@ -82,8 +85,11 @@ module.exports = {
     UserPreset,
     AuditLog,
     DashboardState,
+    DashboardDivisionState,
     DashboardCache,
     KmlHub,
     KmlZone,
+    Route,
+    GeoCache,
     syncDatabase
 };

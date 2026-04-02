@@ -3,10 +3,10 @@ import { localStorageUtils } from '../utils/ui/localStorage'
 import { toast } from 'react-hot-toast'
 import { normalizeCourierName, isId0CourierName, getCourierName } from '../utils/data/courierName'
 import { enrichOrderGeodata } from '../utils/data/excelProcessor'
-import { isOrderCompleted } from '../utils/data/orderStatus'
 import { getStableOrderId } from '../utils/data/orderId'
 import { normalizeDateToIso } from '../utils/data/dateUtils'
 import { CourierIdResolver } from '../utils/data/courierIdMap'
+import { useDashboardStore } from '../stores/useDashboardStore'
 
 interface ExcelData {
   orders: any[]
@@ -46,9 +46,58 @@ interface ExcelDataProviderProps {
 export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }) => {
   const [excelData, setExcelDataState] = useState<ExcelData | null>(null)
   const hasInit = useRef(false)
-  const bypassSaveRef = useRef(false)
   const excelDataRef = useRef<ExcelData | null>(null)
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Helper to fetch routes with current date
+  const fetchRoutesWithDate = useCallback(async (token: string) => {
+    const apiDateShift = useDashboardStore.getState().apiDateShift;
+    
+    console.log('[ExcelSync] 📡 Fetching routes from API, date:', apiDateShift);
+    
+    // v5.143: Normalize date to YYYY-MM-DD and pass to backend
+    let normalizedDate = '';
+    if (apiDateShift) {
+      if (/^\d{2}\.\d{2}\.\d{4}$/.test(apiDateShift)) {
+        const parts = apiDateShift.split('.');
+        normalizedDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+      } else if (/^\d{4}-\d{2}-\d{2}$/.test(apiDateShift)) {
+        normalizedDate = apiDateShift;
+      }
+    }
+    
+    // Build URL with date parameter
+    const url = normalizedDate 
+      ? `/api/routes/calculated?date=${encodeURIComponent(normalizedDate)}`
+      : '/api/routes/calculated';
+    
+    const routesRes = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    let allRoutes = [];
+    if (routesRes.ok) {
+      const routesJson = await routesRes.json();
+      allRoutes = routesJson.data || [];
+      console.log('[ExcelSync] 📥 Got routes from API:', allRoutes.length);
+    } else {
+      console.log('[ExcelSync] ❌ API error:', routesRes.status);
+    }
+    
+    console.log('[ExcelSync] ✅ Routes loaded:', { count: allRoutes.length, date: normalizedDate || 'today' });
+    
+    // Debug: show first few routes
+    if (allRoutes.length > 0) {
+      console.log('[ExcelSync] 📋 Sample route:', JSON.stringify({
+        id: allRoutes[0].id,
+        courier: allRoutes[0].courier,
+        ordersCount: allRoutes[0].ordersCount,
+        targetDate: allRoutes[0].targetDate
+      }, null, 2));
+    }
+    
+    return allRoutes;
+  }, []);
 
   useEffect(() => {
     excelDataRef.current = excelData
@@ -75,6 +124,41 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
 
               if (response.ok) {
                 const json = await response.json();
+                console.log('[ExcelSync] Server response:', json.success ? 'OK' : 'FAIL', 
+                  json.data ? `orders: ${json.data.orders?.length || 0}, routes: ${json.data.routes?.length || 0}` : 'no data');
+                
+                // v5.152: Check if server has meaningful data (at least orders)
+                const serverHasOrders = json.success && json.data && (json.data.orders?.length > 0);
+                
+                // v5.152: Also check localStorage for fresh data
+                const localRaw = localStorage.getItem('km_dashboard_processed_data');
+                let localData = null;
+                if (localRaw) {
+                  try {
+                    localData = JSON.parse(localRaw);
+                  } catch (e) {}
+                }
+                
+                // v5.152: Use local data if it exists and has orders, OR if server has no orders
+                console.log('[ExcelSync] 🔍 Data check:', {
+                  localHasOrders: localData?.orders?.length || 0,
+                  serverHasOrders: json.data?.orders?.length || 0,
+                  localLastModified: localData?.lastModified,
+                  serverLastModified: json.data?.lastModified
+                });
+                
+                if (localData && localData.orders && localData.orders.length > 0) {
+                  if (!serverHasOrders || (localData.lastModified && (!json.data.lastModified || localData.lastModified > json.data.lastModified))) {
+                    console.log('[ExcelSync] 📱 Using localStorage data:', localData.orders.length, 'orders (server has', json.data?.orders?.length || 0, ')');
+                    setExcelDataState(localData);
+                    return;
+                  } else {
+                    console.log('[ExcelSync] 📱 localStorage data exists but server has newer data');
+                  }
+                } else {
+                  console.log('[ExcelSync] 📱 localStorage has no orders (', localData?.orders?.length || 0, ')');
+                }
+                
                 if (json.success && json.data) {
                   const serverData = json.data;
                   const localOverrides = localStorage.getItem('km_manual_overrides');
@@ -100,18 +184,71 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                     } catch (e) {}
                   }
                   
-                  // Проверяем локальное кэшированное состояние
-                  const localRaw = localStorage.getItem('km_dashboard_processed_data');
-                  if (localRaw) {
-                    const localData = JSON.parse(localRaw);
-                    if (localData.lastModified && serverData.lastModified && localData.lastModified > serverData.lastModified) {
-                      console.log('[ExcelSync] Local data is NEWER than server. Using Local.');
-                      setExcelDataState(localData);
-                      return;
+                  // v25.3: Also fetch routes from database when using server data
+                  try {
+                    const token = localStorage.getItem('km_access_token');
+                    if (token) {
+                      const dbRoutes = await fetchRoutesWithDate(token);
+                      console.log('[ExcelSync] 🔄 DB Routes loaded:', dbRoutes.length);
+                      
+                      // Merge with existing routes if any
+                      const existingRoutes = Array.isArray(serverData.routes) ? serverData.routes : [];
+                      
+                      // v5.141: Improved merging logic with deduplication
+                      const allRouteIds = new Set<string>();
+                      const mergedRoutes: any[] = [];
+                      
+                      // Add existing routes first (deduplicated)
+                      existingRoutes.forEach((r: any) => {
+                        const rid = String(r.id || '');
+                        if (rid && !allRouteIds.has(rid)) {
+                          allRouteIds.add(rid);
+                          mergedRoutes.push(r);
+                        }
+                      });
+                      
+                      // Add DB routes (deduplicated, DB routes have priority)
+                      dbRoutes.forEach((r: any) => {
+                        const rid = String(r.id || '');
+                        if (rid && !allRouteIds.has(rid)) {
+                          allRouteIds.add(rid);
+                          mergedRoutes.push(r);
+                        }
+                      });
+                      
+                      serverData.routes = mergedRoutes;
+
+                      // v5.147: Update courier distances from these routes (skip "Не назначено")
+                      // Normalize both courier names for proper matching
+                      if (serverData.couriers && Array.isArray(serverData.couriers)) {
+                        serverData.couriers.forEach((c: any) => {
+                            const rawName = (c.name || c.courierName || '').toString().trim();
+                            const normName = rawName.replace(/\s+/g, ' ').toUpperCase();
+                            
+                            // v5.141: Skip "Не назначено"
+                            if (normName === 'НЕ НАЗНАЧЕНО' || !rawName) return;
+                            
+                            // v5.147: Normalize courier field from routes - check both courier and courier_id
+                            const courierRoutes = mergedRoutes.filter((r: any) => {
+                              const routeCourier = (r.courier || r.courier_id || '').toString().trim().replace(/\s+/g, ' ').toUpperCase();
+                              return routeCourier === normName;
+                            });
+                            
+                            if (courierRoutes.length > 0) {
+                                const totalDist = courierRoutes.reduce((acc: number, curr: any) => acc + (Number(curr.total_distance) || 0), 0);
+                                const totalOrders = courierRoutes.reduce((acc: number, curr: any) => acc + (Number(curr.ordersCount) || 0), 0);
+                                c.distanceKm = Number(totalDist.toFixed(2));
+                                c.calculatedOrders = totalOrders;
+                                console.log(`[ExcelSync] 📍 Updated courier ${normName}: ${c.distanceKm} km, ${totalOrders} orders (${courierRoutes.length} routes)`);
+                            }
+                        });
+                      }
                     }
+                  } catch (e) {
+                    console.warn('[ExcelSync] Failed to fetch routes from database:', e);
                   }
 
-                  console.log('[ExcelSync] Using Server data.');
+                  console.log('[ExcelSync] 🚀 Using Server data (with distances and routes).');
                   setExcelDataState(serverData);
                   return;
                 }
@@ -121,10 +258,72 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             }
           }
 
-          // 2. Если сервера нет или ошибка, грузим из localStorage
+            // 2. Если сервера нет или ошибка, грузим из localStorage
           const localData = localStorage.getItem('km_dashboard_processed_data')
+          
+          // Always try to fetch routes from database first
+          let dbRoutes: any[] = [];
+          try {
+            const token = localStorage.getItem('km_access_token');
+            if (token) {
+              dbRoutes = await fetchRoutesWithDate(token);
+              console.log('[ExcelSync] 🔄 DB Routes loaded:', dbRoutes.length);
+            }
+          } catch (e) {
+            console.warn('[ExcelSync] Failed to fetch routes from database:', e);
+          }
+          
           if (localData) {
-            setExcelDataState(JSON.parse(localData))
+            const parsed = JSON.parse(localData);
+            
+            // Merge with DB routes
+            const existingRoutes = Array.isArray(parsed.routes) ? parsed.routes : [];
+            const existingRouteIds = new Set(existingRoutes.map((r: any) => r.id));
+            const newDbRoutes = dbRoutes.filter((r: any) => !existingRouteIds.has(r.id));
+            
+            if (newDbRoutes.length > 0) {
+              console.log('[ExcelSync] 🔄 Adding DB routes to local:', newDbRoutes.length);
+              parsed.routes = [...existingRoutes, ...newDbRoutes];
+            } else if (existingRoutes.length === 0 && dbRoutes.length > 0) {
+              console.log('[ExcelSync] 🔄 Using DB routes:', dbRoutes.length);
+              parsed.routes = dbRoutes;
+            }
+            
+            // v5.147: Update courier distances when loading from localStorage + DB routes
+            if (parsed.couriers && Array.isArray(parsed.couriers)) {
+              const allRoutes = parsed.routes || [];
+              parsed.couriers.forEach((c: any) => {
+                const rawName = (c.name || c.courierName || '').toString().trim();
+                const normName = rawName.replace(/\s+/g, ' ').toUpperCase();
+                if (normName === 'НЕ НАЗНАЧЕНО' || !rawName) return;
+                
+                const courierRoutes = allRoutes.filter((r: any) => {
+                  const routeCourier = (r.courier || r.courier_id || '').toString().trim().replace(/\s+/g, ' ').toUpperCase();
+                  return routeCourier === normName;
+                });
+                
+                if (courierRoutes.length > 0) {
+                  const totalDist = courierRoutes.reduce((acc: number, curr: any) => acc + (Number(curr.total_distance) || 0), 0);
+                  const totalOrders = courierRoutes.reduce((acc: number, curr: any) => acc + (Number(curr.ordersCount) || 0), 0);
+                  c.distanceKm = Number(totalDist.toFixed(2));
+                  c.calculatedOrders = totalOrders;
+                  console.log(`[ExcelSync] 📍 Loaded: ${normName} = ${c.distanceKm} km, ${totalOrders} orders`);
+                }
+              });
+            }
+            
+            setExcelDataState(parsed)
+          } else if (dbRoutes.length > 0) {
+            // No local data, but we have DB routes - create minimal state
+            console.log('[ExcelSync] 🔄 Using DB routes only (no local data):', dbRoutes.length);
+            setExcelDataState({
+              orders: [],
+              couriers: [],
+              paymentMethods: [],
+              routes: dbRoutes,
+              errors: [],
+              summary: {}
+            });
           }
         } catch (error) {
           console.error('Error loading data:', error);
@@ -133,6 +332,87 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       loadData()
     }
   }, [])
+
+  // v25.1: Listen for storage changes (when Turbo Robot saves routes in another tab)
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'km_routes' && e.newValue) {
+        try {
+          const routes = JSON.parse(e.newValue);
+          if (routes.length > 0) {
+            console.log('[ExcelSync] 🔄 Storage event (cross-tab): Routes updated by Turbo Robot:', routes.length);
+            setExcelDataState(prev => {
+              if (prev) {
+                return { ...prev, routes };
+              }
+              return prev;
+            });
+          }
+        } catch (e) {
+          console.warn('[ExcelSync] Failed to parse routes from storage event:', e);
+        }
+      }
+    };
+    
+    // v30.0: Listen for same-tab DOM events dispatched by socketService
+    // socketService dispatches 'km:turbo:routes_update' when robot finishes routing
+    const handleTurboRoutes = (e: Event) => {
+      const { routes, date } = (e as CustomEvent).detail || {};
+      if (routes && Array.isArray(routes) && routes.length > 0) {
+        console.log('[ExcelSync] 📡 km:turbo:routes_update received:', routes.length, 'routes for', date);
+        setExcelDataState(prev => {
+          if (!prev) return prev;
+          // DB routes take priority; remove duplicates by id
+          const dbIds = new Set(routes.map((r: any) => String(r.id)));
+          const manualRoutes = (prev.routes || []).filter((r: any) => {
+            const id = String(r.id || '');
+            return id.startsWith('route_') && !dbIds.has(id);
+          });
+          return { ...prev, routes: [...routes, ...manualRoutes] };
+        });
+      }
+    };
+
+    // v30.0: Listen for enriched dashboard data (courier km distances) from robot
+    const handleTurboDashboard = (e: Event) => {
+      const data = (e as CustomEvent).detail;
+      if (!data) return;
+      console.log('[ExcelSync] 📡 km:turbo:dashboard_update received: couriers=', data.couriers?.length);
+      if (data.couriers && Array.isArray(data.couriers)) {
+        setExcelDataState(prev => {
+          if (!prev) return prev;
+          // Merge distanceKm from robot-enriched couriers into current state
+          const enrichedMap = new Map<string, number>();
+          data.couriers.forEach((c: any) => {
+            const name = (c.courierName || c.name || '').toString().trim().toUpperCase();
+            if (name && (c.distanceKm || 0) > 0) {
+              enrichedMap.set(name, Number(c.distanceKm));
+            }
+          });
+          if (enrichedMap.size === 0) return prev;
+          const updatedCouriers = (prev.couriers || []).map((c: any) => {
+            const name = (c.courierName || c.name || '').toString().trim().toUpperCase();
+            const km = enrichedMap.get(name);
+            if (km !== undefined && km > 0) {
+              return { ...c, distanceKm: km };
+            }
+            return c;
+          });
+          return { ...prev, couriers: updatedCouriers };
+        });
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('km:turbo:routes_update', handleTurboRoutes);
+    window.addEventListener('km:turbo:dashboard_update', handleTurboDashboard);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('km:turbo:routes_update', handleTurboRoutes);
+      window.removeEventListener('km:turbo:dashboard_update', handleTurboDashboard);
+    };
+  }, [])
+
 
   const protectData = useCallback((next: ExcelData, current: ExcelData | null): ExcelData => {
     if (!current || !next) return next;
@@ -143,6 +423,15 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     
     const localRouteCount = (current.routes || []).length;
     const serverRouteCount = (next.routes || []).length;
+
+    // Reject completely empty updates if we already have valid data
+    const isNewDataEmpty = (!next.orders || next.orders.length === 0);
+    const hadOrders = (current.orders && current.orders.length > 0);
+
+    if (isNewDataEmpty && hadOrders) {
+        console.warn(`[ExcelSync] Server sent EMPTY data but we have ${current.orders.length} orders. REJECTING update.`);
+        return current;
+    }
 
     // If server sends significantly LESS information, it's a regression. 
     // Return a merged version or stick with Local.
@@ -186,9 +475,11 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       localStorage.setItem('km_manual_overrides', JSON.stringify(overrides));
       
       if (excelDataRef.current && excelDataRef.current.orders) {
-        const fullData = { ...excelDataRef.current, orders: orders };
+        // v5.152: Strip geometry from routes to prevent localStorage QuotaExceededError
+        const routesNoGeo = (excelDataRef.current.routes || []).map((r: any) => ({ ...r, geometry: undefined }));
+        const fullData = { ...excelDataRef.current, orders: orders, routes: routesNoGeo };
         fullData.lastModified = Date.now();
-        localStorage.setItem('km_dashboard_processed_data', JSON.stringify(fullData));
+        localStorageUtils.setData('km_dashboard_processed_data', fullData);
       }
     } catch (e) {
       console.warn('Manual overrides save failed:', e);
@@ -200,28 +491,33 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     performManualOverridesSave(excelData.orders);
   }, [excelData?.orders, performManualOverridesSave]);
 
-  const saveDataToServer = async (data: ExcelData) => {
-    const token = localStorage.getItem('km_access_token');
-    if (!token) return;
-
-    try {
-      const response = await fetch('/api/v1/state', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ data })
-      });
-
-      if (!response.ok) {
-        throw new Error('Ошибка сервера');
+  // v5.151: Auto-save dashboard data to localStorage when it changes
+  // This ensures FastOperator data persists across page reloads
+  useEffect(() => {
+    if (excelData && excelData.orders && excelData.orders.length > 0) {
+      // Debounce save to avoid excessive writes during rapid updates
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
       }
-    } catch (error) {
-      console.error('Ошибка сохранения на сервер:', error);
-      toast.error('Ошибка сохранения на сервер', { id: 'save-error' });
+      saveTimeoutRef.current = setTimeout(() => {
+        try {
+          // v5.152: Strip geometry from routes to prevent localStorage QuotaExceededError
+          const routesNoGeo = (excelData.routes || []).map((r: any) => ({ ...r, geometry: undefined }));
+          const dataToSave = { ...excelData, routes: routesNoGeo, lastModified: Date.now() };
+          localStorageUtils.setData('km_dashboard_processed_data', dataToSave);
+          console.log('[ExcelSync] 💾 Auto-saved dashboard data to localStorage:', excelData.orders.length, 'orders');
+        } catch (e) {
+          console.warn('[ExcelSync] Failed to auto-save dashboard data:', e);
+        }
+      }, 500); // Save 500ms after last change
     }
-  };
+    
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [excelData]);
 
   const setExcelData = useCallback((incomingData: ExcelData | null) => {
     if (incomingData) {
@@ -315,6 +611,120 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
+
+  // v25.4: Refresh routes from database when excelData is loaded
+  // v5.141: Improved deduplication to avoid duplicate routes
+  const refreshRoutesFromDB = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('km_access_token');
+      if (!token) return;
+      
+      const dbRoutes = await fetchRoutesWithDate(token);
+      console.log('[ExcelSync] 🔄 Refreshed routes from DB:', dbRoutes.length, 'routes');
+      
+      // v5.141: Deduplicate DB routes by ID first
+      const seenRouteIds = new Set<string>();
+      const uniqueDbRoutes: any[] = [];
+      dbRoutes.forEach((r: any) => {
+        const rid = String(r.id || '');
+        if (rid && !seenRouteIds.has(rid)) {
+          seenRouteIds.add(rid);
+          uniqueDbRoutes.push(r);
+        }
+      });
+      if (uniqueDbRoutes.length < dbRoutes.length) {
+        console.warn(`[ExcelSync] ⚠️ Removed ${dbRoutes.length - uniqueDbRoutes.length} duplicate DB routes`);
+      }
+      
+      // Debug: show sample route
+      if (uniqueDbRoutes.length > 0) {
+        console.log('[ExcelSync] Sample route:', JSON.stringify({
+          id: uniqueDbRoutes[0].id,
+          courier: uniqueDbRoutes[0].courier,
+          orders: uniqueDbRoutes[0].ordersCount,
+          distance: uniqueDbRoutes[0].totalDistance,
+          timeBlock: uniqueDbRoutes[0].timeBlock
+        }, null, 2));
+      }
+      
+      setExcelDataState(prev => {
+        // v5.148: Even if prev is null, we should create a state with routes
+        const prevSafe = prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: {} };
+        
+        // DB routes always take priority - they come from Turbo Robot calculation
+        const existingRoutes = Array.isArray(prevSafe.routes) ? prevSafe.routes : [];
+
+        // Build a map of order IDs that are already in DB routes
+        const dbOrderIds = new Set<string>();
+        uniqueDbRoutes.forEach((r: any) => {
+          (r.orders || []).forEach((o: any) => {
+            const oid = String(o.id || o.orderNumber || '');
+            if (oid) dbOrderIds.add(oid);
+          });
+        });
+
+        // Manual routes: keep only those that do not duplicate DB orders
+        const manualRoutes = existingRoutes.filter((r: any) => {
+          const id = String(r.id || '');
+          // Only manual routes
+          if (!id.startsWith('route_')) return false;
+          const manualOrderIds = (r.orders || []).map((o: any) => String(o.id || o.orderNumber || ''));
+          const hasDup = manualOrderIds.some((oid: string) => dbOrderIds.has(oid));
+          return !hasDup;
+        });
+
+        // v5.141: Also deduplicate manual routes by ID
+        const seenManualIds = new Set<string>();
+        const uniqueManualRoutes = manualRoutes.filter((r: any) => {
+          const rid = String(r.id || '');
+          if (!rid || seenManualIds.has(rid)) return false;
+          seenManualIds.add(rid);
+          return true;
+        });
+
+        // Final routes: DB routes + manual routes without duplicates
+        const finalRoutes = [...uniqueDbRoutes, ...uniqueManualRoutes];
+        console.log('[ExcelSync] Merged routes:', { db: uniqueDbRoutes.length, manual: uniqueManualRoutes.length, total: finalRoutes.length });
+        return {
+          ...prevSafe,
+          routes: finalRoutes
+        };
+      });
+    } catch (e) {
+      console.warn('[ExcelSync] Failed to refresh routes:', e);
+    }
+  }, [fetchRoutesWithDate]);
+
+  // v5.148: Auto-refresh routes when data is loaded OR on initial load
+  useEffect(() => {
+    // Always try to load routes from DB - they may exist even without excelData
+    console.log('[ExcelSync] Auto-refreshing routes from DB...');
+    refreshRoutesFromDB();
+  }, [refreshRoutesFromDB]);
+  
+  // Also refresh when orders change
+  useEffect(() => {
+    if (excelData && excelData.orders?.length > 0) {
+      console.log('[ExcelSync] Orders changed, refreshing routes...');
+      refreshRoutesFromDB();
+    }
+  }, [excelData?.orders?.length, refreshRoutesFromDB]);
+
+  // Expose refresh function globally for manual trigger
+  useEffect(() => {
+    (window as any).__refreshTurboRoutes = refreshRoutesFromDB;
+    (window as any).__getExcelData = () => excelData;
+    (window as any).__loadRoutesFromDB = async () => {
+      console.log('[ExcelSync] Manual route refresh triggered');
+      await refreshRoutesFromDB();
+      console.log('[ExcelSync] Current routes:', excelData?.routes?.length || 0);
+    };
+    return () => { 
+      delete (window as any).__refreshTurboRoutes;
+      delete (window as any).__getExcelData;
+      delete (window as any).__loadRoutesFromDB;
+    };
+  }, [refreshRoutesFromDB, excelData]);
 
   return (
     <ExcelDataContext.Provider value={contextValue}>
@@ -494,7 +904,7 @@ function applyCourierVehicleMap(data: any, current?: any): any {
     const incomingRoutes = Array.isArray(data.routes) ? data.routes : [];
     const localRoutes = Array.isArray(current?.routes) ? current.routes : [];
     
-    const incomingDate = normalizeDateToIso(data.creationDate || (orders.find(o => o.creationDate))?.creationDate || "");
+    const incomingDate = normalizeDateToIso(data.creationDate || (orders.find((o: any) => o.creationDate))?.creationDate || "");
     const localDate = normalizeDateToIso(current?.creationDate || (current?.orders?.find((o:any) => o.creationDate))?.creationDate || "");
     
     let routesToProcess = incomingRoutes;

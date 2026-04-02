@@ -758,23 +758,9 @@ class DashboardFetcher {
             const mergedCouriers = this.mergeCouriers(existingData.couriers, data.couriers, mergedOrders);
             const statusChanges = this.detectStatusChanges(existingData.orders, mergedOrders);
 
-            // 3. Record status changes (within same transaction)
+            // 3. Detect status changes metrics
             if (statusChanges.length > 0) {
                 this.metrics.totalStatusChanges += statusChanges.length;
-                logger.info(`${logTag} Обнаружено ${statusChanges.length} изменений статуса`);
-
-                // Batch insert for efficiency
-                const changeValues = statusChanges.map((c, i) => {
-                    const offset = i * 3;
-                    return `($${offset + 1}, $${offset + 2}, $${offset + 3}, NOW())`;
-                }).join(', ');
-
-                const changeParams = statusChanges.flatMap(c => [c.orderNumber, c.oldStatus, c.newStatus]);
-
-                await client.query(
-                    `INSERT INTO api_dashboard_status_history (order_number, old_status, new_status, created_at) VALUES ${changeValues}`,
-                    changeParams
-                );
             }
 
             // 4. Build final payload
@@ -815,8 +801,28 @@ class DashboardFetcher {
 
             // COMMIT TRANSACTION
             await client.query('COMMIT');
+            logger.info(`${logTag} Данные успешно обновлены для ${targetDateISO} (заказов: ${mergedOrders.length})`);
 
-            // 6. Notify via pg_notify (outside transaction for reliability)
+            // 6. Record status changes OUTSIDE of main transaction - if it fails, it won't abort the cache update
+            if (statusChanges.length > 0) {
+                try {
+                    const changeValues = statusChanges.map((c, i) => {
+                        const offset = i * 3;
+                        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, NOW())`;
+                    }).join(', ');
+
+                    const changeParams = statusChanges.flatMap(c => [c.orderNumber, c.oldStatus, c.newStatus]);
+
+                    await client.query(
+                        `INSERT INTO api_dashboard_status_history (order_number, old_status, new_status, created_at) VALUES ${changeValues}`,
+                        changeParams
+                    );
+                } catch (historyErr) {
+                    logger.warn(`${logTag} Could not record status history (likely missing created_at column): ${historyErr.message}`);
+                }
+            }
+
+            // 7. Notify via pg_notify
             try {
                 await client.query('SELECT pg_notify(\'dashboard_update\', $1)', [JSON.stringify({
                     divisionId: deptId,
@@ -871,14 +877,40 @@ class DashboardFetcher {
     }
 
     mergeCouriers(existing, incoming, mergedOrders) {
-        if (!incoming || !Array.isArray(incoming)) return existing || [];
+        // v2.1: Extract couriers from orders if incoming array is empty
+        let incomingCouriers = incoming || [];
+        
+        if ((!incomingCouriers || incomingCouriers.length === 0) && mergedOrders && mergedOrders.length > 0) {
+            const courierMap = new Map();
+            mergedOrders.forEach(order => {
+                const courierName = order.courier || order.courierName;
+                if (courierName && courierName.trim() !== '' && courierName !== 'ID:0' && courierName !== 'по') {
+                    if (!courierMap.has(courierName)) {
+                        courierMap.set(courierName, {
+                            id: courierName,
+                            name: courierName,
+                            orders: 0,
+                            isActive: true
+                        });
+                    }
+                    const courier = courierMap.get(courierName);
+                    courier.orders++;
+                }
+            });
+            incomingCouriers = Array.from(courierMap.values());
+            if (incomingCouriers.length > 0) {
+                logger.info(`Extracted ${incomingCouriers.length} couriers from ${mergedOrders.length} orders`);
+            }
+        }
+
+        if (!incomingCouriers || !Array.isArray(incomingCouriers)) return existing || [];
 
         const merged = new Map();
         const activeCourierIds = new Set();
         if (mergedOrders && Array.isArray(mergedOrders)) {
             mergedOrders.forEach(o => {
-                const cid = o.courierId || o.courierName;
-                if (cid) activeCourierIds.add(String(cid));
+                const cid = o.courierId || o.courierName || o.courier;
+                if (cid && cid !== 'ID:0' && cid !== 'по') activeCourierIds.add(String(cid));
             });
         }
 
@@ -889,15 +921,21 @@ class DashboardFetcher {
             });
         }
 
-        incoming.forEach(c => {
+        incomingCouriers.forEach(c => {
             const id = String(c.id || c.name || '');
-            if (id) {
+            if (id && id !== 'ID:0' && id !== 'по') {
                 const existingCourier = merged.get(id) || {};
                 merged.set(id, { ...existingCourier, ...c });
             }
         });
 
-        return Array.from(merged.values());
+        // Filter to only include active couriers
+        const activeCouriers = Array.from(merged.values()).filter(c => {
+            const id = String(c.id || c.name || '');
+            return activeCourierIds.has(id);
+        });
+
+        return activeCouriers;
     }
 
     detectStatusChanges(oldOrders, newOrders) {

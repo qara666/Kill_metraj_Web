@@ -1,22 +1,44 @@
 import React from 'react';
 import { useExcelData } from '../../contexts/ExcelDataContext';
 import { useDashboardWebSocket } from '../../hooks/useDashboardWebSocket';
-import { useContinuousAutoRouting } from '../../hooks/useContinuousAutoRouting';
 
+/**
+ * Global component that handles background data synchronization.
+ * v20.1: Relies on the Backend Turbo Robot for calculations.
+ * Fixed to ensure no UI crashes from stale references.
+ * v5.154: Don't overwrite data if server returns empty but we have local data
+ */
 export const GlobalDashboardFetcher: React.FC = () => {
-    const { setExcelData } = useExcelData();
-
-    // 1. WebSocket for Dashboard updates
-    useDashboardWebSocket({
+    const { setExcelData, excelData } = useExcelData();
+    
+    // Listen for real-time updates (inc. Robot calculation signals)
+    // Synchronizes the received data into the global Excel context.
+    useDashboardWebSocket({ 
         onDataLoaded: (data) => {
-            console.log('🔄 Global background sync: Data updated');
-            setExcelData(data);
+            if (data && typeof setExcelData === 'function') {
+                // v5.154: Don't overwrite existing data with empty data
+                const hasNewOrders = data.orders && data.orders.length > 0;
+                const hasExistingOrders = excelData?.orders && excelData.orders.length > 0;
+                
+                if (hasNewOrders) {
+                    // New data has orders - use it
+                    console.log('[GlobalFetcher] ✅ Setting new data with', data.orders.length, 'orders');
+                    setExcelData(data);
+                } else if (!hasExistingOrders) {
+                    // No new orders AND no existing orders - OK to set
+                    console.log('[GlobalFetcher] ⚠️ Setting empty data (no existing data)');
+                    setExcelData(data);
+                } else {
+                    // No new orders but we have existing orders - skip to preserve data
+                    console.log('[GlobalFetcher] ⏭️ Skipping empty update (preserving', excelData.orders.length, 'existing orders)');
+                }
+            }
         },
         enabled: true
     });
 
-    // 2. Background Continuous Auto-Routing engine
-    useContinuousAutoRouting();
+    // v20.1: All routing/geocoding is strictly offloaded to the backend robot.
+    // This component now purely serves as a passive state synchronization listener.
 
     return null;
 };

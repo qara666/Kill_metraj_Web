@@ -921,6 +921,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     }
 
     // 2. Aggregate unassigned orders ONLY if viewing the unassigned pool
+    // v5.139: Deduplicate orders that may exist in both 'ID:0' AND 'Не назначено' groups
+    const unassignedSeenIds = new Set<string>();
     const unassignedOrders: Order[] = []
     
     // Only if searching in "Не назначено" or if admin wants to see "ID:0"
@@ -930,6 +932,16 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       Object.entries(courierOrders).forEach(([courierName, orders]) => {
         if (isId0CourierName(courierName) || courierName === 'Не назначено') {
           orders.forEach(o => {
+            const sid = getStableOrderId(o);
+            if (!sid) return; // Skip orders without ID
+            
+            // v5.139: Skip if already added (deduplicate across both groups)
+            if (unassignedSeenIds.has(sid)) {
+              console.warn(`[RouteManagement] ⚠️ Duplicate order ${sid} in unassigned pool (exists in both ID:0 and Не назначено)`);
+              return;
+            }
+            unassignedSeenIds.add(sid);
+            
             const s = (o.status || '').toLowerCase().trim();
             const isInProgress = s === 'доставляется' || s === 'в пути';
             const isCompleted = isOrderCompleted(o.status);
@@ -1773,6 +1785,28 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                 <span>{fleetStats.total} курьеров, {(excelData?.routes?.length ?? 0)} маршрутов</span>
               </div>
               <Tooltip
+                content="Обновить маршруты из базы данных"
+                position="left"
+              >
+                <button
+                  onClick={() => {
+                    const refreshFn = (window as any).__refreshTurboRoutes;
+                    if (refreshFn) {
+                      refreshFn();
+                      toast.success('Обновляю маршруты...', { duration: 1500 });
+                    }
+                  }}
+                  className={clsx(
+                    'p-3 rounded-xl transition-all hover:scale-105',
+                    isDark
+                      ? 'bg-gray-700 hover:bg-gray-600 text-green-400'
+                      : 'bg-white hover:bg-green-50 text-green-600 shadow-lg'
+                  )}
+                >
+                  <ArrowPathIcon className="w-6 h-6" />
+                </button>
+              </Tooltip>
+              <Tooltip
                 content="Открыть справку и инструкции по управлению маршрутами"
                 position="left"
               >
@@ -2288,12 +2322,41 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                             console.log(`[Quantum] Starting Giant Batch Geocode for ${uniqueAddresses.size} unique addresses...`);
 
                             // 2. Execute one giant batch geocode for everything
+                            // v5.152: Improved geocoding with high accuracy options
                             const addrCache = await batchGeocode(
                               Array.from(uniqueAddresses).map(addr => ({
                                 address: addr,
-                                options: { turbo: true, silent: true }
+                                options: { 
+                                  turbo: true, 
+                                  silent: true,
+                                  strictZoneFallback: false,  // Don't ask for clarifications
+                                  maxResults: 1,               // Return best match only
+                                  timeout: 5000                // 5 second timeout per address
+                                }
                               }))
                             );
+                            
+                            // v5.152: Retry failed addresses with fallback providers
+                            const failedAddresses = Array.from(uniqueAddresses).filter(addr => {
+                              const key = addr.trim().toLowerCase();
+                              return !addrCache.has(key);
+                            });
+                            
+                            if (failedAddresses.length > 0) {
+                              console.log(`[Quantum] Retrying ${failedAddresses.length} failed addresses with fallback...`);
+                              const retryResults = await batchGeocode(
+                                failedAddresses.map(addr => ({
+                                  address: addr,
+                                  options: { 
+                                    turbo: false,  // Use slower but more accurate providers
+                                    silent: true,
+                                    strictZoneFallback: false,
+                                    maxResults: 1
+                                  }
+                                }))
+                              );
+                              retryResults.forEach((val, key) => addrCache.set(key, val));
+                            }
 
                             useCalculationProgress.getState().setProgress(30);
                             console.log(`[Quantum] Giant Geocode complete. Calculating ${newRoutes.length} routes in parallel...`);

@@ -95,18 +95,23 @@ export const localStorageUtils = {
     } catch (error: any) {
       if (error.name === 'QuotaExceededError' || error.message?.includes('quota')) {
         console.warn(`⚠️ localStorage переполнен для ключа "${key}". Попытка очистки...`)
-        // Пробуем очистить старые данные
+        // Пробуем очистить старые данные (v23.0 Smart Headroom)
         try {
-          // Удаляем старые данные (кроме критически важных)
           const criticalKeys = ['google_maps_api_key', 'km_settings', 'km_courier_vehicle_map']
           const allKeys = Object.keys(localStorage)
-          allKeys.forEach(k => {
-            if (!criticalKeys.includes(k) && k.startsWith('km_')) {
-              try {
-                localStorage.removeItem(k)
-              } catch { }
-            }
-          })
+          
+          // v23.0: Only clear enough to make room, keep most recent data
+          const kmKeys = allKeys.filter(k => k.startsWith('km_') && !criticalKeys.includes(k))
+          
+          let removedCount = 0;
+          for (const k of kmKeys) {
+            try {
+              localStorage.removeItem(k)
+              removedCount++;
+              if (removedCount >= 15) break; // Enough headroom cleared
+            } catch { }
+          }
+          
           // Пробуем сохранить снова
           localStorage.setItem(key, JSON.stringify(data))
         } catch (retryError) {

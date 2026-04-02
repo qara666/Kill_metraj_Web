@@ -42,8 +42,12 @@ const CACHE_TTL = 300000; // 5 минут в миллисекундах
 async function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
-
-    if (!token) {
+    
+    // Treat string 'null' or 'undefined' as missing token
+    const isTokenValid = token && token !== 'null' && token !== 'undefined';
+    logger.info(`[Auth] Request to ${req.path}, has token: ${!!token}, token preview: ${token ? token.substring(0, 20) + '...' : 'none'}`);
+    
+    if (!isTokenValid) {
         return res.status(401).json({
             success: false,
             error: 'ОшибкаАутентификации',

@@ -26,6 +26,8 @@ export interface DashboardCourierResponse {
     name: string;                  // Имя курьера
     isActive: boolean;             // Активен
     vehicleType?: 'car' | 'motorcycle' | 'pedestrian';  // Тип транспорта
+    distanceKm?: number;
+    calculatedOrders?: number;
 }
 
 export interface DashboardApiParams {
@@ -43,6 +45,10 @@ export interface DashboardApiParams {
 export interface DashboardApiResponse {
     orders: DashboardOrderResponse[];
     couriers: DashboardCourierResponse[];
+    routes?: any[];
+    distanceKm?: Record<string, number>;
+    calculatedOrders?: Record<string, number>;
+    lastModified?: string | number;
 }
 
 export interface DashboardApiError {
