@@ -357,9 +357,9 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     // v30.0: Listen for same-tab DOM events dispatched by socketService
     // socketService dispatches 'km:turbo:routes_update' when robot finishes routing
     const handleTurboRoutes = (e: Event) => {
-      const { routes, date } = (e as CustomEvent).detail || {};
+      const { routes, date, couriers: eventCouriers } = (e as CustomEvent).detail || {};
       if (routes && Array.isArray(routes) && routes.length > 0) {
-        console.log('[ExcelSync] 📡 km:turbo:routes_update received:', routes.length, 'routes for', date);
+        console.log('[ExcelSync] 📡 km:turbo:routes_update received:', routes.length, 'routes for', date, '| enrichedCouriers:', eventCouriers?.length || 0);
         setExcelDataState(prev => {
           if (!prev) return prev;
           // DB routes take priority; remove duplicates by id
@@ -368,10 +368,64 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             const id = String(r.id || '');
             return id.startsWith('route_') && !dbIds.has(id);
           });
-          return { ...prev, routes: [...routes, ...manualRoutes] };
+          const mergedRoutes = [...routes, ...manualRoutes];
+
+          // v5.153: Update courier distanceKm — two paths:
+          // Path A (Fast): Use the enriched couriers array sent directly by the robot
+          // Path B (Computed): Build from route objects if no enriched array available
+          let updatedCouriers = prev.couriers || [];
+
+          if (eventCouriers && Array.isArray(eventCouriers) && eventCouriers.length > 0) {
+            // PATH A: Direct enriched couriers from robot (fastest, most accurate)
+            const enrichedMap = new Map<string, { km: number; orders: number }>();
+            eventCouriers.forEach((c: any) => {
+              const name = (c.name || c.courierName || '').toString().trim().toUpperCase();
+              if (name && (c.distanceKm > 0 || c.calculatedOrders > 0)) {
+                enrichedMap.set(name, { km: Number(c.distanceKm || 0), orders: Number(c.calculatedOrders || 0) });
+              }
+            });
+            if (enrichedMap.size > 0) {
+              updatedCouriers = updatedCouriers.map((c: any) => {
+                const normName = (c.name || c.courierName || '').toString().trim().toUpperCase();
+                const calc = enrichedMap.get(normName);
+                if (calc && calc.km > 0) {
+                  return { ...c, distanceKm: Number(calc.km.toFixed(2)), calculatedOrders: calc.orders };
+                }
+                return c;
+              });
+              console.log('[ExcelSync] 📍 Path A: Applied enriched courier data from robot:', enrichedMap.size, 'couriers');
+            }
+          } else if (updatedCouriers.length > 0 && mergedRoutes.length > 0) {
+            // PATH B: compute from route objects (fallback)
+            const distMap = new Map<string, { km: number; orders: number }>();
+            mergedRoutes.forEach((r: any) => {
+              const rawCourier = (r.courier || r.courier_id || '').toString().trim();
+              const normKey = rawCourier.replace(/\s+/g, ' ').toUpperCase();
+              if (!normKey) return;
+              const existing = distMap.get(normKey) || { km: 0, orders: 0 };
+              existing.km += Number(r.totalDistance || r.total_distance || 0);
+              existing.orders += Number(r.ordersCount || r.orders_count || (r.orders?.length) || 0);
+              distMap.set(normKey, existing);
+            });
+            if (distMap.size > 0) {
+              updatedCouriers = updatedCouriers.map((c: any) => {
+                const rawName = (c.name || c.courierName || '').toString().trim();
+                const normName = rawName.replace(/\s+/g, ' ').toUpperCase();
+                const calc = distMap.get(normName);
+                if (calc && calc.km > 0) {
+                  return { ...c, distanceKm: Number(calc.km.toFixed(2)), calculatedOrders: calc.orders };
+                }
+                return c;
+              });
+              console.log('[ExcelSync] 📍 Path B: Computed courier distances from routes:', distMap.size, 'couriers');
+            }
+          }
+
+          return { ...prev, routes: mergedRoutes, couriers: updatedCouriers };
         });
       }
     };
+
 
     // v30.0: Listen for enriched dashboard data (courier km distances) from robot
     const handleTurboDashboard = (e: Event) => {
@@ -685,10 +739,41 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
         // Final routes: DB routes + manual routes without duplicates
         const finalRoutes = [...uniqueDbRoutes, ...uniqueManualRoutes];
         console.log('[ExcelSync] Merged routes:', { db: uniqueDbRoutes.length, manual: uniqueManualRoutes.length, total: finalRoutes.length });
+
+        // v5.153: Update courier distanceKm from DB routes immediately
+        // This ensures the Couriers tab shows correct km after refreshRoutesFromDB (robot finish / page load)
+        let updatedCouriers = prevSafe.couriers || [];
+        if (uniqueDbRoutes.length > 0 && updatedCouriers.length > 0) {
+          const distMap = new Map<string, { km: number; orders: number }>();
+          uniqueDbRoutes.forEach((r: any) => {
+            const rawCourier = (r.courier || r.courier_id || '').toString().trim();
+            const normKey = rawCourier.replace(/\s+/g, ' ').toUpperCase();
+            if (!normKey) return;
+            const existing = distMap.get(normKey) || { km: 0, orders: 0 };
+            existing.km += Number(r.totalDistance || r.total_distance || 0);
+            existing.orders += Number(r.ordersCount || r.orders_count || (r.orders?.length) || 0);
+            distMap.set(normKey, existing);
+          });
+          if (distMap.size > 0) {
+            updatedCouriers = updatedCouriers.map((c: any) => {
+              const rawName = (c.name || c.courierName || '').toString().trim();
+              const normName = rawName.replace(/\s+/g, ' ').toUpperCase();
+              const calc = distMap.get(normName);
+              if (calc && calc.km > 0) {
+                return { ...c, distanceKm: Number(calc.km.toFixed(2)), calculatedOrders: calc.orders };
+              }
+              return c;
+            });
+            console.log('[ExcelSync] 📍 refreshRoutesFromDB: Updated', distMap.size, 'courier distances from DB routes');
+          }
+        }
+
         return {
           ...prevSafe,
-          routes: finalRoutes
+          routes: finalRoutes,
+          couriers: updatedCouriers
         };
+
       });
     } catch (e) {
       console.warn('[ExcelSync] Failed to refresh routes:', e);

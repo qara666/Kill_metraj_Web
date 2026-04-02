@@ -1044,11 +1044,20 @@ class OrderCalculator {
                     Array.from(deliveryWindows.values()).flat().map(w => w.windowLabel)
                 ));
 
-                logger.info(`[TurboCalculator] 🚀 Emitting routes_update with ${routeDataForFrontend.length} routes`);
+                // v5.153: Build enriched couriers array with distanceKm and ordersCount
+                // This lets the Couriers tab update immediately without waiting for dashboard:update
+                const enrichedCouriers = Object.values(stats.courierStats || {}).map((cs) => ({
+                    name: cs.name,
+                    courierName: cs.name,
+                    distanceKm: Number((cs.distanceKm || 0).toFixed(2)),
+                    calculatedOrders: cs.orders || 0,
+                })).filter(c => c.distanceKm > 0 || c.calculatedOrders > 0);
+
+                logger.info(`[TurboCalculator] 🚀 Emitting routes_update with ${routeDataForFrontend.length} routes, ${enrichedCouriers.length} enriched couriers`);
                 this.io.emit('routes_update', {
                     divisionId: cache.division_id,
                     date: cache.target_date,
-                    couriers: Array.from(deliveryWindows.keys()).filter(c => stats.courierStats[c]),
+                    couriers: enrichedCouriers,
                     timeBlocks: allWindowLabels,
                     routes: routeDataForFrontend
                 });

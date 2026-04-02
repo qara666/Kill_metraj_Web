@@ -29,7 +29,7 @@ export interface TimeWindowGroup {
 // ФУНКЦИИ ГРУППИРОВКИ ПО ВРЕМЕННЫМ ОКНАМ
 // ============================================
 
-const DEFAULT_WINDOW_MINUTES = 30; // v5.138: Increased to 30m as per user requirement
+const DEFAULT_WINDOW_MINUTES = 15; // v5.153: Finalized to 15m as per strict requirement
 
 /**
  * Получает ключ временного окна для timestamp

@@ -220,6 +220,36 @@ router.post('/dashboard/fetch', async (req, res) => {
             const orderCount = payload.orders.length;
             const courierCount = payload.couriers.length;
 
+            // v31.2: PRESERVE robot-calculated distances from existing cache
+            try {
+                const oldCache = await sequelize.query(
+                    `SELECT payload FROM api_dashboard_cache WHERE division_id = :divId AND target_date = :targetDate LIMIT 1`,
+                    { replacements: { divId: String(deptId), targetDate: targetDateISO }, type: sequelize.QueryTypes.SELECT }
+                );
+                if (oldCache && oldCache.length > 0) {
+                    const oldPayload = typeof oldCache[0].payload === 'string' ? JSON.parse(oldCache[0].payload) : oldCache[0].payload;
+                    if (oldPayload && oldPayload.couriers && Array.isArray(oldPayload.couriers)) {
+                        const metricMap = new Map();
+                        oldPayload.couriers.forEach(c => {
+                            const name = (c.name || c.courierName || c.courier || '').toString().trim().toUpperCase();
+                            if (name && (c.distanceKm > 0 || c.calculatedOrders > 0)) {
+                                metricMap.set(name, { distanceKm: c.distanceKm, calculatedOrders: c.calculatedOrders });
+                            }
+                        });
+                        payload.couriers.forEach(c => {
+                            const name = (c.name || c.courierName || c.courier || '').toString().trim().toUpperCase();
+                            const metrics = metricMap.get(name);
+                            if (metrics) {
+                                c.distanceKm = metrics.distanceKm;
+                                c.calculatedOrders = metrics.calculatedOrders;
+                            }
+                        });
+                    }
+                }
+            } catch (err) {
+                logger.warn(`[FETCH] Metric restoration failed: ${err.message}`);
+            }
+
             // V2: UPSERT pattern matching the fetcher worker
             await sequelize.query(
                 `INSERT INTO api_dashboard_cache (payload, data_hash, status_code, division_id, target_date, order_count, courier_count, updated_at)

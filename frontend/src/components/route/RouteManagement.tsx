@@ -485,7 +485,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       nameToOrders.set(normalizeCourierName(k), v);
     });
 
-    const map = new Map<string, { available: number; delivered: number; total: number; activeInRoute: number; unassigned: number }>()
+    const map = new Map<string, { available: number; delivered: number; total: number; activeInRoute: number; unassigned: number; distanceKm: number }>()
 
     const allCouriers = new Set([
       ...Object.keys(courierOrders),
@@ -525,6 +525,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         }
       }
 
+      // v5.153: Get distance metrics from the couriers array state
+      const courierState = (excelData?.couriers || []).find((c: any) => normalizeCourierName(c.name) === normUpperKey);
+      const distanceKm = courierState?.distanceKm || 0;
+
       map.set(normUpperKey, { 
         available, 
         delivered, 
@@ -532,7 +536,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         // to keep the badge accurate, otherwise use physical total.
         total: (normUpperKey === 'НЕ НАЗНАЧЕНО' || isId0CourierName(name)) ? available : orders.length, 
         activeInRoute,
-        unassigned: available
+        unassigned: available,
+        distanceKm
       })
     })
 
@@ -542,7 +547,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
   const getCourierMetrics = useCallback((courierName: string) => {
     // v5.134: Always look up by UPPERCASE-normalized key to match courierMetricsMap storage
     const normKey = normalizeCourierName(courierName);
-    return courierMetricsMap.get(normKey) || { available: 0, delivered: 0, total: 0, activeInRoute: 0, unassigned: 0 }
+    return courierMetricsMap.get(normKey) || { available: 0, delivered: 0, total: 0, activeInRoute: 0, unassigned: 0, distanceKm: 0 }
   }, [courierMetricsMap])
 
   // Aggregate Fleet Stats
@@ -589,34 +594,58 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
   }, [courierOrders, excelData?.couriers, courierMetricsMap])
 
   // ─── Wire "ЗАПУСТИТЬ РАСЧЕТ" button from CourierCard ──────────────────────
-  // The button fires this event globally. We listen here and recalculate
-  // any routes that do not yet have a totalDistance (i.e. not geocoded).
+  // v5.153: Properly triggers the background Turbo Robot via REST API.
   useEffect(() => {
-    const handler = async () => {
-      const routes: Route[] = excelData?.routes || [];
-      const incomplete = routes.filter(r =>
-        !r.totalDistance ||
-        r.totalDistance === 0 ||
-        r.orders.some((o: any) => !o.coords?.lat)
-      );
-
-      if (incomplete.length === 0) {
-        toast.success('Все маршруты рассчитаны');
+    const handler = async (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      const token = localStorage.getItem('km_access_token');
+      if (!token) {
+        toast.error('❌ Не авторизован');
         return;
       }
 
-      toast(`🔄 Запускаю расчёт ${incomplete.length} маршрут(ов)...`);
-      for (const route of incomplete) {
-        await recalculateRoute(route);
-        await new Promise(r => setTimeout(r, 50)); // yield to UI
+      const { user } = await import('../../contexts/AuthContext').then(() => ({ user: (window as any).__user || null }));
+      const divisionId = user?.divisionId || (excelData as any)?.divisionId || (excelData as any)?.orders?.[0]?.departmentId || null;
+
+      const { useDashboardStore } = await import('../../stores/useDashboardStore');
+      const apiDateShift = useDashboardStore.getState().apiDateShift;
+      const today = new Date().toISOString().split('T')[0];
+      let targetDate = today;
+      if (apiDateShift) {
+        if (/^\d{2}\.\d{2}\.\d{4}$/.test(apiDateShift)) {
+          const p = apiDateShift.split('.');
+          targetDate = `${p[2]}-${p[1]}-${p[0]}`;
+        } else if (/^\d{4}-\d{2}-\d{2}$/.test(apiDateShift)) {
+          targetDate = apiDateShift;
+        }
       }
-      toast.success(`✅ Расчёт завершён`);
+
+      const courierName = detail?.courierName || null;
+      const loadingToast = toast.loading(`🤖 Запускаю фоновый расчёт${courierName ? ` для ${courierName}` : ''}...`);
+
+      try {
+        const res = await fetch('/api/turbo/priority', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ divisionId, date: targetDate, courierFilter: courierName })
+        });
+        const json = await res.json();
+        if (json.success) {
+          toast.dismiss(loadingToast);
+          toast.success(`🤖 Фоновый робот запущен! Результаты появятся через 30-60 секунд.`);
+        } else {
+          toast.dismiss(loadingToast);
+          toast.error(`❌ Ошибка: ${json.error || 'Неизвестная ошибка'}`);
+        }
+      } catch (err: any) {
+        toast.dismiss(loadingToast);
+        toast.error(`❌ Сетевая ошибка: ${err.message}`);
+      }
     };
 
     window.addEventListener('km-force-auto-routing', handler);
     return () => window.removeEventListener('km-force-auto-routing', handler);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [excelData?.routes]);
+  }, [excelData]);
 
   // Trigger on-demand geocoding when the returning modal is opened
 
@@ -2018,6 +2047,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                                     totalOrdersCount={metric.total}
                                     calculatedCount={metric.activeInRoute}
                                     unassignedCount={metric.unassigned}
+                                    distanceKm={metric.distanceKm}
                                     isDark={isDark}
                                   />
                                 </div>
@@ -2411,8 +2441,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                                 return order;
                               });
 
+                              // v5.152: Atomically replace all routes for the selected courier
+                              // This prevents duplicates across all tabs and ensures 100% parity with robot behavior.
+                              const courierToClear = String(selectedCourier || '').toUpperCase();
                               const existingRoutes = (prev?.routes || []).filter(
-                                (r: Route) => !newRoutes.some(nr => nr.id === r.id)
+                                (r: Route) => normalizeCourierName(r.courier).toUpperCase() !== courierToClear && 
+                                              !newRoutes.some(nr => nr.id === r.id)
                               );
                               const finalRoutes = [
                                 ...existingRoutes,

@@ -15,10 +15,11 @@ import { CourierCard } from './CourierCard'
 import { useExcelData } from '../../contexts/ExcelDataContext'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useRouteGeocoding } from '../../hooks/useRouteGeocoding'
-import { Route } from '../../types/route'
+// Route type no longer needed after v5.153 refactor (robot trigger via API)
 import { toast } from 'react-hot-toast'
 import { Tooltip } from '../shared/Tooltip'
 import { normalizeCourierName, getCourierName } from '../../utils/data/courierName'
+import { useAuth } from '../../contexts/AuthContext'
 import { isOrderCancelled } from '../../utils/data/orderStatus'
 import { getStableOrderId } from '../../utils/data/orderId'
 import { CourierIdResolver } from '../../utils/data/courierIdMap'
@@ -59,6 +60,7 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
   const { excelData: contextExcelData, updateExcelData, updateRouteData } = useExcelData()
   const excelData = propExcelData || contextExcelData
   const contextData = excelData // Alias for compatibility with existing logic
+  const { user } = useAuth()
 
   const { isDark } = useTheme()
 
@@ -443,12 +445,21 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
         const nm = normalizeCourierName(c.name || c.courierName || '');
         if (!nm) return;
         const entry = stats.get(nm);
-        if (entry && robotKm > entry.totalDistance) {
+        if (entry) {
           // Robot distance overrides estimated / route-summed distance
           const delta = robotKm - entry.baseDistance;
           entry.totalDistance = robotKm;
           entry.baseDistance = robotKm;
           entry.additionalDistance = Math.max(0, delta);
+          
+          // v5.153: Also prioritize robot-calculated order counts if available
+          if (c.calculatedOrders > 0) {
+            entry.ordersInRoutes = c.calculatedOrders;
+            // Ensure uniqueOrderIds count matches if possible, or at least respect the total
+            if (entry.totalOrders < c.calculatedOrders) {
+               entry.totalOrders = c.calculatedOrders;
+            }
+          }
         } else if (!entry) {
           // Courier only exists in cache (no local orders) — create entry
           stats.set(nm, {
@@ -590,36 +601,65 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
       )
   }, [couriers, filter, deferredSearchTerm])
   // ─── Wire "ЗАПУСТИТЬ РАСЧЕТ" button from CourierCard ──────────────────────
-  // Identical to RouteManagement.tsx listener to ensure button works in both views.
+  // v5.153: Properly triggers the background Turbo Robot via REST API.
+  // The old logic was broken: it checked local routes and falsely showed 
+  // "✅ Все маршруты рассчитаны" even when the robot hadn't run at all.
   useEffect(() => {
     const handler = async (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      const targetCourier = detail?.courierName ? normalizeCourierName(detail.courierName) : null;
 
-      const routes: Route[] = contextData?.routes || [];
-      const incomplete = routes.filter(r => {
-        if (targetCourier && normalizeCourierName(r.courier) !== targetCourier) return false;
-        return !r.totalDistance ||
-               r.totalDistance === 0 ||
-               r.orders.some((o: any) => !o.coords?.lat);
-      });
-
-      if (incomplete.length === 0) {
-        toast('✅ Все маршруты рассчитаны');
+      const token = localStorage.getItem('km_access_token');
+      if (!token) {
+        toast.error('❌ Не авторизован. Войдите в систему.');
         return;
       }
 
-      toast(`🔄 Запускаю расчёт ${incomplete.length} маршрут(ов)...`);
-      for (const route of incomplete) {
-        await calculateRouteDistance(route);
-        await new Promise(r => setTimeout(r, 50)); // yield to UI
+      // Get divisionId: prefer user profile, fallback to excelData metadata
+      const divisionId = user?.divisionId ||
+        (excelData as any)?.divisionId ||
+        (excelData as any)?.orders?.[0]?.departmentId ||
+        null;
+
+      // Get target date from store or today
+      const { useDashboardStore } = await import('../../stores/useDashboardStore');
+      const apiDateShift = useDashboardStore.getState().apiDateShift;
+      const today = new Date().toISOString().split('T')[0];
+      let targetDate = today;
+      if (apiDateShift) {
+        if (/^\d{2}\.\d{2}\.\d{4}$/.test(apiDateShift)) {
+          const p = apiDateShift.split('.');
+          targetDate = `${p[2]}-${p[1]}-${p[0]}`;
+        } else if (/^\d{4}-\d{2}-\d{2}$/.test(apiDateShift)) {
+          targetDate = apiDateShift;
+        }
       }
-      toast.success(`✅ Расчёт завершён`);
+
+      const courierName = detail?.courierName || null;
+      const loadingToast = toast.loading(`🤖 Запускаю фоновый расчёт${courierName ? ` для ${courierName}` : ''}...`);
+
+      try {
+        const res = await fetch('/api/turbo/priority', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ divisionId, date: targetDate, courierFilter: courierName })
+        });
+        const json = await res.json();
+        if (json.success) {
+          toast.dismiss(loadingToast);
+          toast.success(`🤖 Фоновый робот запущен! Результаты появятся через 30-60 секунд.`);
+        } else {
+          toast.dismiss(loadingToast);
+          toast.error(`❌ Ошибка запуска: ${json.error || 'Неизвестная ошибка'}`);
+        }
+      } catch (err: any) {
+        toast.dismiss(loadingToast);
+        toast.error(`❌ Сетевая ошибка: ${err.message}`);
+      }
     };
 
     window.addEventListener('km-force-auto-routing', handler);
     return () => window.removeEventListener('km-force-auto-routing', handler);
-  }, [contextData?.routes, calculateRouteDistance]);
+  }, [user, excelData]);
 
   const getCourierRoutes = (courierName: string) => {
     if (!contextData?.routes) return []
