@@ -19,6 +19,7 @@ describe('addressUtils', () => {
     describe('generateStreetVariants', () => {
         it('should generate variants for Lukyanenka (new/old names)', () => {
             const variants = generateStreetVariants("вул. Левка Лук'яненка, 13", "Киев");
+            console.log('DEBUG VARIANTS (Lukyanenka):', variants);
             expect(variants.some(v => v.includes("Маршала Тимошенка"))).toBe(true);
         });
 

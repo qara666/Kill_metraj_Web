@@ -3,6 +3,7 @@ import { isOrderCompleted } from '../data/orderStatus';
 import { getPlannedTime, getArrivalTime, getKitchenTime } from '../data/timeUtils';
 import { haversineDistance } from '../routes/routeOptimizationHelpers';
 import { normalizeCourierName } from '../data/courierName';
+import { getStableOrderId } from '../data/orderId';
 
 // ============================================
 // ТИПЫ ДЛЯ ГРУППИРОВКИ ПО ВРЕМЕННЫМ ОКНАМ
@@ -28,7 +29,7 @@ export interface TimeWindowGroup {
 // ФУНКЦИИ ГРУППИРОВКИ ПО ВРЕМЕННЫМ ОКНАМ
 // ============================================
 
-const DEFAULT_WINDOW_MINUTES = 15;
+const DEFAULT_WINDOW_MINUTES = 30; // v5.138: Increased to 30m as per user requirement
 
 /**
  * Получает ключ временного окна для timestamp
@@ -74,7 +75,7 @@ export function getTimeWindowBounds(
 }
 
 // Константы для группировки
-const PROXIMITY_MINUTES = 15;            // v5.106: Set to 15m as per user requirement
+const PROXIMITY_MINUTES = 15;            // v5.151: Strict adherence to 15-minute wait time (not 30)
 const MAX_DELIVERY_SPAN_MINUTES = 60;   // Максимальный разброс доставки в одной группе
 
 /**
@@ -193,11 +194,31 @@ export function groupOrdersByTimeWindow(
 ): TimeWindowGroup[] {
     if (!orders || orders.length === 0) return [];
 
+    // STEP 0: Deduplicate orders by stable ID BEFORE processing (v5.139 fix)
+    // Use getStableOrderId which handles _id, orderNumber, and address hash
+    const seenIds = new Set<string>();
+    const uniqueOrders: Order[] = [];
+    for (const order of orders) {
+        const sid = getStableOrderId(order);
+        if (!sid) {
+            // Orders without any ID - keep them (edge case)
+            uniqueOrders.push(order);
+        } else if (!seenIds.has(sid)) {
+            seenIds.add(sid);
+            uniqueOrders.push(order);
+        }
+    }
+    
+    // Debug: log if duplicates were found
+    if (uniqueOrders.length < orders.length) {
+        console.warn(`[groupOrdersByTimeWindow] ⚠️ Removed ${orders.length - uniqueOrders.length} duplicate orders`);
+    }
+
     const noTimeOrders: Order[] = [];
     const ordersWithData: Array<{ order: Order; planned: number; arrival: number; kitchen?: number }> = [];
 
     // Разделяем заказы
-    orders.forEach(order => {
+    uniqueOrders.forEach(order => {
         // Пробуем получить плановое время из разных источников
         let plannedTime = getPlannedTime(order);
 
@@ -244,23 +265,10 @@ export function groupOrdersByTimeWindow(
         });
     });
 
-    // 1. Сначала определяем, является ли загрузка массовой (bulk) или постепенной (progressive)
-    let isBulkImport = false;
-    if (ordersWithData.length > 2) {
-        const arrivalTimes = ordersWithData.map(o => o.arrival);
-        const maxArrival = Math.max(...arrivalTimes);
-        const minArrival = Math.min(...arrivalTimes);
-        
-        // Если все заказы свалились в промежуток менее 5 минут, считаем это массовой выгрузкой
-        if (maxArrival - minArrival < 5 * 60 * 1000) {
-            isBulkImport = true;
-        }
-    }
-
-    // В зависимости от типа загрузки выбираем базовое время (anchor) для создания 15-минутного окна
+    // ВНИМАНИЕ: Берем только arrival, согласно строгой бизнес-логике 15-минутного таймера с момента назначения!
     const ordersWithAnchor = ordersWithData.map(item => ({
         ...item,
-        anchorTime: isBulkImport ? item.planned : item.arrival
+        anchorTime: item.arrival
     }));
 
     // Сортируем по опорному времени (anchorTime)
@@ -310,43 +318,43 @@ export function groupOrdersByTimeWindow(
 
             let newSplitReason = '';
 
-            if (isAssignedCourier) {
-                // Для назначенных курьеров: если не попадает в окно 15 минут, то разделяем группу
-                if (!arrivedClose) newSplitReason = 'Время';
-            } else {
-                // Продвинутая логика (СЛА, дистанция, готовность) ТОЛЬКО для неназначенных
-                const minDelivery = Math.min(currentGroup.windowStart, planned);
-                const maxDelivery = Math.max(currentGroup.windowEnd, planned);
-                const deliveryFits = (maxDelivery - minDelivery) <= deliverySpanMs;
+            // Общая продвинутая логика разбиения (СЛА, дистанция), работает для ВСЕХ курьеров (и назначенных, и авто)
+            const minDelivery = Math.min(currentGroup.windowStart, planned);
+            const maxDelivery = Math.max(currentGroup.windowEnd, planned);
+            const deliveryFits = (maxDelivery - minDelivery) <= deliverySpanMs;
 
-                let kitchenGapOk = true;
+            let distanceOk = true;
+            if (order.coords && currentGroup.orders[0].coords) {
+                const dist = haversineDistance(
+                    order.coords.lat, order.coords.lng,
+                    currentGroup.orders[0].coords.lat, currentGroup.orders[0].coords.lng
+                );
+                // v5.151: Жесткое разбиение если между заказами больше 15 км, даже если их закинули в один момент времени.
+                if (dist > 15) distanceOk = false;
+            }
+
+            let districtOk = true;
+            const orderZone = order.deliveryZone || '';
+            const groupZone = currentGroup.orders[0].deliveryZone || '';
+            if (orderZone && groupZone && orderZone !== groupZone) {
+                districtOk = false;
+            }
+
+            let kitchenGapOk = true;
+            if (!isAssignedCourier) {
+                // Kitchen gap check is mainly for automated robot planning (unassigned)
                 const prevKitchen = (currentGroup as any).lastKitchen;
                 if (prevKitchen && kitchen && Math.abs(kitchen - prevKitchen) > 30 * 60 * 1000) {
                     kitchenGapOk = false;
                 }
-
-                let distanceOk = true;
-                if (order.coords && currentGroup.orders[0].coords) {
-                    const dist = haversineDistance(
-                        order.coords.lat, order.coords.lng,
-                        currentGroup.orders[0].coords.lat, currentGroup.orders[0].coords.lng
-                    );
-                    if (dist > 5) distanceOk = false; // не дальше 5 км
-                }
-
-                let districtOk = true;
-                const orderZone = order.deliveryZone || '';
-                const groupZone = currentGroup.orders[0].deliveryZone || '';
-                if (orderZone && groupZone && orderZone !== groupZone) {
-                    districtOk = false;
-                }
-
-                if (!arrivedClose) newSplitReason = 'Время';
-                else if (!deliveryFits) newSplitReason = 'SLA';
-                else if (!kitchenGapOk) newSplitReason = 'Готовность';
-                else if (!distanceOk) newSplitReason = 'Гео';
-                else if (!districtOk) newSplitReason = 'Район';
             }
+
+            // Главный каскад причин разделения блока 
+            if (!arrivedClose) newSplitReason = 'Время';
+            else if (!deliveryFits) newSplitReason = 'SLA';
+            else if (!distanceOk) newSplitReason = 'Гео';
+            else if (!districtOk) newSplitReason = 'Район';
+            else if (!isAssignedCourier && !kitchenGapOk) newSplitReason = 'Готовность';
 
             if (newSplitReason === '') {
                 // Заказ подходит, добавляем в текущую группу

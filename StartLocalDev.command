@@ -65,12 +65,12 @@ echo "🌐 Открытие Safari..."
 open -a Safari "$FRONTEND_URL"
 
 echo ""
-echo "✅ Проект запущен и открыт в Safari!"
+echo "✅ Проект запущен в режиме разработки!"
 echo "📱 Frontend: $FRONTEND_URL"
-echo "🔧 Backend: http://localhost:3001"
+echo "🔧 Backend: http://localhost:5001"
 echo "📋 Логи: /tmp/kill_metraj_start.log"
 echo ""
-echo "⏹️  Нажмите Ctrl+C для остановки"
+echo "⏹️  Нажмите Ctrl+C для остановки (авто-перезагрузка включена)"
 echo ""
 
 # Ждем завершения процессов (или бесконечно, пока пользователь не остановит)

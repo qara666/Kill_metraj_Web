@@ -597,11 +597,14 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
                   isDark ? "bg-slate-800 border-slate-700 text-slate-400" : "bg-slate-50 border-slate-200 text-slate-500"
                 )}>
                   Дата данных: {(() => {
-                    const d = processedData.creationDate || (processedData.orders?.[0]?.creationDate);
+                    const d = processedData.creationDate || (processedData.orders?.[0]?.creationDate) || (processedData.orders?.[0]?.['Дата создания']);
                     if (!d) return '—';
                     try {
-                      const dateObj = new Date(String(d).split(' ')[0]);
-                      return dateObj.toLocaleDateString('ru-RU');
+                      const dateStr = String(d).split(' ')[0];
+                      if (dateStr.includes('.')) return dateStr;
+                      const dateObj = new Date(dateStr);
+                      if (!isNaN(dateObj.getTime())) return dateObj.toLocaleDateString('ru-RU');
+                      return dateStr;
                     } catch {
                       return String(d).split(' ')[0];
                     }
@@ -686,12 +689,12 @@ export const ExcelUploadSection: React.FC<ExcelUploadSectionProps> = ({
                     >
                       <stat.icon className="w-5 h-5" />
                     </div>
-                    <p className={clsx("text-[10px] font-black uppercase tracking-widest opacity-50 mb-1", isDark ? "text-slate-400" : "text-slate-500")}>
+                    <div className={clsx("text-[10px] font-black uppercase tracking-widest opacity-50 mb-1", isDark ? "text-slate-400" : "text-slate-500")}>
                       {stat.label}
-                    </p>
-                    <p className={clsx("text-lg font-black tracking-tight", isDark ? "text-white" : "text-slate-900")}>
+                    </div>
+                    <div className={clsx("text-lg font-black tracking-tight", isDark ? "text-white" : "text-slate-900")}>
                       {stat.value}
-                    </p>
+                    </div>
                   </div>
                 ))}
               </div>

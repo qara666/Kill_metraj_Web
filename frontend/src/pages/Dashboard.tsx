@@ -4,6 +4,7 @@ import { toast } from 'react-hot-toast'
 import { LoadingSpinner } from '../components/shared/LoadingSpinner'
 import { ExcelUploadSection } from '../components/excel/ExcelUploadSection'
 import { DashboardApiSection } from '../components/autoplanner/DashboardApiSection'
+import DivisionStatusPanel from '../components/division/DivisionStatusPanel'
 import { ExcelResultsDisplay } from '../components/excel/ExcelResultsDisplay'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
@@ -401,6 +402,9 @@ export const Dashboard: React.FC = () => {
 
         <div className="lg:col-span-2">
         </div>
+        <div style={{ gridColumn: '1 / -1', padding: 12 }}>
+          <DivisionStatusPanel />
+        </div>
       </div>
 
       <Suspense fallback={<LoadingSpinner />}>
@@ -422,8 +426,6 @@ export const Dashboard: React.FC = () => {
     </div>
   )
 }
-
-
 
 
 

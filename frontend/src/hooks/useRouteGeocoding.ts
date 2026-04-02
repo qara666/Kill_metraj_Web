@@ -431,63 +431,84 @@ export const useRouteGeocoding = ({
                 const key = cleaned.toLowerCase();
                 const geocodeRes = addrCache.get(key);
 
-                const best = geocodeRes?.best;
+                let best = geocodeRes?.best;
                 let loc: any = null;
 
                 if (!best || !toLoc(best.raw)) {
-                     // v38: Force manual selection if automatic search failed
-                     const manualRes = await robustGeocode(order.address, { 
-                        silent: false, 
-                        forceManualSelection: true,
-                        hintPoint: originLoc 
+                     // v5.153: Enhanced fallback strategies for failed geocoding
+                     console.warn(`[Расчет] Геокодирование не удалось для: ${order.address}, пробуем альтернативные методы...`);
+                     
+                     // Strategy 1: Try without house number (just street)
+                     const streetOnly = cleaned.replace(/\d+[а-яА-Яa-zA-Z]?\s*$/g, '').trim();
+                     let fallbackRes = await robustGeocode(streetOnly, { 
+                         silent: true, 
+                         strictZoneFallback: false,
+                         hintPoint: originLoc 
                      });
+                     
+                     // Strategy 2: Try with simplified address (remove special chars, floor, apt info)
+                     if (!fallbackRes?.best) {
+                         const simplified = order.address
+                             .replace(/(?:под|подъезд|п)\s*\d+/gi, '')
+                             .replace(/(?:эт|этаж|этаж)\s*\d+/gi, '')
+                             .replace(/(?:кв|квартира)\s*\d+/gi, '')
+                             .replace(/д\/ф\s*\w*/gi, '')
+                             .replace(/\s+/g, ' ')
+                             .trim();
+                         fallbackRes = await robustGeocode(simplified, { 
+                             silent: true, 
+                             strictZoneFallback: false,
+                             hintPoint: originLoc 
+                         });
+                     }
+                     
+                     // Strategy 3: Try with just city + street name
+                     if (!fallbackRes?.best) {
+                         const cityMatch = order.address.match(/(Київ|Киев|область)/i);
+                         const streetMatch = order.address.match(/(вул|просп|пр-т|пров|пер|бульвар)\s*[\w\s'-]+/i);
+                         if (streetMatch) {
+                             const minimalAddr = cityMatch ? `${cityMatch[1]}, ${streetMatch[0]}` : streetMatch[0];
+                             fallbackRes = await robustGeocode(minimalAddr, { 
+                                 silent: true, 
+                                 strictZoneFallback: false,
+                                 hintPoint: originLoc 
+                             });
+                         }
+                     }
+                     
+                     if (fallbackRes?.best) {
+                         best = fallbackRes.best;
+                         addrCache.set(key, fallbackRes);
+                         console.log(`[Расчет] Адрес распознан альтернативным методом: ${order.address}`);
+                     } else {
+                         // Last resort: Skip this order with warning instead of blocking entire route
+                         console.error(`[Расчет] Адрес пропущен (не удалось распознать): ${order.address}`);
+                         toast(`Адрес пропущен: ${order.address.substring(0, 50)}...`, { icon: '⚠️', duration: 3000 });
+                         continue; // Skip this order, continue with others
+                     }
+                 }
+                 
+                 loc = toLoc(best.raw);
+                 if (!loc) continue; // Skip if no valid location
+                 
+                 waypointLocs.push(loc);
+                 const update: any = { 
+                     id: order.id,
+                     lat: loc.lat, 
+                     lng: loc.lng,
+                     kmlZone: best.kmlZone,
+                     kmlHub: best.kmlHub,
+                     streetNumberMatched: best.streetNumberMatched,
+                     geocodeRes: best.raw
+                 };
+                 if (best.raw.geometry?.location_type) {
+                     update.locationType = best.raw.geometry.location_type;
+                 }
+                 orderUpdates.push(update);
+             }
+            } // End of else (NORMAL-PATH)
 
-                      if (!manualRes?.best) {
-                         console.error(`[Расчет] Адрес ОТКЛОНЕН (v38): ${order.address}`, geocodeRes);
-                         toast.error(`Проверьте адрес: ${order.address}. Не удалось найти точку.`, { duration: 10000 });
-                         if (!skipStateUpdate) setIsCalculating(false);
-                         return null;
-                      }
-                      
-                      // If manual selection resulted in a choice
-                      const manualBest = manualRes.best;
-                      loc = toLoc(manualBest.raw);
-                      
-                      const update: any = { 
-                        id: order.id,
-                        lat: loc.lat, 
-                        lng: loc.lng,
-                        kmlZone: manualBest.kmlZone,
-                        kmlHub: manualBest.kmlHub,
-                        streetNumberMatched: manualBest.streetNumberMatched,
-                        locationType: manualBest.raw.geometry?.location_type || 'ROOFTOP',
-                        geocodeRes: manualBest.raw
-                      };
-                      waypointLocs.push(loc);
-                      orderUpdates.push(update);
-                      continue; // Proceed to next order
-                }
-
-                loc = toLoc(best.raw);
-                waypointLocs.push(loc);
-                
-                const update: any = { 
-                    id: order.id,
-                    lat: loc.lat, 
-                    lng: loc.lng,
-                    kmlZone: best.kmlZone,
-                    kmlHub: best.kmlHub,
-                    streetNumberMatched: best.streetNumberMatched,
-                    geocodeRes: best.raw
-                };
-                if (best.raw.geometry?.location_type) {
-                    update.locationType = best.raw.geometry.location_type;
-                }
-                orderUpdates.push(update);
-            }
-            }
-
-            // 2.5 Save GEODATA IMMEDIATELY (v35.9.6: Persistence Priority)
+             // 2.5 Save GEODATA IMMEDIATELY (v35.9.6: Persistence Priority)
             // This ensures KML zones and coordinates are visible even if the routing engine fails.
             // NOTE: Skip in batch mode (skipStateUpdate=true) because routes don't exist in state yet —
             // the geodata will be included in the final atomic commit in RouteManagement.tsx.

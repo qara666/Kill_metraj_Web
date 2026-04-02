@@ -41,11 +41,10 @@ export const extractStreetRoot = (address: string): string => {
 
 export const cleanAddress = (address: string) => {
     if (!address) return '';
-    // Deep Cleaning V3: Aggressive stripping of technical info before it even hits the variant generator
-    let cleaned = address;
+    // Deep Cleaning V3.5: Strip ambiguous chars first
+    let cleaned = address.replace(/[?*]/g, ' ');
     
     // 1. Remove everything after common technical separators
-    // We remove p., k., t. from the list because they clash with street initials (e.g. П. Мирного, Т. Шевченко)
     const stopWords = /\b(эт\.?|кв\.?|под\.?|пд\.?|п-д|квартира|этаж|подъезд|д\/ф|моб|д\.?ф\.?|эт|кв|под|домофон|тел\.?\b|мобільний|моб\.?)\b.*$/iu;
     cleaned = cleaned.replace(stopWords, '');
 
@@ -203,43 +202,31 @@ export const generateStreetVariants = (raw: string, city: string | null): string
         });
     }
 
-    // Final global prefix deduplication
-    const finalVariants = Array.from(variants).map(v => 
-        v.replace(/\b(вул|ул|пров|просп|пр|бул|бульвар|вулиця|улица)\.?\s+\1\.?\b/gi, '$1.').trim()
-    );
-
-    // Post-process: Parenthetical Old Name (added separately)
-    const parentheticalMatch = raw.match(/\(([^)]+)\)/);
-    const parentheticalContent = parentheticalMatch ? parentheticalMatch[1].trim() : null;
-    if (parentheticalContent && parentheticalContent.length > 3 && !/^\d+$/.test(parentheticalContent)) {
-        if (!/^(д\/ф|моб|кв|под|эт|літ|корп|оф)/i.test(parentheticalContent)) {
-            const house = base.match(/\d+[а-яієґ]*$/i)?.[0] || '';
-            variants.add(`${parentheticalContent}${house ? ', ' + house : ''}${city ? ', ' + city : ''}, Украина`);
-        }
-    }
-
-    // Post-process: Word Order Permutations for 2-word streets
-    // (e.g. "Леся Курбаса" -> "Курбаса Леся")
-    Array.from(variants).forEach(v => {
+    // Final pass for word substitutions and permutations
+    const expanded = new Set<string>();
+    variants.forEach(v => {
+        expanded.add(v);
+        
+        // Final Word Order Permutations for 2-word streets
         const parts = v.split(/[\s,]+/);
-        // Look for multi-word sequences that might be names
-        // Simple logic: if we have 2-3 words > 3 letters, try reversing them
         const words = parts.filter(p => p.length > 3 && !/\d/.test(p));
         if (words.length === 2) {
             const reversed = v.replace(words[0], 'TEMP_W').replace(words[1], words[0]).replace('TEMP_W', words[1]);
-            variants.add(reversed);
+            expanded.add(reversed);
         }
     });
 
-    // Post-process: District Hint (appended to everything)
+    // Apply District Hints last (tier 3 fallback)
     if (districtHint && districtHint.length > 5) {
-        Array.from(variants).forEach(v => {
-            variants.add(`${districtHint}, ${v}`);
-            variants.add(`${v}, ${districtHint}`);
+        Array.from(expanded).forEach(v => {
+            expanded.add(`${districtHint}, ${v}`);
+            expanded.add(`${v}, ${districtHint}`);
         });
     }
 
-    return Array.from(new Set(finalVariants)).filter(Boolean);
+    return Array.from(expanded)
+        .map(v => v.replace(/\b(вул|ул|пров|просп|пр|бул|бульвар|вулиця|улица)\.?\s+\1\.?\b/gi, '$1.').trim())
+        .filter(Boolean);
 };
 
 /**

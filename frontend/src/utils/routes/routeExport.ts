@@ -30,23 +30,39 @@ export const exportToGoogleMaps = (data: RouteExportData): string => {
     return encodeURIComponent(cleanAddressForMaps(addr))
   }
 
+  // Helper to get valid coordinates
+  const getCoordStr = (obj: any): string | null => {
+    if (!obj) return null
+    const lat = obj.lat ?? obj.latitude
+    const lng = obj.lng ?? obj.lon ?? obj.longitude
+    if (typeof lat === 'number' && typeof lng === 'number' && !isNaN(lat) && !isNaN(lng)) {
+      return `${lat},${lng}`
+    }
+    return null
+  }
+
   // v35.9.27: Using Google Maps Directions API URL format for better stability
   if (route.geoMeta) {
-    const origin = `${route.geoMeta.origin.lat},${route.geoMeta.origin.lng}`
-    const destination = `${route.geoMeta.destination.lat},${route.geoMeta.destination.lng}`
+    const origin = getCoordStr(route.geoMeta.origin) || (startCoords ? `${startCoords.lat},${startCoords.lng}` : null)
+    const destination = getCoordStr(route.geoMeta.destination) || (endCoords ? `${endCoords.lat},${endCoords.lng}` : null)
     
-    const wpList = route.geoMeta.waypoints
-      .map((wp: any) => `${wp.lat},${wp.lng}`)
-      
-    if (wpList.length > 0) {
-      const waypoints = wpList.join('/')
-      return `https://www.google.com/maps/dir/${origin}/${waypoints}/${destination}`
+    if (!origin || !destination) {
+      // Fallback to non-geoMeta path
     } else {
-      return `https://www.google.com/maps/dir/${origin}/${destination}`
+      const wpList = (route.geoMeta.waypoints || [])
+        .map((wp: any) => getCoordStr(wp))
+        .filter(Boolean)
+        
+      if (wpList.length > 0) {
+        const waypoints = wpList.join('/')
+        return `https://www.google.com/maps/dir/${origin}/${waypoints}/${destination}`
+      } else {
+        return `https://www.google.com/maps/dir/${origin}/${destination}`
+      }
     }
   }
 
-  // Fallback to addresses/coords if geoMeta is missing
+  // Fallback to addresses/coords if geoMeta is missing or invalid
   const origin = startCoords ? `${startCoords.lat},${startCoords.lng}` : getPoint(null, startAddress)
   const destination = endCoords ? `${endCoords.lat},${endCoords.lng}` : getPoint(null, endAddress)
   const waypoints = orders
@@ -59,36 +75,45 @@ export const exportToGoogleMaps = (data: RouteExportData): string => {
 
 // ЭКСПОРТ В GRAPHHOPPER (Ранее Valhalla/OSRM — GraphHopper лучше поддерживает параметры профиля в URL)
 export const exportToValhalla = (data: RouteExportData): string => {
-  const { route, orders } = data
+  const { route, orders, startCoords, endCoords } = data
   
   const locs: {lat: number, lon: number}[] = []
   
-  if (route.geoMeta) {
-    if (route.geoMeta.origin) {
-      locs.push({ lat: route.geoMeta.origin.lat, lon: route.geoMeta.origin.lng })
+  // Helper to get valid coordinates from various sources
+  const getValidCoord = (obj: any): { lat: number, lon: number } | null => {
+    if (!obj) return null
+    const lat = obj.lat ?? obj.latitude
+    const lon = obj.lon ?? obj.lng ?? obj.longitude
+    if (typeof lat === 'number' && typeof lon === 'number' && !isNaN(lat) && !isNaN(lon)) {
+      return { lat, lon }
     }
-    route.geoMeta.waypoints.forEach((wp: any) => locs.push({ lat: wp.lat, lon: wp.lon || wp.lng }))
-    if (route.geoMeta.destination) {
-      locs.push({ lat: route.geoMeta.destination.lat, lon: route.geoMeta.destination.lng })
-    }
-  } else {
-    // Добавляем точку старта
-    if (data.startCoords) {
-      locs.push({ lat: data.startCoords.lat, lon: data.startCoords.lng })
-    }
+    return null
+  }
+  
+  // Add start point (prefer geoMeta.origin, fallback to startCoords)
+  const startCoord = getValidCoord(route.geoMeta?.origin) || getValidCoord(startCoords)
+  if (startCoord) {
+    locs.push(startCoord)
+  }
 
-    orders.forEach(o => {
-      if (o.coords?.lat && o.coords?.lng) {
-        locs.push({ lat: Number(o.coords.lat), lon: Number(o.coords.lng) })
-      } else if (o.lat && o.lng) {
-        locs.push({ lat: Number(o.lat), lon: Number(o.lng) })
-      }
+  // Add waypoints from geoMeta if available
+  if (route.geoMeta?.waypoints && Array.isArray(route.geoMeta.waypoints)) {
+    route.geoMeta.waypoints.forEach((wp: any) => {
+      const coord = getValidCoord(wp)
+      if (coord) locs.push(coord)
     })
+  } else {
+    // Fallback: add orders as waypoints
+    orders.forEach(o => {
+      const coord = getValidCoord(o.coords) || getValidCoord(o)
+      if (coord) locs.push(coord)
+    })
+  }
 
-    // Добавляем точку финиша
-    if (data.endCoords) {
-      locs.push({ lat: data.endCoords.lat, lon: data.endCoords.lng })
-    }
+  // Add end point (prefer geoMeta.destination, fallback to endCoords)
+  const endCoord = getValidCoord(route.geoMeta?.destination) || getValidCoord(endCoords)
+  if (endCoord) {
+    locs.push(endCoord)
   }
 
   if (locs.length > 0) {
@@ -109,22 +134,41 @@ export const exportToVisicom = (data: RouteExportData): string => {
   
   const locs: {lat: number, lon: number}[] = []
 
-  if (route.geoMeta) {
-    if (route.geoMeta.origin) locs.push({ lat: route.geoMeta.origin.lat, lon: route.geoMeta.origin.lng })
-    route.geoMeta.waypoints.forEach((wp: any) => locs.push({ lat: wp.lat, lon: wp.lon || wp.lng }))
-    if (route.geoMeta.destination) locs.push({ lat: route.geoMeta.destination.lat, lon: route.geoMeta.destination.lng })
-  } else {
-    if (startCoords) locs.push({ lat: startCoords.lat, lon: startCoords.lng })
-    
-    orders.forEach(o => {
-      if (o.coords?.lat && o.coords?.lng) {
-        locs.push({ lat: Number(o.coords.lat), lon: Number(o.coords.lng) })
-      } else if (o.lat && o.lng) {
-        locs.push({ lat: Number(o.lat), lon: Number(o.lng) })
-      }
+  // Helper to get valid coordinates from various sources
+  const getValidCoord = (obj: any): { lat: number, lon: number } | null => {
+    if (!obj) return null
+    const lat = obj.lat ?? obj.latitude
+    const lon = obj.lon ?? obj.lng ?? obj.longitude
+    if (typeof lat === 'number' && typeof lon === 'number' && !isNaN(lat) && !isNaN(lon)) {
+      return { lat, lon }
+    }
+    return null
+  }
+  
+  // Add start point (prefer geoMeta.origin, fallback to startCoords)
+  const startCoord = getValidCoord(route.geoMeta?.origin) || getValidCoord(startCoords)
+  if (startCoord) {
+    locs.push(startCoord)
+  }
+
+  // Add waypoints from geoMeta if available
+  if (route.geoMeta?.waypoints && Array.isArray(route.geoMeta.waypoints)) {
+    route.geoMeta.waypoints.forEach((wp: any) => {
+      const coord = getValidCoord(wp)
+      if (coord) locs.push(coord)
     })
-    
-    if (endCoords) locs.push({ lat: endCoords.lat, lon: endCoords.lng })
+  } else {
+    // Fallback: add orders as waypoints
+    orders.forEach(o => {
+      const coord = getValidCoord(o.coords) || getValidCoord(o)
+      if (coord) locs.push(coord)
+    })
+  }
+
+  // Add end point (prefer geoMeta.destination, fallback to endCoords)
+  const endCoord = getValidCoord(route.geoMeta?.destination) || getValidCoord(endCoords)
+  if (endCoord) {
+    locs.push(endCoord)
   }
 
   const validLocs = locs.filter(l => l.lat && l.lon)

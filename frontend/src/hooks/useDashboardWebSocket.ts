@@ -18,7 +18,6 @@ import { ProcessedExcelData } from '../types';
 import { logger } from '../utils/ui/logger';
 import { formatDateForApi, transformDashboardData } from '../utils/data/apiDataTransformer';
 import { dashboardApiService } from '../utils/api/dashboardApiService';
-import { normalizeDateToIso } from '../utils/data/dateUtils';
 
 interface DashboardWebSocketParams {
     onDataLoaded: (data: ProcessedExcelData) => void;
@@ -179,12 +178,12 @@ export const useDashboardWebSocket = ({
     }, [setApiLastSyncTime, setApiNextSyncTime, setApiSyncStatus, setApiSyncError]);
 
     const handleDashboardUpdate = useCallback((update: any) => {
-        // v5.110: WebSocket Date Guard
-        const { apiDateShift } = stateRef.current;
-        const currentStoreDate = normalizeDateToIso(apiDateShift);
+        // v5.136: Robust Date Normalization for comparison
+        const normalize = (val: string) => (val || '').split(' ')[0].replace(/\./g, '-');
+        const currentStoreDate = normalize(stateRef.current.apiDateShift);
         
-        const updateDate = update.data?.creationDate || (update.data?.orders?.[0]?.creationDate);
-        const updateDateStr = normalizeDateToIso(updateDate);
+        const updateRaw = update.data?.creationDate || (update.data?.orders?.[0]?.creationDate);
+        const updateDateStr = normalize(updateRaw);
 
         if (currentStoreDate && updateDateStr && currentStoreDate !== updateDateStr) {
             logger.info(`Ignoring WebSocket update for mismatched date: Update is ${updateDateStr}, UI is ${currentStoreDate}`);
@@ -202,6 +201,34 @@ export const useDashboardWebSocket = ({
             const apiDate = stateRef.current.apiDateShift || formatDateForApi(new Date());
             const transformed = transformDashboardData(update.data, apiDate);
             onDataLoadedRef.current(transformed);
+        } else if (!update.data) {
+            // v19.0: If update has no data (Turbo Robot notification), trigger a full refetch
+            logger.info('[Sync] 🤖 Turbo Robot signaled change — triggering refetch');
+            lastDataSignatureRef.current = null; // v5.136: Force state reset to allow same-data update
+            
+            // v25.1: Check if routes were saved to localStorage
+            const savedRoutes = localStorage.getItem('km_routes');
+            if (savedRoutes) {
+                logger.info('[Sync] 🤖 Using routes from localStorage');
+                // Reload from localStorage instead of fetching from server
+                const localData = localStorage.getItem('km_dashboard_processed_data');
+                if (localData && onDataLoadedRef.current) {
+                    try {
+                        const parsed = JSON.parse(localData);
+                        const apiDate = stateRef.current.apiDateShift || formatDateForApi(new Date());
+                        const transformed = transformDashboardData(parsed, apiDate);
+                        onDataLoadedRef.current(transformed);
+                        logger.info('[Sync] 🤖 Reloaded data with routes from localStorage');
+                    } catch (e) {
+                        logger.warn('[Sync] Failed to parse localStorage data:', e);
+                        fetchLatestData();
+                    }
+                } else {
+                    fetchLatestData();
+                }
+            } else {
+                fetchLatestData();
+            }
         }
     }, [setApiLastSyncTime, setApiNextSyncTime, setApiSyncStatus, setApiSyncError]);
 

@@ -6,6 +6,8 @@ import { clsx } from 'clsx';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useDashboardStore } from '../../stores/useDashboardStore';
 import { useExcelData } from '../../contexts/ExcelDataContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { API_URL } from '../../config/apiConfig';
 
 export const DashboardApiSection: React.FC = () => {
     const { isDark } = useTheme();
@@ -25,12 +27,68 @@ export const DashboardApiSection: React.FC = () => {
     const setAutoRoutingStatus = useDashboardStore(s => s.setAutoRoutingStatus);
 
     const { clearExcelData } = useExcelData();
+    const { user } = useAuth();
 
     // Initial selectedDate state removal, use apiDateShift instead
     const selectedDate = apiDateShift;
     const setSelectedDate = setApiDateShift;
 
     const [timeLeft, setTimeLeft] = useState<string>('--:--');
+    const [isTriggeringPriority, setIsTriggeringPriority] = useState(false);
+
+    // Function to trigger priority calculation
+    const triggerPriorityCalculation = async () => {
+        if (!user?.divisionId) {
+            toast.error('Division ID not found. Please login again.');
+            return;
+        }
+
+        setIsTriggeringPriority(true);
+        try {
+                                    const token = localStorage.getItem('km_access_token') || localStorage.getItem('accessToken');
+                                    if (!token || token === 'null' || token === 'undefined') {
+                                        toast.error('Вы не авторизованы. Пожалуйста войдите в систему.');
+                                        window.location.href = '/login';
+                                        return;
+                                    }
+            const response = await fetch(`${API_URL}/api/turbo/priority`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    divisionId: user.divisionId,
+                    date: selectedDate,
+                    userId: user.id
+                })
+            });
+
+            console.log('[DashboardApiSection] Priority calculation response:', response.status, response.statusText);
+
+            if (response.status === 401 || response.status === 403) {
+                // Session might be expired or token invalid. Do not force navigation.
+                toast.error('Сессия истекла или неверный токен. Обновите токен и повторите попытку.');
+                // User can log in again via UI without automatic redirect.
+                return;
+            }
+
+            const data = await response.json();
+            
+            if (data.success) {
+                toast.success(`Priority calculation started for division ${user.divisionId}`);
+                // Update local state to show it's active
+                setAutoRoutingStatus({ isActive: true });
+            } else {
+                toast.error(data.error || 'Failed to start priority calculation');
+            }
+        } catch (error) {
+            console.error('Error triggering priority calculation:', error);
+            toast.error('Failed to trigger priority calculation');
+        } finally {
+            setIsTriggeringPriority(false);
+        }
+    };
 
     // v5.96: New Day Detection - only auto-set today on first run of the day
     React.useEffect(() => {
@@ -242,7 +300,7 @@ export const DashboardApiSection: React.FC = () => {
                                 "w-2 h-2 rounded-full",
                                 autoRoutingStatus.isActive ? "bg-green-500 animate-pulse" : "bg-gray-400"
                             )} />
-                            <p className={clsx(
+                            <div className={clsx(
                                 'text-xs font-semibold uppercase tracking-wider',
                                 isDark ? 'text-gray-400' : 'text-gray-500'
                             )}>
@@ -260,7 +318,7 @@ export const DashboardApiSection: React.FC = () => {
                                         </div>
                                     )
                                     : 'Режим ожидания'}
-                            </p>
+                            </div>
                             {autoRoutingStatus.lastUpdate && (
                                 <span className="text-[10px] text-gray-400 ml-1">
                                     • {format(autoRoutingStatus.lastUpdate, 'HH:mm:ss')}
@@ -272,15 +330,48 @@ export const DashboardApiSection: React.FC = () => {
 
                 <div className="flex items-center gap-4">
                     <button
-                        onClick={() => setAutoRoutingStatus({ isActive: !autoRoutingStatus.isActive })}
+                        onClick={async () => {
+                            if (autoRoutingStatus.isActive) {
+                                // Stop calculation on server
+                                try {
+                                    const token = localStorage.getItem('km_access_token') || localStorage.getItem('accessToken');
+                                    if (!token || token === 'null' || token === 'undefined') {
+                                        toast.error('Вы не авторизованы. Пожалуйста войдите в систему.');
+                                        // Don't send request if no token
+                                    } else {
+                                        await fetch(`${API_URL}/api/turbo/stop`, {
+                                            method: 'POST',
+                                            headers: {
+                                                'Authorization': `Bearer ${token}`
+                                            }
+                                        });
+                                    }
+                                } catch (e) {
+                                    console.error('Error stopping calculation:', e);
+                                }
+                                setAutoRoutingStatus({ isActive: false });
+                            } else {
+                                // Start priority calculation
+                                triggerPriorityCalculation();
+                            }
+                        }}
+                        disabled={isTriggeringPriority}
                         className={clsx(
                             'btn flex items-center gap-2 px-6 py-2.5 rounded-2xl font-bold transform transition-all duration-200 active:scale-95 shadow-lg',
                             autoRoutingStatus.isActive
                                 ? 'bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20'
-                                : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-600/30'
+                                : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-600/30',
+                            isTriggeringPriority && 'opacity-50 cursor-not-allowed'
                         )}
                     >
-                        {autoRoutingStatus.isActive ? (
+                        {isTriggeringPriority ? (
+                            <>
+                                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                <span>Запуск...</span>
+                            </>
+                        ) : autoRoutingStatus.isActive ? (
                             <>
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />

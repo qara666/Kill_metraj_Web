@@ -36,9 +36,9 @@ if [ ! -d "node_modules" ]; then
     npm install
 fi
 
-# Запускаем bac
-echo "Запуск backendа"
-npm start &
+# Запускаем backend в режиме авто-перезагрузки (nodemon)
+echo "Запуск backend (Auto-reload enabled)..."
+npm run dev &
 BACKEND_PID=$!
 
 # Ждем немного чтобы backend запустился
@@ -60,8 +60,8 @@ FRONTEND_PID=$!
 
 echo "Сервер Запущен!"
 echo " Фронт: http://localhost:5173"
-echo " Backend: http://localhost:3001"
-echo " Нажми Ctrl+C для остановки"
+echo " Backend: http://localhost:5001"
+echo " Нажми Ctrl+C для остановки (авто-перезагрузка включена)"
 
 # Ждем завершения процессов
 wait

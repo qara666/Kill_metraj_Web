@@ -199,6 +199,7 @@ export class NominatimService {
             url.searchParams.append('format', 'jsonv2')
             url.searchParams.append('addressdetails', '1')
             url.searchParams.append('countrycodes', 'ua')
+            url.searchParams.append('category', 'building,place,highway') // v23.0: High precision mode
             url.searchParams.append('limit', '5')
             
             if (viewbox) {
@@ -211,9 +212,16 @@ export class NominatimService {
             const response = await rateLimitedFetch(url.toString())
             if (!response.ok) throw new Error(`Nominatim ${response.status}`)
 
-            const items: NominatimResult[] = await response.json()
+            const items = await response.json()
+            
+            // v20.0: Strict array validation to prevent .sort() errors on non-array responses
+            if (!Array.isArray(items)) {
+                console.warn('[Геокодинг] Внимание: Получен некорректный ответ от прокси (не массив). Возвращаю пустой список.');
+                return [];
+            }
+
             const candidates = items
-                .sort((a, b) => b.importance - a.importance)
+                .sort((a: NominatimResult, b: NominatimResult) => (b.importance || 0) - (a.importance || 0))
                 .map(toRawCandidate)
             
             nominatimCache.set(cacheKey, candidates);

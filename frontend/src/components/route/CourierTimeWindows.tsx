@@ -4,6 +4,7 @@ import { SparklesIcon } from '@heroicons/react/24/outline';
 import type { Order } from '../../types';
 import { TimeWindowGroupCard } from './TimeWindowGroupCard';
 import { groupOrdersByTimeWindow, type TimeWindowGroup } from '../../utils/route/routeCalculationHelpers';
+import { getStableOrderId } from '../../utils/data/orderId';
 
 interface CourierTimeWindowsProps {
     courierId: string;
@@ -32,9 +33,31 @@ export const CourierTimeWindows = memo(({
     onCalculateAllRoutes,
     ordersInRoutesSet = new Set(),
 }: CourierTimeWindowsProps) => {
+    // v5.139: Deduplicate orders BEFORE any processing
+    // This fixes duplicates that may come from multiple sources (routes supplement, etc.)
+    const uniqueOrders = useMemo(() => {
+        const seenIds = new Set<string>();
+        const unique: Order[] = [];
+        for (const order of orders) {
+            const sid = getStableOrderId(order);
+            if (!sid) {
+                unique.push(order);
+            } else if (!seenIds.has(sid)) {
+                seenIds.add(sid);
+                unique.push(order);
+            }
+        }
+        
+        if (unique.length < orders.length) {
+            console.warn(`[CourierTimeWindows] ⚠️ Removed ${orders.length - unique.length} duplicate orders for courier ${courierName}`);
+        }
+        
+        return unique;
+    }, [orders, courierName]);
+
     const timeGroups = useMemo(() => {
-        return groupOrdersByTimeWindow(orders, courierId, courierName);
-    }, [orders, courierId, courierName]);
+        return groupOrdersByTimeWindow(uniqueOrders, courierId, courierName);
+    }, [uniqueOrders, courierId, courierName]);
 
     if (!timeGroups || timeGroups.length === 0) {
         return (
@@ -80,7 +103,7 @@ export const CourierTimeWindows = memo(({
                         "px-3 py-1 rounded-lg flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shadow-sm",
                         isDark ? "bg-slate-800 text-slate-400" : "bg-white text-slate-500 border border-slate-100"
                     )}>
-                        <span className={isDark ? "text-emerald-400" : "text-emerald-600"}>{orders.length}</span>
+                        <span className={isDark ? "text-emerald-400" : "text-emerald-600"}>{uniqueOrders.length}</span>
                         <span>Заказов</span>
                     </div>
                 </div>
