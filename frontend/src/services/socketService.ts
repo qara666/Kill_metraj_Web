@@ -224,7 +224,15 @@ class SocketService {
             if (data.routes && Array.isArray(data.routes)) {
                 console.log('[SocketService] 📡 Dispatching km:turbo:routes_update:', data.routes.length, 'routes');
                 window.dispatchEvent(new CustomEvent('km:turbo:routes_update', {
-                    detail: { routes: data.routes, date: data.date, divisionId: data.divisionId }
+                    detail: {
+                        routes: data.routes,
+                        date: data.date,
+                        divisionId: data.divisionId,
+                        // v5.153: Pass enriched couriers for immediate km update in Couriers tab
+                        couriers: Array.isArray(data.couriers) && data.couriers.length > 0 && typeof data.couriers[0] === 'object'
+                            ? data.couriers
+                            : null
+                    }
                 }));
                 // Also persist for cross-tab sync / page reload recovery
                 try {

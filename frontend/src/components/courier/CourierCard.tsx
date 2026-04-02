@@ -57,9 +57,11 @@ export const CourierCard = memo(({
   const totalCount = courier.orders || 0;
   const calculationProgress = totalCount > 0 ? (calculatedCount / totalCount) * 100 : 0;
   
-  // v5.113: Improved status logic for empty couriers
-  const isFullyCalculated = totalCount > 0 && calculatedCount === totalCount;
+  // v5.153: isFullyCalculated: true when robot has calculated distance OR all orders are in routes
+  const hasRobotCalculated = (distanceDetails?.totalDistance || 0) > 0;
+  const isFullyCalculated = hasRobotCalculated || (totalCount > 0 && calculatedCount >= totalCount);
   const hasNoOrders = totalCount === 0;
+
 
   return (
     <div className={clsx(

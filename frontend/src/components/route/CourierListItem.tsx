@@ -13,6 +13,7 @@ interface CourierListItemProps {
   totalOrdersCount: number;
   calculatedCount?: number;
   unassignedCount?: number;
+  distanceKm?: number;
   isDark: boolean;
 }
 
@@ -24,6 +25,7 @@ export const CourierListItem = memo(({
   deliveredOrdersCount,
   totalOrdersCount,
   calculatedCount = 0,
+  distanceKm = 0,
   isDark
 }: CourierListItemProps) => {
 
@@ -170,6 +172,14 @@ export const CourierListItem = memo(({
                     <span className={clsx("w-1.5 h-1.5 rounded-full", isFinished ? "bg-green-500" : "bg-blue-500 animate-pulse")} />
                     {isFinished ? 'Завершено' : remainingTasks > 0 ? 'Доставляет' : 'На маршруте'}
                   </span>
+                  {distanceKm > 0 && (
+                    <span className={clsx(
+                      "text-[10px] font-bold px-2 py-0.5 rounded-lg flex items-center gap-1.5",
+                      isDark ? "bg-indigo-500/10 text-indigo-400" : "bg-indigo-50 text-indigo-600"
+                    )}>
+                      {distanceKm.toFixed(1)} км
+                    </span>
+                  )}
                 </div>
 
                 {!isExpanded && (
@@ -207,6 +217,12 @@ export const CourierListItem = memo(({
                     {remainingTasks}
                   </span>
                 </div>
+                {distanceKm > 0 && (
+                  <div className="col-span-3 mt-2 flex items-center justify-between p-2 rounded-lg bg-indigo-500/5 border border-indigo-500/10 h-8">
+                    <span className={clsx("text-[9px] font-extrabold uppercase tracking-[0.2em] opacity-60", isDark ? "text-indigo-300" : "text-indigo-700")}>ПРОБІГ ЗА ДЕНЬ</span>
+                    <span className={clsx("text-xs font-black", isDark ? "text-indigo-300" : "text-indigo-800")}>{distanceKm.toFixed(2)} КМ</span>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1.5 px-0.5">

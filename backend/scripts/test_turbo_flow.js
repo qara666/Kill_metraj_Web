@@ -102,6 +102,25 @@ async function runTest() {
         console.log(`  Couriers with km:    ${couriersWithKm.length} / ${allCouriers.length}`);
         console.log(`  Socket routes sent:  ${reportedRoutes}`);
         console.log('='.repeat(50));
+
+        // 6. Detailed Grouping Audit (v5.152)
+        console.log('\n📊 GROUPING AUDIT (15m / 15km rule):');
+        const dbRoutes = await sequelize.query(`
+            SELECT route_data->'courier' as courier, jsonb_array_length(route_data->'orders') as order_count, total_distance
+            FROM calculated_routes 
+            WHERE route_data->>'target_date' = :targetDate
+        `, { replacements: { targetDate }, type: sequelize.QueryTypes.SELECT });
+        
+        const courierBlocks = {};
+        dbRoutes.forEach(r => {
+            const name = r.courier;
+            if (!courierBlocks[name]) courierBlocks[name] = [];
+            courierBlocks[name].push(r.order_count);
+        });
+
+        Object.entries(courierBlocks).slice(0, 10).forEach(([name, counts]) => {
+            console.log(`   ${name.padEnd(25)} | Blocks: ${counts.length} | Orders: ${counts.join(', ')}`);
+        });
         
         if (parseInt(result.routes) > 0 && couriersWithKm.length > 0) {
             console.log('🎉 SUCCESS: Full pipeline verified!');

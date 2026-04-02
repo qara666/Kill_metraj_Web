@@ -135,8 +135,12 @@ function formatTimeRange(startTime, endTime) {
  * CRITICAL v5.146: Rewrite grouping to match frontend EXACTLY
  * Uses arrival time for window grouping, not planned time
  */
-function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 30) {
+// v5.153: Changed to 15 minutes as per user strict requirement
+function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
     if (!orders || orders.length === 0) return [];
+
+    const WINDOW_MS = windowMinutes * 60 * 1000;
+    const DELIVERY_SPAN_MS = 60 * 60 * 1000; // SLA remains 60 min for now
 
     // STEP 0: Global deduplication (v5.149 - CRITICAL: orderNumber as PRIMARY key)
     // Same orderNumber = same order, regardless of ID
@@ -459,7 +463,7 @@ function groupAllOrdersByTimeWindow(orders) {
 
     const result = new Map();
     rawGroups.forEach((info, normName) => {
-        const timeGroups = groupOrdersByTimeWindowFrontend(info.orders, 30);
+        const timeGroups = groupOrdersByTimeWindowFrontend(info.orders, 15);
         result.set(normName, timeGroups);
     });
 
