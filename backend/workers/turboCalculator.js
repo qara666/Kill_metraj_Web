@@ -28,34 +28,55 @@ function getAllOrderIds(o) {
     return ids;
 }
 
+/**
+ * v5.164: Robust date normalization to YYYY-MM-DD
+ */
+function normalizeDateISO(dateStr) {
+    if (!dateStr) return null;
+    if (typeof dateStr !== 'string') return dateStr;
+    
+    // Handle DD-MM-YYYY or DD.MM.YYYY
+    const sep = dateStr.includes('-') ? '-' : (dateStr.includes('.') ? '.' : null);
+    if (sep) {
+        const parts = dateStr.split(sep);
+        if (parts[0].length === 2 && parts[2].length === 4) {
+             return `${parts[2]}-${parts[1]}-${parts[0]}`; // Convert to YYYY-MM-DD
+        }
+    }
+    
+    // Already YYYY-MM-DD?
+    if (dateStr.includes('-') && dateStr.split('-')[0].length === 4) {
+        return dateStr;
+    }
+    
+    return dateStr;
+}
+
 class OrderCalculator {
     constructor() {
         this.isRunning = false;
-        this.interval = 15000; // 15s poll as fallback
+        this.interval = 15000;
         this.timer = null;
         this.isProcessing = false;
-        this.io = null; // Socket.io instance
+        this.io = null;
 
         // Settings
-        // v20.1: Prioritize Yapiko OSRM for maximum speed and quality. 
         this.osrmUrl = process.env.YAPIKO_OSRM_URL || process.env.OSRM_URL || 'http://116.204.153.171:5050';
 
-        // v23.1: Persistent Geocache to avoid redundant API calls
+        // v23.1: Persistent Geocache
         this.geocache = new Map();
         this.addressUtils = require('../src/utils/addressUtils');
 
-        // Per-division state: divisionId -> { users:Set<string>, date, priorityQueue, currentPriority, isActive }
+        // Per-division state
         this.divisionStates = new Map();
-        this.processedHashes = new Map(); // v28.1: Track processed data hashes to avoid redundant runs
-        this.priorityQueue = []; // legacy fallback, kept for compatibility
+        this.processedHashes = new Map();
+        this.priorityQueue = [];
         this.currentPriority = null;
 
-        // v24.0: Active division for background calculation (set when user clicks "Start")
+        // v5.170: NO auto-start — robot ONLY runs when user clicks "Запустить"
         this.activeDivisionId = null;
         this.activeDivisionDate = null;
 
-
-        // v24.0: Engine presets for distance calculations (OSRM Yapiko as default, then Photon, then VHV)
         this.enginePresets = {
             yapikoOSRM: {
                 label: 'Yapiko OSRM',
@@ -70,8 +91,8 @@ class OrderCalculator {
                 url: process.env.VHV_URL || 'http://hvv.example'
             }
         };
-        // v24.0: Load all division states from DB into memory
-        this.loadAllDivisionStatesFromDB();
+        // v5.170: DO NOT auto-load division states from DB — robot starts OFF by default
+        // this.loadAllDivisionStatesFromDB(); // REMOVED — only trigger on explicit start
     }
 
     /**
@@ -155,13 +176,10 @@ class OrderCalculator {
         this.isRunning = true;
         this.io = io || this.io;
 
-        // v28.2: Small delay to ensure Sequelize models are fully registered in the index
         await new Promise(resolve => setTimeout(resolve, 1000));
-        await this.loadSavedState();
 
-        logger.info(`[TurboCalculator] 🚀 v22.4 (THE FORCE) INITIALIZING... Engine: ${this.osrmUrl}`);
+        logger.info(`[TurboCalculator] 🚀 v5.170 INITIALIZED — Robot is OFF. Waiting for explicit start command.`);
 
-        // v23.0: Direct model loading - no more waiting
         try {
             const models = require('../src/models');
             logger.info(`[OrderCalculator] ✅ Models loaded: ${Object.keys(models).filter(k => k !== 'sequelize' && k !== 'syncDatabase').join(', ')}`);
@@ -169,45 +187,21 @@ class OrderCalculator {
             logger.error('[OrderCalculator] ❌ Failed to load models:', error.message);
         }
 
-        // Restoring state if any division is active
-        if (global && global.divisionStatusStore) {
-            logger.info(`[TurboCalculator] 🔍 Checking for active divisions in global store...`);
-            for (const [key, status] of Object.entries(global.divisionStatusStore)) {
-                if (status && status.isActive) {
-                    const parts = key.split('_');
-                    if (parts.length >= 2) {
-                        const divId = parts[0];
-                        const date = parts[1];
-                        
-                        this.activeDivisionId = divId;
-                        this.activeDivisionDate = date;
-                        
-                        // Sync to local states Map
-                        this.divisionStates.set(divId, {
-                            isActive: true,
-                            date: date,
-                            users: new Set(),
-                            priorityQueue: []
-                        });
-                        logger.info(`[TurboCalculator] 💾 Restored active division: ${divId} for date ${date}`);
-                    }
-                }
-            }
-        }
-
-        // Delay initial run to ensure models are ready
-        setTimeout(() => {
-            logger.info(`[TurboCalculator] 🚀 Running initial check for ${this.divisionStates.size} active divisions`);
-            if (this.divisionStates.size > 0) {
-                this.tick();
-            } else {
-                this.scheduleNextTick();
-            }
-        }, 5000);
+        // v5.170: DO NOT auto-resume any divisions. Robot stays OFF until user clicks "Запустить".
+        // The tick() will only be called from trigger() (manual start button).
+        logger.info(`[TurboCalculator] ⏸️ Robot in STANDBY mode. No divisions active.`);
     }
 
     scheduleNextTick() {
         if (this.timer) clearTimeout(this.timer);
+
+        // v5.170: Only schedule next tick if there are active divisions
+        const hasActiveDivision = Array.from(this.divisionStates.values()).some(s => s.isActive);
+        if (!hasActiveDivision) {
+            logger.info('[TurboCalculator] ⏸️ No active divisions — stopping tick loop');
+            return;
+        }
+
         this.timer = setTimeout(() => this.tick(), this.interval);
     }
 
@@ -218,7 +212,6 @@ class OrderCalculator {
      * @param {string} userId - User initiating trigger
      */
     trigger(divisionId, date = null, userId = null) {
-        // If called without divisionId, just ensure tick is running
         if (!divisionId) {
             if (!this.isProcessing) this.tick();
             return;
@@ -235,49 +228,37 @@ class OrderCalculator {
         const targetDate = normalizedDate || new Date().toISOString().split('T')[0];
         const cacheKey = `${divisionId}_${targetDate}`;
 
-        // ALWAYS clear hash on manual trigger to force recalculation!
+        // v5.170: ALWAYS clear hash on manual trigger to force recalculation
         this.processedHashes.delete(cacheKey);
-        logger.info(`[TurboCalculator] 💥 Manual bypass: Cleared processedHash for ${cacheKey}`);
+        logger.info(`[TurboCalculator] 💥 Manual trigger: Cleared processedHash for ${cacheKey}`);
 
         let state = this.divisionStates.get(divisionId);
         if (!state) {
             state = { users: new Set(), date: targetDate, priorityQueue: [], currentPriority: null, isActive: true };
             this.divisionStates.set(divisionId, state);
+        } else {
+            // v5.170: Reactivate if was stopped
+            state.isActive = true;
+            state.date = targetDate;
         }
         if (userId) state.users.add(userId);
-        state.isActive = true;
-        state.date = targetDate;
 
-        // Persist activation in memory DB (best effort)
-        try {
-            const DashboardDivisionState = this.getModel('DashboardDivisionState');
-            if (DashboardDivisionState && userId) {
-                // upsert: user_id, division_id, date, is_active, data
-                return DashboardDivisionState.upsert({ user_id: Number(userId), division_id: String(divisionId), date: targetDate, is_active: true, data: {} })
-                    .then(() => {
-                        // ok
-                    }).catch(() => {
-                        // ignore persistence error in in-memory mode
-                    });
-            }
-        } catch (e) {
-            // ignore persistence errors in in-memory mode
-        }
-
-        // Persist activation to DB for persistence across restarts (best effort, non-blocking)
+        // Persist activation to DB
         try {
             const DashboardDivisionState = this.getModel('DashboardDivisionState');
             if (DashboardDivisionState && userId) {
                 const uid = Number(userId);
-                DashboardDivisionState.findOrCreate({ where: { user_id: uid, division_id: String(divisionId) }, defaults: { date: targetDate, is_active: true, data: {} } })
-                    .then(() => DashboardDivisionState.update({ date: targetDate, is_active: true, last_updated: new Date() }, { where: { user_id: uid, division_id: String(divisionId) } }))
-                    .catch(err => logger.warn('[TurboCalculator] Failed to persist division state:', err.message));
+                DashboardDivisionState.upsert({
+                    user_id: uid,
+                    division_id: String(divisionId),
+                    date: targetDate,
+                    is_active: true,
+                    data: {}
+                }).catch(err => logger.warn('[TurboCalculator] Failed to persist division state:', err.message));
             }
-        } catch (e) {
-            // swallow persistence errors to avoid breaking in-memory flow
-        }
+        } catch (e) { /* ignore */ }
 
-        // Trigger global tick to process all active divisions
+        // Trigger calculation
         if (!this.isProcessing) {
             this.tick();
         } else {
@@ -290,9 +271,20 @@ class OrderCalculator {
      * Stop background calculation and clear active division
      */
     async stop(divisionId = null) {
+        // v5.170: Clear the timer IMMEDIATELY to prevent any further ticks
+        if (this.timer) {
+            clearTimeout(this.timer);
+            this.timer = null;
+        }
+
         if (divisionId) {
+            const state = this.divisionStates.get(String(divisionId));
+            if (state) {
+                state.isActive = false;
+            }
             this.divisionStates.delete(String(divisionId));
-            
+            this.processedHashes.delete(`${divisionId}_${state?.date || ''}`);
+
             // Persist stop state to DB
             try {
                 const DashboardDivisionState = this.getModel('DashboardDivisionState');
@@ -305,14 +297,28 @@ class OrderCalculator {
             } catch (e) {
                 logger.error(`[TurboCalculator] ❌ Failed to persist stop state for ${divisionId}: ${e.message}`);
             }
+
+            // Emit stopped status
+            if (this.io) {
+                this.io.emit('robot_status', {
+                    divisionId,
+                    isActive: false,
+                    message: 'Robot stopped by user',
+                    totalCount: 0,
+                    processedCount: 0
+                });
+            }
+
             logger.info(`[TurboCalculator] ⏹️ Background calculation stopped for ${divisionId}`);
         } else {
+            // v5.170: Stop ALL divisions completely
             this.activeDivisionId = null;
             this.activeDivisionDate = null;
             this.priorityQueue = [];
             this.divisionStates.clear();
-            
-            // Persist stop across all divisions globally
+            this.processedHashes.clear();
+
+            // Persist stop across all divisions
             try {
                 const DashboardDivisionState = this.getModel('DashboardDivisionState');
                 if (DashboardDivisionState) {
@@ -324,12 +330,32 @@ class OrderCalculator {
             } catch (e) {
                 logger.error(`[TurboCalculator] ❌ Failed to persist global stop state: ${e.message}`);
             }
-            logger.info(`[TurboCalculator] ⏹️ Background calculation stopped globally, all active divisions cleared`);
+
+            // Emit stopped status
+            if (this.io) {
+                this.io.emit('robot_status', {
+                    isActive: false,
+                    message: 'Robot stopped globally',
+                    totalCount: 0,
+                    processedCount: 0
+                });
+            }
+
+            logger.info(`[TurboCalculator] ⏹️ Background calculation stopped globally — ALL divisions cleared, timer removed`);
         }
     }
 
     async tick() {
         if (this.isProcessing) return;
+
+        // v5.170: Check if ANY division is active before processing
+        const hasActiveDivision = Array.from(this.divisionStates.values()).some(s => s.isActive);
+        if (!hasActiveDivision) {
+            logger.info('[TurboCalculator] ⏸️ No active divisions — tick skipped');
+            this.isProcessing = false;
+            return;
+        }
+
         this.isProcessing = true;
         this.needsReRun = false;
 
@@ -353,15 +379,6 @@ class OrderCalculator {
                 if (!state.isActive) continue;
 
                 let targetDate = state.date;
-                let isPriority = false;
-
-                // Priority queue handling
-                if (state.priorityQueue && state.priorityQueue.length > 0) {
-                    const priorityItem = state.priorityQueue.shift();
-                    targetDate = priorityItem.date;
-                    state.currentPriority = priorityItem;
-                    isPriority = true;
-                }
 
                 logger.info(`[TurboCalculator] ⚙️ Starting tick for ${divId} on ${targetDate}`);
                 tasks.push(this.processDay(targetDate, divId));
@@ -451,6 +468,8 @@ class OrderCalculator {
     async processCache(cache) {
         try {
             const data = cache.payload;
+            const targetDateNorm = normalizeDateISO(cache.target_date);
+            
             // v30.0 CRITICAL FIX: Route must be declared inside processCache.
             // Previously it was ONLY declared in processDay (different scope),
             // causing every Route.create() call to throw "Route is not defined".
@@ -622,36 +641,44 @@ class OrderCalculator {
                 });
             }
 
-            // v28.1 & v5.146: Deep Stable Deduplication - Ignore transient fields like statusTimings/updated_at
-            // By building a stable hash ONLY from routing-relevant fields, we prevent the robot from firing constantly
+            // v5.170: Deep Stable Deduplication - Ignore transient fields like statusTimings/updated_at
+            // v5.157: REMOVED status from hash - it changes constantly and shouldn't trigger re-calculation
+            // v5.170: Hash includes courier assignment so NEW orders on existing couriers trigger recalc
             const crypto = require('crypto');
             const stablePayload = (data.orders || []).map(o => ({
                 id: o.id || o._id,
                 n: o.orderNumber,
-                s: String(o.status || '').toUpperCase(),
                 c: String(o.courier || o.courierName || o.courierId || '').toUpperCase(),
                 a: String(o.address || o.addressGeo || '').toLowerCase(),
                 ll: o.coords ? `${o.coords.lat},${o.coords.lng}` : null,
                 t: o.deliverBy || o.plannedTime || o.deliveryTime,
                 arr: o.arrivedAt || o.createdAt || null
             }));
-            
+
             const dataHash = crypto.createHash('sha256').update(JSON.stringify(stablePayload)).digest('hex');
             const cacheKey = `${cache.division_id}_${cache.target_date}`;
-            if (this.processedHashes.get(cacheKey) === dataHash) {
-                logger.info(`[TurboCalculator] ⏩ Data for ${cacheKey} unchanged (${dataHash}), skipping heavy calculation`);
-                // Still emit status to say we are ready
+
+            const existingHash = this.processedHashes.get(cacheKey);
+            logger.info(`[TurboCalculator] 🤖 Data Hash [${cacheKey}]: ${dataHash.substring(0, 12)}... (Previous: ${existingHash ? existingHash.substring(0, 12) + '...' : 'none'})`);
+
+            if (existingHash === dataHash) {
+                logger.info(`[TurboCalculator] ⏩ Data for ${cacheKey} unchanged, skipping calculation`);
                 if (this.io) {
                     this.io.emit('robot_status', {
                         divisionId: cache.division_id,
                         date: cache.target_date,
                         isActive: false,
                         currentPhase: 'complete',
-                        message: 'Data up-to-date (cached)',
+                        message: 'Data up-to-date (no changes)',
                         totalCount: data.orders.length
                     });
                 }
                 return;
+            }
+
+            // v5.170: Data HAS changed — log what changed
+            if (existingHash) {
+                logger.info(`[TurboCalculator] 🔄 Data changed for ${cacheKey} — recalculating routes`);
             }
 
             // v5.145 FLICKER FIX: Now that we know data HAS changed, delete old routes
@@ -668,22 +695,30 @@ class OrderCalculator {
                 logger.info(`[TurboCalculator] 🗑️ Batch deleted ${deletedCount} old routes for ${cache.division_id} on ${cache.target_date} after confirming changes`);
             }
 
-            // v28.8: Initialize stats using the SAME grouping logic as the calculation loop
-            // This ensures all counts (orders, couriers) match exactly what is being processed
+            // v5.163: Calculate true "Assigned" count for accurate progress tracking
+            const assignedOrdersCount = data.orders.filter(o => {
+                const n = normalizeCourierName(o.courier);
+                return n && n !== 'НЕ НАЗНАЧЕНО';
+            }).length;
+            const unassignedCount = data.orders.length - assignedOrdersCount;
+
             const stats = {
                 isActive: true,
                 lastUpdate: Date.now(),
-                totalCount: data.orders.length,
+                totalCount: assignedOrdersCount, 
+                unassignedCount: unassignedCount,
                 processedCount: 0,
                 totalCouriers: deliveryWindows.size, 
                 processedCouriers: 0,
                 skippedGeocoding: 0,
                 skippedInRoutes: 0,
-                skippedNoCourier: 0,
-                skippedOther: 0,
-                currentPhase: 'grouping',
-                message: `Initializing: ${deliveryWindows.size} couriers...`
+                message: `Analyzing ${assignedOrdersCount} orders across ${deliveryWindows.size} couriers...`
             };
+            
+            if (unassignedCount > 0) {
+                stats.message += ` (${unassignedCount} unassigned orders skipped)`;
+                logger.info(`[TurboCalculator] ⏩ Skipping ${unassignedCount} unassigned orders in ${cache.division_id}`);
+            }
             
             // Initialize per-division courier stats for distance tracking
             stats.courierStats = {};
@@ -735,7 +770,7 @@ class OrderCalculator {
 
             // Initial status push - show immediately!
             emitStatus();
-            logger.info(`[TurboCalculator] 📊 Starting: ${stats.totalCount} orders, ${stats.totalCouriers} couriers`);
+            logger.info(`[TurboCalculator] 📊 Starting: ${stats.totalCount} orders, ${stats.totalCouriers} couriers for ${cache.division_id} on ${targetDateNorm}`);
 
             // v25.0: Selective Geocoding Strategy
             // Only geocode orders that are in "доставляется" status and lack coordinates.
@@ -746,6 +781,100 @@ class OrderCalculator {
             stats.message = 'Analyzing delivery queues...';
             emitStatus();
             logger.info(`[TurboCalculator] 🧭 Starting selective geocoding and routing for ${stats.totalCount} orders`);
+            
+            // v5.170: Parallel geocoding pre-pass for ALL orders in this cache
+            // CRITICAL: Only geocode addresses that are NOT already in GeoCache DB
+            // This prevents re-geocoding the same addresses on every tick
+            const GeoCache = this.getModel('GeoCache');
+            const allOrdersNeedsGeo = data.orders.filter(o => {
+                if (o.coords?.lat) return false; // Already has coords
+                return true;
+            });
+
+            if (allOrdersNeedsGeo.length > 0) {
+                // v5.170: Pre-check GeoCache DB to skip already-geocoded addresses
+                const addressesToGeocode = [];
+                const dbCachedAddresses = new Map();
+
+                // Batch check GeoCache for all unique addresses
+                const uniqueAddresses = new Set(allOrdersNeedsGeo.map(o => (o.address || o.addressGeo || '').toLowerCase().trim()));
+                if (GeoCache && uniqueAddresses.size > 0) {
+                    try {
+                        const cached = await GeoCache.findAll({
+                            where: {
+                                address_key: Array.from(uniqueAddresses),
+                                is_success: true
+                            }
+                        });
+                        cached.forEach(c => {
+                            dbCachedAddresses.set(c.address_key, { latitude: c.lat, longitude: c.lng });
+                        });
+                        logger.info(`[TurboCalculator] 📦 GeoCache DB hit: ${dbCachedAddresses.size}/${uniqueAddresses.size} addresses already cached`);
+                    } catch (e) {
+                        logger.warn(`[TurboCalculator] ⚠️ GeoCache DB check failed: ${e.message}`);
+                    }
+                }
+
+                // Filter out addresses already in DB cache
+                const trulyNeedsGeo = allOrdersNeedsGeo.filter(o => {
+                    const addrKey = (o.address || o.addressGeo || '').toLowerCase().trim();
+                    if (dbCachedAddresses.has(addrKey)) {
+                        const cached = dbCachedAddresses.get(addrKey);
+                        o.coords = { lat: cached.latitude, lng: cached.longitude };
+                        this.geocache.set(addrKey, cached);
+                        return false;
+                    }
+                    // Also check session cache
+                    if (this.geocache.has(addrKey)) {
+                        const cached = this.geocache.get(addrKey);
+                        if (cached) o.coords = { lat: cached.latitude, lng: cached.longitude };
+                        return false;
+                    }
+                    return !!addrKey;
+                });
+
+                if (trulyNeedsGeo.length > 0) {
+                    stats.currentPhase = 'geocoding';
+                    stats.message = `Geocoding ${trulyNeedsGeo.length} new addresses...`;
+                    emitStatus();
+                    logger.info(`[TurboCalculator] 🧭 Batch geocoding: ${trulyNeedsGeo.length} truly new addresses (skipped ${allOrdersNeedsGeo.length - trulyNeedsGeo.length} cached)`);
+
+                    // Process in chunks of 10
+                    for (let i = 0; i < trulyNeedsGeo.length; i += 10) {
+                        const chunk = trulyNeedsGeo.slice(i, i + 10);
+                        const currentCount = i + chunk.length;
+                        stats.message = `Geocoding ${currentCount} / ${trulyNeedsGeo.length} new addresses...`;
+
+                        await Promise.all(chunk.map(async o => {
+                            try {
+                                const cacheKey2 = (o.address || o.addressGeo || '').toLowerCase().trim();
+
+                                // Double-check session cache (might have been populated by another chunk)
+                                if (this.geocache.has(cacheKey2)) {
+                                    const cached = this.geocache.get(cacheKey2);
+                                    if (cached) o.coords = { lat: cached.latitude, lng: cached.longitude };
+                                    return;
+                                }
+
+                                const coords = await this.getRobustGeocode(o.address || o.addressGeo, cityBias);
+                                if (coords) {
+                                    o.coords = { lat: coords.latitude, lng: coords.longitude };
+                                    this.geocache.set(cacheKey2, coords);
+                                } else {
+                                    this.geocache.set(cacheKey2, null);
+                                }
+                            } catch (err) {
+                                // ignore
+                            }
+                        }));
+
+                        stats.processedCount = currentCount;
+                        emitStatus();
+                    }
+                } else {
+                    logger.info(`[TurboCalculator] ✅ All addresses already cached — skipping geocoding phase`);
+                }
+            }
 
             // v27.0: Match frontend's groupOrdersByTimeWindow() logic EXACTLY
             // Already calculated at the start of processCache as 'deliveryWindows'
@@ -783,6 +912,8 @@ class OrderCalculator {
                     { lat: parseFloat(presets.defaultEndLat), lng: parseFloat(presets.defaultEndLng) } : null;
 
                 let courierRoutesCreated = 0;
+                stats.processedCouriers++;
+                emitStatus();
 
                 for (const timeGroup of windows) {
                     const windowKey = timeGroup.windowLabel;
@@ -819,35 +950,56 @@ class OrderCalculator {
                     logger.info(`[TurboCalculator] 🚚 [${windowKey}] Processing ${normName} with ${dedupedOrders.length} orders`);
 
                     try {
-                        // v28.9: Geocoding only orders still missing coords (addressGeo already handled above)
+                        // v5.170: Geocoding only orders still missing coords
+                        // CRITICAL: Check session cache AND DB cache before calling API
                         const needsGeocoding = dedupedOrders.filter(o => {
                             const s = String(o.status || '').toLowerCase().trim();
                             if (s.includes('отказ') || s.includes('отменен') || s.includes('відмова')) return false;
-                            return !o.coords?.lat;
+                            if (o.coords?.lat) return false; // Already has coords
+
+                            // Check session cache
+                            const addrKey = (o.address || o.addressGeo || '').toLowerCase().trim();
+                            if (this.geocache.has(addrKey)) {
+                                const cached = this.geocache.get(addrKey);
+                                if (cached) o.coords = { lat: cached.latitude, lng: cached.longitude };
+                                return false;
+                            }
+                            return true;
                         });
 
                         if (needsGeocoding.length > 0) {
                             logger.info(`[TurboCalculator] 🧭 Need geocoding: ${needsGeocoding.length} orders for ${normName}`);
-                        }
 
-                        // v29.0: Parallel geocoding with in-memory session cache
-                        await Promise.all(needsGeocoding.map(async o => {
-                            // Check session geocache first (fastest, no DB hit)
-                            const cacheKey2 = (o.address || '').toLowerCase().trim();
-                            if (this.geocache.has(cacheKey2)) {
-                                const cached = this.geocache.get(cacheKey2);
-                                if (cached) o.coords = { lat: cached.latitude, lng: cached.longitude };
-                                return;
-                            }
-                            const coords = await this.getRobustGeocode(o.address, cityBias);
-                            if (coords) {
-                                o.coords = { lat: coords.latitude, lng: coords.longitude };
-                                this.geocache.set(cacheKey2, coords); // Cache for reuse
-                                stats.processedCount++;
-                            } else {
-                                this.geocache.set(cacheKey2, null); // Cache miss to avoid re-trying
-                            }
-                        }));
+                            // v29.0: Parallel geocoding with in-memory session cache
+                            await Promise.all(needsGeocoding.map(async o => {
+                                try {
+                                    const cacheKey2 = (o.address || o.addressGeo || '').toLowerCase().trim();
+                                    if (!cacheKey2) return;
+
+                                    // Double-check (might have been cached by another parallel call)
+                                    if (this.geocache.has(cacheKey2)) {
+                                        const cached = this.geocache.get(cacheKey2);
+                                        if (cached) o.coords = { lat: cached.latitude, lng: cached.longitude };
+                                        return;
+                                    }
+
+                                    const coords = await this.getRobustGeocode(o.address || o.addressGeo, cityBias);
+                                    if (coords) {
+                                        o.coords = { lat: coords.latitude, lng: coords.longitude };
+                                        this.geocache.set(cacheKey2, coords);
+                                    } else {
+                                        this.geocache.set(cacheKey2, null);
+                                    }
+                                } catch (err) {
+                                    // ignore
+                                }
+                            }));
+                        }
+                        
+                        // v5.162: CRITICAL - Increment processedCount AFTER the window's geocoding is handled
+                        // This applies to ALL orders in this window, even if they were already in cache.
+                        stats.processedCount += dedupedOrders.length;
+                        emitStatus();
 
                         // Use all valid orders (with coords OR a valid address for routing)
                         // Use deduplicated orders from this block
@@ -925,9 +1077,17 @@ class OrderCalculator {
                                 uniqueRouteOrders.push({
                                     id: o.id,
                                     orderNumber: o.orderNumber,
-                                    address: o.address,
+                                    // v5.170: CRITICAL - address can be empty, fallback to addressGeo
+                                    address: o.address || o.addressGeo || o.raw?.address || 'Адрес не указан',
                                     coords: o.coords,
-                                    deliveryTime: o.deliverBy || o.plannedTime || o.deliveryTime
+                                    deliveryTime: o.deliverBy || o.plannedTime || o.deliveryTime,
+                                    // v5.170: Pass through geocoding metadata for badge display
+                                    locationType: o.locationType || o.coords?.locationType,
+                                    streetNumberMatched: o.streetNumberMatched,
+                                    kmlZone: o.kmlZone || o.deliveryZone,
+                                    kmlHub: o.kmlHub,
+                                    plannedTime: o.plannedTime || o.deliverBy,
+                                    deliveryZone: o.deliveryZone
                                 });
                             });
 
@@ -950,12 +1110,21 @@ class OrderCalculator {
                                 orders_count: uniqueRouteOrders.length,
                                 calculated_at: new Date(),
                                 route_data: {
-                                    target_date: cache.target_date,
+                                    target_date: targetDateNorm, // v5.164: Save as YYYY-MM-DD
+                                    division_id: cache.division_id,
+                                    courier: normName,
                                     deliveryWindow: timeBlockLabel,
                                     timeBlocks: timeBlockLabel,
                                     windowStart: timeGroup.windowStart,
                                     startAddress: presets?.defaultStartAddress || null,
                                     endAddress: presets?.defaultEndAddress || null,
+                                    startCoords: startPoint, // v5.165: Save exact coordinates
+                                    endCoords: endPoint,
+                                    geoMeta: { // v5.166: Save geoMeta for routeExport compatibility
+                                        origin: startPoint,
+                                        destination: endPoint,
+                                        waypoints: uniqueRouteOrders.map(o => o.coords).filter(Boolean)
+                                    },
                                     orders: uniqueRouteOrders,
                                     geometry: routeResult.geometry
                                 }
@@ -1137,12 +1306,15 @@ class OrderCalculator {
         const cleaned = cleanAddress(address);
         const normalized = cleaned.toLowerCase();
 
-        // Check local cache first (fastest)
+        // Check local cache first (fastest) - v30.3: Check ANY record (even failures)
         try {
             const cached = await GeoCache.findOne({
-                where: { address_key: normalized, is_success: true }
+                where: { address_key: normalized }
             });
-            if (cached) return { latitude: cached.lat, longitude: cached.lng, locationType: 'CACHED' };
+            if (cached) {
+                if (!cached.is_success) return null; // Avoid re-trying known failures
+                return { latitude: cached.lat, longitude: cached.lng, locationType: 'CACHED' };
+            }
         } catch (e) { /* ignore cache errors */ }
 
         // Try all variants from cache
@@ -1157,115 +1329,155 @@ class OrderCalculator {
             } catch (e) { /* ignore */ }
         }
 
-        // Try Google Geocoding first (most accurate)
-        const googleKey = process.env.GOOGLE_GEOCODE_API_KEY;
-        if (googleKey) {
+        // v5.160: Try primary geocoding with fallback strategies
+        const tryGeocode = async (query, provider, timeout) => {
+            const googleKey = process.env.GOOGLE_GEOCODE_API_KEY;
+            
+            if (provider === 'google' && googleKey) {
+                try {
+                    const googleUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${googleKey}&language=uk`;
+                    const googleRes = await axios.get(googleUrl, { timeout });
+                    if (googleRes.data?.status === 'OK' && googleRes.data.results?.[0]) {
+                        const r = googleRes.data.results[0];
+                        return {
+                            latitude: r.geometry.location.lat,
+                            longitude: r.geometry.location.lng,
+                            locationType: r.geometry.location_type || 'ROOFTOP'
+                        };
+                    }
+                } catch (e) { /* continue */ }
+            }
+            
+            if (provider === 'photon') {
+                const PHOTON_URL = process.env.PHOTON_URL || 'http://localhost:2322';
+                try {
+                    const photonRes = await axios.get(`${PHOTON_URL}/api?q=${encodeURIComponent(query)}&limit=1&lang=uk`, { timeout });
+                    if (photonRes.data?.features?.length > 0) {
+                        const f = photonRes.data.features[0];
+                        return {
+                            latitude: f.geometry.coordinates[1],
+                            longitude: f.geometry.coordinates[0],
+                            locationType: f.properties?.type || 'PHOTON'
+                        };
+                    }
+                } catch (e) { /* continue */ }
+            }
+            
+            if (provider === 'komoot') {
+                try {
+                    const photon2Res = await axios.get(`https://photon.komoot.io/api?q=${encodeURIComponent(query)}&limit=1&lang=uk`, { timeout });
+                    if (photon2Res.data?.features?.length > 0) {
+                        const f = photon2Res.data.features[0];
+                        return {
+                            latitude: f.geometry.coordinates[1],
+                            longitude: f.geometry.coordinates[0],
+                            locationType: f.properties?.type || 'PHOTON'
+                        };
+                    }
+                } catch (e) { /* continue */ }
+            }
+            
+            if (provider === 'nominatim') {
+                try {
+                    const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&addressdetails=1&accept-language=uk`;
+                    const nomRes = await axios.get(nomUrl, { 
+                        timeout,
+                        headers: { 'User-Agent': 'KillMetraj/1.0' }
+                    });
+                    if (Array.isArray(nomRes.data) && nomRes.data.length > 0) {
+                        const r = nomRes.data[0];
+                        return {
+                            latitude: parseFloat(r.lat),
+                            longitude: parseFloat(r.lon),
+                            locationType: r.type || 'NOMINATIM'
+                        };
+                    }
+                } catch (e) { /* continue */ }
+            }
+            
+            return null;
+        };
+
+        const cacheResult = async (result, provider) => {
+            if (!result) return;
             try {
-                const googleUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(cleaned + ', ' + city)}&key=${googleKey}&language=uk`;
-                const googleRes = await axios.get(googleUrl, { timeout: 5000 });
-                if (googleRes.data?.status === 'OK' && googleRes.data.results?.[0]) {
-                    const r = googleRes.data.results[0];
-                    const result = {
-                        latitude: r.geometry.location.lat,
-                        longitude: r.geometry.location.lng,
-                        locationType: r.geometry.location_type || 'ROOFTOP'
-                    };
-                    // Cache this result
-                    try {
-                        await GeoCache.create({
-                            address_key: normalized,
-                            lat: result.latitude,
-                            lng: result.longitude,
-                            is_success: true,
-                            provider: 'google'
-                        });
-                    } catch (e) { /* ignore cache write errors */ }
+                await GeoCache.create({
+                    address_key: normalized,
+                    lat: result.latitude,
+                    lng: result.longitude,
+                    is_success: true,
+                    provider
+                });
+            } catch (e) { /* ignore */ }
+        };
+
+        // Primary attempt with full address
+        const primaryQuery = cleaned + ', ' + city;
+        for (const provider of ['google', 'photon', 'komoot', 'nominatim']) {
+            const result = await tryGeocode(primaryQuery, provider, 5000);
+            if (result) {
+                await cacheResult(result, provider);
+                return result;
+            }
+        }
+
+        // v5.160: Enhanced fallback strategies
+        logger.info(`[TurboCalculator] 🔄 Primary geocoding failed for "${address}", trying fallback strategies...`);
+
+        // Strategy 1: Remove house number (just street)
+        const noHouse = cleaned.replace(/\b\d+[а-яА-Яa-zA-ZіІєЄґґ]*(?:[\/\-]\d*)?\b/g, '').trim();
+        if (noHouse && noHouse !== cleaned) {
+            const fallbackQuery1 = noHouse + ', ' + city;
+            logger.info(`[TurboCalculator]   Strategy 1 (no house): "${fallbackQuery1}"`);
+            for (const provider of ['google', 'photon', 'komoot']) {
+                const result = await tryGeocode(fallbackQuery1, provider, 4000);
+                if (result) {
+                    logger.info(`[TurboCalculator]   ✅ Fallback success (no-house) via ${provider}`);
+                    await cacheResult(result, provider);
                     return result;
                 }
-            } catch (e) {
-                logger.warn(`[TurboCalculator] ⚠️ Google geocoding failed: ${e.message}`);
             }
         }
 
-        // Try local Photon first
-        const PHOTON_URL = process.env.PHOTON_URL || 'http://localhost:2322';
-        try {
-            const photonRes = await axios.get(`${PHOTON_URL}/api?q=${encodeURIComponent(cleaned + ', ' + city)}&limit=1&lang=uk`, { timeout: 3000 });
-            if (photonRes.data?.features?.length > 0) {
-                const f = photonRes.data.features[0];
-                const result = {
-                    latitude: f.geometry.coordinates[1],
-                    longitude: f.geometry.coordinates[0],
-                    locationType: f.properties?.type || 'PHOTON'
-                };
-                // Cache it
-                try {
-                    await GeoCache.create({
-                        address_key: normalized,
-                        lat: result.latitude,
-                        lng: result.longitude,
-                        is_success: true,
-                        provider: 'photon'
-                    });
-                } catch (e) { /* ignore */ }
-                return result;
+        // Strategy 2: Simplified address (remove apt, floor, entrance, etc.)
+        const simplified = cleaned
+            .replace(/(?:под\.?|подъезд|п)\s*\d+/gi, '')
+            .replace(/(?:кв\.?|квартира)\s*\d+/gi, '')
+            .replace(/(?:эт\.?|этаж)\s*\d+/gi, '')
+            .replace(/(?:оф\.?|офис)\s*\w+/gi, '')
+            .replace(/д\/ф\s*\w*/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        if (simplified && simplified !== cleaned) {
+            const fallbackQuery2 = simplified + ', ' + city;
+            logger.info(`[TurboCalculator]   Strategy 2 (simplified): "${fallbackQuery2}"`);
+            for (const provider of ['google', 'photon', 'komoot']) {
+                const result = await tryGeocode(fallbackQuery2, provider, 4000);
+                if (result) {
+                    logger.info(`[TurboCalculator]   ✅ Fallback success (simplified) via ${provider}`);
+                    await cacheResult(result, provider);
+                    return result;
+                }
             }
-        } catch (photonErr) {
-            logger.warn(`[TurboCalculator] ⚠️ Photon failed: ${photonErr.message}`);
         }
 
-        // Try Komoot Photon
-        try {
-            const photon2Res = await axios.get(`https://photon.komoot.io/api?q=${encodeURIComponent(cleaned + ', ' + city)}&limit=1&lang=uk`, { timeout: 4000 });
-            if (photon2Res.data?.features?.length > 0) {
-                const f = photon2Res.data.features[0];
-                const result = {
-                    latitude: f.geometry.coordinates[1],
-                    longitude: f.geometry.coordinates[0],
-                    locationType: f.properties?.type || 'PHOTON'
-                };
-                try {
-                    await GeoCache.create({
-                        address_key: normalized,
-                        lat: result.latitude,
-                        lng: result.longitude,
-                        is_success: true,
-                        provider: 'komoot'
-                    });
-                } catch (e) { /* ignore */ }
-                return result;
+        // Strategy 3: Just city + street name
+        const streetMatch = cleaned.match(/((?:вул\.?|просп\.?|пр-т|пров\.?|пер\.?|бульвар)\s*[\w\s'-]+)/i);
+        if (streetMatch) {
+            const cityMatch = cleaned.match(/(Київ|Киев|Дніпро|Одеса|Харків|Львів)/i);
+            const minimalQuery = cityMatch ? `${cityMatch[1]}, ${streetMatch[1]}` : streetMatch[1];
+            logger.info(`[TurboCalculator]   Strategy 3 (street-only): "${minimalQuery}"`);
+            for (const provider of ['google', 'photon', 'komoot', 'nominatim']) {
+                const result = await tryGeocode(minimalQuery, provider, 4000);
+                if (result) {
+                    logger.info(`[TurboCalculator]   ✅ Fallback success (street-only) via ${provider}`);
+                    await cacheResult(result, provider);
+                    return result;
+                }
             }
-        } catch (e) { /* ignore */ }
-
-        // Try Nominatim
-        try {
-            const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleaned + ', ' + city)}&limit=1&addressdetails=1&accept-language=uk`;
-            const nomRes = await axios.get(nomUrl, { 
-                timeout: 5000,
-                headers: { 'User-Agent': 'KillMetraj/1.0' }
-            });
-            if (Array.isArray(nomRes.data) && nomRes.data.length > 0) {
-                const r = nomRes.data[0];
-                const result = {
-                    latitude: parseFloat(r.lat),
-                    longitude: parseFloat(r.lon),
-                    locationType: r.type || 'NOMINATIM'
-                };
-                try {
-                    await GeoCache.create({
-                        address_key: normalized,
-                        lat: result.latitude,
-                        lng: result.longitude,
-                        is_success: true,
-                        provider: 'nominatim'
-                    });
-                } catch (e) { /* ignore */ }
-                return result;
-            }
-        } catch (e) {
-            logger.warn(`[TurboCalculator] ⚠️ Nominatim failed: ${e.message}`);
         }
 
+        logger.warn(`[TurboCalculator] ❌ All geocoding strategies failed for: ${address}`);
         return null;
     }
 
@@ -1285,454 +1497,6 @@ class OrderCalculator {
             // ignore parse errors
         }
         return null;
-    }
-
-    extractCoordsFromOrders(orders) {
-        for (const o of orders) {
-            // Already have coords
-            if (o.coords?.lat) continue;
-            
-            // Try lat/lng direct fields
-            if (o.lat && o.lng) {
-                o.coords = { lat: Number(o.lat), lng: Number(o.lng) };
-                continue;
-            }
-            
-            // Try addressGeo field (legacy format)
-            if (o.addressGeo) {
-                const parsed = this.parseAddressGeo(o.addressGeo);
-                if (parsed) {
-                    o.coords = parsed;
-                    continue;
-                }
-            }
-            
-            // Try geocoded field
-            if (o.geocoded && o.lat && o.lng) {
-                o.coords = { lat: Number(o.lat), lng: Number(o.lng) };
-                continue;
-            }
-            
-            // Try raw API data
-            if (o.raw?.lat && o.raw?.lng) {
-                o.coords = { lat: Number(o.raw.lat), lng: Number(o.raw.lng) };
-                continue;
-            }
-        }
-        return orders;
-    }
-
-    groupOrdersByCourier(orders) {
-        // First extract coords from addressGeo
-        this.extractCoordsFromOrders(orders);
-
-        const groups = {};
-        for (const o of orders) {
-            const rawName = o.courierName || o.courier;
-            if (!rawName) continue; // no courier assigned
-            const cName = String(rawName).trim();
-            // Skip unassigned or dummy IDs
-            const cNameUpper = cName.toUpperCase();
-            if (cName === 'Не назначено' || cNameUpper === 'НЕ НАЗНАЧЕНО' || cName === 'ID:0' || cName === 'по' || cName.startsWith('ID:')) {
-                continue;
-            }
-            if (!groups[cName]) groups[cName] = [];
-            groups[cName].push(o);
-        }
-        // Ensure we don't expose a group for unassigned orders
-        delete groups['Не назначено'];
-        delete groups['НЕ НАЗНАЧЕНО'];
-        return groups;
-    }
-
-    /**
-     * Group orders by time blocks (e.g., 13:00-13:30, 13:30-14:00, etc.)
-     * Uses 'deliverBy' or 'plannedTime' field for grouping
-     */
-    groupOrdersByTimeBlocks(orders, blockDurationMinutes = 30) {
-        const blocks = {};
-
-        orders.forEach(o => {
-            // Get delivery time from available fields
-            const deliveryTime = o.deliverBy || o.plannedTime || o.deliveryTime;
-            if (!deliveryTime) {
-                // If no time, put in 'no-time' block
-                if (!blocks['no-time']) blocks['no-time'] = [];
-                blocks['no-time'].push(o);
-                return;
-            }
-
-            // Parse time (format "HH:MM" or "HH:MM:SS")
-            let hours, minutes;
-            if (typeof deliveryTime === 'string') {
-                const timeParts = deliveryTime.split(':');
-                hours = parseInt(timeParts[0], 10);
-                minutes = parseInt(timeParts[1], 10);
-            } else {
-                // If deliveryTime is not a string, try to parse as number (minutes from midnight)
-                hours = Math.floor(deliveryTime / 60);
-                minutes = deliveryTime % 60;
-            }
-
-            if (isNaN(hours) || isNaN(minutes)) {
-                if (!blocks['invalid-time']) blocks['invalid-time'] = [];
-                blocks['invalid-time'].push(o);
-                return;
-            }
-
-            // Calculate block start time (rounded down to nearest blockDurationMinutes)
-            const totalMinutes = hours * 60 + minutes;
-            const blockStartMinutes = Math.floor(totalMinutes / blockDurationMinutes) * blockDurationMinutes;
-            const blockEndMinutes = blockStartMinutes + blockDurationMinutes;
-
-            // Format block key (e.g., "13:00-13:30")
-            const blockStartHours = Math.floor(blockStartMinutes / 60);
-            const blockStartMins = blockStartMinutes % 60;
-            const blockEndHours = Math.floor(blockEndMinutes / 60);
-            const blockEndMins = blockEndMinutes % 60;
-
-            const blockKey = `${String(blockStartHours).padStart(2, '0')}:${String(blockStartMins).padStart(2, '0')}-${String(blockEndHours).padStart(2, '0')}:${String(blockEndMins).padStart(2, '0')}`;
-
-            if (!blocks[blockKey]) blocks[blockKey] = [];
-            blocks[blockKey].push(o);
-        });
-
-        // Sort blocks by time
-        const sortedBlocks = {};
-        Object.keys(blocks)
-            .sort((a, b) => {
-                if (a === 'no-time' || a === 'invalid-time') return 1;
-                if (b === 'no-time' || b === 'invalid-time') return -1;
-                return a.localeCompare(b);
-            })
-            .forEach(key => {
-                sortedBlocks[key] = blocks[key];
-            });
-
-        return sortedBlocks;
-    }
-
-    /**
-     * Group orders by planned delivery time windows (15 min blocks)
-     * Like frontend's groupOrdersByTimeWindow - strict 15-min window from first order
-     * Returns structure: { "14:00": { "Courier1": [orders], "Courier2": [orders] }, ... }
-     * Orders without delivery time are SKIPPED
-     */
-    groupOrdersByTimeWindowLikeFrontend(orders, windowMinutes = 15) {
-        this.extractCoordsFromOrders(orders);
-
-        // Group by courier first
-        const courierGroups = this.groupOrdersByCourier(orders);
-
-        const result = {};
-
-        Object.entries(courierGroups).forEach(([courier, courierOrders]) => {
-            // Get orders with deliverBy or plannedTime (not 00:00)
-            const ordersWithData = [];
-
-            courierOrders.forEach(o => {
-                // Get planned/delivery time
-                let plannedTime = o.deliverBy || o.plannedTime || o.deliveryTime;
-
-                // Get arrival time (when order was created/assigned)
-                let arrivalTime = o.creationTime || o.createdAt || o.assignTime || o.receivedTime;
-
-                if (!plannedTime || plannedTime === '00:00') {
-                    // No delivery time - SKIP this order (don't create routes for it)
-                    return;
-                }
-
-                // Parse planned time to minutes
-                let plannedMinutes;
-                if (typeof plannedTime === 'string') {
-                    const parts = plannedTime.split(':');
-                    plannedMinutes = parseInt(parts[0]) * 60 + parseInt(parts[1]);
-                } else if (typeof plannedTime === 'number') {
-                    plannedMinutes = plannedTime;
-                } else {
-                    ordersNoTime.push(o);
-                    return;
-                }
-
-                if (isNaN(plannedMinutes)) {
-                    ordersNoTime.push(o);
-                    return;
-                }
-
-                // Parse arrival time to timestamp (for bulk detection)
-                let arrivalTs;
-                if (typeof arrivalTime === 'string') {
-                    arrivalTs = new Date(arrivalTime).getTime();
-                } else if (typeof arrivalTime === 'number') {
-                    arrivalTs = arrivalTime;
-                } else {
-                    arrivalTs = Date.now();
-                }
-
-                ordersWithData.push({
-                    order: o,
-                    planned: plannedMinutes,
-                    arrival: arrivalTs
-                });
-            });
-
-            // Store orders without time
-            if (ordersNoTime.length > 0) {
-                if (!noTimeOrders[courier]) noTimeOrders[courier] = [];
-                noTimeOrders[courier].push(...ordersNoTime);
-            }
-
-            if (ordersWithData.length === 0) return;
-
-            // Determine if bulk import (all orders arrive within 5 minutes)
-            let isBulkImport = false;
-            if (ordersWithData.length > 2) {
-                const arrivalTimes = ordersWithData.map(o => o.arrival);
-                const maxArrival = Math.max(...arrivalTimes);
-                const minArrival = Math.min(...arrivalTimes);
-                if (maxArrival - minArrival < 5 * 60 * 1000) {
-                    isBulkImport = true;
-                }
-            }
-
-            // Set anchor time: planned for bulk, arrival otherwise (like frontend)
-            ordersWithData.forEach(o => {
-                o.anchorTime = isBulkImport ? o.planned : o.arrival;
-            });
-
-            // Sort by anchor time first, then by planned
-            ordersWithData.sort((a, b) => {
-                if (a.anchorTime !== b.anchorTime) return a.anchorTime - b.anchorTime;
-                return a.planned - b.planned;
-            });
-
-            // Group by strict 15-min window from FIRST order's planned time (like frontend)
-            if (ordersWithData.length > 0) {
-                let windowStart = ordersWithData[0].planned;
-                let windowOrders = [ordersWithData[0].order];
-
-                for (let i = 1; i < ordersWithData.length; i++) {
-                    const orderPlanned = ordersWithData[i].planned;
-
-                    // Strict: if within windowMinutes from window START, add to current group
-                    if (orderPlanned - windowStart < windowMinutes) {
-                        windowOrders.push(ordersWithData[i].order);
-                    } else {
-                        // Close current window
-                        const windowKey = this.formatMinutesToTime(windowStart);
-                        if (!result[windowKey]) result[windowKey] = {};
-                        if (!result[windowKey][courier]) result[windowKey][courier] = [];
-                        result[windowKey][courier].push(...windowOrders);
-
-                        // Start new window from this order's planned time
-                        windowStart = orderPlanned;
-                        windowOrders = [ordersWithData[i].order];
-                    }
-                }
-
-                // Don't forget last window
-                const windowKey = this.formatMinutesToTime(windowStart);
-                if (!result[windowKey]) result[windowKey] = {};
-                if (!result[windowKey][courier]) result[windowKey][courier] = [];
-                result[windowKey][courier].push(...windowOrders);
-            }
-        });
-
-        // Orders without time are SKIPPED - they don't get routes
-        // (no-time orders should not be part of Turbo Robot routes)
-
-        return result;
-    }
-
-    /**
-     * Group by arrival/creation time (like frontend uses)
-     */
-    groupOrdersByArrivalTime(orders, windowMinutes = 15) {
-        this.extractCoordsFromOrders(orders);
-
-        // Group by courier first
-        const courierGroups = this.groupOrdersByCourier(orders);
-
-        const result = {};
-
-        Object.entries(courierGroups).forEach(([courier, courierOrders]) => {
-            // Get orders with deliverBy (not 00:00)
-            const ordersWithTime = courierOrders.filter(o => o.deliverBy && o.deliverBy !== '00:00');
-
-            if (ordersWithTime.length === 0) return;
-
-            // Sort by deliverBy
-            ordersWithTime.sort((a, b) => {
-                const timeA = a.deliverBy || '00:00';
-                const timeB = b.deliverBy || '00:00';
-                return timeA.localeCompare(timeB);
-            });
-
-            // Convert to minutes
-            const ordersWithMinutes = ordersWithTime.map(o => {
-                const time = o.deliverBy;
-                const parts = time.split(':');
-                const minutes = parseInt(parts[0]) * 60 + parseInt(parts[1]);
-                return { ...o, _minutes: minutes };
-            });
-
-            // Group by 15-min STRICT window from first order (like frontend)
-            if (ordersWithMinutes.length > 0) {
-                let windowStart = ordersWithMinutes[0]._minutes;
-                let windowOrders = [ordersWithMinutes[0]];
-
-                for (let i = 1; i < ordersWithMinutes.length; i++) {
-                    const orderMinutes = ordersWithMinutes[i]._minutes;
-
-                    // Strict: if within 15 min from window START, add to current group
-                    if (orderMinutes - windowStart < windowMinutes) {
-                        windowOrders.push(ordersWithMinutes[i]);
-                    } else {
-                        // Close current window
-                        const windowKey = this.formatMinutesToTime(windowStart);
-                        if (!result[windowKey]) result[windowKey] = {};
-                        result[windowKey][courier] = windowOrders;
-
-                        // Start new window
-                        windowStart = orderMinutes;
-                        windowOrders = [ordersWithMinutes[i]];
-                    }
-                }
-
-                // Don't forget last window
-                const windowKey = this.formatMinutesToTime(windowStart);
-                if (!result[windowKey]) result[windowKey] = {};
-                result[windowKey][courier] = windowOrders;
-            }
-        });
-
-        return result;
-    }
-
-    /**
-     * Legacy function - unused now
-     */
-    groupOrdersByDeliverByTime(orders, windowMinutes = 15) {
-        this.extractCoordsFromOrders(orders);
-
-        // Get orders with a courier assigned AND have plannedTime/deliverBy
-        const ordersWithTime = orders.filter(o => {
-            const rawName = o.courierName || o.courier;
-            const cName = String(rawName || '').trim();
-            // Skip unassigned
-            if (!cName || cName === 'Не назначено' || cName === 'ID:0' || cName === 'по' || cName.startsWith('ID:')) {
-                return false;
-            }
-            return o.plannedTime || o.deliverBy;
-        });
-
-        // Sort by plannedTime (primary) or deliverBy
-        ordersWithTime.sort((a, b) => {
-            const timeA = a.plannedTime || a.deliverBy || '00:00';
-            const timeB = b.plannedTime || b.deliverBy || '00:00';
-            return timeA.localeCompare(timeB);
-        });
-
-        const result = {};
-
-        ordersWithTime.forEach(order => {
-            const rawName = order.courierName || order.courier;
-            const cName = String(rawName || '').trim();
-            if (!cName || cName === 'Не назначено' || cName === 'ID:0' || cName === 'по' || cName.startsWith('ID:')) {
-                return;
-            }
-
-            // Use plannedTime if available, else deliverBy
-            const plannedTime = order.plannedTime || order.deliverBy;
-            if (!plannedTime || plannedTime === '00:00') return;
-
-            let orderMinutes;
-            if (typeof plannedTime === 'string') {
-                const parts = plannedTime.split(':');
-                orderMinutes = parseInt(parts[0]) * 60 + parseInt(parts[1]);
-            } else {
-                return;
-            }
-
-            if (isNaN(orderMinutes)) return;
-
-            if (!result[cName]) result[cName] = [];
-            result[cName].push({ ...order, _deliverMinutes: orderMinutes });
-        });
-
-        // Group by SLIDING 15-min windows (like frontend)
-        const finalResult = {};
-        Object.entries(result).forEach(([courier, courierOrders]) => {
-            const sorted = courierOrders.sort((a, b) => a._deliverMinutes - b._deliverMinutes);
-
-            if (sorted.length === 0) return;
-
-            // First order defines the window start
-            let windowStart = sorted[0]._deliverMinutes;
-            let windowOrders = [sorted[0]];
-
-            for (let i = 1; i < sorted.length; i++) {
-                const orderMinutes = sorted[i]._deliverMinutes;
-
-                // If within windowMinutes from window START, add to current group
-                // This is the key: sliding window from first order, not from last
-                if (orderMinutes - windowStart < windowMinutes * 2) {
-                    // Within 30 mins from start = same route
-                    windowOrders.push(sorted[i]);
-                } else {
-                    // Close current window and start new one
-                    const windowKey = this.formatMinutesToTime(windowStart);
-                    if (!finalResult[windowKey]) finalResult[windowKey] = {};
-                    if (!finalResult[windowKey][courier]) finalResult[windowKey][courier] = [];
-                    finalResult[windowKey][courier].push(...windowOrders);
-
-                    // Start new window from this order
-                    windowStart = orderMinutes;
-                    windowOrders = [sorted[i]];
-                }
-            }
-
-            // Don't forget the last window
-            const windowKey = this.formatMinutesToTime(windowStart);
-            if (!finalResult[windowKey]) finalResult[windowKey] = {};
-            if (!finalResult[windowKey][courier]) finalResult[windowKey][courier] = [];
-            finalResult[windowKey][courier].push(...windowOrders);
-        });
-
-        return finalResult;
-    }
-
-    formatMinutesToTime(minutes) {
-        const h = Math.floor(minutes / 60);
-        const m = minutes % 60;
-        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    }
-
-    /**
-     * Group orders by time blocks AND courier
-     * Returns structure: { "13:00-13:30": { "Courier1": [orders], "Courier2": [orders] }, ... }
-     */
-    groupOrdersByTimeBlocksAndCourier(orders, blockDurationMinutes = 30) {
-        // First extract coords from all orders
-        this.extractCoordsFromOrders(orders);
-        const timeBlocks = this.groupOrdersByTimeBlocks(orders, blockDurationMinutes);
-        const result = {};
-
-        Object.entries(timeBlocks).forEach(([blockKey, blockOrders]) => {
-            const courierGroups = this.groupOrdersByCourier(blockOrders);
-            // Include time blocks even if they have 0 couriers (for debugging)
-            if (Object.keys(courierGroups).length > 0 || blockOrders.length > 0) {
-                result[blockKey] = courierGroups;
-            }
-        });
-
-        return result;
-    }
-
-    calculateRouteHash(orders, courierName) {
-        const ids = orders.map(o => o.id || o.number).sort().join(',');
-        const coords = orders.map(o => `${o.coords.lat},${o.coords.lng}`).sort().join('|');
-        return `${courierName}|${ids}|${coords}`;
     }
 
     async calculateRoute(orders, divisionId = null, startPoint = null, endPoint = null) {

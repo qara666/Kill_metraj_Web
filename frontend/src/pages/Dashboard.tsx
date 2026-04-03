@@ -9,6 +9,7 @@ import { ExcelResultsDisplay } from '../components/excel/ExcelResultsDisplay'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
+import { useDashboardStore } from '../stores/useDashboardStore'
 
 import { clsx } from 'clsx'
 import * as api from '../services/api'
@@ -20,6 +21,7 @@ export const Dashboard: React.FC = () => {
   const { excelData, setExcelData, clearExcelData } = useExcelData()
   const { isDark } = useTheme()
   const { user } = useAuth()
+  const setDivisionId = useDashboardStore(s => s.setDivisionId)
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [logs, setLogs] = useState<string[]>([])
@@ -73,6 +75,12 @@ export const Dashboard: React.FC = () => {
       }
     } catch { }
   }, [excelLogs])
+
+  useEffect(() => {
+    if (user?.divisionId) {
+      setDivisionId(user.divisionId);
+    }
+  }, [user?.divisionId, setDivisionId]);
 
 
   const processFileMutation = useMutation({

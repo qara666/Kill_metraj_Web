@@ -90,6 +90,35 @@ export const DashboardApiSection: React.FC = () => {
         }
     };
 
+    // v5.159: Hydrate status from server on mount
+    React.useEffect(() => {
+        const hydrateStatus = async () => {
+            if (!user?.divisionId) return;
+            try {
+                const token = localStorage.getItem('km_access_token') || localStorage.getItem('accessToken');
+                const res = await fetch(`${API_URL}/api/turbo/statuses`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const json = await res.json();
+                if (json.success && json.data) {
+                    const key = `${user.divisionId}_${selectedDate}`;
+                    const status = json.data[key];
+                    if (status) {
+                        console.log('[DashboardApiSection] Hydrated status:', status);
+                        setAutoRoutingStatus(status);
+                    }
+                }
+            } catch (err) {
+                console.warn('[DashboardApiSection] Hydration failed:', err);
+            }
+        };
+
+        hydrateStatus();
+        // Also poll every 30s as fallback if socket misses
+        const interval = setInterval(hydrateStatus, 30000);
+        return () => clearInterval(interval);
+    }, [user?.divisionId, selectedDate, setAutoRoutingStatus]);
+
     // v5.96: New Day Detection - only auto-set today on first run of the day
     React.useEffect(() => {
         const today = format(new Date(), 'yyyy-MM-dd');
@@ -389,6 +418,38 @@ export const DashboardApiSection: React.FC = () => {
                     </button>
                 </div>
             </div>
+
+            {/* v5.157: Real-time Stats Only */}
+            {autoRoutingStatus.isActive && (
+                <div className={clsx(
+                    'mt-4 pt-4 border-t flex flex-col gap-3',
+                    isDark ? 'border-gray-700/50' : 'border-gray-200/50'
+                )}>
+                    <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">
+                            ⚡ Статистика в реальном времени
+                        </span>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div>
+                            <div className={clsx('text-[10px] uppercase tracking-wider', isDark ? 'text-gray-500' : 'text-gray-400')}>Всего заказов</div>
+                            <div className={clsx('text-lg font-black', isDark ? 'text-white' : 'text-gray-900')}>{autoRoutingStatus.totalCount || 0}</div>
+                        </div>
+                        <div>
+                            <div className={clsx('text-[10px] uppercase tracking-wider', isDark ? 'text-gray-500' : 'text-gray-400')}>Обработано</div>
+                            <div className={clsx('text-lg font-black text-emerald-500')}>{autoRoutingStatus.processedCount || 0}</div>
+                        </div>
+                        <div>
+                            <div className={clsx('text-[10px] uppercase tracking-wider', isDark ? 'text-gray-500' : 'text-gray-400')}>В маршрутах</div>
+                            <div className={clsx('text-lg font-black text-blue-500')}>{autoRoutingStatus.skippedInRoutes || 0}</div>
+                        </div>
+                        <div>
+                            <div className={clsx('text-[10px] uppercase tracking-wider', isDark ? 'text-gray-500' : 'text-gray-400')}>Ошибки гео</div>
+                            <div className={clsx('text-lg font-black', autoRoutingStatus.skippedGeocoding > 0 ? 'text-red-500' : (isDark ? 'text-gray-500' : 'text-gray-400'))}>{autoRoutingStatus.skippedGeocoding || 0}</div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

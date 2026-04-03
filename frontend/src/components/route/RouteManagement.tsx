@@ -343,7 +343,11 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
         const stableId = getStableOrderId(order);
 
-        // v38.2: Prevent duplication of orders with same ID in the same list
+        // v5.160: Prevent duplication by orderNumber FIRST (primary), then by ID
+        const orderNum = String(order.orderNumber || '');
+        if (orderNum && grouped[courierName].some(o => String(o.orderNumber) === orderNum)) {
+          return;
+        }
         if (grouped[courierName].some(o => o.id === stableId)) {
           return;
         }
@@ -367,7 +371,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         grouped[courierName].push({
           id: stableId,
           orderNumber: order.orderNumber || 'N/A',
-          address: order.address,
+          address: order.address || 'Адрес не указан',
           courier: courierName,
           amount: order.amount || 0,
           phone: order.phone || '',
@@ -418,6 +422,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         const sid = getStableOrderId(routeOrder);
         if (!sid) return;
 
+        // v5.160: Check by orderNumber FIRST (primary dedup key)
+        const routeOrderNum = String(routeOrder.orderNumber || '');
+        if (routeOrderNum && grouped[routeCourierName].some((o: any) => String(o.orderNumber) === routeOrderNum)) return;
         // Already in this courier's group — skip duplication
         if (grouped[routeCourierName].some((o: any) => o.id === sid)) return;
 
@@ -431,7 +438,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         grouped[routeCourierName].push({
           id: sid,
           orderNumber: orderSource.orderNumber || routeOrder.orderNumber || 'N/A',
-          address: orderSource.address || routeOrder.address || '',
+          address: orderSource.address || routeOrder.address || 'Адрес не указан',
           courier: routeCourierName,          // corrected courier name from route
           amount: orderSource.amount || 0,
           phone: orderSource.phone || '',
@@ -470,10 +477,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         route.orders.forEach((order: Order) => {
           const sid = getStableOrderId(order);
           set.add(sid);
+          // v5.160: Also track by orderNumber
+          if (order.orderNumber) set.add(`num_${order.orderNumber}`);
         })
       })
     return set
-  }, [excelData?.routes, getStableOrderId])
+  }, [excelData?.routes])
 
   // Функция для получения метрик курьера (Optimized with Memoization)
   const courierMetricsMap = useMemo(() => {
@@ -1093,6 +1102,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     // Helper to enrich sequence of orders (v5.71: Deduplicating by Number + ID)
     const enrichOrders = (ordersToEnrich: any[]) => {
       const seen = new Set();
+      // v5.170: Also create lookup by orderNumber for backend routes
+      const masterOrdersByNumber = new Map(allOrdersList.map(o => [String(o.orderNumber), o]));
+
       return (ordersToEnrich || [])
         .filter(order => {
           // Use orderNumber as primary unique key if available, fallback to id
@@ -1102,16 +1114,17 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
           return true;
         })
         .map(order => {
-          const masterOrder = masterOrdersMap.get(String(order.id));
+          // v5.170: Try lookup by id first, then by orderNumber
+          const masterOrder = masterOrdersMap.get(String(order.id)) || masterOrdersByNumber.get(String(order.orderNumber));
           const lat = masterOrder?.lat || order.lat || order.coords?.lat;
           const lng = masterOrder?.lng || order.lng || order.coords?.lng;
-          
+
           const locType = masterOrder?.locationType || order.locationType || (order as any).coords?.locationType;
           const streetMatch = (masterOrder as any)?.streetNumberMatched ?? order.streetNumberMatched;
-          
+
           let finalKmlZone = masterOrder?.kmlZone || order.kmlZone || masterOrder?.deliveryZone || order.deliveryZone;
           let finalKmlHub = masterOrder?.kmlHub || order.kmlHub;
-          
+
           if (!finalKmlZone && lat && lng) {
             const zoneMatch = robustGeocodingService.findZoneForCoords(lat, lng);
             if (zoneMatch) {
@@ -1119,10 +1132,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
               finalKmlHub = zoneMatch.hubName;
             }
           }
-          
+
           return {
             ...order,
             ...masterOrder,
+            // v5.170: CRITICAL — address must come from master if order.address is empty
+            address: order.address || masterOrder?.address || 'Адрес не указан',
+            orderNumber: order.orderNumber || masterOrder?.orderNumber || 'N/A',
             kmlZone: finalKmlZone,
             kmlHub: finalKmlHub,
             deliveryZone: masterOrder?.deliveryZone || order.deliveryZone || finalKmlZone,
@@ -1136,10 +1152,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     };
 
     // 1. Process existing calculated routes
-    const processedRoutes = rawRoutes.map(route => ({
-      ...route,
-      orders: enrichOrders(route.orders)
-    }));
+    const processedRoutes = rawRoutes.map(route => {
+      // v5.170: Backend stores orders in route_data.orders, not route.orders
+      const routeOrders = route.orders || (route as any).route_data?.orders || [];
+      return {
+        ...route,
+        orders: enrichOrders(routeOrders)
+      };
+    });
 
     // 2. Identify "Orphaned" orders (assigned to courier but not in any route)
     const ordersInCalculatedRoutes = new Set();
@@ -1682,12 +1702,22 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
   const clearAllRoutes = () => {
     if (window.confirm('Вы уверены, что хотите удалить все маршруты?')) {
-      updateExcelData({ ...(excelData || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }), routes: [] }, true)
+      // v5.160: Clear ALL route-related localStorage keys
       try {
-        localStorage.removeItem('km_routes')
+        localStorage.removeItem('km_routes');
+        localStorage.removeItem('km_routes_last_updated');
+        localStorage.removeItem('km_dashboard_processed_data');
       } catch (error) {
-        console.error('Error clearing routes from localStorage:', error)
+        console.error('Error clearing routes from localStorage:', error);
       }
+
+      // v5.160: Force update with empty routes
+      updateExcelData({
+        ...(excelData || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
+        routes: []
+      }, true /* force: true */);
+
+      toast.success('Все маршруты очищены');
     }
   }
 
@@ -2388,6 +2418,71 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                               retryResults.forEach((val, key) => addrCache.set(key, val));
                             }
 
+                            // v5.160: Enhanced fallback - try simplified addresses for remaining failures
+                            const stillFailed = Array.from(uniqueAddresses).filter(addr => {
+                              const key = addr.trim().toLowerCase();
+                              return !addrCache.has(key);
+                            });
+                            
+                            if (stillFailed.length > 0) {
+                              console.log(`[Quantum] ${stillFailed.length} addresses still failed, trying enhanced fallback strategies...`);
+                              useCalculationProgress.getState().setMessage(`Уточнение ${stillFailed.length} адресов...`);
+                              
+                              const enhancedFallbacks = stillFailed.flatMap(addr => {
+                                const fallbacks: { address: string; original: string; strategy: string }[] = [];
+                                
+                                // Strategy 1: Remove house number
+                                const noHouse = addr.replace(/\b\d+[а-яА-Яa-zA-ZіІєЄґґ]*(?:[\/\-]\d*)?\b/g, '').trim();
+                                if (noHouse && noHouse !== addr) {
+                                  fallbacks.push({ address: noHouse, original: addr, strategy: 'no-house' });
+                                }
+                                
+                                // Strategy 2: Remove apartment/entrance/floor details
+                                const simplified = addr
+                                  .replace(/(?:под\.?|подъезд|п)\s*\d+/gi, '')
+                                  .replace(/(?:кв\.?|квартира)\s*\d+/gi, '')
+                                  .replace(/(?:эт\.?|этаж)\s*\d+/gi, '')
+                                  .replace(/(?:оф\.?|офис)\s*\w+/gi, '')
+                                  .replace(/д\/ф\s*\w*/gi, '')
+                                  .replace(/\s+/g, ' ')
+                                  .trim();
+                                if (simplified && simplified !== addr) {
+                                  fallbacks.push({ address: simplified, original: addr, strategy: 'simplified' });
+                                }
+                                
+                                // Strategy 3: Extract just street name
+                                const streetMatch = addr.match(/((?:вул\.?|просп\.?|пр-т|пров\.?|пер\.?|бульвар)\s*[\w\s'-]+)/i);
+                                if (streetMatch) {
+                                  const cityMatch = addr.match(/(Київ|Киев|Дніпро|Одеса|Харків|Львів)/i);
+                                  const minimal = cityMatch ? `${cityMatch[1]}, ${streetMatch[1]}` : streetMatch[1];
+                                  fallbacks.push({ address: minimal, original: addr, strategy: 'street-only' });
+                                }
+                                
+                                return fallbacks;
+                              });
+                              
+                              if (enhancedFallbacks.length > 0) {
+                                const fallbackResults = await batchGeocode(
+                                  enhancedFallbacks.map(fb => ({
+                                    address: fb.address,
+                                    options: { turbo: true, silent: true, strictZoneFallback: false, maxResults: 1 }
+                                  }))
+                                );
+                                
+                                // Map results back to original addresses
+                                enhancedFallbacks.forEach((fb) => {
+                                  const result = fallbackResults.get(fb.address.toLowerCase());
+                                  if (result?.best) {
+                                    const originalKey = fb.original.trim().toLowerCase();
+                                    if (!addrCache.has(originalKey)) {
+                                      addrCache.set(originalKey, result);
+                                      console.log(`[Quantum] ✅ Fallback success (${fb.strategy}): "${fb.original}" → "${fb.address}"`);
+                                    }
+                                  }
+                                });
+                              }
+                            }
+
                             useCalculationProgress.getState().setProgress(30);
                             console.log(`[Quantum] Giant Geocode complete. Calculating ${newRoutes.length} routes in parallel...`);
 
@@ -2402,8 +2497,23 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                                 // Yield main thread to browser to paint UI
                                 await new Promise(r => setTimeout(r, 10));
 
+                                // v5.160: Show current route being calculated
+                                const routeIndex = newRoutes.indexOf(route);
+                                const windowLabel = route.orders.length > 0 ? 
+                                  `(${(route.orders[0] as any).deliverBy || route.orders[0].plannedTime || ''})` : '';
+                                useCalculationProgress.getState().setMessage(
+                                  `Маршрут ${routeIndex + 1}/${newRoutes.length} ${windowLabel}`
+                                );
+
                                 const result = await calculateRouteDistance(route, true, addrCache);
                                 calculatedRoutes.push(result);
+                                
+                                if (result) {
+                                  console.log(`[Quantum] ✅ Route ${routeIndex + 1} calculated: ${(result.totalDistance || 0).toFixed(1)}km`);
+                                } else {
+                                  console.warn(`[Quantum] ⚠️ Route ${routeIndex + 1} failed`);
+                                  toast(`Маршрут ${routeIndex + 1} не рассчитан`, { icon: '⚠️', duration: 2000 });
+                                }
                               } catch (e) {
                                 console.error(`[Quantum] Ошибка маршрута:`, e);
                                 calculatedRoutes.push(null);
@@ -2464,8 +2574,13 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                             }, true /* force: true to ensure new routes are NOT dropped by protectData */);
 
                             const successCount = calculatedRoutes.filter(Boolean).length;
+                            const failCount = calculatedRoutes.length - successCount;
                             if (successCount > 0) {
-                              toast.success(`Расчитано ${successCount} маршрутов`);
+                              if (failCount > 0) {
+                                toast.success(`Расчитано ${successCount} маршрутов (${failCount} не удалось)`);
+                              } else {
+                                toast.success(`Расчитано ${successCount} маршрутов`);
+                              }
                             } else {
                               toast.error('Не удалось рассчитать маршруты. Проверьте консоль.');
                             }

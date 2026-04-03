@@ -25,6 +25,7 @@ type DivisionStatus = {
   currentPhase: string;
   message: string;
   couriers?: CourierInfo[];
+  isBulkImport?: boolean;
 }
 
 const DivisionStatusPanel: React.FC = () => {
@@ -134,7 +135,7 @@ const DivisionStatusPanel: React.FC = () => {
         gap: '20px' 
       }}>
         {data.map(d => (
-          <div key={d.divisionId} style={{ 
+          <div key={`${d.divisionId}_${d.date}`} style={{ 
             border: '1px solid #e5e7eb', 
             borderRadius: '14px', 
             padding: '16px', 
@@ -172,11 +173,20 @@ const DivisionStatusPanel: React.FC = () => {
             `}</style>
 
             <div style={{ marginTop: '16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                <span style={{ color: '#6b7280' }}>Всего заказов:</span>
-                <span style={{ fontWeight: 600 }}>{d.totalCount}</span>
-              </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginTop: '6px' }}>
+                <span style={{ color: '#6b7280' }}>Прогресс (заказы):</span>
+                <span style={{ fontWeight: 600 }}>{d.processedCount} / {d.totalCount}</span>
+              </div>
+              <div style={{ width: '100%', height: '6px', background: '#e5e7eb', borderRadius: '3px', marginTop: '4px', overflow: 'hidden' }}>
+                <div style={{ 
+                  width: `${Math.min(100, (d.processedCount / (d.totalCount || 1)) * 100)}%`, 
+                  height: '100%', 
+                  background: '#3b82f6', 
+                  transition: 'width 0.5s ease' 
+                }} />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginTop: '10px' }}>
                 <span style={{ color: '#6b7280' }}>Обработано курьеров:</span>
                 <span style={{ fontWeight: 600 }}>{d.processedCouriers} / {d.totalCouriers}</span>
               </div>

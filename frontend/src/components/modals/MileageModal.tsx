@@ -248,7 +248,7 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
           
           <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={(e) => { e.stopPropagation(); window.open(exportToGoogleMaps({ route, orders: route.orders || [], startAddress: route.startAddress || '', endAddress: route.endAddress || '' }), '_blank'); }}
+              onClick={(e) => { e.stopPropagation(); window.open(exportToGoogleMaps({ route, orders: route.orders || [], startAddress: route.startAddress || '', endAddress: route.endAddress || '', startCoords: route.startCoords || route.route_data?.startCoords, endCoords: route.endCoords || route.route_data?.endCoords }), '_blank'); }}
               className={clsx(
                 "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-colors",
                 isDark ? "bg-blue-500/10 text-blue-400 hover:bg-blue-500/20" : "bg-blue-50 text-blue-600 hover:bg-blue-100"
@@ -257,7 +257,7 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
               <MapIcon className="w-4 h-4" /> Google
             </button>
             <button
-              onClick={(e) => { e.stopPropagation(); window.open(exportToValhalla({ route, orders: route.orders || [], startAddress: route.startAddress || '', endAddress: route.endAddress || '' }), '_blank'); }}
+              onClick={(e) => { e.stopPropagation(); window.open(exportToValhalla({ route, orders: route.orders || [], startAddress: route.startAddress || '', endAddress: route.endAddress || '', startCoords: route.startCoords || route.route_data?.startCoords, endCoords: route.endCoords || route.route_data?.endCoords }), '_blank'); }}
               className={clsx(
                 "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-colors",
                 isDark ? "bg-green-500/10 text-green-400 hover:bg-green-500/20" : "bg-green-50 text-green-600 hover:bg-green-100"

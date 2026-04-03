@@ -208,9 +208,9 @@ export const RouteCard: React.FC<RouteCardProps> = memo(({
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                         <span className="font-black text-sm">#{order.orderNumber}</span>
+                         <span className="font-black text-sm">#{order.orderNumber || 'N/A'}</span>
                       </div>
-                      <p className="text-xs truncate opacity-70 leading-tight mt-0.5" title={order.address}>{order.address}</p>
+                      <p className="text-xs truncate opacity-70 leading-tight mt-0.5" title={order.address || 'Адрес не указан'}>{order.address || 'Адрес не указан'}</p>
                     </div>
                   </div>
                   <button
@@ -373,7 +373,7 @@ export const RouteCard: React.FC<RouteCardProps> = memo(({
                     <span className={clsx(
                       'font-black text-sm tracking-tight',
                       isDark ? 'text-gray-100' : 'text-gray-900'
-                    )}>#{order.orderNumber}</span>
+                    )}>#{order.orderNumber || 'N/A'}</span>
                     {order.plannedTime && order.plannedTime !== '00:00' && order.plannedTime !== '00:00:00' && order.plannedTime !== 'Без времени' && (
                       <span className={clsx(
                         'flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider',
@@ -388,7 +388,7 @@ export const RouteCard: React.FC<RouteCardProps> = memo(({
                     'truncate text-sm font-medium',
                     isDark ? 'text-gray-400' : 'text-gray-600',
                     hasAddressIssues && 'text-red-500'
-                  )} title={order.address}>{order.address}</div>
+                  )} title={order.address || 'Адрес не указан'}>{order.address || 'Адрес не указан'}</div>
                   {metaBadge}
                 </div>
               </div>

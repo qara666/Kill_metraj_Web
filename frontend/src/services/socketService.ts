@@ -174,19 +174,22 @@ class SocketService {
         });
 
         // Per-division status updates (for multi-division UI)
-        this.socket.on('division_status', (payload) => {
-            console.log('[SocketService] division_status', payload);
+        const relayStatus = (payload: any) => {
+            console.log('[SocketService] relaying status_update', payload);
             try {
                 // Attach division status to a simple in-memory store
-                window.__divisionStatuses = window.__divisionStatuses || {};
-                window.__divisionStatuses[payload.divisionId] = payload;
+                (window as any).__divisionStatuses = (window as any).__divisionStatuses || {};
+                (window as any).__divisionStatuses[payload.divisionId] = payload;
                 
                 // v25.0: Emit local event for real-time UI updates
                 this.emit('division_status_update', payload);
             } catch (e) {
                 console.warn('Failed to store division_status', e);
             }
-        });
+        };
+
+        this.socket.on('division_status', relayStatus);
+        this.socket.on('division_status_update', relayStatus);
 
         this.socket.on('routes_update', (data) => {
             console.log('[SocketService] 🤖 Turbo Robot: Routes recalculated', {
@@ -195,18 +198,27 @@ class SocketService {
                 count: data.routes?.length
             });
             
-            // v25.0: Sanity check - Ignore updates for other divisions
+            // v5.158: Sanity check - Ignore updates for other divisions or other dates
             try {
                 const { useDashboardStore } = require('../stores/useDashboardStore');
                 const store = useDashboardStore.getState();
                 const currentDivisionStr = String(store.divisionId || 'all');
                 
+                // Also check if our dashboard date matches the robot date
+                const dashboardDate = normalizeDate(store.apiDateShift);
+                const robotDate = normalizeDate(data.date);
+                
                 if (currentDivisionStr !== 'all' && String(data.divisionId) !== currentDivisionStr) {
                     console.log(`[SocketService] 🛑 Ignoring routes_update for division ${data.divisionId} (currently on ${currentDivisionStr})`);
                     return;
                 }
+                
+                if (dashboardDate && robotDate && dashboardDate !== robotDate) {
+                    console.log(`[SocketService] 🛑 Ignoring routes_update for date ${robotDate} (currently viewing ${dashboardDate})`);
+                    return;
+                }
             } catch (e) {
-                // Ignore division check errors
+                // Ignore filtering errors
             }
             
             // Try to trigger a direct refresh via global function
@@ -252,7 +264,20 @@ class SocketService {
             console.log('[SocketService] 🤖 Turbo Robot: Status update', data);
             try {
                 const { useDashboardStore } = require('../stores/useDashboardStore');
-                useDashboardStore.getState().setAutoRoutingStatus(data);
+                const store = useDashboardStore.getState();
+                const currentDivisionStr = String(store.divisionId || 'all');
+                const dashboardDate = normalizeDate(store.apiDateShift);
+                const robotDate = normalizeDate(data.date);
+
+                // FILTER: Only update UI if division AND date match
+                if (currentDivisionStr !== 'all' && String(data.divisionId) !== currentDivisionStr) {
+                    return;
+                }
+                if (dashboardDate && robotDate && dashboardDate !== robotDate) {
+                    return;
+                }
+
+                store.setAutoRoutingStatus(data);
             } catch (e) {
                 // Secondary fallback if direct import fails in this context
             }
@@ -360,6 +385,23 @@ class SocketService {
         this.socket.disconnect();
         this.socket.connect();
     }
+}
+
+/**
+ * v5.161: Robust date normalization to avoid format mismatches (DD-MM-YYYY vs YYYY-MM-DD)
+ */
+function normalizeDate(dateStr: string | null): string | null {
+    if (!dateStr) return null;
+    if (dateStr.includes('-')) {
+        const parts = dateStr.split('-');
+        if (parts[0].length === 4) return dateStr; // YYYY-MM-DD
+        if (parts[2].length === 4) return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD-MM-YYYY
+    }
+    if (dateStr.includes('.')) {
+        const parts = dateStr.split('.');
+        if (parts[2].length === 4) return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD.MM.YYYY
+    }
+    return dateStr;
 }
 
 // Export singleton instance

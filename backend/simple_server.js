@@ -1148,7 +1148,9 @@ async function setupDashboardListener() {
               socket.emit('dashboard:update', {
                 data: result.payload,
                 timestamp: result.created_at,
-                status: result.status_code
+                status: result.status_code,
+                source: 'server_initial',
+                divisionId: divisionId
               });
             }
           }
@@ -1218,7 +1220,9 @@ io.on('connection', (socket) => {
       socket.emit('dashboard:update', {
         data: result.payload,
         timestamp: result.created_at,
-        status: result.status_code
+        status: result.status_code,
+        source: 'on_connect',
+        divisionId: user.role === 'admin' ? 'all' : user.divisionId
       });
       logger.info(`Отправлены начальные данные дашборда клиенту ${socket.id} (заказов: ${result.payload.orders?.length || 0})`);
     }
