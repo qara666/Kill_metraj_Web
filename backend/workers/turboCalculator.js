@@ -348,7 +348,6 @@ class OrderCalculator {
     async tick() {
         if (this.isProcessing) return;
 
-        // v5.170: Check if ANY division is active before processing
         const hasActiveDivision = Array.from(this.divisionStates.values()).some(s => s.isActive);
         if (!hasActiveDivision) {
             logger.info('[TurboCalculator] ⏸️ No active divisions — tick skipped');
@@ -360,7 +359,6 @@ class OrderCalculator {
         this.needsReRun = false;
 
         try {
-            // Emit initial global status
             if (this.io) {
                 this.io.emit('robot_status', {
                     isActive: true,
@@ -373,19 +371,27 @@ class OrderCalculator {
                 });
             }
 
-            // Process all active divisions for this tick
             const tasks = [];
             for (const [divId, state] of this.divisionStates.entries()) {
                 if (!state.isActive) continue;
 
                 let targetDate = state.date;
-
                 logger.info(`[TurboCalculator] ⚙️ Starting tick for ${divId} on ${targetDate}`);
                 tasks.push(this.processDay(targetDate, divId));
             }
             await Promise.all(tasks);
         } catch (err) {
-            logger.error('[OrderCalculator] ❌ Robot Tick critical failure:', err.message);
+            logger.error('[OrderCalculator] ❌ Robot Tick critical failure:', err);
+            // v5.170: Emit error status so frontend knows something went wrong
+            if (this.io) {
+                this.io.emit('robot_status', {
+                    isActive: false,
+                    lastUpdate: Date.now(),
+                    message: `Error: ${err.message}`,
+                    totalCount: 0,
+                    processedCount: 0
+                });
+            }
         } finally {
             this.isProcessing = false;
             this.scheduleNextTick();
@@ -397,8 +403,13 @@ class OrderCalculator {
 
     async processDay(dateISO, priorityDivisionId = null) {
         try {
+            logger.info(`[TurboCalculator] 📅 processDay called: date=${dateISO}, division=${priorityDivisionId || 'all'}`);
+
             const DashboardCache = this.getModel('DashboardCache');
-            if (!DashboardCache) return;
+            if (!DashboardCache) {
+                logger.error('[TurboCalculator] ❌ DashboardCache model not found — cannot process');
+                return;
+            }
 
             let caches;
             if (priorityDivisionId && priorityDivisionId !== 'all') {
@@ -409,9 +420,26 @@ class OrderCalculator {
                 caches = await DashboardCache.findAll({ where: { target_date: dateISO } });
             }
 
+            logger.info(`[TurboCalculator] 📊 Found ${caches?.length || 0} DashboardCache records for ${dateISO}`);
+
+            if (!caches || caches.length === 0) {
+                logger.warn(`[TurboCalculator] ⚠️ No DashboardCache found for date ${dateISO} (division: ${priorityDivisionId || 'all'})`);
+                if (this.io) {
+                    this.io.emit('robot_status', {
+                        divisionId: priorityDivisionId,
+                        date: dateISO,
+                        isActive: false,
+                        currentPhase: 'error',
+                        message: `Нет данных за ${dateISO}. Проверьте Dashboard Fetcher.`,
+                        totalCount: 0,
+                        processedCount: 0
+                    });
+                }
+                return;
+            }
+
             if (caches.length === 0) {
                 logger.info(`[TurboCalculator] ⚠️ No data found for ${priorityDivisionId || 'all'} on ${dateISO}`);
-                // Emit final "No data" status so UI doesn't spin
                 if (this.io && priorityDivisionId) {
                     const noDataPayload = {
                         divisionId: priorityDivisionId,
@@ -426,13 +454,13 @@ class OrderCalculator {
                 return;
             }
 
-            // v28.0: If processing 'all', we need to emit an aggregated status to move the top bar!
+            // v28.0: If processing 'all', emit aggregated status
             if (priorityDivisionId === 'all') {
                 let totalOrdersGlobal = 0;
                 caches.forEach(c => {
                    totalOrdersGlobal += (c.order_count || c.payload?.orders?.length || 0);
                 });
-                
+
                 if (this.io) {
                     this.io.emit('robot_status', {
                         divisionId: 'all',
@@ -445,8 +473,7 @@ class OrderCalculator {
                 }
             }
 
-            // v5.145: CRITICAL FIX - Only process ONE cache per division/date
-            // If multiple caches exist, use the one with the most orders
+            // v5.145: Process only ONE cache per division/date — the largest one
             const primaryCache = caches.reduce((best, c) => {
                 const currentCount = c.payload?.orders?.length || 0;
                 const bestCount = best?.payload?.orders?.length || 0;
@@ -458,10 +485,13 @@ class OrderCalculator {
             }
 
             if (primaryCache) {
+                logger.info(`[TurboCalculator] 🔄 Processing cache: id=${primaryCache.id}, orders=${primaryCache.payload?.orders?.length || 0}, division=${primaryCache.division_id}`);
                 await this.processCache(primaryCache);
+            } else {
+                logger.error('[TurboCalculator] ❌ primaryCache is null after reduce!');
             }
         } catch (err) {
-            logger.error(`[OrderCalculator] ❌ processDay error (${dateISO}): ${err.message}`);
+            logger.error(`[OrderCalculator] ❌ processDay error (${dateISO}):`, err);
         }
     }
 
