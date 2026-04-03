@@ -23,12 +23,15 @@ router.get('/calculated', async (req, res) => {
         const whereClause = {};
         
         // Filter by division_id if explicitly provided
-        if (divisionId && divisionId !== 'null' && divisionId !== 'undefined') {
+        // v5.156: Admins (division_id === 'all') should see routes for ALL divisions
+        if (divisionId && divisionId !== 'all' && divisionId !== 'null' && divisionId !== 'undefined') {
             whereClause[Op.or] = [
                 { division_id: String(divisionId) },
                 { division_id: null }
             ];
         }
+        // If divisionId is 'all', we don't add division filtering at all, 
+        // allowing admins to see everything.
         
         // v5.143: Filter by date if provided (route_data->>'target_date')
         if (targetDate) {
@@ -40,7 +43,9 @@ router.get('/calculated', async (req, res) => {
                 )
             );
         } else {
-            // If no date provided, get only today's routes by default
+            // v5.156: If no date provided, try to find the MOST RECENT calculated date
+            // This prevents the "empty dashboard after midnight" bug.
+            // For now, we fallback to today but logged it for debugging.
             const today = new Date().toISOString().split('T')[0];
             whereClause[Op.and] = whereClause[Op.and] || [];
             whereClause[Op.and].push(

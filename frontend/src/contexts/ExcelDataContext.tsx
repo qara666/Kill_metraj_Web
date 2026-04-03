@@ -7,6 +7,7 @@ import { getStableOrderId } from '../utils/data/orderId'
 import { normalizeDateToIso } from '../utils/data/dateUtils'
 import { CourierIdResolver } from '../utils/data/courierIdMap'
 import { useDashboardStore } from '../stores/useDashboardStore'
+import { API_URL } from '../config/apiConfig'
 
 interface ExcelData {
   orders: any[]
@@ -68,8 +69,8 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     
     // Build URL with date parameter
     const url = normalizedDate 
-      ? `/api/routes/calculated?date=${encodeURIComponent(normalizedDate)}`
-      : '/api/routes/calculated';
+      ? `${API_URL}/api/routes/calculated?date=${encodeURIComponent(normalizedDate)}`
+      : `${API_URL}/api/routes/calculated`;
     
     const routesRes = await fetch(url, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -222,21 +223,20 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                       // Normalize both courier names for proper matching
                       if (serverData.couriers && Array.isArray(serverData.couriers)) {
                         serverData.couriers.forEach((c: any) => {
-                            const rawName = (c.name || c.courierName || '').toString().trim();
-                            const normName = rawName.replace(/\s+/g, ' ').toUpperCase();
+                            const normName = normalizeCourierName(c.name || c.courierName);
+                            if (normName === 'Не назначено' || !normName) return;
                             
-                            // v5.141: Skip "Не назначено"
-                            if (normName === 'НЕ НАЗНАЧЕНО' || !rawName) return;
-                            
-                            // v5.147: Normalize courier field from routes - check both courier and courier_id
                             const courierRoutes = mergedRoutes.filter((r: any) => {
-                              const routeCourier = (r.courier || r.courier_id || '').toString().trim().replace(/\s+/g, ' ').toUpperCase();
+                              const routeCourier = normalizeCourierName(r.courier || r.courier_id);
                               return routeCourier === normName;
                             });
                             
                             if (courierRoutes.length > 0) {
-                                const totalDist = courierRoutes.reduce((acc: number, curr: any) => acc + (Number(curr.total_distance) || 0), 0);
-                                const totalOrders = courierRoutes.reduce((acc: number, curr: any) => acc + (Number(curr.ordersCount) || 0), 0);
+                                // v5.157: Handle both snake_case (DB) and camelCase (JSON/API) field names
+                                const totalDist = courierRoutes.reduce((acc: number, curr: any) => 
+                                  acc + (Number(curr.totalDistance || curr.total_distance || 0)), 0);
+                                const totalOrders = courierRoutes.reduce((acc: number, curr: any) => 
+                                  acc + (Number(curr.ordersCount || curr.orders_count || 0)), 0);
                                 c.distanceKm = Number(totalDist.toFixed(2));
                                 c.calculatedOrders = totalOrders;
                                 console.log(`[ExcelSync] 📍 Updated courier ${normName}: ${c.distanceKm} km, ${totalOrders} orders (${courierRoutes.length} routes)`);
@@ -261,6 +261,18 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             // 2. Если сервера нет или ошибка, грузим из localStorage
           const localData = localStorage.getItem('km_dashboard_processed_data')
           
+          // v5.155: Also read km_routes from localStorage (written by socketService during turbo robot)
+          let localRoutes: any[] = [];
+          try {
+            const savedRoutes = localStorage.getItem('km_routes');
+            if (savedRoutes) {
+              localRoutes = JSON.parse(savedRoutes);
+              console.log('[ExcelSync] 📦 km_routes from localStorage:', localRoutes.length);
+            }
+          } catch (e) {
+            console.warn('[ExcelSync] Failed to parse km_routes:', e);
+          }
+          
           // Always try to fetch routes from database first
           let dbRoutes: any[] = [];
           try {
@@ -276,18 +288,41 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
           if (localData) {
             const parsed = JSON.parse(localData);
             
-            // Merge with DB routes
+            // v5.155: Merge routes from 3 sources: local data, km_routes, DB
             const existingRoutes = Array.isArray(parsed.routes) ? parsed.routes : [];
-            const existingRouteIds = new Set(existingRoutes.map((r: any) => r.id));
-            const newDbRoutes = dbRoutes.filter((r: any) => !existingRouteIds.has(r.id));
+            const allRouteIds = new Set<string>();
+            const mergedRoutes: any[] = [];
             
-            if (newDbRoutes.length > 0) {
-              console.log('[ExcelSync] 🔄 Adding DB routes to local:', newDbRoutes.length);
-              parsed.routes = [...existingRoutes, ...newDbRoutes];
-            } else if (existingRoutes.length === 0 && dbRoutes.length > 0) {
-              console.log('[ExcelSync] 🔄 Using DB routes:', dbRoutes.length);
-              parsed.routes = dbRoutes;
-            }
+            // Priority 1: DB routes (most authoritative)
+            dbRoutes.forEach((r: any) => {
+              const rid = String(r.id || '');
+              if (rid && !allRouteIds.has(rid)) {
+                allRouteIds.add(rid);
+                mergedRoutes.push(r);
+              }
+            });
+            
+            // Priority 2: km_routes (turbo robot results)
+            localRoutes.forEach((r: any) => {
+              const rid = String(r.id || '');
+              if (rid && !allRouteIds.has(rid)) {
+                allRouteIds.add(rid);
+                mergedRoutes.push(r);
+              }
+            });
+            
+            // Priority 3: Local manual routes (from parsed data)
+            existingRoutes.forEach((r: any) => {
+              const rid = String(r.id || '');
+              // Only add manual routes (start with 'route_')
+              if (rid.startsWith('route_') && !allRouteIds.has(rid)) {
+                allRouteIds.add(rid);
+                mergedRoutes.push(r);
+              }
+            });
+            
+            parsed.routes = mergedRoutes;
+            console.log('[ExcelSync] 🔄 Merged routes: DB=', dbRoutes.length, ', km_routes=', localRoutes.length, ', manual=', existingRoutes.filter((r: any) => String(r.id || '').startsWith('route_')).length, ', total=', mergedRoutes.length);
             
             // v5.147: Update courier distances when loading from localStorage + DB routes
             if (parsed.couriers && Array.isArray(parsed.couriers)) {
@@ -362,13 +397,60 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
         console.log('[ExcelSync] 📡 km:turbo:routes_update received:', routes.length, 'routes for', date, '| enrichedCouriers:', eventCouriers?.length || 0);
         setExcelDataState(prev => {
           if (!prev) return prev;
+
+          // v5.160: Enrich route orders with master order data (address, courier, etc.)
+          const masterOrdersMap = new Map((prev.orders || []).map((o: any) => [String(o.id), o]));
+          const masterOrdersByNumber = new Map((prev.orders || []).map((o: any) => [String(o.orderNumber), o]));
+
+          const enrichedRoutes = routes.map((route: any) => {
+            if (!route.orders) return route;
+
+            // v5.160: Deduplicate orders within this route by orderNumber
+            const seenOrderNumbers = new Set<string>();
+            const dedupedOrders = route.orders.filter((o: any) => {
+              const key = String(o.orderNumber || o.id || '');
+              if (!key || seenOrderNumbers.has(key)) return false;
+              seenOrderNumbers.add(key);
+              return true;
+            });
+
+            // v5.160: Enrich each order with master data (address, courier, etc.)
+            const enrichedOrders = dedupedOrders.map((order: any) => {
+              const masterById = masterOrdersMap.get(String(order.id));
+              const masterByNumber = masterOrdersByNumber.get(String(order.orderNumber));
+              const master = masterById || masterByNumber;
+
+              if (master) {
+                return {
+                  ...order,
+                  ...master,
+                  coords: order.coords || master.coords,
+                  kmlZone: order.kmlZone || master.kmlZone || master.deliveryZone,
+                  kmlHub: order.kmlHub || master.kmlHub,
+                  address: order.address || master.address || 'Адрес не указан',
+                  orderNumber: order.orderNumber || master.orderNumber || 'N/A',
+                  plannedTime: order.plannedTime || master.plannedTime || master.deliverBy,
+                };
+              }
+
+              // No master found - ensure minimum fields
+              return {
+                ...order,
+                address: order.address || 'Адрес не указан',
+                orderNumber: order.orderNumber || 'N/A',
+              };
+            });
+
+            return { ...route, orders: enrichedOrders };
+          });
+
           // DB routes take priority; remove duplicates by id
-          const dbIds = new Set(routes.map((r: any) => String(r.id)));
+          const dbIds = new Set(enrichedRoutes.map((r: any) => String(r.id)));
           const manualRoutes = (prev.routes || []).filter((r: any) => {
             const id = String(r.id || '');
             return id.startsWith('route_') && !dbIds.has(id);
           });
-          const mergedRoutes = [...routes, ...manualRoutes];
+          const mergedRoutes = [...enrichedRoutes, ...manualRoutes];
 
           // v5.153: Update courier distanceKm — two paths:
           // Path A (Fast): Use the enriched couriers array sent directly by the robot
@@ -379,16 +461,16 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             // PATH A: Direct enriched couriers from robot (fastest, most accurate)
             const enrichedMap = new Map<string, { km: number; orders: number }>();
             eventCouriers.forEach((c: any) => {
-              const name = (c.name || c.courierName || '').toString().trim().toUpperCase();
-              if (name && (c.distanceKm > 0 || c.calculatedOrders > 0)) {
+              const name = normalizeCourierName(c.name || c.courierName);
+              if (name && name !== 'Не назначено') {
                 enrichedMap.set(name, { km: Number(c.distanceKm || 0), orders: Number(c.calculatedOrders || 0) });
               }
             });
             if (enrichedMap.size > 0) {
               updatedCouriers = updatedCouriers.map((c: any) => {
-                const normName = (c.name || c.courierName || '').toString().trim().toUpperCase();
+                const normName = normalizeCourierName(c.name || c.courierName);
                 const calc = enrichedMap.get(normName);
-                if (calc && calc.km > 0) {
+                if (calc && calc.km >= 0) {
                   return { ...c, distanceKm: Number(calc.km.toFixed(2)), calculatedOrders: calc.orders };
                 }
                 return c;
@@ -399,9 +481,8 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             // PATH B: compute from route objects (fallback)
             const distMap = new Map<string, { km: number; orders: number }>();
             mergedRoutes.forEach((r: any) => {
-              const rawCourier = (r.courier || r.courier_id || '').toString().trim();
-              const normKey = rawCourier.replace(/\s+/g, ' ').toUpperCase();
-              if (!normKey) return;
+              const normKey = normalizeCourierName(r.courier || r.courier_id);
+              if (!normKey || normKey === 'Не назначено') return;
               const existing = distMap.get(normKey) || { km: 0, orders: 0 };
               existing.km += Number(r.totalDistance || r.total_distance || 0);
               existing.orders += Number(r.ordersCount || r.orders_count || (r.orders?.length) || 0);
@@ -409,10 +490,9 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             });
             if (distMap.size > 0) {
               updatedCouriers = updatedCouriers.map((c: any) => {
-                const rawName = (c.name || c.courierName || '').toString().trim();
-                const normName = rawName.replace(/\s+/g, ' ').toUpperCase();
+                const normName = normalizeCourierName(c.name || c.courierName);
                 const calc = distMap.get(normName);
-                if (calc && calc.km > 0) {
+                if (calc && calc.km >= 0) {
                   return { ...c, distanceKm: Number(calc.km.toFixed(2)), calculatedOrders: calc.orders };
                 }
                 return c;
@@ -446,9 +526,14 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
           if (enrichedMap.size === 0) return prev;
           const updatedCouriers = (prev.couriers || []).map((c: any) => {
             const name = (c.courierName || c.name || '').toString().trim().toUpperCase();
-            const km = enrichedMap.get(name);
-            if (km !== undefined && km > 0) {
-              return { ...c, distanceKm: km };
+            const calc = enrichedMap.get(name);
+            if (calc !== undefined && calc > 0) {
+              const robotData = data.couriers?.find((rc: any) => (rc.courierName || rc.name || '').toString().trim().toUpperCase() === name);
+              return { 
+                ...c, 
+                distanceKm: calc, 
+                calculatedOrders: robotData?.calculatedOrders || robotData?.orders || c.calculatedOrders 
+              };
             }
             return c;
           });

@@ -1,9 +1,9 @@
 import { clsx } from 'clsx';
 import { useCalculationProgress } from '../../store/calculationProgressStore';
-import { ArrowPathIcon, MapIcon } from '@heroicons/react/24/outline'; // Adjusted to outline since we don't have solid imported everywhere
+import { ArrowPathIcon, MapIcon } from '@heroicons/react/24/outline';
 
 export const CalculationOverlay = ({ isDark }: { isDark: boolean }) => {
-  const { progress } = useCalculationProgress();
+  const { progress, message } = useCalculationProgress();
 
   return (
     <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black/40 transition-all duration-300">
@@ -22,7 +22,7 @@ export const CalculationOverlay = ({ isDark }: { isDark: boolean }) => {
         <div className="text-center">
           <h3 className={clsx("text-2xl font-black mb-1", isDark ? "text-white" : "text-gray-900")}>Расчет...</h3>
           <p className={clsx("text-xs font-bold opacity-60 uppercase tracking-widest", isDark ? "text-blue-400" : "text-blue-600")}>
-            Оптимизация маршрута
+            {message || 'Оптимизация маршрута'}
           </p>
         </div>
         <div className="w-full max-w-[240px] mt-2">

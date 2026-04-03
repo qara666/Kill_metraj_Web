@@ -28,6 +28,7 @@ interface DashboardStoreState {
     apiDateShiftFilterEnabled: boolean;
     apiTimeFilterEnabled: boolean;
     apiManualSyncTrigger: number;
+    divisionId: string | null; // v5.157: For filtering socket events
 
     // Background Auto-Routing Status
     autoRoutingStatus: {
@@ -42,6 +43,7 @@ interface DashboardStoreState {
         skippedInRoutes: number;
         skippedNoCourier: number;
         skippedOther: number;
+        isBulkImport: boolean; // v5.160: For logic reporting
     };
 
     // Actions
@@ -59,6 +61,7 @@ interface DashboardStoreState {
     setApiDateShiftFilterEnabled: (enabled: boolean) => void;
     setApiTimeFilterEnabled: (enabled: boolean) => void;
     setApiManualSyncTrigger: (trigger: number) => void;
+    setDivisionId: (id: string | null) => void;
     triggerApiManualSync: () => void;
     setAutoRoutingStatus: (status: Partial<DashboardStoreState['autoRoutingStatus']>) => void;
 }
@@ -95,6 +98,7 @@ export const useDashboardStore = create<DashboardStoreState>()(
             apiDateShiftFilterEnabled: true,
             apiTimeFilterEnabled: false,
             apiManualSyncTrigger: 0,
+            divisionId: null,
 
             autoRoutingStatus: {
                 isActive: false,
@@ -107,6 +111,7 @@ export const useDashboardStore = create<DashboardStoreState>()(
                 skippedInRoutes: 0,
                 skippedNoCourier: 0,
                 skippedOther: 0,
+                isBulkImport: false,
             },
 
             setApiKey: (key) => set({ apiKey: key }),
@@ -123,6 +128,7 @@ export const useDashboardStore = create<DashboardStoreState>()(
             setApiDateShiftFilterEnabled: (enabled) => set({ apiDateShiftFilterEnabled: enabled }),
             setApiTimeFilterEnabled: (enabled) => set({ apiTimeFilterEnabled: enabled }),
             setApiManualSyncTrigger: (trigger) => set({ apiManualSyncTrigger: trigger }),
+            setDivisionId: (id) => set({ divisionId: id }),
             triggerApiManualSync: () => set({ apiManualSyncTrigger: Date.now() }),
             setAutoRoutingStatus: (status: Partial<DashboardStoreState['autoRoutingStatus']>) => set((state) => {
                 const newStatus = { ...state.autoRoutingStatus, ...status };
@@ -140,19 +146,40 @@ export const useDashboardStore = create<DashboardStoreState>()(
                 } = state;
                 // v5.128: Reset transient counters on persist — only keep isActive/lastUpdate
                 // Counts are recalculated at runtime from real data, not from stale localStorage
+                // v5.155: Keep counters intact during active calculation to prevent reset
                 return {
                     ...persistentState,
                     autoRoutingStatus: {
                         isActive: persistentState.autoRoutingStatus.isActive,
                         lastUpdate: persistentState.autoRoutingStatus.lastUpdate,
-                        processedCount: 0,
-                        totalCount: 0,
-                        processedCouriers: 0,
-                        totalCouriers: 0,
-                        skippedGeocoding: 0,
-                        skippedInRoutes: 0,
-                        skippedNoCourier: 0,
-                        skippedOther: 0,
+                        // v5.155: Preserve counters during active calculation
+                        processedCount: persistentState.autoRoutingStatus.isActive 
+                            ? persistentState.autoRoutingStatus.processedCount 
+                            : 0,
+                        totalCount: persistentState.autoRoutingStatus.isActive 
+                            ? persistentState.autoRoutingStatus.totalCount 
+                            : 0,
+                        processedCouriers: persistentState.autoRoutingStatus.isActive 
+                            ? persistentState.autoRoutingStatus.processedCouriers 
+                            : 0,
+                        totalCouriers: persistentState.autoRoutingStatus.isActive 
+                            ? persistentState.autoRoutingStatus.totalCouriers 
+                            : 0,
+                        skippedGeocoding: persistentState.autoRoutingStatus.isActive 
+                            ? persistentState.autoRoutingStatus.skippedGeocoding 
+                            : 0,
+                        skippedInRoutes: persistentState.autoRoutingStatus.isActive 
+                            ? persistentState.autoRoutingStatus.skippedInRoutes 
+                            : 0,
+                        skippedNoCourier: persistentState.autoRoutingStatus.isActive 
+                            ? persistentState.autoRoutingStatus.skippedNoCourier 
+                            : 0,
+                        skippedOther: persistentState.autoRoutingStatus.isActive 
+                            ? persistentState.autoRoutingStatus.skippedOther 
+                            : 0,
+                        isBulkImport: persistentState.autoRoutingStatus.isActive
+                            ? persistentState.autoRoutingStatus.isBulkImport
+                            : false,
                     }
                 };
             }

@@ -89,16 +89,21 @@ export const exportToValhalla = (data: RouteExportData): string => {
     }
     return null
   }
+
+  // v5.170: Support both direct geoMeta and nested route_data.geoMeta (from backend)
+  const geoMeta = route.geoMeta || route.route_data?.geoMeta;
+  const rdStartCoords = route.route_data?.startCoords;
+  const rdEndCoords = route.route_data?.endCoords;
   
-  // Add start point (prefer geoMeta.origin, fallback to startCoords)
-  const startCoord = getValidCoord(route.geoMeta?.origin) || getValidCoord(startCoords)
+  // Add start point (geoMeta.origin -> startCoords -> route_data.startCoords)
+  const startCoord = getValidCoord(geoMeta?.origin) || getValidCoord(startCoords) || getValidCoord(rdStartCoords)
   if (startCoord) {
     locs.push(startCoord)
   }
 
   // Add waypoints from geoMeta if available
-  if (route.geoMeta?.waypoints && Array.isArray(route.geoMeta.waypoints)) {
-    route.geoMeta.waypoints.forEach((wp: any) => {
+  if (geoMeta?.waypoints && Array.isArray(geoMeta.waypoints)) {
+    geoMeta.waypoints.forEach((wp: any) => {
       const coord = getValidCoord(wp)
       if (coord) locs.push(coord)
     })
@@ -110,8 +115,8 @@ export const exportToValhalla = (data: RouteExportData): string => {
     })
   }
 
-  // Add end point (prefer geoMeta.destination, fallback to endCoords)
-  const endCoord = getValidCoord(route.geoMeta?.destination) || getValidCoord(endCoords)
+  // Add end point (geoMeta.destination -> endCoords -> route_data.endCoords)
+  const endCoord = getValidCoord(geoMeta?.destination) || getValidCoord(endCoords) || getValidCoord(rdEndCoords)
   if (endCoord) {
     locs.push(endCoord)
   }
@@ -144,29 +149,33 @@ export const exportToVisicom = (data: RouteExportData): string => {
     }
     return null
   }
+
+  // v5.170: Support both direct geoMeta and nested route_data.geoMeta (from backend)
+  const geoMeta = route.geoMeta || route.route_data?.geoMeta;
+  const rdStartCoords = route.route_data?.startCoords;
+  const rdEndCoords = route.route_data?.endCoords;
   
-  // Add start point (prefer geoMeta.origin, fallback to startCoords)
-  const startCoord = getValidCoord(route.geoMeta?.origin) || getValidCoord(startCoords)
+  // Add start point
+  const startCoord = getValidCoord(geoMeta?.origin) || getValidCoord(startCoords) || getValidCoord(rdStartCoords)
   if (startCoord) {
     locs.push(startCoord)
   }
 
-  // Add waypoints from geoMeta if available
-  if (route.geoMeta?.waypoints && Array.isArray(route.geoMeta.waypoints)) {
-    route.geoMeta.waypoints.forEach((wp: any) => {
+  // Add waypoints
+  if (geoMeta?.waypoints && Array.isArray(geoMeta.waypoints)) {
+    geoMeta.waypoints.forEach((wp: any) => {
       const coord = getValidCoord(wp)
       if (coord) locs.push(coord)
     })
   } else {
-    // Fallback: add orders as waypoints
     orders.forEach(o => {
       const coord = getValidCoord(o.coords) || getValidCoord(o)
       if (coord) locs.push(coord)
     })
   }
 
-  // Add end point (prefer geoMeta.destination, fallback to endCoords)
-  const endCoord = getValidCoord(route.geoMeta?.destination) || getValidCoord(endCoords)
+  // Add end point
+  const endCoord = getValidCoord(geoMeta?.destination) || getValidCoord(endCoords) || getValidCoord(rdEndCoords)
   if (endCoord) {
     locs.push(endCoord)
   }

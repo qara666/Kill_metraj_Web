@@ -1,11 +1,11 @@
 const logger = require('../src/utils/logger');
 
-// v5.151: CRITICAL - Sync with frontend grouping logic EXACTLY (15 minutes + Geo Split)
-// Constants aligned with frontend routeCalculationHelpers.ts
-const PROXIMITY_MINUTES = 15;            // v5.151: Strict adherence to 15-minute wait time (not 30)
-const MAX_DELIVERY_SPAN_MINUTES = 60;   
-const WINDOW_MS = PROXIMITY_MINUTES * 60 * 1000; // 15 minutes in ms
-const DELIVERY_SPAN_MS = MAX_DELIVERY_SPAN_MINUTES * 60 * 1000; // 60 minutes in ms
+// v5.170: CRITICAL - Sync with frontend grouping logic EXACTLY
+// Constants MUST match frontend routeCalculationHelpers.ts
+const PROXIMITY_MINUTES = 15;            // Strict 15-minute window from first order arrival
+const MAX_DELIVERY_SPAN_MINUTES = 60;    // v5.170: Match frontend — 60 min (NOT 120!)
+const WINDOW_MS = PROXIMITY_MINUTES * 60 * 1000;
+const DELIVERY_SPAN_MS = MAX_DELIVERY_SPAN_MINUTES * 60 * 1000;
 
 // v5.151: Add haversineDistance for Geographic splitting matching frontend
 function haversineDistance(lat1, lon1, lat2, lon2) {
@@ -48,15 +48,25 @@ function normalizeCourierName(name) {
     return n;
 }
 
-// Time getters - MATCH frontend exactly
+// v5.170: getPlannedTime — match frontend timeUtils.ts EXACTLY
 function getPlannedTime(o) {
+    if (!o) return null;
+
+    // Check deadlineAt as number (timestamp) first
     if (o.deadlineAt && typeof o.deadlineAt === 'number') {
         const date = new Date(o.deadlineAt);
         if (date.getHours() !== 0 || date.getMinutes() !== 0) {
             return o.deadlineAt;
         }
     }
+
+    // Try deliverBy, plannedTime, deliveryTime fields
     const t = o.deliverBy || o.plannedTime || o.deliveryTime;
+    if (!t) return null;
+
+    // Skip "00:00" as invalid
+    if (typeof t === 'string' && (t === '00:00' || t === '00:00:00')) return null;
+
     return parseTimeRobust(t);
 }
 
@@ -76,11 +86,15 @@ function parseTimeRobust(t) {
     return null;
 }
 
+// v5.170: getArrivalTime — MUST match frontend timeUtils.ts EXACTLY
+// Frontend does NOT differentiate assigned vs unassigned for arrival time!
+// It always checks statusTimings first for active orders, then createdAt, then fallbacks
 function getArrivalTime(o) {
     if (!o) return null;
 
     const status = (o.status || '').toString().trim();
 
+    // Phase 4.4 & SOTA 3.1 & v5.46: For active orders — use actual status transition times
     if (status === 'Доставляется' || status === 'В пути' || status === 'Исполнен') {
         if (o.statusTimings?.deliveringAt) {
             const dt = parseTimeRobust(o.statusTimings.deliveringAt);
@@ -96,9 +110,18 @@ function getArrivalTime(o) {
         }
     }
 
-    // Default fallback
+    // createdAt as number (timestamp)
+    if (o.createdAt && typeof o.createdAt === 'number') return o.createdAt;
+
+    // Other arrival time fields
     const t = o.arrivedAt || o.arrivalTime || o.creationDate || o.createdAt || o.receivedTime;
-    return parseTimeRobust(t);
+    if (t) {
+        const parsed = parseTimeRobust(t);
+        if (parsed) return parsed;
+    }
+
+    // If no creation time found, use kitchen time as proxy (same as frontend)
+    return getKitchenTime(o);
 }
 
 function getKitchenTime(o) {
@@ -139,8 +162,8 @@ function formatTimeRange(startTime, endTime) {
 function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
     if (!orders || orders.length === 0) return [];
 
-    const WINDOW_MS = windowMinutes * 60 * 1000;
-    const DELIVERY_SPAN_MS = 60 * 60 * 1000; // SLA remains 60 min for now
+    const LOCAL_WINDOW_MS = windowMinutes * 60 * 1000;
+    const LOCAL_DELIVERY_SPAN_MS = 120 * 60 * 1000; // Match frontend: 120 min delivery window
 
     // STEP 0: Global deduplication (v5.149 - CRITICAL: orderNumber as PRIMARY key)
     // Same orderNumber = same order, regardless of ID
@@ -229,24 +252,16 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
     });
 
     // STEP 1: Add anchorTime (MATCHES FRONTEND EXACTLY)
-    // anchorTime is STRICTLY arrival (assignment time), ensuring 15-min stopwatch
+    // Frontend ALWAYS uses item.arrival as anchorTime (line 269-271 of routeCalculationHelpers.ts)
+    // NO bulk import detection at this level - the frontend doesn't do it
     const ordersWithAnchor = ordersWithData.map(item => ({
         ...item,
         anchorTime: item.arrival
     }));
     
-    logger.info(`[turboGroupingHelpers] 🕐 Order times (total ${ordersWithAnchor.length}):`);
-    ordersWithAnchor.slice(0, 10).forEach((item, idx) => {
-        const pTime = new Date(item.planned);
-        const aTime = new Date(item.arrival);
-        const anchor = new Date(item.anchorTime);
-        logger.info(`[turboGroupingHelpers]   ${idx + 1}. ${item.order.orderNumber || item.order.id}: planned=${pTime.toISOString()}, arrival=${aTime.toISOString()}, anchor=${anchor.toISOString()}, valid=${!isNaN(item.anchorTime)}`);
-    });
-    if (ordersWithAnchor.length > 10) {
-        logger.info(`[turboGroupingHelpers]   ... and ${ordersWithAnchor.length - 10} more orders`);
-    }
+    logger.info(`[turboGroupingHelpers] 🕐 Order times (total ${ordersWithAnchor.length})`);
 
-    // STEP 3: Sort by anchorTime, then kitchen
+    // STEP 2: Sort by anchorTime, then kitchen
     ordersWithAnchor.sort((a, b) => {
         if (a.anchorTime !== b.anchorTime) return a.anchorTime - b.anchorTime;
         return (a.kitchen || 0) - (b.kitchen || 0);
@@ -286,9 +301,6 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
         let groupIndex = 0;
 
         list.forEach((item, idx) => {
-            // Log anchor times for all orders in this courier
-            logger.info(`[turboGroupingHelpers] 🔍 Order ${idx + 1}: orderNum=${item.order.orderNumber}, anchor=${new Date(item.anchorTime).toISOString()}, planned=${new Date(item.planned).toISOString()}, arrival=${new Date(item.arrival).toISOString()}`);
-            
             if (!currentGroup) {
                 // Create first group
                 currentGroup = {
@@ -306,20 +318,21 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
                 const firstAnchor = currentGroup.firstAnchor || currentGroup.windowStart;
                 const diffMs = item.anchorTime - firstAnchor;
                 const diffMin = Math.round(diffMs / 1000 / 60);
-                const arrivedClose = diffMs <= WINDOW_MS;
+                const arrivedClose = diffMs <= LOCAL_WINDOW_MS;
+
                 // Calculate SLA Delivery Window
                 const minDelivery = Math.min(currentGroup.windowStart, item.planned);
                 const maxDelivery = Math.max(currentGroup.windowEnd, item.planned);
-                const deliveryFits = (maxDelivery - minDelivery) <= DELIVERY_SPAN_MS;
+                const deliveryFits = (maxDelivery - minDelivery) <= LOCAL_DELIVERY_SPAN_MS;
 
-                // Check distance
+                // Check distance (15km threshold)
                 let distanceOk = true;
                 if (item.order.coords && currentGroup.orders[0].coords) {
                     const dist = haversineDistance(
                         item.order.coords.lat, item.order.coords.lng,
                         currentGroup.orders[0].coords.lat, currentGroup.orders[0].coords.lng
                     );
-                    if (dist > 15) distanceOk = false; // >15km split
+                    if (dist > 15) distanceOk = false;
                 }
 
                 // Check district
@@ -327,10 +340,19 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
                 const orderZone = item.order.deliveryZone || '';
                 const groupZone = currentGroup.orders[0].deliveryZone || '';
                 if (orderZone && groupZone && orderZone !== groupZone) {
-                    districtOk = false; // separate district split
+                    districtOk = false;
                 }
 
-                // Main split cascade logic exactly as frontend
+                // v5.170: Kitchen gap check — only for unassigned couriers (matching frontend)
+                let kitchenGapOk = true;
+                if (courierName === 'НЕ НАЗНАЧЕНО') {
+                    const prevKitchen = currentGroup.lastKitchen;
+                    if (prevKitchen && item.kitchen && Math.abs(item.kitchen - prevKitchen) > 30 * 60 * 1000) {
+                        kitchenGapOk = false;
+                    }
+                }
+
+                // Main split cascade: Время -> SLA -> Гео -> Район -> Готовность
                 let isSplit = false;
                 let splitReason = '';
 
@@ -338,6 +360,7 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
                 else if (!deliveryFits) { isSplit = true; splitReason = 'SLA'; }
                 else if (!distanceOk) { isSplit = true; splitReason = 'Гео'; }
                 else if (!districtOk) { isSplit = true; splitReason = 'Район'; }
+                else if (courierName === 'НЕ НАЗНАЧЕНО' && !kitchenGapOk) { isSplit = true; splitReason = 'Готовность'; }
                 
                 logger.info(`[turboGroupingHelpers] 📊 Order ${idx + 1}: diff=${diffMin}min, split=${isSplit}, reason=${splitReason}`);
 
