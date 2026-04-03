@@ -653,17 +653,8 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
     env: process.env.NODE_ENV || 'development'
   });
 
-  // v28.2: Delayed TurboCalculator initialization to prevent startup circularity
-  try {
-    turboCalculator = require('./workers/turboCalculator');
-    if (turboCalculator) {
-      turboCalculator.io = io;
-      turboCalculator.start();
-      logger.info('[TurboCalculator] 🚀 v22.4 THE FORCE запущен (delayed)');
-    }
-  } catch (calcError) {
-    logger.error('Failed to start TurboCalculator worker:', calcError.message);
-  }
+  // v28.2: TurboCalculator initialization AFTER database is ready
+  // (moved below syncDatabase to ensure models are registered)
 
   // Background Initialization
   try {
@@ -788,6 +779,19 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
     await ensureIndexes();
     await ensureKmlHubsTable();
     await ensureKmlZonesTable();
+
+    // v5.170: TurboCalculator initialization AFTER all database setup is complete
+    // This ensures all models (DashboardCache, Route, GeoCache, etc.) are registered
+    try {
+      turboCalculator = require('./workers/turboCalculator');
+      if (turboCalculator) {
+        turboCalculator.io = io;
+        await turboCalculator.start(io);
+        logger.info('[TurboCalculator] 🚀 v5.170 запущен после инициализации БД (Render-safe)');
+      }
+    } catch (calcError) {
+      logger.error('Failed to start TurboCalculator worker:', calcError.message);
+    }
 
     // Start Kafka CDC Consumer if enabled
     if (process.env.CDC_ENABLED === 'true') {
@@ -1314,11 +1318,16 @@ app.post('/api/turbo/priority', authenticateToken, async (req, res) => {
 
     logger.info(`[API] About to trigger turboCalculator with divisionId=${divisionId}, date=${date}`);
     if (turboCalculator && typeof turboCalculator.trigger === 'function') {
-      turboCalculator.trigger(divisionId, date, userId);
-      logger.info(`[API] turboCalculator.trigger() called successfully`);
-      res.json({ success: true, message: `Priority calculation started for division ${divisionId}`, divisionId, date: date || new Date().toISOString().split('T')[0] });
+      try {
+        turboCalculator.trigger(divisionId, date, userId);
+        logger.info(`[API] turboCalculator.trigger() called successfully`);
+        res.json({ success: true, message: `Priority calculation started for division ${divisionId}`, divisionId, date: date || new Date().toISOString().split('T')[0] });
+      } catch (triggerErr) {
+        logger.error('[API] turboCalculator.trigger() threw error:', triggerErr);
+        res.status(500).json({ success: false, error: 'Trigger failed: ' + triggerErr.message });
+      }
     } else {
-      logger.error('[API] turboCalculator not available or trigger not a function');
+      logger.error(`[API] turboCalculator not available (is null: ${turboCalculator === null}, has trigger: ${turboCalculator ? typeof turboCalculator.trigger === 'function' : 'N/A'})`);
       res.status(500).json({ success: false, error: 'TurboCalculator not available' });
     }
   } catch (error) {
