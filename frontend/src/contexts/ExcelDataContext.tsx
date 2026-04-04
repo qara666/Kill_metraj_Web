@@ -541,9 +541,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     // v5.135: Winning Logic - Protect local state from stale or partial server updates
     const localSettledCount = (current.orders || []).filter(o => !!o.settledDate).length;
     const serverSettledCount = (next.orders || []).filter(o => !!o.settledDate).length;
-    
-    const localRouteCount = (current.routes || []).length;
-    const serverRouteCount = (next.routes || []).length;
+
 
     // Reject completely empty updates if we already have valid data
     const isNewDataEmpty = (!next.orders || next.orders.length === 0);
@@ -556,12 +554,12 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
 
     // If server sends significantly LESS information, it's a regression. 
     // Return a merged version or stick with Local.
-    if (serverSettledCount < localSettledCount || (serverRouteCount === 0 && localRouteCount > 0)) {
-        console.warn(`[ExcelSync] Server Data Partial: Settled=${serverSettledCount} (Local=${localSettledCount}), Routes=${serverRouteCount} (Local=${localRouteCount}). Protecting Local State.`);
+    // v5.161: Allow 0 routes from server if it's a valid update (preventing stuck 'Protecting Local State')
+    if (serverSettledCount < localSettledCount) {
+        console.warn(`[ExcelSync] Server Data Partial: Settled=${serverSettledCount} (Local=${localSettledCount}). Protecting Local State.`);
         return {
             ...next,
-            orders: serverSettledCount < localSettledCount ? current.orders : next.orders,
-            routes: serverRouteCount < localRouteCount ? current.routes : next.routes,
+            orders: current.orders, // Prefer local orders if server count drops
             lastModified: Math.max(next.lastModified || 0, current.lastModified || 0)
         };
     }

@@ -88,7 +88,7 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
       // Small delay to ensure container is in DOM
       await new Promise(r => setTimeout(r, 100));
       const container = document.getElementById('edit-address-map');
-      if (!container) return;
+      if (!container || (container as any)._leafletMap) return; // v5.161: Prevent 'Map container is already initialized' error
 
       try {
         const L = await loadLeaflet();
