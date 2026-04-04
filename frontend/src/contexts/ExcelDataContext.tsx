@@ -405,7 +405,10 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                 return {
                   ...order,
                   ...master,
+                  // v5.170: Ensure coords and lat/lng are properly set
                   coords: order.coords || master.coords,
+                  lat: order.lat || master.lat || order.coords?.lat || master.coords?.lat,
+                  lng: order.lng || master.lng || order.coords?.lng || master.coords?.lng,
                   kmlZone: order.kmlZone || master.kmlZone || master.deliveryZone,
                   kmlHub: order.kmlHub || master.kmlHub,
                   address: order.address || master.address || 'Адрес не указан',
