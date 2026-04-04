@@ -63,6 +63,8 @@ import { useKmlData } from '../../hooks/useKmlData'
 import { exportToGoogleMaps, exportToValhalla } from '../../utils/routes/routeExport'
 import { CourierListItem } from './CourierListItem'
 import { ServiceStatusDashboard } from './ServiceStatusDashboard'
+import { useDashboardStore } from '../../stores/useDashboardStore'
+import { socketService } from '../../services/socketService'
 
 
 interface RouteManagementProps {
@@ -1695,8 +1697,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     await calculateRouteDistance(route)
   }
 
-  const clearAllRoutes = () => {
+  const clearAllRoutes = async () => {
     if (window.confirm('Вы уверены, что хотите удалить все маршруты?')) {
+      const store = useDashboardStore.getState();
+      const divisionId = store.divisionId || 'all';
+      const date = store.apiDateShift;
+
       // v5.160: Clear ALL route-related localStorage keys
       try {
         localStorage.removeItem('km_routes');
@@ -1706,29 +1712,56 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         console.error('Error clearing routes from localStorage:', error);
       }
 
+      // API Call to clear the backend Calculated Routes
+      try {
+        const token = localStorage.getItem('km_access_token');
+        if (token) {
+          await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/routes/all/calculated?divisionId=${divisionId}&date=${date}`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+        }
+      } catch (err) {
+        console.error('Error clearing remote routes:', err);
+      }
+
       // v5.160: Force update with empty routes
       updateExcelData({
         ...(excelData || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
         routes: []
       }, true /* force: true */);
 
+      // Force socket robot update to stop if it's running for this division
+      const socket = socketService.getSocket();
+      if (socket) {
+        socket.emit('robot_control', {
+            action: 'stop',
+            divisionId: divisionId
+        });
+      }
+
       toast.success('Все маршруты очищены');
     }
   }
 
-  const clearFinishedRoutes = () => {
+  const clearEmptyRoutes = () => {
     updateExcelData((prev: any) => {
       const routes = prev?.routes || [];
-      const activeRoutes = routes.filter((r: Route) => {
-        if (!r.orders || r.orders.length === 0) return true;
-        return !r.orders.every((o: any) => isOrderCompleted(o.status));
+      const nonEmptyRoutes = routes.filter((r: Route) => {
+        return r.orders && r.orders.length > 0;
       });
-      if (activeRoutes.length === routes.length) {
-        toast.error('Нет завершенных маршрутов для очистки');
+
+      if (nonEmptyRoutes.length === routes.length) {
+        toast.error('Нет пустых маршрутов для удаления');
         return prev;
       }
-      toast.success(`Очищено маршрутов: ${routes.length - activeRoutes.length}`);
-      return { ...prev, routes: activeRoutes };
+      toast.success(`Удалено пустых маршрутов: ${routes.length - nonEmptyRoutes.length}`);
+      return {
+        ...prev,
+        routes: nonEmptyRoutes
+      };
     }, true);
   }
 
@@ -2720,15 +2753,15 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                   {(excelData?.routes?.length ?? 0) > 0 && (
                     <div className="flex items-center gap-3">
                       <button
-                        onClick={clearFinishedRoutes}
+                        onClick={clearEmptyRoutes}
                         className={clsx(
                           'px-6 py-3 rounded-xl text-sm font-black uppercase tracking-widest transition-all border-2',
                           isDark
-                            ? 'border-green-500/30 text-green-400 hover:bg-green-500/10'
-                            : 'border-green-100 text-green-600 hover:bg-green-50 hover:border-green-200 shadow-sm'
+                            ? 'border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10'
+                            : 'border-yellow-100 text-yellow-600 hover:bg-yellow-50 hover:border-yellow-200 shadow-sm'
                         )}
                       >
-                        Очистить завершенные
+                        Удалить пустые
                       </button>
                       <button
                         onClick={clearAllRoutes}

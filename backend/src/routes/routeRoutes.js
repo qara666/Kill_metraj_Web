@@ -146,6 +146,39 @@ router.delete('/:id', auditLog('delete_route'), (req, res) => {
     res.json({ success: true });
 });
 
+// DELETE /api/routes/all/calculated - Delete all calculated routes for a division/date
+router.delete('/all/calculated', async (req, res) => {
+    try {
+        const divisionId = req.query.divisionId || req.user?.divisionId;
+        const targetDate = req.query.date || new Date().toISOString().split('T')[0];
+
+        const { Op } = require('sequelize');
+        const whereClause = {};
+
+        if (divisionId && divisionId !== 'all' && divisionId !== 'null' && divisionId !== 'undefined') {
+            whereClause[Op.or] = [
+                { division_id: String(divisionId) },
+                { division_id: null }
+            ];
+        }
+
+        whereClause[Op.and] = [
+            sequelize.where(
+                sequelize.literal("route_data->>'target_date'"),
+                targetDate
+            )
+        ];
+
+        const deletedCount = await Route.destroy({ where: whereClause });
+        logger.info(`[RouteAPI] 🗑️ User requested clear all routes. Deleted ${deletedCount} routes for division ${divisionId} on ${targetDate}`);
+
+        res.json({ success: true, deletedCount });
+    } catch (error) {
+        logger.error('Error clearing all calculated routes:', error);
+        res.status(500).json({ success: false, error: error.message, message: 'Failed to clear routes' });
+    }
+});
+
 // GET /api/routes/statistics - Get route statistics
 router.get('/statistics', (req, res) => {
     res.json({ success: true, data: {} });

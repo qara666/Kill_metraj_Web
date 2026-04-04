@@ -33,8 +33,8 @@ class SocketService {
             return this.socket;
         }
 
-        if (this.isConnecting) {
-            return this.socket!;
+        if (this.isConnecting && this.socket) {
+            return this.socket;
         }
 
         this.isConnecting = true;
@@ -48,7 +48,6 @@ class SocketService {
             reconnectionDelay: 2000,
             reconnectionDelayMax: 10000,
             reconnectionAttempts: this.maxReconnectAttempts,
-            // CRITICAL: Force polling first for Render compatibility
             transports: ['polling', 'websocket'],
             timeout: 45000,
             autoConnect: true,
@@ -59,6 +58,13 @@ class SocketService {
         this.setupEventHandlers();
         this.setupVisibilityHandler();
 
+        return this.socket;
+    }
+
+    /**
+     * Get raw Socket.io instance
+     */
+    getSocket(): Socket | null {
         return this.socket;
     }
 
