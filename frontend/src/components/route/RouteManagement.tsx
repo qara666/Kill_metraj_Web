@@ -2484,49 +2484,50 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                             }
 
                             useCalculationProgress.getState().setProgress(30);
-                            console.log(`[Quantum] Giant Geocode complete. Calculating ${newRoutes.length} routes in parallel...`);
+                            console.log(`[Quantum] Giant Geocode complete. Calculating ${newRoutes.length} routes...`);
 
-                            // 3. Sequential chunking calculation with shared cache (Phase 7 Extreme Optimization)
-                            // By processing sequentially with a setTimeout yield, we completely unblock
-                            // the main thread, allowing the progress bar to render smoothly and preventing crashes.
+                            // v5.170: Parallel route calculation with concurrency limit (max 3 at a time)
+                            // This is MUCH faster than sequential while not overwhelming the browser
                             let completedRoutes = 0;
-                            const calculatedRoutes: (Route | null)[] = [];
+                            const calculatedRoutes: (Route | null)[] = new Array(newRoutes.length).fill(null);
+                            const CONCURRENCY = 3; // Max parallel route calculations
 
-                            for (const route of newRoutes) {
+                            const calculateRouteWithProgress = async (route: any, index: number) => {
                               try {
-                                // Yield main thread to browser to paint UI
-                                await new Promise(r => setTimeout(r, 10));
-
-                                // v5.160: Show current route being calculated
-                                const routeIndex = newRoutes.indexOf(route);
-                                const windowLabel = route.orders.length > 0 ? 
+                                const windowLabel = route.orders.length > 0 ?
                                   `(${(route.orders[0] as any).deliverBy || route.orders[0].plannedTime || ''})` : '';
                                 useCalculationProgress.getState().setMessage(
-                                  `Маршрут ${routeIndex + 1}/${newRoutes.length} ${windowLabel}`
+                                  `Маршрут ${index + 1}/${newRoutes.length} ${windowLabel}`
                                 );
 
                                 const result = await calculateRouteDistance(route, true, addrCache);
-                                calculatedRoutes.push(result);
-                                
+                                calculatedRoutes[index] = result;
+
                                 if (result) {
-                                  console.log(`[Quantum] ✅ Route ${routeIndex + 1} calculated: ${(result.totalDistance || 0).toFixed(1)}km`);
+                                  console.log(`[Quantum] ✅ Route ${index + 1} calculated: ${(result.totalDistance || 0).toFixed(1)}km`);
                                 } else {
-                                  console.warn(`[Quantum] ⚠️ Route ${routeIndex + 1} failed`);
-                                  toast(`Маршрут ${routeIndex + 1} не рассчитан`, { icon: '⚠️', duration: 2000 });
+                                  console.warn(`[Quantum] ⚠️ Route ${index + 1} failed`);
                                 }
                               } catch (e) {
-                                console.error(`[Quantum] Ошибка маршрута:`, e);
-                                calculatedRoutes.push(null);
+                                console.error(`[Quantum] Ошибка маршрута ${index + 1}:`, e);
+                                calculatedRoutes[index] = null;
                               } finally {
                                 completedRoutes++;
                                 const progressPct = Math.round(30 + ((completedRoutes / newRoutes.length) * 65));
-
-                                // Phase 7: Zero Re-Render UI Update directly to store
-                                if (progressPct === 95 || (Date.now() - (window as any)._lastProgressUpdate > 200)) {
+                                if (progressPct === 95 || (Date.now() - (window as any)._lastProgressUpdate > 100)) {
                                   useCalculationProgress.getState().setProgress(progressPct);
                                   (window as any)._lastProgressUpdate = Date.now();
                                 }
                               }
+                            };
+
+                            // Process routes in batches of CONCURRENCY
+                            for (let i = 0; i < newRoutes.length; i += CONCURRENCY) {
+                              const batch = newRoutes.slice(i, i + CONCURRENCY);
+                              const batchIndices = Array.from({ length: batch.length }, (_, j) => i + j);
+                              await Promise.all(batch.map((route, j) => calculateRouteWithProgress(route, batchIndices[j])));
+                              // Yield to browser between batches
+                              await new Promise(r => setTimeout(r, 5));
                             }
 
                             useCalculationProgress.getState().setProgress(95)

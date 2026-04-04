@@ -17,11 +17,11 @@ router.get('/calculated', async (req, res) => {
     try {
         const divisionId = req.query.divisionId || req.user?.divisionId;
         const targetDate = req.query.date; // Optional date filter from frontend
-        
-        // v5.143: Get routes with optional date filtering
+
+        // v5.170: Get routes with optional date filtering
         const { Op } = require('sequelize');
         const whereClause = {};
-        
+
         // Filter by division_id if explicitly provided
         // v5.156: Admins (division_id === 'all') should see routes for ALL divisions
         if (divisionId && divisionId !== 'all' && divisionId !== 'null' && divisionId !== 'undefined') {
@@ -30,9 +30,7 @@ router.get('/calculated', async (req, res) => {
                 { division_id: null }
             ];
         }
-        // If divisionId is 'all', we don't add division filtering at all, 
-        // allowing admins to see everything.
-        
+
         // v5.143: Filter by date if provided (route_data->>'target_date')
         if (targetDate) {
             whereClause[Op.and] = whereClause[Op.and] || [];
@@ -43,9 +41,7 @@ router.get('/calculated', async (req, res) => {
                 )
             );
         } else {
-            // v5.156: If no date provided, try to find the MOST RECENT calculated date
-            // This prevents the "empty dashboard after midnight" bug.
-            // For now, we fallback to today but logged it for debugging.
+            // v5.156: If no date provided, fallback to today
             const today = new Date().toISOString().split('T')[0];
             whereClause[Op.and] = whereClause[Op.and] || [];
             whereClause[Op.and].push(
@@ -55,31 +51,41 @@ router.get('/calculated', async (req, res) => {
                 )
             );
         }
-        
+
         // Get routes
-        const routes = await Route.findAll({
-            where: whereClause,
-            order: [['created_at', 'DESC']],
-            limit: 1000
-        });
-        
+        let routes = [];
+        try {
+            routes = await Route.findAll({
+                where: whereClause,
+                order: [['created_at', 'DESC']],
+                limit: 1000
+            });
+        } catch (dbErr) {
+            // v5.170: If table doesn't exist yet (first deploy), return empty instead of 500
+            if (dbErr.message.includes('does not exist') || dbErr.message.includes('relation')) {
+                logger.warn('[RouteAPI] calculated_routes table not found — returning empty (table will be created on next restart)');
+                return res.json({ success: true, data: [], count: 0 });
+            }
+            throw dbErr;
+        }
+
         logger.info(`[RouteAPI] Found ${routes.length} routes in database (date: ${targetDate || 'today'})`);
-        
+
         const formattedRoutes = routes.map(r => {
             const timeBlock = r.route_data?.deliveryWindow || r.route_data?.timeBlocks || r.route_data?.timeBlock || '';
-            
-            // v30.0: Only drop truly empty/null rows — not empty timeBlock (valid routes get dropped!)
+
+            // v30.0: Only drop truly empty/null rows
             if (!r.courier_id) return null;
-            
+
             const routeOrders = (r.route_data?.orders || []).map(o => ({
                 ...o,
                 plannedTime: o.deliveryTime || o.plannedTime
             }));
-            
+
             return {
                 id: r.id,
-                courier: r.courier_id,         // maps to frontend 'courier' field
-                courier_id: r.courier_id,      // raw field for compatibility
+                courier: r.courier_id,
+                courier_id: r.courier_id,
                 totalDistance: Math.round(parseFloat(r.total_distance || 0) * 100) / 100,
                 totalDuration: Math.round((r.total_duration || 0) / 60),
                 ordersCount: r.orders_count || routeOrders.length,
@@ -96,11 +102,12 @@ router.get('/calculated', async (req, res) => {
             };
         }).filter(r => r !== null);
 
-        
+
         res.json({ success: true, data: formattedRoutes, count: formattedRoutes.length });
     } catch (error) {
         logger.error('Error fetching calculated routes:', error);
-        res.status(500).json({ success: false, error: error.message });
+        // v5.170: Return JSON error, not HTML
+        res.status(500).json({ success: false, error: error.message, message: 'Failed to fetch routes' });
     }
 });
 

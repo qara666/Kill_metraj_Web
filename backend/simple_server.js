@@ -775,7 +775,7 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
     await ensureStatusHistoryTable();
     await ensureDivisionIdColumn();
     await ensureManualOverridesTable();
-    await ensureDashboardCacheV2();
+    await ensureRoutesTable(); // v5.170: CRITICAL — calculated_routes table for Turbo Robot
     await ensureIndexes();
     await ensureKmlHubsTable();
     await ensureKmlZonesTable();
@@ -1079,6 +1079,39 @@ async function ensureKmlZonesTable() {
     logger.info('DB Check: api_kml_zones table verified/created');
   } catch (err) {
     logger.error('DB Check: Error creating api_kml_zones table', { error: err.message });
+  }
+}
+
+/**
+ * v5.170: DB 2.2: Ensure calculated_routes table exists for Turbo Robot
+ * This is CRITICAL — without this table, /api/routes/calculated returns 500
+ */
+async function ensureRoutesTable() {
+  try {
+    logger.info('DB Check: Ensuring calculated_routes table exists...');
+    await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS calculated_routes (
+        id SERIAL PRIMARY KEY,
+        courier_id VARCHAR(100) NOT NULL,
+        division_id VARCHAR(50),
+        total_distance DECIMAL(10,2) DEFAULT 0,
+        total_duration INTEGER DEFAULT 0,
+        engine_used VARCHAR(50) DEFAULT 'manual',
+        is_active BOOLEAN DEFAULT TRUE,
+        orders_count INTEGER DEFAULT 0,
+        calculated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        route_data JSONB DEFAULT '{}',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+    // Add indexes for common queries
+    await sequelize.query('CREATE INDEX IF NOT EXISTS idx_routes_division ON calculated_routes(division_id)');
+    await sequelize.query('CREATE INDEX IF NOT EXISTS idx_routes_date ON calculated_routes((route_data->>\'target_date\'))');
+    await sequelize.query('CREATE INDEX IF NOT EXISTS idx_routes_courier ON calculated_routes(courier_id)');
+    logger.info('DB Check: calculated_routes table verified/created with indexes');
+  } catch (err) {
+    logger.error('DB Check: Error creating calculated_routes table', { error: err.message });
   }
 }
 

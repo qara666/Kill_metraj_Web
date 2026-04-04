@@ -1329,23 +1329,23 @@ class OrderCalculator {
 
     async getRobustGeocode(address, city = 'Київ') {
         if (!address) return null;
-        
+
         const GeoCache = this.getModel('GeoCache');
         if (!GeoCache) return null;
 
         const cleaned = cleanAddress(address);
         const normalized = cleaned.toLowerCase();
 
-        // Check local cache first (fastest) - v30.3: Check ANY record (even failures)
+        // Check local cache first (fastest)
         try {
             const cached = await GeoCache.findOne({
                 where: { address_key: normalized }
             });
             if (cached) {
-                if (!cached.is_success) return null; // Avoid re-trying known failures
+                if (!cached.is_success) return null;
                 return { latitude: cached.lat, longitude: cached.lng, locationType: 'CACHED' };
             }
-        } catch (e) { /* ignore cache errors */ }
+        } catch (e) { /* ignore */ }
 
         // Try all variants from cache
         const variants = generateVariants(address, city, 10).map(v => v.toLowerCase());
@@ -1359,73 +1359,69 @@ class OrderCalculator {
             } catch (e) { /* ignore */ }
         }
 
-        // v5.160: Try primary geocoding with fallback strategies
+        // v5.170: Parallel provider race — fastest provider wins!
         const tryGeocode = async (query, provider, timeout) => {
             const googleKey = process.env.GOOGLE_GEOCODE_API_KEY;
-            
+
             if (provider === 'google' && googleKey) {
-                try {
-                    const googleUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${googleKey}&language=uk`;
-                    const googleRes = await axios.get(googleUrl, { timeout });
-                    if (googleRes.data?.status === 'OK' && googleRes.data.results?.[0]) {
-                        const r = googleRes.data.results[0];
-                        return {
-                            latitude: r.geometry.location.lat,
-                            longitude: r.geometry.location.lng,
-                            locationType: r.geometry.location_type || 'ROOFTOP'
-                        };
-                    }
-                } catch (e) { /* continue */ }
+                const googleUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${googleKey}&language=uk`;
+                const googleRes = await axios.get(googleUrl, { timeout });
+                if (googleRes.data?.status === 'OK' && googleRes.data.results?.[0]) {
+                    const r = googleRes.data.results[0];
+                    return {
+                        latitude: r.geometry.location.lat,
+                        longitude: r.geometry.location.lng,
+                        locationType: r.geometry.location_type || 'ROOFTOP',
+                        provider: 'google'
+                    };
+                }
             }
-            
+
             if (provider === 'photon') {
                 const PHOTON_URL = process.env.PHOTON_URL || 'http://localhost:2322';
-                try {
-                    const photonRes = await axios.get(`${PHOTON_URL}/api?q=${encodeURIComponent(query)}&limit=1&lang=uk`, { timeout });
-                    if (photonRes.data?.features?.length > 0) {
-                        const f = photonRes.data.features[0];
-                        return {
-                            latitude: f.geometry.coordinates[1],
-                            longitude: f.geometry.coordinates[0],
-                            locationType: f.properties?.type || 'PHOTON'
-                        };
-                    }
-                } catch (e) { /* continue */ }
+                const photonRes = await axios.get(`${PHOTON_URL}/api?q=${encodeURIComponent(query)}&limit=1&lang=uk`, { timeout });
+                if (photonRes.data?.features?.length > 0) {
+                    const f = photonRes.data.features[0];
+                    return {
+                        latitude: f.geometry.coordinates[1],
+                        longitude: f.geometry.coordinates[0],
+                        locationType: f.properties?.type || 'PHOTON',
+                        provider: 'photon'
+                    };
+                }
             }
-            
+
             if (provider === 'komoot') {
-                try {
-                    const photon2Res = await axios.get(`https://photon.komoot.io/api?q=${encodeURIComponent(query)}&limit=1&lang=uk`, { timeout });
-                    if (photon2Res.data?.features?.length > 0) {
-                        const f = photon2Res.data.features[0];
-                        return {
-                            latitude: f.geometry.coordinates[1],
-                            longitude: f.geometry.coordinates[0],
-                            locationType: f.properties?.type || 'PHOTON'
-                        };
-                    }
-                } catch (e) { /* continue */ }
+                const photon2Res = await axios.get(`https://photon.komoot.io/api?q=${encodeURIComponent(query)}&limit=1&lang=uk`, { timeout });
+                if (photon2Res.data?.features?.length > 0) {
+                    const f = photon2Res.data.features[0];
+                    return {
+                        latitude: f.geometry.coordinates[1],
+                        longitude: f.geometry.coordinates[0],
+                        locationType: f.properties?.type || 'PHOTON',
+                        provider: 'komoot'
+                    };
+                }
             }
-            
+
             if (provider === 'nominatim') {
-                try {
-                    const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&addressdetails=1&accept-language=uk`;
-                    const nomRes = await axios.get(nomUrl, { 
-                        timeout,
-                        headers: { 'User-Agent': 'KillMetraj/1.0' }
-                    });
-                    if (Array.isArray(nomRes.data) && nomRes.data.length > 0) {
-                        const r = nomRes.data[0];
-                        return {
-                            latitude: parseFloat(r.lat),
-                            longitude: parseFloat(r.lon),
-                            locationType: r.type || 'NOMINATIM'
-                        };
-                    }
-                } catch (e) { /* continue */ }
+                const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&addressdetails=1&accept-language=uk`;
+                const nomRes = await axios.get(nomUrl, {
+                    timeout,
+                    headers: { 'User-Agent': 'KillMetraj/1.0' }
+                });
+                if (Array.isArray(nomRes.data) && nomRes.data.length > 0) {
+                    const r = nomRes.data[0];
+                    return {
+                        latitude: parseFloat(r.lat),
+                        longitude: parseFloat(r.lon),
+                        locationType: r.type || 'NOMINATIM',
+                        provider: 'nominatim'
+                    };
+                }
             }
-            
-            return null;
+
+            throw new Error(`${provider} failed`);
         };
 
         const cacheResult = async (result, provider) => {
@@ -1441,35 +1437,35 @@ class OrderCalculator {
             } catch (e) { /* ignore */ }
         };
 
-        // Primary attempt with full address
+        // v5.170: Primary attempt — parallel race of all providers
         const primaryQuery = cleaned + ', ' + city;
-        for (const provider of ['google', 'photon', 'komoot', 'nominatim']) {
-            const result = await tryGeocode(primaryQuery, provider, 5000);
-            if (result) {
-                await cacheResult(result, provider);
-                return result;
-            }
+        const primaryProviders = ['google', 'photon', 'komoot', 'nominatim'].filter(p => {
+            if (p === 'google') return !!process.env.GOOGLE_GEOCODE_API_KEY;
+            return true;
+        });
+
+        try {
+            const result = await Promise.any(
+                primaryProviders.map(p => tryGeocode(primaryQuery, p, 5000))
+            );
+            await cacheResult(result, result.provider);
+            return result;
+        } catch (e) {
+            // All primary providers failed — try fallback strategies
         }
 
-        // v5.160: Enhanced fallback strategies
         logger.info(`[TurboCalculator] 🔄 Primary geocoding failed for "${address}", trying fallback strategies...`);
 
-        // Strategy 1: Remove house number (just street)
+        // v5.170: Fallback strategies — also parallel
+        const fallbackStrategies = [];
+
+        // Strategy 1: Remove house number
         const noHouse = cleaned.replace(/\b\d+[а-яА-Яa-zA-ZіІєЄґґ]*(?:[\/\-]\d*)?\b/g, '').trim();
         if (noHouse && noHouse !== cleaned) {
-            const fallbackQuery1 = noHouse + ', ' + city;
-            logger.info(`[TurboCalculator]   Strategy 1 (no house): "${fallbackQuery1}"`);
-            for (const provider of ['google', 'photon', 'komoot']) {
-                const result = await tryGeocode(fallbackQuery1, provider, 4000);
-                if (result) {
-                    logger.info(`[TurboCalculator]   ✅ Fallback success (no-house) via ${provider}`);
-                    await cacheResult(result, provider);
-                    return result;
-                }
-            }
+            fallbackStrategies.push({ query: noHouse + ', ' + city, strategy: 'no-house' });
         }
 
-        // Strategy 2: Simplified address (remove apt, floor, entrance, etc.)
+        // Strategy 2: Simplified address
         const simplified = cleaned
             .replace(/(?:под\.?|подъезд|п)\s*\d+/gi, '')
             .replace(/(?:кв\.?|квартира)\s*\d+/gi, '')
@@ -1479,16 +1475,7 @@ class OrderCalculator {
             .replace(/\s+/g, ' ')
             .trim();
         if (simplified && simplified !== cleaned) {
-            const fallbackQuery2 = simplified + ', ' + city;
-            logger.info(`[TurboCalculator]   Strategy 2 (simplified): "${fallbackQuery2}"`);
-            for (const provider of ['google', 'photon', 'komoot']) {
-                const result = await tryGeocode(fallbackQuery2, provider, 4000);
-                if (result) {
-                    logger.info(`[TurboCalculator]   ✅ Fallback success (simplified) via ${provider}`);
-                    await cacheResult(result, provider);
-                    return result;
-                }
-            }
+            fallbackStrategies.push({ query: simplified + ', ' + city, strategy: 'simplified' });
         }
 
         // Strategy 3: Just city + street name
@@ -1496,14 +1483,20 @@ class OrderCalculator {
         if (streetMatch) {
             const cityMatch = cleaned.match(/(Київ|Киев|Дніпро|Одеса|Харків|Львів)/i);
             const minimalQuery = cityMatch ? `${cityMatch[1]}, ${streetMatch[1]}` : streetMatch[1];
-            logger.info(`[TurboCalculator]   Strategy 3 (street-only): "${minimalQuery}"`);
-            for (const provider of ['google', 'photon', 'komoot', 'nominatim']) {
-                const result = await tryGeocode(minimalQuery, provider, 4000);
-                if (result) {
-                    logger.info(`[TurboCalculator]   ✅ Fallback success (street-only) via ${provider}`);
-                    await cacheResult(result, provider);
-                    return result;
-                }
+            fallbackStrategies.push({ query: minimalQuery, strategy: 'street-only' });
+        }
+
+        for (const fb of fallbackStrategies) {
+            logger.info(`[TurboCalculator]   Strategy ${fb.strategy}: "${fb.query}"`);
+            try {
+                const result = await Promise.any(
+                    primaryProviders.map(p => tryGeocode(fb.query, p, 4000))
+                );
+                logger.info(`[TurboCalculator]   ✅ Fallback success (${fb.strategy}) via ${result.provider}`);
+                await cacheResult(result, result.provider);
+                return result;
+            } catch (e) {
+                // This strategy failed, try next
             }
         }
 
