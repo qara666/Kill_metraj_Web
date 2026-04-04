@@ -200,7 +200,6 @@ export class GeocodingService {
     const cleanedAddress = cleanAddressForSearch(address)
 
     if (cleanedAddress !== address && cleanedAddress.length > 3) {
-      console.log(`[GeocodingService] Retrying with cleaned address: "${cleanedAddress}" (orig: "${address}")`)
       result = await this.geocodeAddress(cleanedAddress, options)
       if (result.success) result.warnings = [...(result.warnings || []), 'Адрес был автоматически очищен для поиска']
     }

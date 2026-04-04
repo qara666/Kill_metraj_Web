@@ -1715,7 +1715,7 @@ export async function globalRouteOptimization(
 ): Promise<RouteForRebalancing[]> {
   if (routes.length < 2) return routes
 
-  console.log(` Глобальная оптимизация: ${routes.length} маршрутов`)
+  // Global optimization started
 
   let improved = true
   let iterations = 0
@@ -1834,7 +1834,7 @@ export async function globalRouteOptimization(
               route.orders = testRoute
               routeImproved = true
               improved = true
-              console.log(` Глобальная оптимизация: переставлены заказы внутри маршрута (${oldDistance.toFixed(1)} → ${newDistance.toFixed(1)} км)`)
+              // Orders reordered
               break
             }
           }
@@ -1844,7 +1844,7 @@ export async function globalRouteOptimization(
     }
   }
 
-  console.log(` Глобальная оптимизация завершена (итераций: ${iterations})`)
+  // Global optimization finished
   return routes
 }
 

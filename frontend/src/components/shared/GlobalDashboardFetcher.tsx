@@ -22,15 +22,15 @@ export const GlobalDashboardFetcher: React.FC = () => {
                 
                 if (hasNewOrders) {
                     // New data has orders - use it
-                    console.log('[GlobalFetcher] ✅ Setting new data with', data.orders.length, 'orders');
+                    // New data has orders - use it
                     setExcelData(data);
                 } else if (!hasExistingOrders) {
                     // No new orders AND no existing orders - OK to set
-                    console.log('[GlobalFetcher] ⚠️ Setting empty data (no existing data)');
+                    // No new orders AND no existing orders - OK to set
                     setExcelData(data);
                 } else {
                     // No new orders but we have existing orders - skip to preserve data
-                    console.log('[GlobalFetcher] ⏭️ Skipping empty update (preserving', excelData.orders.length, 'existing orders)');
+                    // No new orders but we have existing orders - skip to preserve data
                 }
             }
         },

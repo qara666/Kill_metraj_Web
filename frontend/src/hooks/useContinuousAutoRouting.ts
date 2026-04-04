@@ -184,7 +184,6 @@ export function useContinuousAutoRouting() {
                     // This uses all providers, more variants, all fallback levels
                     const stillFailed = allOrdersToGeocode.filter((o: any) => !o.coords?.lat);
                     if (stillFailed.length > 0) {
-                        console.log(`[AutoRoute] Pass 2: ретрай ${stillFailed.length} адресов (полный поиск)`);
                         
                         // Process in small batches to avoid rate limiting
                         const RETRY_BATCH = 3;
@@ -205,9 +204,7 @@ export function useContinuousAutoRouting() {
                                 const res = retryResults.get(o.address.trim().toLowerCase());
                                 applyGeoResult(o, res);
                                 if (o.coords?.lat) {
-                                    console.log(`[AutoRoute] ✅ Pass 2 нашел: "${o.address}" → ${o.coords.lat.toFixed(5)}, ${o.coords.lng.toFixed(5)}`);
                                 } else {
-                                    console.warn(`[AutoRoute] ❌ Pass 2 тоже не нашел: "${o.address}"`);
                                 }
                             });
                         }
@@ -229,7 +226,6 @@ export function useContinuousAutoRouting() {
                         });
                         return { ...prev, orders: nO };
                     }, true);
-                    console.log(`[AutoRoute] ✅ Сохранено координат для ${newlyGeocoded.length} заказов. Ожидание формирования маршрутов...`);
                 }
 
                 // === COURIER REASSIGNMENT CLEANUP ===
@@ -380,9 +376,7 @@ export function useContinuousAutoRouting() {
                                                 dist = r.totalDistance || 0;
                                                 dur = r.totalDuration || 0;
                                                 eng = 'yapiko_osrm';
-                                                console.log(`[AutoRoute] ✅ ${actualCourierName} (Yapiko): ${(dist/1000).toFixed(2)} км`);
                                             } else {
-                                                console.warn(`[AutoRoute] ⚠️ ${actualCourierName}: Yapiko не смог рассчитать маршрут.`);
                                             }
                                         } catch (e) {
                                             console.error(`[AutoRoute] Yapiko ошибка (${actualCourierName}):`, e);
@@ -397,7 +391,6 @@ export function useContinuousAutoRouting() {
                                                 dist = r.totalDistance || 0;
                                                 dur = r.totalDuration || 0;
                                                 eng = 'valhalla';
-                                                console.log(`[AutoRoute] ✅ ${actualCourierName} (Valhalla): ${(dist/1000).toFixed(2)} км`);
                                             }
                                         } catch {}
                                     }
@@ -409,7 +402,6 @@ export function useContinuousAutoRouting() {
                                         dist = ckm * 1.4 * 1000;
                                         dur = (dist / 1000) * 2 * 60;
                                         eng = 'crow_flies';
-                                        console.log(`[AutoRoute] ✅ ${actualCourierName} (CrowFlies): ${(dist/1000).toFixed(2)} км`);
                                     }
 
                                     // dist is in METERS from Yapiko/Valhalla, convert to KM for UI
@@ -476,7 +468,6 @@ export function useContinuousAutoRouting() {
                                 // Reassignment: order's current courier doesn't match this route's courier
                                 const currentCourier = currentCourierByOrderId.get(oid);
                                 if (currentCourier && currentCourier !== routeCourierNorm) {
-                                    console.log(`[AutoRoute] 🔄 Очистка маршрута ${routeCourierNorm}: заказ ${oid} переназначен → ${currentCourier}`);
                                     return false;
                                 }
                             }

@@ -41,7 +41,6 @@ export const usePerformanceMonitor = () => {
 
             // Логирование в консоль (только в dev режиме)
             if (import.meta.env.DEV) {
-                console.log(`[Performance] ${name}: ${measure.duration.toFixed(2)}ms`, metadata);
             }
 
             // Очистка меток

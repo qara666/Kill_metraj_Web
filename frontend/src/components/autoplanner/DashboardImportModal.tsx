@@ -94,14 +94,8 @@ export const DashboardImportModal: React.FC<DashboardImportModalProps> = ({
                 });
             }
 
-            console.log(' Отправка запроса к Dashboard API:', params);
-            const startTime = performance.now();
 
             const result = await dashboardApi.fetchOrdersFromDashboard(params);
-
-            const endTime = performance.now();
-            const duration = endTime - startTime;
-            console.log(`️ Загрузка из Dashboard API заняла ${duration.toFixed(2)}ms`);
 
             if (result.success && result.data) {
                 // Сохранение настроек
@@ -113,7 +107,6 @@ export const DashboardImportModal: React.FC<DashboardImportModalProps> = ({
                     timeDeliveryEnd: params.timeDeliveryEnd || '',
                 });
 
-                console.log(` Загружено ${result.data.orders.length} заказов и ${result.data.couriers.length} курьеров`);
                 onDataLoaded(result.data);
                 onClose();
             } else {

@@ -54,7 +54,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   const fetchRoutesWithDate = useCallback(async (token: string) => {
     const apiDateShift = useDashboardStore.getState().apiDateShift;
     
-    console.log('[ExcelSync] 📡 Fetching routes from API, date:', apiDateShift);
+    // Fetching routes from API
     
     // v5.143: Normalize date to YYYY-MM-DD and pass to backend
     let normalizedDate = '';
@@ -80,22 +80,13 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     if (routesRes.ok) {
       const routesJson = await routesRes.json();
       allRoutes = routesJson.data || [];
-      console.log('[ExcelSync] 📥 Got routes from API:', allRoutes.length);
+      // Got routes
     } else {
-      console.log('[ExcelSync] ❌ API error:', routesRes.status);
+      // API error
     }
     
-    console.log('[ExcelSync] ✅ Routes loaded:', { count: allRoutes.length, date: normalizedDate || 'today' });
+    // Routes loaded
     
-    // Debug: show first few routes
-    if (allRoutes.length > 0) {
-      console.log('[ExcelSync] 📋 Sample route:', JSON.stringify({
-        id: allRoutes[0].id,
-        courier: allRoutes[0].courier,
-        ordersCount: allRoutes[0].ordersCount,
-        targetDate: allRoutes[0].targetDate
-      }, null, 2));
-    }
     
     return allRoutes;
   }, []);
@@ -125,8 +116,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
 
               if (response.ok) {
                 const json = await response.json();
-                console.log('[ExcelSync] Server response:', json.success ? 'OK' : 'FAIL', 
-                  json.data ? `orders: ${json.data.orders?.length || 0}, routes: ${json.data.routes?.length || 0}` : 'no data');
+                // Server response
                 
                 // v5.152: Check if server has meaningful data (at least orders)
                 const serverHasOrders = json.success && json.data && (json.data.orders?.length > 0);
@@ -141,23 +131,17 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                 }
                 
                 // v5.152: Use local data if it exists and has orders, OR if server has no orders
-                console.log('[ExcelSync] 🔍 Data check:', {
-                  localHasOrders: localData?.orders?.length || 0,
-                  serverHasOrders: json.data?.orders?.length || 0,
-                  localLastModified: localData?.lastModified,
-                  serverLastModified: json.data?.lastModified
-                });
                 
                 if (localData && localData.orders && localData.orders.length > 0) {
                   if (!serverHasOrders || (localData.lastModified && (!json.data.lastModified || localData.lastModified > json.data.lastModified))) {
-                    console.log('[ExcelSync] 📱 Using localStorage data:', localData.orders.length, 'orders (server has', json.data?.orders?.length || 0, ')');
+                    // Using localStorage data
                     setExcelDataState(localData);
                     return;
                   } else {
-                    console.log('[ExcelSync] 📱 localStorage data exists but server has newer data');
+                    // Server has newer data
                   }
                 } else {
-                  console.log('[ExcelSync] 📱 localStorage has no orders (', localData?.orders?.length || 0, ')');
+                  // No local orders
                 }
                 
                 if (json.success && json.data) {
@@ -190,7 +174,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                     const token = localStorage.getItem('km_access_token');
                     if (token) {
                       const dbRoutes = await fetchRoutesWithDate(token);
-                      console.log('[ExcelSync] 🔄 DB Routes loaded:', dbRoutes.length);
+                      // DB Routes loaded
                       
                       // Merge with existing routes if any
                       const existingRoutes = Array.isArray(serverData.routes) ? serverData.routes : [];
@@ -239,7 +223,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                                   acc + (Number(curr.ordersCount || curr.orders_count || 0)), 0);
                                 c.distanceKm = Number(totalDist.toFixed(2));
                                 c.calculatedOrders = totalOrders;
-                                console.log(`[ExcelSync] 📍 Updated courier ${normName}: ${c.distanceKm} km, ${totalOrders} orders (${courierRoutes.length} routes)`);
                             }
                         });
                       }
@@ -248,7 +231,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                     console.warn('[ExcelSync] Failed to fetch routes from database:', e);
                   }
 
-                  console.log('[ExcelSync] 🚀 Using Server data (with distances and routes).');
+                  // Using server data
                   setExcelDataState(serverData);
                   return;
                 }
@@ -267,7 +250,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             const savedRoutes = localStorage.getItem('km_routes');
             if (savedRoutes) {
               localRoutes = JSON.parse(savedRoutes);
-              console.log('[ExcelSync] 📦 km_routes from localStorage:', localRoutes.length);
+              // km_routes from localStorage
             }
           } catch (e) {
             console.warn('[ExcelSync] Failed to parse km_routes:', e);
@@ -279,7 +262,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             const token = localStorage.getItem('km_access_token');
             if (token) {
               dbRoutes = await fetchRoutesWithDate(token);
-              console.log('[ExcelSync] 🔄 DB Routes loaded:', dbRoutes.length);
             }
           } catch (e) {
             console.warn('[ExcelSync] Failed to fetch routes from database:', e);
@@ -322,7 +304,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             });
             
             parsed.routes = mergedRoutes;
-            console.log('[ExcelSync] 🔄 Merged routes: DB=', dbRoutes.length, ', km_routes=', localRoutes.length, ', manual=', existingRoutes.filter((r: any) => String(r.id || '').startsWith('route_')).length, ', total=', mergedRoutes.length);
+            // Merged routes
             
             // v5.147: Update courier distances when loading from localStorage + DB routes
             if (parsed.couriers && Array.isArray(parsed.couriers)) {
@@ -342,7 +324,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                   const totalOrders = courierRoutes.reduce((acc: number, curr: any) => acc + (Number(curr.ordersCount) || 0), 0);
                   c.distanceKm = Number(totalDist.toFixed(2));
                   c.calculatedOrders = totalOrders;
-                  console.log(`[ExcelSync] 📍 Loaded: ${normName} = ${c.distanceKm} km, ${totalOrders} orders`);
                 }
               });
             }
@@ -350,7 +331,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             setExcelDataState(parsed)
           } else if (dbRoutes.length > 0) {
             // No local data, but we have DB routes - create minimal state
-            console.log('[ExcelSync] 🔄 Using DB routes only (no local data):', dbRoutes.length);
+            // DB routes only
             setExcelDataState({
               orders: [],
               couriers: [],
@@ -375,7 +356,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
         try {
           const routes = JSON.parse(e.newValue);
           if (routes.length > 0) {
-            console.log('[ExcelSync] 🔄 Storage event (cross-tab): Routes updated by Turbo Robot:', routes.length);
+            // Storage event updated routes
             setExcelDataState(prev => {
               if (prev) {
                 return { ...prev, routes };
@@ -392,9 +373,9 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     // v30.0: Listen for same-tab DOM events dispatched by socketService
     // socketService dispatches 'km:turbo:routes_update' when robot finishes routing
     const handleTurboRoutes = (e: Event) => {
-      const { routes, date, couriers: eventCouriers } = (e as CustomEvent).detail || {};
+      const { routes, couriers: eventCouriers } = (e as CustomEvent).detail || {};
       if (routes && Array.isArray(routes) && routes.length > 0) {
-        console.log('[ExcelSync] 📡 km:turbo:routes_update received:', routes.length, 'routes for', date, '| enrichedCouriers:', eventCouriers?.length || 0);
+        // turbo:routes_update received
         setExcelDataState(prev => {
           if (!prev) return prev;
 
@@ -475,7 +456,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                 }
                 return c;
               });
-              console.log('[ExcelSync] 📍 Path A: Applied enriched courier data from robot:', enrichedMap.size, 'couriers');
             }
           } else if (updatedCouriers.length > 0 && mergedRoutes.length > 0) {
             // PATH B: compute from route objects (fallback)
@@ -497,7 +477,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                 }
                 return c;
               });
-              console.log('[ExcelSync] 📍 Path B: Computed courier distances from routes:', distMap.size, 'couriers');
             }
           }
 
@@ -511,7 +490,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     const handleTurboDashboard = (e: Event) => {
       const data = (e as CustomEvent).detail;
       if (!data) return;
-      console.log('[ExcelSync] 📡 km:turbo:dashboard_update received: couriers=', data.couriers?.length);
+      // turbo:dashboard_update received
       if (data.couriers && Array.isArray(data.couriers)) {
         setExcelDataState(prev => {
           if (!prev) return prev;
@@ -644,7 +623,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
           const routesNoGeo = (excelData.routes || []).map((r: any) => ({ ...r, geometry: undefined }));
           const dataToSave = { ...excelData, routes: routesNoGeo, lastModified: Date.now() };
           localStorageUtils.setData('km_dashboard_processed_data', dataToSave);
-          console.log('[ExcelSync] 💾 Auto-saved dashboard data to localStorage:', excelData.orders.length, 'orders');
+          // Auto-saved
         } catch (e) {
           console.warn('[ExcelSync] Failed to auto-save dashboard data:', e);
         }
@@ -759,7 +738,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       if (!token) return;
       
       const dbRoutes = await fetchRoutesWithDate(token);
-      console.log('[ExcelSync] 🔄 Refreshed routes from DB:', dbRoutes.length, 'routes');
+      // Refreshed routes from DB
       
       // v5.141: Deduplicate DB routes by ID first
       const seenRouteIds = new Set<string>();
@@ -775,16 +754,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
         console.warn(`[ExcelSync] ⚠️ Removed ${dbRoutes.length - uniqueDbRoutes.length} duplicate DB routes`);
       }
       
-      // Debug: show sample route
-      if (uniqueDbRoutes.length > 0) {
-        console.log('[ExcelSync] Sample route:', JSON.stringify({
-          id: uniqueDbRoutes[0].id,
-          courier: uniqueDbRoutes[0].courier,
-          orders: uniqueDbRoutes[0].ordersCount,
-          distance: uniqueDbRoutes[0].totalDistance,
-          timeBlock: uniqueDbRoutes[0].timeBlock
-        }, null, 2));
-      }
       
       setExcelDataState(prev => {
         // v5.148: Even if prev is null, we should create a state with routes
@@ -823,7 +792,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
 
         // Final routes: DB routes + manual routes without duplicates
         const finalRoutes = [...uniqueDbRoutes, ...uniqueManualRoutes];
-        console.log('[ExcelSync] Merged routes:', { db: uniqueDbRoutes.length, manual: uniqueManualRoutes.length, total: finalRoutes.length });
+        // Merged routes complete
 
         // v5.153: Update courier distanceKm from DB routes immediately
         // This ensures the Couriers tab shows correct km after refreshRoutesFromDB (robot finish / page load)
@@ -849,7 +818,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
               }
               return c;
             });
-            console.log('[ExcelSync] 📍 refreshRoutesFromDB: Updated', distMap.size, 'courier distances from DB routes');
           }
         }
 
@@ -868,14 +836,14 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   // v5.148: Auto-refresh routes when data is loaded OR on initial load
   useEffect(() => {
     // Always try to load routes from DB - they may exist even without excelData
-    console.log('[ExcelSync] Auto-refreshing routes from DB...');
+    // Auto-refreshing routes
     refreshRoutesFromDB();
   }, [refreshRoutesFromDB]);
   
   // Also refresh when orders change
   useEffect(() => {
     if (excelData && excelData.orders?.length > 0) {
-      console.log('[ExcelSync] Orders changed, refreshing routes...');
+      // Orders changed
       refreshRoutesFromDB();
     }
   }, [excelData?.orders?.length, refreshRoutesFromDB]);
@@ -885,9 +853,8 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     (window as any).__refreshTurboRoutes = refreshRoutesFromDB;
     (window as any).__getExcelData = () => excelData;
     (window as any).__loadRoutesFromDB = async () => {
-      console.log('[ExcelSync] Manual route refresh triggered');
+      // Manual refresh
       await refreshRoutesFromDB();
-      console.log('[ExcelSync] Current routes:', excelData?.routes?.length || 0);
     };
     return () => { 
       delete (window as any).__refreshTurboRoutes;
@@ -1006,10 +973,6 @@ function applyCourierVehicleMap(data: any, current?: any): any {
              }
         }
 
-        const normName = normalizeCourierName(o.courier);
-        if (normName.includes('ЗОРЯ') || normName.includes('БАГНЄВ') || normName.includes('БАГНЕВ')) {
-            console.log(`[Trace-Assignment] Order ${num}: Courier="${o.courier}", CoordsFound=${!!o.coords?.lat}, MemFound=${!!existing}`);
-        }
 
         if (isSafeToApplyOverride) {
             return {
@@ -1079,7 +1042,7 @@ function applyCourierVehicleMap(data: any, current?: any): any {
     
     let routesToProcess = incomingRoutes;
     if (incomingRoutes.length === 0 && localRoutes.length > 0 && incomingDate === localDate) {
-        console.log(`[ExcelSync] Preserving ${localRoutes.length} local routes for date ${incomingDate}`);
+        // Preserving local routes
         routesToProcess = localRoutes;
     }
 

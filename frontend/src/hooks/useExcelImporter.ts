@@ -12,19 +12,10 @@ export const useExcelImporter = (
     const [importError, setImportError] = useState<string | null>(null);
 
     const handleExcelUpload = useCallback(async (file: File) => {
-        console.log(' [useExcelImporter] handleExcelUpload started with file:', file.name, 'size:', file.size);
         setIsImporting(true);
         setImportError(null);
         try {
-            console.log(' [useExcelImporter] Calling processExcelFile...');
             const data = await processExcelFile(file);
-            console.log(' [useExcelImporter] processExcelFile returned:', {
-                orders: data.orders.length,
-                couriers: data.couriers.length,
-                paymentMethods: data.paymentMethods.length,
-                errors: data.errors.length
-            });
-            console.log(' [useExcelImporter] Full data:', data);
 
             setExcelData(data);
             logger.info(` Успешно загружено ${data.orders.length} заказов из ${file.name}`);
@@ -61,7 +52,6 @@ export const useExcelImporter = (
             logger.error('Excel Import Error:', error);
         } finally {
             setIsImporting(false);
-            console.log(' [useExcelImporter] handleExcelUpload finished');
         }
     }, [setExcelData, setCourierSchedules]);
 

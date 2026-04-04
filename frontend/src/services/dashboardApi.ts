@@ -116,7 +116,6 @@ class DashboardApiService {
         params.timeDeliveryBeg
       )
 
-      console.log(` Загружено ${processedData.orders.length} заказов и ${processedData.couriers.length} курьеров из Dashboard API`)
 
       return {
         success: true,
@@ -153,7 +152,6 @@ class DashboardApiService {
       departmentId,
       apiKey,
     };
-    console.log('[DashboardAPI] Default params:', res);
     return res;
   }
 }

@@ -464,9 +464,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       });
     });
 
-    const keys = Object.keys(grouped);
-    console.log(`[CourierOrders] Built ${keys.length} courier groups. Keys: ${keys.slice(0, 10).join(' | ')}`);
-
     return grouped
   }, [excelData?.orders, excelData?.couriers, excelData?.routes])
 
@@ -1383,7 +1380,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
   // Функция для перемещения заказа в другую временную группу (Force Move / SOTA v2.0)
   const handleMoveOrderToGroup = useCallback(async (orderId: string, targetGroup: TimeWindowGroup) => {
-    console.log('[DND] Force Move logic triggered for order:', orderId, 'to group:', targetGroup.id);
 
     // v5.3: DND is instant — no async geocoding, no modals during drag.
     // Only show a toast warning if coords available and the order is extremely far from the group.
@@ -1444,7 +1440,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         const isMovedOrder = (oId === targetIdStr) || (oNum === targetIdStr) || (normalizedOId === normalizedTargetId) || (oNum === normalizedTargetId);
 
         if (isMovedOrder) {
-          console.log('[DND] Matched Order:', oId, 'Moving to:', targetManualId);
         }
 
         // Это заказ, который УЖЕ был в целевой группе?
@@ -2379,8 +2374,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                             if (startAddress) uniqueAddresses.add(cleanAddressForRoute(startAddress));
                             if (endAddress) uniqueAddresses.add(cleanAddressForRoute(endAddress));
 
-                            console.log(`[Quantum] Starting Giant Batch Geocode for ${uniqueAddresses.size} unique addresses...`);
-
                             // 2. Execute one giant batch geocode for everything
                             // v5.152: Improved geocoding with high accuracy options
                             const addrCache = await batchGeocode(
@@ -2403,7 +2396,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                             });
                             
                             if (failedAddresses.length > 0) {
-                              console.log(`[Quantum] Retrying ${failedAddresses.length} failed addresses with fallback...`);
                               const retryResults = await batchGeocode(
                                 failedAddresses.map(addr => ({
                                   address: addr,
@@ -2425,7 +2417,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                             });
                             
                             if (stillFailed.length > 0) {
-                              console.log(`[Quantum] ${stillFailed.length} addresses still failed, trying enhanced fallback strategies...`);
                               useCalculationProgress.getState().setMessage(`Уточнение ${stillFailed.length} адресов...`);
                               
                               const enhancedFallbacks = stillFailed.flatMap(addr => {
@@ -2476,7 +2467,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                                     const originalKey = fb.original.trim().toLowerCase();
                                     if (!addrCache.has(originalKey)) {
                                       addrCache.set(originalKey, result);
-                                      console.log(`[Quantum] ✅ Fallback success (${fb.strategy}): "${fb.original}" → "${fb.address}"`);
                                     }
                                   }
                                 });
@@ -2484,7 +2474,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                             }
 
                             useCalculationProgress.getState().setProgress(30);
-                            console.log(`[Quantum] Giant Geocode complete. Calculating ${newRoutes.length} routes...`);
 
                             // v5.170: Parallel route calculation with concurrency limit (max 3 at a time)
                             // This is MUCH faster than sequential while not overwhelming the browser
@@ -2504,7 +2493,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                                 calculatedRoutes[index] = result;
 
                                 if (result) {
-                                  console.log(`[Quantum] ✅ Route ${index + 1} calculated: ${(result.totalDistance || 0).toFixed(1)}km`);
                                 } else {
                                   console.warn(`[Quantum] ⚠️ Route ${index + 1} failed`);
                                 }
@@ -2565,7 +2553,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                                 ...newRoutes.map(r => updatedRouteMap.get(r.id) || r)
                               ];
 
-                              console.log(`[Батч] Финальный коммит: ${finalRoutes.length} маршрутов, ${updatedOrders.filter((o: any) => allOrderIdsToUpdate.has(String(o.id))).length} обновленных заказов`);
 
                               return {
                                 ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),

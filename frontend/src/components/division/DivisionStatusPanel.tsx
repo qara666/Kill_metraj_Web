@@ -38,7 +38,6 @@ const DivisionStatusPanel: React.FC = () => {
       const raw = window.__divisionStatuses;
       if (raw && Object.keys(raw).length > 0) {
         setData(Object.values(raw) as DivisionStatus[]);
-        setDebug(`Loaded ${Object.values(raw).length} from window`);
         return;
       }
 
@@ -52,7 +51,6 @@ const DivisionStatusPanel: React.FC = () => {
         if (json.success && json.data) {
           const values = Object.values(json.data) as DivisionStatus[];
           setData(values);
-          setDebug(`Fetched ${values.length} statuses from API`);
         } else {
           setDebug('No active calculations found');
         }
@@ -67,14 +65,12 @@ const DivisionStatusPanel: React.FC = () => {
 
     // Subscribe to real-time updates
     const handleUpdate = (payload: any) => {
-      console.log('[DivisionStatusPanel] Update:', payload);
       setData(prev => {
         const key = `${payload.divisionId}_${payload.date}`;
         // Find existing or append
         const filtered = prev.filter(p => `${p.divisionId}_${p.date}` !== key);
         return [...filtered, payload];
       });
-      setDebug(`Update: ${payload.divisionId}`);
     };
 
     socketService.on('division_status_update', handleUpdate);
