@@ -264,13 +264,13 @@ export const CourierCard = memo(({
               'text-2xl font-black leading-none mb-1.5',
               isDark ? 'text-gray-100' : 'text-gray-900'
             )}>
-              {courier.orders}
+              {calculatedCount}
             </div>
             <div className={clsx(
               'text-[10px] font-bold uppercase tracking-widest opacity-60',
               isDark ? 'text-gray-400' : 'text-gray-500'
             )}>
-              {getOrdersUkSuffix(totalCount).split(' ')[1] || 'Заказов'}
+              {getOrdersUkSuffix(calculatedCount).split(' ')[1] || 'Заказов'}
             </div>
           </div>
         </div>

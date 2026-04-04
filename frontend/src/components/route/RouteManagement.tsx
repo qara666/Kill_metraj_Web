@@ -1727,10 +1727,18 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         console.error('Error clearing remote routes:', err);
       }
 
-      // v5.160: Force update with empty routes
-      updateExcelData({
-        ...(excelData || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
-        routes: []
+      // v5.160: Force update with empty routes and reset courier stats
+      updateExcelData((prev: any) => {
+        const prevSafe = prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined };
+        return {
+          ...prevSafe,
+          routes: [],
+          couriers: (prevSafe.couriers || []).map((c: any) => ({
+            ...c,
+            distanceKm: 0,
+            calculatedOrders: 0
+          }))
+        };
       }, true /* force: true */);
 
       // Force socket robot update to stop if it's running for this division

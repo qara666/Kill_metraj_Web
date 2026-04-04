@@ -1110,6 +1110,9 @@ class OrderCalculator {
                                     // v5.170: CRITICAL - address can be empty, fallback to addressGeo
                                     address: o.address || o.addressGeo || o.raw?.address || 'Адрес не указан',
                                     coords: o.coords,
+                                    // v5.170: Add lat/lng at top level for frontend compatibility
+                                    lat: o.coords?.lat || o.lat,
+                                    lng: o.coords?.lng || o.lng,
                                     deliveryTime: o.deliverBy || o.plannedTime || o.deliveryTime,
                                     // v5.170: Pass through geocoding metadata for badge display
                                     locationType: o.locationType || o.coords?.locationType,
