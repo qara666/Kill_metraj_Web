@@ -48,11 +48,154 @@ function normalizeCourierName(name) {
     return n;
 }
 
-// v5.170: getPlannedTime — match frontend timeUtils.ts EXACTLY
-function getPlannedTime(o) {
+// v5.170: getPlannedTime, getArrivalTime, getKitchenTime — match frontend timeUtils.ts EXACTLY
+
+function parseTime(val, options = {}) {
+    if (!val && val !== 0) return null;
+    const s = String(val).trim();
+    if (!s || s.includes('#')) return null;
+
+    const strVal = s.toLowerCase();
+    if (strVal.includes('мин.') || strVal.includes('час') || strVal.includes('min') || strVal.includes('hour')) {
+        return null;
+    }
+
+    const excelTime = typeof val === 'number' ? val : parseFloat(s);
+    if (!isNaN(excelTime) && excelTime > 0) {
+        const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+
+        if (excelTime >= 25569) { // Date + Time
+            const days = Math.floor(excelTime);
+            const timeFraction = excelTime - days;
+
+            if (options.isKitchenTime && options.baseDate) {
+                const totalHours = timeFraction * 24;
+                const hours = Math.floor(totalHours);
+                const minutes = Math.floor((totalHours - hours) * 60);
+                const seconds = Math.round(((totalHours - hours) * 60 - minutes) * 60);
+
+                const resultDate = new Date(options.baseDate);
+                resultDate.setHours(hours, minutes, seconds, 0);
+                return resultDate.getTime();
+            } else {
+                const date = new Date(excelEpoch.getTime() + days * 86400 * 1000);
+                const totalHours = timeFraction * 24;
+                const hours = Math.floor(totalHours);
+                const minutes = Math.floor((totalHours - hours) * 60);
+                const seconds = Math.round(((totalHours - hours) * 60 - minutes) * 60);
+                date.setUTCHours(hours, minutes, seconds, 0);
+                return date.getTime();
+            }
+        } else if (excelTime >= 0 && excelTime < 1) { // Time only
+            const totalHours = excelTime * 24;
+            const hours = Math.floor(totalHours);
+            const minutes = Math.floor((totalHours - hours) * 60);
+            const seconds = Math.round(((totalHours - hours) * 60 - minutes) * 60);
+
+            const base = options.baseDate ? new Date(options.baseDate) : new Date();
+            base.setHours(hours, minutes, seconds, 0);
+            return base.getTime();
+        }
+    }
+
+    const dotDateTimeMatch = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/i);
+    if (dotDateTimeMatch) {
+        const day = parseInt(dotDateTimeMatch[1], 10);
+        const month = parseInt(dotDateTimeMatch[2], 10);
+        const year = parseInt(dotDateTimeMatch[3], 10);
+        const hour = parseInt(dotDateTimeMatch[4], 10);
+        const minute = parseInt(dotDateTimeMatch[5], 10);
+        const second = dotDateTimeMatch[6] ? parseInt(dotDateTimeMatch[6], 10) : 0;
+        return new Date(year, month - 1, day, hour, minute, second).getTime();
+    }
+
+    const excelDateTimeMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
+    if (excelDateTimeMatch) {
+        let first = parseInt(excelDateTimeMatch[1], 10);
+        let second = parseInt(excelDateTimeMatch[2], 10);
+        let year = parseInt(excelDateTimeMatch[3], 10);
+        let hour = parseInt(excelDateTimeMatch[4], 10);
+        const minute = parseInt(excelDateTimeMatch[5], 10);
+        const ampm = excelDateTimeMatch[7];
+
+        let month, day;
+        if (first > 12) { day = first; month = second; }
+        else if (second > 12) { month = first; day = second; }
+        else { month = first; day = second; }
+
+        if (year < 100) year += year < 50 ? 2000 : 1900;
+        if (ampm) {
+            if (ampm.toUpperCase() === 'PM' && hour !== 12) hour += 12;
+            else if (ampm.toUpperCase() === 'AM' && hour === 12) hour = 0;
+        }
+        return new Date(year, month - 1, day, hour, minute, 0).getTime();
+    }
+
+    const timeMatch = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
+    if (timeMatch) {
+        let hour = parseInt(timeMatch[1], 10);
+        const minute = parseInt(timeMatch[2], 10);
+        const second = timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
+        const ampm = timeMatch[4];
+        if (ampm) {
+            if (ampm.toUpperCase() === 'PM' && hour !== 12) hour += 12;
+            else if (ampm.toUpperCase() === 'AM' && hour === 12) hour = 0;
+        }
+        const base = options.baseDate ? new Date(options.baseDate) : new Date();
+        base.setHours(hour, minute, second, 0);
+        return base.getTime();
+    }
+
+    const d = new Date(s);
+    if (!isNaN(d.getTime()) && d.getFullYear() > 2000) {
+        return d.getTime();
+    }
+
+    return null;
+}
+
+const KITCHEN_TIME_FIELDS = [
+    'время на кухню', 'время_на_кухню', 'Время на кухню', 'Время_на_кухню', 'ВРЕМЯ НА КУХНЮ',
+    'час на кухню', 'час_на_кухню', 'час на кухні', 'час_на_кухні',
+    'kitchen_time', 'kitchenTime', 'KitchenTime', 'KITCHEN_TIME',
+    'kitchen', 'Kitchen', 'KITCHEN',
+    'Время готовности', 'время готовности', 'Готовность', 'готовность',
+    'готовність', 'час готовності'
+];
+
+const PLANNED_TIME_FIELDS = [
+    'плановое время', 'плановое_время', 'Плановое время', 'Плановое_время', 'ПЛАНОВОЕ ВРЕМЯ',
+    'plannedTime', 'planned_time', 'PlannedTime', 'PLANNED_TIME',
+    'Дедлайн', 'дедлайн', 'ДЕДЛАЙН', 'deadline', 'Deadline', 'DEADLINE',
+    'deadlineAt', 'deadline_at', 'DeadlineAt',
+    'deliverBy', 'deliver_by', 'DeliverBy',
+    'Время доставки', 'время доставки', 'ВРЕМЯ ДОСТАВКИ',
+    'доставить к', 'доставить_к', 'Доставить к',
+    'timeDeliveryEnd', 'time_delivery_end', 'TimeDeliveryEnd'
+];
+
+const ARRIVAL_TIME_FIELDS = [
+    'создания', 'создание', 'creation', 'createdAt', 'Дата.создания',
+    'дата.создания', 'Дата создания', 'дата создания', 'CreatedAt'
+];
+
+function getKitchenTime(o, baseDate) {
+    if (!o) return null;
+    if (o.readyAtSource && typeof o.readyAtSource === 'number') return o.readyAtSource;
+
+    for (const field of KITCHEN_TIME_FIELDS) {
+        const val = o[field] ?? o.raw?.[field];
+        if (val !== undefined && val !== null) {
+            const parsed = parseTime(val, { isKitchenTime: true, baseDate });
+            if (parsed) return parsed;
+        }
+    }
+    return null;
+}
+
+function getPlannedTime(o, baseDate) {
     if (!o) return null;
 
-    // Check deadlineAt as number (timestamp) first
     if (o.deadlineAt && typeof o.deadlineAt === 'number') {
         const date = new Date(o.deadlineAt);
         if (date.getHours() !== 0 || date.getMinutes() !== 0) {
@@ -60,44 +203,26 @@ function getPlannedTime(o) {
         }
     }
 
-    // Try deliverBy, plannedTime, deliveryTime fields
-    const t = o.deliverBy || o.plannedTime || o.deliveryTime;
-    if (!t) return null;
-
-    // Skip "00:00" as invalid
-    if (typeof t === 'string' && (t === '00:00' || t === '00:00:00')) return null;
-
-    return parseTimeRobust(t);
-}
-
-function parseTimeRobust(t) {
-    if (!t) return null;
-    if (typeof t === 'number') return t;
-    if (typeof t === 'string' && t.includes(':') && !t.includes('-') && !t.includes('T')) {
-        const parts = t.split(':');
-        const d = new Date();
-        d.setHours(parseInt(parts[0], 10), parseInt(parts[1]||'0', 10), 0, 0);
-        return d.getTime();
-    }
-    if (typeof t === 'string') {
-        const tt = new Date(t).getTime();
-        return isNaN(tt) ? null : tt;
+    for (const field of PLANNED_TIME_FIELDS) {
+        const val = o[field] ?? o.raw?.[field];
+        if (val !== undefined && val !== null) {
+            if (typeof val === 'string' && (val === '00:00' || val === '00:00:00')) {
+                continue;
+            }
+            const parsed = parseTime(val, { baseDate });
+            if (parsed) return parsed;
+        }
     }
     return null;
 }
 
-// v5.170: getArrivalTime — MUST match frontend timeUtils.ts EXACTLY
-// Frontend does NOT differentiate assigned vs unassigned for arrival time!
-// It always checks statusTimings first for active orders, then createdAt, then fallbacks
-function getArrivalTime(o) {
+function getArrivalTime(o, baseDate) {
     if (!o) return null;
 
     const status = (o.status || '').toString().trim();
-
-    // Phase 4.4 & SOTA 3.1 & v5.46: For active orders — use actual status transition times
     if (status === 'Доставляется' || status === 'В пути' || status === 'Исполнен') {
         if (o.statusTimings?.deliveringAt) {
-            const dt = parseTimeRobust(o.statusTimings.deliveringAt);
+            const dt = parseTime(o.statusTimings.deliveringAt, { baseDate });
             if (dt) return dt;
         }
         if (o.handoverAt) return o.handoverAt;
@@ -105,42 +230,22 @@ function getArrivalTime(o) {
 
     if (status === 'Собран') {
         if (o.statusTimings?.assembledAt) {
-            const at = parseTimeRobust(o.statusTimings.assembledAt);
+            const at = parseTime(o.statusTimings.assembledAt, { baseDate });
             if (at) return at;
         }
     }
 
-    // createdAt as number (timestamp)
     if (o.createdAt && typeof o.createdAt === 'number') return o.createdAt;
 
-    // Other arrival time fields
-    const t = o.arrivedAt || o.arrivalTime || o.creationDate || o.createdAt || o.receivedTime;
-    if (t) {
-        const parsed = parseTimeRobust(t);
-        if (parsed) return parsed;
+    for (const field of ARRIVAL_TIME_FIELDS) {
+        const val = o[field] ?? o.raw?.[field];
+        if (val !== undefined && val !== null) {
+            const parsed = parseTime(val, { baseDate });
+            if (parsed) return parsed;
+        }
     }
 
-    // If no creation time found, use kitchen time as proxy (same as frontend)
-    return getKitchenTime(o);
-}
-
-function getKitchenTime(o) {
-    const t = o.kitchenTime || o.readyAt || o.cooking_time;
-    if (!t) return null;
-    if (typeof t === 'number') return t;
-    // Handle time strings like "12:30"
-    if (typeof t === 'string' && t.includes(':') && !t.includes('-') && !t.includes('T')) {
-        const parts = t.split(':');
-        const d = new Date();
-        d.setHours(parseInt(parts[0], 10), parseInt(parts[1]||'0', 10), 0, 0);
-        return d.getTime();
-    }
-    // Handle full date strings
-    if (typeof t === 'string') {
-        const tt = new Date(t).getTime();
-        return isNaN(tt) ? null : tt;
-    }
-    return null;
+    return getKitchenTime(o, baseDate);
 }
 
 function formatTimeRange(startTime, endTime) {
@@ -163,7 +268,7 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
     if (!orders || orders.length === 0) return [];
 
     const LOCAL_WINDOW_MS = windowMinutes * 60 * 1000;
-    const LOCAL_DELIVERY_SPAN_MS = 120 * 60 * 1000; // Match frontend: 120 min delivery window
+    const LOCAL_DELIVERY_SPAN_MS = 60 * 60 * 1000; // Match frontend EXACTLY: 60 min delivery window (not 120!)
 
     // STEP 0: Global deduplication (v5.149 - CRITICAL: orderNumber as PRIMARY key)
     // Same orderNumber = same order, regardless of ID

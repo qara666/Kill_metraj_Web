@@ -38,7 +38,6 @@ export async function calculateTurboRace(
     verbose?: boolean;
   } = {}
 ): Promise<RoutingResult> {
-  const startTime = Date.now();
   if (points.length < 2) return { feasible: false };
 
   const osrmUrl = options.yapikoOsrmUrl?.trim();
@@ -102,9 +101,6 @@ export async function calculateTurboRace(
       return { feasible: false };
     }
 
-    if (options.verbose !== false) {
-      console.log(`[TurboRace] 🏎️ WINNER: ${r.usedEngine} in ${Date.now() - startTime}ms (${distKm.toFixed(1)} km)`);
-    }
     return {
       feasible: true,
       totalDistance: r.totalDistance,
@@ -168,9 +164,6 @@ export async function calculateRouteWithFallback(
           console.warn(`[Fallback] 🛡️ Yapiko OSRM АНОМАЛИЯ: ${distKm.toFixed(1)} км отклонено (прямая ~${slKm.toFixed(1)} км).`);
           return { feasible: false };
         } else {
-          if (options.verbose !== false) {
-            console.log(`[Маршрут] ✅ YapikoOSRM: ${distKm.toFixed(1)} km / ${Math.round((r.totalDuration || 0) / 60)} min`);
-          }
           return {
             feasible: true,
             totalDistance: r.totalDistance,
@@ -185,7 +178,6 @@ export async function calculateRouteWithFallback(
       console.warn('[Маршрут] ⚠️ YapikoOSRM ошибка — переключаюсь на Valhalla:', e);
     }
   } else {
-    console.log('[Маршрут] ℹ️ YapikoOSRM URL не настроен — используется Valhalla');
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -200,9 +192,6 @@ export async function calculateRouteWithFallback(
       if (distKm > maxDist * 1.5) {
          console.warn(`[Fallback] 🛡️ Valhalla АНОМАЛИЯ: ${distKm.toFixed(1)} км отклонено.`);
       } else {
-        if (options.verbose !== false) {
-          console.log(`[Маршрут] ✅ Valhalla: ${distKm.toFixed(1)} km / ${Math.round((r.totalDuration || 0) / 60)} min`);
-        }
         return {
           feasible: true,
           totalDistance: r.totalDistance,  // meters

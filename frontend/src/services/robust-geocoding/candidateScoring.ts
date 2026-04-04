@@ -188,7 +188,6 @@ export function scoreCandidate(
         score += SCORE.STRICT_CITY_LOCKDOWN; // -15,000,000
         (raw as any)._rejectReason = `Hard city radius: ${distFromKyivKm.toFixed(1)}km from Kyiv center (>30km limit)`;
       } else {
-        console.log(`[Геокодинг] ПРОВЕРКА ДИСТАНЦИИ ПРОЙДЕНА: точка ${distFromKyivKm.toFixed(1)}км находится в активной KML зоне. Блокировка Lockdown отменена.`);
       }
     }
   }
@@ -467,13 +466,9 @@ export function scoreCandidate(
            score += SCORE.CITY_MISMATCH_PENALTY;
            (raw as any)._rejectReason = `Lockdown: Not in ${city} or known suburb, and >3km from active zones. (v35.9.26)`;
         } else if ((isInside || isNearActiveZone) && !hasCurrentCity) {
-           // Soften the penalty for proximity but don't kill the candidate
-           if (!isInside) {
-             score -= 50000 
-             console.log(`[Геокодинг] SOFT LOCKDOWN: точка в 3км от зоны (дистанция=${Math.round(distToNearestActiveZone)}м). Уменьшаем штраф.`)
-           } else {
-             console.log(`[Геокодинг] LOCKDOWN BYPASS: точка в активной зоне "${kmlZone}". Полное доверие.`)
-           }
+            if (!isInside) {
+              score -= 50000;
+            }
         }
       }
     }
@@ -496,7 +491,6 @@ export function scoreCandidate(
             const hasExtraOrdinal = candidateFull.match(/\b\d+[\s\-]*(?:та|ша|га|ій|ий|ка)\b/i) && !req.match(/\d+(?:та|ша|га|ій|ий|ка)/i)
             
             if (hasExtraOrdinal) {
-                console.warn(`[RobustGeocode v35.9.14] ORDINAL COLLISION: "${candidateFull}" contains ordinal not in "${req}"`)
                 continue 
             }
 
@@ -511,12 +505,10 @@ export function scoreCandidate(
       // This allows coordinates in custom zones to survive even if the street name in metadata is slightly different.
       if (isInside) {
         score -= 200000 // Was 50000, but -2M was too aggressive. -200k is a safe middle ground for in-zone.
-        console.warn(`[Геокодинг] SOFT STREET MISMATCH: точка в активной зоне "${kmlZone}", но улица "${candidateFull}" не совпала с корнем.`)
       } else {
         score += SCORE.STREET_NAME_MISMATCH
         const missing = opts.requestedStreetNames.join('|')
         ;(raw as any)._rejectReason = `Street mismatch. Expected one of [${missing}]`
-        console.error(`[RobustGeocode v35.9.13] FAIL: "${candidateFull}" vs Roots: [${missing}]`)
       }
     } else {
       // v35.9.38: Silent mode for PASS logs to improve performance and clarity
@@ -524,7 +516,6 @@ export function scoreCandidate(
     }
   } else if (opts.expectedHouse) {
       score -= 400000 
-      console.warn(`[RobustGeocode v35.9.5] WARN: Roots empty for "${candidateFull}"`)
   }
 
   const expectedHouseNormal = opts.expectedHouse?.toLowerCase().replace(/[^a-z0-9а-яієґ]/g, '')

@@ -131,7 +131,6 @@ export class RobustGeocodingService {
         Object.entries(parsed).forEach(([key, val]) => {
           this.l1Cache.set(key, val as RobustGeocodeResult);
         });
-        console.log(`[Кэш] Загружено ${this.l1Cache.size} адресов из локального хранилища.`);
       }
     } catch (e) {
       console.warn('[Cache] Ошибка загрузки кэша:', e);
@@ -247,7 +246,6 @@ export class RobustGeocodingService {
       const perfect = scored.find((c: any) => isPerfectHit(c, expectedHouse, []));
       
       if (perfect) {
-        console.log(`[${name}] ✅ Точное попадание: "${query}" → ${perfect.score} баллов`);
         return { scored, perfect };
       }
       return { scored };
@@ -488,7 +486,6 @@ export class RobustGeocodingService {
 
     // Iron Dome: reject obvious anomalies
     if (bestResult && bestResult.score < -900000) {
-      console.warn(`[Геокодинг] ОТКЛОНЕНО (аномалия): ${bestResult.raw.formatted_address} | Score: ${bestResult.score}`);
       bestResult = null;
     }
 

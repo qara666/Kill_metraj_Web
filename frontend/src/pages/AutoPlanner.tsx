@@ -125,7 +125,6 @@ export const AutoPlanner: React.FC = () => {
     // --- WebSocket Hook for Real-time Updates ---
     useDashboardWebSocket({
         onDataLoaded: (data) => {
-            console.log('🔄 Dashboard data updated via WebSocket/API');
             setExcelData(data);
         },
         enabled: true

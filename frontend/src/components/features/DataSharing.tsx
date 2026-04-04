@@ -58,22 +58,14 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
     setIsSharing(true)
     try {
       // Добавляем отладочную информацию
-      console.log('Начинаем создание ссылки для обмена...')
-      console.log('Excel данные:', excelData)
-      console.log('Маршруты:', safeRoutes)
+      // Starting link creation
       
       // Проверяем данные перед кодированием
-      const dataToShare = {
-        excelData,
-        routes: safeRoutes,
-        timestamp: Date.now(),
-        version: '1.0.0'
-      }
       
-      console.log('Данные для обмена:', dataToShare)
+      // Ready to share
       
       const url = shareData(excelData, safeRoutes)
-      console.log('Ссылка создана успешно:', url)
+      // URL created successfully
       
       setShareUrl(url)
       setShowShareModal(true)
@@ -123,14 +115,7 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
         return
       }
 
-      console.log('Импортируемые данные:', sharedData)
-      console.log('Структура данных:', {
-        hasExcelData: !!sharedData.excelData,
-        hasRoutes: !!sharedData.routes,
-        ordersCount: sharedData.excelData?.orders?.length || 0,
-        couriersCount: sharedData.excelData?.couriers?.length || 0,
-        routesCount: sharedData.routes?.length || 0
-      })
+      // Processing shared data
 
       // Обновляем данные в контексте полностью
       let newCombinedData = sharedData.excelData
@@ -141,16 +126,12 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
           newCombinedData.routes = [...excelData.routes]
       }
       updateExcelData(newCombinedData)
-      console.log('Excel данные обновлены:', {
-        orders: newCombinedData.orders?.length || 0,
-        couriers: newCombinedData.couriers?.length || 0,
-        routes: newCombinedData.routes?.length || 0
-      })
+      // Excel data updated
       
       // Дополнительно обновляем маршруты если они есть отдельно
       if (sharedData.routes && sharedData.routes.length > 0) {
         updateRouteData(sharedData.routes)
-        console.log('Маршруты обновлены отдельно:', sharedData.routes.length)
+        // Routes updated separately
       }
 
       // Сохраняем данные в localStorage для синхронизации с другими пользователями
@@ -158,13 +139,13 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
         // Сохраняем в основной ключ ExcelDataContext
         if (sharedData.excelData) {
           localStorage.setItem('km_dashboard_processed_data', JSON.stringify(sharedData.excelData))
-          console.log('Excel данные сохранены в km_dashboard_processed_data')
+          // Saved to main store
         }
         
         // Сохраняем маршруты отдельно
         if (sharedData.routes && sharedData.routes.length > 0) {
           localStorage.setItem('km_routes', JSON.stringify(sharedData.routes))
-          console.log('Маршруты сохранены в km_routes')
+          // Routes saved
         }
         
         // Сохраняем для синхронизации
@@ -174,7 +155,7 @@ export const DataSharing: React.FC<DataSharingProps> = ({ className }) => {
           lastModified: Date.now()
         }
         localStorage.setItem('km_sync_data', JSON.stringify(syncData))
-        console.log('Данные сохранены для синхронизации')
+        // Data saved for sync
       } catch (syncError) {
         console.error('Ошибка сохранения для синхронизации:', syncError)
       }

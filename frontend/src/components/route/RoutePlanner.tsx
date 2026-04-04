@@ -109,7 +109,6 @@ export const RoutePlanner: React.FC = () => {
       // Обновляем данные
       if (excelData) {
         // Здесь можно добавить логику обновления данных
-        console.log('Новые маршруты созданы:', newRoutes)
       }
       
       // Показываем результат

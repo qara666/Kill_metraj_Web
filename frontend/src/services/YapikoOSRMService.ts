@@ -92,11 +92,7 @@ export class YapikoOSRMService {
           }
 
           const route = data.routes[0];
-          const distKm = route.distance / 1000;
           
-          // Improved logging for small distances
-          const distLog = distKm < 1 ? `${Math.round(route.distance)} м` : `${distKm.toFixed(2)} км`;
-          console.log(`[YapikoOSRM] ✅ Успех (${p}): ${distLog} | Точек: ${locations.length}`);
 
           const legs: OSRMLeg[] = (route.legs || []).map((leg: any, idx: number) => ({
             distance: { 

@@ -324,7 +324,6 @@ export const useRouteGeocoding = ({
             // FAST-PATH: If all orders have coordinates and we aren't confirming addresses,
             // we can map them instantly without any yields or geocoding logic.
             if (allOrdersHaveCoords && !confirmAddresses) {
-                console.log(`[Прямой-Путь] Обработка ${route.orders.length} заказов в режиме обхода`);
                 route.orders.forEach(order => {
                     const loc = { lat: order.coords!.lat, lng: order.coords!.lng };
                     waypointLocs.push(loc);
@@ -411,7 +410,6 @@ export const useRouteGeocoding = ({
             });
 
             if (ordersToGeocode.length > 0) {
-                console.log(`[Пакетный-Геокодер] Геокодирование ${ordersToGeocode.length} уникальных адресов...`);
                 if (!skipStateUpdate) useCalculationProgress.getState().setProgress(10);
                 
                 // v37: Use optimized batchGeocode
@@ -436,7 +434,6 @@ export const useRouteGeocoding = ({
 
                 if (!best || !toLoc(best.raw)) {
                      // v5.153: Enhanced fallback strategies for failed geocoding
-                     console.warn(`[Расчет] Геокодирование не удалось для: ${order.address}, пробуем альтернативные методы...`);
                      
                      // Strategy 1: Try without house number (just street)
                      const streetOnly = cleaned.replace(/\d+[а-яА-Яa-zA-Z]?\s*$/g, '').trim();
@@ -479,10 +476,8 @@ export const useRouteGeocoding = ({
                      if (fallbackRes?.best) {
                          best = fallbackRes.best;
                          addrCache.set(key, fallbackRes);
-                         console.log(`[Расчет] Адрес распознан альтернативным методом: ${order.address}`);
                      } else {
                          // Last resort: Skip this order with warning instead of blocking entire route
-                         console.error(`[Расчет] Адрес пропущен (не удалось распознать): ${order.address}`);
                          toast(`Адрес пропущен: ${order.address.substring(0, 50)}...`, { icon: '⚠️', duration: 3000 });
                          continue; // Skip this order, continue with others
                      }
@@ -568,7 +563,6 @@ export const useRouteGeocoding = ({
                         const badOrder = route.orders[badOrderIdx]
                         const cleaned = badOrder ? cleanAddressForRoute(badOrder.address) : ''
 
-                        console.warn(`[Расчет] Аномальный перегон ${i}→${i+1}: ${segKm.toFixed(1)} км. Запуск уточнения для: ${badOrder?.address}`)
 
                         // ─── Multi-pass candidate fetch for maximum coverage ──────────────────
                         // Pass 1: with city bias (Kyiv city)
@@ -755,7 +749,6 @@ export const useRouteGeocoding = ({
                 if (winner) {
                     const totalDistance = winner.value.dist
                     const totalDuration = winner.value.dur
-                    console.log(`[Выбор] Победитель: ${winner.value.src} — ${(totalDistance / 1000).toFixed(1)} км`)
 
                     const geoMeta = {
                         origin: originLoc,

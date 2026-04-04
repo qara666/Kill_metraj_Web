@@ -64,7 +64,6 @@ export const DashboardApiSection: React.FC = () => {
                 })
             });
 
-            console.log('[DashboardApiSection] Priority calculation response:', response.status, response.statusText);
 
             if (response.status === 401 || response.status === 403) {
                 // Session might be expired or token invalid. Do not force navigation.
@@ -104,7 +103,6 @@ export const DashboardApiSection: React.FC = () => {
                     const key = `${user.divisionId}_${selectedDate}`;
                     const status = json.data[key];
                     if (status) {
-                        console.log('[DashboardApiSection] Hydrated status:', status);
                         setAutoRoutingStatus(status);
                     }
                 }
@@ -126,7 +124,6 @@ export const DashboardApiSection: React.FC = () => {
         if (apiLastVisitDate !== today) {
             setApiDateShift(today);
             setApiLastVisitDate(today);
-            console.log(`📅 Новая сессия: установлена дата ${today}`);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Only run ONCE on component mount
