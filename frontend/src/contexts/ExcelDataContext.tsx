@@ -378,6 +378,45 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
         // v5.180: Mark timestamp to prevent stale DB overwrites
         lastSocketRouteUpdateRef.current = Date.now();
         
+        // v5.180: FRONTEND VALIDATION — Normalize backend routes to match frontend expectations
+        const validatedRoutes = routes.map((route: any) => {
+          // Normalize courier name to match frontend grouping
+          const rawCourier = route.courier || route.courier_id || route.courierName || '';
+          const normCourier = normalizeCourierName(rawCourier);
+          
+          // v5.180: Skip routes with invalid couriers (ПО, НЕ НАЗНАЧЕНО, etc.)
+          if (!normCourier || normCourier === 'Не назначено' || normCourier.toLowerCase() === 'по') {
+            console.warn(`[ExcelSync] ⚠️ Dropping route with invalid courier: "${rawCourier}"`);
+            return null;
+          }
+          
+          // v5.180: Fix route courier field to match frontend courier names
+          const fixedRoute = {
+            ...route,
+            courier: normCourier, // Use normalized name for consistent frontend matching
+            courier_id: normCourier, // Also fix courier_id for backward compatibility
+          };
+          
+          // v5.180: Validate and fix order courier names within the route
+          if (route.orders && Array.isArray(route.orders)) {
+            fixedRoute.orders = route.orders.map((order: any) => {
+              const orderCourier = order.courier || '';
+              const normOrderCourier = normalizeCourierName(orderCourier);
+              return {
+                ...order,
+                courier: normOrderCourier || normCourier, // Fix order courier to match route
+              };
+            });
+          }
+          
+          return fixedRoute;
+        }).filter(Boolean); // Remove null routes
+        
+        if (validatedRoutes.length === 0) {
+          console.warn('[ExcelSync] ⚠️ All routes had invalid couriers, skipping');
+          return;
+        }
+        
         // turbo:routes_update received
         setExcelDataState(prev => {
           // v5.180: If no data loaded yet, create minimal state with routes
@@ -387,7 +426,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
               orders: [],
               couriers: eventCouriers || [],
               paymentMethods: [],
-              routes: routes,
+              routes: validatedRoutes,
               errors: [],
               summary: {}
             } as any;
@@ -397,7 +436,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
           const masterOrdersMap = new Map((prev.orders || []).map((o: any) => [String(o.id), o]));
           const masterOrdersByNumber = new Map((prev.orders || []).map((o: any) => [String(o.orderNumber), o]));
 
-          const enrichedRoutes = routes.map((route: any) => {
+          const enrichedRoutes = validatedRoutes.map((route: any) => {
             if (!route.orders) return route;
 
             // v5.160: Deduplicate orders within this route by orderNumber
@@ -807,6 +846,28 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
         console.warn(`[ExcelSync] ⚠️ Removed ${dbRoutes.length - uniqueDbRoutes.length} duplicate DB routes`);
       }
       
+      // v5.180: FRONTEND VALIDATION — Normalize DB routes to match frontend expectations
+      const validatedDbRoutes = uniqueDbRoutes.map((route: any) => {
+        const rawCourier = route.courier || route.courier_id || route.courierName || '';
+        const normCourier = normalizeCourierName(rawCourier);
+        
+        // Skip routes with invalid couriers
+        if (!normCourier || normCourier === 'Не назначено' || normCourier.toLowerCase() === 'по') {
+          console.warn(`[ExcelSync] ⚠️ Dropping DB route with invalid courier: "${rawCourier}"`);
+          return null;
+        }
+        
+        return {
+          ...route,
+          courier: normCourier,
+          courier_id: normCourier,
+          orders: (route.orders || []).map((o: any) => ({
+            ...o,
+            courier: normalizeCourierName(o.courier) || normCourier,
+          })),
+        };
+      }).filter(Boolean);
+      
       
       setExcelDataState(prev => {
         // v5.148: Even if prev is null, we should create a state with routes
@@ -815,9 +876,12 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
         // DB routes always take priority - they come from Turbo Robot calculation
         const existingRoutes = Array.isArray(prevSafe.routes) ? prevSafe.routes : [];
 
+        // v5.180: Use validated DB routes (courier names normalized)
+        const dbRoutesToMerge = validatedDbRoutes;
+
         // Build a map of order IDs that are already in DB routes
         const dbOrderIds = new Set<string>();
-        uniqueDbRoutes.forEach((r: any) => {
+        dbRoutesToMerge.forEach((r: any) => {
           (r.orders || []).forEach((o: any) => {
             const oid = String(o.id || o.orderNumber || '');
             if (oid) dbOrderIds.add(oid);
@@ -844,18 +908,19 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
         });
 
         // Final routes: DB routes + manual routes without duplicates
-        const finalRoutes = [...uniqueDbRoutes, ...uniqueManualRoutes];
+        const finalRoutes = [...dbRoutesToMerge, ...uniqueManualRoutes];
         // Merged routes complete
 
         // v5.153: Update courier distanceKm from DB routes immediately
         // This ensures the Couriers tab shows correct km after refreshRoutesFromDB (robot finish / page load)
         let updatedCouriers = prevSafe.couriers || [];
-        if (uniqueDbRoutes.length > 0 && updatedCouriers.length > 0) {
+        if (dbRoutesToMerge.length > 0 && updatedCouriers.length > 0) {
           const distMap = new Map<string, { km: number; orders: number }>();
-          uniqueDbRoutes.forEach((r: any) => {
+          dbRoutesToMerge.forEach((r: any) => {
+            // v5.180: Use normalized courier name
             const rawCourier = (r.courier || r.courier_id || '').toString().trim();
-            const normKey = rawCourier.replace(/\s+/g, ' ').toUpperCase();
-            if (!normKey) return;
+            const normKey = normalizeCourierName(rawCourier);
+            if (!normKey || normKey === 'Не назначено') return;
             const existing = distMap.get(normKey) || { km: 0, orders: 0 };
             existing.km += Number(r.totalDistance || r.total_distance || 0);
             existing.orders += Number(r.ordersCount || r.orders_count || (r.orders?.length) || 0);

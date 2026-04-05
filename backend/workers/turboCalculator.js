@@ -927,16 +927,38 @@ class OrderCalculator {
             }
 
             // v33: In-Memory cache for partial renders to skip DB O(N^2) hits!
+            // v5.180: FRONTEND COMPATIBILITY — match frontend courier name format EXACTLY
             let inMemoryFrontendRoutes = existingRoutes.map(r => ({
                 id: r.id,
-                courier: r.courier_id,
+                courier: r.courier_id, // This is already normalized (UPPERCASE)
+                courier_id: r.courier_id,
                 totalDistance: parseFloat(r.total_distance || 0),
                 totalDuration: r.total_duration,
                 ordersCount: r.orders_count,
                 timeBlock: r.route_data?.deliveryWindow || r.route_data?.timeBlocks,
                 startAddress: r.route_data?.startAddress,
                 endAddress: r.route_data?.endAddress,
-                orders: r.route_data?.orders || [],
+                orders: (r.route_data?.orders || []).map(o => ({
+                    // v5.180: Match frontend order structure EXACTLY
+                    id: o.id,
+                    orderNumber: o.orderNumber,
+                    address: o.address || 'Адрес не указан',
+                    courier: normalizeCourierName(o.courier || r.courier_id), // v5.180: Normalize order courier
+                    coords: o.coords || (o.lat && o.lng ? { lat: o.lat, lng: o.lng } : null),
+                    lat: o.lat || o.coords?.lat,
+                    lng: o.lng || o.coords?.lng,
+                    plannedTime: o.plannedTime || o.deliveryTime || o.deliverBy,
+                    status: o.status,
+                    statusTimings: o.statusTimings,
+                    kmlZone: o.kmlZone || o.deliveryZone,
+                    kmlHub: o.kmlHub,
+                    deliveryZone: o.deliveryZone,
+                    locationType: o.locationType,
+                    streetNumberMatched: o.streetNumberMatched,
+                    manualGroupId: o.manualGroupId,
+                    handoverAt: o.handoverAt,
+                    executionTime: o.executionTime,
+                })),
                 geometry: r.route_data?.geometry || null
             }));
 
@@ -1002,13 +1024,33 @@ class OrderCalculator {
                     const routeDataForFrontend = existingRoutes.map(r => ({
                         id: r.id,
                         courier: r.courier_id,
+                        courier_id: r.courier_id,
                         totalDistance: parseFloat(r.total_distance || 0),
                         totalDuration: r.total_duration,
                         ordersCount: r.orders_count,
                         timeBlock: r.route_data?.deliveryWindow || r.route_data?.timeBlocks,
                         startAddress: r.route_data?.startAddress,
                         endAddress: r.route_data?.endAddress,
-                        orders: r.route_data?.orders || [],
+                        orders: (r.route_data?.orders || []).map(o => ({
+                            id: o.id,
+                            orderNumber: o.orderNumber,
+                            address: o.address || 'Адрес не указан',
+                            courier: normalizeCourierName(o.courier || r.courier_id),
+                            coords: o.coords || (o.lat && o.lng ? { lat: o.lat, lng: o.lng } : null),
+                            lat: o.lat || o.coords?.lat,
+                            lng: o.lng || o.coords?.lng,
+                            plannedTime: o.plannedTime || o.deliveryTime || o.deliverBy,
+                            status: o.status,
+                            statusTimings: o.statusTimings,
+                            kmlZone: o.kmlZone || o.deliveryZone,
+                            kmlHub: o.kmlHub,
+                            deliveryZone: o.deliveryZone,
+                            locationType: o.locationType,
+                            streetNumberMatched: o.streetNumberMatched,
+                            manualGroupId: o.manualGroupId,
+                            handoverAt: o.handoverAt,
+                            executionTime: o.executionTime,
+                        })),
                         geometry: r.route_data?.geometry || null
                     }));
 
@@ -1073,7 +1115,8 @@ class OrderCalculator {
                 // v33.1: Only batch geocode if order is definitely ACTIVE and ASSIGNED to a courier
                 const courierNameRaw = o.courier || o.courierName || o.courierId;
                 const normC = courierNameRaw ? normalizeCourierName(courierNameRaw) : 'НЕ НАЗНАЧЕНО';
-                if (!normC || normC === 'НЕ НАЗНАЧЕНО' || normC === 'UNASSIGNED') return false;
+                // v5.180: Skip unassigned AND "ПО" (not a real courier)
+                if (!normC || normC === 'НЕ НАЗНАЧЕНО' || normC === 'UNASSIGNED' || normC === 'ПО') return false;
 
                 const s = String(o.status || '').toLowerCase().trim();
                 // We'll skip canceled orders, orders in draft/registration/assembly, and orders that already have lat/lng
@@ -1387,21 +1430,27 @@ class OrderCalculator {
 
             // v31.2: Instant UI updates! Extract route emit logic into a helper
             // so we can broadcast intermediate calculations strictly for partial rendering.
+            // v5.180: FRONTEND COMPATIBILITY — ensure courier names match frontend grouping
             const emitCurrentRoutes = async () => {
                 if (this.io) {
                     const allWindowLabels = Array.from(new Set(
                         Array.from(deliveryWindows.values()).flat().map(w => w.windowLabel)
                     ));
 
-                    const enrichedCouriers = Object.values(stats.courierStats || {}).map((cs) => ({
-                        name: cs.name,
-                        courierName: cs.name,
-                        distanceKm: Number((cs.distanceKm || 0).toFixed(2)),
-                        calculatedOrders: cs.orders || 0,
-                    })).filter(c => {
+                    // v5.180: Normalize courier names to match frontend format
+                    const enrichedCouriers = Object.values(stats.courierStats || {}).map((cs) => {
+                        const rawName = cs.name || '';
+                        const normName = normalizeCourierName(rawName);
+                        return {
+                            name: normName, // v5.180: Normalized name matching frontend
+                            courierName: normName,
+                            distanceKm: Number((cs.distanceKm || 0).toFixed(2)),
+                            calculatedOrders: cs.orders || 0,
+                        };
+                    }).filter(c => {
                         // v34: Exclusive - skip 'НЕ НАЗНАЧЕНО' as it's not a real courier for analytics
                         const norm = (c.name || '').toUpperCase().trim();
-                        if (norm === 'НЕ НАЗНАЧЕНО' || norm === 'UNASSIGNED') return false;
+                        if (norm === 'НЕ НАЗНАЧЕНО' || norm === 'UNASSIGNED' || norm === 'ПО') return false;
                         return c.distanceKm > 0 || c.calculatedOrders > 0;
                     });
 
@@ -1768,16 +1817,37 @@ class OrderCalculator {
                             });
 
                             // v33: Push into memory cache immediately!
+                            // v5.180: FRONTEND COMPATIBILITY — match frontend order structure EXACTLY
                             inMemoryFrontendRoutes.push({
                                 id: createdRoute.id,
                                 courier: createdRoute.courier_id,
+                                courier_id: createdRoute.courier_id,
                                 totalDistance: parseFloat(createdRoute.total_distance || 0),
                                 totalDuration: createdRoute.total_duration,
                                 ordersCount: createdRoute.orders_count,
                                 timeBlock: createdRoute.route_data?.deliveryWindow || createdRoute.route_data?.timeBlocks,
                                 startAddress: createdRoute.route_data?.startAddress,
                                 endAddress: createdRoute.route_data?.endAddress,
-                                orders: createdRoute.route_data?.orders || [],
+                                orders: (createdRoute.route_data?.orders || []).map(o => ({
+                                    id: o.id,
+                                    orderNumber: o.orderNumber,
+                                    address: o.address || 'Адрес не указан',
+                                    courier: normalizeCourierName(o.courier || createdRoute.courier_id),
+                                    coords: o.coords || (o.lat && o.lng ? { lat: o.lat, lng: o.lng } : null),
+                                    lat: o.lat || o.coords?.lat,
+                                    lng: o.lng || o.coords?.lng,
+                                    plannedTime: o.plannedTime || o.deliveryTime || o.deliverBy,
+                                    status: o.status,
+                                    statusTimings: o.statusTimings,
+                                    kmlZone: o.kmlZone || o.deliveryZone,
+                                    kmlHub: o.kmlHub,
+                                    deliveryZone: o.deliveryZone,
+                                    locationType: o.locationType,
+                                    streetNumberMatched: o.streetNumberMatched,
+                                    manualGroupId: o.manualGroupId,
+                                    handoverAt: o.handoverAt,
+                                    executionTime: o.executionTime,
+                                })),
                                 geometry: createdRoute.route_data?.geometry || null,
                                 isCalculated: true // v5.175: Force UI to treat this as solid data
                             });
@@ -1821,12 +1891,20 @@ class OrderCalculator {
             if (data && Array.isArray(data.orders)) {
                 try {
                     if (data.couriers && Array.isArray(data.couriers)) {
-                        // v34.2: Stripping 'НЕ НАЗНАЧЕНО' from the final DATA object sent to frontend
-                        // This fixes the medals (Leader of Volume, Speed Demon) and summary cards!
-                        data.couriers = data.couriers.filter(c => {
+                        // v34.2: Stripping 'НЕ НАЗНАЧЕНО' and 'ПО' from the final DATA object sent to frontend
+                        // v5.180: Normalize courier names to match frontend grouping EXACTLY
+                        data.couriers = data.couriers.map(c => {
                             const rawName = c.courierName || c.name || c.courier;
-                            const norm = (rawName || '').toString().toUpperCase().trim();
-                            return norm !== 'НЕ НАЗНАЧЕНО' && norm !== 'UNASSIGNED';
+                            const norm = normalizeCourierName(rawName);
+                            return {
+                                ...c,
+                                courierName: norm, // v5.180: Normalized name matching frontend
+                                name: norm,
+                                courier: norm,
+                            };
+                        }).filter(c => {
+                            const norm = (c.courierName || '').toUpperCase().trim();
+                            return norm !== 'НЕ НАЗНАЧЕНО' && norm !== 'UNASSIGNED' && norm !== 'ПО' && norm !== '';
                         });
 
                         // v35.2: Weekly Analytics - Calculate Active Days & Normalized Efficiency
