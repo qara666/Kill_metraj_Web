@@ -682,6 +682,32 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
       logger.info('SUCCESS: Database sync skipped (production mode & tables exist)');
     }
 
+    // v5.180: Production migration — add missing columns that sync({alter:false}) won't add
+    if (process.env.NODE_ENV === 'production') {
+      try {
+        const columns = await sequelize.query(
+          "SELECT column_name FROM information_schema.columns WHERE table_name = 'users'",
+          { type: sequelize.QueryTypes.SELECT }
+        );
+        const existingCols = columns.map(c => c.column_name);
+        const missingCols = ['allowedTabs'].filter(c => !existingCols.includes(c));
+        
+        for (const col of missingCols) {
+          if (col === 'allowedTabs') {
+            await sequelize.query(
+              `ALTER TABLE users ADD COLUMN IF NOT EXISTS "allowedTabs" JSON DEFAULT '["dashboard","routes","couriers","financials","analytics","telegram-parsing","settings"]'`
+            );
+            logger.info(`[Migration] ✅ Added column: allowedTabs`);
+          }
+        }
+        if (missingCols.length === 0) {
+          logger.info('[Migration] ✅ All columns up to date');
+        }
+      } catch (err) {
+        logger.warn('[Migration] ⚠️ Could not run migration:', err.message);
+      }
+    }
+
     logger.info('STARTING ADMIN CHECK/CREATION...');
     try {
       // Use environment variables or fallback to hardcoded defaults for guaranteed access

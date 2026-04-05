@@ -4,8 +4,9 @@ services:
     name: yapiko-auto-km-backend
     env: node
     plan: free
-    buildCommand: cd backend && npm ci
+    buildCommand: cd backend && npm ci --production=false
     startCommand: cd backend && node simple_server.js
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
         value: 20.x
@@ -21,8 +22,13 @@ services:
         value: 7
       - key: REDIS_ENABLED
         value: "true"
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: yapiko-auto-km-redis
+          property: connectionString
       - key: CDC_ENABLED
-        value: "false" # Default to false on Render unless user sets up Kafka
+        value: "false"
       - key: DASHBOARD_MOCK_MODE
         value: "false"
       - key: EXTERNAL_API_URL
@@ -32,14 +38,9 @@ services:
       - key: DASHBOARD_DEPARTMENT_ID
         value: "100000052"
       - key: DB_ALTER_SYNC
-        value: "false"
+        value: "true"  # Enable to sync schema and add missing columns (allowedTabs)
       - key: SETUP_SECRET
         generateValue: true
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: yapiko-auto-km-redis
-          property: connectionString
       - key: FRONTEND_URL
         sync: false
       - key: DATABASE_URL
@@ -49,15 +50,22 @@ services:
       - key: EXTERNAL_API_KEY
         value: "KMFh23298&23201)8172^&21Vs@gfgsd"
       - key: JWT_SECRET
-        generateValue: true # Render will generate a random secret
+        sync: false  # Keep existing secret, don't regenerate
       - key: KAFKA_BROKER
-        sync: false # User provides if using external Kafka
+        sync: false
+      - key: GOOGLE_GEOCODE_API_KEY
+        sync: false
+      - key: GOOGLE_ROUTES_API_KEY
+        sync: false
+      - key: PHOTON_URL
+        value: "http://localhost:2322"
 
   # Frontend Service (Static Site)
   - type: web
     name: yapiko-auto-km-frontend-live
     env: static
-    buildCommand: cd frontend && npm install && npx vite build
+    plan: free
+    buildCommand: cd frontend && npm ci && npx vite build
     staticPublishPath: frontend/dist
     routes:
       - type: rewrite
