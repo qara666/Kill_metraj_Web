@@ -70,7 +70,7 @@ router.get('/', async (req, res) => {
 router.post('/', auditLog('user_create'), async (req, res) => {
     const t = await sequelize.transaction();
     try {
-        const { username, email, password, role, divisionId, canModifySettings } = req.body;
+        const { username, email, password, role, divisionId, canModifySettings, allowedTabs } = req.body;
 
         if (!username || !password) {
             await t.rollback();
@@ -108,6 +108,7 @@ router.post('/', auditLog('user_create'), async (req, res) => {
             role: role || 'user',
             divisionId: divisionId || null,
             canModifySettings: canModifySettings !== undefined ? canModifySettings : true,
+            allowedTabs: allowedTabs || ['dashboard', 'routes', 'couriers', 'financials', 'analytics', 'telegram-parsing', 'settings'],
             preset: {
                 settings: {}, // Uses model defaults
                 updatedBy: req.user.id
@@ -164,7 +165,7 @@ router.get('/:id', auditLog('user_view'), async (req, res) => {
 // PUT /api/users/:id - Update user
 router.put('/:id', auditLog('user_update'), async (req, res) => {
     try {
-        const { email, role, isActive, divisionId, canModifySettings, password } = req.body;
+        const { email, role, isActive, divisionId, canModifySettings, password, allowedTabs } = req.body;
 
         const user = await User.findByPk(req.params.id);
 
@@ -183,6 +184,7 @@ router.put('/:id', auditLog('user_update'), async (req, res) => {
         if (divisionId !== undefined) user.divisionId = divisionId;
         if (canModifySettings !== undefined) user.canModifySettings = canModifySettings;
         if (password) user.passwordHash = password; // Hashed via hook
+        if (allowedTabs !== undefined) user.allowedTabs = allowedTabs;
 
         await user.save();
 

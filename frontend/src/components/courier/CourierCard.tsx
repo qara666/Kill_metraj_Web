@@ -205,7 +205,7 @@ export const CourierCard = memo(({
               'text-[11px] font-black tabular-nums',
               isDark ? 'text-blue-400' : 'text-blue-600'
             )}>
-              {calculatedCount} / {totalCount}
+              {calculatedCount} {getOrdersUkSuffix(calculatedCount).split(' ')[1]}
             </span>
           </div>
           <div className={clsx(

@@ -26,19 +26,12 @@ export const TimeWindowGroupCard = memo(({
     const [isExpanded, setIsExpanded] = useState(true);
     const [isDragOver, setIsDragOver] = useState(false);
 
-    // Calculate readiness status
-    const assembledOrders = group.orders.filter(o => o.status === 'Собран' || o.status === 'Исполнен');
-
-    const getReadinessStatus = () => {
-        if (assembledOrders.length === group.orders.length) return 'ready';
-        if (assembledOrders.length > 0) return 'partial';
-        return 'preparing';
-    };
-
-    const readinessStatus = getReadinessStatus();
+    // Calculate routed orders for display v5.170
+    const routedOrdersCount = group.orders.filter(o => ordersInRoutesSet.has(String(o.id || o.orderNumber))).length;
+    const isReady = routedOrdersCount === group.orders.length;
+    const isPartial = routedOrdersCount > 0 && !isReady;
 
     const theme = useMemo(() => {
-        const isReady = readinessStatus === 'ready';
         if (isReady) return {
             border: isDark ? 'border-emerald-500/30' : 'border-emerald-500/50',
             bg: isDark ? 'bg-slate-900/60' : 'bg-white/80',
@@ -47,7 +40,7 @@ export const TimeWindowGroupCard = memo(({
             glow: isDark ? 'shadow-[0_0_20px_rgba(16,185,129,0.1)]' : 'shadow-[0_0_15px_rgba(16,185,129,0.1)]'
         };
 
-        if (readinessStatus === 'partial') return {
+        if (isPartial) return {
             border: isDark ? 'border-amber-500/30' : 'border-amber-500/50',
             bg: isDark ? 'bg-slate-900/60' : 'bg-white/80',
             badgeBg: isDark ? 'bg-amber-500/20' : 'bg-amber-50',
@@ -63,7 +56,7 @@ export const TimeWindowGroupCard = memo(({
             glow: ''
         };
 
-    }, [readinessStatus, isDark]);
+    }, [isReady, isPartial, isDark]);
 
     return (
         <div
@@ -86,7 +79,7 @@ export const TimeWindowGroupCard = memo(({
                     e.preventDefault();
                     e.stopPropagation();
                     setIsDragOver(false);
-
+ 
                     const orderId = e.dataTransfer.getData('orderId') || e.dataTransfer.getData('text/plain');
                     if (orderId && onOrderMoved) {
                         onOrderMoved(orderId, group);
@@ -135,8 +128,8 @@ export const TimeWindowGroupCard = memo(({
                         'px-2 py-0.5 rounded-lg text-[11px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-sm',
                         theme.badgeBg, theme.badgeText
                     )}>
-                        {readinessStatus === 'ready' ? <CheckBadgeIcon className="w-3.5 h-3.5" /> : <ClockIcon className="w-3.5 h-3.5 opacity-50" />}
-                        <span className="tabular-nums">{assembledOrders.length} / {group.orders.length}</span>
+                        {isReady ? <CheckBadgeIcon className="w-3.5 h-3.5" /> : <ClockIcon className="w-3.5 h-3.5 opacity-50" />}
+                        <span className="tabular-nums">РОЗРАХОВАНО {routedOrdersCount} / {group.orders.length}</span>
                     </div>
 
                     {group.splitReason && (

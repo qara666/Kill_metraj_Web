@@ -4,7 +4,12 @@ const axios = require('axios');
 const { Op } = require('sequelize');
 const { sequelize } = require('../src/config/database');
 const { cleanAddress, generateVariants } = require('../src/utils/addressUtils');
-const { groupAllOrdersByTimeWindow, normalizeCourierName } = require('./turboGroupingHelpers');
+const { groupAllOrdersByTimeWindow, normalizeCourierName, getExecutionTime } = require('./turboGroupingHelpers');
+const QuickLRU = require('quick-lru').default;
+const pRetry = require('p-retry').default;
+const pLimit = require('p-limit').default;
+const leven = require('leven').default;
+
 
 // v5.144: Helper to create a stable hash from order for deduplication
 // This catches cases where orders have different IDs but represent the same order
@@ -34,21 +39,21 @@ function getAllOrderIds(o) {
 function normalizeDateISO(dateStr) {
     if (!dateStr) return null;
     if (typeof dateStr !== 'string') return dateStr;
-    
+
     // Handle DD-MM-YYYY or DD.MM.YYYY
     const sep = dateStr.includes('-') ? '-' : (dateStr.includes('.') ? '.' : null);
     if (sep) {
         const parts = dateStr.split(sep);
         if (parts[0].length === 2 && parts[2].length === 4) {
-             return `${parts[2]}-${parts[1]}-${parts[0]}`; // Convert to YYYY-MM-DD
+            return `${parts[2]}-${parts[1]}-${parts[0]}`; // Convert to YYYY-MM-DD
         }
     }
-    
+
     // Already YYYY-MM-DD?
     if (dateStr.includes('-') && dateStr.split('-')[0].length === 4) {
         return dateStr;
     }
-    
+
     return dateStr;
 }
 
@@ -64,8 +69,19 @@ class OrderCalculator {
         this.osrmUrl = process.env.YAPIKO_OSRM_URL || process.env.OSRM_URL || 'http://116.204.153.171:5050';
 
         // v23.1: Persistent Geocache
-        this.geocache = new Map();
+        this.geocache = new QuickLRU({ maxSize: 5000, maxAge: 24 * 60 * 60 * 1000 }); // 5000 entries, 24h TTL
         this.addressUtils = require('../src/utils/addressUtils');
+
+        // v5.172: KML Zone Spatial Grid Index for O(1) lookup
+        this.kmlZones = []; // All active KML zones
+        this.kmlGridIndex = new Map(); // Spatial grid: "lat,lng" -> [zones]
+        this.GRID_SIZE = 0.01; // ~1.1km at equator
+
+        // v5.180: Route calculation concurrency limit
+        this.routeLimit = pLimit(3); // Max 3 concurrent route calculations
+
+        // v5.180: GeoCache fuzzy match threshold
+        this.FUZZY_THRESHOLD = 3; // Max Levenshtein distance for fuzzy match
 
         // Per-division state
         this.divisionStates = new Map();
@@ -91,8 +107,237 @@ class OrderCalculator {
                 url: process.env.VHV_URL || 'http://hvv.example'
             }
         };
-        // v5.170: DO NOT auto-load division states from DB — robot starts OFF by default
-        // this.loadAllDivisionStatesFromDB(); // REMOVED — only trigger on explicit start
+
+        // v5.172: Pre-load KML zones on construction
+        this.preloadKmlZones();
+
+        // v5.170: Restore saved division states on restart
+        this.loadSavedState();
+        this.loadAllDivisionStatesFromDB();
+    }
+
+    // v5.172: Pre-load all KML zones into memory with spatial grid index
+    async preloadKmlZones() {
+        try {
+            const KmlZone = this.getModel('KmlZone');
+            if (!KmlZone) {
+                logger.warn('[TurboCalculator] KmlZone model not available');
+                return;
+            }
+
+            // Load all active zones
+            this.kmlZones = await KmlZone.findAll({
+                where: { is_active: true }
+            });
+
+            // Build spatial grid index
+            this.buildKmlSpatialGrid();
+
+            logger.info(`[TurboCalculator] 📦 Pre-loaded ${this.kmlZones.length} KML zones with spatial grid index`);
+        } catch (e) {
+            logger.warn('[TurboCalculator] Failed to preload KML zones:', e.message);
+        }
+    }
+
+    // v5.172: Build spatial grid index for fast O(1) zone lookup
+    buildKmlSpatialGrid() {
+        this.kmlGridIndex.clear();
+
+        for (const zone of this.kmlZones) {
+            if (!zone.bounds) continue;
+
+            const b = zone.bounds;
+            const swLat = b.south;
+            const swLng = b.west;
+            const neLat = b.north;
+            const neLng = b.east;
+
+            // Skip invalid bounds
+            if (swLat === undefined || neLat === undefined) continue;
+
+            // Add zone to all grid cells it intersects
+            for (let lat = Math.floor(swLat / this.GRID_SIZE); lat <= Math.floor(neLat / this.GRID_SIZE); lat++) {
+                for (let lng = Math.floor(swLng / this.GRID_SIZE); lng <= Math.floor(neLng / this.GRID_SIZE); lng++) {
+                    const key = `${lat},${lng}`;
+                    if (!this.kmlGridIndex.has(key)) {
+                        this.kmlGridIndex.set(key, []);
+                    }
+                    this.kmlGridIndex.get(key).push(zone);
+                }
+            }
+        }
+
+        logger.info(`[TurboCalculator] 📊 KML Grid Index built: ${this.kmlGridIndex.size} cells`);
+    }
+
+    // v5.172: Fast O(1) zone lookup using spatial grid + point-in-polygon
+    findZonesForPoint(lat, lng, tolerance = 0.01) {
+        if (!lat || !lng || this.kmlZones.length === 0) return [];
+
+        // Step 1: Get candidate zones from grid (O(1) lookup)
+        const gridKey = `${Math.floor(lat / this.GRID_SIZE)},${Math.floor(lng / this.GRID_SIZE)}`;
+        const candidateZones = this.kmlGridIndex.get(gridKey) || [];
+
+        if (candidateZones.length === 0) return [];
+
+        // Step 2: Precise point-in-polygon check for candidates only
+        const matches = [];
+        const KmlService = require('../src/services/KmlService');
+
+        for (const zone of candidateZones) {
+            if (zone.boundary && zone.boundary.coordinates && zone.boundary.coordinates[0]) {
+                const isInside = KmlService._isPointInPolygon(lat, lng, zone.boundary.coordinates[0], tolerance);
+                if (isInside) {
+                    matches.push({
+                        id: zone.id,
+                        name: zone.name,
+                        hub_id: zone.hub_id,
+                        is_technical: zone.is_technical
+                    });
+                }
+            }
+        }
+
+        // Sort: delivery zones first, then technical
+        matches.sort((a, b) => {
+            if (a.is_technical !== b.is_technical) return a.is_technical ? 1 : -1;
+            return 0;
+        });
+
+        return matches;
+    }
+
+    // v5.172: Find best (non-technical) zone for a point
+    findBestZoneForPoint(lat, lng) {
+        const zones = this.findZonesForPoint(lat, lng);
+        // Return first non-technical zone
+        return zones.find(z => !z.is_technical) || zones[0] || null;
+    }
+
+    // v5.172: Check if point is inside expected KML zone (with fallback to other active zones)
+    validatePointInZone(lat, lng, expectedZoneName, allowFallback = true) {
+        if (!expectedZoneName) return { valid: true, zone: null };
+
+        const zones = this.findZonesForPoint(lat, lng);
+
+        if (zones.length === 0) {
+            return { valid: false, zone: null, reason: 'outside_all_zones' };
+        }
+
+        // Check if point is in expected zone
+        const expectedNormalized = expectedZoneName.replace(/FO\/KML:\s*/i, '').trim().toLowerCase();
+        const matchingZone = zones.find(z => z.name.toLowerCase().includes(expectedNormalized));
+
+        if (matchingZone) {
+            return { valid: true, zone: matchingZone };
+        }
+
+        // If not in expected zone but in another active zone, and fallback is allowed
+        if (allowFallback && zones[0]) {
+            return { valid: true, zone: zones[0], fallback: true };
+        }
+
+        return { valid: false, zone: zones[0], reason: 'not_in_expected_zone' };
+    }
+
+    // v5.180: Find nearest zone within distance threshold (fallback when point is outside all zones)
+    findNearestZone(lat, lng, maxDistanceMeters = 500) {
+        if (!lat || !lng || this.kmlZones.length === 0) return null;
+
+        let nearestZone = null;
+        let nearestDistance = Infinity;
+
+        for (const zone of this.kmlZones) {
+            if (!zone.bounds) continue;
+
+            const b = zone.bounds;
+            // Quick bounding box check
+            if (lat < b.south - 0.01 || lat > b.north + 0.01 || lng < b.west - 0.01 || lng > b.east + 0.01) {
+                continue;
+            }
+
+            // Find closest point on polygon boundary
+            if (zone.boundary && zone.boundary.coordinates && zone.boundary.coordinates[0]) {
+                const coords = zone.boundary.coordinates[0];
+                let minDist = Infinity;
+                for (let i = 0; i < coords.length - 1; i++) {
+                    const dist = this.pointToSegmentDistance(lat, lng, coords[i][1], coords[i][0], coords[i + 1][1], coords[i + 1][0]);
+                    if (dist < minDist) minDist = dist;
+                }
+
+                if (minDist < nearestDistance && minDist <= maxDistanceMeters) {
+                    nearestDistance = minDist;
+                    nearestZone = {
+                        id: zone.id,
+                        name: zone.name,
+                        hub_id: zone.hub_id,
+                        is_technical: zone.is_technical,
+                        distanceMeters: Math.round(minDist)
+                    };
+                }
+            }
+        }
+
+        return nearestZone;
+    }
+
+    // v5.180: Calculate distance from point to line segment
+    pointToSegmentDistance(px, py, x1, y1, x2, y2) {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const lengthSq = dx * dx + dy * dy;
+
+        if (lengthSq === 0) return this.haversineDistance(px, py, x1, y1);
+
+        let t = ((px - x1) * dx + (py - y1) * dy) / lengthSq;
+        t = Math.max(0, Math.min(1, t));
+
+        const projX = x1 + t * dx;
+        const projY = y1 + t * dy;
+
+        return this.haversineDistance(px, py, projX, projY);
+    }
+
+    // v5.180: Haversine distance in meters
+    haversineDistance(lat1, lng1, lat2, lng2) {
+        const R = 6371000;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLng = (lng2 - lng1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    }
+
+    // v5.180: Fuzzy cache lookup using Levenshtein distance
+    fuzzyCacheLookup(addressKey, threshold = null) {
+        const maxDist = threshold || this.FUZZY_THRESHOLD;
+        const normalizedKey = addressKey.toLowerCase().trim();
+
+        // Check exact match first
+        if (this.geocache.has(normalizedKey)) {
+            return { match: this.geocache.get(normalizedKey), type: 'exact' };
+        }
+
+        // Fuzzy match against cache keys
+        let bestMatch = null;
+        let bestDistance = Infinity;
+
+        for (const [key, value] of this.geocache) {
+            const dist = leven(normalizedKey, key.toLowerCase());
+            if (dist <= maxDist && dist < bestDistance) {
+                bestDistance = dist;
+                bestMatch = { key, value, distance: dist };
+            }
+        }
+
+        if (bestMatch) {
+            logger.info(`[TurboCalculator] 🔍 Fuzzy cache hit: "${addressKey}" -> "${bestMatch.key}" (dist: ${bestMatch.distance})`);
+            return { match: bestMatch.value, type: 'fuzzy', distance: bestMatch.distance };
+        }
+
+        return null;
     }
 
     /**
@@ -173,12 +418,14 @@ class OrderCalculator {
 
     async start(io = null) {
         if (this.isRunning) return;
+        // v5.170: INITIALIZED — Robot is OFF.
         this.isRunning = true;
         this.io = io || this.io;
 
         await new Promise(resolve => setTimeout(resolve, 1000));
 
         logger.info(`[TurboCalculator] 🚀 v5.170 INITIALIZED — Robot is OFF. Waiting for explicit start command.`);
+
 
         try {
             const models = require('../src/models');
@@ -210,8 +457,9 @@ class OrderCalculator {
      * @param {string} divisionId - Division to start
      * @param {string} date - Date to process
      * @param {string} userId - User initiating trigger
+     * @param {boolean} forceFull - If true, recalculate ALL orders (not incremental)
      */
-    trigger(divisionId, date = null, userId = null) {
+    trigger(divisionId, date = null, userId = null, forceFull = false) {
         if (!divisionId) {
             if (!this.isProcessing) this.tick();
             return;
@@ -228,18 +476,24 @@ class OrderCalculator {
         const targetDate = normalizedDate || new Date().toISOString().split('T')[0];
         const cacheKey = `${divisionId}_${targetDate}`;
 
-        // v5.170: ALWAYS clear hash on manual trigger to force recalculation
+        // v5.172: ALWAYS clear hash on manual trigger to force recalculation
         this.processedHashes.delete(cacheKey);
-        logger.info(`[TurboCalculator] 💥 Manual trigger: Cleared processedHash for ${cacheKey}`);
+        logger.info(`[TurboCalculator] 💥 Manual trigger: Cleared processedHash for ${cacheKey}${forceFull ? ' (FULL recalculation)' : ''}`);
 
         let state = this.divisionStates.get(divisionId);
         if (!state) {
-            state = { users: new Set(), date: targetDate, priorityQueue: [], currentPriority: null, isActive: true };
+            state = { users: new Set(), date: targetDate, priorityQueue: [], currentPriority: null, isActive: true, forceFull };
             this.divisionStates.set(divisionId, state);
         } else {
-            // v5.170: Reactivate if was stopped
+            // v5.170: Reactivate if was stopped and UPDATE the date!
             state.isActive = true;
+            if (targetDate !== state.date) {
+                logger.info(`[TurboCalculator] 📅 Date changed for ${divisionId}: ${state.date} -> ${targetDate}. Clearing cache hash.`);
+                this.processedHashes.delete(cacheKey); // Clear old date hash
+                this.processedHashes.delete(`${divisionId}_${state.date}`); // Clear explicit previous date hash
+            }
             state.date = targetDate;
+            state.forceFull = forceFull; // Store force flag in state
         }
         if (userId) state.users.add(userId);
 
@@ -253,7 +507,7 @@ class OrderCalculator {
                     division_id: String(divisionId),
                     date: targetDate,
                     is_active: true,
-                    data: {}
+                    data: { forceFull }
                 }).catch(err => logger.warn('[TurboCalculator] Failed to persist division state:', err.message));
             }
         } catch (e) { /* ignore */ }
@@ -458,7 +712,7 @@ class OrderCalculator {
             if (priorityDivisionId === 'all') {
                 let totalOrdersGlobal = 0;
                 caches.forEach(c => {
-                   totalOrdersGlobal += (c.order_count || c.payload?.orders?.length || 0);
+                    totalOrdersGlobal += (c.order_count || c.payload?.orders?.length || 0);
                 });
 
                 if (this.io) {
@@ -499,7 +753,7 @@ class OrderCalculator {
         try {
             const data = cache.payload;
             const targetDateNorm = normalizeDateISO(cache.target_date);
-            
+
             // v30.0 CRITICAL FIX: Route must be declared inside processCache.
             // Previously it was ONLY declared in processDay (different scope),
             // causing every Route.create() call to throw "Route is not defined".
@@ -539,7 +793,7 @@ class OrderCalculator {
                 return;
             }
             if (!data || !data.orders) return;
-            
+
             // v5.144: RADICAL De-duplication using BOTH IDs AND content hash
             // This catches: same order with different IDs, orders from multiple sources
             const seenIds = new Set();
@@ -547,11 +801,11 @@ class OrderCalculator {
             const uniqueOrders = [];
             let duplicateById = 0;
             let duplicateByHash = 0;
-            
+
             data.orders.forEach(o => {
                 const allIds = getAllOrderIds(o);
                 const orderHash = getOrderHash(o);
-                
+
                 // Check if ANY of this order's IDs was already seen
                 let isDuplicateById = false;
                 for (const id of allIds) {
@@ -561,18 +815,18 @@ class OrderCalculator {
                         break;
                     }
                 }
-                
+
                 // Check if content hash was already seen (catches different-ID duplicates)
                 let isDuplicateByHash = seenHashes.has(orderHash);
                 if (isDuplicateByHash) {
                     duplicateByHash++;
                 }
-                
+
                 // Skip if duplicate by either method
                 if (isDuplicateById || isDuplicateByHash) {
                     return;
                 }
-                
+
                 // Add all IDs and hash to seen sets
                 for (const id of allIds) {
                     seenIds.add(id);
@@ -580,12 +834,12 @@ class OrderCalculator {
                 seenHashes.add(orderHash);
                 uniqueOrders.push(o);
             });
-            
+
             data.orders = uniqueOrders;
             if (duplicateById > 0 || duplicateByHash > 0) {
                 logger.warn(`[TurboCalculator] 🧊 De-duplicated: ${duplicateById} by ID + ${duplicateByHash} by content, kept ${data.orders.length}`);
             }
-            
+
             // v5.150: Debug - log time fields for first 5 orders of ПОНОМАРЕНКО ЄВГЕНІЙ
             const ponomarenkoOrders = data.orders.filter(o => {
                 const courier = String(o.courier || '').toUpperCase();
@@ -605,71 +859,109 @@ class OrderCalculator {
                 });
             }
 
-            // v28.9: Frontload coordinate extraction from all possible sources (including addressGeo)
-            // This ensures grouping and validOrders filters have accurate GPS data immediately.
-            data.orders.forEach(o => {
-                if (o.coords?.lat) return; 
-                
-                // 1. Try addressGeo (Common in user's 347 orders)
-                if (o.addressGeo) {
-                    const parsed = this.parseAddressGeo(o.addressGeo);
-                    if (parsed) {
-                        o.coords = parsed;
-                        return;
-                    }
-                }
-                
-                // 2. Try lat/lng fields directly
-                if (o.lat && o.lng) {
-                    const lat = parseFloat(o.lat);
-                    const lng = parseFloat(o.lng);
-                    if (!isNaN(lat) && !isNaN(lng)) {
-                        o.coords = { lat, lng };
-                        return;
-                    }
-                }
+            // v5.171: INCREMENTAL ROUTING — fetch existing routes to know which orders are already routed
+            // This prevents recalculating everything and only processes NEW orders
+            const existingRoutedOrderNumbers = new Set();
+            const existingRoutedOrderIds = new Set();
+            let existingRoutes = [];
 
-                // 3. Try geocoded field
-                if (o.geocoded && o.lat && o.lng) {
-                    o.coords = { lat: parseFloat(o.lat), lng: parseFloat(o.lng) };
+            // v5.172: Check if this is a FULL recalculation (manual trigger with forceFull flag)
+            const state = this.divisionStates.get(String(cache.division_id));
+            const forceFull = state?.forceFull === true;
+
+            if (Route) {
+                try {
+                    existingRoutes = await Route.findAll({
+                        where: {
+                            division_id: cache.division_id,
+                            [Op.and]: sequelize.where(
+                                sequelize.literal("route_data->>'target_date'"),
+                                targetDateNorm || cache.target_date
+                            )
+                        },
+                        order: [['calculated_at', 'ASC']] // Keep existing order
+                    });
+
+                    existingRoutes.forEach(r => {
+                        const orders = r.route_data?.orders || [];
+                        orders.forEach(o => {
+                            if (o.orderNumber) existingRoutedOrderNumbers.add(String(o.orderNumber));
+                            if (o.id) existingRoutedOrderIds.add(String(o.id));
+                        });
+                    });
+
+                    if (existingRoutes.length > 0) {
+                        logger.info(`[TurboCalculator] 📦 Found ${existingRoutes.length} existing routes with ${existingRoutedOrderNumbers.size} already-routed orders`);
+                    }
+                } catch (e) {
+                    logger.warn(`[TurboCalculator] ⚠️ Failed to fetch existing routes: ${e.message}`);
                 }
-            });
-            
-            // v28.8: Use the new frontend-like grouping by arrivedAt -> 30min windows
-            let deliveryWindows = new Map();
-            let totalBlocksCount = 0;
+            }
+
+            // v5.172: If forceFull is true, delete existing routes for a clean recalculation
+            if (forceFull && existingRoutes.length > 0 && Route) {
+                try {
+                    const deletedCount = await Route.destroy({
+                        where: {
+                            division_id: cache.division_id,
+                            [Op.and]: sequelize.where(
+                                sequelize.literal("route_data->>'target_date'"),
+                                targetDateNorm || cache.target_date
+                            )
+                        }
+                    });
+                    logger.info(`[TurboCalculator] 🗑️ FULL recalculation: Deleted ${deletedCount} existing routes`);
+                    existingRoutes = [];
+                    existingRoutedOrderNumbers.clear();
+                    existingRoutedOrderIds.clear();
+                } catch (e) {
+                    logger.warn(`[TurboCalculator] ⚠️ Failed to delete existing routes: ${e.message}`);
+                }
+            }
+
+            // v5.171: Filter out already-routed orders BEFORE grouping
+            // This ensures grouping only creates windows for NEW orders (unless forceFull)
+
+            // v31.1: Fetch all KML zones once per cache processing
+            let allKmlZones = [];
             try {
-              const { groupAllOrdersByTimeWindow } = require('./turboGroupingHelpers');
-              // v5.150: Use groupAllOrdersByTimeWindow to process per-courier correctly
-              // This is CRITICAL for the "bulk import" detection to work exactly like frontend
-              deliveryWindows = groupAllOrdersByTimeWindow(data.orders);
-              
-              // Log block summary
-              const blockSummary = {};
-              deliveryWindows.forEach((windows, courier) => {
-                totalBlocksCount += windows.length;
-                blockSummary[courier] = windows.map(w => `${w.windowLabel}(${w.orders.length})`);
-              });
-              
-              logger.info(`[TurboCalculator] 📦 Grouped into ${totalBlocksCount} blocks across ${deliveryWindows.size} couriers`);
-              Object.entries(blockSummary).forEach(([courier, blks]) => {
-                logger.info(`[TurboCalculator]   ${courier}: ${blks.length} blocks - ${blks.join(', ')}`);
-              });
-            } catch (err) {
-              logger.error('[TurboCalculator] Backend grouping failed', err);
-              deliveryWindows = new Map();
+                const KmlZone = this.getModel('KmlZone');
+                if (KmlZone) allKmlZones = await KmlZone.findAll();
+            } catch (e) {
+                logger.warn(`[TurboCalculator] ⚠️ Failed to fetch KmlZones: ${e.message}`);
             }
-            
-            if (this.io) {
-                this.io.emit('robot_status', {
-                    divisionId: cache.division_id,
-                    date: cache.target_date,
-                    isActive: true,
-                    currentPhase: 'grouping',
-                    message: `Grouping ${data.orders.length} orders into 30m blocks...`,
-                    totalCount: data.orders.length
-                });
-            }
+
+            // v33: In-Memory cache for partial renders to skip DB O(N^2) hits!
+            let inMemoryFrontendRoutes = existingRoutes.map(r => ({
+                id: r.id,
+                courier: r.courier_id,
+                totalDistance: parseFloat(r.total_distance || 0),
+                totalDuration: r.total_duration,
+                ordersCount: r.orders_count,
+                timeBlock: r.route_data?.deliveryWindow || r.route_data?.timeBlocks,
+                startAddress: r.route_data?.startAddress,
+                endAddress: r.route_data?.endAddress,
+                orders: r.route_data?.orders || [],
+                geometry: r.route_data?.geometry || null
+            }));
+
+            // v33: Pre-fetch Presets ONCE for entire cache processing
+            const presets = await this.getDivisionPresets(cache.division_id);
+            const cityBias = presets?.cityBias || 'Київ';
+            const globalStartPoint = presets?.defaultStartLat && presets?.defaultStartLng ?
+                { lat: parseFloat(presets.defaultStartLat), lng: parseFloat(presets.defaultStartLng) } : null;
+            const globalEndPoint = presets?.defaultEndLat && presets?.defaultEndLng ?
+                { lat: parseFloat(presets.defaultEndLat), lng: parseFloat(presets.defaultEndLng) } : null;
+
+            const newOrders = (data.orders || []).filter(o => {
+
+                const orderNum = String(o.orderNumber || '');
+                const orderId = String(o.id || '');
+                // Skip if already routed (by orderNumber or ID)
+                if (orderNum && existingRoutedOrderNumbers.has(orderNum)) return false;
+                if (orderId && existingRoutedOrderIds.has(orderId)) return false;
+                return true;
+            });
 
             // v5.170: Deep Stable Deduplication - Ignore transient fields like statusTimings/updated_at
             // v5.157: REMOVED status from hash - it changes constantly and shouldn't trigger re-calculation
@@ -691,8 +983,9 @@ class OrderCalculator {
             const existingHash = this.processedHashes.get(cacheKey);
             logger.info(`[TurboCalculator] 🤖 Data Hash [${cacheKey}]: ${dataHash.substring(0, 12)}... (Previous: ${existingHash ? existingHash.substring(0, 12) + '...' : 'none'})`);
 
-            if (existingHash === dataHash) {
-                logger.info(`[TurboCalculator] ⏩ Data for ${cacheKey} unchanged, skipping calculation`);
+            // If hash unchanged AND no new orders, skip entirely
+            if (existingHash === dataHash && newOrders.length === 0) {
+                logger.info(`[TurboCalculator] ⏩ Data for ${cacheKey} unchanged, no new orders — skipping calculation`);
                 if (this.io) {
                     this.io.emit('robot_status', {
                         divisionId: cache.division_id,
@@ -706,62 +999,230 @@ class OrderCalculator {
                 return;
             }
 
-            // v5.170: Data HAS changed — log what changed
-            if (existingHash) {
-                logger.info(`[TurboCalculator] 🔄 Data changed for ${cacheKey} — recalculating routes`);
+            // v5.171: INCREMENTAL — if hash changed but all orders are already routed, skip
+            if (newOrders.length === 0 && existingRoutedOrderNumbers.size > 0) {
+                logger.info(`[TurboCalculator] ⏩ All ${data.orders.length} orders already routed — no new orders to process`);
+                // Still emit existing routes to frontend so UI stays in sync
+                if (this.io && existingRoutes.length > 0) {
+                    const routeDataForFrontend = existingRoutes.map(r => ({
+                        id: r.id,
+                        courier: r.courier_id,
+                        totalDistance: parseFloat(r.total_distance || 0),
+                        totalDuration: r.total_duration,
+                        ordersCount: r.orders_count,
+                        timeBlock: r.route_data?.deliveryWindow || r.route_data?.timeBlocks,
+                        startAddress: r.route_data?.startAddress,
+                        endAddress: r.route_data?.endAddress,
+                        orders: r.route_data?.orders || [],
+                        geometry: r.route_data?.geometry || null
+                    }));
+
+                    this.io.emit('routes_update', {
+                        divisionId: cache.division_id,
+                        date: cache.target_date,
+                        routes: routeDataForFrontend
+                    });
+                }
+                this.processedHashes.set(cacheKey, dataHash);
+                // v5.172: Reset forceFull flag after processing
+                if (state) state.forceFull = false;
+                return;
             }
 
-            // v5.145 FLICKER FIX: Now that we know data HAS changed, delete old routes
-            if (Route) {
-                const deletedCount = await Route.destroy({
-                    where: {
-                        division_id: cache.division_id,
-                        [Op.and]: sequelize.where(
-                            sequelize.literal("route_data->>'target_date'"),
-                            cache.target_date
-                        )
+            // v5.171: Data HAS changed and there are new orders — log what changed
+            if (existingHash) {
+                logger.info(`[TurboCalculator] 🔄 Data changed for ${cacheKey}: ${newOrders.length} new orders out of ${data.orders.length} total — calculating incremental routes`);
+            }
+
+            // v5.171: DO NOT delete existing routes — we're doing incremental routing
+            // Only new routes will be appended to the database
+            if (newOrders.length > 0) {
+                logger.info(`[TurboCalculator] ➕ Processing ${newOrders.length} new orders (existing ${existingRoutedOrderNumbers.size} orders remain untouched)`);
+            }
+
+            // v5.171: Group ONLY new orders (not all orders) for incremental routing
+            const ordersToGroup = newOrders.length > 0 ? newOrders : data.orders;
+
+            // v28.9: Frontload coordinate extraction from all possible sources (including addressGeo)
+            // This ensures grouping and validOrders filters have accurate GPS data immediately.
+            ordersToGroup.forEach(o => {
+                if (o.coords?.lat) return;
+
+                // 1. Try addressGeo (Common in user's 347 orders)
+                if (o.addressGeo) {
+                    const parsed = this.parseAddressGeo(o.addressGeo);
+                    if (parsed) {
+                        o.coords = parsed;
+                        return;
                     }
+                }
+
+                // 2. Try lat/lng fields directly
+                if (o.lat && o.lng) {
+                    const lat = parseFloat(o.lat);
+                    const lng = parseFloat(o.lng);
+                    if (!isNaN(lat) && !isNaN(lng)) {
+                        o.coords = { lat, lng };
+                        return;
+                    }
+                }
+
+                // 3. Try geocoded field
+                if (o.geocoded && o.lat && o.lng) {
+                    o.coords = { lat: parseFloat(o.lat), lng: parseFloat(o.lng) };
+                }
+            });
+
+            // v33: Massive BATCH GEOCODING! Geocode all missing addresses upfront across ALL couriers!
+            const globalNeedsGeocoding = ordersToGroup.filter(o => {
+                // v33.1: Only batch geocode if order is definitely ACTIVE and ASSIGNED to a courier
+                const courierNameRaw = o.courier || o.courierName || o.courierId;
+                const normC = courierNameRaw ? normalizeCourierName(courierNameRaw) : 'НЕ НАЗНАЧЕНО';
+                if (!normC || normC === 'НЕ НАЗНАЧЕНО' || normC === 'UNASSIGNED') return false;
+
+                const s = String(o.status || '').toLowerCase().trim();
+                // We'll skip canceled orders, orders in draft/registration/assembly, and orders that already have lat/lng
+                if (s.includes('отказ') || s.includes('отменен') || s.includes('відмова') ||
+                    s.includes('оформление') || s.includes('собран') || s.includes('в работе')) {
+                    return false;
+                }
+                if (o.coords?.lat) return false;
+
+                const addrKey = (o.address || o.addressGeo || '').toLowerCase().trim();
+                if (this.geocache.has(addrKey)) {
+                    const cached = this.geocache.get(addrKey);
+                    if (cached) o.coords = { lat: cached.latitude, lng: cached.longitude };
+                    return false;
+                }
+                return true;
+            });
+
+            if (globalNeedsGeocoding.length > 0) {
+                logger.info(`[TurboCalculator] 🚀 BATCH GEOCODING: Processing ${globalNeedsGeocoding.length} orders in parallel chunks...`);
+                // Process in chunks of 50 to maximize throughput without bottlenecking memory/event loop
+                const chunkSize = 50;
+                for (let i = 0; i < globalNeedsGeocoding.length; i += chunkSize) {
+                    const chunk = globalNeedsGeocoding.slice(i, i + chunkSize);
+                    await Promise.all(chunk.map(async o => {
+                        try {
+                            const cacheKey2 = (o.address || o.addressGeo || '').toLowerCase().trim();
+                            if (!cacheKey2) return;
+
+                            // Double check if cached during parallel step
+                            if (this.geocache.has(cacheKey2)) {
+                                const cached = this.geocache.get(cacheKey2);
+                                if (cached) o.coords = { lat: cached.latitude, lng: cached.longitude };
+                                return;
+                            }
+
+                            const expectedZone = String(o.deliveryZone || o.kmlZone || o.sector || o.zone || '').trim();
+                            const coords = await this.getRobustGeocode(o.address || o.addressGeo, cityBias, expectedZone, allKmlZones);
+
+                            if (coords) {
+                                o.coords = { lat: coords.latitude, lng: coords.longitude };
+                                this.geocache.set(cacheKey2, coords);
+                            } else {
+                                this.geocache.set(cacheKey2, null);
+                            }
+                        } catch (err) { }
+                    }));
+                }
+                logger.info(`[TurboCalculator] ✅ BATCH GEOCODING DONE.`);
+            }
+
+            // v28.8: Use the new frontend-like grouping by arrivedAt -> 30min windows
+            let deliveryWindows = new Map();
+            let totalBlocksCount = 0;
+            try {
+                const { groupAllOrdersByTimeWindow } = require('./turboGroupingHelpers');
+                // v5.150: Use groupAllOrdersByTimeWindow to process per-courier correctly
+                // This is CRITICAL for the "bulk import" detection to work exactly like frontend
+                deliveryWindows = groupAllOrdersByTimeWindow(ordersToGroup);
+
+                // Log block summary
+                const blockSummary = {};
+                deliveryWindows.forEach((windows, courier) => {
+                    totalBlocksCount += windows.length;
+                    blockSummary[courier] = windows.map(w => `${w.windowLabel}(${w.orders.length})`);
                 });
-                logger.info(`[TurboCalculator] 🗑️ Batch deleted ${deletedCount} old routes for ${cache.division_id} on ${cache.target_date} after confirming changes`);
+
+                logger.info(`[TurboCalculator] 📦 Grouped ${ordersToGroup.length} orders into ${totalBlocksCount} blocks across ${deliveryWindows.size} couriers`);
+                Object.entries(blockSummary).forEach(([courier, blks]) => {
+                    logger.info(`[TurboCalculator]   ${courier}: ${blks.length} blocks - ${blks.join(', ')}`);
+                });
+            } catch (err) {
+                logger.error('[TurboCalculator] Backend grouping failed', err);
+                deliveryWindows = new Map();
+            }
+
+            if (this.io) {
+                this.io.emit('robot_status', {
+                    divisionId: cache.division_id,
+                    date: cache.target_date,
+                    isActive: true,
+                    currentPhase: 'grouping',
+                    message: `Grouping ${ordersToGroup.length} new orders into 30m blocks...`,
+                    totalCount: ordersToGroup.length
+                });
             }
 
             // v5.163: Calculate true "Assigned" count for accurate progress tracking
-            const assignedOrdersCount = data.orders.filter(o => {
+            const assignedOrdersCount = ordersToGroup.filter(o => {
                 const n = normalizeCourierName(o.courier);
                 return n && n !== 'НЕ НАЗНАЧЕНО';
             }).length;
-            const unassignedCount = data.orders.length - assignedOrdersCount;
+            const unassignedCount = data.orders.length - (assignedOrdersCount + existingRoutedOrderNumbers.size);
 
             const stats = {
                 isActive: true,
                 lastUpdate: Date.now(),
-                totalCount: assignedOrdersCount, 
+                totalCount: data.orders.length,
                 unassignedCount: unassignedCount,
-                processedCount: 0,
-                totalCouriers: deliveryWindows.size, 
+                processedCount: existingRoutedOrderNumbers.size + unassignedCount,
+                totalCouriers: deliveryWindows.size,
                 processedCouriers: 0,
                 skippedGeocoding: 0,
-                skippedInRoutes: 0,
-                message: `Analyzing ${assignedOrdersCount} orders across ${deliveryWindows.size} couriers...`
+                skippedInRoutes: existingRoutedOrderNumbers.size,
+                skippedNoCourier: unassignedCount,
+                message: `Analyzing ${assignedOrdersCount} new orders across ${deliveryWindows.size} couriers...`
             };
-            
+
             if (unassignedCount > 0) {
                 stats.message += ` (${unassignedCount} unassigned orders skipped)`;
                 logger.info(`[TurboCalculator] ⏩ Skipping ${unassignedCount} unassigned orders in ${cache.division_id}`);
             }
-            
+
+
             // Initialize per-division courier stats for distance tracking
             stats.courierStats = {};
             const processedCourierNames = new Set();
+
+            // v35.1: Pre-detect courier types from orders (Car/Moto)
+            const courierTypeMap = new Map();
+            ordersToGroup.forEach(o => {
+                const n = normalizeCourierName(o.courier);
+                if (!n || n === 'НЕ НАЗНАЧЕНО') return;
+
+                // Try to detect type from various fields
+                let type = o.type || o.courierType || o.raw?.courierType;
+                if (!type && o.courier) {
+                    const lower = String(o.courier).toLowerCase();
+                    if (lower.includes('мото') || lower.includes('moto')) type = 'Moto';
+                    else if (lower.includes('авто') || lower.includes('car')) type = 'Car';
+                }
+                if (type) courierTypeMap.set(n, type);
+            });
+
             deliveryWindows.forEach((windows, normName) => {
                 const totalOrdersInWindows = windows.reduce((acc, w) => acc + w.orders.length, 0);
-                stats.courierStats[normName] = { 
-                    name: normName, 
-                    orders: totalOrdersInWindows, 
-                    distanceKm: 0 
+                stats.courierStats[normName] = {
+                    name: normName,
+                    orders: totalOrdersInWindows,
+                    distanceKm: 0,
+                    type: courierTypeMap.get(normName) || 'Car' // Default to Car
                 };
             });
-            
+
             this.io.emit('robot_status', {
                 divisionId: cache.division_id,
                 date: cache.target_date,
@@ -781,11 +1242,14 @@ class OrderCalculator {
                         currentPhase: stats.currentPhase,
                         message: stats.message,
                         isActive: stats.isActive,
-                        couriers: couriersList
+                        couriers: couriersList,
+                        skippedGeocoding: stats.skippedGeocoding || 0,
+                        skippedInRoutes: stats.skippedInRoutes || 0,
+                        skippedNoCourier: stats.skippedNoCourier || stats.unassignedCount || 0
                     };
 
                     this.io.emit('robot_status', payload);
-                    
+
                     // Also emit per-division status for UI (test panel)
                     this.io.emit('division_status_update', payload);
 
@@ -811,12 +1275,10 @@ class OrderCalculator {
             stats.message = 'Analyzing delivery queues...';
             emitStatus();
             logger.info(`[TurboCalculator] 🧭 Starting selective geocoding and routing for ${stats.totalCount} orders`);
-            
-            // v5.170: Parallel geocoding pre-pass for ALL orders in this cache
-            // CRITICAL: Only geocode addresses that are NOT already in GeoCache DB
-            // This prevents re-geocoding the same addresses on every tick
+
+            // v5.171: Only geocode orders that need it (from ordersToGroup, not all orders)
             const GeoCache = this.getModel('GeoCache');
-            const allOrdersNeedsGeo = data.orders.filter(o => {
+            const allOrdersNeedsGeo = ordersToGroup.filter(o => {
                 if (o.coords?.lat) return false; // Already has coords
                 return true;
             });
@@ -898,7 +1360,10 @@ class OrderCalculator {
                             }
                         }));
 
-                        stats.processedCount = currentCount;
+                        // Progress notification for long geocoding
+                        const remaining = trulyNeedsGeo.length - currentCount;
+                        const estSec = Math.ceil(remaining / 5); // Rough estimate
+                        stats.message = `Geocoding: ${currentCount}/${trulyNeedsGeo.length} done. ${remaining > 0 ? `(~${estSec}s left)` : 'Finishing...'}`;
                         emitStatus();
                     }
                 } else {
@@ -908,7 +1373,7 @@ class OrderCalculator {
 
             // v27.0: Match frontend's groupOrdersByTimeWindow() logic EXACTLY
             // Already calculated at the start of processCache as 'deliveryWindows'
-            
+
             let totalWindowsCount = 0;
             const uniqueCouriers = new Set();
             deliveryWindows.forEach((windows, courier) => {
@@ -925,7 +1390,39 @@ class OrderCalculator {
 
             // v5.145: Routes are now deleted ONCE in processDay, not here
 
+            // v31.2: Instant UI updates! Extract route emit logic into a helper
+            // so we can broadcast intermediate calculations strictly for partial rendering.
+            const emitCurrentRoutes = async () => {
+                if (this.io) {
+                    const allWindowLabels = Array.from(new Set(
+                        Array.from(deliveryWindows.values()).flat().map(w => w.windowLabel)
+                    ));
+
+                    const enrichedCouriers = Object.values(stats.courierStats || {}).map((cs) => ({
+                        name: cs.name,
+                        courierName: cs.name,
+                        distanceKm: Number((cs.distanceKm || 0).toFixed(2)),
+                        calculatedOrders: cs.orders || 0,
+                    })).filter(c => {
+                        // v34: Exclusive - skip 'НЕ НАЗНАЧЕНО' as it's not a real courier for analytics
+                        const norm = (c.name || '').toUpperCase().trim();
+                        if (norm === 'НЕ НАЗНАЧЕНО' || norm === 'UNASSIGNED') return false;
+                        return c.distanceKm > 0 || c.calculatedOrders > 0;
+                    });
+
+                    this.io.emit('routes_update', {
+                        divisionId: cache.division_id,
+                        date: cache.target_date,
+                        couriers: enrichedCouriers,
+                        timeBlocks: allWindowLabels,
+                        routes: inMemoryFrontendRoutes // v33: Instant memory pull, NO O(N^2) DB CALLS
+                    });
+                }
+            };
+
+
             // Process each courier and their time windows
+
             // v5.140: Courier names are now normalized in groupOrdersByTimeWindowFrontend
             for (const [courierName, windows] of deliveryWindows.entries()) {
                 const normName = courierName;
@@ -933,13 +1430,7 @@ class OrderCalculator {
 
                 logger.info(`[TurboCalculator] 🚚 Processing courier ${normName}: ${windows.length} time windows`);
 
-                // v29.0: Fetch presets ONCE per courier, not per time-window (huge performance win!)
-                const presets = await this.getDivisionPresets(cache.division_id);
-                const cityBias = presets?.cityBias || 'Київ';
-                const startPoint = presets?.defaultStartLat && presets?.defaultStartLng ?
-                    { lat: parseFloat(presets.defaultStartLat), lng: parseFloat(presets.defaultStartLng) } : null;
-                const endPoint = presets?.defaultEndLat && presets?.defaultEndLng ?
-                    { lat: parseFloat(presets.defaultEndLat), lng: parseFloat(presets.defaultEndLng) } : null;
+                // v29.0: Presets fetched ONCE at top-level globally!
 
                 let courierRoutesCreated = 0;
                 stats.processedCouriers++;
@@ -949,15 +1440,15 @@ class OrderCalculator {
                     const windowKey = timeGroup.windowLabel;
                     const orders = timeGroup.orders;
                     if (!orders || orders.length === 0) continue;
-                    
+
                     // v5.144: Deduplicate orders using helper function
                     const seenIds = new Set();
                     const dedupedOrders = [];
                     let localDupCount = 0;
-                    
+
                     orders.forEach(o => {
                         const allIds = getAllOrderIds(o);
-                        
+
                         let isDuplicate = false;
                         for (const id of allIds) {
                             if (seenIds.has(id)) {
@@ -967,13 +1458,13 @@ class OrderCalculator {
                             }
                         }
                         if (isDuplicate) return;
-                        
+
                         for (const id of allIds) {
                             seenIds.add(id);
                         }
                         dedupedOrders.push(o);
                     });
-                    
+
                     if (localDupCount > 0) {
                         logger.warn(`[TurboCalculator] ⚠️ Found ${localDupCount} duplicates in window ${windowKey}`);
                     }
@@ -1000,8 +1491,9 @@ class OrderCalculator {
                         if (needsGeocoding.length > 0) {
                             logger.info(`[TurboCalculator] 🧭 Need geocoding: ${needsGeocoding.length} orders for ${normName}`);
 
-                            // v29.0: Parallel geocoding with in-memory session cache
-                            await Promise.all(needsGeocoding.map(async o => {
+                            // v5.180: Parallel geocoding with concurrency limit to prevent overwhelming APIs
+                            const geoLimit = pLimit(5); // Max 5 concurrent geocoding requests
+                            await Promise.all(needsGeocoding.map(o => geoLimit(async () => {
                                 try {
                                     const cacheKey2 = (o.address || o.addressGeo || '').toLowerCase().trim();
                                     if (!cacheKey2) return;
@@ -1013,7 +1505,10 @@ class OrderCalculator {
                                         return;
                                     }
 
-                                    const coords = await this.getRobustGeocode(o.address || o.addressGeo, cityBias);
+                                    // Pass extracted delivery zone down for strict KML bounding validation
+                                    const expectedZone = String(o.deliveryZone || o.kmlZone || o.sector || o.zone || '').trim();
+                                    const coords = await this.getRobustGeocode(o.address || o.addressGeo, cityBias, expectedZone, allKmlZones);
+
                                     if (coords) {
                                         o.coords = { lat: coords.latitude, lng: coords.longitude };
                                         this.geocache.set(cacheKey2, coords);
@@ -1023,9 +1518,9 @@ class OrderCalculator {
                                 } catch (err) {
                                     // ignore
                                 }
-                            }));
+                            })));
                         }
-                        
+
                         // v5.162: CRITICAL - Increment processedCount AFTER the window's geocoding is handled
                         // This applies to ALL orders in this window, even if they were already in cache.
                         stats.processedCount += dedupedOrders.length;
@@ -1035,21 +1530,51 @@ class OrderCalculator {
                         // Use deduplicated orders from this block
                         let validOrders = dedupedOrders.filter(o => {
                             const s = String(o.status || o.deliveryStatus || '').toLowerCase().trim();
-                            if (s.includes('отказ') || s.includes('отменен') || s.includes('відмова')) return false;
+                            if (s.includes('отказ') || s.includes('отменен') || s.includes('відмова')) {
+                                stats.skippedOther = (stats.skippedOther || 0) + 1;
+                                return false;
+                            }
                             const hasCoords = (o.coords?.lat && o.coords?.lng) ||
-                                             (o.lat && o.lng) ||
-                                             (o.latitude && o.longitude);
-                            return hasCoords || (o.address && o.address.length > 5);
+                                (o.lat && o.lng) ||
+                                (o.latitude && o.longitude);
+                            const isValid = hasCoords;
+                            if (!isValid) stats.skippedGeocoding++;
+                            return isValid;
                         });
 
-                        // Sort orders by delivery time for optimal route
-                        const getDeliveryMinutes = (o) => {
+                        // v31.0: Sort orders by ACTUAL execution time (Исполнен) first, then planned delivery time.
+                        // This makes the calculated km reflect the real courier route (order they were completed).
+                        const getOrderSortKey = (o) => {
+                            let timestampToParse = null;
+
+                            // Priority 1: If the order is executed, use its actual completion time
+                            const execTime = getExecutionTime(o);
+                            if (execTime) timestampToParse = execTime;
+                            // Priority 2: Delivery/handover timestamp (order was in transit)
+                            else if (o.handoverAt && typeof o.handoverAt === 'number') timestampToParse = o.handoverAt;
+                            else if (o.statusTimings?.deliveringAt) timestampToParse = o.statusTimings.deliveringAt;
+
+                            // If we have a full Unix timestamp, convert it to minutes of the day (matching the time window context)
+                            if (timestampToParse) {
+                                const d = new Date(timestampToParse);
+                                return d.getHours() * 60 + d.getMinutes();
+                            }
+
+                            // Priority 3: Planned time (for orders not yet delivered, or missing execution traces)
                             const time = o.deliverBy || o.plannedTime || o.deliveryTime;
                             if (!time || time === '00:00') return 9999;
                             const parts = String(time).split(':');
-                            return parseInt(parts[0]) * 60 + parseInt(parts[1] || '0');
+                            const minutesOfDay = parseInt(parts[0]) * 60 + parseInt(parts[1] || '0');
+                            return minutesOfDay;
                         };
-                        validOrders = validOrders.sort((a, b) => getDeliveryMinutes(a) - getDeliveryMinutes(b));
+
+                        validOrders = validOrders.sort((a, b) => getOrderSortKey(a) - getOrderSortKey(b));
+
+                        // Log sort mode for this window
+                        const executedInWindow = validOrders.filter(o => getExecutionTime(o)).length;
+                        if (executedInWindow > 0) {
+                            logger.info(`[TurboCalculator] ✅ [${windowKey}] ${executedInWindow}/${validOrders.length} orders sorted by execution time`);
+                        }
 
                         if (validOrders.length < 1) {
                             logger.info(`[TurboCalculator] ⚠️ No valid orders for ${normName} in block ${windowKey}`);
@@ -1058,52 +1583,98 @@ class OrderCalculator {
 
                         if (this.io) {
                             const firstAddr = (validOrders[0].address || 'Unknown').split(',')[0];
-                            this.io.emit('robot_status', {
-                                divisionId: cache.division_id,
-                                date: cache.target_date,
-                                message: `Calculating: ${normName} → ${firstAddr} (${validOrders.length} orders)`,
-                                processedCouriers: stats.processedCouriers,
-                                totalCouriers: stats.totalCouriers,
-                            });
+                            stats.message = `Calculating: ${normName} → ${firstAddr} (${validOrders.length} orders)`;
+
+                            // Let standard emitStatus handle it to ensure all fields are sent
+                            emitStatus();
                         }
 
                         let routeResult = null;
                         try {
-                            routeResult = await this.calculateRoute(validOrders, cache.division_id, startPoint, endPoint);
+                            routeResult = await this.calculateRoute(validOrders, cache.division_id, globalStartPoint, globalEndPoint);
                         } catch (routeErr) {
                             logger.warn(`[TurboCalculator] ⚠️ calculateRoute failed for ${normName}: ${routeErr.message}`);
+                        }
+
+                        // v5.180: Apply 2-opt optimization if route was calculated and has enough points
+                        if (routeResult && validOrders.length >= 4) {
+                            try {
+                                const routePoints = validOrders
+                                    .filter(o => o.coords?.lat && o.coords?.lng)
+                                    .map(o => ({ lat: o.coords.lat, lng: o.coords.lng }));
+
+                                if (globalStartPoint) {
+                                    routePoints.unshift({ lat: Number(globalStartPoint.lat), lng: Number(globalStartPoint.lng) });
+                                }
+                                if (globalEndPoint) {
+                                    routePoints.push({ lat: Number(globalEndPoint.lat), lng: Number(globalEndPoint.lng) });
+                                }
+
+                                const optimized = this.optimizeRoute2Opt(routePoints, 50);
+                                if (optimized.improved && optimized.savingsPct > 1) {
+                                    // Recalculate route with optimized order
+                                    const optimizedResult = await this.calculateRoute(
+                                        validOrders,
+                                        cache.division_id,
+                                        globalStartPoint,
+                                        globalEndPoint
+                                    );
+                                    if (optimizedResult && optimizedResult.distance < routeResult.distance) {
+                                        logger.info(`[TurboCalculator] ✅ 2-opt improved route: ${(routeResult.distance / 1000).toFixed(2)}km -> ${(optimizedResult.distance / 1000).toFixed(2)}km`);
+                                        routeResult = optimizedResult;
+                                    }
+                                }
+                            } catch (optErr) {
+                                logger.warn(`[TurboCalculator] ⚠️ 2-opt optimization failed: ${optErr.message}`);
+                            }
                         }
 
                         if (routeResult) {
                             const timeBlockLabel = timeGroup.windowLabel;
                             const distanceKm = Math.round((routeResult.distance / 1000) * 100) / 100;
 
+                            // v36.0: CRITICAL SANITY CHECK
+                            // If a single route in a 15-30m block is > 100km, it's almost certainly 
+                            // a geocoding error (wrong city) or routing loop. REJECT IT.
+                            if (distanceKm > 100) {
+                                logger.error(`[TurboCalculator] ❌ REJECTED HUGE ROUTE: ${normName} [${timeBlockLabel}] shows ${distanceKm}km. Likely geocoding error.`);
+                                continue;
+                            }
+
+
                             // v5.149: CRITICAL FIX - Deduplicate by orderNumber FIRST (primary key)
                             // The same order may have different IDs from different sources
                             const seenOrderNumbers = new Set();
                             const seenIds = new Set();
                             const uniqueRouteOrders = [];
-                            
-                            validOrders.forEach(o => {
+
+                            // 🚀 v36.0 FIX: Keep ALL orders in the route block, even if geocoding failed!
+                            // calculateRoute used validOrders, but the DB representation must contain ALL orders in the block.
+                            const nonCancelledOrders = dedupedOrders.filter(o => {
+                                const s = String(o.status || o.deliveryStatus || '').toLowerCase().trim();
+                                return !(s.includes('отказ') || s.includes('отменен') || s.includes('відмова'));
+                            });
+
+                            nonCancelledOrders.forEach(o => {
                                 const orderNum = String(o.orderNumber || '');
                                 const orderId = String(o.id || '');
-                                
+
                                 // Skip if we've seen this orderNumber before
                                 if (orderNum && seenOrderNumbers.has(orderNum)) {
                                     logger.warn(`[TurboCalculator] ⚠️ Skipping duplicate orderNumber: ${orderNum}`);
                                     return;
                                 }
-                                
+
                                 // Also skip if we've seen this id before
                                 if (orderId && seenIds.has(orderId)) {
                                     logger.warn(`[TurboCalculator] ⚠️ Skipping duplicate id: ${orderId}`);
                                     return;
                                 }
-                                
+
                                 // Mark as seen
                                 if (orderNum) seenOrderNumbers.add(orderNum);
                                 if (orderId) seenIds.add(orderId);
-                                
+
                                 uniqueRouteOrders.push({
                                     id: o.id,
                                     orderNumber: o.orderNumber,
@@ -1116,25 +1687,33 @@ class OrderCalculator {
                                     deliveryTime: o.deliverBy || o.plannedTime || o.deliveryTime,
                                     // v5.170: Pass through geocoding metadata for badge display
                                     locationType: o.locationType || o.coords?.locationType,
-                                    streetNumberMatched: o.streetNumberMatched,
+                                    streetNumberMatched: o.streetNumberMatched || o.coords?.streetNumberMatched,
+                                    isAddressLocked: o.isAddressLocked || !!o.coords?.lat,
                                     kmlZone: o.kmlZone || o.deliveryZone,
                                     kmlHub: o.kmlHub,
                                     plannedTime: o.plannedTime || o.deliverBy,
-                                    deliveryZone: o.deliveryZone
+                                    deliveryZone: o.deliveryZone,
+                                    // v31.0: Execution time tracking for accurate km calculation
+                                    status: o.status || null,
+                                    executionTime: getExecutionTime(o) || null,
+                                    handoverAt: o.handoverAt || null,
+                                    manualGroupId: o.manualGroupId,
+                                    readyAtPreview: o.readyAtPreview || o.kitchen || o.readyAtSource,
+                                    statusTimings: o.statusTimings || null,
                                 });
                             });
 
-                            if (uniqueRouteOrders.length < validOrders.length) {
-                                logger.warn(`[TurboCalculator] ⚠️ Route deduplication: ${validOrders.length} -> ${uniqueRouteOrders.length} orders`);
+                            if (uniqueRouteOrders.length < nonCancelledOrders.length) {
+                                logger.warn(`[TurboCalculator] ⚠️ Route deduplication: ${nonCancelledOrders.length} -> ${uniqueRouteOrders.length} orders`);
                                 // Log which orderNumbers were duplicates
-                                const orderNums = validOrders.map(o => o.orderNumber).filter(Boolean);
+                                const orderNums = nonCancelledOrders.map(o => o.orderNumber).filter(Boolean);
                                 const dupNums = orderNums.filter((n, i) => orderNums.indexOf(n) !== i);
                                 if (dupNums.length > 0) {
                                     logger.warn(`[TurboCalculator] ⚠️ Duplicate orderNumbers: ${[...new Set(dupNums)].join(', ')}`);
                                 }
                             }
 
-                            await Route.create({
+                            const createdRoute = await Route.create({
                                 courier_id: normName,
                                 division_id: cache.division_id,
                                 total_distance: distanceKm,
@@ -1151,11 +1730,11 @@ class OrderCalculator {
                                     windowStart: timeGroup.windowStart,
                                     startAddress: presets?.defaultStartAddress || null,
                                     endAddress: presets?.defaultEndAddress || null,
-                                    startCoords: startPoint, // v5.165: Save exact coordinates
-                                    endCoords: endPoint,
+                                    startCoords: globalStartPoint, // v5.165: Save exact coordinates
+                                    endCoords: globalEndPoint,
                                     geoMeta: { // v5.166: Save geoMeta for routeExport compatibility
-                                        origin: startPoint,
-                                        destination: endPoint,
+                                        origin: globalStartPoint,
+                                        destination: globalEndPoint,
                                         waypoints: uniqueRouteOrders.map(o => o.coords).filter(Boolean)
                                     },
                                     orders: uniqueRouteOrders,
@@ -1163,7 +1742,23 @@ class OrderCalculator {
                                 }
                             });
 
+                            // v33: Push into memory cache immediately!
+                            inMemoryFrontendRoutes.push({
+                                id: createdRoute.id,
+                                courier: createdRoute.courier_id,
+                                totalDistance: parseFloat(createdRoute.total_distance || 0),
+                                totalDuration: createdRoute.total_duration,
+                                ordersCount: createdRoute.orders_count,
+                                timeBlock: createdRoute.route_data?.deliveryWindow || createdRoute.route_data?.timeBlocks,
+                                startAddress: createdRoute.route_data?.startAddress,
+                                endAddress: createdRoute.route_data?.endAddress,
+                                orders: createdRoute.route_data?.orders || [],
+                                geometry: createdRoute.route_data?.geometry || null,
+                                isCalculated: true // v5.175: Force UI to treat this as solid data
+                            });
+
                             courierRoutesCreated++;
+                            stats.skippedInRoutes += uniqueRouteOrders.length; // v5.170: Track in-route count for real-time stats
                             logger.info(`[TurboCalculator] ✅ Created route for ${normName}: ${uniqueRouteOrders.length} orders, ${(routeResult.distance / 1000).toFixed(2)}km`);
 
                             // v29.0: Update per-courier stats - use normName as key (consistent)
@@ -1179,97 +1774,67 @@ class OrderCalculator {
 
                 logger.info(`[TurboCalculator] ✅ Courier ${normName}: created ${courierRoutesCreated} routes`);
 
-                // v28.9: Increment processedCouriers once per courier (outside window loop)
                 if (!processedCourierNames.has(normName)) {
                     processedCourierNames.add(normName);
                     stats.processedCouriers = processedCourierNames.size;
+                    stats.message = `Courier ${normName} completed`; // Update message so it doesn't get stuck
                     emitStatus(); // Push fresh status after each courier is done
+                    await emitCurrentRoutes(); // v31.2: EMIT RIGHT NOW to refresh UI!
                 }
             } // End of courier loop
 
             // Update processedCount to match total processed orders
             stats.processedCount = stats.totalCount;
 
-            // v29.0: Fetch created routes for frontend (use JSON filter for compatibility with old rows)
-            let routeDataForFrontend = [];
-            let totalRoutesCreated = 0;
+            // v5.171: Fetch ALL routes (existing + newly created) for frontend
+            // Final comprehensive emit across all couriers just in case
+            await emitCurrentRoutes();
 
-            if (Route) {
-                try {
-                    const recentRoutes = await Route.findAll({
-                        where: {
-                            [Op.and]: [
-                                sequelize.where(
-                                    sequelize.literal("route_data->>'target_date'"),
-                                    cache.target_date
-                                ),
-                                sequelize.where(
-                                    sequelize.literal("route_data->>'target_date'"),
-                                    { [Op.not]: null }
-                                )
-                            ]
-                        },
-                        order: [['calculated_at', 'DESC']],
-                        limit: 200
-                    });
-
-                    // Filter to only this division
-                    const divisionRoutes = recentRoutes.filter(r =>
-                        r.division_id === cache.division_id ||
-                        r.route_data?.divisionId === cache.division_id ||
-                        !r.division_id // legacy rows without division_id
-                    );
-
-                    totalRoutesCreated = divisionRoutes.length;
-                    routeDataForFrontend = divisionRoutes.map(r => ({
-                        id: r.id,
-                        courier: r.courier_id,
-                        totalDistance: parseFloat(r.total_distance || 0),
-                        totalDuration: r.total_duration,
-                        ordersCount: r.orders_count,
-                        timeBlock: r.route_data?.deliveryWindow || r.route_data?.timeBlocks,
-                        startAddress: r.route_data?.startAddress,
-                        endAddress: r.route_data?.endAddress,
-                        orders: r.route_data?.orders || [],
-                        geometry: r.route_data?.geometry || null
-                    }));
-                    logger.info(`[OrderCalculator] 📦 Fetched ${routeDataForFrontend.length} routes for frontend`);
-                } catch (e) {
-                    logger.warn(`[OrderCalculator] ⚠️ Failed to fetch routes: ${e.message}`);
-                }
-            }
-
-            // Always emit routes update when processing is done
-            if (this.io) {
-                // Extract unique window labels for the frontend
-                const allWindowLabels = Array.from(new Set(
-                    Array.from(deliveryWindows.values()).flat().map(w => w.windowLabel)
-                ));
-
-                // v5.153: Build enriched couriers array with distanceKm and ordersCount
-                // This lets the Couriers tab update immediately without waiting for dashboard:update
-                const enrichedCouriers = Object.values(stats.courierStats || {}).map((cs) => ({
-                    name: cs.name,
-                    courierName: cs.name,
-                    distanceKm: Number((cs.distanceKm || 0).toFixed(2)),
-                    calculatedOrders: cs.orders || 0,
-                })).filter(c => c.distanceKm > 0 || c.calculatedOrders > 0);
-
-                logger.info(`[TurboCalculator] 🚀 Emitting routes_update with ${routeDataForFrontend.length} routes, ${enrichedCouriers.length} enriched couriers`);
-                this.io.emit('routes_update', {
-                    divisionId: cache.division_id,
-                    date: cache.target_date,
-                    couriers: enrichedCouriers,
-                    timeBlocks: allWindowLabels,
-                    routes: routeDataForFrontend
-                });
-            }
 
             // v29.0: Cache Enrichment - write calculated distances back to api_dashboard_cache
             // Match courier names by both normalized (uppercase) and raw for maximum coverage
             if (data && Array.isArray(data.orders)) {
                 try {
                     if (data.couriers && Array.isArray(data.couriers)) {
+                        // v34.2: Stripping 'НЕ НАЗНАЧЕНО' from the final DATA object sent to frontend
+                        // This fixes the medals (Leader of Volume, Speed Demon) and summary cards!
+                        data.couriers = data.couriers.filter(c => {
+                            const rawName = c.courierName || c.name || c.courier;
+                            const norm = (rawName || '').toString().toUpperCase().trim();
+                            return norm !== 'НЕ НАЗНАЧЕНО' && norm !== 'UNASSIGNED';
+                        });
+
+                        // v35.2: Weekly Analytics - Calculate Active Days & Normalized Efficiency
+                        const DashboardCache = this.getModel('DashboardCache');
+                        let weeklyActivity = {}; // normName -> Set of dates
+
+                        if (DashboardCache) {
+                            try {
+                                const oneWeekAgo = new Date(new Date(cache.target_date) - 7 * 24 * 60 * 60 * 1000);
+                                const last7Days = await DashboardCache.findAll({
+                                    where: {
+                                        division_id: cache.division_id,
+                                        target_date: { [Op.gte]: oneWeekAgo.toISOString().split('T')[0] }
+                                    },
+                                    attributes: ['target_date', 'payload']
+                                });
+
+                                last7Days.forEach(day => {
+                                    const dayPayload = day.payload;
+                                    if (dayPayload && Array.isArray(dayPayload.orders)) {
+                                        dayPayload.orders.forEach(o => {
+                                            const n = normalizeCourierName(o.courier);
+                                            if (!n || n === 'НЕ НАЗНАЧЕНО') return;
+                                            if (!weeklyActivity[n]) weeklyActivity[n] = new Set();
+                                            weeklyActivity[n].add(day.target_date);
+                                        });
+                                    }
+                                });
+                            } catch (e) {
+                                logger.warn(`[TurboCalculator] ⚠️ Failed weekly activity calc: ${e.message}`);
+                            }
+                        }
+
                         data.couriers.forEach(c => {
                             const rawName = c.courierName || c.name || c.courier;
                             const upperName = (rawName || '').toString().toUpperCase().trim();
@@ -1277,12 +1842,23 @@ class OrderCalculator {
 
                             // Try all key variants
                             const calc = stats.courierStats[upperName] ||
-                                         stats.courierStats[normName2] ||
-                                         stats.courierStats[rawName];
-                            if (calc && calc.distanceKm > 0) {
-                                c.distanceKm = Number((calc.distanceKm).toFixed(2));
+                                stats.courierStats[normName2] ||
+                                stats.courierStats[rawName];
+
+                            if (calc) {
+                                c.distanceKm = Number((calc.distanceKm || 0).toFixed(2));
                                 c.calculatedOrders = calc.orders || 0;
-                                logger.info(`[TurboCalculator] 📏 Courier ${rawName}: ${c.distanceKm} km`);
+                                c.courierType = calc.type || 'Car';
+
+                                // v35.2: Enrichment with Weekly Stats
+                                const activeDays = weeklyActivity[normName2 || upperName]?.size || 1;
+                                c.activeDaysWeek = activeDays;
+
+                                // Efficiency: Weighted orders by active days to compare people fairly
+                                // Intensity = Total Orders / Active Days
+                                c.weeklyIntensity = Number((c.calculatedOrders / activeDays).toFixed(2));
+
+                                logger.info(`[TurboCalculator] 📏 Courier ${rawName}: ${c.distanceKm} km, Type: ${c.courierType}, ActiveDays/Week: ${activeDays}`);
                             }
                         });
                     }
@@ -1320,17 +1896,18 @@ class OrderCalculator {
 
             // Final status push - routing complete!
             stats.currentPhase = 'complete';
-            stats.message = `Complete! ${totalRoutesCreated} routes calculated`;
+            const newRoutesCount = totalRoutesCreated - existingRoutes.length;
+            stats.message = `Complete! ${totalRoutesCreated} total routes (${newRoutesCount > 0 ? `${newRoutesCount} new, ` : ''}${existingRoutes.length} existing)`;
             stats.isActive = false;
             emitStatus();
-            logger.info(`[TurboCalculator] ✅ DONE: ${totalRoutesCreated} routes, ${stats.processedCouriers} couriers processed`);
+            logger.info(`[TurboCalculator] ✅ DONE: ${totalRoutesCreated} total routes (${newRoutesCount} new + ${existingRoutes.length} existing), ${stats.processedCouriers} couriers processed`);
 
         } catch (err) {
             logger.error(`[OrderCalculator] ❌ processCache fatal: ${err.message}`);
         }
     }
 
-    async getRobustGeocode(address, city = 'Київ') {
+    async getRobustGeocode(address, city = 'Київ', expectedZoneName = null, allZones = []) {
         if (!address) return null;
 
         const GeoCache = this.getModel('GeoCache');
@@ -1339,6 +1916,35 @@ class OrderCalculator {
         const cleaned = cleanAddress(address);
         const normalized = cleaned.toLowerCase();
 
+        // v31.1: KML validation core
+        let targetZoneName = null;
+        if (expectedZoneName) {
+            targetZoneName = expectedZoneName.replace(/FO\/KML:\s*/i, '').trim();
+        }
+
+        const KmlService = require('../src/services/KmlService');
+
+        // v5.172: Use spatial grid index for fast validation + multi-zone fallback
+        const validateCandidate = (lat, lng) => {
+            if (!lat || !lng) return false;
+
+            // If no expected zone, accept any point
+            if (!targetZoneName) return true;
+
+            // Use pre-loaded spatial grid for O(1) lookup
+            const validation = this.validatePointInZone(lat, lng, targetZoneName, true);
+
+            if (validation.valid) {
+                if (validation.fallback) {
+                    logger.info(`[TurboCalculator] ℹ️ Point ${lat},${lng} in zone "${validation.zone.name}" (fallback from "${targetZoneName}")`);
+                }
+                return true;
+            } else {
+                logger.warn(`[TurboCalculator] 🚫 Rejected: Point ${lat},${lng} is ${validation.reason || 'outside expected KML zone'}!`);
+                return false;
+            }
+        };
+
         // Check local cache first (fastest)
         try {
             const cached = await GeoCache.findOne({
@@ -1346,9 +1952,23 @@ class OrderCalculator {
             });
             if (cached) {
                 if (!cached.is_success) return null;
-                return { latitude: cached.lat, longitude: cached.lng, locationType: 'CACHED' };
+                if (validateCandidate(cached.lat, cached.lng)) {
+                    return { latitude: cached.lat, longitude: cached.lng, locationType: 'CACHED' };
+                } else {
+                    logger.warn(`[TurboCalculator] 🗑️ Ignored DB cache for ${normalized} (fell outside KML)`);
+                }
             }
         } catch (e) { /* ignore */ }
+
+        // v5.180: Check in-memory LRU cache with fuzzy matching
+        const fuzzyResult = this.fuzzyCacheLookup(normalized);
+        if (fuzzyResult && fuzzyResult.match) {
+            const cached = fuzzyResult.match;
+            if (cached && validateCandidate(cached.latitude, cached.longitude)) {
+                logger.info(`[TurboCalculator] ✅ LRU cache hit (${fuzzyResult.type}): ${normalized}`);
+                return { latitude: cached.latitude, longitude: cached.longitude, locationType: 'CACHED_LRU' };
+            }
+        }
 
         // Try all variants from cache
         const variants = generateVariants(address, city, 10).map(v => v.toLowerCase());
@@ -1358,9 +1978,35 @@ class OrderCalculator {
                 const cached = await GeoCache.findOne({
                     where: { address_key: variant, is_success: true }
                 });
-                if (cached) return { latitude: cached.lat, longitude: cached.lng, locationType: 'CACHED' };
+                if (cached && validateCandidate(cached.lat, cached.lng)) {
+                    // v5.180: Also populate LRU cache
+                    this.geocache.set(normalized, { latitude: cached.lat, longitude: cached.lng });
+                    return { latitude: cached.lat, longitude: cached.lng, locationType: 'CACHED' };
+                }
             } catch (e) { /* ignore */ }
         }
+
+        // v5.180: Enhanced validateCandidate with distance fallback
+        const validateCandidateWithFallback = (lat, lng) => {
+            if (!lat || !lng) return { valid: false, reason: 'no_coords' };
+
+            if (!targetZoneName) return { valid: true };
+
+            const validation = this.validatePointInZone(lat, lng, targetZoneName, true);
+
+            if (validation.valid) {
+                return { valid: true, zone: validation.zone, fallback: validation.fallback };
+            }
+
+            // v5.180: Distance fallback - find nearest zone within 500m
+            const nearestZone = this.findNearestZone(lat, lng, 500);
+            if (nearestZone) {
+                logger.info(`[TurboCalculator] 📍 Distance fallback: ${lat},${lng} is ${nearestZone.distanceMeters}m from zone "${nearestZone.name}"`);
+                return { valid: true, zone: nearestZone, distanceFallback: true };
+            }
+
+            return { valid: false, reason: validation.reason || 'outside_all_zones' };
+        };
 
         // v5.170: Parallel provider race — fastest provider wins!
         const tryGeocode = async (query, provider, timeout) => {
@@ -1371,13 +2017,15 @@ class OrderCalculator {
                 const googleRes = await axios.get(googleUrl, { timeout });
                 if (googleRes.data?.status === 'OK' && googleRes.data.results?.[0]) {
                     const r = googleRes.data.results[0];
-                    return {
-                        latitude: r.geometry.location.lat,
-                        longitude: r.geometry.location.lng,
-                        locationType: r.geometry.location_type || 'ROOFTOP',
-                        provider: 'google'
-                    };
+                    const lat = r.geometry.location.lat;
+                    const lng = r.geometry.location.lng;
+                    const validation = validateCandidateWithFallback(lat, lng);
+                    if (validation.valid) {
+                        return { latitude: lat, longitude: lng, locationType: r.geometry.location_type || 'ROOFTOP', provider: 'google', kmlZone: validation.zone, distanceFallback: validation.distanceFallback };
+                    }
+                    throw new Error(`google candidate outside KML zone`);
                 }
+                throw new Error(`${provider} failed or empty`);
             }
 
             if (provider === 'photon') {
@@ -1385,26 +2033,30 @@ class OrderCalculator {
                 const photonRes = await axios.get(`${PHOTON_URL}/api?q=${encodeURIComponent(query)}&limit=1&lang=uk`, { timeout });
                 if (photonRes.data?.features?.length > 0) {
                     const f = photonRes.data.features[0];
-                    return {
-                        latitude: f.geometry.coordinates[1],
-                        longitude: f.geometry.coordinates[0],
-                        locationType: f.properties?.type || 'PHOTON',
-                        provider: 'photon'
-                    };
+                    const lat = f.geometry.coordinates[1];
+                    const lng = f.geometry.coordinates[0];
+                    const validation = validateCandidateWithFallback(lat, lng);
+                    if (validation.valid) {
+                        return { latitude: lat, longitude: lng, locationType: f.properties?.type || 'PHOTON', provider: 'photon', kmlZone: validation.zone, distanceFallback: validation.distanceFallback };
+                    }
+                    throw new Error(`photon candidate outside KML zone`);
                 }
+                throw new Error(`${provider} failed or empty`);
             }
 
             if (provider === 'komoot') {
                 const photon2Res = await axios.get(`https://photon.komoot.io/api?q=${encodeURIComponent(query)}&limit=1&lang=uk`, { timeout });
                 if (photon2Res.data?.features?.length > 0) {
                     const f = photon2Res.data.features[0];
-                    return {
-                        latitude: f.geometry.coordinates[1],
-                        longitude: f.geometry.coordinates[0],
-                        locationType: f.properties?.type || 'PHOTON',
-                        provider: 'komoot'
-                    };
+                    const lat = f.geometry.coordinates[1];
+                    const lng = f.geometry.coordinates[0];
+                    const validation = validateCandidateWithFallback(lat, lng);
+                    if (validation.valid) {
+                        return { latitude: lat, longitude: lng, locationType: f.properties?.type || 'PHOTON', provider: 'komoot', kmlZone: validation.zone, distanceFallback: validation.distanceFallback };
+                    }
+                    throw new Error(`komoot candidate outside KML zone`);
                 }
+                throw new Error(`${provider} failed or empty`);
             }
 
             if (provider === 'nominatim') {
@@ -1415,17 +2067,20 @@ class OrderCalculator {
                 });
                 if (Array.isArray(nomRes.data) && nomRes.data.length > 0) {
                     const r = nomRes.data[0];
-                    return {
-                        latitude: parseFloat(r.lat),
-                        longitude: parseFloat(r.lon),
-                        locationType: r.type || 'NOMINATIM',
-                        provider: 'nominatim'
-                    };
+                    const lat = parseFloat(r.lat);
+                    const lng = parseFloat(r.lon);
+                    const validation = validateCandidateWithFallback(lat, lng);
+                    if (validation.valid) {
+                        return { latitude: lat, longitude: lng, locationType: r.type || 'NOMINATIM', provider: 'nominatim', kmlZone: validation.zone, distanceFallback: validation.distanceFallback };
+                    }
+                    throw new Error(`nominatim candidate outside KML zone`);
                 }
+                throw new Error(`${provider} failed or empty`);
             }
 
             throw new Error(`${provider} failed`);
         };
+
 
         const cacheResult = async (result, provider) => {
             if (!result) return;
@@ -1440,18 +2095,33 @@ class OrderCalculator {
             } catch (e) { /* ignore */ }
         };
 
-        // v5.170: Primary attempt — parallel race of all providers
+        // v5.180: Primary attempt — parallel race with retry + exponential backoff
         const primaryQuery = cleaned + ', ' + city;
         const primaryProviders = ['google', 'photon', 'komoot', 'nominatim'].filter(p => {
             if (p === 'google') return !!process.env.GOOGLE_GEOCODE_API_KEY;
             return true;
         });
 
+        // v5.180: Retry wrapper with exponential backoff
+        const tryGeocodeWithRetry = async (query, provider, timeout) => {
+            return pRetry(() => tryGeocode(query, provider, timeout), {
+                retries: 2,
+                minTimeout: 1000,
+                maxTimeout: 3000,
+                factor: 2,
+                onFailedAttempt: error => {
+                    logger.warn(`[TurboCalculator] 🔄 ${provider} attempt ${error.attemptNumber} failed: ${error.message}`);
+                }
+            });
+        };
+
         try {
             const result = await Promise.any(
-                primaryProviders.map(p => tryGeocode(primaryQuery, p, 5000))
+                primaryProviders.map(p => tryGeocodeWithRetry(primaryQuery, p, 5000))
             );
             await cacheResult(result, result.provider);
+            // v5.180: Store in LRU cache
+            this.geocache.set(normalized, { latitude: result.latitude, longitude: result.longitude });
             return result;
         } catch (e) {
             // All primary providers failed — try fallback strategies
@@ -1488,6 +2158,31 @@ class OrderCalculator {
             const minimalQuery = cityMatch ? `${cityMatch[1]}, ${streetMatch[1]}` : streetMatch[1];
             fallbackStrategies.push({ query: minimalQuery, strategy: 'street-only' });
         }
+
+        // Strategy 4: Deep Recovery - Everything before the first comma (often the pure street + house)
+        const beforeComma = cleaned.split(',')[0].trim();
+        // Remove common fast-food comments that might be before the comma
+        const cleanedBeforeComma = beforeComma.replace(/(?:кв|квартира|под|подъезд|эт|этаж|п|оф|офис)\s*\d*.*/gi, '').trim();
+        if (cleanedBeforeComma && cleanedBeforeComma !== cleaned && cleanedBeforeComma !== simplified) {
+            fallbackStrategies.push({ query: cleanedBeforeComma + ', ' + city, strategy: 'before-comma' });
+        }
+
+        // Strategy 5: Deep Recovery - First two words + first number (e.g. "Леся курбаса 5")
+        const words = cleaned.split(/[\s,]+/);
+        const textWords = words.filter(w => /[a-zA-Zа-яА-ЯіІєЄїЇ]/.test(w) && w.length > 2 && !/^(вул|просп|пр-т|пров|пер|бульвар)$/i.test(w)).slice(0, 2).join(' ');
+        const firstNumMatch = cleaned.match(/\b\d+[а-яА-Яa-zA-ZіІєЄїЇ]{0,2}\b/);
+        const firstNum = firstNumMatch ? firstNumMatch[0] : '';
+        const desperateQuery = `${textWords} ${firstNum}, ${city}`.trim();
+        if (textWords && desperateQuery !== cleaned && desperateQuery !== (cleanedBeforeComma + ', ' + city)) {
+            fallbackStrategies.push({ query: desperateQuery, strategy: 'desperate-text-num' });
+        }
+
+        // Strategy 6: Deep Recovery - Relaxed search using just the first significant word and city (e.g., "Соборная, Киев")
+        const firstLongWord = words.find(w => /[a-zA-Zа-яА-ЯіІєЄїЇ]/.test(w) && w.length > 4);
+        if (firstLongWord) {
+            fallbackStrategies.push({ query: `${firstLongWord}, ${city}`, strategy: 'first-long-word' });
+        }
+
 
         for (const fb of fallbackStrategies) {
             logger.info(`[TurboCalculator]   Strategy ${fb.strategy}: "${fb.query}"`);
@@ -1546,7 +2241,7 @@ class OrderCalculator {
 
         // Add order addresses - v28.7: Deduplicate consecutive same-coordinates to optimize OSRM
         let lastCoordKey = startPoint ? `${Number(startPoint.lat).toFixed(5)},${Number(startPoint.lng).toFixed(5)}` : null;
-        
+
         orders.forEach(o => {
             const lat = Number(o.coords?.lat || o.lat);
             const lng = Number(o.coords?.lng || o.lng);
@@ -1581,11 +2276,12 @@ class OrderCalculator {
         if (startPoint && endPoint) {
             const distHaversine = this.calculateDistance(startPoint, endPoint);
             if (distHaversine > 100000) { // Check > 100km 
-                 logger.warn(`[TurboCalculator] ⚠️ Base-to-Base distance is huge (${(distHaversine/1000).toFixed(1)}km). Check settings!`);
+                logger.warn(`[TurboCalculator] ⚠️ Base-to-Base distance is huge (${(distHaversine / 1000).toFixed(1)}km). Check settings!`);
             }
         }
 
         // v2.2: Multi-engine race - Yapiko OSRM is PRIORITY, others as fallback
+        // v5.180: Added retry with exponential backoff to each engine
         const engines = [
             {
                 name: 'yapiko-osrm',
@@ -1593,7 +2289,10 @@ class OrderCalculator {
                 calculate: async () => {
                     const baseUrl = (customOsrmUrl || this.osrmUrl).trim().replace(/\/+$/, '');
                     const url = `${baseUrl}/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`;
-                    const response = await axios.get(url, { timeout: 8000 });
+                    const response = await pRetry(
+                        () => axios.get(url, { timeout: 8000 }),
+                        { retries: 2, minTimeout: 1000, factor: 2 }
+                    );
                     if (response.data?.routes?.[0]) {
                         const r = response.data.routes[0];
                         if (r.distance > 500000) return null; // Sanity check: > 500km is likely error
@@ -1617,19 +2316,22 @@ class OrderCalculator {
                         costing: 'auto',
                         directions_options: { units: 'kilometers' }
                     };
-                    const response = await axios.post(`${vUrl}/route`, request, {
-                        timeout: 10000,
-                        headers: { 'Content-Type': 'application/json' }
-                    });
+                    const response = await pRetry(
+                        () => axios.post(`${vUrl}/route`, request, {
+                            timeout: 10000,
+                            headers: { 'Content-Type': 'application/json' }
+                        }),
+                        { retries: 2, minTimeout: 1000, factor: 2 }
+                    );
                     if (response.data?.trip?.summary) {
                         const trip = response.data.trip;
                         const totalDistanceMeters = trip.summary.length * 1000;
                         const totalDurationSeconds = trip.summary.time;
-                        
+
                         if (totalDistanceMeters > 500000) return null;
-                        
+
                         logger.info(`[TurboCalculator] 🏁 Valhalla result: ${trip.summary.length.toFixed(2)} km, ${totalDurationSeconds} sec`);
-                        
+
                         return {
                             distance: totalDistanceMeters,
                             duration: totalDurationSeconds,
@@ -1646,7 +2348,10 @@ class OrderCalculator {
                 calculate: async () => {
                     const pUrl = (customPhotonUrl || process.env.PHOTON_URL || 'https://photon.komoot.io').trim().replace(/\/+$/, '');
                     const url = `${pUrl}/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`;
-                    const response = await axios.get(url, { timeout: 10000 });
+                    const response = await pRetry(
+                        () => axios.get(url, { timeout: 10000 }),
+                        { retries: 2, minTimeout: 1000, factor: 2 }
+                    );
                     if (response.data?.routes?.[0]) {
                         const r = response.data.routes[0];
                         if (r.distance > 500000) return null;
@@ -1665,7 +2370,10 @@ class OrderCalculator {
                 priority: 4,
                 calculate: async () => {
                     const url = `https://router.project-osrm.org/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`;
-                    const response = await axios.get(url, { timeout: 10000 });
+                    const response = await pRetry(
+                        () => axios.get(url, { timeout: 10000 }),
+                        { retries: 2, minTimeout: 1000, factor: 2 }
+                    );
                     if (response.data?.routes?.[0]) {
                         const r = response.data.routes[0];
                         if (r.distance > 500000) return null;
@@ -1733,7 +2441,7 @@ class OrderCalculator {
         // Fallback: Smart straight-line distance with better estimation
         logger.warn(`[OrderCalculator] ⚠️ All engines failed, using smart fallback`);
         let totalDistance = 0;
-        
+
         for (let i = 0; i < points.length - 1; i++) {
             const dist = this.calculateDistance(points[i], points[i + 1]);
             const factor = dist > 5000 ? 1.4 : 1.3;
@@ -1741,7 +2449,7 @@ class OrderCalculator {
         }
 
         const avgSpeedKmH = totalDistance > 10000 ? 35 : 25;
-        
+
         return {
             distance: totalDistance,
             duration: (totalDistance / 1000) / avgSpeedKmH * 3600,
@@ -1789,6 +2497,66 @@ class OrderCalculator {
 
         return R * c;
     }
+
+    /**
+     * v5.180: 2-opt local search for route optimization
+     * Improves route order by iteratively swapping segments to reduce total distance
+     * Best for 10-50 stops, O(n²) but fast enough for delivery routes
+     */
+    optimizeRoute2Opt(points, maxIterations = 100) {
+        if (points.length <= 3) return { points, improved: false, savingsPct: 0 };
+
+        // Clone points to avoid mutating original
+        let route = points.map(p => ({ ...p }));
+
+        // Calculate initial total distance
+        const calcTotalDistance = (r) => {
+            let total = 0;
+            for (let i = 0; i < r.length - 1; i++) {
+                total += this.haversineDistance(r[i].lat, r[i].lng, r[i + 1].lat, r[i + 1].lng);
+            }
+            return total;
+        };
+
+        let bestDistance = calcTotalDistance(route);
+        let improved = false;
+
+        for (let iter = 0; iter < maxIterations; iter++) {
+            let iterationImproved = false;
+
+            for (let i = 1; i < route.length - 2; i++) {
+                for (let j = i + 1; j < route.length - 1; j++) {
+                    // Create new route with segment i..j reversed
+                    const newRoute = [
+                        ...route.slice(0, i),
+                        ...route.slice(i, j + 1).reverse(),
+                        ...route.slice(j + 1)
+                    ];
+
+                    const newDistance = calcTotalDistance(newRoute);
+                    if (newDistance < bestDistance) {
+                        route = newRoute;
+                        bestDistance = newDistance;
+                        iterationImproved = true;
+                        improved = true;
+                    }
+                }
+            }
+
+            // If no improvement in this iteration, we've converged
+            if (!iterationImproved) break;
+        }
+
+        const initialDistance = calcTotalDistance(points);
+        const savingsPct = initialDistance > 0 ? ((initialDistance - bestDistance) / initialDistance * 100) : 0;
+
+        if (improved) {
+            logger.info(`[TurboCalculator] 🔄 2-opt: ${initialDistance.toFixed(0)}m -> ${bestDistance.toFixed(0)}m (${savingsPct.toFixed(1)}% savings)`);
+        }
+
+        return { points: route, improved, savingsPct };
+    }
+
     /**
      * Decode Valhalla legs into GeoJSON/Simple path for the UI
      */

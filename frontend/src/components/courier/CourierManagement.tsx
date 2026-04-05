@@ -319,7 +319,8 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
     if (contextData?.routes && Array.isArray(contextData.routes)) {
       contextData.routes.forEach((route: any) => {
         // v5.132: Resolve courier name from ID if needed
-        const rawCourier = getCourierName(route.courier);
+        // v5.180: Check both route.courier and route.courier_id
+        const rawCourier = getCourierName(route.courier || route.courier_id);
         let routeCourier = courierIdToNameMap.get(rawCourier) || CourierIdResolver.resolve(rawCourier) || normalizeCourierName(rawCourier);
         
         if (!routeCourier || routeCourier === 'Не назначено' || routeCourier === 'НЕ НАЗНАЧЕНО') return;

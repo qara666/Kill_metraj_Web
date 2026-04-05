@@ -13,10 +13,10 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
     const R = 6371; // km
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
 }
 // v5.142: Helper to extract ALL possible IDs from an order for deduplication
@@ -219,23 +219,32 @@ function getPlannedTime(o, baseDate) {
 function getArrivalTime(o, baseDate) {
     if (!o) return null;
 
-    const status = (o.status || '').toString().trim();
-    if (status === 'Доставляется' || status === 'В пути' || status === 'Исполнен') {
+    // v5.182: Handle ALL status variants including Ukrainian 'Доставляється', 'В маршруті', 'В маршруте'
+    const status = (o.status || o.deliveryStatus || '').toString().trim();
+    const statusLower = status.toLowerCase();
+    
+    // For orders in delivery or completed — use deliveredAt/deliveringAt timing
+    const isDelivering = statusLower.includes('доставля') || statusLower.includes('в пути') || 
+                         statusLower.includes('маршру') || statusLower.includes('исполнен') ||
+                         statusLower.includes('виконан') || statusLower.includes('завер');
+    
+    if (isDelivering) {
         if (o.statusTimings?.deliveringAt) {
             const dt = parseTime(o.statusTimings.deliveringAt, { baseDate });
             if (dt) return dt;
         }
-        if (o.handoverAt) return o.handoverAt;
+        if (o.handoverAt && typeof o.handoverAt === 'number') return o.handoverAt;
     }
 
-    if (status === 'Собран') {
+    if (statusLower.includes('собран') || statusLower.includes('зібран')) {
         if (o.statusTimings?.assembledAt) {
             const at = parseTime(o.statusTimings.assembledAt, { baseDate });
             if (at) return at;
         }
     }
 
-    if (o.createdAt && typeof o.createdAt === 'number') return o.createdAt;
+    // createdAt ONLY if it's a proper number timestamp (not a string that could be wrong date)
+    if (o.createdAt && typeof o.createdAt === 'number' && o.createdAt > 1000000000000) return o.createdAt;
 
     for (const field of ARRIVAL_TIME_FIELDS) {
         const val = o[field] ?? o.raw?.[field];
@@ -245,8 +254,39 @@ function getArrivalTime(o, baseDate) {
         }
     }
 
-    return getKitchenTime(o, baseDate);
+    return null; // Do NOT fall back to kitchenTime — that causes wrong anchoring
 }
+
+/**
+ * v31.0: NEW — getExecutionTime
+ * Returns the actual completion timestamp of an executed order.
+ * Priority: statusTimings.completedAt → statusTimings.deliveringAt → handoverAt → plannedTime
+ * Used for sorting "Исполнен" orders by the time the courier actually delivered them.
+ */
+function getExecutionTime(o, baseDate) {
+    if (!o) return null;
+    const status = (o.status || '').toString().trim().toLowerCase();
+    const isExecuted = status.includes('исполнен') || status.includes('выполнен') || status.includes('доставлен');
+    if (!isExecuted) return null;
+
+    // Best source: exact moment order was marked complete
+    if (o.statusTimings?.completedAt) {
+        const t = typeof o.statusTimings.completedAt === 'number'
+            ? o.statusTimings.completedAt
+            : parseTime(o.statusTimings.completedAt, { baseDate });
+        if (t) return t;
+    }
+
+    // Second: when courier was handed the order (started delivery)
+    if (o.statusTimings?.deliveringAt) {
+        const t = parseTime(o.statusTimings.deliveringAt, { baseDate });
+        if (t) return t;
+    }
+    if (o.handoverAt && typeof o.handoverAt === 'number') return o.handoverAt;
+
+    return null;
+}
+
 
 function formatTimeRange(startTime, endTime) {
     const getTimeStr = (ts) => {
@@ -276,19 +316,19 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
     const seenIds = new Set();
     const uniqueOrders = [];
     let dupByOrderNum = 0, dupById = 0;
-    
+
     for (const o of orders) {
         const orderNum = String(o.orderNumber || '');
         const allIds = getAllOrderIds(o);
-        
+
         let isDuplicate = false;
-        
+
         // PRIMARY: Check orderNumber first (most reliable)
         if (orderNum && seenOrderNumbers.has(orderNum)) {
             isDuplicate = true;
             dupByOrderNum++;
         }
-        
+
         // SECONDARY: Check IDs
         if (!isDuplicate) {
             for (const id of allIds) {
@@ -299,9 +339,9 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
                 }
             }
         }
-        
+
         if (isDuplicate) continue;
-        
+
         // Mark as seen
         if (orderNum) seenOrderNumbers.add(orderNum);
         for (const id of allIds) {
@@ -309,7 +349,7 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
         }
         uniqueOrders.push(o);
     }
-    
+
     if (dupByOrderNum > 0 || dupById > 0) {
         logger.info(`[turboGroupingHelpers] 🧊 Dedup: ${dupByOrderNum} by orderNumber + ${dupById} by ID, kept ${uniqueOrders.length}`);
     }
@@ -322,6 +362,8 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
         let plannedTime = getPlannedTime(order);
         const kitchenTime = getKitchenTime(order);
         let arrivalTime = getArrivalTime(order);
+        // v31.0: For executed orders, use the actual completion time as the primary sort anchor
+        const executionTime = getExecutionTime(order);
 
         // If no arrival time, use planned or kitchen time
         if (!arrivalTime) {
@@ -352,18 +394,25 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
             order,
             planned: plannedTs,
             arrival: arrivalTs,
-            kitchen: kitchenTime || undefined
+            kitchen: kitchenTime || undefined,
+            executionTime: executionTime || undefined // v31.0: actual delivery completion time
         });
     });
 
+
     // STEP 1: Add anchorTime (MATCHES FRONTEND EXACTLY)
-    // Frontend ALWAYS uses item.arrival as anchorTime (line 269-271 of routeCalculationHelpers.ts)
-    // NO bulk import detection at this level - the frontend doesn't do it
+    // v5.182: CRITICAL FIX — use PLANNED delivery time as anchor, matching frontend!
+    // Frontend groups by the TIME shown on orders (e.g. "11:27", "11:29") which is plannedTime.
+    // Using arrivalTime/createdAt caused completely wrong grouping because:
+    // - For 'В маршруте' orders, createdAt = order creation time (hours before delivery)
+    // - Two adjacent orders at 11:27 and 11:29 got assigned createdAt from different hours
+    //   → different blocks, wrong routes!
+    // executionTime is used ONLY for completed orders where it reflects actual delivery order.
     const ordersWithAnchor = ordersWithData.map(item => ({
         ...item,
-        anchorTime: item.arrival
+        anchorTime: item.executionTime || item.planned  // planned = deliverBy/plannedTime
     }));
-    
+
     logger.info(`[turboGroupingHelpers] 🕐 Order times (total ${ordersWithAnchor.length})`);
 
     // STEP 2: Sort by anchorTime, then kitchen
@@ -378,10 +427,10 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
         let courierRaw = (item.order.courier || '').toString().trim();
         if (!courierRaw) courierRaw = 'Не назначено';
         const courier = normalizeCourierName(courierRaw);
-        
+
         // CRITICAL: Skip unassigned - they are containers, not real couriers
         if (courier === 'НЕ НАЗНАЧЕНО') return;
-        
+
         if (!courierGroups.has(courier)) courierGroups.set(courier, []);
         courierGroups.get(courier).push(item);
     });
@@ -391,21 +440,44 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
 
     courierGroups.forEach((list, courierName) => {
         if (list.length === 0) return;
-        
-        logger.info(`[turboGroupingHelpers] 📦 Courier ${courierName}: ${list.length} orders to group`);
-        if (list.length <= 5) {
-            list.forEach((item, idx) => {
-                logger.info(`[turboGroupingHelpers]   Order ${idx + 1}: planned=${new Date(item.planned).toLocaleTimeString()}, arrival=${new Date(item.arrival).toLocaleTimeString()}, anchor=${new Date(item.anchorTime).toLocaleTimeString()}`);
+
+        // v36.0: CRITICAL - Respect manual groups from frontend FIRST
+        const manualGroupsMap = new Map();
+        const ordersForAuto = [];
+
+        list.forEach(item => {
+            if (item.order.manualGroupId) {
+                if (!manualGroupsMap.has(item.order.manualGroupId)) {
+                    manualGroupsMap.set(item.order.manualGroupId, []);
+                }
+                manualGroupsMap.get(item.order.manualGroupId).push(item);
+            } else {
+                ordersForAuto.push(item);
+            }
+        });
+
+        // Push manual groups verbatim (NO SLA SPLITS)
+        manualGroupsMap.forEach((manualList, manualId) => {
+            const minPlanned = Math.min(...manualList.map(i => i.planned));
+            const maxPlanned = Math.max(...manualList.map(i => i.planned));
+            blocks.push({
+                courierName,
+                windowStart: minPlanned,
+                windowEnd: maxPlanned,
+                windowLabel: manualList.length > 0 ? formatTimeRange(minPlanned, maxPlanned) : 'Ручная группа',
+                orders: manualList.map(i => i.order),
+                manualGroupId: manualId
             });
-        } else {
-            logger.info(`[turboGroupingHelpers]   First: planned=${new Date(list[0].planned).toLocaleTimeString()}, anchor=${new Date(list[0].anchorTime).toLocaleTimeString()}`);
-            logger.info(`[turboGroupingHelpers]   Last: planned=${new Date(list[list.length-1].planned).toLocaleTimeString()}, anchor=${new Date(list[list.length-1].anchorTime).toLocaleTimeString()}`);
-        }
+            logger.info(`[turboGroupingHelpers] ✋ Created manual block for ${courierName}: ${manualList.length} orders (id: ${manualId})`);
+        });
+
+        logger.info(`[turboGroupingHelpers] 📦 Courier ${courierName}: ${ordersForAuto.length} auto orders to group`);
+        if (ordersForAuto.length === 0) return;
 
         let currentGroup = null;
         let groupIndex = 0;
 
-        list.forEach((item, idx) => {
+        ordersForAuto.forEach((item, idx) => {
             if (!currentGroup) {
                 // Create first group
                 currentGroup = {
@@ -466,7 +538,7 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
                 else if (!distanceOk) { isSplit = true; splitReason = 'Гео'; }
                 else if (!districtOk) { isSplit = true; splitReason = 'Район'; }
                 else if (courierName === 'НЕ НАЗНАЧЕНО' && !kitchenGapOk) { isSplit = true; splitReason = 'Готовность'; }
-                
+
                 logger.info(`[turboGroupingHelpers] 📊 Order ${idx + 1}: diff=${diffMin}min, split=${isSplit}, reason=${splitReason}`);
 
                 if (!isSplit) {
@@ -487,7 +559,7 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
                         windowLabel: label,
                         orders: [...currentGroup.orders]
                     });
-                    
+
                     // Start new group
                     currentGroup = {
                         courierName,
@@ -516,7 +588,7 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
                 orders: currentGroup.orders
             });
         }
-        
+
         logger.info(`[turboGroupingHelpers] ✅ Total blocks for ${courierName}: ${blocks.filter(b => b.courierName === courierName).length}`);
     });
 
@@ -550,10 +622,10 @@ function dedupeOrders(orders) {
     for (const o of orders) {
         const orderNum = String(o.orderNumber || '');
         const allIds = getAllOrderIds(o);
-        
+
         // Check orderNumber first (primary key)
         if (orderNum && seenOrderNumbers.has(orderNum)) continue;
-        
+
         // Check IDs
         let isDuplicate = false;
         for (const id of allIds) {
@@ -563,7 +635,7 @@ function dedupeOrders(orders) {
             }
         }
         if (isDuplicate) continue;
-        
+
         if (orderNum) seenOrderNumbers.add(orderNum);
         for (const id of allIds) {
             if (id) seenIds.add(id);
@@ -581,10 +653,10 @@ function groupAllOrdersByTimeWindow(orders) {
         if (typeof courierName === 'object' && courierName !== null) {
             courierName = courierName.name || courierName._id || courierName.id;
         }
-        
+
         const normName = normalizeCourierName(courierName);
         if (normName === 'НЕ НАЗНАЧЕНО') return; // Skip unassigned
-        
+
         if (!rawGroups.has(normName)) rawGroups.set(normName, { name: courierName, orders: [] });
         rawGroups.get(normName).orders.push(order);
     });
@@ -598,4 +670,5 @@ function groupAllOrdersByTimeWindow(orders) {
     return result;
 }
 
-module.exports = { groupAllOrdersByTimeWindow, groupOrdersByTimeWindowFrontend, normalizeCourierName };
+module.exports = { groupAllOrdersByTimeWindow, groupOrdersByTimeWindowFrontend, normalizeCourierName, getExecutionTime };
+

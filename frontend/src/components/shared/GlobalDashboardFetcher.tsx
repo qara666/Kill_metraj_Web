@@ -17,19 +17,25 @@ export const GlobalDashboardFetcher: React.FC = () => {
         onDataLoaded: (data) => {
             if (data && typeof setExcelData === 'function') {
                 // v5.154: Don't overwrite existing data with empty data
+                // v5.180: Also check for routes - robot may send route updates without orders
                 const hasNewOrders = data.orders && data.orders.length > 0;
                 const hasExistingOrders = excelData?.orders && excelData.orders.length > 0;
+                const hasNewRoutes = data.routes && data.routes.length > 0;
                 
                 if (hasNewOrders) {
                     // New data has orders - use it
-                    // New data has orders - use it
                     setExcelData(data);
+                } else if (hasNewRoutes) {
+                    // v5.180: New data has routes - merge them in
+                    setExcelData({
+                        ...data,
+                        orders: excelData?.orders || data.orders || [],
+                        couriers: data.couriers || excelData?.couriers || [],
+                    });
                 } else if (!hasExistingOrders) {
-                    // No new orders AND no existing orders - OK to set
                     // No new orders AND no existing orders - OK to set
                     setExcelData(data);
                 } else {
-                    // No new orders but we have existing orders - skip to preserve data
                     // No new orders but we have existing orders - skip to preserve data
                 }
             }

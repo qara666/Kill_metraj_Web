@@ -216,6 +216,7 @@ const transformDashboardOrder = (apiOrder: DashboardOrderResponse, baseDate: str
         deliveryTime: apiOrder.deliveryTime,
         changeAmount: apiOrder.changeAmount,
         totalTime: apiOrder.totalTime,
+        zone: (apiOrder.deliveryZone || (apiOrder as any).deliveryZoneName || apiOrder.zoneName || apiOrder.zone || 'БЕЗ ЗОНЫ').toString().trim().toUpperCase(),
         coords: (apiOrder as any).coords || ((apiOrder as any).lat && (apiOrder as any).lng ? { lat: Number((apiOrder as any).lat), lng: Number((apiOrder as any).lng) } : null),
         isSelected: false,
         isInRoute: false,
