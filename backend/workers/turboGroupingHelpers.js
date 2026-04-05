@@ -219,32 +219,36 @@ function getPlannedTime(o, baseDate) {
 function getArrivalTime(o, baseDate) {
     if (!o) return null;
 
-    // v5.182: Handle ALL status variants including Ukrainian 'Доставляється', 'В маршруті', 'В маршруте'
-    const status = (o.status || o.deliveryStatus || '').toString().trim();
-    const statusLower = status.toLowerCase();
-    
-    // For orders in delivery or completed — use deliveredAt/deliveringAt timing
-    const isDelivering = statusLower.includes('доставля') || statusLower.includes('в пути') || 
-                         statusLower.includes('маршру') || statusLower.includes('исполнен') ||
-                         statusLower.includes('виконан') || statusLower.includes('завер');
-    
-    if (isDelivering) {
+    // Phase 5.185: Prefer low-precision strings (creationDate/kitchenTime) over high-precision timestamps (createdAt)
+    // to ensure orders from the same batch/minute are grouped together, matching frontend.
+    const lowPrecisionFields = ['creationDate', 'kitchenTime', 'создания', 'создание', 'время на кухню'];
+    for (const field of lowPrecisionFields) {
+        const val = o[field] ?? o.raw?.[field];
+        if (val && typeof val === 'string' && val.includes(':')) {
+            const parsed = parseTime(val, { baseDate });
+            if (parsed) return parsed;
+        }
+    }
+
+    // EXACT MATCH with frontend timeUtils.ts getArrivalTime (line 190)
+    // Only these exact Russian status strings — same as frontend
+    if (o.status === 'Доставляется' || o.status === 'В пути' || o.status === 'Исполнен') {
         if (o.statusTimings?.deliveringAt) {
             const dt = parseTime(o.statusTimings.deliveringAt, { baseDate });
             if (dt) return dt;
         }
-        if (o.handoverAt && typeof o.handoverAt === 'number') return o.handoverAt;
+        if (o.handoverAt) return o.handoverAt;
     }
 
-    if (statusLower.includes('собран') || statusLower.includes('зібран')) {
+    if (o.status === 'Собран') {
         if (o.statusTimings?.assembledAt) {
             const at = parseTime(o.statusTimings.assembledAt, { baseDate });
             if (at) return at;
         }
     }
 
-    // createdAt ONLY if it's a proper number timestamp (not a string that could be wrong date)
-    if (o.createdAt && typeof o.createdAt === 'number' && o.createdAt > 1000000000000) return o.createdAt;
+    // CRITICAL: createdAt is ONLY a fallback and must be used with caution (too high precision)
+    if (o.createdAt && typeof o.createdAt === 'number') return o.createdAt;
 
     for (const field of ARRIVAL_TIME_FIELDS) {
         const val = o[field] ?? o.raw?.[field];
@@ -254,7 +258,8 @@ function getArrivalTime(o, baseDate) {
         }
     }
 
-    return null; // Do NOT fall back to kitchenTime — that causes wrong anchoring
+    // Frontend line 216: fallback to kitchenTime
+    return getKitchenTime(o, baseDate);
 }
 
 /**
@@ -400,17 +405,11 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
     });
 
 
-    // STEP 1: Add anchorTime (MATCHES FRONTEND EXACTLY)
-    // v5.182: CRITICAL FIX — use PLANNED delivery time as anchor, matching frontend!
-    // Frontend groups by the TIME shown on orders (e.g. "11:27", "11:29") which is plannedTime.
-    // Using arrivalTime/createdAt caused completely wrong grouping because:
-    // - For 'В маршруте' orders, createdAt = order creation time (hours before delivery)
-    // - Two adjacent orders at 11:27 and 11:29 got assigned createdAt from different hours
-    //   → different blocks, wrong routes!
-    // executionTime is used ONLY for completed orders where it reflects actual delivery order.
+    // STEP 1: anchorTime = arrival (EXACT MATCH with frontend line 271)
+    // frontend: anchorTime: item.arrival
     const ordersWithAnchor = ordersWithData.map(item => ({
         ...item,
-        anchorTime: item.executionTime || item.planned  // planned = deliverBy/plannedTime
+        anchorTime: item.arrival
     }));
 
     logger.info(`[turboGroupingHelpers] 🕐 Order times (total ${ordersWithAnchor.length})`);
@@ -502,7 +501,8 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
                 const maxDelivery = Math.max(currentGroup.windowEnd, item.planned);
                 const deliveryFits = (maxDelivery - minDelivery) <= LOCAL_DELIVERY_SPAN_MS;
 
-                // Check distance (15km threshold)
+                // EXACT MATCH with frontend groupOrdersByTimeWindow (lines 326-357)
+                // Frontend HAS distanceOk + districtOk checks — we must have them too!
                 let distanceOk = true;
                 if (item.order.coords && currentGroup.orders[0].coords) {
                     const dist = haversineDistance(
@@ -512,32 +512,32 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
                     if (dist > 15) distanceOk = false;
                 }
 
-                // Check district
                 let districtOk = true;
-                const orderZone = item.order.deliveryZone || '';
-                const groupZone = currentGroup.orders[0].deliveryZone || '';
+                const orderZone = String(item.order.deliveryZone || item.order.zone || item.order.kmlZone || '').trim().toUpperCase();
+                const groupZone = String(currentGroup.orders[0].deliveryZone || currentGroup.orders[0].zone || currentGroup.orders[0].kmlZone || '').trim().toUpperCase();
                 if (orderZone && groupZone && orderZone !== groupZone) {
                     districtOk = false;
                 }
 
-                // v5.170: Kitchen gap check — only for unassigned couriers (matching frontend)
+                // kitchenGap: frontend checks !isAssignedCourier (line 344)
+                // In backend: assigned couriers are everyone except 'НЕ НАЗНАЧЕНО'
+                const isAssignedCourier = courierName !== 'НЕ НАЗНАЧЕНО';
                 let kitchenGapOk = true;
-                if (courierName === 'НЕ НАЗНАЧЕНО') {
+                if (!isAssignedCourier) {
                     const prevKitchen = currentGroup.lastKitchen;
                     if (prevKitchen && item.kitchen && Math.abs(item.kitchen - prevKitchen) > 30 * 60 * 1000) {
                         kitchenGapOk = false;
                     }
                 }
 
-                // Main split cascade: Время -> SLA -> Гео -> Район -> Готовность
+                // Split cascade (matches frontend lines 353-357 exactly)
                 let isSplit = false;
                 let splitReason = '';
-
                 if (!arrivedClose) { isSplit = true; splitReason = 'Время'; }
                 else if (!deliveryFits) { isSplit = true; splitReason = 'SLA'; }
                 else if (!distanceOk) { isSplit = true; splitReason = 'Гео'; }
                 else if (!districtOk) { isSplit = true; splitReason = 'Район'; }
-                else if (courierName === 'НЕ НАЗНАЧЕНО' && !kitchenGapOk) { isSplit = true; splitReason = 'Готовность'; }
+                else if (!isAssignedCourier && !kitchenGapOk) { isSplit = true; splitReason = 'Готовность'; }
 
                 logger.info(`[turboGroupingHelpers] 📊 Order ${idx + 1}: diff=${diffMin}min, split=${isSplit}, reason=${splitReason}`);
 

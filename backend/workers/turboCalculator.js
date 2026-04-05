@@ -613,17 +613,9 @@ class OrderCalculator {
         this.needsReRun = false;
 
         try {
-            if (this.io) {
-                this.io.emit('robot_status', {
-                    isActive: true,
-                    lastUpdate: Date.now(),
-                    totalCount: 0,
-                    processedCount: 0,
-                    totalCouriers: 0,
-                    processedCouriers: 0,
-                    message: 'Initializing background robot...'
-                });
-            }
+            // v5.185: DO NOT emit zeroed-out status at the start of tick.
+            // This causes the frontend progress bar to reset to 0/0 and flash.
+            // We only emit when we actually start processing a specific division or all.
 
             const tasks = [];
             for (const [divId, state] of this.divisionStates.entries()) {
