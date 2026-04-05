@@ -628,25 +628,50 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   }, [excelData?.orders, performManualOverridesSave]);
 
   // v5.151: Auto-save dashboard data to localStorage when it changes
-  // This ensures FastOperator data persists across page reloads
+  // v5.180: Optimized - increased debounce to 1000ms, skip if only routes changed
+  const lastSavedRef = useRef<string>('');
+  
   useEffect(() => {
-    if (excelData && excelData.orders && excelData.orders.length > 0) {
-      // Debounce save to avoid excessive writes during rapid updates
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-      saveTimeoutRef.current = setTimeout(() => {
-        try {
-          // v5.152: Strip geometry from routes to prevent localStorage QuotaExceededError
-          const routesNoGeo = (excelData.routes || []).map((r: any) => ({ ...r, geometry: undefined }));
-          const dataToSave = { ...excelData, routes: routesNoGeo, lastModified: Date.now() };
-          localStorageUtils.setData('km_dashboard_processed_data', dataToSave);
-          // Auto-saved
-        } catch (e) {
-          console.warn('[ExcelSync] Failed to auto-save dashboard data:', e);
-        }
-      }, 500); // Save 500ms after last change
+    if (!excelData || !excelData.orders || excelData.orders.length === 0) return;
+    
+    // v5.180: Create lightweight hash to detect real changes
+    const currentHash = `${excelData.orders.length}-${excelData.couriers?.length || 0}-${excelData.summary?.totalOrders || 0}`;
+    if (currentHash === lastSavedRef.current && excelData.routes) {
+      // Only routes changed, no need to save orders
+      return;
     }
+    lastSavedRef.current = currentHash;
+    
+    // Debounce save to avoid excessive writes during rapid updates
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = setTimeout(() => {
+      try {
+        // v5.152: Strip geometry from routes to prevent localStorage QuotaExceededError
+        // v5.180: Also strip heavy data from orders to save space
+        const ordersLight = (excelData.orders || []).map((o: any) => ({
+          id: o.id, orderNumber: o.orderNumber, courier: o.courier,
+          address: o.address, status: o.status, coords: o.coords,
+          deliveryZone: o.deliveryZone, kmlZone: o.kmlZone,
+          settledDate: o.settledDate, totalAmount: o.totalAmount
+        }));
+        const routesNoGeo = (excelData.routes || []).map((r: any) => ({ 
+          ...r, geometry: undefined, 
+          orders: r.orders?.map((o: any) => ({ id: o.id, orderNumber: o.orderNumber })) 
+        }));
+        const dataToSave = { 
+          ...excelData, 
+          orders: ordersLight, 
+          routes: routesNoGeo, 
+          lastModified: Date.now() 
+        };
+        localStorageUtils.setData('km_dashboard_processed_data', dataToSave);
+        // Auto-saved (optimized)
+      } catch (e) {
+        console.warn('[ExcelSync] Failed to auto-save dashboard data:', e);
+      }
+    }, 1000); // v5.180: Increased to 1000ms to reduce writes
     
     return () => {
       if (saveTimeoutRef.current) {

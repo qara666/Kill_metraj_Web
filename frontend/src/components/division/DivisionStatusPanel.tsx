@@ -60,8 +60,9 @@ const DivisionStatusPanel: React.FC = () => {
     };
     hydrate();
 
-    // Poll for updates as backup
-    const interval = setInterval(hydrate, 5000);
+    // v5.180: Poll for updates less frequently to reduce CPU/bandwidth
+    // Real-time updates come via socket, polling is just backup
+    const interval = setInterval(hydrate, 30000); // 30 seconds instead of 5
 
     // Subscribe to real-time updates
     const handleUpdate = (payload: any) => {
