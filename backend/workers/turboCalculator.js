@@ -1466,11 +1466,41 @@ class OrderCalculator {
                     logger.info(`[TurboCalculator] 🚚 [${windowKey}] Processing ${normName} with ${dedupedOrders.length} orders`);
 
                     try {
-                        // v5.170: Geocoding only orders still missing coords
-                        // CRITICAL: Check session cache AND DB cache before calling API
+                        // v5.180: CRITICAL - Only geocode orders that are:
+                        // 1. NOT cancelled/refused
+                        // 2. Have coords OR can get coords
+                        // 3. Have a REAL courier assigned (not "НЕ НАЗНАЧЕНО" or "UNASSIGNED" or "По")
+                        // 4. NOT already routed (for incremental mode)
+                        // 5. NOT self-pickup (самовивіз)
+                        const isValidCourier = (courier) => {
+                            if (!courier) return false;
+                            const n = String(courier).toUpperCase().trim();
+                            if (n === 'НЕ НАЗНАЧЕНО' || n === 'UNASSIGNED' || n === 'ПО') return false;
+                            if (n.includes('НЕ НАЗНАЧЕН') || n.includes('НЕНАЗНАЧЕН')) return false;
+                            return true;
+                        };
+                        
+                        const isSelfPickup = (order) => {
+                            const delivery = String(order.deliveryType || order.delivery || '').toLowerCase();
+                            const address = String(order.address || '').toLowerCase();
+                            return delivery.includes('самови') || delivery.includes('самовыв') || 
+                                   delivery.includes('pickup') || delivery.includes('self') ||
+                                   address.includes('самови') || address.includes('самовыв');
+                        };
+
+                        // v5.180: Check if order is already routed (skip in incremental mode)
+                        const isAlreadyRouted = (order) => {
+                            const orderNum = String(order.orderNumber || '');
+                            const orderId = String(order.id || '');
+                            return existingRoutedOrderNumbers.has(orderNum) || existingRoutedOrderIds.has(orderId);
+                        };
+
                         const needsGeocoding = dedupedOrders.filter(o => {
                             const s = String(o.status || '').toLowerCase().trim();
                             if (s.includes('отказ') || s.includes('отменен') || s.includes('відмова')) return false;
+                            if (isSelfPickup(o)) return false; // Skip self-pickup orders
+                            if (!isValidCourier(o.courier)) return false; // Skip if no real courier
+                            if (isAlreadyRouted(o)) return false; // Skip already-routed in incremental mode
                             if (o.coords?.lat) return false; // Already has coords
 
                             // Check session cache
