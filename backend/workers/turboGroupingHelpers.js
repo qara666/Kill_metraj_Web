@@ -41,10 +41,13 @@ function getOrderHash(o) {
 }
 
 // v5.148: Fixed to match frontend - use "НЕ НАЗНАЧЕНО" (uppercase)
+// v5.180: "ПО" is not a courier - treat as unassigned
 function normalizeCourierName(name) {
     if (!name) return '';
     const n = name.toString().trim().replace(/\s+/g, ' ').toUpperCase();
     if (!n || n === 'ID:0' || n.includes('НЕ НАЗНАЧЕН') || n.includes('НЕНАЗНАЧЕН')) return 'НЕ НАЗНАЧЕНО';
+    // v5.180: "ПО" is not a courier - it's internal/trash designation
+    if (n === 'ПО') return 'НЕ НАЗНАЧЕНО';
     return n;
 }
 
@@ -429,6 +432,8 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
 
         // CRITICAL: Skip unassigned - they are containers, not real couriers
         if (courier === 'НЕ НАЗНАЧЕНО') return;
+        // CRITICAL: Skip "ПО" (trash/internal) - not a real courier
+        if (courier === 'ПО') return;
 
         if (!courierGroups.has(courier)) courierGroups.set(courier, []);
         courierGroups.get(courier).push(item);
@@ -656,6 +661,7 @@ function groupAllOrdersByTimeWindow(orders) {
 
         const normName = normalizeCourierName(courierName);
         if (normName === 'НЕ НАЗНАЧЕНО') return; // Skip unassigned
+        if (normName === 'ПО') return; // v5.180: "ПО" is not a real courier
 
         if (!rawGroups.has(normName)) rawGroups.set(normName, { name: courierName, orders: [] });
         rawGroups.get(normName).orders.push(order);
