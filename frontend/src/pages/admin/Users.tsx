@@ -349,6 +349,16 @@ export const AdminUsers: React.FC = () => {
     )
 }
 
+const ALL_TABS = [
+    { id: 'dashboard', name: 'Главная' },
+    { id: 'routes', name: 'Маршруты' },
+    { id: 'couriers', name: 'Курьеры' },
+    { id: 'financials', name: 'Касса рассчет' },
+    { id: 'analytics', name: 'Аналитика' },
+    { id: 'telegram-parsing', name: 'Парсинг выгрузки' },
+    { id: 'settings', name: 'Настройки' }
+]
+
 // Модальное окно создания пользователя (упрощенная версия)
 const CreateUserModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const { isDark } = useTheme()
@@ -359,8 +369,18 @@ const CreateUserModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         password: '',
         role: 'user',
         divisionId: '',
-        canModifySettings: true
+        canModifySettings: true,
+        allowedTabs: ['dashboard', 'routes', 'couriers', 'financials', 'analytics', 'telegram-parsing', 'settings']
     })
+
+    const toggleTab = (tabId: string) => {
+        const current = formData.allowedTabs || []
+        if (current.includes(tabId)) {
+            setFormData({ ...formData, allowedTabs: current.filter(id => id !== tabId) })
+        } else {
+            setFormData({ ...formData, allowedTabs: [...current, tabId] })
+        }
+    }
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -433,6 +453,28 @@ const CreateUserModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                         )}
                     />
 
+                    <div className="space-y-2">
+                        <label className={clsx('text-xs font-black uppercase tracking-widest opacity-40', isDark ? 'text-gray-300' : 'text-gray-700')}>Доступные вкладки:</label>
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                            {ALL_TABS.map(tab => (
+                                <button
+                                    key={tab.id}
+                                    type="button"
+                                    onClick={() => toggleTab(tab.id)}
+                                    className={clsx(
+                                        "px-3 py-2 rounded-xl text-[10px] font-black uppercase transition-all text-left flex items-center gap-2",
+                                        formData.allowedTabs?.includes(tab.id)
+                                            ? "bg-blue-600 text-white shadow-lg"
+                                            : (isDark ? "bg-gray-700/50 text-gray-400 border border-gray-600" : "bg-gray-100 text-gray-600 border border-gray-200")
+                                    )}
+                                >
+                                    <div className={clsx("w-2 h-2 rounded-full", formData.allowedTabs?.includes(tab.id) ? "bg-white" : "bg-gray-500")} />
+                                    {tab.name}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
                     <div className="flex items-center gap-2">
                         <input
                             type="checkbox"
@@ -483,8 +525,18 @@ const EditUserModal: React.FC<{ user: User; onClose: () => void }> = ({ user, on
         isActive: user.isActive,
         divisionId: user.divisionId || '',
         password: '',
-        canModifySettings: user.canModifySettings ?? true
+        canModifySettings: user.canModifySettings ?? true,
+        allowedTabs: user.allowedTabs || ['dashboard', 'routes', 'couriers', 'financials', 'analytics', 'telegram-parsing', 'settings']
     })
+
+    const toggleTab = (tabId: string) => {
+        const current = formData.allowedTabs || []
+        if (current.includes(tabId)) {
+            setFormData({ ...formData, allowedTabs: current.filter(id => id !== tabId) })
+        } else {
+            setFormData({ ...formData, allowedTabs: [...current, tabId] })
+        }
+    }
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -543,6 +595,28 @@ const EditUserModal: React.FC<{ user: User; onClose: () => void }> = ({ user, on
                             isDark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'
                         )}
                     />
+
+                    <div className="space-y-2">
+                        <label className={clsx('text-xs font-black uppercase tracking-widest opacity-40', isDark ? 'text-gray-300' : 'text-gray-700')}>Доступные вкладки:</label>
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                            {ALL_TABS.map(tab => (
+                                <button
+                                    key={tab.id}
+                                    type="button"
+                                    onClick={() => toggleTab(tab.id)}
+                                    className={clsx(
+                                        "px-3 py-2 rounded-xl text-[10px] font-black uppercase transition-all text-left flex items-center gap-2",
+                                        formData.allowedTabs?.includes(tab.id)
+                                            ? "bg-blue-600 text-white shadow-lg"
+                                            : (isDark ? "bg-gray-700/50 text-gray-400 border border-gray-600" : "bg-gray-100 text-gray-600 border border-gray-200")
+                                    )}
+                                >
+                                    <div className={clsx("w-2 h-2 rounded-full", formData.allowedTabs?.includes(tab.id) ? "bg-white" : "bg-gray-500")} />
+                                    {tab.name}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
 
                     <div className="flex items-center gap-2">
                         <input

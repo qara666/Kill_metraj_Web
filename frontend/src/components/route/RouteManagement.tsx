@@ -102,7 +102,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
   // v5.41: Robust Normalization - trim all inputs to prevent mismatch
   const [courierFilter, setCourierFilter] = useState<string>('all')
-  const [unassignedStatusFilter, setUnassignedStatusFilter] = useState<'all' | 'оформление' | 'в работе' | 'другое'>('all')
+  const [unassignedStatusFilter, setUnassignedStatusFilter] = useState<'all' | 'оформление' | 'в работе' | 'собран' | 'отказы'>('all')
   const [isGroupedExpanded, setIsGroupedExpanded] = useState(true)
   const [routePage, setRoutePage] = useState(0)
   const [routesPerPage] = useState(5) // Количество маршрутов на странице
@@ -1031,16 +1031,19 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         const s = (o.status || '').toLowerCase().trim();
         if (unassignedStatusFilter === 'оформление') {
           // Broad variants for "Оформление"
-          return s.includes('оформлен') || s.includes('оформление') || s.includes('сформирован') || s.includes('формируется') || s.includes('новый') || s.includes('new') || s.includes('draft');
+          return s.includes('оформлен') || s.includes('оформление') || s.includes('сформирован') || s.includes('формируется') || s.includes('новый') || s.includes('принят') || s.includes('new') || s.includes('draft');
         }
         if (unassignedStatusFilter === 'в работе') {
-          // Broad variants for "В работе"
-          return s.includes('в работе') || s.includes('собирается') || s.includes('собран') || s.includes('в сборке') || s.includes('уточнение') || s.includes('work') || s.includes('processing');
+          // Broad variants for "В работе" (Processing but not yet ready)
+          return s.includes('в работе') || s.includes('собирает') || s.includes('сборк') || s.includes('готовит') || s.includes('очеред') || s.includes('уточн') || s.includes('подготов') || s.includes('work') || s.includes('proc');
         }
-        if (unassignedStatusFilter === 'другое') {
-          const isDraft = s.includes('оформлен') || s.includes('оформление') || s.includes('сформирован') || s.includes('формируется') || s.includes('новый') || s.includes('new') || s.includes('draft');
-          const isInProgress = s.includes('в работе') || s.includes('собирается') || s.includes('собран') || s.includes('в сборке') || s.includes('уточнение') || s.includes('work') || s.includes('processing');
-          return !isDraft && !isInProgress;
+        if (unassignedStatusFilter === 'собран') {
+          // Variants for "Собран" (Ready for pickup/delivery)
+          return s.includes('собран') || s.includes('готов') || s.includes('ready') || s.includes('assembled');
+        }
+        if (unassignedStatusFilter === 'отказы') {
+          // Variants for "Отказы" (Cancellations/Rejections)
+          return s.includes('отмен') || s.includes('отказ') || s.includes('возврат') || s.includes('удал') || s.includes('cancel') || s.includes('reject') || s.includes('fail');
         }
         return true;
       });
@@ -1698,7 +1701,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
   }
 
   const clearAllRoutes = async () => {
-    if (window.confirm('Вы уверены, что хотите удалить все маршруты?')) {
+    if (window.confirm('Вы уверены, что хотите полностью удалить все маршруты для выбранного подразделения?')) {
       const store = useDashboardStore.getState();
       const divisionId = store.divisionId || 'all';
       const date = store.apiDateShift;
@@ -1716,7 +1719,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       try {
         const token = localStorage.getItem('km_access_token');
         if (token) {
-          await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/routes/all/calculated?divisionId=${divisionId}&date=${date}`, {
+          const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+          await fetch(`${baseUrl}/api/routes/all/calculated?divisionId=${divisionId}&date=${date}`, {
             method: 'DELETE',
             headers: {
               'Authorization': `Bearer ${token}`
@@ -1750,27 +1754,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         });
       }
 
-      toast.success('Все маршруты очищены');
+      toast.success('Маршруты успешно удалены');
     }
   }
 
-  const clearEmptyRoutes = () => {
-    updateExcelData((prev: any) => {
-      const routes = prev?.routes || [];
-      const nonEmptyRoutes = routes.filter((r: Route) => {
-        return r.orders && r.orders.length > 0;
-      });
-
-      if (nonEmptyRoutes.length === routes.length) {
-        toast.error('Нет пустых маршрутов для удаления');
-        return prev;
-      }
-      toast.success(`Удалено пустых маршрутов: ${routes.length - nonEmptyRoutes.length}`);
-      return {
-        ...prev,
-        routes: nonEmptyRoutes
-      };
-    }, true);
+  const handleFinishCalculation = () => {
+    // New function requested to replace "Clear Finished" / "Clear Completed"
+    // We'll call it "Complete Calculation" or "Archive Day"
+    toast('Функция архивации будет доступна в следующем обновлении', { icon: '📦' });
   }
 
   const openRouteInGoogleMaps = (route: Route) => {
@@ -2234,7 +2225,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                           { id: 'all', label: 'ВСЕ' },
                           { id: 'оформление', label: 'ОФОРМЛЕНИЕ' },
                           { id: 'в работе', label: 'В РАБОТЕ' },
-                          { id: 'другое', label: 'ПРОЧИЕ' }
+                          { id: 'собран', label: 'СОБРАН' },
+                          { id: 'отказы', label: 'ОТКАЗЫ' }
                         ] as const).map((filter) => (
                           <button
                             key={filter.id}
@@ -2761,15 +2753,15 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                   {(excelData?.routes?.length ?? 0) > 0 && (
                     <div className="flex items-center gap-3">
                       <button
-                        onClick={clearEmptyRoutes}
+                        onClick={handleFinishCalculation}
                         className={clsx(
                           'px-6 py-3 rounded-xl text-sm font-black uppercase tracking-widest transition-all border-2',
                           isDark
-                            ? 'border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10'
-                            : 'border-yellow-100 text-yellow-600 hover:bg-yellow-50 hover:border-yellow-200 shadow-sm'
+                            ? 'border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10'
+                            : 'border-indigo-100 text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 shadow-sm'
                         )}
                       >
-                        Удалить пустые
+                        Завершить расчет
                       </button>
                       <button
                         onClick={clearAllRoutes}

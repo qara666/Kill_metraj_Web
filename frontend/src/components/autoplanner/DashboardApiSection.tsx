@@ -416,8 +416,8 @@ export const DashboardApiSection: React.FC = () => {
                 </div>
             </div>
 
-            {/* v5.157: Real-time Stats Only */}
-            {autoRoutingStatus.isActive && (
+            {/* v5.157: Real-time Stats */}
+            {(autoRoutingStatus.isActive || (autoRoutingStatus.processedCount || 0) > 0) && (
                 <div className={clsx(
                     'mt-4 pt-4 border-t flex flex-col gap-3',
                     isDark ? 'border-gray-700/50' : 'border-gray-200/50'

@@ -1338,7 +1338,7 @@ app.post('/api/turbo/priority', authenticateToken, async (req, res) => {
     // Save active division to DashboardState (per-user)
     const DashboardState = require('./src/models/DashboardState');
     const existing = await DashboardState.findOne({ where: { userId } });
-    const existingData = existing?.data || {};
+    const existingData = (existing && existing.data) ? existing.data : {};
     await DashboardState.upsert({
       userId: userId,
       data: {
@@ -1352,8 +1352,9 @@ app.post('/api/turbo/priority', authenticateToken, async (req, res) => {
     logger.info(`[API] About to trigger turboCalculator with divisionId=${divisionId}, date=${date}`);
     if (turboCalculator && typeof turboCalculator.trigger === 'function') {
       try {
-        turboCalculator.trigger(divisionId, date, userId);
-        logger.info(`[API] turboCalculator.trigger() called successfully`);
+        // v5.172: Manual trigger = FULL recalculation (forceFull=true)
+        turboCalculator.trigger(divisionId, date, userId, true);
+        logger.info(`[API] turboCalculator.trigger() called with forceFull=true`);
         res.json({ success: true, message: `Priority calculation started for division ${divisionId}`, divisionId, date: date || new Date().toISOString().split('T')[0] });
       } catch (triggerErr) {
         logger.error('[API] turboCalculator.trigger() threw error:', triggerErr);

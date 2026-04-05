@@ -375,9 +375,23 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     const handleTurboRoutes = (e: Event) => {
       const { routes, couriers: eventCouriers } = (e as CustomEvent).detail || {};
       if (routes && Array.isArray(routes) && routes.length > 0) {
+        // v5.180: Mark timestamp to prevent stale DB overwrites
+        lastSocketRouteUpdateRef.current = Date.now();
+        
         // turbo:routes_update received
         setExcelDataState(prev => {
-          if (!prev) return prev;
+          // v5.180: If no data loaded yet, create minimal state with routes
+          if (!prev) {
+            console.log('[ExcelSync] handleTurboRoutes: creating initial state from socket routes');
+            return {
+              orders: [],
+              couriers: eventCouriers || [],
+              paymentMethods: [],
+              routes: routes,
+              errors: [],
+              summary: {}
+            } as any;
+          }
 
           // v5.160: Enrich route orders with master order data (address, courier, etc.)
           const masterOrdersMap = new Map((prev.orders || []).map((o: any) => [String(o.id), o]));
@@ -555,11 +569,14 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     // If server sends significantly LESS information, it's a regression. 
     // Return a merged version or stick with Local.
     // v5.161: Allow 0 routes from server if it's a valid update (preventing stuck 'Protecting Local State')
+    // v5.180: CRITICAL FIX - preserve routes from next even when protecting local orders
     if (serverSettledCount < localSettledCount) {
         console.warn(`[ExcelSync] Server Data Partial: Settled=${serverSettledCount} (Local=${localSettledCount}). Protecting Local State.`);
         return {
             ...next,
             orders: current.orders, // Prefer local orders if server count drops
+            routes: next.routes || current.routes, // v5.180: Always preserve routes
+            couriers: next.couriers || current.couriers, // v5.180: Always preserve courier updates
             lastModified: Math.max(next.lastModified || 0, current.lastModified || 0)
         };
     }
@@ -733,10 +750,20 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
 
   // v25.4: Refresh routes from database when excelData is loaded
   // v5.141: Improved deduplication to avoid duplicate routes
+  // v5.180: Track last socket route update to prevent stale DB overwrites
+  const lastSocketRouteUpdateRef = useRef<number>(0);
+  
   const refreshRoutesFromDB = useCallback(async () => {
     try {
       const token = localStorage.getItem('km_access_token');
       if (!token) return;
+      
+      // v5.180: Skip if socket routes were updated in the last 5 seconds (prevent stale DB overwrite)
+      const timeSinceSocketUpdate = Date.now() - lastSocketRouteUpdateRef.current;
+      if (timeSinceSocketUpdate < 5000 && lastSocketRouteUpdateRef.current > 0) {
+        console.log(`[ExcelSync] Skipping DB refresh - socket routes updated ${timeSinceSocketUpdate}ms ago`);
+        return;
+      }
       
       const dbRoutes = await fetchRoutesWithDate(token);
       // Refreshed routes from DB

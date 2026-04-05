@@ -29,13 +29,13 @@ interface LayoutProps {
 }
 
 const navigation = [
-  { name: 'Панель управления', href: '/', icon: HomeIcon, restricted: false },
-  { name: 'Маршруты', href: '/routes', icon: MapIcon, restricted: false },
-  { name: 'Курьеры', href: '/couriers', icon: UserGroupIcon, restricted: false },
-  { name: 'Касса рассчет', href: '/financials', icon: BanknotesIcon, restricted: false },
-  { name: 'Аналитика', href: '/analytics', icon: ChartBarIcon, restricted: true },
-  { name: 'Парсинг выгрузки в телеграм и реестре', href: '/telegram-parsing', icon: PaperClipIcon, restricted: true },
-  { name: 'Настройки', href: '/settings', icon: CogIcon, restricted: false },
+  { id: 'dashboard', name: 'Панель управления', href: '/', icon: HomeIcon, restricted: false },
+  { id: 'routes', name: 'Маршруты', href: '/routes', icon: MapIcon, restricted: false },
+  { id: 'couriers', name: 'Курьеры', href: '/couriers', icon: UserGroupIcon, restricted: false },
+  { id: 'financials', name: 'Касса рассчет', href: '/financials', icon: BanknotesIcon, restricted: false },
+  { id: 'analytics', name: 'Аналитика', href: '/analytics', icon: ChartBarIcon, restricted: true },
+  { id: 'telegram-parsing', name: 'Парсинг выгрузки в телеграм и реестре', href: '/telegram-parsing', icon: PaperClipIcon, restricted: true },
+  { id: 'settings', name: 'Настройки', href: '/settings', icon: CogIcon, restricted: false },
 ]
 
 const adminNavigation = [
@@ -163,7 +163,8 @@ export function Layout({ children }: LayoutProps) {
             </div>
 
             {navigation.map((item) => {
-              if (item.restricted && !isAdmin) return null;
+              const isAllowed = user?.allowedTabs ? user.allowedTabs.includes(item.id) : !item.restricted;
+              if (!isAdmin && !isAllowed) return null;
               const isActive = location.pathname === item.href
               return (
                 <Link
@@ -284,7 +285,8 @@ export function Layout({ children }: LayoutProps) {
             </div>
 
             {navigation.map((item) => {
-              if (item.restricted && !isAdmin) return null;
+              const isAllowed = user?.allowedTabs ? user.allowedTabs.includes(item.id) : !item.restricted;
+              if (!isAdmin && !isAllowed) return null;
               const isActive = location.pathname === item.href
               return (
                 <Link

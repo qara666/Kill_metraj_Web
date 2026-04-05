@@ -158,7 +158,63 @@ class KmlService {
         return { north: maxLat, south: minLat, east: maxLng, west: minLng };
     }
 
-    _isPointInPolygon(lat, lng, polygon) {
+    _isPointInPolygon(lat, lng, polygon, tolerance = 0.01) {
+        // v5.172: Added tolerance for edge points
+        // v5.180: Increased default tolerance from 0.005 to 0.01 (~1.1km)
+        
+        // Try exact check first
+        if (this._pointInPolygonExact(lat, lng, polygon)) return true;
+        
+        // v5.180: Check distance to polygon edges (more accurate than offset points)
+        if (tolerance > 0) {
+            // Convert tolerance from degrees to meters (~111km per degree)
+            const toleranceMeters = tolerance * 111000;
+            
+            // Check distance to each edge of the polygon
+            for (let i = 0; i < polygon.length - 1; i++) {
+                const dist = this._pointToSegmentDistance(lat, lng, polygon[i][1], polygon[i][0], polygon[i + 1][1], polygon[i + 1][0]);
+                if (dist <= toleranceMeters) return true;
+            }
+        }
+        
+        return false;
+    }
+
+    // v5.180: Calculate distance from point to line segment in meters
+    _pointToSegmentDistance(px, py, x1, y1, x2, y2) {
+        // px,py = point lat,lng; x1,y1,x2,y2 = segment endpoints in lat,lng format
+        const R = 6371000; // Earth radius in meters
+        
+        // For small distances, use simple Euclidean approximation in degrees
+        // then convert to meters using average latitude scaling
+        const avgLat = (px + x1 + x2) / 3;
+        const metersPerDegLat = 111000; // ~111km per degree latitude
+        const metersPerDegLng = 111000 * Math.cos(avgLat * Math.PI / 180); // varies by latitude
+        
+        const dx = (x2 - x1) * metersPerDegLat;
+        const dy = (y2 - y1) * metersPerDegLng;
+        const lengthSq = dx * dx + dy * dy;
+
+        if (lengthSq === 0) {
+            // Segment is a point
+            const dLat = (px - x1) * metersPerDegLat;
+            const dLng = (py - y1) * metersPerDegLng;
+            return Math.sqrt(dLat * dLat + dLng * dLng);
+        }
+
+        let t = ((px - x1) * (x2 - x1) * metersPerDegLat * metersPerDegLat + 
+                 (py - y1) * (y2 - y1) * metersPerDegLng * metersPerDegLng) / lengthSq;
+        t = Math.max(0, Math.min(1, t));
+
+        const projX = x1 + t * (x2 - x1);
+        const projY = y1 + t * (y2 - y1);
+
+        const dLat = (px - projX) * metersPerDegLat;
+        const dLng = (py - projY) * metersPerDegLng;
+        return Math.sqrt(dLat * dLat + dLng * dLng);
+    }
+
+    _pointInPolygonExact(lat, lng, polygon) {
         let inside = false;
         for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
             const xi = polygon[i][1], yi = polygon[i][0];

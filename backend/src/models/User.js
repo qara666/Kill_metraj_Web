@@ -54,6 +54,12 @@ const User = sequelize.define('User', {
         defaultValue: true,
         allowNull: false,
         comment: 'Разрешено ли пользователю менять настройки своего профиля'
+    },
+    allowedTabs: {
+        type: DataTypes.JSON,
+        defaultValue: ['dashboard', 'routes', 'couriers', 'financials', 'analytics', 'telegram-parsing', 'settings'],
+        allowNull: false,
+        comment: 'Список разрешенных вкладок для пользователя'
     }
 }, {
     tableName: 'users',

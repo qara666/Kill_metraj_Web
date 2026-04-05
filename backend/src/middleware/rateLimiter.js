@@ -32,8 +32,8 @@ const createRateLimiter = (windowMs, max, message) => {
       });
     },
     skip: (req) => {
-      // Disable rate limiting globally as requested
-      return true;
+      // Disable rate limiting in development, enable in production
+      return process.env.NODE_ENV !== 'production';
     }
   });
 };

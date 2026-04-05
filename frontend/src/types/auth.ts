@@ -10,6 +10,7 @@ export interface User {
     lastLoginAt?: string
     lastLoginIp?: string
     canModifySettings: boolean
+    allowedTabs?: string[]
 }
 
 // Я заменю _id на id во всем фронтенде постепенно, или добавлю совместимость.
@@ -109,6 +110,7 @@ export interface CreateUserData {
     role: 'user' | 'admin'
     divisionId?: string
     canModifySettings?: boolean
+    allowedTabs?: string[]
 }
 
 export interface UpdateUserData {
@@ -118,4 +120,5 @@ export interface UpdateUserData {
     divisionId?: string
     password?: string
     canModifySettings?: boolean
+    allowedTabs?: string[]
 }

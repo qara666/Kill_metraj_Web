@@ -429,4 +429,128 @@ router.get('/dashboard/metrics', authorize('admin'), async (req, res) => {
     }
 });
 
+/**
+ * GET /api/v1/dashboard/analytics/couriers
+ * Агрегированная статистика по курьерам за период
+ */
+router.get('/dashboard/analytics/couriers', async (req, res) => {
+    try {
+        const { startDate, endDate, divisionId: reqDivId } = req.query;
+        const user = req.user;
+        const divisionId = user.role === 'admin' ? (reqDivId || 'all') : user.divisionId;
+
+        if (!startDate || !endDate) {
+            return res.status(400).json({ success: false, error: 'startDate и endDate обязательны' });
+        }
+
+        logger.info(`📊 Courier Analytics Request: ${startDate} to ${endDate}, divisionId=${divisionId}`);
+
+        // Fetch all cache entries for the period
+        const whereClause = divisionId === 'all' 
+            ? 'target_date BETWEEN :start AND :end'
+            : 'target_date BETWEEN :start AND :end AND division_id = :divId';
+        
+        const cacheEntries = await sequelize.query(
+            `SELECT target_date, division_id, payload 
+             FROM api_dashboard_cache 
+             WHERE ${whereClause}
+             ORDER BY target_date ASC`,
+            { 
+                replacements: { start: startDate, end: endDate, divId: String(divisionId) },
+                type: sequelize.QueryTypes.SELECT 
+            }
+        );
+
+        // Aggregate statistics by courier
+        const courierMetrics = {};
+
+        cacheEntries.forEach(entry => {
+            const payload = typeof entry.payload === 'string' ? JSON.parse(entry.payload) : entry.payload;
+            if (!payload) return;
+
+            const orders = payload.orders || [];
+            const couriers = payload.couriers || [];
+
+            // 1. Group orders by courier name for this specific date
+            const ordersByCourier = {};
+            orders.forEach(o => {
+                const name = (o.courier || '').toString().trim().toUpperCase();
+                if (!name) return;
+                if (!ordersByCourier[name]) ordersByCourier[name] = 0;
+                ordersByCourier[name]++;
+            });
+
+            // 2. Add courier info and metrics from payload
+            couriers.forEach(c => {
+                const name = (c.name || c.courierName || c.courier || '').toString().trim().toUpperCase();
+                if (!name) return;
+
+                if (!courierMetrics[name]) {
+                    courierMetrics[name] = {
+                        name: c.name || name,
+                        totalOrders: 0,
+                        totalDistanceKm: 0,
+                        totalCalculatedOrders: 0,
+                        daysWorked: new Set(),
+                        avgEfficiency: 0,
+                        vehicleType: c.vehicleType || 'car'
+                    };
+                }
+
+                courierMetrics[name].totalOrders += (ordersByCourier[name] || 0);
+                courierMetrics[name].totalDistanceKm += (c.distanceKm || 0);
+                courierMetrics[name].totalCalculatedOrders += (c.calculatedOrders || 0);
+                courierMetrics[name].daysWorked.add(entry.target_date);
+            });
+        });
+
+        // Finalize aggregation
+        const result = Object.values(courierMetrics).map(m => ({
+            ...m,
+            daysWorked: m.daysWorked.size,
+            avgOrdersPerDay: m.daysWorked.size > 0 ? (m.totalOrders / m.daysWorked.size).toFixed(1) : 0,
+            avgDistancePerOrder: m.totalCalculatedOrders > 0 ? (m.totalDistanceKm / m.totalCalculatedOrders).toFixed(2) : 0,
+            efficiencyScore: m.totalDistanceKm > 0 ? (m.totalCalculatedOrders / m.totalDistanceKm).toFixed(2) : 0
+        })).sort((a, b) => b.totalOrders - a.totalOrders);
+
+        res.json({
+            success: true,
+            period: { start: startDate, end: endDate },
+            couriers: result,
+            totalDays: cacheEntries.length
+        });
+
+    } catch (error) {
+        logger.error('Courier Analytics Error:', error);
+        res.status(500).json({ success: false, error: 'Ошибка при расчете аналитики', details: error.message });
+    }
+});
+
+/**
+ * GET /api/v1/dashboard/analytics/full
+ * Полная аналитика логистики за период
+ */
+router.get('/dashboard/analytics/full', async (req, res) => {
+    try {
+        const { startDate, endDate, divisionId: reqDivId } = req.query;
+        const analyticsService = require('../services/AnalyticsService');
+        const user = req.user;
+        const divisionId = user.role === 'admin' ? (reqDivId || 'all') : user.divisionId;
+
+        if (!startDate || !endDate) {
+            return res.status(400).json({ success: false, error: 'startDate и endDate обязательны' });
+        }
+
+        const data = await analyticsService.getLogisticsOverview(startDate, endDate, divisionId);
+        res.json({
+            success: true,
+            data
+        });
+
+    } catch (error) {
+        logger.error('Logistics Analytics Error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 module.exports = router;
