@@ -980,18 +980,15 @@ class OrderCalculator {
                 return true;
             });
 
-            // v5.170: Deep Stable Deduplication - Ignore transient fields like statusTimings/updated_at
-            // v5.157: REMOVED status from hash - it changes constantly and shouldn't trigger re-calculation
-            // v5.170: Hash includes courier assignment so NEW orders on existing couriers trigger recalc
+            // v5.170: Deep Stable Deduplication - Hash based on order identity ONLY
+            // v5.180: CRITICAL FIX — hash does NOT include courier assignment or status
+            // This prevents recalculation when orders just get reassigned between couriers
             const crypto = require('crypto');
             const stablePayload = (data.orders || []).map(o => ({
                 id: o.id || o._id,
                 n: o.orderNumber,
-                c: String(o.courier || o.courierName || o.courierId || '').toUpperCase(),
                 a: String(o.address || o.addressGeo || '').toLowerCase(),
-                ll: o.coords ? `${o.coords.lat},${o.coords.lng}` : null,
                 t: o.deliverBy || o.plannedTime || o.deliveryTime,
-                arr: o.arrivedAt || o.createdAt || null
             }));
 
             const dataHash = crypto.createHash('sha256').update(JSON.stringify(stablePayload)).digest('hex');
@@ -1016,7 +1013,8 @@ class OrderCalculator {
                 return;
             }
 
-            // v5.171: INCREMENTAL — if hash changed but all orders are already routed, skip
+            // v5.180: INCREMENTAL — if hash changed but all orders are already routed, skip
+            // BUT still emit routes to frontend to keep UI in sync
             if (newOrders.length === 0 && existingRoutedOrderNumbers.size > 0) {
                 logger.info(`[TurboCalculator] ⏩ All ${data.orders.length} orders already routed — no new orders to process`);
                 // Still emit existing routes to frontend so UI stays in sync
@@ -1060,13 +1058,14 @@ class OrderCalculator {
                         routes: routeDataForFrontend
                     });
                 }
+                // v5.180: Update hash so we don't re-enter here on next trigger
                 this.processedHashes.set(cacheKey, dataHash);
                 // v5.172: Reset forceFull flag after processing
                 if (state) state.forceFull = false;
                 return;
             }
 
-            // v5.171: Data HAS changed and there are new orders — log what changed
+            // v5.180: Data HAS changed and there are new orders — log what changed
             if (existingHash) {
                 logger.info(`[TurboCalculator] 🔄 Data changed for ${cacheKey}: ${newOrders.length} new orders out of ${data.orders.length} total — calculating incremental routes`);
             }
@@ -1077,8 +1076,17 @@ class OrderCalculator {
                 logger.info(`[TurboCalculator] ➕ Processing ${newOrders.length} new orders (existing ${existingRoutedOrderNumbers.size} orders remain untouched)`);
             }
 
-            // v5.171: Group ONLY new orders (not all orders) for incremental routing
-            const ordersToGroup = newOrders.length > 0 ? newOrders : data.orders;
+            // v5.180: Group ONLY new orders (not all orders) for incremental routing
+            // v5.180: CRITICAL — only group orders that have a REAL courier assigned
+            const ordersToGroup = newOrders.length > 0 ? newOrders.filter(o => {
+                const c = String(o.courier || o.courierName || o.courierId || '').toUpperCase().trim();
+                if (!c || c === 'НЕ НАЗНАЧЕНО' || c === 'UNASSIGNED' || c === 'ПО' || c === 'ID:0') return false;
+                return true;
+            }) : data.orders.filter(o => {
+                const c = String(o.courier || o.courierName || o.courierId || '').toUpperCase().trim();
+                if (!c || c === 'НЕ НАЗНАЧЕНО' || c === 'UNASSIGNED' || c === 'ПО' || c === 'ID:0') return false;
+                return true;
+            });
 
             // v28.9: Frontload coordinate extraction from all possible sources (including addressGeo)
             // This ensures grouping and validOrders filters have accurate GPS data immediately.
@@ -1204,31 +1212,26 @@ class OrderCalculator {
                 });
             }
 
-            // v5.163: Calculate true "Assigned" count for accurate progress tracking
-            const assignedOrdersCount = ordersToGroup.filter(o => {
-                const n = normalizeCourierName(o.courier);
-                return n && n !== 'НЕ НАЗНАЧЕНО';
-            }).length;
-            const unassignedCount = data.orders.length - (assignedOrdersCount + existingRoutedOrderNumbers.size);
+            // v5.180: Calculate true counts for accurate progress tracking
+            // totalCount = ALL orders from API (for frontend display)
+            // ordersToProcess = orders that will actually be calculated
+            const totalCount = data.orders.length;
+            const ordersWithRealCourier = ordersToGroup.length;
+            const alreadyRouted = existingRoutedOrderNumbers.size;
 
             const stats = {
                 isActive: true,
                 lastUpdate: Date.now(),
-                totalCount: data.orders.length,
-                unassignedCount: unassignedCount,
-                processedCount: existingRoutedOrderNumbers.size + unassignedCount,
+                totalCount: totalCount, // Total orders from API
+                unassignedCount: totalCount - ordersWithRealCourier - alreadyRouted,
+                processedCount: alreadyRouted, // Start with already-routed count
                 totalCouriers: deliveryWindows.size,
                 processedCouriers: 0,
                 skippedGeocoding: 0,
-                skippedInRoutes: existingRoutedOrderNumbers.size,
-                skippedNoCourier: unassignedCount,
-                message: `Analyzing ${assignedOrdersCount} new orders across ${deliveryWindows.size} couriers...`
+                skippedInRoutes: alreadyRouted,
+                skippedNoCourier: totalCount - ordersWithRealCourier - alreadyRouted,
+                message: `Analyzing ${ordersWithRealCourier} new orders across ${deliveryWindows.size} couriers...`
             };
-
-            if (unassignedCount > 0) {
-                stats.message += ` (${unassignedCount} unassigned orders skipped)`;
-                logger.info(`[TurboCalculator] ⏩ Skipping ${unassignedCount} unassigned orders in ${cache.division_id}`);
-            }
 
 
             // Initialize per-division courier stats for distance tracking
@@ -1879,6 +1882,7 @@ class OrderCalculator {
             } // End of courier loop
 
             // Update processedCount to match total processed orders
+            // v5.180: processedCount should reflect: already-routed + newly-routed + unassigned
             stats.processedCount = stats.totalCount;
 
             // v5.171: Fetch ALL routes (existing + newly created) for frontend
