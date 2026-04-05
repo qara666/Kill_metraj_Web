@@ -108,12 +108,17 @@ class OrderCalculator {
             }
         };
 
-        // v5.172: Pre-load KML zones on construction
-        this.preloadKmlZones();
+        // v5.185: Haversine distance in meters
+        this.FUZZY_THRESHOLD = 3; // Max Levenshtein distance for fuzzy match
 
-        // v5.170: Restore saved division states on restart
-        this.loadSavedState();
-        this.loadAllDivisionStatesFromDB();
+        // Per-division state
+        this.divisionStates = new Map();
+        this.processedHashes = new Map();
+        this.priorityQueue = [];
+        this.currentPriority = null;
+
+        // v5.185: Pre-load KML zones on construction
+        this.preloadKmlZones();
     }
 
     // v5.172: Pre-load all KML zones into memory with spatial grid index
@@ -418,25 +423,16 @@ class OrderCalculator {
 
     async start(io = null) {
         if (this.isRunning) return;
-        // v5.170: INITIALIZED — Robot is OFF.
+        // v5.185: INTITIALIZING
         this.isRunning = true;
         this.io = io || this.io;
 
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // v5.185: Restore saved division states on restart
+        // This MUST happen after isRunning=true so that tick() can be triggered
+        await this.loadSavedState();
+        await this.loadAllDivisionStatesFromDB();
 
-        logger.info(`[TurboCalculator] 🚀 v5.170 INITIALIZED — Robot is OFF. Waiting for explicit start command.`);
-
-
-        try {
-            const models = require('../src/models');
-            logger.info(`[OrderCalculator] ✅ Models loaded: ${Object.keys(models).filter(k => k !== 'sequelize' && k !== 'syncDatabase').join(', ')}`);
-        } catch (error) {
-            logger.error('[OrderCalculator] ❌ Failed to load models:', error.message);
-        }
-
-        // v5.170: DO NOT auto-resume any divisions. Robot stays OFF until user clicks "Запустить".
-        // The tick() will only be called from trigger() (manual start button).
-        logger.info(`[TurboCalculator] ⏸️ Robot in STANDBY mode. No divisions active.`);
+        logger.info(`[TurboCalculator] 🚀 v5.185 INITIALIZED — Resumed active divisions from DB.`);
     }
 
     scheduleNextTick() {
@@ -613,9 +609,16 @@ class OrderCalculator {
         this.needsReRun = false;
 
         try {
-            // v5.185: DO NOT emit zeroed-out status at the start of tick.
-            // This causes the frontend progress bar to reset to 0/0 and flash.
-            // We only emit when we actually start processing a specific division or all.
+            // v5.185: Emit minimal "Heartbeat" status so UI knows the robot is awake.
+            // We use divisionId: 'all' to avoid resetting specific division bars.
+            if (this.io) {
+                this.io.emit('robot_status', {
+                    divisionId: 'all',
+                    isActive: true,
+                    lastUpdate: Date.now(),
+                    message: 'Robot is awake and processing...'
+                });
+            }
 
             const tasks = [];
             for (const [divId, state] of this.divisionStates.entries()) {
