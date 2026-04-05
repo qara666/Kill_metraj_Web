@@ -61,10 +61,8 @@ services:
         value: "http://localhost:2322"
 
   # Frontend Service (Static Site)
-  - type: web
+  - type: static_site
     name: yapiko-auto-km-frontend-live
-    env: static
-    plan: free
     buildCommand: cd frontend && npm ci && npx vite build
     staticPublishPath: frontend/dist
     routes:
