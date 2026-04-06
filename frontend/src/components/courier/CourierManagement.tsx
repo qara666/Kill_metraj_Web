@@ -431,32 +431,39 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
     if (excelData?.couriers && Array.isArray(excelData.couriers)) {
       excelData.couriers.forEach((c: any) => {
         const robotKm = c.distanceKm;
+        const robotOrders = c.calculatedOrders || 0;
         if (!robotKm || robotKm <= 0) return;
         const nm = normalizeCourierName(c.name || c.courierName || '');
         if (!nm) return;
         const entry = stats.get(nm);
         if (entry) {
-          // Robot distance overrides estimated / route-summed distance
-          const delta = robotKm - entry.baseDistance;
+          // v6.9: Robot distance = base (route between stops) + additional (0.5km per stop)
+          // Robot calculates: routeDistance + (orders * 0.5)
+          // So: baseDistance = robotKm - (orders * 0.5)
+          // additionalDistance = orders * 0.5
+          const additionalKm = robotOrders * 0.5;
+          const baseKm = robotKm - additionalKm;
+          
           entry.totalDistance = robotKm;
-          entry.baseDistance = robotKm;
-          entry.additionalDistance = Math.max(0, delta);
+          entry.baseDistance = Math.max(0, baseKm); // route between stops
+          entry.additionalDistance = additionalKm;   // 0.5km per stop (last mile)
           
           // v5.153: Also prioritize robot-calculated order counts if available
-          if (c.calculatedOrders > 0) {
-            entry.ordersInRoutes = c.calculatedOrders;
-            // Ensure uniqueOrderIds count matches if possible, or at least respect the total
-            if (entry.totalOrders < c.calculatedOrders) {
-               entry.totalOrders = c.calculatedOrders;
+          if (robotOrders > 0) {
+            entry.ordersInRoutes = robotOrders;
+            if (entry.totalOrders < robotOrders) {
+               entry.totalOrders = robotOrders;
             }
           }
         } else if (!entry) {
           // Courier only exists in cache (no local orders) — create entry
+          const additionalKm = robotOrders * 0.5;
+          const baseKm = robotKm - additionalKm;
           stats.set(nm, {
-            ordersInRoutes: c.calculatedOrders || 0,
-            totalOrders: c.calculatedOrders || 0,
-            baseDistance: robotKm,
-            additionalDistance: 0,
+            ordersInRoutes: robotOrders || 0,
+            totalOrders: robotOrders || 0,
+            baseDistance: Math.max(0, baseKm),
+            additionalDistance: additionalKm,
             totalDistance: robotKm,
             uniqueOrderIds: new Set(),
             allAssignedOrderIds: new Set(),
