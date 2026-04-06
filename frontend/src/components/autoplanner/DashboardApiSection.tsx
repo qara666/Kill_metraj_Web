@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';
-import { ArrowPathIcon, CalendarIcon, CpuChipIcon } from '@heroicons/react/24/outline';
+import { ArrowPathIcon, CalendarIcon, CpuChipIcon, BoltIcon } from '@heroicons/react/24/outline';
 import { clsx } from 'clsx';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useDashboardStore } from '../../stores/useDashboardStore';
@@ -194,54 +194,52 @@ export const DashboardApiSection: React.FC = () => {
 
     return (
         <div className={clsx(
-            'glass-panel p-6 shadow-[0_20px_50px_rgba(0,0,0,0.3)] relative overflow-hidden group mb-6 border-2 transition-all duration-500',
+            'p-6 mb-6 rounded-[2rem] border transition-all duration-300 flex flex-col gap-6',
             isDark
-                ? 'bg-gradient-to-br from-gray-900/80 via-blue-900/20 to-gray-900/80 border-blue-500/20 hover:border-blue-500/40'
-                : 'bg-gradient-to-br from-white/80 via-blue-50/50 to-white/80 border-blue-200 hover:border-blue-400'
+                ? 'bg-[#151b2b] border-white/5 shadow-sm'
+                : 'bg-white border-slate-200 shadow-sm'
         )}>
-            {/* Dynamic Light Accents - More pronounced */}
-            <div className="absolute -top-24 -right-24 w-64 h-64 bg-blue-600/10 blur-[100px] pointer-events-none group-hover:bg-blue-500/30 transition-all duration-700 animate-pulse" />
-            <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-indigo-500/10 blur-[100px] pointer-events-none group-hover:bg-indigo-500/30 transition-all duration-700" />
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-gradient-to-tr from-transparent via-blue-400/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
-
-            <div className="flex flex-col lg:flex-row items-center justify-between gap-4 relative z-10">
-                <div className="flex items-center gap-3">
+            {/* Top Row: System Sync */}
+            <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
+                <div className="flex items-center gap-4">
                     <div className={clsx(
-                        'p-3 rounded-2xl shadow-inner transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3',
-                        isDark ? 'bg-blue-900/30 text-blue-400' : 'bg-blue-50 text-blue-600'
+                        'w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform cursor-default',
+                        isDark ? 'bg-white/5 text-blue-400' : 'bg-slate-50 border border-slate-100 text-blue-600'
                     )}>
                         <ArrowPathIcon className={clsx("w-6 h-6", (apiSyncStatus === 'syncing') && "animate-spin")} />
                     </div>
                     <div>
                         <h3 className={clsx(
-                            'font-bold text-lg tracking-tight',
-                            isDark ? 'text-white' : 'text-gray-900'
+                            'font-black text-lg tracking-tight mb-1',
+                            isDark ? 'text-white' : 'text-slate-900'
                         )}>
                             Загрузка данных с ФастОператора
                         </h3>
-                        <div className="flex items-center gap-2 mt-0.5">
-                            <p className={clsx(
-                                'text-xs font-semibold uppercase tracking-wider',
+                        <div className="flex items-center gap-3">
+                            <span className={clsx(
+                                'text-[10px] font-bold uppercase tracking-widest',
                                 isDark ? 'text-gray-400' : 'text-gray-500'
                             )}>
-                                {apiLastSyncTime ? `Обновлено: ${format(apiLastSyncTime, 'HH:mm:ss')}` : 'Ожидание первого обновления...'}
-                            </p>
+                                {apiLastSyncTime ? `Обновлено: ${format(apiLastSyncTime, 'HH:mm:ss')}` : 'Ожидание первого обновления'}
+                            </span>
+                            
                             {apiAutoRefreshEnabled && apiNextSyncTime && (
-                                <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-blue-500/5 dark:bg-blue-400/10 border border-blue-500/20 dark:border-blue-400/20 shadow-sm transition-all hover:border-blue-500/40">
-                                    <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold tabular-nums tracking-tight">
-                                        След: {timeLeft}
-                                    </span>
-                                    <div className="w-px h-3 bg-blue-500/20 dark:bg-blue-400/20 mx-0.5" />
+                                <div className={clsx(
+                                    "flex items-center gap-2 px-2 py-0.5 rounded-lg border text-[10px] font-black uppercase tracking-widest transition-colors",
+                                    isDark ? "bg-blue-500/10 border-blue-500/20 text-blue-400" : "bg-blue-50 border-blue-100 text-blue-600"
+                                )}>
+                                    <span>След: {timeLeft}</span>
+                                    <div className={clsx("w-px h-3", isDark ? "bg-blue-500/20" : "bg-blue-200")} />
                                     <button
                                         onClick={handleQuickRefresh}
                                         disabled={apiSyncStatus === 'syncing'}
                                         className={clsx(
-                                            "hover:scale-110 active:rotate-180 transition-all duration-300 p-0.5 rounded-full hover:bg-blue-500/10",
-                                            apiSyncStatus === 'syncing' && "cursor-not-allowed opacity-50"
+                                            "rounded-md p-0.5 transition-colors hover:bg-blue-200 dark:hover:bg-blue-500/30",
+                                            apiSyncStatus === 'syncing' && "opacity-50"
                                         )}
                                         title="Обновить сейчас"
                                     >
-                                        <ArrowPathIcon className={clsx("w-3 h-3 text-blue-500 dark:text-blue-400", (apiSyncStatus === 'syncing') && "animate-spin")} />
+                                        <ArrowPathIcon className={clsx("w-3 h-3", apiSyncStatus === 'syncing' && "animate-spin")} />
                                     </button>
                                 </div>
                             )}
@@ -249,17 +247,20 @@ export const DashboardApiSection: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-4 justify-center w-full lg:w-auto">
-                    {/* Переключатель автообновления */}
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-2xl border border-dashed border-gray-300 dark:border-white/10 bg-gray-50/30 dark:bg-white/5 backdrop-blur-md transition-colors hover:border-blue-400/50">
+                <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+                    {/* Auto Update Toggle */}
+                    <div className={clsx(
+                        "flex items-center gap-3 px-4 py-2 rounded-xl border transition-colors",
+                        isDark ? "bg-white/5 border-white/5 hover:border-white/10" : "bg-slate-50 border-slate-100 hover:border-slate-200"
+                    )}>
                         <div className="flex items-center gap-2">
                             <div className={clsx(
                                 "w-2 h-2 rounded-full",
-                                apiAutoRefreshEnabled ? "bg-green-500 animate-pulse" : "bg-gray-400"
+                                apiAutoRefreshEnabled ? "bg-green-500" : "bg-gray-400"
                             )} />
                             <span className={clsx(
-                                'text-sm font-bold',
-                                isDark ? 'text-gray-200' : 'text-gray-700'
+                                "text-[11px] uppercase tracking-wider font-bold",
+                                isDark ? "text-gray-300" : "text-gray-700"
                             )}>
                                 Автообновление
                             </span>
@@ -267,20 +268,21 @@ export const DashboardApiSection: React.FC = () => {
                         <button
                             onClick={handleToggleAutoUpdate}
                             className={clsx(
-                                'relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1',
-                                apiAutoRefreshEnabled ? 'bg-blue-600 shadow-lg shadow-blue-600/30' : 'bg-gray-300 dark:bg-gray-700'
+                                'relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 focus:outline-none',
+                                apiAutoRefreshEnabled ? 'bg-blue-600' : (isDark ? 'bg-gray-700' : 'bg-gray-300')
                             )}
                         >
                             <span
                                 className={clsx(
-                                    'inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-all duration-300',
+                                    'inline-block h-4 w-4 transform rounded-full bg-white transition-all duration-300',
                                     apiAutoRefreshEnabled ? 'translate-x-[24px]' : 'translate-x-1'
                                 )}
                             />
                         </button>
                     </div>
 
-                    <div className="relative flex-1 sm:flex-initial">
+                    {/* Date Picker */}
+                    <div className="relative">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <CalendarIcon className="h-5 w-5 text-gray-400" />
                         </div>
@@ -291,85 +293,109 @@ export const DashboardApiSection: React.FC = () => {
                             onChange={(e) => handleDateChange(e.target.value)}
                             title={apiAutoRefreshEnabled ? "Отключите автообновление для выбора другой даты" : ""}
                             className={clsx(
-                                'input pl-10 w-full sm:w-48 rounded-2xl font-bold transition-all duration-300',
+                                'pl-10 h-10 w-full sm:w-44 rounded-xl font-bold transition-all border outline-none',
                                 apiAutoRefreshEnabled && 'opacity-60 cursor-not-allowed',
-                                isDark ? 'bg-gray-800/40 border-white/5 text-white hover:bg-gray-800/60 focus:bg-gray-800/80 outline-none' : 'bg-white border-gray-200 text-gray-900 hover:border-blue-300'
+                                isDark ? 'bg-white/5 border-white/5 text-white focus:border-blue-500/50' : 'bg-slate-50 border-slate-200 text-gray-900 focus:border-blue-400'
                             )}
                         />
                     </div>
                 </div>
             </div>
 
-            {/* v5.8: Robot Control Center (Centralized) */}
-            <div className={clsx(
-                'mt-6 pt-6 border-t-2 flex flex-col lg:flex-row items-center justify-between gap-4 relative z-10',
-                isDark ? 'border-blue-500/10' : 'border-blue-100'
-            )}>
-                <div className="flex items-center gap-3">
+            <div className={clsx("h-px w-full", isDark ? "bg-white/5" : "bg-slate-100")} />
+
+            {/* Robot Control Row */}
+            <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
+                <div className="flex items-center gap-4">
                     <div className={clsx(
-                        'p-3.5 rounded-2xl shadow-lg transition-all duration-500 group-hover:scale-105',
+                        'w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform',
                         autoRoutingStatus.isActive 
-                            ? (isDark ? 'bg-blue-600 shadow-blue-500/20 text-white' : 'bg-blue-600 shadow-blue-500/30 text-white')
-                            : (isDark ? 'bg-indigo-900/20 text-indigo-400' : 'bg-indigo-50 text-indigo-600')
+                            ? (isDark ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white')
+                            : (isDark ? 'bg-white/5 text-gray-400' : 'bg-slate-50 border border-slate-100 text-gray-500')
                     )}>
                         <CpuChipIcon className={clsx("w-6 h-6", autoRoutingStatus.isActive && "animate-pulse")} />
                     </div>
                     <div>
                         <h3 className={clsx(
-                            'font-bold text-lg tracking-tight',
-                            isDark ? 'text-white' : 'text-gray-900'
+                            'font-black text-lg tracking-tight mb-1',
+                            isDark ? 'text-white' : 'text-slate-900'
                         )}>
                             Фоновый расчет заказов
                         </h3>
-                        <div className="flex items-center gap-2 mt-0.5">
+                        <div className="flex flex-wrap items-center gap-2">
                             <div className={clsx(
-                                "w-2 h-2 rounded-full",
-                                autoRoutingStatus.isActive ? "bg-green-500 animate-pulse" : "bg-gray-400"
+                                "w-1.5 h-1.5 rounded-full",
+                                autoRoutingStatus.isActive ? "bg-green-500" : "bg-gray-400"
                             )} />
-                            <div className={clsx(
-                                'text-xs font-semibold uppercase tracking-wider',
+                            <span className={clsx(
+                                'text-[10px] font-bold uppercase tracking-widest flex items-center gap-1',
                                 isDark ? 'text-gray-400' : 'text-gray-500'
                             )}>
-                                {autoRoutingStatus.isActive
-                                    ? (
-                                        <div className="flex flex-col gap-1">
-                                            <div className="flex items-center gap-2">
-                                                <span>АКТИВЕН • Заказы: {autoRoutingStatus.processedCount}/{autoRoutingStatus.totalCount} • Курьеры: {autoRoutingStatus.processedCouriers}/{autoRoutingStatus.totalCouriers}</span>
-                                            </div>
-                                            <div className="flex items-center gap-3 text-[10px] text-gray-500 font-medium">
-                                                {autoRoutingStatus.skippedInRoutes > 0 && <span className="text-emerald-600/70">В маршрутах: {autoRoutingStatus.skippedInRoutes}</span>}
-                                                {autoRoutingStatus.skippedGeocoding > 0 && <span className="text-red-500/70">Ошибка гео: {autoRoutingStatus.skippedGeocoding}</span>}
-                                                {autoRoutingStatus.skippedNoCourier > 0 && <span className="text-orange-500/70">Без курьера: {autoRoutingStatus.skippedNoCourier}</span>}
-                                            </div>
-                                        </div>
-                                    )
-                                    : 'Режим ожидания'}
-                            </div>
-                            {autoRoutingStatus.lastUpdate && (
-                                <span className="text-[10px] text-gray-400 ml-1">
-                                    • {format(autoRoutingStatus.lastUpdate, 'HH:mm:ss')}
-                                </span>
-                            )}
+                                {autoRoutingStatus.isActive ? 'Активен' : 'Режим ожидания'}
+                                {autoRoutingStatus.lastUpdate && (
+                                    <span className="opacity-50 tracking-normal lowercase">
+                                         • {format(autoRoutingStatus.lastUpdate, 'HH:mm:ss')}
+                                    </span>
+                                )}
+                            </span>
                         </div>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="flex flex-col lg:flex-row items-center gap-3 w-full lg:w-auto">
+                    <button
+                        onClick={async () => {
+                            if (!user?.divisionId) return;
+                            try {
+                                const token = localStorage.getItem('km_access_token') || localStorage.getItem('accessToken');
+                                const res = await fetch(`${API_URL}/api/turbo/clear`, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'Authorization': `Bearer ${token}`
+                                    },
+                                    body: JSON.stringify({ divisionId: user.divisionId, date: selectedDate })
+                                });
+                                const data = await res.json();
+                                if (data.success) {
+                                    toast.success(data.message || 'Очистка завершена');
+                                    // v5.195: WIPE FRONTEND CACHES DEAD
+                                    localStorage.removeItem('km_routes');
+                                    setAutoRoutingStatus({ isActive: false, processedCount: 0, totalCount: 0, skippedGeocoding: 0, skippedInRoutes: 0 });
+                                    try {
+                                        if (typeof window !== 'undefined') {
+                                            window.dispatchEvent(new CustomEvent('km:turbo:routes_update', {
+                                                detail: { routes: [], couriers: [] }
+                                            }));
+                                        }
+                                    } catch(e) {}
+                                    triggerApiManualSync();
+                                } else {
+                                    toast.error(data.error || 'Ошибка очистки');
+                                }
+                            } catch(e) {
+                                toast.error('Ошибка сервера при очистке');
+                            }
+                        }}
+                        disabled={isTriggeringPriority || autoRoutingStatus.isActive}
+                        className={clsx(
+                            'flex items-center justify-center gap-2 px-6 h-10 rounded-xl font-bold text-[12px] uppercase tracking-widest transition-all active:scale-[0.98] outline-none',
+                            isDark ? 'bg-white/5 hover:bg-white/10 text-red-400' : 'bg-slate-50 hover:bg-red-50 text-red-500 border border-slate-200',
+                            (isTriggeringPriority || autoRoutingStatus.isActive) && 'opacity-50 cursor-not-allowed'
+                        )}
+                        title="Очистить и сбросить маршруты Турбо-робота"
+                    >
+                         Очистить
+                    </button>
                     <button
                         onClick={async () => {
                             if (autoRoutingStatus.isActive) {
-                                // Stop calculation on server
                                 try {
                                     const token = localStorage.getItem('km_access_token') || localStorage.getItem('accessToken');
-                                    if (!token || token === 'null' || token === 'undefined') {
-                                        toast.error('Вы не авторизованы. Пожалуйста войдите в систему.');
-                                        // Don't send request if no token
-                                    } else {
+                                    if (token && token !== 'null' && token !== 'undefined') {
                                         await fetch(`${API_URL}/api/turbo/stop`, {
                                             method: 'POST',
-                                            headers: {
-                                                'Authorization': `Bearer ${token}`
-                                            }
+                                            headers: { 'Authorization': `Bearer ${token}` }
                                         });
                                     }
                                 } catch (e) {
@@ -377,72 +403,85 @@ export const DashboardApiSection: React.FC = () => {
                                 }
                                 setAutoRoutingStatus({ isActive: false });
                             } else {
-                                // Start priority calculation
                                 triggerPriorityCalculation();
                             }
                         }}
                         disabled={isTriggeringPriority}
                         className={clsx(
-                            'btn flex items-center gap-2 px-6 py-2.5 rounded-2xl font-bold transform transition-all duration-200 active:scale-95 shadow-lg',
+                            'flex items-center justify-center gap-2 px-8 h-10 rounded-xl font-bold text-[12px] uppercase tracking-widest transition-all active:scale-[0.98] w-full lg:w-auto outline-none focus:outline-none',
                             autoRoutingStatus.isActive
-                                ? 'bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20'
-                                : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-600/30',
+                                ? (isDark ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20' : 'bg-red-50 text-red-600 hover:bg-red-100')
+                                : (isDark ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'),
                             isTriggeringPriority && 'opacity-50 cursor-not-allowed'
                         )}
                     >
                         {isTriggeringPriority ? (
                             <>
-                                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
+                                <ArrowPathIcon className="w-4 h-4 animate-spin" />
                                 <span>Запуск...</span>
                             </>
                         ) : autoRoutingStatus.isActive ? (
                             <>
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                <span>Остановить считать этого гения  </span>
+                                <span>Остановить расчет</span>
                             </>
                         ) : (
                             <>
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                </svg>
-                                <span>Запустить </span>
+                                <BoltIcon className="w-4 h-4" />
+                                <span>Запустить расчёт</span>
                             </>
                         )}
                     </button>
                 </div>
             </div>
 
-            {/* v5.157: Real-time Stats */}
+            {/* Real-time Stats */}
             {(autoRoutingStatus.isActive || (autoRoutingStatus.processedCount || 0) > 0) && (
                 <div className={clsx(
-                    'mt-4 pt-4 border-t flex flex-col gap-3',
-                    isDark ? 'border-gray-700/50' : 'border-gray-200/50'
+                    'mt-2 pt-6 border-t flex flex-col gap-5',
+                    isDark ? 'border-white/5' : 'border-slate-100'
                 )}>
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2">
+                        <BoltIcon className="w-4 h-4 text-amber-500" />
                         <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">
-                            ⚡ Статистика в реальном времени
+                            Статистика в реальном времени
                         </span>
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <div>
-                            <div className={clsx('text-[10px] uppercase tracking-wider', isDark ? 'text-gray-500' : 'text-gray-400')}>Всего заказов</div>
-                            <div className={clsx('text-lg font-black', isDark ? 'text-white' : 'text-gray-900')}>{autoRoutingStatus.totalCount || 0}</div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className={clsx("p-5 rounded-2xl flex flex-col justify-center", isDark ? "bg-white/[0.02]" : "bg-slate-50")}>
+                            <div className={clsx('text-[10px] font-bold uppercase tracking-widest mb-1.5', isDark ? 'text-gray-500' : 'text-gray-400')}>
+                                Всего заказов
+                            </div>
+                            <div className={clsx('text-3xl font-black', isDark ? 'text-white' : 'text-gray-900')}>
+                                {autoRoutingStatus.totalCount || 0}
+                            </div>
                         </div>
-                        <div>
-                            <div className={clsx('text-[10px] uppercase tracking-wider', isDark ? 'text-gray-500' : 'text-gray-400')}>Обработано</div>
-                            <div className={clsx('text-lg font-black text-emerald-500')}>{autoRoutingStatus.processedCount || 0}</div>
+
+                        <div className={clsx("p-5 rounded-2xl flex flex-col justify-center", isDark ? "bg-white/[0.02]" : "bg-slate-50")}>
+                            <div className={clsx('text-[10px] font-bold uppercase tracking-widest mb-1.5', isDark ? 'text-emerald-500/70' : 'text-emerald-600/70')}>
+                                Обработано
+                            </div>
+                            <div className={clsx('text-3xl font-black text-emerald-500')}>
+                                {autoRoutingStatus.processedCount || 0}
+                            </div>
                         </div>
-                        <div>
-                            <div className={clsx('text-[10px] uppercase tracking-wider', isDark ? 'text-gray-500' : 'text-gray-400')}>В маршрутах</div>
-                            <div className={clsx('text-lg font-black text-blue-500')}>{autoRoutingStatus.skippedInRoutes || 0}</div>
+
+                        <div className={clsx("p-5 rounded-2xl flex flex-col justify-center", isDark ? "bg-white/[0.02]" : "bg-slate-50")}>
+                            <div className={clsx('text-[10px] font-bold uppercase tracking-widest mb-1.5', isDark ? 'text-blue-400/70' : 'text-blue-500/70')}>
+                                В маршрутах
+                            </div>
+                            <div className={clsx('text-3xl font-black', isDark ? 'text-blue-400' : 'text-blue-600')}>
+                                {autoRoutingStatus.skippedInRoutes || 0}
+                            </div>
                         </div>
-                        <div>
-                            <div className={clsx('text-[10px] uppercase tracking-wider', isDark ? 'text-gray-500' : 'text-gray-400')}>Ошибки гео</div>
-                            <div className={clsx('text-lg font-black', autoRoutingStatus.skippedGeocoding > 0 ? 'text-red-500' : (isDark ? 'text-gray-500' : 'text-gray-400'))}>{autoRoutingStatus.skippedGeocoding || 0}</div>
+
+                        <div className={clsx("p-5 rounded-2xl flex flex-col justify-center", isDark ? "bg-white/[0.02]" : "bg-slate-50")}>
+                            <div className={clsx('text-[10px] font-bold uppercase tracking-widest mb-1.5', isDark ? 'text-red-400/70' : 'text-red-500/70')}>
+                                Ошибки гео
+                            </div>
+                            <div className={clsx('text-3xl font-black', autoRoutingStatus.skippedGeocoding > 0 ? (isDark ? 'text-red-400' : 'text-red-500') : (isDark ? 'text-gray-500' : 'text-gray-400'))}>
+                                {autoRoutingStatus.skippedGeocoding || 0}
+                            </div>
                         </div>
                     </div>
                 </div>

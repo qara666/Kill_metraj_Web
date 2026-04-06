@@ -307,10 +307,10 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className={clsx(
-      'space-y-6 transition-colors duration-300',
+      'space-y-4 transition-colors duration-300',
       isDark ? 'text-gray-100' : 'text-gray-900'
     )}>
-      <div className="space-y-8">
+      <div className="space-y-4">
         <DashboardApiSection />
 
         <ExcelUploadSection
@@ -332,72 +332,43 @@ export const Dashboard: React.FC = () => {
       )}
 
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
         {user?.role === 'admin' && (
           <div className="lg:col-span-2">
-            <div className="card p-6">
-              <div className="flex items-center justify-between mb-4">
+            <div className="p-4 rounded-2xl border bg-white dark:bg-gray-800 border-gray-200 dark:border-white/5 shadow-md">
+              <div className="flex items-center justify-between mb-3">
                 <h2 className={clsx(
-                  'text-lg font-semibold',
-                  isDark ? 'text-gray-100' : 'text-gray-900'
-                )}>Логи (только для админа)</h2>
-                <div className="space-x-2">
+                  'text-sm font-black uppercase tracking-widest',
+                  isDark ? 'text-gray-400' : 'text-gray-500'
+                )}>Логи системи</h2>
+                <div className="flex gap-2">
                   {excelLogs.length > 0 && (
                     <button
                       onClick={() => setShowExcelLogs(true)}
-                      className="btn-primary text-sm"
-                      title="Показать детальные логи Excel обработки"
+                      className="px-3 py-1.5 rounded-lg bg-blue-600 text-[10px] font-black text-white hover:bg-blue-700 transition-all uppercase tracking-widest"
                     >
-                      Excel логи ({excelLogs.length})
+                      EXCEL ({excelLogs.length})
                     </button>
                   )}
                   <button
                     onClick={() => setLogs([])}
-                    className="btn-outline"
-                    title="Очистить логи"
+                    className="px-3 py-1.5 rounded-lg border border-gray-200 text-[10px] font-black text-gray-400 hover:bg-gray-50 transition-all uppercase tracking-widest"
                   >
-                    Очистить логи
+                    Очистити
                   </button>
-                  {excelData && (
-                    <button
-                      onClick={() => {
-                        if (window.confirm('Вы уверены, что хотите полностью очистить все данные Excel? Это действие нельзя отменить.')) {
-                          clearExcelData()
-                          setPreviewData(null)
-                          setShowDataPreview(false)
-                          setExcelLogs([])
-                          try {
-                            localStorage.removeItem('km_dashboard_processed_data')
-                            localStorage.removeItem('km_dashboard_excel_logs')
-                            localStorage.removeItem('km_routes')
-                            localStorage.removeItem('km_excel_data')
-                          } catch { }
-                          log('Все данные Excel полностью очищены')
-                          toast.success('Все данные Excel очищены')
-                        }
-                      }}
-                      className="btn-outline text-red-600 border-red-300 hover:bg-red-50"
-                      title="Полностью очистить все данные Excel"
-                    >
-                      Очистить все данные
-                    </button>
-                  )}
                 </div>
               </div>
               {logs.length === 0 ? (
-                <p className={clsx(
-                  'text-sm',
-                  isDark ? 'text-gray-400' : 'text-gray-500'
-                )}>Пока что нет логов</p>
+                <p className="text-[10px] text-gray-500 uppercase font-black opacity-30 text-center py-8">Пусто</p>
               ) : (
-                <div className="max-h-64 overflow-y-auto space-y-2">
+                <div className="max-h-40 overflow-y-auto space-y-1 custom-scrollbar">
                   {logs.map((line, idx) => (
                     <div key={idx} className={clsx(
-                      'text-xs font-mono border rounded p-2',
+                      'text-[9px] font-mono border rounded-lg p-1.5',
                       isDark
-                        ? 'bg-gray-800 border-gray-700 text-gray-300'
-                        : 'bg-gray-50 border-gray-200 text-gray-800'
+                        ? 'bg-black/20 border-white/5 text-gray-400'
+                        : 'bg-gray-50 border-gray-100 text-gray-600'
                     )}>
                       {line}
                     </div>
@@ -408,9 +379,7 @@ export const Dashboard: React.FC = () => {
           </div>
         )}
 
-        <div className="lg:col-span-2">
-        </div>
-        <div style={{ gridColumn: '1 / -1', padding: 12 }}>
+        <div style={{ gridColumn: '1 / -1' }}>
           <DivisionStatusPanel />
         </div>
       </div>

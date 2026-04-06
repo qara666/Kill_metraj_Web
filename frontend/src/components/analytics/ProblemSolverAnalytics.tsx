@@ -130,7 +130,7 @@ export const ProblemSolverAnalytics: React.FC = () => {
                         </div>
                     ) : (
                         <div className="space-y-6">
-                            {activeIssues.map((p: any, i: number) => (
+                            {activeIssues.map((p: any) => (
                                 <div key={p.id} className={clsx(
                                     "p-10 rounded-[3.5rem] border-2 shadow-2xl transition-all hover:translate-x-2 group relative overflow-hidden",
                                     p.type === 'danger' 

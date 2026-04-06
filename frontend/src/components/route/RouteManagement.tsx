@@ -33,7 +33,6 @@ import { CourierTimeWindows } from './CourierTimeWindows'
 import { GridOrderCard } from './GridOrderCard'
 import { type TimeWindowGroup, groupOrdersByTimeWindow, formatTimeLabel } from '../../utils/route/routeCalculationHelpers'
 import { isId0CourierName, normalizeCourierName } from '../../utils/data/courierName'
-import { CourierIdResolver } from '../../utils/data/courierIdMap'
 import { getReturnETA, getAccurateReturnETA, getCourierSpeed, enrichRoutesWithCoords } from '../../utils/routes/courierETA'
 import { calculateDistance } from '../../utils/geoUtils'
 import { isOrderCompleted, isOrderCancelled } from '../../utils/data/orderStatus'
@@ -63,8 +62,6 @@ import { useKmlData } from '../../hooks/useKmlData'
 import { exportToGoogleMaps, exportToValhalla } from '../../utils/routes/routeExport'
 import { CourierListItem } from './CourierListItem'
 import { ServiceStatusDashboard } from './ServiceStatusDashboard'
-import { useDashboardStore } from '../../stores/useDashboardStore'
-import { socketService } from '../../services/socketService'
 
 
 interface RouteManagementProps {
@@ -102,7 +99,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
   // v5.41: Robust Normalization - trim all inputs to prevent mismatch
   const [courierFilter, setCourierFilter] = useState<string>('all')
-  const [unassignedStatusFilter, setUnassignedStatusFilter] = useState<'all' | 'оформление' | 'в работе' | 'собран' | 'отказы'>('all')
+  const [unassignedStatusFilter, setUnassignedStatusFilter] = useState<'all' | 'оформление' | 'в работе' | 'другое'>('all')
   const [isGroupedExpanded, setIsGroupedExpanded] = useState(true)
   const [routePage, setRoutePage] = useState(0)
   const [routesPerPage] = useState(5) // Количество маршрутов на странице
@@ -302,35 +299,16 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       return {}
     }
 
-    // v5.134: Build ID→name map first so ObjectId courier refs are resolved to names
-    const courierIdToNameMap = new Map<string, string>();
-    (excelData?.couriers || []).forEach((c: any) => {
-      const cId = String(c._id || c.id || '');
-      const cName = normalizeCourierName(String(c.name || ''));
-      if (cId && cName) courierIdToNameMap.set(cId, cName);
-    });
-
     const grouped: { [courier: string]: Order[] } = {}
+
 
     excelData.orders.forEach((order: any) => {
       if (order.address) {
         // Advanced courier name extraction
-        let c = order?.courier;
-
-        // v5.134: Resolve ObjectId (24-char hex) to courier name
-        if (typeof c === 'string' && /^[0-9a-f]{24}$/i.test(c)) {
-          const resolvedName = courierIdToNameMap.get(c) || CourierIdResolver.resolve(c);
-          if (resolvedName) c = resolvedName;
-        }
-
+        const c = order?.courier;
         const rawName = (typeof c === 'object' && c !== null)
           ? (c.name || c._id || c.id || '')
           : (typeof c === 'string' ? c : '');
-
-        // If still an ObjectId after resolution — skip, don't pollute the map
-        if (typeof rawName === 'string' && /^[0-9a-f]{24}$/i.test(rawName)) {
-          return;
-        }
 
         const courierName = normalizeCourierName(rawName || order.courierName) || 'Не назначено'
 
@@ -345,11 +323,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
         const stableId = getStableOrderId(order);
 
-        // v5.160: Prevent duplication by orderNumber FIRST (primary), then by ID
-        const orderNum = String(order.orderNumber || '');
-        if (orderNum && grouped[courierName].some(o => String(o.orderNumber) === orderNum)) {
-          return;
-        }
+        // v38.2: Prevent duplication of orders with same ID in the same list
         if (grouped[courierName].some(o => o.id === stableId)) {
           return;
         }
@@ -373,7 +347,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         grouped[courierName].push({
           id: stableId,
           orderNumber: order.orderNumber || 'N/A',
-          address: order.address || 'Адрес не указан',
+          address: order.address,
           courier: courierName,
           amount: order.amount || 0,
           phone: order.phone || '',
@@ -399,75 +373,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       }
     })
 
-    // v5.135: CRITICAL — Supplement courierOrders from route data.
-    // Problem: FastOperator API often sends orders with courier=null.
-    // These orders end up in "Не назначено" even though routes are created.
-    // Solution: For each route, find its orders in excelData.orders (for fresh status)
-    // and add them to the correct courier's group if not already there.
-    const orderByStableId = new Map<string, any>();
-    excelData.orders.forEach((order: any) => {
-      orderByStableId.set(getStableOrderId(order), order);
-    });
-
-    (excelData?.routes || []).forEach((route: any) => {
-      if (!route?.orders?.length) return;
-
-      // v5.132: Resolve courier name from ID if needed
-      const rawCourier = route.courier || route.courierId || route.courierName || '';
-      const routeCourierName = CourierIdResolver.resolve(rawCourier) || normalizeCourierName(rawCourier);
-      
-      if (!routeCourierName || isId0CourierName(routeCourierName) || routeCourierName.toLowerCase() === 'по') return;
-
-      if (!grouped[routeCourierName]) grouped[routeCourierName] = [];
-
-      route.orders.forEach((routeOrder: any) => {
-        const sid = getStableOrderId(routeOrder);
-        if (!sid) return;
-
-        // v5.160: Check by orderNumber FIRST (primary dedup key)
-        const routeOrderNum = String(routeOrder.orderNumber || '');
-        if (routeOrderNum && grouped[routeCourierName].some((o: any) => String(o.orderNumber) === routeOrderNum)) return;
-        // Already in this courier's group — skip duplication
-        if (grouped[routeCourierName].some((o: any) => o.id === sid)) return;
-
-        // Prefer the fresh version of the order from excelData.orders (has latest status from API)
-        const freshOrder = orderByStableId.get(sid);
-        const orderSource = freshOrder || routeOrder;
-
-        const lat = orderSource.lat || orderSource.coords?.lat;
-        const lng = orderSource.lng || orderSource.coords?.lng;
-
-        grouped[routeCourierName].push({
-          id: sid,
-          orderNumber: orderSource.orderNumber || routeOrder.orderNumber || 'N/A',
-          address: orderSource.address || routeOrder.address || 'Адрес не указан',
-          courier: routeCourierName,          // corrected courier name from route
-          amount: orderSource.amount || 0,
-          phone: orderSource.phone || '',
-          customerName: orderSource.customerName || '',
-          plannedTime: orderSource.plannedTime || '',
-          paymentMethod: orderSource.paymentMethod || '',
-          manualGroupId: orderSource.manualGroupId,
-          deadlineAt: orderSource.deadlineAt,
-          handoverAt: orderSource.handoverAt,
-          status: orderSource.status,
-          statusTimings: orderSource.statusTimings,
-          kmlZone: orderSource.kmlZone || orderSource.deliveryZone,
-          kmlHub: orderSource.kmlHub,
-          lat,
-          lng,
-          coords: orderSource.coords || (lat && lng ? { lat, lng } : undefined),
-          locationType: orderSource.locationType,
-          deliveryZone: orderSource.deliveryZone,
-          streetNumberMatched: orderSource.streetNumberMatched,
-          raw: orderSource,
-          isSelected: false,
-        });
-      });
-    });
-
     return grouped
-  }, [excelData?.orders, excelData?.couriers, excelData?.routes])
+  }, [excelData?.orders])
 
   // Precompute set of orders in routes for O(1) lookups
   const ordersInRoutesSet = useMemo(() => {
@@ -476,24 +383,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         route.orders.forEach((order: Order) => {
           const sid = getStableOrderId(order);
           set.add(sid);
-          // v5.160: Also track by orderNumber
-          if (order.orderNumber) set.add(`num_${order.orderNumber}`);
         })
       })
     return set
-  }, [excelData?.routes])
+  }, [excelData?.routes, getStableOrderId])
 
   // Функция для получения метрик курьера (Optimized with Memoization)
   const courierMetricsMap = useMemo(() => {
-    // Build lookup: normalized-uppercase-name -> orders[]
-    // Keys in courierOrders are UPPERCASE (normalizeCourierName output)
-    // We build a secondary index: normalized-uppercase -> orders
-    const nameToOrders = new Map<string, any[]>();
-    Object.entries(courierOrders).forEach(([k, v]) => {
-      nameToOrders.set(normalizeCourierName(k), v);
-    });
-
-    const map = new Map<string, { available: number; delivered: number; total: number; activeInRoute: number; unassigned: number; distanceKm: number }>()
+    const map = new Map<string, { available: number; delivered: number; total: number; activeInRoute: number; unassigned: number }>()
 
     const allCouriers = new Set([
       ...Object.keys(courierOrders),
@@ -502,13 +399,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
     allCouriers.forEach(name => {
       if (!name) return
-      const normUpperKey = normalizeCourierName(name); // UPPERCASE normalized
-      // Skip if already processed this courier (dedup)
-      if (map.has(normUpperKey)) return;
-
-      // v5.134: Look up via UPPERCASE key (matches courierOrders keys)
-      const orders = nameToOrders.get(normUpperKey) || []
-
+      const orders = courierOrders[name] || []
       let available = 0
       let delivered = 0
       let activeInRoute = 0
@@ -533,19 +424,14 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         }
       }
 
-      // v5.153: Get distance metrics from the couriers array state
-      const courierState = (excelData?.couriers || []).find((c: any) => normalizeCourierName(c.name) === normUpperKey);
-      const distanceKm = courierState?.distanceKm || 0;
-
-      map.set(normUpperKey, { 
+      map.set(name, { 
         available, 
         delivered, 
         // v5.114: Use filtered total for actionable orders ONLY if it's the unassigned pool
         // to keep the badge accurate, otherwise use physical total.
-        total: (normUpperKey === 'НЕ НАЗНАЧЕНО' || isId0CourierName(name)) ? available : orders.length, 
+        total: (name === 'Не назначено' || isId0CourierName(name)) ? available : orders.length, 
         activeInRoute,
-        unassigned: available,
-        distanceKm
+        unassigned: available
       })
     })
 
@@ -553,9 +439,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
   }, [courierOrders, ordersInRoutesSet, excelData?.couriers])
 
   const getCourierMetrics = useCallback((courierName: string) => {
-    // v5.134: Always look up by UPPERCASE-normalized key to match courierMetricsMap storage
-    const normKey = normalizeCourierName(courierName);
-    return courierMetricsMap.get(normKey) || { available: 0, delivered: 0, total: 0, activeInRoute: 0, unassigned: 0, distanceKm: 0 }
+    return courierMetricsMap.get(courierName) || { available: 0, delivered: 0, total: 0, activeInRoute: 0, unassigned: 0 }
   }, [courierMetricsMap])
 
   // Aggregate Fleet Stats
@@ -602,58 +486,34 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
   }, [courierOrders, excelData?.couriers, courierMetricsMap])
 
   // ─── Wire "ЗАПУСТИТЬ РАСЧЕТ" button from CourierCard ──────────────────────
-  // v5.153: Properly triggers the background Turbo Robot via REST API.
+  // The button fires this event globally. We listen here and recalculate
+  // any routes that do not yet have a totalDistance (i.e. not geocoded).
   useEffect(() => {
-    const handler = async (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      const token = localStorage.getItem('km_access_token');
-      if (!token) {
-        toast.error('❌ Не авторизован');
+    const handler = async () => {
+      const routes: Route[] = excelData?.routes || [];
+      const incomplete = routes.filter(r =>
+        !r.totalDistance ||
+        r.totalDistance === 0 ||
+        r.orders.some((o: any) => !o.coords?.lat)
+      );
+
+      if (incomplete.length === 0) {
+        toast.success('Все маршруты рассчитаны');
         return;
       }
 
-      const { user } = await import('../../contexts/AuthContext').then(() => ({ user: (window as any).__user || null }));
-      const divisionId = user?.divisionId || (excelData as any)?.divisionId || (excelData as any)?.orders?.[0]?.departmentId || null;
-
-      const { useDashboardStore } = await import('../../stores/useDashboardStore');
-      const apiDateShift = useDashboardStore.getState().apiDateShift;
-      const today = new Date().toISOString().split('T')[0];
-      let targetDate = today;
-      if (apiDateShift) {
-        if (/^\d{2}\.\d{2}\.\d{4}$/.test(apiDateShift)) {
-          const p = apiDateShift.split('.');
-          targetDate = `${p[2]}-${p[1]}-${p[0]}`;
-        } else if (/^\d{4}-\d{2}-\d{2}$/.test(apiDateShift)) {
-          targetDate = apiDateShift;
-        }
+      toast(`🔄 Запускаю расчёт ${incomplete.length} маршрут(ов)...`);
+      for (const route of incomplete) {
+        await recalculateRoute(route);
+        await new Promise(r => setTimeout(r, 50)); // yield to UI
       }
-
-      const courierName = detail?.courierName || null;
-      const loadingToast = toast.loading(`🤖 Запускаю фоновый расчёт${courierName ? ` для ${courierName}` : ''}...`);
-
-      try {
-        const res = await fetch('/api/turbo/priority', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ divisionId, date: targetDate, courierFilter: courierName })
-        });
-        const json = await res.json();
-        if (json.success) {
-          toast.dismiss(loadingToast);
-          toast.success(`🤖 Фоновый робот запущен! Результаты появятся через 30-60 секунд.`);
-        } else {
-          toast.dismiss(loadingToast);
-          toast.error(`❌ Ошибка: ${json.error || 'Неизвестная ошибка'}`);
-        }
-      } catch (err: any) {
-        toast.dismiss(loadingToast);
-        toast.error(`❌ Сетевая ошибка: ${err.message}`);
-      }
+      toast.success(`✅ Расчёт завершён`);
     };
 
     window.addEventListener('km-force-auto-routing', handler);
     return () => window.removeEventListener('km-force-auto-routing', handler);
-  }, [excelData]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [excelData?.routes]);
 
   // Trigger on-demand geocoding when the returning modal is opened
 
@@ -749,9 +609,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         const route = rawRoute ? (enrichedById.get(rawRoute.id) ?? rawRoute) : (enrichedById.get(virtualId))
 
         // v42.1: Tracking calculated vs total
-        const routeOrdersCount = (excelData?.routes || [])
-          .filter((r: any) => normalizeCourierName(r.courier) === name)
-          .reduce((sum: number, r: any) => sum + (r.orders?.length || 0), 0);
+        const routeOrdersCount = route?.orders?.length || 0;
         
         const m = courierMetricsMap.get(name) || { available: 0, delivered: 0, total: 0 }
         const remaining = m.total - m.delivered;
@@ -800,10 +658,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       const m = courierMetricsMap.get(name) || { available: 0, delivered: 0, total: 0 }
       const remaining = m.total - m.delivered;
       
-      // Get calculated count (orders in routes) across ALL routes for this courier
-      const calculatedCount = (excelData?.routes || [])
-        .filter((r: any) => normalizeCourierName(r.courier) === name)
-        .reduce((sum: number, r: any) => sum + (r.orders?.length || 0), 0);
+      // Get calculated count (orders in routes)
+      const routeIdx = (excelData?.routes || []).findIndex((r: any) => normalizeCourierName(r.courier) === name);
+      const calculatedCount = routeIdx !== -1 ? (excelData!.routes[routeIdx].orders?.length || 0) : 0;
 
       // Refined: "In Transit" if started but > 2 left, or haven't started yet
       if (m.total > 0 && (m.delivered === 0 || (m.delivered > 0 && remaining > 2))) {
@@ -945,21 +802,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     }
 
     // 1. Collect orders for selected courier
-    // v5.134: courierOrders keys are UPPERCASE-normalized, selectedCourier may be any case
-    const normSelected = normalizeCourierName(selectedCourier);
-    let selectedCourierRawOrders: Order[] = courierOrders[normSelected] || [];
-
-    // Fallback: if selected is an ObjectId, resolve it to a name and try again
-    if (selectedCourierRawOrders.length === 0 && /^[0-9a-f]{24}$/i.test(String(selectedCourier))) {
-        const resolved = CourierIdResolver.resolve(String(selectedCourier));
-        if (resolved) {
-            selectedCourierRawOrders = courierOrders[normalizeCourierName(resolved)] || [];
-        }
-    }
+    const selectedCourierRawOrders = courierOrders[selectedCourier] || []
 
     // 2. Aggregate unassigned orders ONLY if viewing the unassigned pool
-    // v5.139: Deduplicate orders that may exist in both 'ID:0' AND 'Не назначено' groups
-    const unassignedSeenIds = new Set<string>();
     const unassignedOrders: Order[] = []
     
     // Only if searching in "Не назначено" or if admin wants to see "ID:0"
@@ -969,16 +814,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       Object.entries(courierOrders).forEach(([courierName, orders]) => {
         if (isId0CourierName(courierName) || courierName === 'Не назначено') {
           orders.forEach(o => {
-            const sid = getStableOrderId(o);
-            if (!sid) return; // Skip orders without ID
-            
-            // v5.139: Skip if already added (deduplicate across both groups)
-            if (unassignedSeenIds.has(sid)) {
-              console.warn(`[RouteManagement] ⚠️ Duplicate order ${sid} in unassigned pool (exists in both ID:0 and Не назначено)`);
-              return;
-            }
-            unassignedSeenIds.add(sid);
-            
             const s = (o.status || '').toLowerCase().trim();
             const isInProgress = s === 'доставляется' || s === 'в пути';
             const isCompleted = isOrderCompleted(o.status);
@@ -1031,19 +866,16 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         const s = (o.status || '').toLowerCase().trim();
         if (unassignedStatusFilter === 'оформление') {
           // Broad variants for "Оформление"
-          return s.includes('оформлен') || s.includes('оформление') || s.includes('сформирован') || s.includes('формируется') || s.includes('новый') || s.includes('принят') || s.includes('new') || s.includes('draft');
+          return s.includes('оформлен') || s.includes('оформление') || s.includes('сформирован') || s.includes('формируется') || s.includes('новый') || s.includes('new') || s.includes('draft');
         }
         if (unassignedStatusFilter === 'в работе') {
-          // Broad variants for "В работе" (Processing but not yet ready)
-          return s.includes('в работе') || s.includes('собирает') || s.includes('сборк') || s.includes('готовит') || s.includes('очеред') || s.includes('уточн') || s.includes('подготов') || s.includes('work') || s.includes('proc');
+          // Broad variants for "В работе"
+          return s.includes('в работе') || s.includes('собирается') || s.includes('собран') || s.includes('в сборке') || s.includes('уточнение') || s.includes('work') || s.includes('processing');
         }
-        if (unassignedStatusFilter === 'собран') {
-          // Variants for "Собран" (Ready for pickup/delivery)
-          return s.includes('собран') || s.includes('готов') || s.includes('ready') || s.includes('assembled');
-        }
-        if (unassignedStatusFilter === 'отказы') {
-          // Variants for "Отказы" (Cancellations/Rejections)
-          return s.includes('отмен') || s.includes('отказ') || s.includes('возврат') || s.includes('удал') || s.includes('cancel') || s.includes('reject') || s.includes('fail');
+        if (unassignedStatusFilter === 'другое') {
+          const isDraft = s.includes('оформлен') || s.includes('оформление') || s.includes('сформирован') || s.includes('формируется') || s.includes('новый') || s.includes('new') || s.includes('draft');
+          const isInProgress = s.includes('в работе') || s.includes('собирается') || s.includes('собран') || s.includes('в сборке') || s.includes('уточнение') || s.includes('work') || s.includes('processing');
+          return !isDraft && !isInProgress;
         }
         return true;
       });
@@ -1104,9 +936,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     // Helper to enrich sequence of orders (v5.71: Deduplicating by Number + ID)
     const enrichOrders = (ordersToEnrich: any[]) => {
       const seen = new Set();
-      // v5.170: Also create lookup by orderNumber for backend routes
-      const masterOrdersByNumber = new Map(allOrdersList.map(o => [String(o.orderNumber), o]));
-
       return (ordersToEnrich || [])
         .filter(order => {
           // Use orderNumber as primary unique key if available, fallback to id
@@ -1116,17 +945,16 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
           return true;
         })
         .map(order => {
-          // v5.170: Try lookup by id first, then by orderNumber
-          const masterOrder = masterOrdersMap.get(String(order.id)) || masterOrdersByNumber.get(String(order.orderNumber));
+          const masterOrder = masterOrdersMap.get(String(order.id));
           const lat = masterOrder?.lat || order.lat || order.coords?.lat;
           const lng = masterOrder?.lng || order.lng || order.coords?.lng;
-
+          
           const locType = masterOrder?.locationType || order.locationType || (order as any).coords?.locationType;
           const streetMatch = (masterOrder as any)?.streetNumberMatched ?? order.streetNumberMatched;
-
+          
           let finalKmlZone = masterOrder?.kmlZone || order.kmlZone || masterOrder?.deliveryZone || order.deliveryZone;
           let finalKmlHub = masterOrder?.kmlHub || order.kmlHub;
-
+          
           if (!finalKmlZone && lat && lng) {
             const zoneMatch = robustGeocodingService.findZoneForCoords(lat, lng);
             if (zoneMatch) {
@@ -1134,13 +962,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
               finalKmlHub = zoneMatch.hubName;
             }
           }
-
+          
           return {
             ...order,
             ...masterOrder,
-            // v5.170: CRITICAL — address must come from master if order.address is empty
-            address: order.address || masterOrder?.address || 'Адрес не указан',
-            orderNumber: order.orderNumber || masterOrder?.orderNumber || 'N/A',
             kmlZone: finalKmlZone,
             kmlHub: finalKmlHub,
             deliveryZone: masterOrder?.deliveryZone || order.deliveryZone || finalKmlZone,
@@ -1154,14 +979,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     };
 
     // 1. Process existing calculated routes
-    const processedRoutes = rawRoutes.map(route => {
-      // v5.170: Backend stores orders in route_data.orders, not route.orders
-      const routeOrders = route.orders || (route as any).route_data?.orders || [];
-      return {
-        ...route,
-        orders: enrichOrders(routeOrders)
-      };
-    });
+    const processedRoutes = rawRoutes.map(route => ({
+      ...route,
+      orders: enrichOrders(route.orders)
+    }));
 
     // 2. Identify "Orphaned" orders (assigned to courier but not in any route)
     const ordersInCalculatedRoutes = new Set();
@@ -1385,6 +1206,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
   // Функция для перемещения заказа в другую временную группу (Force Move / SOTA v2.0)
   const handleMoveOrderToGroup = useCallback(async (orderId: string, targetGroup: TimeWindowGroup) => {
+    console.log('[DND] Force Move logic triggered for order:', orderId, 'to group:', targetGroup.id);
 
     // v5.3: DND is instant — no async geocoding, no modals during drag.
     // Only show a toast warning if coords available and the order is extremely far from the group.
@@ -1445,6 +1267,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         const isMovedOrder = (oId === targetIdStr) || (oNum === targetIdStr) || (normalizedOId === normalizedTargetId) || (oNum === normalizedTargetId);
 
         if (isMovedOrder) {
+          console.log('[DND] Matched Order:', oId, 'Moving to:', targetManualId);
         }
 
         // Это заказ, который УЖЕ был в целевой группе?
@@ -1700,68 +1523,31 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     await calculateRouteDistance(route)
   }
 
-  const clearAllRoutes = async () => {
-    if (window.confirm('Вы уверены, что хотите полностью удалить все маршруты для выбранного подразделения?')) {
-      const store = useDashboardStore.getState();
-      const divisionId = store.divisionId || 'all';
-      const date = store.apiDateShift;
-
-      // v5.160: Clear ALL route-related localStorage keys
+  const clearAllRoutes = () => {
+    if (window.confirm('Вы уверены, что хотите удалить все маршруты?')) {
+      updateExcelData({ ...(excelData || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }), routes: [] }, true)
       try {
-        localStorage.removeItem('km_routes');
-        localStorage.removeItem('km_routes_last_updated');
-        localStorage.removeItem('km_dashboard_processed_data');
+        localStorage.removeItem('km_routes')
       } catch (error) {
-        console.error('Error clearing routes from localStorage:', error);
+        console.error('Error clearing routes from localStorage:', error)
       }
-
-      // API Call to clear the backend Calculated Routes
-      try {
-        const token = localStorage.getItem('km_access_token');
-        if (token) {
-          const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-          await fetch(`${baseUrl}/api/routes/all/calculated?divisionId=${divisionId}&date=${date}`, {
-            method: 'DELETE',
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          });
-        }
-      } catch (err) {
-        console.error('Error clearing remote routes:', err);
-      }
-
-      // v5.160: Force update with empty routes and reset courier stats
-      updateExcelData((prev: any) => {
-        const prevSafe = prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined };
-        return {
-          ...prevSafe,
-          routes: [],
-          couriers: (prevSafe.couriers || []).map((c: any) => ({
-            ...c,
-            distanceKm: 0,
-            calculatedOrders: 0
-          }))
-        };
-      }, true /* force: true */);
-
-      // Force socket robot update to stop if it's running for this division
-      const socket = socketService.getSocket();
-      if (socket) {
-        socket.emit('robot_control', {
-            action: 'stop',
-            divisionId: divisionId
-        });
-      }
-
-      toast.success('Маршруты успешно удалены');
     }
   }
 
-  const handleFinishCalculation = () => {
-    // New function requested to replace "Clear Finished" / "Clear Completed"
-    // We'll call it "Complete Calculation" or "Archive Day"
-    toast('Функция архивации будет доступна в следующем обновлении', { icon: '📦' });
+  const clearFinishedRoutes = () => {
+    updateExcelData((prev: any) => {
+      const routes = prev?.routes || [];
+      const activeRoutes = routes.filter((r: Route) => {
+        if (!r.orders || r.orders.length === 0) return true;
+        return !r.orders.every((o: any) => isOrderCompleted(o.status));
+      });
+      if (activeRoutes.length === routes.length) {
+        toast.error('Нет завершенных маршрутов для очистки');
+        return prev;
+      }
+      toast.success(`Очищено маршрутов: ${routes.length - activeRoutes.length}`);
+      return { ...prev, routes: activeRoutes };
+    }, true);
   }
 
   const openRouteInGoogleMaps = (route: Route) => {
@@ -1870,28 +1656,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
               )}>
                 <span>{fleetStats.total} курьеров, {(excelData?.routes?.length ?? 0)} маршрутов</span>
               </div>
-              <Tooltip
-                content="Обновить маршруты из базы данных"
-                position="left"
-              >
-                <button
-                  onClick={() => {
-                    const refreshFn = (window as any).__refreshTurboRoutes;
-                    if (refreshFn) {
-                      refreshFn();
-                      toast.success('Обновляю маршруты...', { duration: 1500 });
-                    }
-                  }}
-                  className={clsx(
-                    'p-3 rounded-xl transition-all hover:scale-105',
-                    isDark
-                      ? 'bg-gray-700 hover:bg-gray-600 text-green-400'
-                      : 'bg-white hover:bg-green-50 text-green-600 shadow-lg'
-                  )}
-                >
-                  <ArrowPathIcon className="w-6 h-6" />
-                </button>
-              </Tooltip>
               <Tooltip
                 content="Открыть справку и инструкции по управлению маршрутами"
                 position="left"
@@ -2104,7 +1868,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                                     totalOrdersCount={metric.total}
                                     calculatedCount={metric.activeInRoute}
                                     unassignedCount={metric.unassigned}
-                                    distanceKm={metric.distanceKm}
                                     isDark={isDark}
                                   />
                                 </div>
@@ -2225,8 +1988,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                           { id: 'all', label: 'ВСЕ' },
                           { id: 'оформление', label: 'ОФОРМЛЕНИЕ' },
                           { id: 'в работе', label: 'В РАБОТЕ' },
-                          { id: 'собран', label: 'СОБРАН' },
-                          { id: 'отказы', label: 'ОТКАЗЫ' }
+                          { id: 'другое', label: 'ПРОЧИЕ' }
                         ] as const).map((filter) => (
                           <button
                             key={filter.id}
@@ -2407,148 +2169,45 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                             if (startAddress) uniqueAddresses.add(cleanAddressForRoute(startAddress));
                             if (endAddress) uniqueAddresses.add(cleanAddressForRoute(endAddress));
 
+                            console.log(`[Quantum] Starting Giant Batch Geocode for ${uniqueAddresses.size} unique addresses...`);
+
                             // 2. Execute one giant batch geocode for everything
-                            // v5.152: Improved geocoding with high accuracy options
                             const addrCache = await batchGeocode(
                               Array.from(uniqueAddresses).map(addr => ({
                                 address: addr,
-                                options: { 
-                                  turbo: true, 
-                                  silent: true,
-                                  strictZoneFallback: false,  // Don't ask for clarifications
-                                  maxResults: 1,               // Return best match only
-                                  timeout: 5000                // 5 second timeout per address
-                                }
+                                options: { turbo: true, silent: true }
                               }))
                             );
-                            
-                            // v5.152: Retry failed addresses with fallback providers
-                            const failedAddresses = Array.from(uniqueAddresses).filter(addr => {
-                              const key = addr.trim().toLowerCase();
-                              return !addrCache.has(key);
-                            });
-                            
-                            if (failedAddresses.length > 0) {
-                              const retryResults = await batchGeocode(
-                                failedAddresses.map(addr => ({
-                                  address: addr,
-                                  options: { 
-                                    turbo: false,  // Use slower but more accurate providers
-                                    silent: true,
-                                    strictZoneFallback: false,
-                                    maxResults: 1
-                                  }
-                                }))
-                              );
-                              retryResults.forEach((val, key) => addrCache.set(key, val));
-                            }
-
-                            // v5.160: Enhanced fallback - try simplified addresses for remaining failures
-                            const stillFailed = Array.from(uniqueAddresses).filter(addr => {
-                              const key = addr.trim().toLowerCase();
-                              return !addrCache.has(key);
-                            });
-                            
-                            if (stillFailed.length > 0) {
-                              useCalculationProgress.getState().setMessage(`Уточнение ${stillFailed.length} адресов...`);
-                              
-                              const enhancedFallbacks = stillFailed.flatMap(addr => {
-                                const fallbacks: { address: string; original: string; strategy: string }[] = [];
-                                
-                                // Strategy 1: Remove house number
-                                const noHouse = addr.replace(/\b\d+[а-яА-Яa-zA-ZіІєЄґґ]*(?:[\/\-]\d*)?\b/g, '').trim();
-                                if (noHouse && noHouse !== addr) {
-                                  fallbacks.push({ address: noHouse, original: addr, strategy: 'no-house' });
-                                }
-                                
-                                // Strategy 2: Remove apartment/entrance/floor details
-                                const simplified = addr
-                                  .replace(/(?:под\.?|подъезд|п)\s*\d+/gi, '')
-                                  .replace(/(?:кв\.?|квартира)\s*\d+/gi, '')
-                                  .replace(/(?:эт\.?|этаж)\s*\d+/gi, '')
-                                  .replace(/(?:оф\.?|офис)\s*\w+/gi, '')
-                                  .replace(/д\/ф\s*\w*/gi, '')
-                                  .replace(/\s+/g, ' ')
-                                  .trim();
-                                if (simplified && simplified !== addr) {
-                                  fallbacks.push({ address: simplified, original: addr, strategy: 'simplified' });
-                                }
-                                
-                                // Strategy 3: Extract just street name
-                                const streetMatch = addr.match(/((?:вул\.?|просп\.?|пр-т|пров\.?|пер\.?|бульвар)\s*[\w\s'-]+)/i);
-                                if (streetMatch) {
-                                  const cityMatch = addr.match(/(Київ|Киев|Дніпро|Одеса|Харків|Львів)/i);
-                                  const minimal = cityMatch ? `${cityMatch[1]}, ${streetMatch[1]}` : streetMatch[1];
-                                  fallbacks.push({ address: minimal, original: addr, strategy: 'street-only' });
-                                }
-                                
-                                return fallbacks;
-                              });
-                              
-                              if (enhancedFallbacks.length > 0) {
-                                const fallbackResults = await batchGeocode(
-                                  enhancedFallbacks.map(fb => ({
-                                    address: fb.address,
-                                    options: { turbo: true, silent: true, strictZoneFallback: false, maxResults: 1 }
-                                  }))
-                                );
-                                
-                                // Map results back to original addresses
-                                enhancedFallbacks.forEach((fb) => {
-                                  const result = fallbackResults.get(fb.address.toLowerCase());
-                                  if (result?.best) {
-                                    const originalKey = fb.original.trim().toLowerCase();
-                                    if (!addrCache.has(originalKey)) {
-                                      addrCache.set(originalKey, result);
-                                    }
-                                  }
-                                });
-                              }
-                            }
 
                             useCalculationProgress.getState().setProgress(30);
+                            console.log(`[Quantum] Giant Geocode complete. Calculating ${newRoutes.length} routes in parallel...`);
 
-                            // v5.170: Parallel route calculation with concurrency limit (max 3 at a time)
-                            // This is MUCH faster than sequential while not overwhelming the browser
+                            // 3. Sequential chunking calculation with shared cache (Phase 7 Extreme Optimization)
+                            // By processing sequentially with a setTimeout yield, we completely unblock
+                            // the main thread, allowing the progress bar to render smoothly and preventing crashes.
                             let completedRoutes = 0;
-                            const calculatedRoutes: (Route | null)[] = new Array(newRoutes.length).fill(null);
-                            const CONCURRENCY = 3; // Max parallel route calculations
+                            const calculatedRoutes: (Route | null)[] = [];
 
-                            const calculateRouteWithProgress = async (route: any, index: number) => {
+                            for (const route of newRoutes) {
                               try {
-                                const windowLabel = route.orders.length > 0 ?
-                                  `(${(route.orders[0] as any).deliverBy || route.orders[0].plannedTime || ''})` : '';
-                                useCalculationProgress.getState().setMessage(
-                                  `Маршрут ${index + 1}/${newRoutes.length} ${windowLabel}`
-                                );
+                                // Yield main thread to browser to paint UI
+                                await new Promise(r => setTimeout(r, 10));
 
                                 const result = await calculateRouteDistance(route, true, addrCache);
-                                calculatedRoutes[index] = result;
-
-                                if (result) {
-                                } else {
-                                  console.warn(`[Quantum] ⚠️ Route ${index + 1} failed`);
-                                }
+                                calculatedRoutes.push(result);
                               } catch (e) {
-                                console.error(`[Quantum] Ошибка маршрута ${index + 1}:`, e);
-                                calculatedRoutes[index] = null;
+                                console.error(`[Quantum] Ошибка маршрута:`, e);
+                                calculatedRoutes.push(null);
                               } finally {
                                 completedRoutes++;
                                 const progressPct = Math.round(30 + ((completedRoutes / newRoutes.length) * 65));
-                                if (progressPct === 95 || (Date.now() - (window as any)._lastProgressUpdate > 100)) {
+
+                                // Phase 7: Zero Re-Render UI Update directly to store
+                                if (progressPct === 95 || (Date.now() - (window as any)._lastProgressUpdate > 200)) {
                                   useCalculationProgress.getState().setProgress(progressPct);
                                   (window as any)._lastProgressUpdate = Date.now();
                                 }
                               }
-                            };
-
-                            // Process routes in batches of CONCURRENCY
-                            for (let i = 0; i < newRoutes.length; i += CONCURRENCY) {
-                              const batch = newRoutes.slice(i, i + CONCURRENCY);
-                              const batchIndices = Array.from({ length: batch.length }, (_, j) => i + j);
-                              await Promise.all(batch.map((route, j) => calculateRouteWithProgress(route, batchIndices[j])));
-                              // Yield to browser between batches
-                              await new Promise(r => setTimeout(r, 5));
                             }
 
                             useCalculationProgress.getState().setProgress(95)
@@ -2573,12 +2232,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                                 return order;
                               });
 
-                              // v5.152: Atomically replace all routes for the selected courier
-                              // This prevents duplicates across all tabs and ensures 100% parity with robot behavior.
-                              const courierToClear = String(selectedCourier || '').toUpperCase();
                               const existingRoutes = (prev?.routes || []).filter(
-                                (r: Route) => normalizeCourierName(r.courier).toUpperCase() !== courierToClear && 
-                                              !newRoutes.some(nr => nr.id === r.id)
+                                (r: Route) => !newRoutes.some(nr => nr.id === r.id)
                               );
                               const finalRoutes = [
                                 ...existingRoutes,
@@ -2586,6 +2241,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                                 ...newRoutes.map(r => updatedRouteMap.get(r.id) || r)
                               ];
 
+                              console.log(`[Батч] Финальный коммит: ${finalRoutes.length} маршрутов, ${updatedOrders.filter((o: any) => allOrderIdsToUpdate.has(String(o.id))).length} обновленных заказов`);
 
                               return {
                                 ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
@@ -2595,13 +2251,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                             }, true /* force: true to ensure new routes are NOT dropped by protectData */);
 
                             const successCount = calculatedRoutes.filter(Boolean).length;
-                            const failCount = calculatedRoutes.length - successCount;
                             if (successCount > 0) {
-                              if (failCount > 0) {
-                                toast.success(`Расчитано ${successCount} маршрутов (${failCount} не удалось)`);
-                              } else {
-                                toast.success(`Расчитано ${successCount} маршрутов`);
-                              }
+                              toast.success(`Расчитано ${successCount} маршрутов`);
                             } else {
                               toast.error('Не удалось рассчитать маршруты. Проверьте консоль.');
                             }
@@ -2753,15 +2404,15 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                   {(excelData?.routes?.length ?? 0) > 0 && (
                     <div className="flex items-center gap-3">
                       <button
-                        onClick={handleFinishCalculation}
+                        onClick={clearFinishedRoutes}
                         className={clsx(
                           'px-6 py-3 rounded-xl text-sm font-black uppercase tracking-widest transition-all border-2',
                           isDark
-                            ? 'border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10'
-                            : 'border-indigo-100 text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 shadow-sm'
+                            ? 'border-green-500/30 text-green-400 hover:bg-green-500/10'
+                            : 'border-green-100 text-green-600 hover:bg-green-50 hover:border-green-200 shadow-sm'
                         )}
                       >
-                        Завершить расчет
+                        Очистить завершенные
                       </button>
                       <button
                         onClick={clearAllRoutes}

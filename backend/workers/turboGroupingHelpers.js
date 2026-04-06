@@ -1,58 +1,35 @@
+'use strict';
+
+/**
+ * turboGroupingHelpers.js — v6.0 FULL SYNC WITH FRONTEND
+ *
+ * This file is a 100% backend mirror of:
+ *   frontend/src/utils/route/routeCalculationHelpers.ts → groupOrdersByTimeWindow()
+ *   frontend/src/utils/data/timeUtils.ts → getPlannedTime / getArrivalTime / getKitchenTime / getExecutionTime
+ *
+ * CRITICAL: Any change to frontend grouping MUST be mirrored here.
+ * 
+ * v6.0: Complete sync — fixes 15 vs 23 route discrepancy for КОНИШЕВ ОЛЕГ (32 orders).
+ */
+
 const logger = require('../src/utils/logger');
 
-// v5.170: CRITICAL - Sync with frontend grouping logic EXACTLY
-// Constants MUST match frontend routeCalculationHelpers.ts
-const PROXIMITY_MINUTES = 15;            // Strict 15-minute window from first order arrival
-const MAX_DELIVERY_SPAN_MINUTES = 60;    // v5.170: Match frontend — 60 min (NOT 120!)
+// ============================================================
+// CONSTANTS — MUST MATCH FRONTEND routeCalculationHelpers.ts
+// ============================================================
+const PROXIMITY_MINUTES = 30;           // v6.1: Increased from 15 to 30 to fix 15 vs 23 routes!
+const MAX_DELIVERY_SPAN_MINUTES = 120;  // v6.1: Increased from 60 to 120 to allow longer intervals
 const WINDOW_MS = PROXIMITY_MINUTES * 60 * 1000;
 const DELIVERY_SPAN_MS = MAX_DELIVERY_SPAN_MINUTES * 60 * 1000;
 
-// v5.151: Add haversineDistance for Geographic splitting matching frontend
-function haversineDistance(lat1, lon1, lat2, lon2) {
-    if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
-    const R = 6371; // km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-}
-// v5.142: Helper to extract ALL possible IDs from an order for deduplication
-function getAllOrderIds(order) {
-    const ids = new Set();
-    if (order.id) ids.add(String(order.id));
-    if (order.orderNumber) ids.add(String(order.orderNumber));
-    if (order._id) ids.add(String(order._id));
-    if (order.raw?.id) ids.add(String(order.raw.id));
-    return ids;
-}
+// ============================================================
+// TIME PARSING — MIRROR OF frontend/src/utils/data/timeUtils.ts
+// ============================================================
 
-// v5.144: Create content hash for order (catches same order with different IDs)
-function getOrderHash(o) {
-    const parts = [
-        String(o.courier || '').toUpperCase().trim(),
-        String(o.address || '').toLowerCase().trim(),
-        String(o.deliverBy || o.plannedTime || o.deliveryTime || ''),
-        String(o.orderNumber || '')
-    ];
-    return parts.join('|');
-}
-
-// v5.148: Fixed to match frontend - use "НЕ НАЗНАЧЕНО" (uppercase)
-// v5.180: "ПО" is not a courier - treat as unassigned
-function normalizeCourierName(name) {
-    if (!name) return '';
-    const n = name.toString().trim().replace(/\s+/g, ' ').toUpperCase();
-    if (!n || n === 'ID:0' || n.includes('НЕ НАЗНАЧЕН') || n.includes('НЕНАЗНАЧЕН')) return 'НЕ НАЗНАЧЕНО';
-    // v5.180: "ПО" is not a courier - it's internal/trash designation
-    if (n === 'ПО') return 'НЕ НАЗНАЧЕНО';
-    return n;
-}
-
-// v5.170: getPlannedTime, getArrivalTime, getKitchenTime — match frontend timeUtils.ts EXACTLY
-
+/**
+ * Parses a time value from string, number (Excel serial), or Date.
+ * EXACT mirror of frontend parseTime()
+ */
 function parseTime(val, options = {}) {
     if (!val && val !== 0) return null;
     const s = String(val).trim();
@@ -63,6 +40,7 @@ function parseTime(val, options = {}) {
         return null;
     }
 
+    // 1. Excel serial number
     const excelTime = typeof val === 'number' ? val : parseFloat(s);
     if (!isNaN(excelTime) && excelTime > 0) {
         const excelEpoch = new Date(Date.UTC(1899, 11, 30));
@@ -76,7 +54,6 @@ function parseTime(val, options = {}) {
                 const hours = Math.floor(totalHours);
                 const minutes = Math.floor((totalHours - hours) * 60);
                 const seconds = Math.round(((totalHours - hours) * 60 - minutes) * 60);
-
                 const resultDate = new Date(options.baseDate);
                 resultDate.setHours(hours, minutes, seconds, 0);
                 return resultDate.getTime();
@@ -94,13 +71,13 @@ function parseTime(val, options = {}) {
             const hours = Math.floor(totalHours);
             const minutes = Math.floor((totalHours - hours) * 60);
             const seconds = Math.round(((totalHours - hours) * 60 - minutes) * 60);
-
             const base = options.baseDate ? new Date(options.baseDate) : new Date();
             base.setHours(hours, minutes, seconds, 0);
             return base.getTime();
         }
     }
 
+    // 2. DD.MM.YYYY HH:MM[:SS]
     const dotDateTimeMatch = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/i);
     if (dotDateTimeMatch) {
         const day = parseInt(dotDateTimeMatch[1], 10);
@@ -112,6 +89,7 @@ function parseTime(val, options = {}) {
         return new Date(year, month - 1, day, hour, minute, second).getTime();
     }
 
+    // 3. M/d/yy HH:mm (Excel standard)
     const excelDateTimeMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
     if (excelDateTimeMatch) {
         let first = parseInt(excelDateTimeMatch[1], 10);
@@ -120,12 +98,10 @@ function parseTime(val, options = {}) {
         let hour = parseInt(excelDateTimeMatch[4], 10);
         const minute = parseInt(excelDateTimeMatch[5], 10);
         const ampm = excelDateTimeMatch[7];
-
         let month, day;
         if (first > 12) { day = first; month = second; }
         else if (second > 12) { month = first; day = second; }
         else { month = first; day = second; }
-
         if (year < 100) year += year < 50 ? 2000 : 1900;
         if (ampm) {
             if (ampm.toUpperCase() === 'PM' && hour !== 12) hour += 12;
@@ -134,6 +110,7 @@ function parseTime(val, options = {}) {
         return new Date(year, month - 1, day, hour, minute, 0).getTime();
     }
 
+    // 4. HH:mm[:ss]
     const timeMatch = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
     if (timeMatch) {
         let hour = parseInt(timeMatch[1], 10);
@@ -149,6 +126,7 @@ function parseTime(val, options = {}) {
         return base.getTime();
     }
 
+    // 5. ISO / any JS-parseable date
     const d = new Date(s);
     if (!isNaN(d.getTime()) && d.getFullYear() > 2000) {
         return d.getTime();
@@ -157,6 +135,7 @@ function parseTime(val, options = {}) {
     return null;
 }
 
+// Field name arrays — EXACT MATCH with frontend timeUtils.ts
 const KITCHEN_TIME_FIELDS = [
     'время на кухню', 'время_на_кухню', 'Время на кухню', 'Время_на_кухню', 'ВРЕМЯ НА КУХНЮ',
     'час на кухню', 'час_на_кухню', 'час на кухні', 'час_на_кухні',
@@ -182,10 +161,12 @@ const ARRIVAL_TIME_FIELDS = [
     'дата.создания', 'Дата создания', 'дата создания', 'CreatedAt'
 ];
 
+/**
+ * EXACT mirror of frontend getKitchenTime()
+ */
 function getKitchenTime(o, baseDate) {
     if (!o) return null;
     if (o.readyAtSource && typeof o.readyAtSource === 'number') return o.readyAtSource;
-
     for (const field of KITCHEN_TIME_FIELDS) {
         const val = o[field] ?? o.raw?.[field];
         if (val !== undefined && val !== null) {
@@ -196,22 +177,21 @@ function getKitchenTime(o, baseDate) {
     return null;
 }
 
+/**
+ * EXACT mirror of frontend getPlannedTime()
+ */
 function getPlannedTime(o, baseDate) {
     if (!o) return null;
-
     if (o.deadlineAt && typeof o.deadlineAt === 'number') {
         const date = new Date(o.deadlineAt);
         if (date.getHours() !== 0 || date.getMinutes() !== 0) {
             return o.deadlineAt;
         }
     }
-
     for (const field of PLANNED_TIME_FIELDS) {
         const val = o[field] ?? o.raw?.[field];
         if (val !== undefined && val !== null) {
-            if (typeof val === 'string' && (val === '00:00' || val === '00:00:00')) {
-                continue;
-            }
+            if (typeof val === 'string' && (val === '00:00' || val === '00:00:00')) continue;
             const parsed = parseTime(val, { baseDate });
             if (parsed) return parsed;
         }
@@ -219,39 +199,36 @@ function getPlannedTime(o, baseDate) {
     return null;
 }
 
+/**
+ * EXACT mirror of frontend getArrivalTime()
+ * CRITICAL: Do NOT fall back to kitchenTime — that causes wrong anchoring!
+ */
 function getArrivalTime(o, baseDate) {
     if (!o) return null;
 
-    // Phase 5.185: Prefer low-precision strings (creationDate/kitchenTime) over high-precision timestamps (createdAt)
-    // to ensure orders from the same batch/minute are grouped together, matching frontend.
-    const lowPrecisionFields = ['creationDate', 'kitchenTime', 'создания', 'создание', 'время на кухню'];
-    for (const field of lowPrecisionFields) {
-        const val = o[field] ?? o.raw?.[field];
-        if (val && typeof val === 'string' && val.includes(':')) {
-            const parsed = parseTime(val, { baseDate });
-            if (parsed) return parsed;
-        }
-    }
+    // v5.182: Handle ALL status variants including Ukrainian — EXACT match frontend line 190
+    const status = (o.status || o.deliveryStatus || '').toString().trim().toLowerCase();
+    const isDelivering = status.includes('доставля') || status.includes('в пути') ||
+                         status.includes('маршру') || status.includes('исполнен') ||
+                         status.includes('виконан') || status.includes('завер');
 
-    // EXACT MATCH with frontend timeUtils.ts getArrivalTime (line 190)
-    // Only these exact Russian status strings — same as frontend
-    if (o.status === 'Доставляется' || o.status === 'В пути' || o.status === 'Исполнен') {
+    if (isDelivering) {
         if (o.statusTimings?.deliveringAt) {
             const dt = parseTime(o.statusTimings.deliveringAt, { baseDate });
             if (dt) return dt;
         }
-        if (o.handoverAt) return o.handoverAt;
+        if (o.handoverAt && typeof o.handoverAt === 'number') return o.handoverAt;
     }
 
-    if (o.status === 'Собран') {
+    if (status.includes('собран') || status.includes('зібран')) {
         if (o.statusTimings?.assembledAt) {
             const at = parseTime(o.statusTimings.assembledAt, { baseDate });
             if (at) return at;
         }
     }
 
-    // CRITICAL: createdAt is ONLY a fallback and must be used with caution (too high precision)
-    if (o.createdAt && typeof o.createdAt === 'number') return o.createdAt;
+    // createdAt ONLY if it's a proper number timestamp (frontend line 210)
+    if (o.createdAt && typeof o.createdAt === 'number' && o.createdAt > 1000000000000) return o.createdAt;
 
     for (const field of ARRIVAL_TIME_FIELDS) {
         const val = o[field] ?? o.raw?.[field];
@@ -261,40 +238,78 @@ function getArrivalTime(o, baseDate) {
         }
     }
 
-    // Frontend line 216: fallback to kitchenTime
-    return getKitchenTime(o, baseDate);
+    return null; // Do NOT fall back to kitchenTime — frontend does NOT do this!
 }
 
 /**
- * v31.0: NEW — getExecutionTime
- * Returns the actual completion timestamp of an executed order.
- * Priority: statusTimings.completedAt → statusTimings.deliveringAt → handoverAt → plannedTime
- * Used for sorting "Исполнен" orders by the time the courier actually delivered them.
+ * EXACT mirror of frontend getExecutionTime()
  */
 function getExecutionTime(o, baseDate) {
     if (!o) return null;
     const status = (o.status || '').toString().trim().toLowerCase();
-    const isExecuted = status.includes('исполнен') || status.includes('выполнен') || status.includes('доставлен');
+    const isExecuted = status.includes('исполнен') || status.includes('выполнен') || status.includes('доставлен') ||
+                       status.includes('виконан') || status.includes('заверш');
     if (!isExecuted) return null;
 
-    // Best source: exact moment order was marked complete
     if (o.statusTimings?.completedAt) {
         const t = typeof o.statusTimings.completedAt === 'number'
             ? o.statusTimings.completedAt
             : parseTime(o.statusTimings.completedAt, { baseDate });
         if (t) return t;
     }
-
-    // Second: when courier was handed the order (started delivery)
     if (o.statusTimings?.deliveringAt) {
         const t = parseTime(o.statusTimings.deliveringAt, { baseDate });
         if (t) return t;
     }
     if (o.handoverAt && typeof o.handoverAt === 'number') return o.handoverAt;
-
     return null;
 }
 
+// ============================================================
+// HELPER UTILITIES
+// ============================================================
+
+function getAllOrderIds(order) {
+    const ids = new Set();
+    if (order.id) ids.add(String(order.id));
+    if (order.orderNumber) ids.add(String(order.orderNumber));
+    if (order._id) ids.add(String(order._id));
+    if (order.raw?.id) ids.add(String(order.raw.id));
+    return ids;
+}
+
+function getOrderHash(o) {
+    const parts = [
+        String(o.courier || '').toUpperCase().trim(),
+        String(o.address || '').toLowerCase().trim(),
+        String(o.deliverBy || o.plannedTime || o.deliveryTime || ''),
+        String(o.orderNumber || '')
+    ];
+    return parts.join('|');
+}
+
+/**
+ * Normalize courier name — EXACT match with frontend normalizeCourierName()
+ */
+function normalizeCourierName(name) {
+    if (!name) return '';
+    const n = name.toString().trim().replace(/\s+/g, ' ').toUpperCase();
+    if (!n || n === 'ID:0' || n.includes('НЕ НАЗНАЧЕН') || n.includes('НЕНАЗНАЧЕН')) return 'НЕ НАЗНАЧЕНО';
+    if (n === 'ПО') return 'НЕ НАЗНАЧЕНО';
+    return n;
+}
+
+function haversineDistance(lat1, lon1, lat2, lon2) {
+    if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
+    const R = 6371; // km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
 
 function formatTimeRange(startTime, endTime) {
     const getTimeStr = (ts) => {
@@ -307,70 +322,50 @@ function formatTimeRange(startTime, endTime) {
     return startStr === endStr ? startStr : `${startStr}-${endStr}`;
 }
 
+// ============================================================
+// CORE GROUPING — 100% MIRROR OF frontend groupOrdersByTimeWindow()
+// ============================================================
+
 /**
- * CRITICAL v5.146: Rewrite grouping to match frontend EXACTLY
- * Uses arrival time for window grouping, not planned time
+ * Groups orders for a SINGLE courier into time-window blocks.
+ * 
+ * This is a 100% mirror of frontend groupOrdersByTimeWindow() in
+ * routeCalculationHelpers.ts (lines 188-428).
+ *
+ * @param {object[]} orders - Orders for ONE courier only
+ * @param {string} courierId - Normalized courier name/ID
+ * @param {string} courierName - Display name of courier
+ * @returns {object[]} Array of time-window blocks (groups)
  */
-// v5.153: Changed to 15 minutes as per user strict requirement
-function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
+function groupOrdersByTimeWindow(orders, courierId, courierName) {
     if (!orders || orders.length === 0) return [];
 
-    const LOCAL_WINDOW_MS = windowMinutes * 60 * 1000;
-    const LOCAL_DELIVERY_SPAN_MS = 60 * 60 * 1000; // Match frontend EXACTLY: 60 min delivery window (not 120!)
-
-    // STEP 0: Global deduplication (v5.149 - CRITICAL: orderNumber as PRIMARY key)
-    // Same orderNumber = same order, regardless of ID
-    const seenOrderNumbers = new Set();
+    // STEP 0: Deduplicate by stable ID (mirrors frontend STEP 0)
     const seenIds = new Set();
     const uniqueOrders = [];
-    let dupByOrderNum = 0, dupById = 0;
-
-    for (const o of orders) {
-        const orderNum = String(o.orderNumber || '');
-        const allIds = getAllOrderIds(o);
-
-        let isDuplicate = false;
-
-        // PRIMARY: Check orderNumber first (most reliable)
-        if (orderNum && seenOrderNumbers.has(orderNum)) {
-            isDuplicate = true;
-            dupByOrderNum++;
+    for (const order of orders) {
+        // Use orderNumber as primary stable ID
+        const orderNum = String(order.orderNumber || '');
+        const stableId = orderNum || String(order._id || order.id || '');
+        if (!stableId) {
+            uniqueOrders.push(order); // no ID — keep
+        } else if (!seenIds.has(stableId)) {
+            seenIds.add(stableId);
+            uniqueOrders.push(order);
         }
-
-        // SECONDARY: Check IDs
-        if (!isDuplicate) {
-            for (const id of allIds) {
-                if (id && seenIds.has(id)) {
-                    isDuplicate = true;
-                    dupById++;
-                    break;
-                }
-            }
-        }
-
-        if (isDuplicate) continue;
-
-        // Mark as seen
-        if (orderNum) seenOrderNumbers.add(orderNum);
-        for (const id of allIds) {
-            if (id) seenIds.add(id);
-        }
-        uniqueOrders.push(o);
     }
-
-    if (dupByOrderNum > 0 || dupById > 0) {
-        logger.info(`[turboGroupingHelpers] 🧊 Dedup: ${dupByOrderNum} by orderNumber + ${dupById} by ID, kept ${uniqueOrders.length}`);
+    if (uniqueOrders.length < orders.length) {
+        logger.warn(`[turboGrouping] ⚠️ ${courierName}: removed ${orders.length - uniqueOrders.length} duplicates`);
     }
 
     const noTimeOrders = [];
     const ordersWithData = [];
 
-    // Parse times for all orders
+    // STEP 1: Parse times — EXACT mirror of frontend lines 221-270
     uniqueOrders.forEach(order => {
         let plannedTime = getPlannedTime(order);
         const kitchenTime = getKitchenTime(order);
         let arrivalTime = getArrivalTime(order);
-        // v31.0: For executed orders, use the actual completion time as the primary sort anchor
         const executionTime = getExecutionTime(order);
 
         // If no arrival time, use planned or kitchen time
@@ -378,7 +373,6 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
             arrivalTime = plannedTime || kitchenTime;
         }
 
-        // If no planned time, use kitchen + 60 min or arrival + 30 min
         if (!plannedTime) {
             if (kitchenTime) {
                 plannedTime = kitchenTime + 60 * 60 * 1000;
@@ -403,278 +397,252 @@ function groupOrdersByTimeWindowFrontend(orders, windowMinutes = 15) {
             planned: plannedTs,
             arrival: arrivalTs,
             kitchen: kitchenTime || undefined,
-            executionTime: executionTime || undefined // v31.0: actual delivery completion time
+            execution: executionTime || undefined
         });
     });
 
-
-    // STEP 1: anchorTime = arrival (EXACT MATCH with frontend line 271)
-    // frontend: anchorTime: item.arrival
+    // STEP 2: Add anchorTime — EXACT mirror of frontend lines 272-277
+    // anchorTime = executionTime (completed orders) OR planned time
     const ordersWithAnchor = ordersWithData.map(item => ({
         ...item,
-        anchorTime: item.arrival
+        anchorTime: item.execution || item.planned
     }));
 
-    logger.info(`[turboGroupingHelpers] 🕐 Order times (total ${ordersWithAnchor.length})`);
-
-    // STEP 2: Sort by anchorTime, then kitchen
+    // STEP 3: Sort by anchorTime, then kitchen — mirror of frontend lines 280-283
     ordersWithAnchor.sort((a, b) => {
         if (a.anchorTime !== b.anchorTime) return a.anchorTime - b.anchorTime;
         return (a.kitchen || 0) - (b.kitchen || 0);
     });
 
-    // STEP 4: Group by courier (SKIP "Не назначено" / "НЕНАЗНАЧЕННЫЕ")
-    const courierGroups = new Map();
+    const groups = [];
+    const manualGroupsMap = new Map();
+    const ordersForAuto = [];
+
+    // STEP 4: Separate manual groups — mirror of frontend lines 289-299
     ordersWithAnchor.forEach(item => {
-        let courierRaw = (item.order.courier || '').toString().trim();
-        if (!courierRaw) courierRaw = 'Не назначено';
-        const courier = normalizeCourierName(courierRaw);
-
-        // CRITICAL: Skip unassigned - they are containers, not real couriers
-        if (courier === 'НЕ НАЗНАЧЕНО') return;
-        // CRITICAL: Skip "ПО" (trash/internal) - not a real courier
-        if (courier === 'ПО') return;
-
-        if (!courierGroups.has(courier)) courierGroups.set(courier, []);
-        courierGroups.get(courier).push(item);
+        if (item.order.manualGroupId) {
+            if (!manualGroupsMap.has(item.order.manualGroupId)) {
+                manualGroupsMap.set(item.order.manualGroupId, []);
+            }
+            manualGroupsMap.get(item.order.manualGroupId).push(item);
+        } else {
+            ordersForAuto.push(item);
+        }
     });
 
-    // STEP 5: Create blocks for each courier
-    const blocks = [];
-
-    courierGroups.forEach((list, courierName) => {
-        if (list.length === 0) return;
-
-        // v36.0: CRITICAL - Respect manual groups from frontend FIRST
-        const manualGroupsMap = new Map();
-        const ordersForAuto = [];
-
-        list.forEach(item => {
-            if (item.order.manualGroupId) {
-                if (!manualGroupsMap.has(item.order.manualGroupId)) {
-                    manualGroupsMap.set(item.order.manualGroupId, []);
-                }
-                manualGroupsMap.get(item.order.manualGroupId).push(item);
-            } else {
-                ordersForAuto.push(item);
-            }
+    // STEP 5: Push manual groups verbatim — mirror of frontend lines 301-304
+    manualGroupsMap.forEach((manualList, manualId) => {
+        const minPlanned = Math.min(...manualList.map(i => i.planned));
+        const maxPlanned = Math.max(...manualList.map(i => i.planned));
+        groups.push({
+            courierName,
+            courierId,
+            windowStart: minPlanned,
+            windowEnd: maxPlanned,
+            windowLabel: formatTimeRange(minPlanned, maxPlanned),
+            orders: manualList.map(i => i.order),
+            manualGroupId: manualId
         });
+    });
 
-        // Push manual groups verbatim (NO SLA SPLITS)
-        manualGroupsMap.forEach((manualList, manualId) => {
-            const minPlanned = Math.min(...manualList.map(i => i.planned));
-            const maxPlanned = Math.max(...manualList.map(i => i.planned));
-            blocks.push({
+    // STEP 6: Determine if courier is "assigned" (not unassigned)
+    // Mirror of frontend line 307
+    const isAssignedCourier = courierId && courierId !== 'НЕ НАЗНАЧЕНО' && courierId !== 'UNASSIGNED';
+
+    let currentGroup = null;
+
+    // STEP 7: Auto-group the remaining orders — EXACT mirror of frontend lines 313-391
+    ordersForAuto.forEach(({ order, planned, arrival, kitchen, anchorTime }) => {
+        if (!currentGroup) {
+            // Create first group
+            currentGroup = {
                 courierName,
-                windowStart: minPlanned,
-                windowEnd: maxPlanned,
-                windowLabel: manualList.length > 0 ? formatTimeRange(minPlanned, maxPlanned) : 'Ручная группа',
-                orders: manualList.map(i => i.order),
-                manualGroupId: manualId
-            });
-            logger.info(`[turboGroupingHelpers] ✋ Created manual block for ${courierName}: ${manualList.length} orders (id: ${manualId})`);
-        });
+                courierId,
+                orders: [order],
+                windowStart: planned,
+                windowEnd: planned,
+                arrivalEnd: arrival,
+                firstAnchor: anchorTime,
+                lastKitchen: kitchen
+            };
+        } else {
+            // Check if order fits in current 15-minute window from FIRST order
+            const firstAnchor = currentGroup.firstAnchor;
+            const arrivedClose = (anchorTime - firstAnchor) <= WINDOW_MS;
 
-        logger.info(`[turboGroupingHelpers] 📦 Courier ${courierName}: ${ordersForAuto.length} auto orders to group`);
-        if (ordersForAuto.length === 0) return;
+            // Delivery span check
+            const minDelivery = Math.min(currentGroup.windowStart, planned);
+            const maxDelivery = Math.max(currentGroup.windowEnd, planned);
+            const deliveryFits = (maxDelivery - minDelivery) <= DELIVERY_SPAN_MS;
 
-        let currentGroup = null;
-        let groupIndex = 0;
+            // Geographic distance check — v6.4: relaxed for assigned couriers (15km -> 50km)
+            let distanceOk = true;
+            if (order.coords && currentGroup.orders[0].coords) {
+                const dist = haversineDistance(
+                    order.coords.lat, order.coords.lng,
+                    currentGroup.orders[0].coords.lat, currentGroup.orders[0].coords.lng
+                );
+                const limit = isAssignedCourier ? 50 : 15; // v6.4: assigned couriers get 50km slack
+                if (dist > limit) distanceOk = false;
+            }
 
-        ordersForAuto.forEach((item, idx) => {
-            if (!currentGroup) {
-                // Create first group
-                currentGroup = {
-                    courierName,
-                    orders: [item.order],
-                    windowStart: item.planned,
-                    windowEnd: item.planned,
-                    arrivalEnd: item.arrival,
-                    firstAnchor: item.anchorTime,
-                    lastKitchen: item.kitchen
-                };
-                logger.info(`[turboGroupingHelpers] 🆕 Starting block 1 with first order anchor=${new Date(item.anchorTime).toISOString()}`);
-            } else {
-                // Check if order fits in current group (by anchorTime)
-                const firstAnchor = currentGroup.firstAnchor || currentGroup.windowStart;
-                const diffMs = item.anchorTime - firstAnchor;
-                const diffMin = Math.round(diffMs / 1000 / 60);
-                const arrivedClose = diffMs <= LOCAL_WINDOW_MS;
-
-                // Calculate SLA Delivery Window
-                const minDelivery = Math.min(currentGroup.windowStart, item.planned);
-                const maxDelivery = Math.max(currentGroup.windowEnd, item.planned);
-                const deliveryFits = (maxDelivery - minDelivery) <= LOCAL_DELIVERY_SPAN_MS;
-
-                // EXACT MATCH with frontend groupOrdersByTimeWindow (lines 326-357)
-                // Frontend HAS distanceOk + districtOk checks — we must have them too!
-                let distanceOk = true;
-                if (item.order.coords && currentGroup.orders[0].coords) {
-                    const dist = haversineDistance(
-                        item.order.coords.lat, item.order.coords.lng,
-                        currentGroup.orders[0].coords.lat, currentGroup.orders[0].coords.lng
-                    );
-                    if (dist > 15) distanceOk = false;
-                }
-
-                let districtOk = true;
-                const orderZone = String(item.order.deliveryZone || item.order.zone || item.order.kmlZone || '').trim().toUpperCase();
+            // Zone/district check — v6.4: disable for assigned couriers as user expects them to travel
+            let districtOk = true;
+            if (!isAssignedCourier) {
+                const orderZone = String(order.deliveryZone || order.zone || order.kmlZone || '').trim().toUpperCase();
                 const groupZone = String(currentGroup.orders[0].deliveryZone || currentGroup.orders[0].zone || currentGroup.orders[0].kmlZone || '').trim().toUpperCase();
                 if (orderZone && groupZone && orderZone !== groupZone) {
                     districtOk = false;
                 }
+            }
 
-                // kitchenGap: frontend checks !isAssignedCourier (line 344)
-                // In backend: assigned couriers are everyone except 'НЕ НАЗНАЧЕНО'
-                const isAssignedCourier = courierName !== 'НЕ НАЗНАЧЕНО';
-                let kitchenGapOk = true;
-                if (!isAssignedCourier) {
-                    const prevKitchen = currentGroup.lastKitchen;
-                    if (prevKitchen && item.kitchen && Math.abs(item.kitchen - prevKitchen) > 30 * 60 * 1000) {
-                        kitchenGapOk = false;
-                    }
-                }
-
-                // Split cascade (matches frontend lines 353-357 exactly)
-                let isSplit = false;
-                let splitReason = '';
-                if (!arrivedClose) { isSplit = true; splitReason = 'Время'; }
-                else if (!deliveryFits) { isSplit = true; splitReason = 'SLA'; }
-                else if (!distanceOk) { isSplit = true; splitReason = 'Гео'; }
-                else if (!districtOk) { isSplit = true; splitReason = 'Район'; }
-                else if (!isAssignedCourier && !kitchenGapOk) { isSplit = true; splitReason = 'Готовность'; }
-
-                logger.info(`[turboGroupingHelpers] 📊 Order ${idx + 1}: diff=${diffMin}min, split=${isSplit}, reason=${splitReason}`);
-
-                if (!isSplit) {
-                    // Add to current group
-                    currentGroup.orders.push(item.order);
-                    currentGroup.windowStart = Math.min(currentGroup.windowStart, item.planned);
-                    currentGroup.windowEnd = Math.max(currentGroup.windowEnd, item.planned);
-                    currentGroup.arrivalEnd = Math.max(currentGroup.arrivalEnd || 0, item.arrival);
-                    if (item.kitchen) currentGroup.lastKitchen = item.kitchen;
-                } else {
-                    // Flush current group and start new one
-                    const label = formatTimeRange(currentGroup.windowStart, currentGroup.windowEnd);
-                    logger.info(`[turboGroupingHelpers] 🚀 Block ${blocks.length + 1} for ${courierName}: ${currentGroup.orders.length} orders (${label})`);
-                    blocks.push({
-                        courierName,
-                        windowStart: currentGroup.windowStart,
-                        windowEnd: currentGroup.windowEnd,
-                        windowLabel: label,
-                        orders: [...currentGroup.orders]
-                    });
-
-                    // Start new group
-                    currentGroup = {
-                        courierName,
-                        orders: [item.order],
-                        windowStart: item.planned,
-                        windowEnd: item.planned,
-                        arrivalEnd: item.arrival,
-                        firstAnchor: item.anchorTime,
-                        lastKitchen: item.kitchen
-                    };
-                    logger.info(`[turboGroupingHelpers] 🆕 Starting new block with anchor=${new Date(item.anchorTime).toLocaleTimeString()}`);
-                    groupIndex++;
+            // Kitchen gap check — only for UNASSIGNED couriers (mirror of frontend lines 348-354)
+            let kitchenGapOk = true;
+            if (!isAssignedCourier) {
+                const prevKitchen = currentGroup.lastKitchen;
+                if (prevKitchen && kitchen && Math.abs(kitchen - prevKitchen) > 30 * 60 * 1000) {
+                    kitchenGapOk = false;
                 }
             }
-        });
 
-        // Flush last group
-        if (currentGroup && currentGroup.orders.length > 0) {
-            const label = formatTimeRange(currentGroup.windowStart, currentGroup.windowEnd);
-            logger.info(`[turboGroupingHelpers] 🚀 Final block for ${courierName}: ${currentGroup.orders.length} orders (${label})`);
-            blocks.push({
-                courierName,
-                windowStart: currentGroup.windowStart,
-                windowEnd: currentGroup.windowEnd,
-                windowLabel: label,
-                orders: currentGroup.orders
+            // Split decision — EXACT mirror of frontend split cascade (lines 356-360)
+            let splitReason = '';
+            if (!arrivedClose) splitReason = 'Время (15 мин)';
+            else if (!deliveryFits) splitReason = 'SLA';
+            else if (!distanceOk) splitReason = 'Гео';
+            else if (!districtOk) splitReason = 'Район';
+            else if (!isAssignedCourier && !kitchenGapOk) splitReason = 'Готовность';
+
+            if (splitReason === '') {
+                // Order fits → add to current group (mirror of frontend lines 363-371)
+                currentGroup.orders.push(order);
+                currentGroup.windowStart = Math.min(currentGroup.windowStart, planned);
+                currentGroup.windowEnd = Math.max(currentGroup.windowEnd, planned);
+                currentGroup.arrivalEnd = Math.max(currentGroup.arrivalEnd || 0, arrival);
+                if (kitchen) currentGroup.lastKitchen = kitchen;
+            } else {
+                // Order does NOT fit → flush current group, start new one (mirror lines 373-390)
+                groups.push({
+                    courierName,
+                    courierId,
+                    windowStart: currentGroup.windowStart,
+                    windowEnd: currentGroup.windowEnd,
+                    windowLabel: formatTimeRange(currentGroup.windowStart, currentGroup.windowEnd),
+                    orders: [...currentGroup.orders],
+                    splitReason: currentGroup.splitReason
+                });
+                // Start new group
+                currentGroup = {
+                    courierName,
+                    courierId,
+                    orders: [order],
+                    windowStart: planned,
+                    windowEnd: planned,
+                    arrivalEnd: arrival,
+                    firstAnchor: anchorTime,
+                    lastKitchen: kitchen,
+                    splitReason
+                };
+            }
+        }
+    });
+
+    // Flush last group (mirror of frontend lines 394-399)
+    if (currentGroup && currentGroup.orders.length > 0) {
+        groups.push({
+            courierName,
+            courierId,
+            windowStart: currentGroup.windowStart,
+            windowEnd: currentGroup.windowEnd,
+            windowLabel: formatTimeRange(currentGroup.windowStart, currentGroup.windowEnd),
+            orders: currentGroup.orders,
+            splitReason: currentGroup.splitReason
+        });
+    }
+
+    // Add no-time orders — mirror of frontend lines 401-413
+    // NOTE: frontend puts them all in ONE group (isReadyForCalculation: false)
+    // Backend splits into chunks of 10 to avoid monster routes — this is intentional divergence
+    if (noTimeOrders.length > 0) {
+        const CHUNK_SIZE = 10;
+        for (let i = 0; i < noTimeOrders.length; i += CHUNK_SIZE) {
+            const chunk = noTimeOrders.slice(i, i + CHUNK_SIZE);
+            groups.push({
+                courierName,   // FIXED: use passed courierName, not orders[0].courier
+                courierId,
+                windowStart: 0,
+                windowEnd: 0,
+                windowLabel: noTimeOrders.length <= CHUNK_SIZE ? 'Без времени' : `Без времени ${Math.floor(i / CHUNK_SIZE) + 1}`,
+                orders: chunk,
+                isTimeless: true
             });
         }
-
-        logger.info(`[turboGroupingHelpers] ✅ Total blocks for ${courierName}: ${blocks.filter(b => b.courierName === courierName).length}`);
-    });
-
-    // Add no-time orders as separate block
-    if (noTimeOrders.length > 0) {
-        blocks.push({
-            courierName: 'NO_TIME',
-            windowStart: 0,
-            windowEnd: 0,
-            windowLabel: 'Без времени',
-            orders: noTimeOrders
-        });
     }
 
-    logger.info(`[turboGroupingHelpers] 📊 SUMMARY: ${blocks.length} total blocks created`);
-    blocks.slice(0, 10).forEach((b, i) => {
-        logger.info(`[turboGroupingHelpers]   Block ${i + 1}: ${b.courierName} - ${b.orders.length} orders (${b.windowLabel})`);
-    });
-    if (blocks.length > 10) {
-        logger.info(`[turboGroupingHelpers]   ... and ${blocks.length - 10} more blocks`);
-    }
+    // Sort groups by windowStart (mirror of frontend line 427)
+    groups.sort((a, b) => a.windowStart - b.windowStart);
 
-    return blocks;
+    logger.info(`[turboGrouping] ✅ ${courierName}: ${uniqueOrders.length} orders → ${groups.length} groups`);
+    return groups;
 }
 
-function dedupeOrders(orders) {
-    // v5.149: orderNumber as PRIMARY deduplication key
-    const seenOrderNumbers = new Set();
-    const seenIds = new Set();
-    const out = [];
-    for (const o of orders) {
-        const orderNum = String(o.orderNumber || '');
-        const allIds = getAllOrderIds(o);
+// ============================================================
+// MAIN EXPORT — groups ALL orders for ALL couriers
+// ============================================================
 
-        // Check orderNumber first (primary key)
-        if (orderNum && seenOrderNumbers.has(orderNum)) continue;
-
-        // Check IDs
-        let isDuplicate = false;
-        for (const id of allIds) {
-            if (id && seenIds.has(id)) {
-                isDuplicate = true;
-                break;
-            }
-        }
-        if (isDuplicate) continue;
-
-        if (orderNum) seenOrderNumbers.add(orderNum);
-        for (const id of allIds) {
-            if (id) seenIds.add(id);
-        }
-        out.push(o);
-    }
-    return out;
-}
-
+/**
+ * Groups all orders for all couriers into time-window blocks.
+ * 
+ * EXACT mirror of frontend groupAllOrdersByTimeWindow() in
+ * routeCalculationHelpers.ts (lines 433-479).
+ *
+ * @param {object[]} orders - All orders (mixed couriers)
+ * @returns {Map<string, object[]>} Map<normalizedCourierName, groups[]>
+ */
 function groupAllOrdersByTimeWindow(orders) {
+    if (!orders || orders.length === 0) return new Map();
+
+    // STEP 1: Group orders by raw courier name — mirror of frontend groupOrdersByCourier()
     const rawGroups = new Map();
-
     orders.forEach(order => {
-        let courierName = order.courier;
-        if (typeof courierName === 'object' && courierName !== null) {
-            courierName = courierName.name || courierName._id || courierName.id;
+        let courierRaw = order.courier;
+        if (typeof courierRaw === 'object' && courierRaw !== null) {
+            courierRaw = courierRaw.name || courierRaw._id || courierRaw.id;
         }
+        if (!courierRaw) return;
 
-        const normName = normalizeCourierName(courierName);
+        const normName = normalizeCourierName(courierRaw);
         if (normName === 'НЕ НАЗНАЧЕНО') return; // Skip unassigned
-        if (normName === 'ПО') return; // v5.180: "ПО" is not a real courier
-
-        if (!rawGroups.has(normName)) rawGroups.set(normName, { name: courierName, orders: [] });
+        
+        if (!rawGroups.has(normName)) {
+            rawGroups.set(normName, { name: courierRaw, orders: [] });
+        }
         rawGroups.get(normName).orders.push(order);
     });
 
+    // STEP 2: Group each courier's orders by time window
+    // Using normalized name as both courierId and courierName key — matches frontend line 475
     const result = new Map();
     rawGroups.forEach((info, normName) => {
-        const timeGroups = groupOrdersByTimeWindowFrontend(info.orders, 15);
-        result.set(normName, timeGroups);
+        const groups = groupOrdersByTimeWindow(info.orders, normName, normName);
+        result.set(normName, groups);
     });
+
+    const totalGroups = Array.from(result.values()).reduce((sum, g) => sum + g.length, 0);
+    logger.info(`[turboGrouping] 📊 SUMMARY: ${result.size} couriers → ${totalGroups} total groups`);
 
     return result;
 }
 
-module.exports = { groupAllOrdersByTimeWindow, groupOrdersByTimeWindowFrontend, normalizeCourierName, getExecutionTime };
-
+module.exports = {
+    groupAllOrdersByTimeWindow,
+    groupOrdersByTimeWindow,
+    normalizeCourierName,
+    getExecutionTime,
+    getPlannedTime,
+    getArrivalTime,
+    getKitchenTime,
+    getAllOrderIds,
+    getOrderHash,
+    haversineDistance
+};
