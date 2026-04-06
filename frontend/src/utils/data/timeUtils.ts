@@ -185,24 +185,29 @@ export const getPlannedTime = (o: any, baseDate?: Date): number | null => {
 export const getArrivalTime = (o: any, baseDate?: Date): number | null => {
     if (!o) return null;
 
-    // Phase 4.4 & SOTA 3.1 & v5.46: Для заказов в работе
-    // ПРИОРИТЕТ: время фактического перехода статуса (deliveringAt для доставки, assembledAt для сборки)
-    if (o.status === 'Доставляется' || o.status === 'В пути' || o.status === 'Исполнен') {
+    // v5.182: Handle ALL status variants including Ukrainian
+    const status = (o.status || o.deliveryStatus || '').toString().trim().toLowerCase();
+    const isDelivering = status.includes('доставля') || status.includes('в пути') ||
+                         status.includes('маршру') || status.includes('исполнен') ||
+                         status.includes('виконан') || status.includes('завер');
+
+    if (isDelivering) {
         if (o.statusTimings?.deliveringAt) {
             const dt = parseTime(o.statusTimings.deliveringAt, { baseDate });
             if (dt) return dt;
         }
-        if (o.handoverAt) return o.handoverAt;
+        if (o.handoverAt && typeof o.handoverAt === 'number') return o.handoverAt;
     }
 
-    if (o.status === 'Собран') {
+    if (status.includes('собран') || status.includes('зібран')) {
         if (o.statusTimings?.assembledAt) {
             const at = parseTime(o.statusTimings.assembledAt, { baseDate });
             if (at) return at;
         }
     }
 
-    if (o.createdAt && typeof o.createdAt === 'number') return o.createdAt;
+    // createdAt ONLY if it's a proper number timestamp (not a string that could be wrong date)
+    if (o.createdAt && typeof o.createdAt === 'number' && o.createdAt > 1000000000000) return o.createdAt;
 
     for (const field of ARRIVAL_TIME_FIELDS) {
         const val = o[field] ?? o.raw?.[field];
@@ -212,6 +217,34 @@ export const getArrivalTime = (o: any, baseDate?: Date): number | null => {
         }
     }
 
-    // Если время создания не найдено, используем время "на кухню" как прокси
-    return getKitchenTime(o, baseDate);
+    return null; // Do NOT fall back to kitchenTime — that causes wrong anchoring
+};
+
+/**
+ * v5.182: Get actual completion timestamp for executed orders.
+ * Priority: statusTimings.completedAt → statusTimings.deliveringAt → handoverAt
+ * Used for sorting "Исполнен" orders by the time the courier actually delivered them.
+ */
+export const getExecutionTime = (o: any, baseDate?: Date): number | null => {
+    if (!o) return null;
+    const status = (o.status || '').toString().trim().toLowerCase();
+    const isExecuted = status.includes('исполнен') || status.includes('выполнен') || status.includes('доставлен') ||
+                      status.includes('виконан') || status.includes('заверш');
+    if (!isExecuted) return null;
+
+    if (o.statusTimings?.completedAt) {
+        const t = typeof o.statusTimings.completedAt === 'number'
+            ? o.statusTimings.completedAt
+            : parseTime(o.statusTimings.completedAt, { baseDate });
+        if (t) return t;
+    }
+
+    if (o.statusTimings?.deliveringAt) {
+        const t = parseTime(o.statusTimings.deliveringAt, { baseDate });
+        if (t) return t;
+    }
+
+    if (o.handoverAt && typeof o.handoverAt === 'number') return o.handoverAt;
+
+    return null;
 };

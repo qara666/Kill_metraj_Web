@@ -23,109 +23,68 @@ export const Analytics: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'couriers' | 'session' | 'problems' | 'financial'>('overview')
 
   return (
-    <div className="space-y-12 animate-in fade-in duration-1000">
-      {/* Premium Header v5.500 */}
+    <div className="space-y-6 animate-in fade-in duration-700">
+      {/* Header Compact v5.234 */}
       <div className={clsx(
-        'rounded-[5rem] shadow-2xl border-2 p-12 relative overflow-hidden transition-all duration-700',
-        isDark ? 'bg-gray-900/40 border-gray-800' : 'bg-white border-gray-100'
+        'rounded-3xl shadow-xl border p-8 relative overflow-hidden transition-all',
+        isDark ? 'bg-gray-900 border-white/5' : 'bg-white border-gray-100 shadow-slate-200/50'
       )}>
-        {/* Animated Background Orbs */}
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-500/5 rounded-full blur-[100px] -mr-64 -mt-64 animate-pulse"></div>
-        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-purple-500/5 rounded-full blur-[100px] -ml-48 -mb-48 animate-pulse delay-700"></div>
-
-        <div className="relative flex flex-col xl:flex-row xl:items-center justify-between gap-12">
-          <div className="max-w-4xl">
-            <div className="flex items-center gap-4 mb-6">
-               <div className="p-4 bg-blue-500/10 rounded-3xl shadow-inner">
-                 <PresentationChartBarIcon className="h-10 w-10 text-blue-500" />
+        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-[80px] -mr-32 -mt-32 pointer-events-none" />
+        
+        <div className="relative flex flex-col xl:flex-row items-center justify-between gap-8">
+          <div className="max-w-2xl text-center xl:text-left">
+            <div className="flex items-center gap-3 mb-4 justify-center xl:justify-start">
+               <div className="p-2.5 bg-blue-500/10 rounded-xl">
+                 <PresentationChartBarIcon className="h-6 w-6 text-blue-500" />
                </div>
-               <span className="text-sm font-black uppercase tracking-[0.4em] text-blue-500/80">Kill Metraj Analytics Engine v2.0</span>
+               <span className="text-[10px] font-black uppercase tracking-widest text-blue-500/60">Analytics Engine v2.0</span>
             </div>
             <h1 className={clsx(
-              'text-7xl font-black tracking-tighter leading-none',
+              'text-4xl font-black tracking-tight leading-none',
               isDark ? 'text-white' : 'text-gray-900'
             )}>
-              Аналитический Хаб
+              Аналітичний Хаб
             </h1>
             <p className={clsx(
-              'mt-6 text-xl font-medium max-w-2xl leading-relaxed opacity-60',
+              'mt-4 text-sm font-medium opacity-60 leading-relaxed',
               isDark ? 'text-gray-400' : 'text-gray-600'
             )}>
-              Максимальный потоковый анализ логистической эффективности, финансовых показателей и операционных аномалий.
+              Максимальний потоковий аналіз логістичної ефективності та фінансових показників.
             </p>
           </div>
 
-          {/* Tab Navigation Grid */}
+          {/* Tab Navigation Compact */}
           <div className={clsx(
-            "p-3 rounded-[3rem] grid grid-cols-2 lg:grid-cols-3 gap-3 self-start xl:self-center shadow-2xl",
-            isDark ? "bg-gray-800/80" : "bg-gray-100"
+            "p-2 rounded-2xl grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2 shadow-inner border",
+            isDark ? "bg-black/30 border-white/5" : "bg-gray-50 border-gray-200"
           )}>
-            <button
-              onClick={() => setActiveTab('overview')}
-              className={clsx(
-                "px-8 py-5 rounded-[2.5rem] text-[9px] font-black uppercase tracking-[0.2em] transition-all duration-500 flex items-center gap-3",
-                activeTab === 'overview' 
-                  ? (isDark ? "bg-blue-600 text-white shadow-2xl scale-105" : "bg-white text-blue-600 shadow-xl scale-105")
-                  : (isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900")
-              )}
-            >
-              <ChartBarIcon className="w-4 h-4" />
-              Обзор
-            </button>
-            <button
-              onClick={() => setActiveTab('problems')}
-              className={clsx(
-                "px-8 py-5 rounded-[2.5rem] text-[9px] font-black uppercase tracking-[0.2em] transition-all duration-500 flex items-center gap-3",
-                activeTab === 'problems' 
-                  ? (isDark ? "bg-indigo-600 text-white shadow-2xl scale-105" : "bg-indigo-500 text-white shadow-xl scale-105")
-                  : (isDark ? "text-indigo-400 hover:text-indigo-300" : "text-indigo-500 hover:bg-indigo-50")
-              )}
-            >
-              <CpuChipIcon className="w-4 h-4" />
-              Автопилот
-            </button>
-            <button
-              onClick={() => setActiveTab('financial')}
-              className={clsx(
-                "px-8 py-5 rounded-[2.5rem] text-[9px] font-black uppercase tracking-[0.2em] transition-all duration-500 flex items-center gap-3",
-                activeTab === 'financial' 
-                  ? (isDark ? "bg-emerald-600 text-white shadow-2xl scale-105" : "bg-emerald-500 text-white shadow-xl scale-105")
-                  : (isDark ? "text-emerald-400 hover:text-emerald-300" : "text-emerald-500 hover:bg-emerald-50")
-              )}
-            >
-              <CurrencyDollarIcon className="w-4 h-4" />
-              Экономика
-            </button>
-            <button
-              onClick={() => setActiveTab('couriers')}
-              className={clsx(
-                "px-8 py-5 rounded-[2.5rem] text-[9px] font-black uppercase tracking-[0.2em] transition-all duration-500 flex items-center gap-3",
-                activeTab === 'couriers' 
-                  ? (isDark ? "bg-blue-600 text-white shadow-2xl scale-105" : "bg-white text-blue-600 shadow-xl scale-105")
-                  : (isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900")
-              )}
-            >
-              <UserGroupIcon className="w-4 h-4" />
-              Персонал
-            </button>
-            <button
-              onClick={() => setActiveTab('session')}
-              className={clsx(
-                "px-8 py-5 rounded-[2.5rem] text-[9px] font-black uppercase tracking-[0.2em] transition-all duration-500 flex items-center gap-3",
-                activeTab === 'session' 
-                  ? (isDark ? "bg-blue-600 text-white shadow-2xl scale-105" : "bg-white text-blue-600 shadow-xl scale-105")
-                  : (isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900")
-              )}
-            >
-              <ClockIcon className="w-4 h-4" />
-              Сессия
-            </button>
+            {[
+              { id: 'overview', label: 'ОГЛЯД', icon: ChartBarIcon },
+              { id: 'problems', label: 'РОБОТ', icon: CpuChipIcon },
+              { id: 'financial', label: 'ФІНАНСИ', icon: CurrencyDollarIcon },
+              { id: 'couriers', label: 'ПЕРСОНАЛ', icon: UserGroupIcon },
+              { id: 'session', label: 'СЕСІЯ', icon: ClockIcon }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={clsx(
+                  "px-5 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                  activeTab === tab.id 
+                    ? "bg-blue-600 text-white shadow-lg scale-105"
+                    : isDark ? "text-gray-500 hover:text-white" : "text-gray-500 hover:text-gray-900"
+                )}
+              >
+                <tab.icon className="w-3.5 h-3.5" />
+                {tab.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Content Rendering v5.520 */}
-      <div className="pb-20 min-h-[60vh]">
+      {/* Content Rendering Compact */}
+      <div className="pb-10 min-h-[50vh]">
         {activeTab === 'overview' && <AdvancedAnalyticsDashboard />}
         {activeTab === 'problems' && <ProblemSolverAnalytics />}
         {activeTab === 'financial' && <FinancialDensityAnalytics />}
@@ -133,11 +92,11 @@ export const Analytics: React.FC = () => {
         {activeTab === 'session' && (
           !excelData?.orders?.length ? (
             <div className={clsx(
-              'flex flex-col items-center justify-center p-32 rounded-[5rem] border-4 border-dashed transition-all duration-1000',
-              isDark ? 'bg-gray-900/20 border-gray-800 text-gray-500' : 'bg-gray-50 border-gray-100 text-gray-400'
+              'flex flex-col items-center justify-center p-12 rounded-3xl border-2 border-dashed transition-all',
+              isDark ? 'bg-gray-900/40 border-gray-800 text-gray-500' : 'bg-gray-50 border-gray-100 text-gray-400'
             )}>
               <LoadingSpinner />
-              <p className="mt-8 text-2xl font-black uppercase tracking-widest opacity-40 italic">Ожидаем поток данных...</p>
+              <p className="mt-6 text-sm font-black uppercase tracking-widest opacity-30">Очікуємо потік даних...</p>
             </div>
           ) : (
             <AnalyticsDashboard />

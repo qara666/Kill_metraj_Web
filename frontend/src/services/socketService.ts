@@ -251,8 +251,11 @@ class SocketService {
                 const dashboardDate = normalizeDate(store.apiDateShift);
                 const robotDate = normalizeDate(data.date);
 
-                // FILTER: Only update UI if division AND date match
-                if (currentDivisionStr !== 'all' && String(data.divisionId) !== currentDivisionStr) {
+                // FILTER: Only update UI if division AND date match. 
+                // v6.5: ALLOW 'all' division status to bypass the division filter so global progress is visible everywhere.
+                const isGlobalUpdate = (String(data.divisionId) === 'all');
+                
+                if (!isGlobalUpdate && currentDivisionStr !== 'all' && String(data.divisionId) !== currentDivisionStr) {
                     return;
                 }
                 if (dashboardDate && robotDate && dashboardDate !== robotDate) {

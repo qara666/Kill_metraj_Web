@@ -1419,6 +1419,54 @@ app.post('/api/turbo/stop', authenticateToken, async (req, res) => {
   }
 });
 
+// v5.190: Clear background calculation distances for division
+app.post('/api/turbo/clear', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user;
+    let divisionId = req.body?.divisionId || user?.divisionId;
+    const date = req.body?.date || new Date().toISOString().split('T')[0];
+
+    if (!divisionId) {
+      return res.status(400).json({ success: false, error: 'divisionId is required.' });
+    }
+
+    const { Route } = require('./src/models');
+    if (Route) {
+      const deleted = await Route.destroy({
+        where: {
+          division_id: divisionId,
+          [require('sequelize').Op.and]: require('sequelize').where(
+            require('sequelize').literal("route_data->>'target_date'"),
+            date
+          )
+        }
+      });
+      logger.info(`[API] Cleared ${deleted} routes for division ${divisionId} on ${date}`);
+      
+      if (turboCalculator && turboCalculator.processedHashes) {
+         turboCalculator.processedHashes.delete(`${divisionId}_${date}`);
+         if (turboCalculator.divisionStates.has(String(divisionId))) {
+             turboCalculator.divisionStates.get(String(divisionId)).courierStats = {};
+         }
+      }
+      
+      // Let UI know routes to refresh
+      io.emit('routes_update', {
+          divisionId: divisionId,
+          date: date,
+          routes: []
+      });
+      
+      return res.json({ success: true, message: `Данные очищены! Удалено маршрутов: ${deleted}` });
+    }
+
+    res.status(500).json({ success: false, error: 'Route DB init skipped' });
+  } catch (error) {
+    logger.error('[API] Error clearing calculations:', error);
+    res.status(500).json({ success: false, error: 'Failed to clear calculations' });
+  }
+});
+
 /**
  * Hub for TurboCalculator events to maintain global state
  */

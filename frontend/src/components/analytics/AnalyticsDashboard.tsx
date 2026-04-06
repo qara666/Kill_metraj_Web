@@ -4,9 +4,7 @@ import {
   CurrencyDollarIcon,
   ArrowTrendingUpIcon,
   BoltIcon,
-  ClockIcon,
-  FireIcon,
-  FaceSmileIcon
+  FireIcon
 } from '@heroicons/react/24/outline'
 import { useExcelData } from '../../contexts/ExcelDataContext'
 import { useTheme } from '../../contexts/ThemeContext'

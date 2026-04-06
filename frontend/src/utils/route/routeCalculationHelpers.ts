@@ -1,6 +1,6 @@
 import type { Order, CourierRouteStatus, RouteCalculationMode } from '../../types';
 import { isOrderCompleted } from '../data/orderStatus';
-import { getPlannedTime, getArrivalTime, getKitchenTime } from '../data/timeUtils';
+import { getPlannedTime, getArrivalTime, getKitchenTime, getExecutionTime } from '../data/timeUtils';
 import { haversineDistance } from '../routes/routeOptimizationHelpers';
 import { normalizeCourierName } from '../data/courierName';
 import { getStableOrderId } from '../data/orderId';
@@ -215,7 +215,7 @@ export function groupOrdersByTimeWindow(
     }
 
     const noTimeOrders: Order[] = [];
-    const ordersWithData: Array<{ order: Order; planned: number; arrival: number; kitchen?: number }> = [];
+    const ordersWithData: Array<{ order: Order; planned: number; arrival: number; kitchen?: number; execution?: number }> = [];
 
     // Разделяем заказы
     uniqueOrders.forEach(order => {
@@ -227,6 +227,9 @@ export function groupOrdersByTimeWindow(
 
         // Пробуем получить время поступления (создания)
         let arrivalTime = getArrivalTime(order);
+        
+        // v5.182: Время исполнения для завершенных заказов
+        const executionTime = getExecutionTime(order);
 
         // ВАЖНО: Если время поступления отсутствует, используем плановое время или время кухни как прокси
         if (!arrivalTime) {
@@ -261,14 +264,16 @@ export function groupOrdersByTimeWindow(
             order,
             planned: finalPlannedTs,
             arrival: finalArrivalTs,
-            kitchen: kitchenTime || undefined
+            kitchen: kitchenTime || undefined,
+            execution: executionTime || undefined
         });
     });
 
-    // ВНИМАНИЕ: Берем только arrival, согласно строгой бизнес-логике 15-минутного таймера с момента назначения!
+    // v5.182: Use executionTime (for completed) or planned as anchor — NOT arrival/createdAt
+    // This matches the backend turboGroupingHelpers behavior
     const ordersWithAnchor = ordersWithData.map(item => ({
         ...item,
-        anchorTime: item.arrival
+        anchorTime: item.execution || item.planned
     }));
 
     // Сортируем по опорному времени (anchorTime)
@@ -300,25 +305,26 @@ export function groupOrdersByTimeWindow(
 
     // Определение типа курьера (назначенный или нет)
     const isAssignedCourier = courierId && courierId !== 'unassigned' && courierId !== 'unassigned_auto' && courierId !== 'Неизвестный курьер';
-    const WINDOW_MS = arrivalProximityMinutes * 60 * 1000; // Строгое окно от первого заказа (обычно 15 мин)
     let currentGroup: TimeWindowGroup | null = null;
 
     // 2. Группируем автоматические заказы
+    const WINDOW_MS = arrivalProximityMinutes * 60 * 1000; // жесткое окно от первого заказа
+
     ordersForAuto.forEach(({ order, planned, arrival, kitchen, anchorTime }) => {
         const deliverySpanMs = maxDeliverySpanMinutes * 60 * 1000;
-
+        
         if (!currentGroup) {
-            currentGroup = createNewGroup(courierId, courierName, order, planned, arrival, groups.length);
-            (currentGroup as any).lastKitchen = kitchen;
-            (currentGroup as any).firstAnchor = anchorTime; // Устанавливаем точку отчета
+            // Создаем новую группу для первого заказа
+            currentGroup = createNewGroup(courierId, courierName, order, planned, arrival, groups.length, '');
+            if (kitchen) (currentGroup as any).lastKitchen = kitchen;
+            (currentGroup as any).firstAnchor = anchorTime;
         } else {
-            // Строгое правило 15 минут от первого заказа в группе (anchorTime)
-            const firstAnchor = (currentGroup as any).firstAnchor || (currentGroup.windowStart);
+            // Проверяем, попадает ли заказ в 15-минутное окно от ПЕРВОГО заказа маршрута
+            const firstAnchor = (currentGroup as any).firstAnchor;
             const arrivedClose = (anchorTime - firstAnchor <= WINDOW_MS);
 
             let newSplitReason = '';
 
-            // Общая продвинутая логика разбиения (СЛА, дистанция), работает для ВСЕХ курьеров (и назначенных, и авто)
             const minDelivery = Math.min(currentGroup.windowStart, planned);
             const maxDelivery = Math.max(currentGroup.windowEnd, planned);
             const deliveryFits = (maxDelivery - minDelivery) <= deliverySpanMs;
@@ -329,7 +335,6 @@ export function groupOrdersByTimeWindow(
                     order.coords.lat, order.coords.lng,
                     currentGroup.orders[0].coords.lat, currentGroup.orders[0].coords.lng
                 );
-                // v5.151: Жесткое разбиение если между заказами больше 15 км, даже если их закинули в один момент времени.
                 if (dist > 15) distanceOk = false;
             }
 
@@ -342,35 +347,30 @@ export function groupOrdersByTimeWindow(
 
             let kitchenGapOk = true;
             if (!isAssignedCourier) {
-                // Kitchen gap check is mainly for automated robot planning (unassigned)
                 const prevKitchen = (currentGroup as any).lastKitchen;
                 if (prevKitchen && kitchen && Math.abs(kitchen - prevKitchen) > 30 * 60 * 1000) {
                     kitchenGapOk = false;
                 }
             }
 
-            // Главный каскад причин разделения блока 
-            if (!arrivedClose) newSplitReason = 'Время';
+            if (!arrivedClose) newSplitReason = 'Время (15 мин)';
             else if (!deliveryFits) newSplitReason = 'SLA';
             else if (!distanceOk) newSplitReason = 'Гео';
             else if (!districtOk) newSplitReason = 'Район';
             else if (!isAssignedCourier && !kitchenGapOk) newSplitReason = 'Готовность';
 
             if (newSplitReason === '') {
-                // Заказ подходит, добавляем в текущую группу
+                // Заказ подходит
                 currentGroup.orders.push(order);
                 currentGroup.windowStart = Math.min(currentGroup.windowStart, planned);
                 currentGroup.windowEnd = Math.max(currentGroup.windowEnd, planned);
                 currentGroup.windowLabel = formatTimeRange(currentGroup.windowStart, currentGroup.windowEnd);
                 
-                // ВНИМАНИЕ: мы НЕ обновляем currentGroup.firstAnchor, чтобы окно отсчитывалось от первого заказа!
                 currentGroup.arrivalEnd = Math.max(currentGroup.arrivalEnd || 0, arrival);
                 if (kitchen) (currentGroup as any).lastKitchen = kitchen;
-
-                // Обновляем прогноз выезда
                 updatePredictedDeparture(currentGroup);
             } else {
-                // Заказ не подходит - закрываем текущую группу и создаем новую
+                // Заказ не подходит (прошло больше 15 мин или другая причина) - закрываем этот и начинаем новый
                 const oldGroup = currentGroup as TimeWindowGroup;
                 const isAllCompleted = oldGroup.orders.every((o: Order) => isOrderCompleted(o.status));
                 if (isAllCompleted && isAssignedCourier) oldGroup.splitReason = 'Завершён';

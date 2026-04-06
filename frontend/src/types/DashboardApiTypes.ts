@@ -20,6 +20,12 @@ export interface DashboardOrderResponse {
         assembledAt?: string;      // ISO string
         deliveringAt?: string;     // ISO string
     };
+    // Optional fields that may come from different API sources
+    deliveryZone?: string;
+    zoneName?: string;
+    zone?: string;
+    lat?: number;
+    lng?: number;
 }
 
 export interface DashboardCourierResponse {

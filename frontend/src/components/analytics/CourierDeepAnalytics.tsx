@@ -1,19 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-    ScatterChart, Scatter, ZAxis, Cell, LineChart, Line, Legend
+    ScatterChart, Scatter, ZAxis, Cell, ResponsiveContainer, 
+    CartesianGrid, XAxis, YAxis, Tooltip
 } from 'recharts';
 import { 
     TrophyIcon, 
-    ArrowsRightLeftIcon,
-    TruckIcon,
     ClockIcon,
-    FaceSmileIcon,
-    ExclamationTriangleIcon,
+    BoltIcon,
     UserGroupIcon,
-    MagnifyingGlassIcon,
-    ChevronDownIcon,
-    BoltIcon
+    MagnifyingGlassIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useDashboardStore } from '../../stores/useDashboardStore';
@@ -61,7 +56,7 @@ export const CourierDeepAnalytics: React.FC = () => {
     }, [data, search, sortBy]);
 
     const topThree = useMemo(() => {
-        if (!data?.couriers) return [];
+        if (!data?.couriers || data.couriers.length === 0) return null;
         const sorted = [...data.couriers].sort((a: any, b: any) => parseFloat(b.efficiency) - parseFloat(a.efficiency));
         return {
             efficient: sorted[0],
@@ -70,8 +65,8 @@ export const CourierDeepAnalytics: React.FC = () => {
         };
     }, [data]);
 
-    if (loading && !data) return <div className="p-32 text-center animate-pulse text-2xl font-black uppercase tracking-widest opacity-20">Сравнение персонала...</div>;
-    if (!data) return null;
+    if (loading && !data) return <div className="p-32 text-center animate-pulse text-2xl font-black uppercase tracking-widest opacity-20">Сравнение персонажа...</div>;
+    if (!data || !topThree) return null;
 
     return (
         <div className="space-y-12 animate-in fade-in duration-700 pb-20">

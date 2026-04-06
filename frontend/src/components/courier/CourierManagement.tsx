@@ -9,21 +9,17 @@ import {
   PlusIcon,
   QuestionMarkCircleIcon,
 } from '@heroicons/react/24/outline'
-// Unused solid icons removed
 import { clsx } from 'clsx'
 import { CourierCard } from './CourierCard'
 import { useExcelData } from '../../contexts/ExcelDataContext'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useRouteGeocoding } from '../../hooks/useRouteGeocoding'
-// Route type no longer needed after v5.153 refactor (robot trigger via API)
 import { toast } from 'react-hot-toast'
-import { Tooltip } from '../shared/Tooltip'
 import { normalizeCourierName, getCourierName } from '../../utils/data/courierName'
 import { useAuth } from '../../contexts/AuthContext'
 import { isOrderCancelled } from '../../utils/data/orderStatus'
 import { getStableOrderId } from '../../utils/data/orderId'
 import { CourierIdResolver } from '../../utils/data/courierIdMap'
-// Unused export functions removed
 import { useKmlData } from '../../hooks/useKmlData'
 import { cleanAddress } from '../../utils/data/addressUtils'
 
@@ -201,13 +197,6 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
     setAddressEditRouteId(null)
   }
 
-
-  const [hasSeenHelp, setHasSeenHelp] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('km_couriers_has_seen_help') === 'true'
-    }
-    return false
-  })
   const [showHelpModal, setShowHelpModal] = useState(false)
   const [showHelpTour, setShowHelpTour] = useState(false)
 
@@ -728,177 +717,123 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header Compact v5.234 */}
       <div className={clsx(
-        'rounded-3xl p-8 shadow-2xl border-2 overflow-hidden relative',
+        'rounded-3xl p-5 shadow-xl border overflow-hidden relative',
         isDark
-          ? 'bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 border-gray-700'
-          : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-blue-200'
+          ? 'bg-[#151B2C]/90 border-white/5'
+          : 'bg-white border-black/5'
       )}>
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10 opacity-50"></div>
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-600/5 via-fuchsia-600/5 to-pink-600/5 pointer-events-none" />
         <div className="relative z-10">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className={clsx(
-                'p-4 rounded-2xl shadow-lg',
-                isDark
-                  ? 'bg-gradient-to-br from-blue-600 to-purple-600'
-                  : 'bg-gradient-to-br from-blue-500 to-indigo-600'
+                'w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transition-transform hover:rotate-6',
+                isDark ? 'bg-blue-600' : 'bg-blue-500'
               )}>
-                <UserIcon className="w-8 h-8 text-white" />
+                <UserIcon className="w-6 h-6 text-white" />
               </div>
               <div>
                 <h1 className={clsx(
-                  'text-3xl font-bold mb-1 bg-gradient-to-r bg-clip-text text-transparent',
-                  isDark
-                    ? 'from-blue-400 to-purple-400'
-                    : 'from-blue-600 to-indigo-600'
+                  'text-xl font-black uppercase tracking-tight',
+                  isDark ? 'text-white' : 'text-gray-900'
                 )}>
                   Керування кур'єрами
                 </h1>
-                <p className={clsx('text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>
-                  Керуйте інформацією про кур'єрів та їх замовлення
-                </p>
-                <div className="flex items-center space-x-4 mt-3">
-                  <div className="flex items-center space-x-2">
-                    <div className={clsx(
-                      'w-2 h-2 rounded-full',
-                      isDark ? 'bg-green-400' : 'bg-green-500'
-                    )}></div>
-                    <span className={clsx(
-                      'text-sm font-medium',
-                      isDark ? 'text-gray-300' : 'text-gray-600'
-                    )}>
-                      {couriers.filter(c => c.isActive).length} активних
-                    </span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className={clsx(
-                      'w-2 h-2 rounded-full',
-                      isDark ? 'bg-blue-400' : 'bg-blue-500'
-                    )}></div>
-                    <span className={clsx(
-                      'text-sm font-medium',
-                      isDark ? 'text-gray-300' : 'text-gray-600'
-                    )}>
-                      {couriers.length} всього
-                    </span>
-                  </div>
+                <div className="flex items-center gap-3 mt-1 opacity-60">
+                   <div className="flex items-center gap-1.5">
+                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                     <span className="text-[10px] font-bold uppercase">{couriers.filter(c => c.isActive).length} Активних</span>
+                   </div>
+                   <div className="flex items-center gap-1.5">
+                     <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                     <span className="text-[10px] font-bold uppercase">{couriers.length} Всього</span>
+                   </div>
                 </div>
               </div>
             </div>
-            <div className="flex items-center space-x-3">
-              <Tooltip
-                content="Відкрити довідку та інструкції з керування кур'єрами"
-                position="left"
-              >
-                <button
-                  onClick={() => {
-                    setShowHelpModal(true)
-                    if (!hasSeenHelp) {
-                      localStorage.setItem('km_couriers_has_seen_help', 'true')
-                      setHasSeenHelp(true)
-                    }
-                  }}
-                  className={clsx(
-                    'p-3 rounded-xl transition-all hover:scale-105',
-                    isDark
-                      ? 'bg-gray-700 hover:bg-gray-600 text-blue-400'
-                      : 'bg-white hover:bg-blue-50 text-blue-600 shadow-lg'
-                  )}
-                >
-                  <QuestionMarkCircleIcon className="w-6 h-6" />
-                </button>
-              </Tooltip>
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setShowAddModal(true)}
+                onClick={() => setShowHelpModal(true)}
                 className={clsx(
-                  'px-6 py-3 rounded-xl font-medium transition-all duration-200 transform hover:scale-105 shadow-lg',
-                  'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800',
-                  'text-white flex items-center space-x-2'
+                  'p-2.5 rounded-xl transition-all hover:bg-white/10 border',
+                  isDark ? 'bg-white/5 border-white/10 text-white' : 'bg-gray-50 border-gray-200 text-gray-400'
                 )}
               >
-                <PlusIcon className="h-5 w-5" />
-                <span>Додати кур'єра</span>
+                <QuestionMarkCircleIcon className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="px-5 py-2.5 rounded-xl font-black uppercase text-[10px] tracking-widest bg-blue-600 hover:bg-blue-700 text-white shadow-lg transition-all active:scale-95 flex items-center gap-2"
+              >
+                <PlusIcon className="w-4 h-4" />
+                <span>Додати</span>
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Filters & Search */}
+      {/* Filters & Search Compact v5.234 */}
       <div className={clsx(
-        'rounded-3xl shadow-xl border p-6 transition-colors duration-150',
-        isDark ? 'bg-gray-800/80 border-gray-700/50' : 'bg-white border-gray-200'
+        'rounded-2xl p-4 shadow-lg border transition-all',
+        isDark ? 'bg-[#151B2C]/40 border-white/5' : 'bg-gray-50/50 border-gray-200'
       )}>
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0 lg:space-x-6">
-          {/* Filter Buttons */}
-          <div className="flex flex-wrap gap-2" data-tour="filters">
+        <div className="flex flex-col lg:flex-row gap-4 items-center">
+          <div className="flex flex-wrap gap-2">
             {[
-              { id: 'all', label: 'Усі кур\'єри', icon: UserIcon, count: couriers.length, activeClass: 'from-blue-600 to-indigo-600' },
-              { id: 'car', label: 'Авто', icon: TruckIcon, count: couriers.filter(c => c.vehicleType === 'car').length, activeClass: 'from-emerald-600 to-teal-600' },
-              { id: 'motorcycle', label: 'Мото', icon: TruckIcon, count: couriers.filter(c => c.vehicleType === 'motorcycle').length, activeClass: 'from-orange-600 to-amber-600' }
+              { id: 'all', label: 'Усі', icon: UserIcon, count: couriers.length },
+              { id: 'car', label: 'Авто', icon: TruckIcon, count: couriers.filter(c => c.vehicleType === 'car').length },
+              { id: 'motorcycle', label: 'Мото', icon: TruckIcon, count: couriers.filter(c => c.vehicleType === 'motorcycle').length }
             ].map(f => (
               <button
                 key={f.id}
                 onClick={() => setFilter(f.id as any)}
                 className={clsx(
-                  'px-6 py-2.5 rounded-2xl text-sm font-bold transition-all duration-300 flex items-center gap-2 border-2',
+                  'px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 border',
                   filter === f.id
-                    ? `bg-gradient-to-r ${f.activeClass} text-white border-transparent shadow-lg shadow-blue-500/20 scale-105`
-                    : isDark
-                      ? 'bg-gray-900/40 text-gray-400 border-gray-800 hover:border-gray-700 hover:text-gray-200'
-                      : 'bg-gray-50 text-gray-500 border-gray-100 hover:border-gray-200 hover:text-gray-900'
+                    ? 'bg-blue-600 border-transparent text-white shadow-md'
+                    : isDark ? 'bg-white/5 border-white/5 text-gray-400 hover:bg-white/10' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
                 )}
               >
-                <f.icon className="w-4 h-4" />
+                <f.icon className="w-3 h-3" />
                 <span>{f.label}</span>
-                <span className={clsx(
-                  'px-2 py-0.5 rounded-lg text-[10px] font-black',
-                  filter === f.id ? 'bg-white/20' : isDark ? 'bg-gray-800' : 'bg-white border'
-                )}>
-                  {f.count}
-                </span>
+                <span className="opacity-40">{f.count}</span>
               </button>
             ))}
           </div>
 
-          {/* Search Field */}
-          <div className="flex-1 max-w-md relative group" data-tour="search">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none transition-transform group-focus-within:scale-110">
-              <MagnifyingGlassIcon className="h-5 w-5 text-gray-500 group-focus-within:text-blue-500" />
-            </div>
+          <div className="flex-1 relative group w-full">
+            <MagnifyingGlassIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-30" />
             <input
               type="text"
-              placeholder="Пошук кур'єра..."
+              placeholder="ПОШУК КУР'ЄРА..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className={clsx(
-                'w-full pl-12 pr-12 py-3 rounded-2xl border-2 text-sm font-medium transition-all duration-300 outline-none',
-                isDark
-                  ? 'bg-gray-900/40 border-gray-800 text-gray-100 placeholder-gray-600 focus:border-blue-500/50 focus:bg-gray-900/60'
-                  : 'bg-white border-gray-100 text-gray-900 placeholder-gray-400 focus:border-blue-500/50 focus:shadow-blue-500/5'
+                'w-full pl-10 pr-10 py-2.5 rounded-xl border outline-none text-[10px] font-black tracking-widest uppercase transition-all',
+                isDark 
+                  ? 'bg-black/20 border-white/5 focus:border-blue-500/50 text-white' 
+                  : 'bg-white border-gray-200 focus:border-blue-400 text-gray-900'
               )}
             />
             {searchTerm && (
-              <button
-                onClick={() => setSearchTerm('')}
-                className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-500 hover:text-blue-500 transition-colors"
-                title="Очистити пошук"
-              >
-                <XMarkIcon className="h-5 w-5" />
+              <button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-white/10 rounded-full transition-all">
+                <XMarkIcon className="w-3 h-3 opacity-40" />
               </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* Couriers Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8" data-tour="courier-list">
+      {/* Couriers Grid v5.228 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-6" data-tour="courier-list">
         {paginatedCouriers.length > 0 ? (
           paginatedCouriers.map((courier, index) => (
             <div
               key={`${courier.id}-${index}`}
+              className="w-full max-w-[380px] mx-auto"
               style={{ contain: 'content', contentVisibility: 'auto', containIntrinsicSize: '0 280px' }}
             >
               <CourierCard
@@ -954,48 +889,60 @@ export const CourierManagement: React.FC<CourierManagementProps> = ({ excelData:
         )}
       </div>
 
-      {/* Pagination Controls */}
+      {/* Smart Compact Pagination v5.234 */}
       {totalPages > 1 && (
-        <div className="flex justify-center items-center space-x-2 py-4">
+        <div className="flex justify-center items-center gap-2 py-6">
           <button
             onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
             disabled={currentPage === 1}
             className={clsx(
-              'px-4 py-2 rounded-xl text-sm font-medium transition-all',
+              'px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all',
               currentPage === 1
-                ? 'opacity-30 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
+                ? 'opacity-20 cursor-not-allowed'
+                : isDark ? 'bg-white/5 text-white hover:bg-white/10' : 'bg-white border border-gray-200 text-gray-900 hover:bg-gray-50'
             )}
           >
-            Назад
+            ← Попер.
           </button>
-          <div className="flex items-center space-x-2">
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map(num => (
-              <button
-                key={num}
-                onClick={() => setCurrentPage(num)}
-                className={clsx(
-                  'w-10 h-10 rounded-xl text-sm font-bold transition-all',
-                  currentPage === num
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
-                    : isDark ? 'bg-gray-800 text-gray-400 hover:bg-gray-700' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-100'
-                )}
-              >
-                {num}
-              </button>
-            ))}
+          
+          <div className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-black/5 dark:bg-white/5 border border-white/5">
+            {[...Array(totalPages)].map((_, i) => {
+              const num = i + 1;
+              const isVisible = num === 1 || num === totalPages || Math.abs(num - currentPage) <= 1;
+              
+              if (!isVisible) {
+                if (num === 2 || num === totalPages - 1) return <span key={num} className="text-gray-500 px-1 font-black text-[10px]">...</span>;
+                return null;
+              }
+
+              return (
+                <button
+                  key={num}
+                  onClick={() => setCurrentPage(num)}
+                  className={clsx(
+                    'w-8 h-8 rounded-lg text-[10px] font-black transition-all flex items-center justify-center',
+                    currentPage === num
+                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/40 scale-110'
+                      : 'text-gray-500 hover:text-white hover:bg-white/10'
+                  )}
+                >
+                  {num}
+                </button>
+              );
+            })}
           </div>
+
           <button
             onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
             disabled={currentPage === totalPages}
             className={clsx(
-              'px-4 py-2 rounded-xl text-sm font-medium transition-all',
+              'px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all',
               currentPage === totalPages
-                ? 'opacity-30 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
+                ? 'opacity-20 cursor-not-allowed'
+                : isDark ? 'bg-white/5 text-white hover:bg-white/10' : 'bg-white border border-gray-200 text-gray-900 hover:bg-gray-50'
             )}
           >
-            Вперед
+            Наст. →
           </button>
         </div>
       )}

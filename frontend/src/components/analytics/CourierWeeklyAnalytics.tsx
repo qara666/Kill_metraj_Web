@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
     Cell
@@ -67,9 +67,6 @@ export const CourierWeeklyAnalytics: React.FC = () => {
     useEffect(() => {
         fetchAnalytics();
     }, [startDate, endDate, divisionId]);
-
-    const bestCouriers = useMemo(() => [...data].sort((a, b) => b.totalOrders - a.totalOrders).slice(0, 5), [data]);
-    const mostEfficient = useMemo(() => [...data].sort((a, b) => Number(b.efficiencyScore) - Number(a.efficiencyScore)).slice(0, 5), [data]);
 
     if (loading && data.length === 0) {
         return (

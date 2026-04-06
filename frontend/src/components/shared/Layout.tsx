@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react'
+import { ReactNode, useState, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   HomeIcon,
@@ -47,7 +47,16 @@ const adminNavigation = [
 
 export function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+
+  // v5.228: Persistence handled in useEffect to avoid dispatcher context issues
+  useEffect(() => {
+    const saved = localStorage.getItem('km_sidebar_collapsed')
+    if (saved === 'true') {
+      setIsCollapsed(true)
+    }
+  }, [])
   const location = useLocation()
   const navigate = useNavigate()
   const { toggleTheme, isDark } = useTheme()
@@ -58,428 +67,241 @@ export function Layout({ children }: LayoutProps) {
     navigate('/login')
   }
 
+  const toggleSidebar = () => {
+    setIsCollapsed(prev => {
+      const next = !prev
+      localStorage.setItem('km_sidebar_collapsed', String(next))
+      return next
+    })
+  }
+
   return (
     <div className={clsx(
       'min-h-screen transition-colors duration-200',
       isDark ? 'bg-[#0B0F1A]' : 'bg-gray-50'
     )}>
-      {/* Mobile sidebar */}
+      {/* Mobile sidebar (Overlays content) */}
       <div className={clsx(
-        'fixed inset-0 z-50 lg:hidden',
-        sidebarOpen ? 'block' : 'hidden'
+        'fixed inset-0 z-50 lg:hidden transition-opacity duration-300',
+        sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
       )}>
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-75" onClick={() => setSidebarOpen(false)} />
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
         <div className={clsx(
-          'fixed inset-y-0 left-0 flex w-64 flex-col shadow-2xl transition-transform duration-300 transform-gpu glass-panel border-r-0',
-          isDark
-            ? 'bg-[#151B2C]/40 border-white/5'
-            : 'bg-white/40 border-gray-200/50'
+          'fixed inset-y-0 left-0 flex w-72 flex-col shadow-2xl transition-transform duration-300 ease-out transform-gpu will-change-transform',
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full',
+          isDark ? 'bg-[#151B2C]' : 'bg-white'
         )}>
-          {/* Elite Gradient Border Accent */}
-          <div className="absolute top-0 right-0 w-[1px] h-full bg-gradient-to-b from-transparent via-blue-500/20 to-transparent" />
-
-          <div className={clsx(
-            'flex h-16 items-center justify-between px-4 border-b',
-            isDark ? 'border-white/5' : 'border-gray-200/50'
-          )}>
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <div className="h-10 w-10 bg-gradient-to-br from-blue-500 to-pink-400 rounded-xl flex items-center justify-center shadow-lg">
-                  <span className="text-white font-bold text-sm">KM</span>
-                </div>
-              </div>
-              <div className="ml-3">
-                <h1 className={clsx(
-                  'text-sm font-semibold',
-                  isDark ? 'text-white' : 'text-gray-900'
-                )}>Авто рассчет км</h1>
-              </div>
-            </div>
-            <button
-              type="button"
-              className={clsx(
-                'p-2 rounded-lg transition-colors',
-                isDark ? 'text-blue-300 hover:text-white hover:bg-blue-700/50' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50'
-              )}
-              onClick={() => setSidebarOpen(false)}
-            >
-              <XMarkIcon className="h-6 w-6" />
-            </button>
-          </div>
-
-          <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
-            {/* Admin section - Top priority for admins */}
-            {isAdmin && (
-              <>
-                <div className={clsx(
-                  'px-3 py-2 mt-4 mb-2 text-xs font-semibold uppercase tracking-wider',
-                  isDark ? 'text-blue-400' : 'text-gray-600'
-                )}>
-                  <div className="flex items-center gap-2">
-                    <ShieldCheckIcon className="w-4 h-4" />
-                    Администрирование
-                  </div>
-                </div>
-                {adminNavigation.map((item) => {
-                  const isActive = location.pathname === item.href
-                  return (
-                    <Link
-                      key={item.name}
-                      to={item.href}
-                      className={clsx(
-                        'group flex items-center px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 transform-gpu active:scale-95',
-                        isActive
-                          ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
-                          : isDark
-                            ? 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                      )}
-                      onClick={() => setSidebarOpen(false)}
-                    >
-                      <item.icon
-                        className={clsx(
-                          'mr-3 h-5 w-5 flex-shrink-0 transition-colors',
-                          isActive
-                            ? 'text-white'
-                            : isDark
-                              ? 'text-purple-300 group-hover:text-white'
-                              : 'text-gray-500 group-hover:text-gray-700'
-                        )}
-                      />
-                      {item.name}
-                    </Link>
-                  )
-                })}
-                <div className="h-px bg-white/10 my-4" />
-              </>
-            )}
-
-            {/* Standard navigation */}
-            <div className={clsx(
-              'px-3 py-2 mb-2 text-xs font-semibold uppercase tracking-wider',
-              isDark ? 'text-blue-400' : 'text-gray-600'
-            )}>
-              Основной функционал
-            </div>
-
-            {navigation.map((item) => {
-              const isAllowed = user?.allowedTabs ? user.allowedTabs.includes(item.id) : !item.restricted;
-              if (!isAdmin && !isAllowed) return null;
-              const isActive = location.pathname === item.href
-              return (
-                <Link
-                  key={item.name}
-                  to={item.href}
-                  className={clsx(
-                    'group flex items-center px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 transform-gpu active:scale-95',
-                    isActive
-                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
-                      : isDark
-                        ? 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                  )}
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  <item.icon
-                    className={clsx(
-                      'mr-3 h-5 w-5 flex-shrink-0 transition-colors',
-                      isActive
-                        ? 'text-white'
-                        : isDark
-                          ? 'text-blue-300 group-hover:text-white'
-                          : 'text-gray-500 group-hover:text-gray-700'
-                    )}
-                  />
-                  {item.name}
-                </Link>
-              )
-            })}
-          </nav>
+           <div className="flex h-16 items-center justify-between px-6 border-b border-black/5 dark:border-white/5">
+             <div className="flex items-center gap-3">
+               <div className="h-9 w-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-lg">
+                 <span className="text-white font-black text-xs">KM</span>
+               </div>
+               <span className={clsx("font-black tracking-tight", isDark ? "text-white" : "text-black")}>МЕНЮ</span>
+             </div>
+             <button onClick={() => setSidebarOpen(false)} className="p-2 opacity-50 hover:opacity-100">
+               <XMarkIcon className="w-6 h-6" />
+             </button>
+           </div>
+           <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto custom-scrollbar">
+             {/* Shared menu contents for mobile */}
+             {navigation.map((item) => {
+               const isAllowed = user?.allowedTabs ? user.allowedTabs.includes(item.id) : !item.restricted;
+               if (!isAdmin && !isAllowed) return null;
+               const isActive = location.pathname === item.href;
+               return (
+                 <Link
+                   key={item.name}
+                   to={item.href}
+                   onClick={() => setSidebarOpen(false)}
+                   className={clsx(
+                     'group flex items-center px-4 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all',
+                     isActive
+                       ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
+                       : isDark ? 'text-gray-400 hover:bg-white/5 hover:text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-black'
+                   )}
+                 >
+                   <item.icon className="mr-4 h-5 w-5 shrink-0" />
+                   {item.name}
+                 </Link>
+               );
+             })}
+           </nav>
         </div>
       </div>
 
 
-      {/* Desktop sidebar */}
-      <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
+      {/* Desktop sidebar - Optimized for weak PCs v5.240 */}
+      <div className={clsx(
+        "hidden lg:fixed lg:inset-y-0 lg:flex lg:flex-col transition-[width] duration-500 ease-in-out z-50 will-change-[width]",
+        isCollapsed ? "lg:w-20" : "lg:w-64"
+      )}>
         <div className={clsx(
-          'flex flex-col flex-grow shadow-sm transition-colors duration-200 relative',
+          'flex flex-col flex-grow shadow-lg transition-colors border-r relative overflow-hidden',
           isDark
-            ? 'bg-[#0F1424]/40 backdrop-blur-xl border-r border-white/5'
-            : 'bg-white border-r border-gray-200'
+            ? 'bg-[#0F1424] border-white/5'
+            : 'bg-white border-gray-200'
         )}>
-          {/* Glass Accent */}
-          <div className="absolute inset-0 bg-gradient-to-b from-blue-500/5 to-transparent pointer-events-none" />
+          {/* Static header for performance */}
           <div className={clsx(
-            'flex h-16 items-center px-4 border-b',
-            isDark ? 'border-blue-800/30' : 'border-gray-200/50'
+            'flex h-16 items-center px-4 border-b shrink-0',
+            isDark ? 'border-white/5' : 'border-gray-200'
           )}>
-            <div className="flex items-center">
+            <div className="flex items-center w-full">
               <div className="flex-shrink-0">
-                <div className="h-10 w-10 bg-gradient-to-br from-blue-500 to-pink-400 rounded-xl flex items-center justify-center shadow-lg">
-                  <span className="text-white font-bold text-sm">KM</span>
+                <div className="h-10 w-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg transform transition-transform hover:rotate-12 active:scale-95 cursor-pointer">
+                  <span className="text-white font-black text-xs">KM</span>
                 </div>
               </div>
-              <div className="ml-6">
+              <div className={clsx(
+                "ml-6 transition-all duration-500 overflow-hidden",
+                isCollapsed ? "opacity-0 w-0 -translate-x-4" : "opacity-100 w-auto"
+              )}>
                 <h1 className={clsx(
-                  'text-lg font-black tracking-tight leading-none',
-                  isDark ? 'text-white' : 'text-gray-900'
+                  'text-xs font-black tracking-[0.2em] uppercase whitespace-nowrap',
+                  isDark ? 'text-gray-400' : 'text-gray-500'
                 )}>
-                  <span className="block text-xs font-bold opacity-60 uppercase tracking-[0.2em] mt-1">Система авто рассчетов</span>
+                  СИСТЕМА РАССЧЕТОВ
                 </h1>
               </div>
             </div>
           </div>
 
-          <nav className="flex-1 px-4 py-4 space-y-2">
-            {/* Admin section - Top priority for admins */}
+          <nav className="flex-1 px-3 py-6 space-y-1.5 overflow-y-auto overflow-x-hidden custom-scrollbar scroll-smooth">
+            {/* Admin Section */}
             {isAdmin && (
-              <>
-                <div className={clsx(
-                  'px-3 py-2 mt-4 mb-2 text-xs font-semibold uppercase tracking-wider',
-                  isDark ? 'text-blue-400' : 'text-gray-600'
-                )}>
-                  <div className="flex items-center gap-2">
-                    <ShieldCheckIcon className="w-4 h-4" />
-                    Администрирование
-                  </div>
-                </div>
-                {adminNavigation.map((item) => {
-                  const isActive = location.pathname === item.href
-                  return (
+              <div className="mb-6">
+                {!isCollapsed && (
+                  <div className="px-4 mb-2 text-[10px] font-black uppercase tracking-widest opacity-30">Админ</div>
+                )}
+                {adminNavigation.map((item) => (
                     <Link
-                      key={item.name}
+                      key={item.href}
                       to={item.href}
                       className={clsx(
-                        'group flex items-center px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 transform-gpu active:scale-95',
-                        isActive
-                          ? 'bg-blue-600 text-white shadow-md shadow-blue-600/10'
-                          : isDark
-                            ? 'text-gray-400 hover:bg-gray-800/50 hover:text-white'
-                            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                        'group flex items-center px-4 py-3 rounded-xl transition-all duration-300 relative will-change-transform',
+                        location.pathname === item.href
+                          ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/20 translate-x-1'
+                          : isDark ? 'text-gray-500 hover:text-white hover:bg-white/5' : 'text-gray-400 hover:text-black hover:bg-gray-50'
                       )}
+                      title={isCollapsed ? item.name : undefined}
                     >
-                      <item.icon
-                        className={clsx(
-                          'mr-3 h-5 w-5 flex-shrink-0 transition-colors',
-                          isActive
-                            ? 'text-white'
-                            : isDark
-                              ? 'text-purple-300 group-hover:text-white'
-                              : 'text-gray-500 group-hover:text-gray-700'
-                        )}
-                      />
-                      {item.name}
+                      <item.icon className="h-5 w-5 shrink-0" />
+                      {!isCollapsed && <span className="ml-4 text-xs font-black uppercase tracking-widest truncate">{item.name}</span>}
                     </Link>
-                  )
-                })}
-                <div className="h-px bg-white/10 my-4" />
-              </>
+                ))}
+              </div>
             )}
 
-            {/* Standard navigation */}
-            <div className={clsx(
-              'px-3 py-2 mb-2 text-xs font-semibold uppercase tracking-wider',
-              isDark ? 'text-blue-400' : 'text-gray-600'
-            )}>
-              Основной функционал
-            </div>
-
+            {/* Standard Nav */}
+            {!isCollapsed && (
+              <div className="px-4 mb-2 text-[10px] font-black uppercase tracking-widest opacity-30">Меню</div>
+            )}
             {navigation.map((item) => {
               const isAllowed = user?.allowedTabs ? user.allowedTabs.includes(item.id) : !item.restricted;
               if (!isAdmin && !isAllowed) return null;
               const isActive = location.pathname === item.href
               return (
                 <Link
-                  key={item.name}
+                  key={item.id}
                   to={item.href}
                   className={clsx(
-                    'group flex items-center px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 transform-gpu active:scale-95',
+                    'group flex items-center px-4 py-3 rounded-xl transition-all duration-300 relative will-change-transform',
                     isActive
-                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/10'
-                      : isDark
-                        ? 'text-gray-400 hover:bg-gray-800/50 hover:text-white'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                      ? 'bg-blue-600 text-white shadow-xl shadow-blue-500/20 translate-x-1'
+                      : isDark ? 'text-gray-500 hover:text-white hover:bg-white/5' : 'text-gray-400 hover:text-black hover:bg-gray-50'
                   )}
+                  title={isCollapsed ? item.name : undefined}
                 >
-                  <item.icon
-                    className={clsx(
-                      'mr-3 h-5 w-5 flex-shrink-0 transition-colors',
-                      isActive
-                        ? 'text-white'
-                        : isDark
-                          ? 'text-blue-300 group-hover:text-white'
-                          : 'text-gray-500 group-hover:text-gray-700'
-                    )}
-                  />
-                  {item.name}
+                  <item.icon className="h-5 w-5 shrink-0" />
+                  {!isCollapsed && <span className="ml-4 text-xs font-black uppercase tracking-widest truncate">{item.name}</span>}
                 </Link>
               )
             })}
           </nav>
+
+          {/* Toggle Button at the bottom for better reach */}
+          <div className="p-4 border-t border-black/5 dark:border-white/5">
+             <button
+               onClick={toggleSidebar}
+               className={clsx(
+                 "w-full py-3 rounded-xl flex items-center justify-center transition-all bg-black/5 hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10 group",
+                 isCollapsed ? "px-0" : "px-4"
+               )}
+             >
+               <Bars3Icon className={clsx("h-5 w-5 transition-transform duration-500", isCollapsed ? "rotate-90" : "")} />
+             </button>
+          </div>
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="lg:pl-64 flex flex-col min-h-screen">
-        {/* Top bar - Floating Effect */}
-        <div className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 px-4 sm:gap-x-6 sm:px-6 lg:px-8 bg-transparent pointer-events-none">
-          {/* Mobile hamburger - Always visible on small screens, pointer-events-auto to be clickable */}
-          <div className="flex flex-1 items-center justify-between lg:justify-end gap-x-4 lg:gap-x-6">
+      {/* Main content wrapper */}
+      <div className={clsx(
+        "flex flex-col min-h-screen transition-all duration-500 ease-in-out transform-gpu will-change-[padding]",
+        isCollapsed ? "lg:pl-20" : "lg:pl-64"
+      )}>
+        {/* Simplified Header for performance */}
+        <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center justify-between px-6 pointer-events-none">
+          <div className="flex-1" />
+          <div className="flex items-center gap-4 pointer-events-auto">
             <button
-              type="button"
-              className={clsx(
-                'p-2.5 lg:hidden pointer-events-auto rounded-xl transition-all active:scale-90',
-                isDark ? 'text-gray-300 hover:text-white bg-gray-800/40' : 'text-gray-700 hover:text-blue-600 bg-white/40 shadow-sm'
-              )}
-              onClick={() => setSidebarOpen(true)}
+               onClick={toggleTheme}
+               className={clsx(
+                 'p-2.5 rounded-xl border transition-all active:scale-95 shadow-lg',
+                 isDark ? 'bg-gray-800 border-white/5 text-yellow-500' : 'bg-white border-gray-100 text-gray-400'
+               )}
             >
-              <Bars3Icon className="h-6 w-6" />
+              {isDark ? <SunIcon className="w-5 h-5" /> : <MoonIcon className="w-5 h-5" />}
             </button>
 
-            <div className="flex items-center gap-x-4 lg:gap-x-6 pointer-events-auto">
-              {/* Theme toggle */}
+            <div className="relative group">
               <button
-                onClick={toggleTheme}
+                onClick={() => setUserMenuOpen(!userMenuOpen)}
                 className={clsx(
-                  'p-2 rounded-lg transition-all duration-200 hover:scale-105',
-                  isDark
-                    ? 'bg-gray-700/50 hover:bg-gray-600/50 text-yellow-400'
-                    : 'bg-gray-200/50 hover:bg-gray-300/50 text-gray-600'
+                  'flex items-center gap-2 px-4 py-2 rounded-xl border transition-all shadow-lg active:scale-95',
+                  isDark ? 'bg-gray-800 border-white/5' : 'bg-white border-gray-100'
                 )}
-                title={isDark ? 'Переключить на светлую тему' : 'Переключить на темную тему'}
               >
-                {isDark ? (
-                  <SunIcon className="h-5 w-5" />
-                ) : (
-                  <MoonIcon className="h-5 w-5" />
-                )}
+                <UserCircleIcon className="w-6 h-6 opacity-50" />
+                <span className="text-[10px] font-black uppercase tracking-widest hidden sm:block">{user?.username}</span>
               </button>
-
-              {/* User menu */}
-              <div className="relative">
-                <button
-                  onClick={() => setUserMenuOpen(!userMenuOpen)}
-                  className={clsx(
-                    'flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200',
-                    isDark
-                      ? 'hover:bg-gray-700/50 text-gray-300'
-                      : 'hover:bg-gray-200/50 text-gray-700'
-                  )}
-                >
-                  <UserCircleIcon className="w-6 h-6" />
-                  <span className="text-sm font-medium hidden sm:block">{user?.username}</span>
-                </button>
-
-                {/* Dropdown */}
-                {userMenuOpen && (
-                  <div className={clsx(
-                    'absolute right-0 mt-2 w-48 rounded-lg shadow-lg border overflow-hidden z-50',
-                    isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-                  )}>
-                    <Link
-                      to="/profile"
-                      onClick={() => setUserMenuOpen(false)}
-                      className={clsx(
-                        'flex items-center gap-2 px-4 py-3 text-sm transition-colors',
-                        isDark ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-50 text-gray-700'
-                      )}
-                    >
-                      <UserCircleIcon className="w-4 h-4" />
-                      Профиль
-                    </Link>
-                    <button
-                      onClick={handleLogout}
-                      className={clsx(
-                        'w-full flex items-center gap-2 px-4 py-3 text-sm transition-colors',
-                        isDark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-50 text-red-600'
-                      )}
-                    >
-                      <ArrowRightOnRectangleIcon className="w-4 h-4" />
-                      Выход
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Status indicator */}
-              <div className={clsx(
-                'flex items-center gap-x-2 px-3 py-1.5 rounded-full border',
-                isDark
-                  ? 'bg-gray-900/50 border-gray-800'
-                  : 'bg-gray-100 border-gray-200'
-              )}>
-                <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
-                <span className={clsx(
-                  'text-xs font-semibold uppercase tracking-wider',
-                  isDark ? 'text-gray-400' : 'text-gray-600'
-                )}>Система работает - ОПы не ловятся</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Page content */}
-        <main className="py-6 flex-1 flex flex-col">
-          <div className="px-4 sm:px-6 lg:px-8 flex-1 max-w-[1600px] mx-auto w-full">
-            {children}
-          </div>
-
-          {/* Premium Footer */}
-          <footer className="mt-auto py-8 px-4 sm:px-6 lg:px-8 border-t border-gray-200/5 dark:border-white/5">
-            <div className="flex flex-col items-center justify-center space-y-4">
-              <div className="flex items-center gap-3 group cursor-pointer transition-all duration-300">
-                <div className="h-px w-8 bg-gradient-to-r from-transparent to-blue-500/50 group-hover:w-12 transition-all" />
-                <span className={clsx(
-                  'text-sm font-black tracking-[0.3em] uppercase transition-colors',
-                  isDark ? 'text-gray-500 group-hover:text-blue-400' : 'text-gray-400 group-hover:text-blue-600'
+              
+              {userMenuOpen && (
+                <div className={clsx(
+                  'absolute right-0 mt-2 w-48 rounded-xl shadow-2xl border overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200',
+                  isDark ? 'bg-[#151B2C] border-white/10' : 'bg-white border-gray-100'
                 )}>
-                  Создатель MaxSun
-                </span>
-                <div className="h-px w-8 bg-gradient-to-l from-transparent to-blue-500/50 group-hover:w-12 transition-all" />
-              </div>
-              <p className={clsx(
-                'text-[10px] font-bold uppercase tracking-widest opacity-30',
-                isDark ? 'text-white' : 'text-black'
-              )}>
-                Elite System v2.1
-              </p>
+                  <Link to="/profile" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all">
+                    <UserCircleIcon className="w-4 h-4" /> Профиль
+                  </Link>
+                  <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-red-500 hover:bg-red-500 hover:text-white transition-all">
+                    <ArrowRightOnRectangleIcon className="w-4 h-4" /> Выход
+                  </button>
+                </div>
+              )}
             </div>
-          </footer>
+
+            <div className={clsx(
+              "px-4 py-2 rounded-full border text-[9px] font-black uppercase tracking-[0.2em] shadow-lg hidden md:flex items-center gap-2",
+              isDark ? "bg-gray-800 border-white/5 text-gray-500" : "bg-white border-gray-100 text-gray-400"
+            )}>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              SYSTEM ACTIVE
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 w-full max-w-[1920px] mx-auto px-4 lg:px-8 py-4">
+          {children}
         </main>
+
+        <footer className="py-10 border-t border-black/5 dark:border-white/5">
+           <div className="flex flex-col items-center gap-2 opacity-20">
+              <span className="text-[10px] font-black uppercase tracking-[0.4em]">Powered by MaxSun Elite</span>
+              <span className="text-[8px] font-bold uppercase tracking-[0.2em]">v5.240 optimized</span>
+           </div>
+        </footer>
       </div>
     </div>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

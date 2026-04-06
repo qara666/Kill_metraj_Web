@@ -1,4 +1,5 @@
 const { sequelize } = require('../config/database');
+const { DataTypes } = require('sequelize');
 const logger = require('../utils/logger');
 const User = require('./User');
 const UserPreset = require('./UserPreset');
@@ -9,7 +10,7 @@ const KmlHub = require('./KmlHub');
 const KmlZone = require('./KmlZone');
 const Route = require('./Route');
 const GeoCache = require('./GeoCache');
-const DashboardDivisionState = require('./DashboardDivisionState');
+const DashboardDivisionState = require('./DashboardDivisionState')(sequelize, DataTypes);
 
 // Define associations
 User.hasOne(UserPreset, {

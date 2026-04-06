@@ -412,7 +412,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
           return fixedRoute;
         }).filter(Boolean); // Remove null routes
         
-        if (validatedRoutes.length === 0) {
+        if (validatedRoutes.length === 0 && routes.length > 0) {
           console.warn('[ExcelSync] ⚠️ All routes had invalid couriers, skipping');
           return;
         }
@@ -531,9 +531,15 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                 if (calc && calc.km >= 0) {
                   return { ...c, distanceKm: Number(calc.km.toFixed(2)), calculatedOrders: calc.orders };
                 }
-                return c;
+                return { ...c, distanceKm: 0, calculatedOrders: 0 }; // v5.195: reset if no route matches
               });
+            } else {
+              // v5.195: Reset all if no routes computed
+              updatedCouriers = updatedCouriers.map((c: any) => ({ ...c, distanceKm: 0, calculatedOrders: 0 }));
             }
+          } else {
+             // v5.195: Reset all if no routes available and no eventCouriers
+             updatedCouriers = updatedCouriers.map((c: any) => ({ ...c, distanceKm: 0, calculatedOrders: 0 }));
           }
 
           return { ...prev, routes: mergedRoutes, couriers: updatedCouriers };

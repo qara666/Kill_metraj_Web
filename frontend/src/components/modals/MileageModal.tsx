@@ -324,16 +324,16 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
           "px-6 py-4 rounded-b-[2rem] flex flex-wrap gap-4 items-center justify-between",
           isDark ? "bg-white/[0.02]" : "bg-slate-50/50"
         )}>
-          <div className="flex gap-6">
+          <div className="grid grid-cols-3 gap-6 min-w-[240px]">
             <div className="flex flex-col">
               <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">Разом</span>
               <span className="text-sm font-black">{metrics.total.toFixed(1)} км</span>
             </div>
-            <div className="flex flex-col">
+            <div className="flex flex-col border-l pl-4 border-black/5 dark:border-white/5">
               <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">База</span>
               <span className="text-sm font-black opacity-60">{metrics.base.toFixed(1)} км</span>
             </div>
-            <div className="flex flex-col">
+            <div className="flex flex-col border-l pl-4 border-black/5 dark:border-white/5">
               <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">Час</span>
               <span className="text-sm font-black opacity-60">{route.totalDuration ? formatDuration(route.totalDuration) : '—'}</span>
             </div>

@@ -25,90 +25,72 @@ import { Layout } from './components/shared/Layout'
 import { GlobalDashboardFetcher } from './components/shared/GlobalDashboardFetcher'
 import { ProtectedRoute } from './components/auth/ProtectedRoute'
 
-// Contexts
-import { ExcelDataProvider } from './contexts/ExcelDataContext'
-import { ThemeProvider } from './contexts/ThemeContext'
-import { ErrorProvider } from './contexts/ErrorContext'
-import { AuthProvider } from './contexts/AuthContext'
-import { ErrorBoundary } from './components/shared/ErrorBoundary'
-
 function App() {
   return (
-    <ErrorBoundary>
-      <ThemeProvider>
-        <ErrorProvider>
-          <AuthProvider>
-            <ExcelDataProvider>
-              <Routes>
-                {/* Public routes */}
-                <Route path="/login" element={<Login />} />
+    <Routes>
+      {/* Public routes */}
+      <Route path="/login" element={<Login />} />
 
-                {/* Protected routes */}
-                <Route
-                  path="/*"
-                  element={
-                    <ProtectedRoute>
-                      <GlobalDashboardFetcher />
-                      <Layout>
-                        <Suspense fallback={<div className="p-6 text-sm text-gray-500">Загрузка...</div>}>
-                          <Routes>
-                            <Route path="/" element={<Dashboard />} />
-                            <Route path="/routes" element={<RoutesPage />} />
-                            <Route path="/couriers" element={<Couriers />} />
-                            <Route path="/analytics" element={<Analytics />} />
-                            <Route path="/telegram-parsing" element={<TelegramParsing />} />
-                            <Route path="/financials" element={<Financials />} />
-                            <Route path="/settings" element={<Settings />} />
-                            <Route path="/profile" element={<Profile />} />
+      <Route
+        path="/*"
+        element={
+          <ProtectedRoute>
+            <GlobalDashboardFetcher />
+            <Layout>
+              <Suspense fallback={<div className="p-6 text-sm text-gray-500">Загрузка...</div>}>
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/routes" element={<RoutesPage />} />
+                  <Route path="/couriers" element={<Couriers />} />
+                  <Route path="/analytics" element={<Analytics />} />
+                  <Route path="/telegram-parsing" element={<TelegramParsing />} />
+                  <Route path="/financials" element={<Financials />} />
+                  <Route path="/settings" element={<Settings />} />
+                  <Route path="/profile" element={<Profile />} />
 
-                            {/* Admin routes - require admin role */}
-                            <Route
-                              path="/admin/users"
-                              element={
-                                <ProtectedRoute requireAdmin>
-                                  <AdminUsers />
-                                </ProtectedRoute>
-                              }
-                            />
-                            <Route
-                              path="/admin/presets"
-                              element={
-                                <ProtectedRoute>
-                                  <AdminPresets />
-                                </ProtectedRoute>
-                              }
-                            />
-                            <Route
-                              path="/admin/logs"
-                              element={
-                                <ProtectedRoute requireAdmin>
-                                  <AdminLogs />
-                                </ProtectedRoute>
-                              }
-                            />
-                            <Route
-                              path="/admin/system"
-                              element={
-                                <ProtectedRoute requireAdmin>
-                                  <Administration />
-                                </ProtectedRoute>
-                              }
-                            />
+                  {/* Admin routes - require admin role */}
+                  <Route
+                    path="/admin/users"
+                    element={
+                      <ProtectedRoute requireAdmin>
+                        <AdminUsers />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/admin/presets"
+                    element={
+                      <ProtectedRoute>
+                        <AdminPresets />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/admin/logs"
+                    element={
+                      <ProtectedRoute requireAdmin>
+                        <AdminLogs />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/admin/system"
+                    element={
+                      <ProtectedRoute requireAdmin>
+                        <Administration />
+                      </ProtectedRoute>
+                    }
+                  />
 
-                            {/* Fallback */}
-                            <Route path="*" element={<Navigate to="/" replace />} />
-                          </Routes>
-                        </Suspense>
-                      </Layout>
-                    </ProtectedRoute>
-                  }
-                />
-              </Routes>
-            </ExcelDataProvider>
-          </AuthProvider>
-        </ErrorProvider>
-      </ThemeProvider>
-    </ErrorBoundary>
+                  {/* Fallback */}
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </Suspense>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+    </Routes>
   )
 }
 
