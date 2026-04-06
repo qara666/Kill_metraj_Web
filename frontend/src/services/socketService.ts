@@ -116,6 +116,18 @@ class SocketService {
             console.error('[SocketService] Reconnection failed');
             this.emit('reconnect_failed');
         });
+
+        // v6.9: Global robot_status listener - receives updates even without dashboard:update subscription
+        this.socket.on('robot_status', (data: any) => {
+            console.log('[SocketService] 📡 Global robot_status received:', data);
+            try {
+                const { useDashboardStore } = require('../stores/useDashboardStore');
+                const store = useDashboardStore.getState();
+                store.setAutoRoutingStatus(data);
+            } catch (e) {
+                console.warn('[SocketService] robot_status handler failed:', e);
+            }
+        });
     }
 
     /**
@@ -195,13 +207,19 @@ class SocketService {
                 const dashboardDate = normalizeDate(store.apiDateShift);
                 const robotDate = normalizeDate(data.date);
                 
-                if (currentDivisionStr !== 'all' && String(data.divisionId) !== currentDivisionStr) {
+                const isGlobalUpdate = (String(data.divisionId) === 'all');
+                
+                // v6.9: More permissive filtering - accept if no date or matching date
+                if (!isGlobalUpdate && currentDivisionStr !== 'all' && String(data.divisionId) !== currentDivisionStr) {
                     return;
                 }
                 
+                // Only filter by date if BOTH are provided and exist
                 if (dashboardDate && robotDate && dashboardDate !== robotDate) {
                     return;
                 }
+                
+                console.log('[SocketService] routes_update received:', { divisionId: data.divisionId, date: data.date, routesCount: data.routes?.length });
             } catch (e) {
                 // Ignore filtering errors
             }
@@ -255,12 +273,17 @@ class SocketService {
                 // v6.5: ALLOW 'all' division status to bypass the division filter so global progress is visible everywhere.
                 const isGlobalUpdate = (String(data.divisionId) === 'all');
                 
+                // v6.8: More permissive filtering - allow updates without date or with matching date
+                // If no robotDate provided, always accept (heartbeat/initial status)
                 if (!isGlobalUpdate && currentDivisionStr !== 'all' && String(data.divisionId) !== currentDivisionStr) {
                     return;
                 }
+                // Only filter by date if BOTH dates are provided and present
                 if (dashboardDate && robotDate && dashboardDate !== robotDate) {
                     return;
                 }
+                // v6.8: Log for debugging
+                console.log('[SocketService] robot_status received:', { divisionId: data.divisionId, date: data.date, robotDate, dashboardDate, isGlobalUpdate, isActive: data.isActive, processedCount: data.processedCount, totalCount: data.totalCount });
 
                 store.setAutoRoutingStatus(data);
             } catch (e) {

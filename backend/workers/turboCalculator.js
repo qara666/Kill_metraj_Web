@@ -490,14 +490,31 @@ class OrderCalculator {
         logger.info(`[TurboCalculator] 💥 Manual trigger: Cleared processedHash for ${cacheKey}${forceFull ? ' (FULL recalculation)' : ''}`);
 
         if (this.io) {
+            const divIdStr = String(divisionId);
             this.io.emit('robot_status', {
-                divisionId,
+                divisionId: divIdStr,
                 date: targetDate,
                 isActive: true,
                 currentPhase: 'initializing',
                 message: 'Preparing data for analysis...',
-                // v5.196: Don't set totalCount to 0 yet to preserve previous UI state if any
+                totalCount: 0,
+                processedCount: 0
             });
+            
+            // v6.9: Also write to global status store
+            if (global.divisionStatusStore) {
+                global.divisionStatusStore[`${divIdStr}_${targetDate}`] = {
+                    divisionId: divIdStr,
+                    date: targetDate,
+                    isActive: true,
+                    currentPhase: 'initializing',
+                    message: 'Preparing data for analysis...',
+                    totalCount: 0,
+                    processedCount: 0
+                };
+            }
+            
+            logger.info(`[TurboCalculator] 📡 Emitted initial status for division ${divIdStr}`);
         }
 
         let state = this.divisionStates.get(divisionId);
@@ -1117,6 +1134,19 @@ class OrderCalculator {
                 deliveryWindows = groupAllOrdersByTimeWindow(ordersToGroup);
                 deliveryWindows.forEach((windows) => { totalBlocksCount += windows.length; });
                 logger.info(`[TurboCalculator] 📦 Grouped ${ordersToGroup.length} orders into ${totalBlocksCount} blocks across ${deliveryWindows.size} couriers`);
+                
+                // v6.0: Emit status immediately after grouping completes
+                if (this.io) {
+                    this.io.emit('robot_status', {
+                        divisionId: cache.division_id,
+                        date: cache.target_date,
+                        isActive: true,
+                        totalCount: data.orders.length,
+                        processedCount: Math.round(data.orders.length * 0.3),
+                        currentPhase: 'grouping',
+                        message: `Grouped ${ordersToGroup.length} orders into ${totalBlocksCount} blocks...`
+                    });
+                }
             } catch (err) {
                 logger.error('[TurboCalculator] Backend grouping failed', err);
                 deliveryWindows = new Map();
@@ -1161,7 +1191,7 @@ class OrderCalculator {
                 if (this.io) {
                     const couriersList = Object.values(stats.courierStats || {});
                     const payload = {
-                        divisionId: cache.division_id,
+                        divisionId: String(cache.division_id),
                         date: cache.target_date,
                         totalCount: stats.totalCount,
                         totalCouriers: stats.totalCouriers,
@@ -1173,11 +1203,20 @@ class OrderCalculator {
                         couriers: couriersList,
                         skippedGeocoding: stats.skippedGeocoding || 0,
                         skippedInRoutes: stats.skippedInRoutes || 0,
-                        skippedNoCourier: stats.skippedNoCourier || stats.unassignedCount || 0
+                        skippedNoCourier: stats.skippedNoCourier || stats.unassignedCount || 0,
+                        lastUpdate: Date.now()
                     };
-                    this.divisionStates.set(cache.division_id, payload);
+                    this.divisionStates.set(String(cache.division_id), payload);
                     this.io.emit('robot_status', payload);
                     this.io.emit('division_status_update', payload);
+                    
+                    // v6.9: Also write to global status store for /api/turbo/statuses endpoint
+                    if (global.divisionStatusStore) {
+                        global.divisionStatusStore[`${payload.divisionId}_${payload.date}`] = payload;
+                    }
+                    
+                    // v6.9: Debug log for status emission
+                    logger.info(`[TurboCalculator] 📡 Status emitted: division=${payload.divisionId}, processed=${payload.processedCount}/${payload.totalCount}, phase=${payload.currentPhase}`);
 
                     // v6.3: If in global mode, also emit an aggregated status
                     if (this.globalStats) {
@@ -1710,6 +1749,9 @@ class OrderCalculator {
             // Update processedCount to match total processed orders
             // v5.180: processedCount should reflect: already-routed + newly-routed + unassigned
             stats.processedCount = stats.totalCount;
+            stats.currentPhase = 'complete';
+            stats.message = 'Calculation complete!';
+            emitStatus(); // Emit final status after all couriers processed
 
             // v5.195: Clean up obsolete routes that didn't match any of the calculated valid block signatures
             if (matchedExistingRouteIds.size > 0 && Route && cache.division_id) {
