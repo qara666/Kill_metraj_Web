@@ -44,6 +44,7 @@ export interface Route {
     totalDuration: number
     startAddress: string
     endAddress: string
+    isCircularRoute?: boolean
     isOptimized: boolean
     geoMeta?: any
     createdAt?: number

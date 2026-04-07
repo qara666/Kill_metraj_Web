@@ -77,8 +77,8 @@ export const DashboardApiSection: React.FC = () => {
             
             if (data.success) {
                 toast.success(`Priority calculation started for division ${user.divisionId}`);
-                // Update local state to show it's active
-                setAutoRoutingStatus({ isActive: true });
+                // v5.202: Update local state - set active and clear userStopped flag
+                setAutoRoutingStatus({ isActive: true, userStopped: false });
             } else {
                 toast.error(data.error || 'Failed to start priority calculation');
             }

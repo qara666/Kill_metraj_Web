@@ -85,6 +85,7 @@ export interface Route {
   transportationMode?: string;
   courier?: Courier | string;
   stopsCount?: number;
+  isCircularRoute?: boolean;
 
   // Route management
   isActive: boolean;

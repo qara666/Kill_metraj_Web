@@ -91,6 +91,15 @@ export const RouteCard: React.FC<RouteCardProps> = memo(({
                   НОВИЙ БЛОК
                 </span>
               )}
+              {route.isCircularRoute && (
+                <span className={clsx(
+                  "text-[8px] px-2 py-0.5 rounded-lg font-black uppercase tracking-[0.15em] flex items-center gap-1",
+                  isDark ? "bg-purple-500/10 text-purple-400 border border-purple-500/20" : "bg-purple-50 text-purple-700 border border-purple-200"
+                )} title="Маршрут замкнут кольцом (без базы)">
+                  <ArrowPathIcon className="w-2.5 h-2.5" />
+                  КРУГОВОЙ
+                </span>
+              )}
             </div>
             <p className="text-[10px] font-black opacity-30 uppercase tracking-[0.2em]">
               {route.orders.length} ЗАКАЗОВ В СПИСКЕ

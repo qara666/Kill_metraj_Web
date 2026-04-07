@@ -1663,6 +1663,7 @@ class OrderCalculator {
                         }
 
                         // v5.180: Apply 2-opt optimization if route was calculated and has enough points
+                        // v7.0: Also include implicit circular start/end (when no depot configured)
                         if (routeResult && validOrders.length >= 4) {
                             try {
                                 const routePoints = validOrders
@@ -1671,9 +1672,16 @@ class OrderCalculator {
 
                                 if (globalStartPoint) {
                                     routePoints.unshift({ lat: Number(globalStartPoint.lat), lng: Number(globalStartPoint.lng) });
+                                } else if (!globalEndPoint && routePoints.length > 1) {
+                                    // v7.0: No depot — mirror circular route: add first stop as implicit start
+                                    routePoints.unshift({ lat: routePoints[0].lat, lng: routePoints[0].lng });
                                 }
+
                                 if (globalEndPoint) {
                                     routePoints.push({ lat: Number(globalEndPoint.lat), lng: Number(globalEndPoint.lng) });
+                                } else if (!globalStartPoint && routePoints.length > 2) {
+                                    // v7.0: No depot — mirror circular route: add first stop as implicit end
+                                    routePoints.push({ lat: routePoints[1].lat, lng: routePoints[1].lng }); // index 1 because index 0 is already the implicit start
                                 }
 
                                 const optimized = this.optimizeRoute2Opt(routePoints, 50);
@@ -1831,6 +1839,7 @@ class OrderCalculator {
                                     endAddress: presets?.defaultEndAddress || null,
                                     startCoords: globalStartPoint, // v5.165: Save exact coordinates
                                     endCoords: globalEndPoint,
+                                    isCircularRoute: !globalStartPoint && !globalEndPoint && uniqueRouteOrders.length > 0, // v7.0: Flag for frontend
                                     geoMeta: { // v5.166: Save geoMeta for routeExport compatibility
                                         origin: globalStartPoint,
                                         destination: globalEndPoint,
@@ -2409,13 +2418,35 @@ class OrderCalculator {
         // Build points array: start -> order addresses -> end
         const points = [];
 
-        // Add start point if provided
-        if (startPoint) {
-            points.push({ lat: Number(startPoint.lat), lng: Number(startPoint.lng), type: 'start' });
+        // v7.0: CIRCULAR ROUTE FIX — When no depot (start/end) is configured but there are
+        // multiple stops, use the first order address as an IMPLICIT start/end to form a
+        // circular route: first_stop → all_stops → first_stop.
+        // This is the industry-standard logistics approach when no depot is defined and gives
+        // a much more realistic total distance than simply measuring A→B between stops.
+        const hasDepot = !!(startPoint || endPoint);
+        let effectiveStart = startPoint;
+        let effectiveEnd = endPoint;
+
+        if (!hasDepot && orders.length > 1) {
+            const firstWithCoords = orders.find(o =>
+                (o.coords?.lat && o.coords?.lng) || (o.lat && o.lng)
+            );
+            if (firstWithCoords) {
+                const implLat = Number(firstWithCoords.coords?.lat || firstWithCoords.lat);
+                const implLng = Number(firstWithCoords.coords?.lng || firstWithCoords.lng);
+                effectiveStart = { lat: implLat, lng: implLng, isImplicit: true };
+                effectiveEnd   = { lat: implLat, lng: implLng, isImplicit: true };
+                logger.info(`[TurboCalculator] 🔄 No depot — circular route via first stop (${implLat.toFixed(5)}, ${implLng.toFixed(5)})`);
+            }
+        }
+
+        // Add start point if provided (real depot OR implicit)
+        if (effectiveStart) {
+            points.push({ lat: Number(effectiveStart.lat), lng: Number(effectiveStart.lng), type: effectiveStart.isImplicit ? 'implicit-start' : 'start' });
         }
 
         // Add order addresses - v28.7: Deduplicate consecutive same-coordinates to optimize OSRM
-        let lastCoordKey = startPoint ? `${Number(startPoint.lat).toFixed(5)},${Number(startPoint.lng).toFixed(5)}` : null;
+        let lastCoordKey = effectiveStart ? `${Number(effectiveStart.lat).toFixed(5)},${Number(effectiveStart.lng).toFixed(5)}` : null;
 
         orders.forEach(o => {
             const lat = Number(o.coords?.lat || o.lat);
@@ -2429,13 +2460,13 @@ class OrderCalculator {
             }
         });
 
-        // Add end point if provided and not same as last point
-        if (endPoint) {
-            const lat = Number(endPoint.lat);
-            const lng = Number(endPoint.lng);
+        // Add end point if provided (real depot OR implicit) and not same as last point
+        if (effectiveEnd) {
+            const lat = Number(effectiveEnd.lat);
+            const lng = Number(effectiveEnd.lng);
             const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
             if (key !== lastCoordKey) {
-                points.push({ lat, lng, type: 'end' });
+                points.push({ lat, lng, type: effectiveEnd.isImplicit ? 'implicit-end' : 'end' });
             }
         }
 
@@ -2446,11 +2477,13 @@ class OrderCalculator {
         }
 
         const coordsStr = points.map(p => `${p.lng.toFixed(7)},${p.lat.toFixed(7)}`).join(';');
-        logger.info(`[TurboCalculator] 🛣️ Calculating route: ${points.length} pts, orders: ${orders.length}, path: ${coordsStr.slice(0, 50)}...`);
+        const routeModeStr = (effectiveStart?.isImplicit || effectiveEnd?.isImplicit) ? '🔄 circular/no-depot' : '📍 depot';
+        logger.info(`[TurboCalculator] 🛣️ [${routeModeStr}] Route: ${points.length} pts, orders: ${orders.length}, path: ${coordsStr.slice(0, 60)}...`);
 
-        if (startPoint && endPoint) {
-            const distHaversine = this.calculateDistance(startPoint, endPoint);
-            if (distHaversine > 100000) { // Check > 100km 
+        // Only warn about huge base-to-base if using REAL (non-implicit) depot points
+        if (effectiveStart && effectiveEnd && !effectiveStart.isImplicit && !effectiveEnd.isImplicit) {
+            const distHaversine = this.calculateDistance(effectiveStart, effectiveEnd);
+            if (distHaversine > 100000) { // Check > 100km
                 logger.warn(`[TurboCalculator] ⚠️ Base-to-Base distance is huge (${(distHaversine / 1000).toFixed(1)}km). Check settings!`);
             }
         }

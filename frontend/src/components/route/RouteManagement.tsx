@@ -492,11 +492,25 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
    // ─── Wire "ЗАПУСТИТЬ РАСЧЕТ" button from CourierCard ──────────────────────
    // The button fires this event globally. We listen here and recalculate
    // any routes that do not yet have a totalDistance (i.e. not geocoded).
+   const recalculateRouteRef = useRef(recalculateRoute);
+   useEffect(() => { recalculateRouteRef.current = recalculateRoute; }, [recalculateRoute]);
+   
    useEffect(() => {
-     const handler = async () => {
+     const handler = async (e: Event) => {
+       const customEvent = e as CustomEvent;
+       const targetCourierName = customEvent.detail?.courierName;
+       
        if (!excelData?.routes) return;
        
-       const routes: Route[] = excelData.routes;
+       let routes: Route[] = excelData.routes;
+       
+       // v5.202: Filter by courier if specified
+       if (targetCourierName) {
+         routes = routes.filter(r => 
+           normalizeCourierName(r.courier) === normalizeCourierName(targetCourierName)
+         );
+       }
+       
        const incomplete = routes.filter(r =>
          !r.totalDistance ||
          r.totalDistance === 0 ||
@@ -510,7 +524,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
        toast(`🔄 Запускаю расчёт ${incomplete.length} маршрут(ов)...`);
        for (const route of incomplete) {
-         await recalculateRoute(route);
+         await recalculateRouteRef.current(route);
          await new Promise(r => setTimeout(r, 50)); // yield to UI
        }
        toast.success(`✅ Расчёт завершён`);
@@ -518,7 +532,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
      window.addEventListener('km-force-auto-routing', handler);
      return () => window.removeEventListener('km-force-auto-routing', handler);
-   }, [excelData]); // Only re-setup if excelData object changes, not its internal properties
+   }, [excelData?.routes]);
 
   // Trigger on-demand geocoding when the returning modal is opened
 
