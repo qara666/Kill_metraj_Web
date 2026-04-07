@@ -1,5 +1,4 @@
 import React, { useMemo } from 'react';
-import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 import { 
   XMarkIcon, 
@@ -73,7 +72,7 @@ export const KpiAnalysisModal: React.FC<KpiAnalysisModalProps> = ({
 
   const percentile = Math.round(((fleetMetrics.total - fleetMetrics.rank + 1) / fleetMetrics.total) * 100);
 
-  return createPortal(
+  return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={onClose} />
       
@@ -203,7 +202,6 @@ export const KpiAnalysisModal: React.FC<KpiAnalysisModalProps> = ({
            </button>
         </div>
       </div>
-    </div>,
-    document.body
+    </div>
   );
 };
