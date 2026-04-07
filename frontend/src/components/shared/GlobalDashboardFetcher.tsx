@@ -9,6 +9,8 @@ import { normalizeCourierName } from '../../utils/data/courierName';
  * Fixed to ensure no UI crashes from stale references.
  * v5.154: Don't overwrite data if server returns empty but we have local data
  * v5.180: Validate and normalize backend data to match frontend expectations
+ * v5.200: Improved merge logic to preserve local routes when robot sends updates
+ * v5.201: Fixed courier merge to preserve local data and update metrics from server
  */
 export const GlobalDashboardFetcher: React.FC = () => {
     const { setExcelData, excelData } = useExcelData();
@@ -64,6 +66,64 @@ export const GlobalDashboardFetcher: React.FC = () => {
         return validated;
     }, []);
     
+    // v5.201: Merge couriers intelligently - preserve local data, update metrics from server
+    const mergeCouriers = (localCouriers: any[], serverCouriers: any[], routes: any[]): any[] => {
+        if (!localCouriers || localCouriers.length === 0) {
+            // No local couriers - use server couriers or calculate from routes
+            if (serverCouriers && serverCouriers.length > 0) {
+                return serverCouriers;
+            }
+            // Calculate from routes
+            return calculateCouriersFromRoutes(routes);
+        }
+        
+        // Build distance map from routes
+        const routeMetrics = new Map<string, { km: number; orders: number }>();
+        (routes || []).forEach((r: any) => {
+            const courier = normalizeCourierName(r.courier || r.courier_id || '');
+            if (!courier || courier === 'Не назначено') return;
+            const existing = routeMetrics.get(courier) || { km: 0, orders: 0 };
+            existing.km += Number(r.totalDistance || r.total_distance || 0);
+            existing.orders += Number(r.ordersCount || r.orders_count || r.orders?.length || 0);
+            routeMetrics.set(courier, existing);
+        });
+        
+        // Merge: keep local couriers, update metrics from routes
+        return localCouriers.map((c: any) => {
+            const normName = normalizeCourierName(c.name || '');
+            const metrics = routeMetrics.get(normName);
+            if (metrics && metrics.km > 0) {
+                return { 
+                    ...c, 
+                    distanceKm: Number(metrics.km.toFixed(2)), 
+                    calculatedOrders: metrics.orders 
+                };
+            }
+            return c;
+        });
+    };
+    
+    // Helper to calculate couriers from routes
+    const calculateCouriersFromRoutes = (routes: any[]): any[] => {
+        const courierMap = new Map<string, { km: number; orders: number }>();
+        (routes || []).forEach((r: any) => {
+            const courier = normalizeCourierName(r.courier || r.courier_id || '');
+            if (!courier || courier === 'Не назначено') return;
+            const existing = courierMap.get(courier) || { km: 0, orders: 0 };
+            existing.km += Number(r.totalDistance || r.total_distance || 0);
+            existing.orders += Number(r.ordersCount || r.orders_count || r.orders?.length || 0);
+            courierMap.set(courier, existing);
+        });
+        
+        return Array.from(courierMap.entries()).map(([name, metrics]) => ({
+            name,
+            distanceKm: Number(metrics.km.toFixed(2)),
+            calculatedOrders: metrics.orders,
+            isActive: true,
+            vehicleType: 'car'
+        }));
+    };
+    
     // Listen for real-time updates (inc. Robot calculation signals)
     // Synchronizes the received data into the global Excel context.
     useDashboardWebSocket({ 
@@ -74,6 +134,8 @@ export const GlobalDashboardFetcher: React.FC = () => {
                 
                 // v5.154: Don't overwrite existing data with empty data
                 // v5.180: Also check for routes - robot may send route updates without orders
+                // v5.200: Improved merge - preserve local orders and routes
+                // v5.201: Fixed courier merge to preserve local data
                 const hasNewOrders = validatedData.orders && validatedData.orders.length > 0;
                 const hasExistingOrders = excelData?.orders && excelData.orders.length > 0;
                 const hasNewRoutes = validatedData.routes && validatedData.routes.length > 0;
@@ -82,11 +144,31 @@ export const GlobalDashboardFetcher: React.FC = () => {
                     // New data has orders - use it
                     setExcelData(validatedData);
                 } else if (hasNewRoutes) {
-                    // v5.180: New data has routes - merge them in
+                    // v5.200: New data has routes - merge them intelligently
+                    // Priority: keep local routes, add new ones from server that don't conflict
+                    const existingRouteIds = new Set(
+                        (excelData?.routes || []).map((r: any) => String(r.id))
+                    );
+                    const newServerRoutes = (validatedData.routes || []).filter(
+                        (r: any) => !existingRouteIds.has(String(r.id))
+                    );
+                    const mergedRoutes = [
+                        ...(excelData?.routes || []),
+                        ...newServerRoutes
+                    ];
+                    
+                    // v5.201: Properly merge couriers - preserve local, update from routes
+                    const mergedCouriers = mergeCouriers(
+                        excelData?.couriers || [],
+                        validatedData.couriers || [],
+                        mergedRoutes
+                    );
+                    
                     setExcelData({
                         ...validatedData,
                         orders: excelData?.orders || validatedData.orders || [],
-                        couriers: validatedData.couriers || excelData?.couriers || [],
+                        couriers: mergedCouriers,
+                        routes: mergedRoutes
                     });
                 } else if (!hasExistingOrders) {
                     // No new orders AND no existing orders - OK to set

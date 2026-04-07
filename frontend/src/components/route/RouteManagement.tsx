@@ -36,6 +36,7 @@ import { isId0CourierName, normalizeCourierName } from '../../utils/data/courier
 import { getReturnETA, getAccurateReturnETA, getCourierSpeed, enrichRoutesWithCoords } from '../../utils/routes/courierETA'
 import { calculateDistance } from '../../utils/geoUtils'
 import { isOrderCompleted, isOrderCancelled } from '../../utils/data/orderStatus'
+import { DashboardHeader } from '../shared/DashboardHeader'
 
 // --- Hooks ---
 
@@ -72,7 +73,7 @@ interface RouteManagementProps {
 
 
 export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: propExcelData }) => {
-  const { excelData: contextExcelData, updateExcelData, saveManualOverrides } = useExcelData()
+  const { excelData: contextExcelData, updateExcelData, clearExcelData, saveManualOverrides } = useExcelData()
   const excelData = propExcelData || contextExcelData
 
   // Data loaded — no verbose debug logging in production path
@@ -106,6 +107,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
   const [sortRoutesByNewest] = useState(true)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [routeToDelete, setRouteToDelete] = useState<Route | null>(null)
+  
+  // v5.201: Force refresh trigger for all tabs after batch calculation
+  const [lastBatchUpdate, setLastBatchUpdate] = useState<number>(0)
   const [showAddressEditModal, setShowAddressEditModal] = useState(false)
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [routeAnomalies, setRouteAnomalies] = useState<Map<string, RouteAnomalyCheck>>(new Map())
@@ -1525,12 +1529,31 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
   const clearAllRoutes = () => {
     if (window.confirm('Вы уверены, что хотите удалить все маршруты?')) {
-      updateExcelData({ ...(excelData || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }), routes: [] }, true)
+      console.log('[RouteManagement] Deep clear initiating...');
+      
+      // 1. Wipe backend state via ExcelDataContext
+      clearExcelData({ skipServerWipe: false });
+      
+      // 2. Clear local storage explicitly
       try {
-        localStorage.removeItem('km_routes')
+        localStorage.removeItem('km_routes');
+        localStorage.removeItem('km_dashboard_processed_data');
+        localStorage.removeItem('km_manual_overrides');
       } catch (error) {
-        console.error('Error clearing routes from localStorage:', error)
+        console.error('Error clearing storage:', error);
       }
+      
+      // 3. Reset local state with force=true
+      updateExcelData({ 
+        orders: [], 
+        couriers: [], 
+        paymentMethods: [], 
+        routes: [], 
+        errors: [], 
+        summary: undefined 
+      } as any, true);
+      
+      toast.success('Все данные и маршруты удалены');
     }
   }
 
@@ -1616,79 +1639,46 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         <CalculationOverlay isDark={isDark} />
       )}
 
-      {/* Header */}
-      <div className={clsx(
-        'rounded-3xl p-8 shadow-lg border-2 overflow-hidden relative',
-        isDark
-          ? 'bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 border-gray-700'
-          : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-blue-200'
-      )}>
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10 opacity-50"></div>
-        <div className="relative z-10">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className={clsx(
-                'p-4 rounded-2xl shadow-lg',
+      <DashboardHeader
+        icon={MapIcon}
+        title="МАРШРУТНЫЙ ХАБ"
+        statusMetrics={[
+          {
+            label: "АКТИВНЫХ",
+            value: (excelData?.routes?.length ?? 0),
+            color: "bg-[#10b981]"
+          },
+          {
+            label: "КУРЬЕРОВ",
+            value: fleetStats.total
+          }
+        ]}
+        actions={
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => {
+                setShowHelpModal(true)
+                if (!hasSeenHelp) {
+                  localStorage.setItem('km_routes_has_seen_help', 'true')
+                  setHasSeenHelp(true)
+                }
+              }}
+              className={clsx(
+                'p-4 rounded-2xl transition-all hover:scale-105 active:scale-95',
                 isDark
-                  ? 'bg-gradient-to-br from-blue-600 to-purple-600'
-                  : 'bg-gradient-to-br from-blue-500 to-indigo-600'
-              )}>
-                <MapIcon className="w-8 h-8 text-white" />
-              </div>
-              <div>
-                <h1 className={clsx(
-                  'text-3xl font-bold mb-1 bg-gradient-to-r bg-clip-text text-transparent',
-                  isDark
-                    ? 'from-blue-400 to-purple-400'
-                    : 'from-blue-600 to-indigo-600'
-                )}>
-                  Управление маршрутами
-                </h1>
-                <p className={clsx('text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>
-                  Создавайте маршруты для курьеров и рассчитывайте расстояния
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-4">
-              <div className={clsx(
-                'flex items-center space-x-4 text-sm',
-                isDark ? 'text-gray-400' : 'text-gray-500'
-              )}>
-                <span>{fleetStats.total} курьеров, {(excelData?.routes?.length ?? 0)} маршрутов</span>
-              </div>
-              <Tooltip
-                content="Открыть справку и инструкции по управлению маршрутами"
-                position="left"
-              >
-                <button
-                  onClick={() => {
-                    setShowHelpModal(true)
-                    if (!hasSeenHelp) {
-                      localStorage.setItem('km_routes_has_seen_help', 'true')
-                      setHasSeenHelp(true)
-                    }
-                  }}
-                  className={clsx(
-                    'p-3 rounded-xl transition-all hover:scale-105',
-                    isDark
-                      ? 'bg-gray-700 hover:bg-gray-600 text-blue-400'
-                      : 'bg-white hover:bg-blue-50 text-blue-600 shadow-lg'
-                  )}
-                >
-                  <QuestionMarkCircleIcon className="w-6 h-6" />
-                </button>
-              </Tooltip>
-              <div className="flex items-center space-x-1">
-                <div className={`w-2 h-2 rounded-full ${googleMapsReady ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
-              <div className="flex items-center gap-4">
-                <ServiceStatusDashboard />
-              </div>
-              </div>
-
+                  ? 'bg-white/5 text-blue-400 hover:bg-white/10'
+                  : 'bg-white text-blue-600 shadow-lg border border-blue-100 hover:bg-blue-50'
+              )}
+              title="Открыть справку"
+            >
+              <QuestionMarkCircleIcon className="w-6 h-6" />
+            </button>
+            <div className="flex items-center gap-4 pl-4 border-l border-white/10">
+              <ServiceStatusDashboard />
             </div>
           </div>
-        </div>
-      </div>
+        }
+      />
 
       {/* Основная рабочая область: Сайдбар + Дашборд */}
       <>
@@ -2134,9 +2124,21 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                             const newRoutes: Route[] = [];
                             const allOrderIdsToUpdate = new Set<string>();
 
-                            // Step 1: Create all basic route objects
+                            // Create order lookup map from excelData for full order data
+                            const orderLookup = new Map<string, Order>();
+                            (excelData?.orders || []).forEach((o: Order) => {
+                                orderLookup.set(String(o.id), o);
+                                if (o.orderNumber) orderLookup.set(String(o.orderNumber), o);
+                            });
+
+                            // Step 1: Create all basic route objects with full order data
                             groups.forEach((group, index) => {
-                              const groupOrders = group.orders as Order[];
+                              const groupOrders = (group.orders as Order[]).map(o => {
+                                // Enrich with full order data from excelData
+                                const fullOrder = orderLookup.get(String(o.id)) || orderLookup.get(String(o.orderNumber)) || o;
+                                return { ...fullOrder, ...o }; // Merge to keep latest data
+                              });
+                              
                               const newRoute: Route = {
                                 // v35.9.35: Stronger unique ID to avoid collisions
                                 id: `route_${Date.now()}_idx${index}_rnd${Math.floor(Math.random() * 10000)}`,
@@ -2158,7 +2160,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
                             // v35.9.35: Giant Batch Geocoding + Parallel Calculation (Quantum Mode)
                             setIsCalculating(true)
-                            useCalculationProgress.getState().setProgress(5)
+                            useCalculationProgress.getState().setProgress(1)
+                            useCalculationProgress.getState().setMessage('Подготовка данных...')
 
                             // 1. Collect ALL unique addresses from all groups
                             const allOrdersInAllGroups = groups.flatMap(g => g.orders as Order[]);
@@ -2170,6 +2173,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                             if (endAddress) uniqueAddresses.add(cleanAddressForRoute(endAddress));
 
                             console.log(`[Quantum] Starting Giant Batch Geocode for ${uniqueAddresses.size} unique addresses...`);
+                            useCalculationProgress.getState().setProgress(5)
+                            useCalculationProgress.getState().setMessage(`Геокодинг ${uniqueAddresses.size} адресов...`)
 
                             // 2. Execute one giant batch geocode for everything
                             const addrCache = await batchGeocode(
@@ -2179,7 +2184,8 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                               }))
                             );
 
-                            useCalculationProgress.getState().setProgress(30);
+                            useCalculationProgress.getState().setProgress(30)
+                            useCalculationProgress.getState().setMessage(`Расчет ${newRoutes.length} маршрутов...`)
                             console.log(`[Quantum] Giant Geocode complete. Calculating ${newRoutes.length} routes in parallel...`);
 
                             // 3. Sequential chunking calculation with shared cache (Phase 7 Extreme Optimization)
@@ -2191,7 +2197,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                             for (const route of newRoutes) {
                               try {
                                 // Yield main thread to browser to paint UI
-                                await new Promise(r => setTimeout(r, 10));
+                                await new Promise(r => setTimeout(r, 5));
 
                                 const result = await calculateRouteDistance(route, true, addrCache);
                                 calculatedRoutes.push(result);
@@ -2201,18 +2207,16 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                               } finally {
                                 completedRoutes++;
                                 const progressPct = Math.round(30 + ((completedRoutes / newRoutes.length) * 65));
-
-                                // Phase 7: Zero Re-Render UI Update directly to store
-                                if (progressPct === 95 || (Date.now() - (window as any)._lastProgressUpdate > 200)) {
-                                  useCalculationProgress.getState().setProgress(progressPct);
-                                  (window as any)._lastProgressUpdate = Date.now();
-                                }
+                                useCalculationProgress.getState().setProgress(progressPct)
+                                useCalculationProgress.getState().setMessage(`Маршрут ${completedRoutes}/${newRoutes.length}...`)
                               }
                             }
 
                             useCalculationProgress.getState().setProgress(95)
+                            useCalculationProgress.getState().setMessage('Сохранение результатов...')
 
                             // Single atomic state commit for all calculated routes
+                            // Also recalculate courier metrics from routes
                             updateExcelData((prev: any) => {
                               const updatedRouteMap = new Map<string, Route>();
                               calculatedRoutes.forEach(r => { if (r) updatedRouteMap.set(r.id, r); });
@@ -2237,21 +2241,56 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                               );
                               const finalRoutes = [
                                 ...existingRoutes,
-                                // Use calculated route if available, else use base uncalculated route
                                 ...newRoutes.map(r => updatedRouteMap.get(r.id) || r)
                               ];
 
-                              console.log(`[Батч] Финальный коммит: ${finalRoutes.length} маршрутов, ${updatedOrders.filter((o: any) => allOrderIdsToUpdate.has(String(o.id))).length} обновленных заказов`);
+                              // Recalculate courier metrics from routes
+                              const courierMetrics = new Map<string, { km: number; orders: number }>();
+                              finalRoutes.forEach((r: any) => {
+                                const cName = r?.courier || courier;
+                                if (!cName || cName === 'Не назначено') return;
+                                const existing = courierMetrics.get(cName) || { km: 0, orders: 0 };
+                                existing.km += Number(r.totalDistance || 0);
+                                existing.orders += Number(r.ordersCount || r.orders?.length || 0);
+                                courierMetrics.set(cName, existing);
+                              });
+
+                              // Update couriers with new metrics
+                              let updatedCouriers = (prev?.couriers || []).map((c: any) => {
+                                const metrics = courierMetrics.get(c.name);
+                                if (metrics) {
+                                  return { ...c, distanceKm: Number(metrics.km.toFixed(2)), calculatedOrders: metrics.orders };
+                                }
+                                return c;
+                              });
+
+                              // Add new couriers from routes if not exist
+                              courierMetrics.forEach((metrics, cName) => {
+                                if (!updatedCouriers.some((c: any) => c.name === cName)) {
+                                  updatedCouriers.push({
+                                    name: cName,
+                                    distanceKm: Number(metrics.km.toFixed(2)),
+                                    calculatedOrders: metrics.orders,
+                                    isActive: true,
+                                    vehicleType: 'car'
+                                  });
+                                }
+                              });
+
+                              console.log(`[Батч] Финальный коммит: ${finalRoutes.length} маршрутов, ${updatedOrders.filter((o: any) => allOrderIdsToUpdate.has(String(o.id))).length} обновленных заказов, ${updatedCouriers.length} курьеров`);
 
                               return {
                                 ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
                                 routes: finalRoutes,
-                                orders: updatedOrders
+                                orders: updatedOrders,
+                                couriers: updatedCouriers
                               };
                             }, true /* force: true to ensure new routes are NOT dropped by protectData */);
 
                             const successCount = calculatedRoutes.filter(Boolean).length;
                             if (successCount > 0) {
+                              useCalculationProgress.getState().setProgress(100)
+                              useCalculationProgress.getState().setMessage(`Готово! ${successCount} маршрутов`)
                               toast.success(`Расчитано ${successCount} маршрутов`);
                             } else {
                               toast.error('Не удалось рассчитать маршруты. Проверьте консоль.');
@@ -2261,7 +2300,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                             toast.error('Ошибка при создании группы маршрутов');
                           } finally {
                             setIsCalculating(false)
-                            setTimeout(() => useCalculationProgress.getState().setProgress(0), 1000)
+                            setTimeout(() => {
+                              useCalculationProgress.getState().setProgress(0)
+                              useCalculationProgress.getState().setMessage('')
+                            }, 2000)
                           }
                         }}
                         />
@@ -2452,7 +2494,6 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
                       route={route}
                       isDark={isDark}
                       courierVehicle={getCourierVehicleType(route.courier)}
-                      anomalyCheck={routeAnomalies.get(route.id)}
                       formatDistance={formatDistance}
                       formatDuration={formatDuration}
                       onOpenGoogleMaps={openRouteInGoogleMaps}

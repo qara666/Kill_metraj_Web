@@ -116,6 +116,63 @@ router.get('/:id', (req, res) => {
     res.json({ success: true, data: { id: req.params.id } });
 });
 
+// POST /api/routes/save - Save or update a calculated route (v5.200)
+router.post('/save', auditLog('save_calculated_route'), async (req, res) => {
+    try {
+        const route = req.body;
+        if (!route || !route.courier) {
+            return res.status(400).json({ success: false, error: 'Route data and courier are required' });
+        }
+
+        const divisionId = route.division_id || req.user?.divisionId || 'all';
+        const targetDate = route.targetDate || (route.route_data?.target_date) || new Date().toISOString().split('T')[0];
+
+        // Format for DB
+        const dbData = {
+            courier_id: route.courier || route.courier_id,
+            division_id: String(divisionId),
+            total_distance: parseFloat(route.totalDistance || 0),
+            total_duration: parseInt(route.totalDuration || 0) * 60, // convert back to seconds
+            engine_used: route.engine_used || 'manual_frontend',
+            orders_count: route.orders?.length || route.ordersCount || 0,
+            route_data: {
+                ...route,
+                target_date: targetDate,
+                last_saved_by: req.user?.id
+            },
+            updated_at: new Date()
+        };
+
+        // Try to find existing route for this courier and date (and division)
+        // v5.200: Match by courier/date
+        const { Op } = require('sequelize');
+        let dbRoute = await Route.findOne({
+            where: {
+                courier_id: dbData.courier_id,
+                [Op.and]: [
+                    sequelize.where(
+                        sequelize.literal("route_data->>'target_date'"),
+                        targetDate
+                    )
+                ]
+            }
+        });
+
+        if (dbRoute) {
+            await dbRoute.update(dbData);
+            logger.info(`[RouteAPI] Updated route for ${dbData.courier_id} on ${targetDate}`);
+        } else {
+            dbRoute = await Route.create(dbData);
+            logger.info(`[RouteAPI] Created new route for ${dbData.courier_id} on ${targetDate}`);
+        }
+
+        res.json({ success: true, data: dbRoute });
+    } catch (error) {
+        logger.error('Error saving calculated route:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // POST /api/routes - Create new route
 router.post('/', auditLog('create_route'), (req, res) => {
     res.json({ success: true, data: { ...req.body, id: 'route_new' } });

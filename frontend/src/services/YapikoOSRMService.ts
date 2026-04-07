@@ -75,7 +75,7 @@ export class YapikoOSRMService {
         const finalUrl = this.getMaybeProxiedUrl(targetUrl);
 
         try {
-          const response = await fetch(finalUrl, { signal: AbortSignal.timeout(10000) });
+          const response = await fetch(finalUrl, { signal: AbortSignal.timeout(5000) });
           
           if (!response.ok) {
               const errText = await response.text().catch(() => '');
@@ -142,7 +142,7 @@ export class YapikoOSRMService {
     const finalUrl = this.getMaybeProxiedUrl(targetUrl);
 
     try {
-      const response = await fetch(finalUrl, { signal: AbortSignal.timeout(15000) });
+      const response = await fetch(finalUrl, { signal: AbortSignal.timeout(5000) });
       if (!response.ok) return null;
       
       const data = await response.json();

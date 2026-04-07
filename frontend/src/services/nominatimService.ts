@@ -37,18 +37,117 @@ const UA_ABBREV: Array<[string, string]> = [
     ['просп\\.', 'проспект'],
     ['пр-т\\.', 'проспект'],
     ['пр-т ', 'проспект '],
+    ['пр\\.', 'проспект'],
     ['бул\\.', 'бульвар'],
     ['пл\\.', 'площа'],
     ['пров\\.', 'провулок'],
+    ['пер\\.', 'провулок'],
     ['шос\\.', 'шосе'],
     ['наб\\.', 'набережна'],
+    ['м-н', 'майдан'],
+    ['ал\\.', 'алея'],
+    ['узв\\.', 'узвіз'],
 ]
 
-function expandUkrAbbrev(address: string): string {
+// City-specific normalizations for all major Ukrainian cities
+const CITY_SPECIFIC: Record<string, Array<[RegExp, string]>> = {
+    'харків': [
+        [/\bм\s+Героїв\s+Харкова\b/gi, 'майдан Героїв Харкова'],
+        [/\bм\s+Героев\s+Харькова\b/gi, 'майдан Героїв Харкова'],
+        [/\bпл\s+Свободи\b/gi, 'майдан Свободи'],
+        [/\bпл\s+Свободы\b/gi, 'майдан Свободи'],
+        [/\bПолтавський\s+Шлях\b/gi, 'Полтавський Шлях'],
+        [/\bПолтавский\s+Шлях\b/gi, 'Полтавський Шлях'],
+        [/\bГероїв\s+Праці\b/gi, 'Героїв Праці'],
+        [/\bГероев\s+Труда\b/gi, 'Героїв Праці'],
+        [/\bМосковський\s+просп\b/gi, 'проспект Героїв Харкова'],
+        [/\bМосковский\s+просп\b/gi, 'проспект Героїв Харкова'],
+    ],
+    'одеса': [
+        [/\bДерибасівська\b/gi, 'Дерибасівська'],
+        [/\bДерибасовская\b/gi, 'Дерибасівська'],
+        [/\bДерибаївська\b/gi, 'Дерибасівська'],
+        [/\bГрецька\b/gi, 'Грецька'],
+        [/\bГреческая\b/gi, 'Грецька'],
+        [/\bРішельєвська\b/gi, 'Рішельєвська'],
+        [/\bРишельевская\b/gi, 'Рішельєвська'],
+        [/\bПреображенська\b/gi, 'Преображенська'],
+        [/\bПреображенская\b/gi, 'Преображенська'],
+        [/\bКанатна\b/gi, 'Канатна'],
+        [/\bКанатная\b/gi, 'Канатна'],
+        [/\bФранцузький\s+бул\b/gi, 'Французький бульвар'],
+        [/\bФранцузский\s+бул\b/gi, 'Французький бульвар'],
+    ],
+    'дніпро': [
+        [/\bпросп\s+Дмитра\s+Яворницького\b/gi, 'проспект Дмитра Яворницького'],
+        [/\bпросп\s+Дмитрия\s+Яворницкого\b/gi, 'проспект Дмитра Яворницького'],
+        [/\bпр\s+Яворницького\b/gi, 'проспект Дмитра Яворницького'],
+        [/\bпр\s+Яворницкого\b/gi, 'проспект Дмитра Яворницького'],
+        [/\bпр\s+Карла\s+Маркса\b/gi, 'проспект Дмитра Яворницького'],
+        [/\bНабережна\s+Перемоги\b/gi, 'набережна Перемоги'],
+        [/\bНабережная\s+Победы\b/gi, 'набережна Перемоги'],
+        [/\bНабережна\s+Заводська\b/gi, 'набережна Заводська'],
+        [/\bНабережная\s+Заводская\b/gi, 'набережна Заводська'],
+        [/\bвул\s+Січеславська\b/gi, 'вулиця Січеславська'],
+        [/\bвул\s+Сичеславская\b/gi, 'вулиця Січеславська'],
+        [/\bвул\s+Володимира\s+Мономаха\b/gi, 'вулиця Володимира Мономаха'],
+        [/\bвул\s+Владимира\s+Мономаха\b/gi, 'вулиця Володимира Мономаха'],
+        [/\bвул\s+Академіка\s+Лазаряна\b/gi, 'вулиця Академіка Лазаряна'],
+        [/\bвул\s+Академика\s+Лазаряна\b/gi, 'вулиця Академіка Лазаряна'],
+    ],
+    'полтава': [
+        [/\bвул\s+Європейська\b/gi, 'вулиця Європейська'],
+        [/\bвул\s+Европейская\b/gi, 'вулиця Європейська'],
+        [/\bКругова\b/gi, 'Кругова'],
+        [/\bвул\s+Незалежності\s+України\b/gi, 'вулиця Незалежності України'],
+        [/\bвул\s+Независимости\s+Украины\b/gi, 'вулиця Незалежності України'],
+        [/\bвул\s+Соборності\b/gi, 'вулиця Соборності'],
+        [/\bвул\s+Соборности\b/gi, 'вулиця Соборності'],
+        [/\bпросп\s+Богдана\s+Хмельницького\b/gi, 'проспект Богдана Хмельницького'],
+        [/\bпросп\s+Богдана\s+Хмельницкого\b/gi, 'проспект Богдана Хмельницького'],
+    ],
+    'київ': [
+        [/\bХрещатик\b/gi, 'Хрещатик'],
+        [/\bКрещатик\b/gi, 'Хрещатик'],
+        [/\bМайдан\s+Незалежності\b/gi, 'майдан Незалежності'],
+        [/\bМайдан\s+Независимости\b/gi, 'майдан Незалежності'],
+        [/\bпросп\s+Перемоги\b/gi, 'проспект Перемоги'],
+        [/\bпросп\s+Победы\b/gi, 'проспект Перемоги'],
+        [/\bпросп\s+Берестейський\b/gi, 'проспект Берестейський'],
+        [/\bпросп\s+Повітрофлотський\b/gi, 'проспект Повітрофлотський'],
+        [/\bпросп\s+Степана\s+Бандери\b/gi, 'проспект Степана Бандери'],
+        [/\bпросп\s+Валерія\s+Лобановського\b/gi, 'проспект Валерія Лобановського'],
+        [/\bпросп\s+Академіка\s+Глушкова\b/gi, 'проспект Академіка Глушкова'],
+    ],
+}
+
+function normalizeCityKey(city: string): string {
+    const lc = city.toLowerCase().trim()
+    if (lc.includes('харк') || lc.includes('харь')) return 'харків'
+    if (lc.includes('одес')) return 'одеса'
+    if (lc.includes('дніп') || lc.includes('днеп')) return 'дніпро'
+    if (lc.includes('полтав')) return 'полтава'
+    if (lc.includes('київ') || lc.includes('киев') || lc.includes('kyiv') || lc.includes('kiev')) return 'київ'
+    return 'київ'
+}
+
+function expandUkrAbbrev(address: string, cityBias?: string): string {
     let result = address
     for (const [abbrev, full] of UA_ABBREV) {
         result = result.replace(new RegExp(abbrev, 'gi'), `${full} `)
     }
+    
+    // Apply city-specific normalizations
+    if (cityBias) {
+        const cityKey = normalizeCityKey(cityBias)
+        const specific = CITY_SPECIFIC[cityKey]
+        if (specific) {
+            for (const [pattern, replacement] of specific) {
+                result = result.replace(pattern, replacement)
+            }
+        }
+    }
+    
     return result.replace(/\s+/g, ' ').trim()
 }
 
@@ -144,7 +243,7 @@ export class NominatimService {
      * Returns results in a format compatible with RawGeoCandidate.
      */
     static async geocode(address: string, cityBias?: string): Promise<any[]> {
-        const expanded = expandUkrAbbrev(address)
+        const expanded = expandUkrAbbrev(address, cityBias)
         const city = cityBias || 'Київ'
         
         const bounds = getCityBounds(city)
@@ -158,16 +257,22 @@ export class NominatimService {
         }
 
         const lowerExpanded = expanded.toLowerCase()
-        const hasCity = lowerExpanded.includes(city.toLowerCase()) || 
-                      (city.toLowerCase() === 'київ' && lowerExpanded.includes('киев')) ||
-                      (city.toLowerCase() === 'киев' && lowerExpanded.includes('київ'))
+        const cityLower = city.toLowerCase()
+        const hasCity = lowerExpanded.includes(cityLower) || 
+                      (cityLower === 'київ' && lowerExpanded.includes('киев')) ||
+                      (cityLower === 'киев' && lowerExpanded.includes('київ')) ||
+                      (cityLower === 'харків' && lowerExpanded.includes('харьков')) ||
+                      (cityLower === 'харьков' && lowerExpanded.includes('харків')) ||
+                      (cityLower === 'одеса' && lowerExpanded.includes('одесса')) ||
+                      (cityLower === 'одесса' && lowerExpanded.includes('одеса')) ||
+                      (cityLower === 'дніпро' && (lowerExpanded.includes('днепр') || lowerExpanded.includes('дніпропетровськ'))) ||
+                      (cityLower === 'днепр' && (lowerExpanded.includes('дніпро') || lowerExpanded.includes('днепропетровск')))
         const hasCountry = lowerExpanded.includes('україна') || lowerExpanded.includes('украина') || lowerExpanded.includes('ukraine')
 
         let query = expanded
         if (!hasCity) query = `${expanded}, ${city}`
         if (!hasCountry) {
-            const country = (city === 'Киев' || city === 'Київ' || lowerExpanded.includes('киев') || lowerExpanded.includes('київ')) ? 'Україна' : 'Україна'
-            query = `${query}, ${country}`
+            query = `${query}, Україна`
         }
 
         const results = await this._query(query, viewbox, bounded)
@@ -179,6 +284,23 @@ export class NominatimService {
             const q2 = `${streetOnly}, ${city}, Україна`;
             const results2 = await this._query(q2, viewbox, bounded);
             if (results2.length > 0) return results2;
+        }
+
+        // Strategy 3: Russian name variant (many OSM entries still use Russian)
+        const ruVariants = expanded
+            .replace(/вулиця/gi, 'улица')
+            .replace(/проспект/gi, 'проспект')
+            .replace(/бульвар/gi, 'бульвар')
+            .replace(/площа/gi, 'площадь')
+            .replace(/провулок/gi, 'переулок')
+            .replace(/набережна/gi, 'набережная')
+            .replace(/майдан/gi, 'площадь')
+            .replace(/алея/gi, 'аллея')
+            .replace(/узвіз/gi, 'спуск')
+        if (ruVariants !== expanded) {
+            const q3 = `${ruVariants}, ${city}, Україна`;
+            const results3 = await this._query(q3, viewbox, bounded);
+            if (results3.length > 0) return results3;
         }
 
         return []
@@ -199,8 +321,9 @@ export class NominatimService {
             url.searchParams.append('format', 'jsonv2')
             url.searchParams.append('addressdetails', '1')
             url.searchParams.append('countrycodes', 'ua')
-            url.searchParams.append('category', 'building,place,highway') // v23.0: High precision mode
-            url.searchParams.append('limit', '5')
+            // v9.0: REMOVED 'category' filter — it was silently blocking valid addresses
+            // (amenities, residential areas, named buildings not tagged as building/place/highway)
+            url.searchParams.append('limit', '8')
             
             if (viewbox) {
                 url.searchParams.append('viewbox', viewbox)

@@ -332,7 +332,7 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
             /^[а-яёіїє]{2,20}\s+[а-яёіїє]{2,20}$/i,
             /^[a-z]{2,20}\s+[a-z]{2,20}$/i,
             /^зона\s+\d+/i,
-            /исполнен|доставляется|в обработке/i,
+            /исполнен|в обработке/i,
             /^[а-яёіїєa-z]{3,15}\s+\d{1,2}[\.\/]\d{1,2}[\.\/]\d{2,4}/i,
             /^[а-яёіїєa-z]{3,15}\s+\d{1,2}[\.\/]\d{1,2}\s+[а-яёіїєa-z]{2,5}$/i,
             /контроль|шеф|дн$/i,
@@ -354,7 +354,7 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
         ];
 
         const hasAddressMarker = addressMarkers.some(pattern => pattern.test(lowerStr));
-        const isNotPhone = !/^[\d\+\-\(\)\s]+$/.test(str);
+        const isNotPhone = !/^[\d\+\-\(\)\s]{7,}$/.test(str);
         const isNotEmail = !/^[\w\.-]+@[\w\.-]+\.\w+$/.test(str);
         const isNotOnlyNumber = !/^\d+$/.test(str);
         const hasText = str.length > 2 && /[а-яА-ЯёЁіІїЇєЄa-zA-Z]/.test(str);
@@ -365,7 +365,8 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
                 return true;
             }
         }
-        return hasAddressMarker && isNotPhone && isNotEmail && isNotOnlyNumber && hasText && hasNumber;
+        // v42.2: Softened - address is valid if it has markers OR (text AND number)
+        return (hasAddressMarker && hasText) || (hasText && hasNumber && isNotPhone && isNotOnlyNumber);
     };
 
     if (address && !isValidAddress(address, 'адрес')) {
@@ -448,6 +449,7 @@ const createOrderFromData = (rowData: Record<string, any>, orderNumber: string, 
         customerName: getValue(rowData, ['клиент', 'customer', 'имя_клиента', 'имя']) || '',
         isSelected: false,
         isInRoute: false,
+        excel_index: index, // v42.4: Save index for ID generation
         ...rowData
     });
 };

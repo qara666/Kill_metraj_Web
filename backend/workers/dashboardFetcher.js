@@ -925,7 +925,12 @@ class DashboardFetcher {
             const id = String(c.id || c.name || '');
             if (id && id !== 'ID:0' && id !== 'по') {
                 const existingCourier = merged.get(id) || {};
-                merged.set(id, { ...existingCourier, ...c });
+                
+                // V7: Preserve robot-calculated metrics from existing cache
+                const distanceKm = existingCourier.distanceKm || c.distanceKm;
+                const calculatedOrders = existingCourier.calculatedOrders || c.calculatedOrders;
+                
+                merged.set(id, { ...existingCourier, ...c, distanceKm, calculatedOrders });
             }
         });
 

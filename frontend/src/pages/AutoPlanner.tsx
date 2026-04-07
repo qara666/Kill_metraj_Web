@@ -3,6 +3,7 @@ import { useDashboardWebSocket } from '../hooks/useDashboardWebSocket'
 import { clsx } from 'clsx'
 import { useTheme } from '../contexts/ThemeContext'
 import { ClockIcon, ChartBarIcon, QuestionMarkCircleIcon } from '@heroicons/react/24/outline'
+import { DashboardHeader } from '../components/shared/DashboardHeader'
 
 import { SparklesIcon as SparklesIconSolid } from '@heroicons/react/24/solid'
 import { routeHistory } from '../utils/routes/routeHistory'
@@ -262,53 +263,37 @@ export const AutoPlanner: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            {/* Заголовок с градиентом */}
-            <div className={clsx(
-                'rounded-3xl p-8 shadow-2xl border-2 overflow-hidden relative',
-                isDark ? 'bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 border-gray-700' : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-blue-200'
-            )}>
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10 opacity-50"></div>
-                <div className="relative z-10">
-                    <div className="flex items-center justify-between mb-6">
-                        <div className="flex items-center gap-4">
-                            <div className={clsx(
-                                'p-4 rounded-2xl shadow-lg',
-                                isDark ? 'bg-gradient-to-br from-blue-600 to-purple-600' : 'bg-gradient-to-br from-blue-500 to-indigo-600'
-                            )}>
-                                <SparklesIconSolid className="w-8 h-8 text-white" />
-                            </div>
-                            <div>
-                                <h2 className={clsx(
-                                    'text-3xl font-bold mb-1 bg-gradient-to-r bg-clip-text text-transparent',
-                                    isDark ? 'from-blue-400 to-purple-400' : 'from-blue-600 to-indigo-600'
-                                )}>
-                                    Автоматическая оптимизация маршрутов
-                                </h2>
-                                <p className={clsx('text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>
-                                    Умное планирование маршрутов с учетом трафика и приоритетов
-                                </p>
-                            </div>
-                        </div>
-                        <Tooltip content="Открыть справку и инструкции" position="left">
-                            <button
-                                onClick={() => {
-                                    setShowHelpModal(true)
-                                    if (!hasSeenHelp) {
-                                        localStorage.setItem('km_has_seen_help', 'true')
-                                        setHasSeenHelp(true)
-                                    }
-                                }}
-                                className={clsx(
-                                    'p-3 rounded-xl transition-all hover:scale-105',
-                                    isDark ? 'bg-gray-700 hover:bg-gray-600 text-blue-400' : 'bg-white hover:bg-blue-50 text-blue-600 shadow-lg'
-                                )}
-                            >
-                                <QuestionMarkCircleIcon className="w-6 h-6" />
-                            </button>
-                        </Tooltip>
-                    </div>
-                </div>
-            </div>
+            <DashboardHeader
+                icon={SparklesIconSolid}
+                title="РОБОТ КЕРУВАННЯ"
+                subtitle="АВТОМАТИЧНА ОПТИМІЗАЦІЯ"
+                statusMetrics={[
+                    {
+                        label: "ЗАКАЗІВ ДЛЯ ПЛАНУ",
+                        value: filteredOrders.length,
+                        color: "bg-purple-500"
+                    }
+                ]}
+                actions={
+                    <Tooltip content="Открыть справку и инструкции" position="left">
+                        <button
+                            onClick={() => {
+                                setShowHelpModal(true)
+                                if (!hasSeenHelp) {
+                                    localStorage.setItem('km_has_seen_help', 'true')
+                                    setHasSeenHelp(true)
+                                }
+                            }}
+                            className={clsx(
+                                'p-3 rounded-xl transition-all hover:scale-105',
+                                isDark ? 'bg-gray-700 hover:bg-gray-600 text-blue-400' : 'bg-white hover:bg-blue-50 text-blue-600 shadow-lg'
+                            )}
+                        >
+                            <QuestionMarkCircleIcon className="w-6 h-6" />
+                        </button>
+                    </Tooltip>
+                }
+            />
 
             {/* Основной контент */}
             <div className={clsx(
@@ -378,7 +363,7 @@ export const AutoPlanner: React.FC = () => {
                 {excelData && (
                     <FiltersSection
                         isDark={isDark}
-                        ordersCount={excelData.orders.length}
+                        ordersCount={excelData?.orders?.length || 0}
                         filteredOrdersCount={filteredOrders.length}
                         isFiltersExpanded={isFiltersExpanded}
                         setIsFiltersExpanded={setIsFiltersExpanded}
@@ -401,9 +386,9 @@ export const AutoPlanner: React.FC = () => {
                             trafficAdvisory === 'critical' ? (isDark ? 'border-red-700 bg-red-900/20 text-red-100' : 'border-red-200 bg-red-50 text-red-700') : trafficAdvisory === 'high' ? (isDark ? 'border-yellow-700 bg-yellow-900/20 text-yellow-100' : 'border-yellow-200 bg-yellow-50 text-yellow-800') : (isDark ? 'border-emerald-700 bg-emerald-900/20 text-emerald-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700')
                         )}>
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                                <span className="font-semibold text-sm">Трафик {new Date(trafficSnapshot.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>
-                                <span>Средняя скорость: {trafficSnapshot.stats.avgSpeed} км/ч</span>
-                                <span>Критических: {trafficSnapshot.stats.criticalCount}</span>
+                                <span className="font-semibold text-sm">Трафик {new Date(trafficSnapshot?.timestamp || Date.now()).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>
+                                <span>Средняя скорость: {trafficSnapshot?.stats?.avgSpeed || 0} км/ч</span>
+                                <span>Критических: {trafficSnapshot?.stats?.criticalCount || 0}</span>
                             </div>
                         </div>
                     )}

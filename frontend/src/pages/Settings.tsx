@@ -17,6 +17,7 @@ import { localStorageUtils } from '../utils/ui/localStorage'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { clsx } from 'clsx'
+import { DashboardHeader } from '../components/shared/DashboardHeader'
 import { CityBiasSection } from '../components/zone/CityBiasSection'
 import { CollapsibleSection } from '../components/shared/CollapsibleSection'
 import { KmlPreviewMap } from '../components/zone/KmlPreviewMap'
@@ -316,17 +317,12 @@ export const Settings: React.FC = () => {
 
   return (
     <div className={clsx('space-y-6', isDark ? 'text-gray-100' : 'text-gray-900')}>
-      <div className={clsx('rounded-2xl shadow-lg border p-8', isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}>
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold">Настройки</h1>
-            <p className={clsx('mt-1 text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>Настройка приложения и API ключей</p>
-          </div>
-          <div className="flex items-center gap-4">
-            {isLoading && <LoadingSpinner size="md" />}
-          </div>
-        </div>
-      </div>
+      <DashboardHeader
+        icon={CogIcon}
+        title="ХАБ НАЛАШТУВАНЬ"
+        subtitle="КОНФІГУРАЦІЯ ТА API"
+        actions={isLoading ? <LoadingSpinner size="md" /> : null}
+      />
 
       <div className={clsx('rounded-2xl shadow-lg border p-8', isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">

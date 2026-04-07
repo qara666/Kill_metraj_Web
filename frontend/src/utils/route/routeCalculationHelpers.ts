@@ -244,6 +244,7 @@ export function groupOrdersByTimeWindow(
                 // v5.127: Final fallback: arrival + 30 mins
                 plannedTime = arrivalTime + 30 * 60 * 1000;
             } else {
+                console.warn(`[Grouping] Order #${order.orderNumber} (ID: ${order.id}) lacks ANY time anchor (planned/kitchen/arrival/completion). Status: ${order.status}. Falling to 'no time' group.`);
                 noTimeOrders.push(order);
                 return;
             }

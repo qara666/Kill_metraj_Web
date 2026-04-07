@@ -115,13 +115,21 @@ export const useDashboardWebSocket = ({
 
                 // v5.119: Content-based Diffing (Hyper-Drive Sync)
                 // Filter out volatile fields like 'updatedAt' if they exist, to only trigger on real changes.
-                const currentSignature = JSON.stringify(ordersRaw.map((o: any) => ({
-                    id: o.orderNumber || o.id,
-                    s: o.status,
-                    c: o.courier || o.driver,
-                    a: o.address,
-                    t: o.plannedTime || o.deliverBy
-                })));
+                const currentSignature = JSON.stringify({
+                    orders: ordersRaw.map((o: any) => ({
+                        id: o.orderNumber || o.id,
+                        s: o.status,
+                        c: o.courier || o.driver,
+                        a: o.address,
+                        t: o.plannedTime || o.deliverBy
+                    })),
+                    // v6.9: MUST track courier metrics to trigger re-render when background engine finishes!
+                    couriers: (response.data.couriers || []).map((c: any) => ({
+                        n: c.name || c.courierName,
+                        d: c.distanceKm || 0,
+                        o: c.calculatedOrders || 0
+                    }))
+                });
 
                 if (currentSignature === lastDataSignatureRef.current && !isManual) {
                     logger.info(`[Sync] Skipping update — no content change detected (${ordersCount} orders)`);
@@ -280,8 +288,18 @@ export const useDashboardWebSocket = ({
 
         if (intervalRef.current) clearInterval(intervalRef.current);
         intervalRef.current = setInterval(() => {
-            fetchLatestData();
-        }, REFRESH_INTERVAL_MS);
+            const currentStoreState = useDashboardStore.getState();
+            if (currentStoreState.apiAutoRefreshEnabled && currentStoreState.apiNextSyncTime) {
+                // If the timer has lapsed according to the store, fetch and reset.
+                // This correctly synchronizes with pushes from the WebSocket.
+                if (Date.now() >= currentStoreState.apiNextSyncTime) {
+                    fetchLatestData();
+                }
+            } else if (!currentStoreState.apiNextSyncTime) {
+                // Fallback if somehow missing
+                fetchLatestData();
+            }
+        }, 1000); // Check every second to synchronize flawlessly with the UI countdown
 
         return () => {
             disconnectWebSocket();

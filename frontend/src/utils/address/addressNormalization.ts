@@ -6,24 +6,37 @@
  */
 
 const ADDR_REPLACEMENTS: [RegExp, string][] = [
+    // 0. Common misspellings and OCR errors (add BEFORE other replacements)
+    [/\bЛевка\s+Лук.?яненка\b/gi, 'Левка Лук\'яненка'],
+    [/\bЛевка\s+Лук\.?яненка\b/gi, 'Левка Лук\'яненка'],
+    [/\bЛевка\s+Лук\'?яненка\b/gi, 'Левка Лук\'яненка'],
+    [/\bЛевка\s+Лук[^\w]?яненка\b/gi, 'Левка Лук\'яненка'],
+    [/\bМаршала\s+Тимошенка\b/gi, 'Маршала Тимошенка'],
+    [/\bпросп\.?\s+Визволителів\b/gi, 'проспект Визволителів'],
+    [/\bпросп\.?\s+Победы\b/gi, 'проспект Победы'],
+    [/\bпросп\.?\s+Перемоги\b/gi, 'проспект Перемоги'],
+    [/\bпр-т\.?\s+Визволителів\b/gi, 'проспект Визволителів'],
+    [/\bпр-т\.?\s+Победы\b/gi, 'проспект Победы'],
+    [/\bпр-т\.?\s+Перемоги\b/gi, 'проспект Перемоги'],
+    
     // 1. Punctuation and special chars (unifies d/f, Luk'yanenka, etc.)
     // v35.9.25: Excluded apostrophe (') from punctuation stripping to keep names like Luk'yanenka together
     [/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, ' '],
-
+    
     // 2. Unify apostrophes and cleanup other quotes
     [/[ʼ`]/g, "'"], 
     [/[«»"]/g, ''],
-
+    
     // 3. Remove technical separators (підʼїзд, этаж, квартира, etc.)
     // Note: 'дом' and 'д' are NOT removed here because they often prefix the house number.
-    [/(?:^|\s)(корп|корпус|pod|підʼїзд|підʼїзд|подъезд|эт|этаж|кв|квартира|оф|офис|офіс|вход|вхід|секция|літера|літ|литера|д\s*ф|моб)(?:\s*\d*)(?=\s|$)/gi, ' '],
-
+    [/(?:^|\s)(корп|корпус|pod|підʼїзд|підʼїзд|подъезд|эт|этаж|кв|квартира|оф|офис|офіс|вход|вхід|секция|літера|літ|литера|д\s*ф|моб|під|под|кв|эт)(?:\s*\d*)(?=\s|$)/gi, ' '],
+    
     // 4. Remove street type prefixes (added English 'street', 'st', 'avenue', 'ave')
-    [/(?:^|\s)(вул|ул|вулиця|улица|пр|просп|проспект|пр-т|пров|пер|пер-к|провулок|переулок|блв|бульвар|шосе|шоссе|набережна|набережная|пл|площа|площадь|тупик|узвіз|спуск|street|st|avenue|ave)(?=\s|$)/gi, ' '],
-
+    [/(?:^|\s)(вул|ул|вулиця|улица|пр|просп|проспект|пр-т|пров|пер|пер-к|провулок|переулок|блв|бульвар|шосе|шоссе|набережна|набережная|пл|площа|площадь|тупик|узвіз|спуск|street|st|avenue|ave|жк|б-р|пл|м-н|майдан|дорога|ст|стр|строение)(?=\s|$)/gi, ' '],
+    
     // 5. Remove city/country and abbreviations
-    [/(?:^|\s)(київ|киев|украина|україна|ua|ukraine|г\.?|м\.?)(?=\s|$)/gi, ' '],
-
+    [/(?:^|\s)(київ|киев|украина|україна|ua|ukraine|г\.?|м\.?|смт|пгт|село|с\.)(?=\s|$)/gi, ' '],
+    
     // 6. Collapse multiple spaces
     [/\s{2,}/g, ' '],
 ];
@@ -156,8 +169,8 @@ export function cleanAddressForSearch(address: string): string {
     // Step 0: Ensure space after comma if it precedes a number
     cleaned = cleaned.replace(/,(\d)/g, ', $1');
 
-    // Step 1: Remove leading city prefix
-    cleaned = cleaned.replace(/^(?:місто\s+|город\s+|м\.?\s*|г\.?\s*)?(?:київ|киев|kyiv|kiev|харків|харьков|дніпро|ужгород|одеса|одесса|львів|львов|бровари|бровары|бориспіль|борисполь|ірпінь|ирпень|буча|вишневе|вишневое|полтава)\s*,\s*/i, '');
+    // Step 1: Remove leading city prefix (extended with просп., наб., вул. variants)
+    cleaned = cleaned.replace(/^(?:місто\s+|город\s+|м\.?\s*|г\.?\s*)?(?:київ|киев|kyiv|kiev|харків|харьков|дніпро|ужгород|одеса|одесса|львів|львов|бровари|бровары|бориспіль|борисполь|ірпінь|ирпень|буча|вишневе|вишневое|полтава|суми|суми|хмельницький|миколаїв|просп|наб)\s*,\s*/i, '');
 
     // Step 2: Smart parenthetical stripping:
     // - Remove TECHNICAL parentheticals (apartment, entrance info etc.)
@@ -179,18 +192,21 @@ export function cleanAddressForSearch(address: string): string {
     }
 
     // Step 4: Recursive suffix stripping (Final Cleanup)
-    const TechnicalLabels = 'корп|корпус|під|под|підʼїзд|подъезд|эт|этаж|кв|квартира|оф|офіс|офис|вход|вхід|секція|секция|літера|літ|литера|д/ф|д\\s*[\\/-]\\s*ф|моб';
+    const TechnicalLabels = 'корп|корпус|під|под|підʼїзд|подъезд|эт|этаж|кв|квартира|оф|офіс|офис|вход|вхід|секція|секция|літера|літ|литера|д[\\s.\\/\\-]*ф|дф|моб|подзвони|звони|дзвони|call';
     
     const spacedSuffix = new RegExp(`(?:,|\\s)\\s*(?:${TechnicalLabels}).*$`, 'iu');
     const stuckSuffix = new RegExp(`(\\d)(?:${TechnicalLabels}).*$`, 'iu');
     const postalRegex = /(?:,|\s)\s*\d{4,5}\b.*$/;
+    // Also strip phone numbers (10+ digits)
+    const phoneRegex = /[\s,]+[\d\-+()\s]{10,}.*$/;
 
     let last: string;
     do {
         last = cleaned;
         cleaned = cleaned.replace(spacedSuffix, '')
                          .replace(stuckSuffix, '$1')
-                         .replace(postalRegex, '');
+                         .replace(postalRegex, '')
+                         .replace(phoneRegex, '');
     } while (cleaned !== last);
 
     // Final cleanup: remove trailing commas/spaces, dashes, etc.

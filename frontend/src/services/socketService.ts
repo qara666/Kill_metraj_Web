@@ -123,7 +123,15 @@ class SocketService {
             try {
                 const { useDashboardStore } = require('../stores/useDashboardStore');
                 const store = useDashboardStore.getState();
-                store.setAutoRoutingStatus(data);
+                // v5.202: Auto-activate if there are orders to process AND user hasn't explicitly stopped
+                const currentState = store.autoRoutingStatus;
+                const hasOrdersToProcess = (data.totalCount || 0) > 0 && 
+                    (data.processedCount || 0) < (data.totalCount || 0);
+                const shouldBeActive = !currentState.userStopped && hasOrdersToProcess;
+                store.setAutoRoutingStatus({
+                    ...data,
+                    isActive: data.isActive || shouldBeActive
+                });
             } catch (e) {
                 console.warn('[SocketService] robot_status handler failed:', e);
             }
@@ -285,7 +293,18 @@ class SocketService {
                 // v6.8: Log for debugging
                 console.log('[SocketService] robot_status received:', { divisionId: data.divisionId, date: data.date, robotDate, dashboardDate, isGlobalUpdate, isActive: data.isActive, processedCount: data.processedCount, totalCount: data.totalCount });
 
-                store.setAutoRoutingStatus(data);
+                // v5.202: Auto-activate if there are orders to process AND user hasn't explicitly stopped
+                const currentState = store.autoRoutingStatus;
+                const hasOrdersToProcess = (data.totalCount || 0) > 0 && 
+                    (data.processedCount || 0) < (data.totalCount || 0);
+                
+                // Only auto-activate if user hasn't stopped and there are orders to process
+                const shouldBeActive = !currentState.userStopped && hasOrdersToProcess;
+                
+                store.setAutoRoutingStatus({
+                    ...data,
+                    isActive: data.isActive || shouldBeActive
+                });
             } catch (e) {
                 // Secondary fallback if direct import fails in this context
             }

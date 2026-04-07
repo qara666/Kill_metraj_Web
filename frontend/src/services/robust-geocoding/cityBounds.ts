@@ -71,6 +71,17 @@ export const CITY_BOUNDS: Record<string, CityBBox> = {
     center: [30.7233, 46.4825],
     radiusKm: 25,
   },
+
+  // ─── ДНІПРО (DNIPRO) ─────────────────────────────────────────────────────
+  // Covers: Dnipro city + Pidhorodne, Novomoskovsk direction, Dnipro suburbs
+  'дніпро': {
+    bbox: [48.38, 34.92, 48.58, 35.18],
+    viewbox: '34.92,48.38,35.18,48.58',
+    bounded: true,
+    names: ['дніпро', 'днепр', 'dnipro', 'dnepropetrovsk', 'дніпропетровськ', 'днепропетровск'],
+    center: [35.0500, 48.4647],
+    radiusKm: 25,
+  },
 }
 
 // ─── Alternate name lookup ─────────────────────────────────────────────────
