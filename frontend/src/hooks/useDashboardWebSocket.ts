@@ -24,7 +24,7 @@ interface DashboardWebSocketParams {
     enabled?: boolean;
 }
 
-const REFRESH_INTERVAL_MS = 60 * 1000; // v5.115: 1 minute (Faster auto-update)
+const REFRESH_INTERVAL_MS = 120 * 1000; // v5.136: 2 minutes (Unified sync)
 
 export const useDashboardWebSocket = ({
     onDataLoaded,

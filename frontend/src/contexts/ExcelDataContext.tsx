@@ -115,8 +115,87 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
           });
         };
 
+        // v5.202: Enrich route orders with full order data from master orders list
+        const enrichRouteOrders = (data: any) => {
+          if (!data || !Array.isArray(data.routes) || !Array.isArray(data.orders)) return data;
+          const masterOrdersMap = new Map(data.orders.map((o: any) => [String(o.id), o]));
+          const masterOrdersByNumber = new Map(data.orders.map((o: any) => [String(o.orderNumber), o]));
+          
+          data.routes = data.routes.map((route: any) => {
+            if (!route.orders || !Array.isArray(route.orders)) return route;
+            return {
+              ...route,
+              orders: route.orders.map((routeOrder: any) => {
+                const masterById = masterOrdersMap.get(String(routeOrder.id));
+                const masterByNumber = masterOrdersByNumber.get(String(routeOrder.orderNumber));
+                const master = masterById || masterByNumber;
+                if (master) {
+                  return { ...routeOrder, ...master };
+                }
+                return routeOrder;
+              })
+            };
+          });
+          return data;
+        };
+
         try {
-          // 1. Сначала пробуем загрузить с сервера
+          // v5.202: FIRST try localStorage - it's always the most reliable source
+          const localRaw = localStorage.getItem('km_dashboard_processed_data');
+          let localData = null;
+          if (localRaw) {
+            try {
+              localData = JSON.parse(localRaw);
+            } catch (e) {}
+          }
+          
+          // v5.202: If we have valid local data, use it IMMEDIATELY
+          // This prevents orders from disappearing when server is slow/unavailable
+          if (localData && localData.orders && localData.orders.length > 0) {
+            // v5.202: Enrich route orders with full order data
+            enrichRouteOrders(localData);
+            
+            // v5.202: Merge with DB routes for completeness
+            try {
+              const token = localStorage.getItem('km_access_token');
+              if (token) {
+                const dbRoutes = await fetchRoutesWithDate(token);
+                if (dbRoutes.length > 0) {
+                  const existingRoutes = Array.isArray(localData.routes) ? localData.routes : [];
+                  const allRouteIds = new Set<string>();
+                  const mergedRoutes: any[] = [];
+                  
+                  // Priority 1: DB routes
+                  dbRoutes.forEach((r: any) => {
+                    const rid = String(r.id || '');
+                    if (rid && !allRouteIds.has(rid)) {
+                      allRouteIds.add(rid);
+                      mergedRoutes.push(r);
+                    }
+                  });
+                  
+                  // Priority 2: Local manual routes
+                  existingRoutes.forEach((r: any) => {
+                    const rid = String(r.id || '');
+                    if (rid.startsWith('route_') && !allRouteIds.has(rid)) {
+                      allRouteIds.add(rid);
+                      mergedRoutes.push(r);
+                    }
+                  });
+                  
+                  localData.routes = mergedRoutes;
+                }
+              }
+            } catch (e) {
+              console.warn('[ExcelSync] DB route merge failed:', e);
+            }
+            
+            rehydrateManualRoutes(localData);
+            setExcelDataState(localData);
+            return;
+          }
+
+          // v5.202: Only try server if local data is empty/missing
           const token = localStorage.getItem('km_access_token');
           if (token) {
             try {
@@ -125,42 +204,16 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
               });
               
               const contentType = response.headers.get('content-type');
-              if (contentType && contentType.includes('text/html')) {
-                  throw new Error('API returned HTML');
+              if (!contentType || !contentType.includes('application/json')) {
+                  // v5.202: Server returned non-JSON (e.g. HTML from sleeping Render.com)
+                  console.warn('[ExcelSync] Server returned non-JSON response, skipping server data');
+                  throw new Error('Server returned non-JSON');
               }
 
               if (response.ok) {
                 const json = await response.json();
-                // Server response
                 
-                // v5.152: Check if server has meaningful data (at least orders)
-                const serverHasOrders = json.success && json.data && (json.data.orders?.length > 0);
-                
-                // v5.152: Also check localStorage for fresh data
-                const localRaw = localStorage.getItem('km_dashboard_processed_data');
-                let localData = null;
-                if (localRaw) {
-                  try {
-                    localData = JSON.parse(localRaw);
-                  } catch (e) {}
-                }
-                
-                // v5.152: Use local data if it exists and has orders, OR if server has no orders
-                
-                if (localData && localData.orders && localData.orders.length > 0) {
-                  if (!serverHasOrders || (localData.lastModified && (!json.data.lastModified || localData.lastModified > json.data.lastModified))) {
-                    // Using localStorage data
-                    rehydrateManualRoutes(localData);
-                    setExcelDataState(localData);
-                    return;
-                  } else {
-                    // Server has newer data
-                  }
-                } else {
-                  // No local orders
-                }
-                
-                if (json.success && json.data) {
+                if (json.success && json.data && json.data.orders && json.data.orders.length > 0) {
                   const serverData = json.data;
                   const localOverrides = localStorage.getItem('km_manual_overrides');
                   if (localOverrides && serverData.orders) {
@@ -185,21 +238,19 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                     } catch (e) {}
                   }
                   
+                  // v5.202: Enrich route orders with full order data
+                  enrichRouteOrders(serverData);
+                  
                   // v25.3: Also fetch routes from database when using server data
                   try {
                     const token = localStorage.getItem('km_access_token');
                     if (token) {
                       const dbRoutes = await fetchRoutesWithDate(token);
-                      // DB Routes loaded
                       
-                      // Merge with existing routes if any
                       const existingRoutes = Array.isArray(serverData.routes) ? serverData.routes : [];
-                      
-                      // v5.141: Improved merging logic with deduplication
                       const allRouteIds = new Set<string>();
                       const mergedRoutes: any[] = [];
                       
-                      // Add existing routes first (deduplicated)
                       existingRoutes.forEach((r: any) => {
                         const rid = String(r.id || '');
                         if (rid && !allRouteIds.has(rid)) {
@@ -208,7 +259,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                         }
                       });
                       
-                      // Add DB routes (deduplicated, DB routes have priority)
                       dbRoutes.forEach((r: any) => {
                         const rid = String(r.id || '');
                         if (rid && !allRouteIds.has(rid)) {
@@ -281,150 +331,19 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             }
           }
 
-            // 2. Если сервера нет или ошибка, грузим из localStorage
-          const localData = localStorage.getItem('km_dashboard_processed_data')
-          
-          // v5.155: Also read km_routes from localStorage (written by socketService during turbo robot)
-          let localRoutes: any[] = [];
-          try {
-            const savedRoutes = localStorage.getItem('km_routes');
-            if (savedRoutes) {
-              localRoutes = JSON.parse(savedRoutes);
-              // km_routes from localStorage
-            }
-          } catch (e) {
-            console.warn('[ExcelSync] Failed to parse km_routes:', e);
-          }
-          
-          // Always try to fetch routes from database first
-          let dbRoutes: any[] = [];
-          try {
-            const token = localStorage.getItem('km_access_token');
-            if (token) {
-              dbRoutes = await fetchRoutesWithDate(token);
-            }
-          } catch (e) {
-            console.warn('[ExcelSync] Failed to fetch routes from database:', e);
-          }
-          
-          if (localData) {
-            const parsed = JSON.parse(localData);
-            
-            // v5.155: Merge routes from 3 sources: local data, km_routes, DB
-            const existingRoutes = Array.isArray(parsed.routes) ? parsed.routes : [];
-            const allRouteIds = new Set<string>();
-            const mergedRoutes: any[] = [];
-            
-            // Priority 1: DB routes (most authoritative)
-            dbRoutes.forEach((r: any) => {
-              const rid = String(r.id || '');
-              if (rid && !allRouteIds.has(rid)) {
-                allRouteIds.add(rid);
-                mergedRoutes.push(r);
+          // v5.202: Final fallback - if neither localStorage nor server worked, try DB routes only
+          // This block should only be reached if localData was empty/missing at the top
+          const fallbackLocalRaw = localStorage.getItem('km_dashboard_processed_data');
+          if (fallbackLocalRaw) {
+            try {
+              const parsed = JSON.parse(fallbackLocalRaw);
+              if (parsed.orders && parsed.orders.length > 0) {
+                // This shouldn't normally be reached since we handle localStorage at the top
+                rehydrateManualRoutes(parsed);
+                setExcelDataState(parsed);
+                return;
               }
-            });
-            
-            // Priority 2: km_routes (turbo robot results)
-            localRoutes.forEach((r: any) => {
-              const rid = String(r.id || '');
-              if (rid && !allRouteIds.has(rid)) {
-                allRouteIds.add(rid);
-                mergedRoutes.push(r);
-              }
-            });
-            
-            // Priority 3: Local manual routes (from parsed data)
-            rehydrateManualRoutes(parsed);
-            existingRoutes.forEach((r: any) => {
-              const rid = String(r.id || '');
-              // Only add manual routes (start with 'route_')
-              if (rid.startsWith('route_') && !allRouteIds.has(rid)) {
-                allRouteIds.add(rid);
-                mergedRoutes.push(r);
-              }
-            });
-            
-            parsed.routes = mergedRoutes;
-            // Merged routes
-            
-            // v5.147: Update courier distances when loading from localStorage + DB routes
-            // v5.201: Also create couriers from routes if they don't exist
-            let existingCourierNames = new Set<string>();
-            if (parsed.couriers && Array.isArray(parsed.couriers)) {
-              const allRoutes = parsed.routes || [];
-              parsed.couriers.forEach((c: any) => {
-                existingCourierNames.add((c.name || c.courierName || '').toString().trim().toUpperCase());
-                
-                const rawName = (c.name || c.courierName || '').toString().trim();
-                const normName = rawName.replace(/\s+/g, ' ').toUpperCase();
-                if (normName === 'НЕ НАЗНАЧЕНО' || !rawName) return;
-                
-                const courierRoutes = allRoutes.filter((r: any) => {
-                  const routeCourier = (r.courier || r.courier_id || '').toString().trim().replace(/\s+/g, ' ').toUpperCase();
-                  return routeCourier === normName;
-                });
-                
-                if (courierRoutes.length > 0) {
-                  const totalDist = courierRoutes.reduce((acc: number, curr: any) => acc + (Number(curr.totalDistance || curr.total_distance) || 0), 0);
-                  const totalOrders = courierRoutes.reduce((acc: number, curr: any) => acc + (Number(curr.ordersCount || curr.orders_count) || 0), 0);
-                  c.distanceKm = Number(totalDist.toFixed(2));
-                  c.calculatedOrders = totalOrders;
-                }
-              });
-            }
-            
-            // v5.201: Create couriers from routes if they don't exist
-            (parsed.routes || []).forEach((r: any) => {
-                const routeCourier = normalizeCourierName(r.courier || r.courier_id || '');
-                if (!routeCourier || routeCourier === 'Не назначено') return;
-                const upperName = routeCourier.toUpperCase();
-                
-                if (!existingCourierNames.has(upperName)) {
-                    existingCourierNames.add(upperName);
-                    const totalDist = Number(r.totalDistance || r.total_distance || 0);
-                    const totalOrders = Number(r.ordersCount || r.orders_count || r.orders?.length || 0);
-                    parsed.couriers = parsed.couriers || [];
-                    parsed.couriers.push({
-                        name: routeCourier,
-                        distanceKm: Number(totalDist.toFixed(2)),
-                        calculatedOrders: totalOrders,
-                        isActive: true,
-                        vehicleType: 'car'
-                    });
-                }
-            });
-            
-            setExcelDataState(parsed)
-          } else if (dbRoutes.length > 0) {
-            // No local data, but we have DB routes - create minimal state
-            // v5.201: Create couriers from routes
-            const courierMap = new Map<string, { km: number; orders: number }>();
-            dbRoutes.forEach((r: any) => {
-                const courier = normalizeCourierName(r.courier || r.courier_id || '');
-                if (!courier || courier === 'Не назначено') return;
-                const existing = courierMap.get(courier) || { km: 0, orders: 0 };
-                existing.km += Number(r.totalDistance || r.total_distance || 0);
-                existing.orders += Number(r.ordersCount || r.orders_count || r.orders?.length || 0);
-                courierMap.set(courier, existing);
-            });
-            
-            const createdCouriers = Array.from(courierMap.entries()).map(([name, metrics]) => ({
-                name,
-                distanceKm: Number(metrics.km.toFixed(2)),
-                calculatedOrders: metrics.orders,
-                isActive: true,
-                vehicleType: 'car'
-            }));
-            
-            // DB routes only
-            setExcelDataState({
-              orders: [],
-              couriers: createdCouriers,
-              paymentMethods: [],
-              routes: dbRoutes,
-              errors: [],
-              summary: {}
-            });
+            } catch (e) {}
           }
         } catch (error) {
           console.error('Error loading data:', error);
@@ -696,40 +615,39 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   }, [])
 
 
-  const protectData = useCallback((next: ExcelData, current: ExcelData | null): ExcelData => {
-    if (!current || !next) return next;
-    
-    // v5.135: Winning Logic - Protect local state from stale or partial server updates
-    const localSettledCount = (current.orders || []).filter(o => !!o.settledDate).length;
-    const serverSettledCount = (next.orders || []).filter(o => !!o.settledDate).length;
-
-
-    // Reject completely empty updates if we already have valid data
-    const isNewDataEmpty = (!next.orders || next.orders.length === 0);
-    const hadOrders = (current.orders && current.orders.length > 0);
-
-    if (isNewDataEmpty && hadOrders) {
-        console.warn(`[ExcelSync] Server sent EMPTY data but we have ${current.orders.length} orders. REJECTING update.`);
-        return current;
-    }
-
-    // If server sends significantly LESS information, it's a regression. 
-    // Return a merged version or stick with Local.
-    // v5.161: Allow 0 routes from server if it's a valid update (preventing stuck 'Protecting Local State')
-    // v5.180: CRITICAL FIX - preserve routes from next even when protecting local orders
-    if (serverSettledCount < localSettledCount) {
-        console.warn(`[ExcelSync] Server Data Partial: Settled=${serverSettledCount} (Local=${localSettledCount}). Protecting Local State.`);
-        return {
-            ...next,
-            orders: current.orders, // Prefer local orders if server count drops
-            routes: next.routes || current.routes, // v5.180: Always preserve routes
-            couriers: next.couriers || current.couriers, // v5.180: Always preserve courier updates
-            lastModified: Math.max(next.lastModified || 0, current.lastModified || 0)
-        };
-    }
-    
-    return next;
-  }, []);
+   const protectData = useCallback((next: ExcelData, current: ExcelData | null): ExcelData => {
+     if (!current || !next) return next;
+     
+     // v5.202: NEVER overwrite existing orders with empty/partial data
+     const hasLocalOrders = (current.orders || []).length > 0;
+     const hasServerOrders = (next.orders || []).length > 0;
+     
+     // If server sends NO orders but we have them locally - NEVER overwrite
+     if (!hasServerOrders && hasLocalOrders) {
+         console.warn(`[ExcelSync] Server sent ${next.orders?.length || 0} orders but we have ${current.orders.length}. PRESERVING local data.`);
+         return {
+             ...next,
+             orders: current.orders,
+             routes: (next.routes && next.routes.length > 0) ? next.routes : current.routes,
+             couriers: next.couriers && next.couriers.length > 0 ? next.couriers : current.couriers,
+             lastModified: Math.max(next.lastModified || 0, current.lastModified || 0)
+         };
+     }
+     
+     // If server sends FEWER orders than local - something is wrong, preserve local
+     if (hasServerOrders && hasLocalOrders && next.orders.length < current.orders.length) {
+         console.warn(`[ExcelSync] Server sent ${next.orders.length} orders but we have ${current.orders.length}. PRESERVING local orders.`);
+         return {
+             ...next,
+             orders: current.orders,
+             routes: (next.routes && next.routes.length > 0) ? next.routes : current.routes,
+             couriers: next.couriers && next.couriers.length > 0 ? next.couriers : current.couriers,
+             lastModified: Math.max(next.lastModified || 0, current.lastModified || 0)
+         };
+     }
+     
+     return next;
+   }, []);
 
   const performManualOverridesSave = useCallback((orders: any[]) => {
     try {

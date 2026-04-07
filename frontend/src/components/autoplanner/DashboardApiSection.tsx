@@ -90,7 +90,7 @@ export const DashboardApiSection: React.FC = () => {
         }
     };
 
-    // v5.202: Hydrate status from server on mount - always show as active if there are orders to process
+    // v5.202: Hydrate status from server on mount - NEVER let server deactivate if user hasn't stopped
     React.useEffect(() => {
         const hydrateStatus = async () => {
             if (!user?.divisionId) return;
@@ -109,10 +109,12 @@ export const DashboardApiSection: React.FC = () => {
                         const hasOrdersToProcess = (status.totalCount || 0) > 0 && 
                             (status.processedCount || 0) < (status.totalCount || 0);
                         const shouldBeActive = !currentStatus.userStopped && hasOrdersToProcess;
+                        // v5.202: If already active and user hasn't stopped, NEVER let server deactivate us
+                        const forceActive = currentStatus.isActive && !currentStatus.userStopped;
                         
                         setAutoRoutingStatus({
                             ...status,
-                            isActive: status.isActive || shouldBeActive
+                            isActive: forceActive || shouldBeActive || status.isActive
                         });
                     }
                 }
@@ -122,9 +124,9 @@ export const DashboardApiSection: React.FC = () => {
         };
 
         hydrateStatus();
-        // Also poll every 30s as fallback if socket misses
-        const interval = setInterval(hydrateStatus, 30000);
-        return () => clearInterval(interval);
+        // REMOVED: 30s polling - we now rely on socket updates which are more reliable
+        // const interval = setInterval(hydrateStatus, 30000);
+        // return () => clearInterval(interval);
     }, [user?.divisionId, selectedDate, setAutoRoutingStatus]);
 
     // v5.96: New Day Detection - only auto-set today on first run of the day

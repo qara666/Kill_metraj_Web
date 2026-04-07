@@ -123,15 +123,21 @@ class SocketService {
             try {
                 const { useDashboardStore } = require('../stores/useDashboardStore');
                 const store = useDashboardStore.getState();
-                // v5.202: Auto-activate if there are orders to process AND user hasn't explicitly stopped
+                // v5.202: NEVER let server deactivate if user hasn't stopped
                 const currentState = store.autoRoutingStatus;
                 const hasOrdersToProcess = (data.totalCount || 0) > 0 && 
                     (data.processedCount || 0) < (data.totalCount || 0);
                 const shouldBeActive = !currentState.userStopped && hasOrdersToProcess;
+                const forceActive = currentState.isActive && !currentState.userStopped;
                 store.setAutoRoutingStatus({
                     ...data,
-                    isActive: data.isActive || shouldBeActive
+                    isActive: forceActive || shouldBeActive || data.isActive
                 });
+
+                // v5.203: Sync Dashboard API timer
+                if (data.processedCount === data.totalCount && data.totalCount > 0) {
+                    store.setApiNextSyncTime(Date.now() + 2000);
+                }
             } catch (e) {
                 console.warn('[SocketService] robot_status handler failed:', e);
             }
@@ -293,18 +299,28 @@ class SocketService {
                 // v6.8: Log for debugging
                 console.log('[SocketService] robot_status received:', { divisionId: data.divisionId, date: data.date, robotDate, dashboardDate, isGlobalUpdate, isActive: data.isActive, processedCount: data.processedCount, totalCount: data.totalCount });
 
-                // v5.202: Auto-activate if there are orders to process AND user hasn't explicitly stopped
+                // v5.202: NEVER let server set isActive to false if user hasn't explicitly stopped
+                // This prevents the background calculation from stopping when server sends isActive: false
                 const currentState = store.autoRoutingStatus;
                 const hasOrdersToProcess = (data.totalCount || 0) > 0 && 
                     (data.processedCount || 0) < (data.totalCount || 0);
                 
-                // Only auto-activate if user hasn't stopped and there are orders to process
+                // If user hasn't stopped, ALWAYS keep isActive true when there are orders to process
+                // Even if server says isActive: false, we override it
                 const shouldBeActive = !currentState.userStopped && hasOrdersToProcess;
+                
+                // v5.202: If we're already active and user hasn't stopped, NEVER let server deactivate us
+                const forceActive = currentState.isActive && !currentState.userStopped;
                 
                 store.setAutoRoutingStatus({
                     ...data,
-                    isActive: data.isActive || shouldBeActive
+                    isActive: forceActive || shouldBeActive || data.isActive
                 });
+
+                // v5.203: Sync Dashboard API timer
+                if (data.processedCount === data.totalCount && data.totalCount > 0) {
+                    store.setApiNextSyncTime(Date.now() + 2000);
+                }
             } catch (e) {
                 // Secondary fallback if direct import fails in this context
             }
