@@ -18,6 +18,9 @@ import {
 import { exportToGoogleMaps, exportToValhalla } from '../../utils/routes/routeExport';
 import { needsAddressClarification } from '../../utils/data/addressUtils';
 
+// v6.31: РУССКАЯ ЛОКАЛИЗАЦИЯ (MileageModal)
+// Все метрики и статусы переведены на русский язык для консистентного HUD
+
 interface OrderRecordProps {
   order: any;
   orderIndex: number;
@@ -30,7 +33,6 @@ const OrderRecord = memo(({ order, orderIndex, route, isDark, onEditAddress }: O
   const meta = route.geoMeta?.waypoints?.[orderIndex];
   const hasCoords = !!((order.lat || order.coords?.lat) && (order.lng || order.coords?.lng));
   
-  // If order has coordinates but no locType, it means it came from FastOperator with native coordinates (we trust this as ROOFTOP)
   const locType = meta?.locationType || order.locationType || (hasCoords ? 'ROOFTOP' : undefined);
   const streetMatched = meta?.streetNumberMatched ?? order.streetNumberMatched ?? (hasCoords ? true : undefined);
   
@@ -63,7 +65,7 @@ const OrderRecord = memo(({ order, orderIndex, route, isDark, onEditAddress }: O
                 "p-1.5 rounded-lg active:scale-95",
                 isDark ? "hover:bg-white/5 text-blue-400" : "hover:bg-blue-50 text-blue-600"
               )}
-              title="Редагувати адресу"
+              title="Редактировать адрес"
             >
               <PencilIcon className="w-3.5 h-3.5" />
             </button>
@@ -76,7 +78,7 @@ const OrderRecord = memo(({ order, orderIndex, route, isDark, onEditAddress }: O
                 isDark ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-700"
               )}>
                 <CheckBadgeIcon className="w-3.5 h-3.5" />
-                ТОЧНИЙ АДРЕС
+                ТОЧНЫЙ АДРЕС
               </div>
             )}
 
@@ -86,7 +88,7 @@ const OrderRecord = memo(({ order, orderIndex, route, isDark, onEditAddress }: O
                 isDark ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-green-50 border-green-200 text-green-700"
               )}>
                 <CheckBadgeIcon className="w-3.5 h-3.5" />
-                ПЕРЕВІРЕНО
+                ПРОВЕРЕНО
               </div>
             )}
 
@@ -120,8 +122,8 @@ const OrderRecord = memo(({ order, orderIndex, route, isDark, onEditAddress }: O
                   : (isDark ? "bg-rose-500/10 border-rose-500/30 text-rose-400" : "bg-rose-50 border-rose-200 text-rose-700")
               )}>
                 <MapIcon className="w-3.5 h-3.5 opacity-70" />
-                <span className="opacity-60 mr-0.5">ВУЛИЦЯ:</span>
-                {locType !== 'APPROXIMATE' ? 'ТАК' : 'НІ'}
+                <span className="opacity-60 mr-0.5">УЛИЦА:</span>
+                {locType !== 'APPROXIMATE' ? 'ДА' : 'НЕТ'}
               </div>
             )}
 
@@ -133,24 +135,28 @@ const OrderRecord = memo(({ order, orderIndex, route, isDark, onEditAddress }: O
                   : (isDark ? "bg-orange-500/10 border-orange-500/30 text-orange-400" : "bg-orange-50 border-orange-200 text-orange-700")
               )}>
                 <HomeIcon className="w-3.5 h-3.5 opacity-70" />
-                <span className="opacity-60 mr-0.5">БУДИНОК:</span>
-                {streetMatched && locType !== 'APPROXIMATE' ? 'ТАК' : 'НІ'}
+                <span className="opacity-60 mr-0.5">ДОМ:</span>
+                {streetMatched && locType !== 'APPROXIMATE' ? 'ДА' : 'НЕТ'}
               </div>
             )}
 
             {!hasCoords && (
-              <div className={clsx(
-                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 shadow-sm",
-                isDark ? "bg-amber-500/10 border-amber-500/30 text-amber-500" : "bg-amber-50 border-amber-200 text-amber-700 shadow-amber-500/10"
-              )}>
-                 <ExclamationCircleIcon className="w-3.5 h-3.5" />
-                 УТОЧНИТИ АДРЕСУ
-              </div>
+              <button 
+                onClick={(e) => { e.stopPropagation(); onEditAddress(order, route.id); }}
+                className={clsx(
+                  "flex items-center gap-1.5 px-3 py-1 rounded-xl border text-[9px] font-black tracking-widest leading-none h-7 shadow-sm transition-all hover:scale-105 active:scale-95 group/btn",
+                  isDark ? "bg-red-500/10 border-red-500/30 text-red-500 hover:bg-red-500/20" : "bg-red-50 border-red-200 text-red-700 shadow-red-500/10"
+                )}
+              >
+                 <ExclamationCircleIcon className="w-4 h-4 animate-pulse group-hover/btn:animate-none" />
+                 УТОЧНИТЬ АДРЕС
+              </button>
             )}
           </div>
         </div>
       </div>
-      <div className="text-sm font-black opacity-30 px-3 uppercase tracking-widest hidden sm:block">
+      <div className="text-[10px] font-black opacity-30 px-3 uppercase tracking-widest hidden sm:flex items-center gap-1">
+        <BoltIcon className="w-3 h-3" />
         +0.5 км
       </div>
     </div>
@@ -172,21 +178,13 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
   
   const metrics = useMemo(() => {
     const baseDist = route.isOptimized && route.totalDistance ? route.totalDistance : 1.0;
-    let addDist = 0;
-    if (route.orders) {
-      let lastAddr = "";
-      route.orders.forEach((o: any) => {
-        const currentAddr = (o.address || "").trim().toLowerCase();
-        if (currentAddr !== lastAddr) {
-          addDist += 0.5;
-          lastAddr = currentAddr;
-        }
-      });
-    }
+    // Each stop gets +0.5 km as per user requirement
+    const stopsBonus = (route.orders?.length || 0) * 0.5;
+    
     return {
       base: baseDist,
-      additional: addDist,
-      total: baseDist + addDist
+      additional: stopsBonus,
+      total: baseDist + stopsBonus
     };
   }, [route]);
 
@@ -204,10 +202,9 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
   const formatDuration = (minutes: number) => {
     const hours = Math.floor(minutes / 60);
     const mins = Math.floor(minutes % 60);
-    return hours > 0 ? `${hours}г ${mins}хв` : `${mins}хв`;
+    return hours > 0 ? `${hours}ч ${mins}мин` : `${mins}мин`;
   };
 
-  // Compose title from order numbers instead of just "Маршрут #X"
   const routeTitle = useMemo(() => {
     if (!route.orders || route.orders.length === 0) return `Маршрут #${index + 1}`;
     const numbers = route.orders.map((o: any) => o.orderNumber).filter(Boolean);
@@ -242,7 +239,7 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
                 <h4 className="font-black text-[15px] leading-tight break-all">{routeTitle}</h4>
                 <ChevronDownIcon className={clsx("w-5 h-5 opacity-40 transition-transform duration-300", isExpanded ? "rotate-180" : "")} />
               </div>
-              <p className="text-xs font-bold opacity-40 uppercase tracking-widest mt-0.5">{ordersCount} замовлень</p>
+              <p className="text-xs font-bold opacity-40 uppercase tracking-widest mt-0.5">{ordersCount} заказов</p>
             </div>
           </div>
           
@@ -286,7 +283,7 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
               )}>
                 <div className="flex items-center gap-4 mb-4">
                   <ExclamationTriangleIcon className="w-6 h-6" />
-                  <h4 className="text-sm font-black uppercase tracking-widest">Потребує уточнення адреси</h4>
+                  <h4 className="text-sm font-black uppercase tracking-widest">Требуется уточнение адреса</h4>
                 </div>
                 <div className="space-y-3">
                   {problematicOrders.map((order: any, pIdx: number) => (
@@ -298,7 +295,7 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
                       <button onClick={() => onEditAddress(order, route.id)} className={clsx(
                         "px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
                         isDark ? "bg-red-500/20 text-red-400" : "bg-red-600 text-white"
-                      )}>Уточнити</button>
+                      )}>Уточнить</button>
                     </div>
                   ))}
                 </div>
@@ -326,7 +323,7 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
         )}>
           <div className="grid grid-cols-3 gap-6 min-w-[240px]">
             <div className="flex flex-col">
-              <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">Разом</span>
+              <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">Итого</span>
               <span className="text-sm font-black">{metrics.total.toFixed(1)} км</span>
             </div>
             <div className="flex flex-col border-l pl-4 border-black/5 dark:border-white/5">
@@ -334,7 +331,7 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
               <span className="text-sm font-black opacity-60">{metrics.base.toFixed(1)} км</span>
             </div>
             <div className="flex flex-col border-l pl-4 border-black/5 dark:border-white/5">
-              <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">Час</span>
+              <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">Время</span>
               <span className="text-sm font-black opacity-60">{route.totalDuration ? formatDuration(route.totalDuration) : '—'}</span>
             </div>
           </div>
@@ -343,7 +340,7 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
               "flex items-center gap-2 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest",
               route.hasGeoErrors ? (isDark ? "bg-red-500/20 text-red-500" : "bg-red-50 text-red-600") : (isDark ? "bg-amber-500/10 text-amber-500" : "bg-amber-50 text-amber-700")
             )}>
-              {route.hasGeoErrors ? 'ПОМИЛКА (АДРЕСА)' : 'Потребує уточнення'}
+              {route.hasGeoErrors ? 'ОШИБКА (АДРЕС)' : 'Требует уточнения'}
             </div>
           )}
         </div>
@@ -367,19 +364,14 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
   const distanceStats = useMemo(() => getCourierStats(courier.name), [courier.name, getCourierStats]);
   const courierRoutes = useMemo(() => getCourierRoutes(courier.name), [courier.name, getCourierRoutes]);
 
-  // Escape key support
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') onClose();
-  }, [onClose]);
-
   useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
+  }, [onClose]);
 
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      {/* NO backdrop-blur here for performance */}
       <div className="absolute inset-0 bg-black/60 transition-opacity" onClick={onClose} />
       
       <div className={clsx(
@@ -393,7 +385,7 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
             </div>
             <div>
               <h2 className="text-2xl font-black tracking-tight leading-tight shrink-0">{courier.name}</h2>
-              <p className="text-xs font-bold uppercase tracking-widest opacity-50">Детальна інформація про пробіг</p>
+              <p className="text-xs font-bold uppercase tracking-widest opacity-50">Подробная информация о пробеге</p>
             </div>
           </div>
           <button onClick={onClose} className={clsx("p-3 rounded-2xl transition-transform hover:scale-110", isDark ? "bg-white/5 text-gray-400 hover:text-white" : "bg-gray-100 text-gray-500 hover:text-gray-900")}>
@@ -403,55 +395,84 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
 
         <div className="flex-1 overflow-y-auto p-4 md:p-8 overscroll-contain">
           <div className="space-y-10">
-            <div className={clsx("grid grid-cols-1 md:grid-cols-2 gap-8 rounded-[2.5rem] p-8 border", isDark ? "bg-white/5 border-white/5" : "bg-slate-50 border-slate-100")}>
-              <div className="space-y-6">
-                <div className="flex items-center gap-3">
-                  <div className={clsx("w-8 h-8 rounded-lg flex items-center justify-center", isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-100 text-blue-600")}><MapIcon className="w-5 h-5" /></div>
-                  <h3 className="text-sm font-black uppercase tracking-[0.2em] opacity-50">Метрики пробігу</h3>
+            <div className={clsx("rounded-[2.5rem] border overflow-hidden", isDark ? "bg-[#1a1c24] border-white/5" : "bg-white border-slate-200 shadow-sm")}>
+              <div className={clsx("p-8 border-b grid grid-cols-1 md:grid-cols-3 gap-8", isDark ? "border-white/5 bg-white/[0.02]" : "border-slate-100 bg-slate-50/50")}>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 opacity-40">
+                    <MapIcon className="w-4 h-4" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">Пробег (км)</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-4xl font-black tabular-nums">{distanceStats.totalDistance.toFixed(1)}</span>
+                      <span className="text-[10px] font-black opacity-30 uppercase tracking-[0.2em]">ИТОГО</span>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-4">
+                      <div className="flex flex-col">
+                        <span className="text-[9px] font-black opacity-40 uppercase tracking-widest leading-none mb-1 text-nowrap">База (файл)</span>
+                        <span className="text-lg font-black tabular-nums">{distanceStats.baseDistance.toFixed(1)}</span>
+                      </div>
+                      <div className="flex flex-col border-l border-white/5 pl-4">
+                        <span className="text-[9px] font-black opacity-40 uppercase tracking-widest leading-none mb-1 text-nowrap text-blue-500">Доп (заказы)</span>
+                        <span className="text-lg font-black tabular-nums text-blue-500">+{distanceStats.additionalDistance.toFixed(1)}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                  <div className="flex flex-col"><span className="text-[10px] font-black uppercase tracking-wider opacity-30 mb-1">Загальний</span><div className="text-3xl font-black tabular-nums">{distanceStats.totalDistance.toFixed(1)} <span className="text-sm opacity-30">км</span></div></div>
-                  <div className="flex flex-col sm:border-l sm:border-white/10 sm:pl-4"><span className="text-[10px] font-black uppercase tracking-wider opacity-30 mb-1">База</span><div className="text-3xl font-black tabular-nums opacity-60">{distanceStats.baseDistance.toFixed(1)} <span className="text-sm opacity-30">км</span></div></div>
-                  <div className="flex flex-col sm:border-l sm:border-white/10 sm:pl-4"><span className="text-[10px] font-black uppercase tracking-wider opacity-30 mb-1">Додана</span><div className="text-3xl font-black tabular-nums opacity-60">{distanceStats.additionalDistance.toFixed(1)} <span className="text-sm opacity-30">км</span></div></div>
+
+                <div className="space-y-4 md:border-l md:pl-8 border-white/5">
+                  <div className="flex items-center gap-2 opacity-40">
+                    <BoltIcon className="w-4 h-4" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">Обработка</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-4xl font-black tabular-nums text-blue-500">{distanceStats.totalOrders}</span>
+                      <span className="text-xs font-black opacity-30 uppercase">Заказов</span>
+                    </div>
+                    <div className="mt-2 flex items-center gap-3">
+                       <div className={clsx("flex-1 h-1.5 rounded-full overflow-hidden", isDark ? "bg-white/5" : "bg-gray-100")}>
+                         <div className={clsx("h-full transition-all duration-1000", distanceStats.ordersInRoutes === distanceStats.totalOrders ? "bg-emerald-500" : "bg-blue-500")} style={{ width: `${(distanceStats.ordersInRoutes / Math.max(1, distanceStats.totalOrders)) * 100}%` }} />
+                       </div>
+                       <span className="text-[10px] font-black opacity-40">{Math.round((distanceStats.ordersInRoutes / Math.max(1, distanceStats.totalOrders)) * 100)}%</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-6">
-                <div className="flex items-center gap-3">
-                   <div className={clsx("w-8 h-8 rounded-lg flex items-center justify-center", isDark ? "bg-emerald-500/20 text-emerald-400" : "bg-emerald-100 text-emerald-600")}><BoltIcon className="w-5 h-5" /></div>
-                   <h3 className="text-sm font-black uppercase tracking-[0.2em] opacity-50">Статус розрахунку</h3>
+
+                <div className="space-y-4 md:border-l md:pl-8 border-white/5">
+                   <div className="flex items-center gap-2 opacity-40">
+                    <ExclamationTriangleIcon className="w-4 h-4" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">Ошибки гео</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <div className="flex items-baseline gap-2">
+                       <span className={clsx("text-4xl font-black tabular-nums", courier.geoErrorCount > 0 ? "text-red-500" : "opacity-20")}>{courier.geoErrorCount || 0}</span>
+                       <span className="text-xs font-black opacity-30 uppercase">Alerts</span>
+                    </div>
+                    {courier.geoErrorCount > 0 && (
+                      <p className="mt-2 text-[9px] font-bold text-red-500/60 uppercase tracking-widest animate-pulse">Требуется уточнение адресов</p>
+                    )}
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                  <div className="flex flex-col"><span className="text-[10px] font-black uppercase tracking-wider opacity-30 mb-1">Всього</span><div className="text-3xl font-black tabular-nums text-blue-500">{distanceStats.totalOrders}</div></div>
-                  <div className="flex flex-col sm:border-l sm:border-white/10 sm:pl-4"><span className="text-[10px] font-black uppercase tracking-wider opacity-30 mb-1">Розраховано</span><div className={clsx("text-3xl font-black tabular-nums", distanceStats.ordersInRoutes === distanceStats.totalOrders ? "text-emerald-500" : "text-blue-400")}>{distanceStats.ordersInRoutes}</div></div>
-                  <div className="flex flex-col sm:border-l sm:border-white/10 sm:pl-4"><span className="text-[10px] font-black uppercase tracking-wider opacity-30 mb-1">Залишилось</span><div className={clsx("text-3xl font-black tabular-nums", (distanceStats.totalOrders - distanceStats.ordersInRoutes) > 0 ? "text-orange-500" : "text-gray-400 opacity-30")}>{distanceStats.totalOrders - distanceStats.ordersInRoutes}</div></div>
-                </div>
-                <div className="mt-4"><div className={clsx("h-1.5 w-full rounded-full overflow-hidden", isDark ? "bg-white/5" : "bg-gray-100")}><div className={clsx("h-full transition-all duration-1000", distanceStats.ordersInRoutes === distanceStats.totalOrders ? "bg-emerald-500" : "bg-blue-500")} style={{ width: `${(distanceStats.ordersInRoutes / Math.max(1, distanceStats.totalOrders)) * 100}%` }} /></div></div>
               </div>
             </div>
 
             <div className="space-y-8">
               <div className="flex items-center gap-4">
-                <h3 className="text-sm font-black uppercase tracking-[0.2em] opacity-50 shrink-0">Історія маршрутів ({courierRoutes.length})</h3>
+                <h3 className="text-sm font-black uppercase tracking-[0.2em] opacity-50 shrink-0">История маршрутов ({courierRoutes.length})</h3>
                 <div className="flex-1 h-px bg-white/5" />
               </div>
               {courierRoutes.length > 0 ? (
                 <div className="space-y-12 relative pl-8">
                   <div className={clsx("absolute left-[1.125rem] top-2 bottom-2 w-0.5", isDark ? "bg-white/5" : "bg-slate-200")} />
                   {courierRoutes.map((route, idx) => (
-                    <RouteSummaryCard 
-                      key={route.id || idx} 
-                      route={route} 
-                      index={idx} 
-                      isDark={isDark} 
-                      onEditAddress={onEditAddress} 
-                      onDeleteRoute={onDeleteRoute} 
-                    />
+                    <RouteSummaryCard key={route.id || idx} route={route} index={idx} isDark={isDark} onEditAddress={onEditAddress} onDeleteRoute={onDeleteRoute} />
                   ))}
                 </div>
               ) : (
                 <div className={clsx("flex flex-col items-center justify-center p-20 rounded-[3rem] border-2 border-dashed", isDark ? "bg-white/5 border-white/5" : "bg-slate-50 border-slate-100")}>
                   <div className={clsx("w-20 h-20 rounded-full flex items-center justify-center mb-6", isDark ? "bg-white/5 text-gray-700" : "bg-white text-gray-200")}><MapIcon className="w-10 h-10" /></div>
-                  <p className="font-bold opacity-30 uppercase tracking-[0.2em] text-center">У цього кур'єра<br/>ще немає маршрутів</p>
+                  <p className="font-bold opacity-30 uppercase tracking-[0.2em] text-center">У этого курьера<br/>еще нет маршрутов</p>
                 </div>
               )}
             </div>
@@ -459,7 +480,7 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
         </div>
 
         <div className={clsx("p-8 border-t flex justify-end shrink-0", isDark ? "border-white/5 bg-[#1e1e1e]" : "border-slate-100 bg-white")}>
-          <button onClick={onClose} className="px-8 py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] bg-blue-600 text-white hover:bg-blue-700 active:scale-95 shadow-lg shadow-blue-500/10">Закрити</button>
+          <button onClick={onClose} className="px-8 py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] bg-blue-600 text-white hover:bg-blue-700 active:scale-95 shadow-lg shadow-blue-500/10">Закрыть</button>
         </div>
       </div>
     </div>,

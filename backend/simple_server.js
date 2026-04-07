@@ -813,7 +813,9 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
       if (turboCalculator) {
         turboCalculator.io = io;
         await turboCalculator.start(io);
-        logger.info('[TurboCalculator] 🚀 v5.170 запущен после инициализации БД (Render-safe)');
+        // v6.11: Expose as global so dashboardRoutes can call notifyNewFOData()
+        global.turboCalculator = turboCalculator;
+        logger.info('[TurboCalculator] 🚀 v6.11 запущен после инициализации БД (Render-safe)');
       }
     } catch (calcError) {
       logger.error('Failed to start TurboCalculator worker:', calcError.message);
@@ -1182,6 +1184,16 @@ async function setupDashboardListener() {
           // v24.0: REMOVED automatic turboCalculator trigger from notifications
           // TurboCalculator now runs on its own schedule and via priority endpoint only
           // This prevents constant re-triggering and performance issues
+
+          // v6.11: Notify TurboCalculator that fresh FO data arrived —
+          // but ONLY activate divisions that user explicitly started (isActive=true)
+          if (global.turboCalculator && typeof global.turboCalculator.notifyNewFOData === 'function') {
+            const notifyDivId = String(notification.divisionId || '');
+            const notifyDate = notification.targetDate || null;
+            if (notifyDivId && notifyDivId !== 'all') {
+              global.turboCalculator.notifyNewFOData(notifyDivId, notifyDate);
+            }
+          }
 
           // Сброс кэша при обновлении данных
           await cacheService.invalidateAll();

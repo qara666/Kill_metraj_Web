@@ -31,8 +31,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <ErrorBoundary>
         <ThemeProvider>
           <ErrorProvider>
-            <AuthProvider>
-              <ExcelDataProvider>
+            <ExcelDataProvider>
+              <AuthProvider>
                 <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
                   <App />
                   <Toaster
@@ -67,8 +67,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                     }}
                   />
                 </BrowserRouter>
-              </ExcelDataProvider>
-            </AuthProvider>
+              </AuthProvider>
+            </ExcelDataProvider>
           </ErrorProvider>
         </ThemeProvider>
       </ErrorBoundary>

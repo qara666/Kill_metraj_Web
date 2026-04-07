@@ -16,6 +16,15 @@ import { distanceBetween } from '../services/robust-geocoding/candidateScoring'
 import { Route } from '../types/route'
 import { useCalculationProgress } from '../store/calculationProgressStore'
 
+// Haversine distance calculator for guaranteed fallback
+const haversineDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
 interface UseRouteGeocodingProps {
     settings: any
     selectedHubs: string[]
@@ -717,34 +726,39 @@ export const useRouteGeocoding = ({
 
                 const yapikoUrl = (settings.yapikoOsrmUrl || '').trim()
 
-                // Race all 3 engines in parallel — return first valid result
+                // ─── ULTRA TURBO: Race ALL providers for MAXIMUM quality + speed ───
+                // Uses all 3 providers in parallel - first valid result wins
+                // Quality: Yapiko > Valhalla > OSRM (Yapiko is most accurate for UA)
                 const raceResults = await Promise.allSettled([
-                    // 1. Yapiko OSRM (custom local server)
+                    // 1. Yapiko OSRM (custom local server) - BEST quality if available
                     yapikoUrl ? (async () => {
                         const { YapikoOSRMService } = await import('../services/YapikoOSRMService')
                         const r = await YapikoOSRMService.calculateRoute(turboPoints, yapikoUrl)
-                        if (r.feasible && (r.totalDistance ?? 0) > 0) return { dist: r.totalDistance ?? 0, dur: r.totalDuration ?? 0, src: 'Yapiko' }
-                        throw new Error('Yapiko returned 0')
+                        if (r.feasible && (r.totalDistance ?? 0) > 0) return { dist: r.totalDistance ?? 0, dur: r.totalDuration ?? 0, src: 'Yapiko', quality: 3 }
+                        throw new Error('Yapiko failed')
                     })() : Promise.reject('No Yapiko URL'),
 
-                    // 2. Public OSRM
-                    (async () => {
-                        const { OSRMService } = await import('../services/osrmService')
-                        const r = await OSRMService.calculateRoute(turboPoints)
-                        if (r.feasible && (r.totalDistance ?? 0) > 0) return { dist: r.totalDistance ?? 0, dur: r.totalDuration ?? 0, src: 'OSRM' }
-                        throw new Error('OSRM returned 0')
-                    })(),
-
-                    // 3. Valhalla
+                    // 2. Valhalla (high quality, medium speed)
                     (async () => {
                         const { ValhallaService } = await import('../services/valhallaService')
                         const r = await ValhallaService.calculateRoute(turboPoints)
-                        if (r.feasible && (r.totalDistance ?? 0) > 0) return { dist: r.totalDistance ?? 0, dur: r.totalDuration ?? 0, src: 'Valhalla' }
-                        throw new Error('Valhalla returned 0')
-                    })()
+                        if (r.feasible && (r.totalDistance ?? 0) > 0) return { dist: r.totalDistance ?? 0, dur: r.totalDuration ?? 0, src: 'Valhalla', quality: 2 }
+                        throw new Error('Valhalla failed')
+                    })(),
+
+                    // 3. OSRM (fast fallback)
+                    (async () => {
+                        const { OSRMService } = await import('../services/osrmService')
+                        const r = await OSRMService.calculateRoute(turboPoints)
+                        if (r.feasible && (r.totalDistance ?? 0) > 0) return { dist: r.totalDistance ?? 0, dur: r.totalDuration ?? 0, src: 'OSRM', quality: 1 }
+                        throw new Error('OSRM failed')
+                    })(),
                 ])
 
-                const winner = raceResults.find(r => r.status === 'fulfilled') as PromiseFulfilledResult<any> | undefined
+                // Find the best result (highest quality provider that succeeded)
+                const winner = raceResults
+                    .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
+                    .sort((a, b) => (b.value.quality || 0) - (a.value.quality || 0))[0]
 
                 if (winner) {
                     const totalDistance = winner.value.dist
@@ -836,8 +850,8 @@ export const useRouteGeocoding = ({
                 }
             }
 
+            // Try Valhalla (high quality)
             if (!routingSuccess) {
-                // Try Valhalla first
                 try {
                     const { ValhallaService } = await import('../services/valhallaService')
                     const vRes = await ValhallaService.calculateRoute(points)
@@ -847,36 +861,41 @@ export const useRouteGeocoding = ({
                         routingSuccess = true
                         console.log(`[Маршрут] Valhalla — успех: ${totalDistance}м`)
                     } else {
-                        console.warn('[Маршрут] Valhalla вернула 0 или невозможный путь. Пробую OSRM.')
+                        console.warn('[Маршрут] Valhalla вернула 0 или ошибку. Пробую OSRM.')
                     }
                 } catch (e) {
                     console.warn('[Маршрут] Ошибка Valhalla, пробую OSRM:', e)
                 }
+            }
 
-                // Try OSRM if Valhalla failed
-                if (!routingSuccess) {
-                    try {
-                        const { OSRMService } = await import('../services/osrmService')
-                        const oRes = await OSRMService.calculateRoute(points)
-                        if (oRes.feasible && oRes.totalDistance && oRes.totalDistance > 0) {
-                            totalDistance = oRes.totalDistance
-                            totalDuration = oRes.totalDuration || 0
-                            routingSuccess = true
-                            console.log(`[Маршрут] OSRM — успех: ${totalDistance}м`)
-                        } else {
-                            console.warn('[Маршрут] OSRM также вернул 0 или невозможный путь.')
-                        }
-                    } catch (e) {
-                        console.warn('[Маршрут] Резервный OSRM не удался:', e)
+            // Try OSRM (fast fallback)
+            if (!routingSuccess) {
+                try {
+                    const { OSRMService } = await import('../services/osrmService')
+                    const oRes = await OSRMService.calculateRoute(points)
+                    if (oRes.feasible && oRes.totalDistance && oRes.totalDistance > 0) {
+                        totalDistance = oRes.totalDistance
+                        totalDuration = oRes.totalDuration || 0
+                        routingSuccess = true
+                        console.log(`[Маршрут] OSRM — успех: ${totalDistance}м`)
+                    } else {
+                        console.warn('[Маршрут] OSRM вернул 0 или ошибку.')
                     }
+                } catch (e) {
+                    console.warn('[Маршрут] OSRM не удался:', e)
                 }
             }
 
-            // Fallback to Google ONLY if explicitly required or manually triggered (Legacy behavior preserved but not automated)
-            // But per user request "забудь за гугл", we skip automated fallback to Google.
+            // Fallback - use Haversine if everything failed
             if (!routingSuccess) {
-                // If everything free failed, we return 0/failure instead of stealthy Google spend
-                console.error('[Маршрут] Все бесплатные провайдеры (Valhalla, OSRM) не смогли построить путь.')
+                console.warn('[Маршрут] Все провайдеры не смогли, используем Haversine.')
+                let haversineTotal = 0
+                for (let i = 0; i < points.length - 1; i++) {
+                    haversineTotal += haversineDistance(points[i].lat, points[i].lng, points[i + 1].lat, points[i + 1].lng)
+                }
+                totalDistance = Math.round(haversineTotal * 1.3)
+                totalDuration = Math.round((totalDistance / 1000) / 0.5 * 60)
+                routingSuccess = true
             }
 
 

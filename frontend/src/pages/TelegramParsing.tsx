@@ -12,6 +12,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { telegramService } from '../services/telegramService'
 import { toast } from 'react-hot-toast'
+import { DashboardHeader } from '../components/shared/DashboardHeader'
 
 interface TelegramChat {
     id: string
@@ -471,46 +472,37 @@ export const TelegramParsing: React.FC = () => {
 
     return (
         <div className="space-y-6 p-6">
-            {/* Заголовок */}
-            <div className={clsx(
-                'rounded-2xl p-6 shadow-lg border-2',
-                isDark ? 'bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 border-gray-700' : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-blue-200'
-            )}>
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className={clsx('text-3xl font-bold mb-2', isDark ? 'text-white' : 'text-gray-900')}>
-                            Парсинг выгрузки в телеграм и реестре
-                        </h1>
-                        <p className={clsx('text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>
-                            Поиск сообщений в Telegram по текстовому запросу
-                        </p>
-                    </div>
+            <DashboardHeader
+                icon={ChatBubbleLeftRightIcon}
+                title="ТЕЛЕГРАМ ХАБ"
+                subtitle="МОНІТОРИНГ ТА ПАРСИНГ"
+                statusMetrics={[
+                    {
+                        label: isConnected ? "ПІДКЛЮЧЕНО" : "НЕ ПІДКЛЮЧЕНО",
+                        value: isConnected ? "ONLINE" : "OFFLINE",
+                        color: isConnected ? "bg-[#10b981]" : "bg-red-500"
+                    }
+                ]}
+                actions={
                     <div className="flex items-center gap-3">
                         {activeTab === 'telegram' && (
                             <>
-                                <div className={clsx(
-                                    'flex items-center gap-2 px-3 py-2 rounded-lg',
-                                    isConnected ? (isDark ? 'bg-green-900/30 text-green-400' : 'bg-green-100 text-green-700') : (isDark ? 'bg-red-900/30 text-red-400' : 'bg-red-100 text-red-700')
-                                )}>
-                                    <div className={clsx('w-2 h-2 rounded-full', isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400')} />
-                                    <span className="text-sm font-medium">{isConnected ? 'Подключено' : 'Не подключено'}</span>
-                                </div>
                                 {isConnected ? (
-                                    <button onClick={handleDisconnect} className={clsx('px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2', isDark ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white')}>
-                                        <XMarkIcon className="w-5 h-5" />
-                                        <span>Отключиться</span>
+                                    <button onClick={handleDisconnect} className={clsx('px-6 py-3 rounded-2xl font-black uppercase text-[11px] tracking-[0.2em] transition-all flex items-center gap-3 border shadow-sm', isDark ? 'bg-red-600/10 border-red-500/20 text-red-400 hover:bg-red-600 hover:text-white' : 'bg-red-50 border-red-200 text-red-600 hover:bg-red-600 hover:text-white')}>
+                                        <XMarkIcon className="w-4 h-4" />
+                                        <span>ВІДКЛЮЧИТИСЯ</span>
                                     </button>
                                 ) : (
-                                    <button onClick={() => setShowConnectionModal(true)} className={clsx('px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2', isDark ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white')}>
-                                        <LinkIcon className="w-5 h-5" />
-                                        <span>Подключиться</span>
+                                    <button onClick={() => setShowConnectionModal(true)} className={clsx('px-6 py-3 rounded-2xl font-black uppercase text-[11px] tracking-[0.2em] transition-all flex items-center gap-3 bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/20')}>
+                                        <LinkIcon className="w-4 h-4" />
+                                        <span>ПІДКЛЮЧИТИСЯ</span>
                                     </button>
                                 )}
                             </>
                         )}
                     </div>
-                </div>
-            </div>
+                }
+            />
 
             {/* Вкладки */}
             <div className={clsx('rounded-xl border-2 p-1', isDark ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white')}>

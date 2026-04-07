@@ -1,17 +1,9 @@
 /**
- * RobustGeocodingService — v3.0 (Direct-First Architecture)
+ * RobustGeocodingService — v3.1 (Direct-First Architecture)
  *
  * TWO clear modes:
- *  🟢 TURBO (fast):  Direct address → Photon + Nominatim in parallel. No variants. No filters.
- *                     Used for first-pass batch geocoding. Target: <2s per address.
+ *  🟢 TURBO (fast):  Direct address → Photon + Nominatim + Geoapify in parallel.
  *  🔵 FULL (deep):   VariantExpander + all providers + fallbacks.
- *                     Used ONLY for refinement pass (addresses that need clarification).
- *
- *  ✔ KML zone validation & prioritisation
- *  ✔ ROOFTOP / RANGE_INTERPOLATED priority
- *  ✔ House number exact-match bonus
- *  ✔ In-flight deduplication (same address → 1 call)
- *  ✔ L1 / L2 / L3 cache (memory + localStorage)
  */
 
 import { PhotonService } from '../photonService'
@@ -92,10 +84,9 @@ export class RobustGeocodingService {
   private ctx: KmlZoneContext = EMPTY_CONTEXT
   private cityBias = 'Київ'
   
-  private readonly PERSISTENT_CACHE_KEY = 'km_geocache_v40';
+  private readonly PERSISTENT_CACHE_KEY = 'km_geocache_v91'; // v9.1: Bumped
   private l1Cache = new Map<string, RobustGeocodeResult>();
 
-  // Provider cooldown (ProviderName -> ExpiryTimestamp)
   private disabledProviders = new Map<string, number>();
   private providerLastRequest = new Map<string, number>();
   private static readonly PROVIDER_MIN_DELAY: Record<string, number> = {
@@ -218,7 +209,6 @@ export class RobustGeocodingService {
     return this.ctx
   }
 
-  // ─── TURBO: Direct query to a single provider, no filtering ──────────────────
   private async _queryProvider(
     name: string,
     service: any,
@@ -245,54 +235,44 @@ export class RobustGeocodingService {
       const scored = norm.map((c: any) => scoreCandidate(c, scoringOpts));
       const perfect = scored.find((c: any) => isPerfectHit(c, expectedHouse, []));
       
-      if (perfect) {
-        return { scored, perfect };
-      }
-      return { scored };
+      return { scored, perfect };
     } catch (e: any) {
       if (e.message === 'TIMEOUT') {
-        // silent timeout
+        // silent
       } else if (e.status === 429 || e.message?.includes('429')) {
-        console.warn(`[${name}] Rate Limited. Пауза 2 мин.`);
         this.disabledProviders.set(name, Date.now() + 120000);
       } else if (e.status === 401 || e.message?.includes('401')) {
         (service as any)._disabled = true;
-      } else {
-        console.warn(`[${name}] Ошибка: ${e.message}`);
       }
       return { scored: [] };
     }
   }
 
-  // ─── TURBO geocode: Fast, direct, no VariantExpander ─────────────────────────
   private async _geocodeTurbo(
     cleanQuery: string,
     city: string,
     scoringOpts: any,
     expectedHouse: string | null,
   ): Promise<{ scored: ScoredCandidate[]; perfect?: ScoredCandidate }> {
-    // Run Photon + Nominatim in strict parallel
-    const [photonResult, nominatimResult] = await Promise.all([
-      this._queryProvider('Photon', PhotonService, cleanQuery, city, scoringOpts, expectedHouse, 2000),
-      this._queryProvider('Nominatim', NominatimService, cleanQuery, city, scoringOpts, expectedHouse, 3500),
+    const [photonResult, nominatimResult, geoapifyResult] = await Promise.all([
+      this._queryProvider('Photon', PhotonService, cleanQuery, city, scoringOpts, expectedHouse, 6000),
+      this._queryProvider('Nominatim', NominatimService, cleanQuery, city, scoringOpts, expectedHouse, 8000),
+      this._queryProvider('Geoapify', (await import('../geoapifyService')).GeoapifyService, cleanQuery, city, scoringOpts, expectedHouse, 6000),
     ]);
 
-    const allScored = [...photonResult.scored, ...nominatimResult.scored];
-    const perfect = photonResult.perfect || nominatimResult.perfect;
+    const allScored = [...photonResult.scored, ...nominatimResult.scored, ...geoapifyResult.scored];
+    const perfect = photonResult.perfect || nominatimResult.perfect || geoapifyResult.perfect;
     
     if (perfect) return { scored: allScored, perfect };
     
-    // Accept best candidate if it's not a total catastrophe (no KML context = everything valid)
     const best = pickBest(dedupeByCoord(allScored));
-    if (best && best.score > -100000) {
+    if (best && best.score > -5000000) {
       return { scored: allScored, perfect: best };
     }
 
     return { scored: allScored };
-
   }
 
-  // ─── FULL geocode: VariantExpander + all providers ────────────────────────────
   private async _geocodeFull(
     rawAddress: string,
     cleanQuery: string,
@@ -303,15 +283,13 @@ export class RobustGeocodingService {
     const allCandidates: ScoredCandidate[] = [];
     const settings = localStorageUtils.getAllSettings();
 
-    // Generate variants via VariantExpander
     const { primary, secondary } = expandVariants(rawAddress, city);
-    const variants = [...primary.slice(0, 5), ...secondary.slice(0, 3)];
+    const variants = [...primary.slice(0, 8), ...secondary.slice(0, 5)];
 
-    // Run all variants in parallel against both free providers
     const variantPromises = variants.map(async (variant) => {
       const [ph, nm] = await Promise.all([
-        this._queryProvider('Photon', PhotonService, variant, city, scoringOpts, expectedHouse, 3000),
-        this._queryProvider('Nominatim', NominatimService, variant, city, scoringOpts, expectedHouse, 5000),
+        this._queryProvider('Photon', PhotonService, variant, city, scoringOpts, expectedHouse, 4000),
+        this._queryProvider('Nominatim', NominatimService, variant, city, scoringOpts, expectedHouse, 6000),
       ]);
       return [...ph.scored, ...nm.scored];
     });
@@ -321,37 +299,25 @@ export class RobustGeocodingService {
       if (r.status === 'fulfilled') allCandidates.push(...r.value);
     }
 
-    // Check for early perfect hit
     let perfect = pickBest(dedupeByCoord(allCandidates));
     if (perfect && (perfect.isInsideZone || perfect.score > 5000)) {
       return { scored: allCandidates, perfect };
     }
 
-    // Geoapify fallback
     if (settings.geoapifyApiKey) {
       try {
         const { GeoapifyService } = await import('../geoapifyService');
-        const geoRaw = await Promise.race([
-          GeoapifyService.geocode(cleanQuery, city),
-          new Promise<any[]>((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 4000))
-        ]);
-        if (Array.isArray(geoRaw) && geoRaw.length > 0) {
-          const geoScored = geoRaw.map((c: any) => {
-            const s = scoreCandidate(normaliseRaw(c), scoringOpts);
-            return s;
-          });
-          allCandidates.push(...geoScored);
+        const geoRaw = await GeoapifyService.geocode(cleanQuery, city);
+        if (Array.isArray(geoRaw)) {
+          allCandidates.push(...geoRaw.map((c: any) => scoreCandidate(normaliseRaw(c), scoringOpts)));
         }
       } catch {}
     }
 
-    // Street-only fallback (if house number is unknown to OSM)
     if (expectedHouse) {
       const streetOnly = cleanQuery.replace(/\b\d+[а-яієґa-z]*\b/gi, '').trim();
       if (streetOnly && streetOnly !== cleanQuery) {
-        const [ph2] = await Promise.all([
-          this._queryProvider('Photon', PhotonService, `${streetOnly}, ${city}`, city, scoringOpts, null, 3000),
-        ]);
+        const ph2 = await this._queryProvider('Photon', PhotonService, `${streetOnly}, ${city}`, city, scoringOpts, null, 3000);
         allCandidates.push(...ph2.scored.map(s => { s.score -= 3000; return s; }));
       }
     }
@@ -394,13 +360,11 @@ export class RobustGeocodingService {
     const cleanQuery = cleanAddressForSearch(normalizedAddress);
     const expectedHouse = extractHouseNumber(rawAddress);
     
-    // L1 Cache Lookup
     const cacheKey = `${cleanQuery.toLowerCase()}:${cityBias.toLowerCase()}:${turbo ? 'T' : 'F'}`;
     if (this.l1Cache.has(cacheKey)) {
         return { ...this.l1Cache.get(cacheKey)!, fromCache: true };
     }
 
-    // addressGeo DIRECT BYPASS — use coordinates embedded in address string
     const geoStr = options.addressGeoStr || (rawAddress.includes('Lat=') ? rawAddress : null);
     if (geoStr) {
         const extracted = this._parseAddressGeo(geoStr);
@@ -435,57 +399,29 @@ export class RobustGeocodingService {
         }
     }
 
-    // Zone Gravity Hint
     let gravityHint = options.hintPoint ?? null;
-    if (!gravityHint && options.expectedDeliveryZone && this.ctx.allPolygons.length > 0) {
-      const eZoneName = options.expectedDeliveryZone.toLowerCase().replace(/зона\s*/g, '').trim();
-      const targetPoly = this.ctx.allPolygons.find(p => p.name.toLowerCase().includes(eZoneName));
-      if (targetPoly?.bounds) {
-        try {
-          const b = targetPoly.bounds;
-          let centerLat: number, centerLng: number;
-          if (typeof b.getCenter === 'function') {
-            const c = b.getCenter();
-            centerLat = Number(typeof c.lat === 'function' ? c.lat() : c.lat);
-            centerLng = Number(typeof c.lng === 'function' ? c.lng() : c.lng);
-          } else {
-            const s = Number(b.south ?? 0), n = Number(b.north ?? 0), w = Number(b.west ?? 0), e = Number(b.east ?? 0);
-            centerLat = (s + n) / 2;
-            centerLng = (w + e) / 2;
-          }
-          gravityHint = { lat: centerLat, lng: centerLng };
-        } catch {}
-      }
-    }
-
     const scoringOpts = {
       ctx: this.ctx,
       expectedHouse,
       hintPoint: gravityHint,
       cityBias,
       expectedDeliveryZone: options.expectedDeliveryZone || null,
-      // IMPORTANT: Do NOT pass requestedStreetNames at all in turbo mode.
-      // candidateScoring penalizes -400k when requestedStreetNames=[] but expectedHouse is set.
-      // By omitting it (undefined), scoring falls through to standard checks without penalty.
     };
 
     let allCandidates: ScoredCandidate[] = [];
     let bestResult: ScoredCandidate | null = null;
 
     if (turbo) {
-      // ── TURBO MODE: Fast, direct, parallel Photon+Nominatim ──────────────────
       const { scored, perfect } = await this._geocodeTurbo(cleanQuery, cityBias, scoringOpts, expectedHouse);
       allCandidates = scored;
       bestResult = perfect || pickBest(dedupeByCoord(scored)) || null;
     } else {
-      // ── FULL MODE: VariantExpander + all providers (refinement only) ──────────
       const { scored, perfect } = await this._geocodeFull(rawAddress, cleanQuery, cityBias, scoringOpts, expectedHouse);
       allCandidates = scored;
       bestResult = perfect || pickBest(dedupeByCoord(scored)) || null;
     }
 
-    // Iron Dome: reject obvious anomalies
-    if (bestResult && bestResult.score < -900000) {
+    if (bestResult && bestResult.score < -5000000) {
       bestResult = null;
     }
 
@@ -499,7 +435,6 @@ export class RobustGeocodingService {
 
     if (bestResult) {
       this.l1Cache.set(cacheKey, finalResult);
-      // Save periodically (not on every call to avoid blocking)
       if (this.l1Cache.size % 10 === 0) this.savePersistentCache();
     }
 
@@ -513,7 +448,6 @@ export class RobustGeocodingService {
     const results = new Map<string, RobustGeocodeResult>();
     const { turbo = false } = globalOptions;
     
-    // Deduplicate addresses
     const uniqueReqs = new Map<string, { address: string; options?: RobustGeocodeOptions }>();
     requests.forEach(req => {
         const key = req.address.trim().toLowerCase();
@@ -524,24 +458,9 @@ export class RobustGeocodingService {
     
     await Promise.all(reqArray.map(async (req) => {
         const key = req.address.trim().toLowerCase();
-        
-        const cacheKey = `${cleanAddressForSearch(req.address).toLowerCase()}:${(globalOptions.cityBias || this.cityBias).toLowerCase()}:${turbo ? 'T' : 'F'}`;
-        if (this.l1Cache.has(cacheKey)) {
-            results.set(key, { ...this.l1Cache.get(cacheKey)!, fromCache: true });
-            return;
-        }
-
-        try {
-            const combinedOptions = { 
-                ...globalOptions, 
-                ...(req.options || {}),
-                turbo: turbo || req.options?.turbo
-            };
-            const result = await this.geocode(req.address, combinedOptions);
-            results.set(key, result);
-        } catch (e) {
-            console.error(`[BatchGeocode] Failed for ${req.address}`, e);
-        }
+        const combinedOptions = { ...globalOptions, ...(req.options || {}), turbo: turbo || req.options?.turbo };
+        const result = await this.geocode(req.address, combinedOptions);
+        results.set(key, result);
     }));
     
     const finalMap = new Map<string, RobustGeocodeResult>();
@@ -556,15 +475,9 @@ export class RobustGeocodingService {
 
   async reverseGeocode(lat: number, lng: number): Promise<{ formattedAddress: string; kmlZone: string | null; kmlHub: string | null } | null> {
     try {
-      let results: any[] = []
-      try {
-        const r = await NominatimService.reverse(lat, lng)
-        results = r ? [r] : []
-      } catch {
-        results = []
-      }
-      if (!results || results.length === 0) return null
-      const raw = normaliseRaw(results[0])
+      const r = await NominatimService.reverse(lat, lng)
+      if (!r) return null
+      const raw = normaliseRaw(r)
       const scored = scoreCandidate(raw, { ctx: this.ctx })
       return { formattedAddress: raw.formatted_address, kmlZone: scored.kmlZone, kmlHub: scored.kmlHub }
     } catch { return null }

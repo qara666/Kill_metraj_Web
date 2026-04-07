@@ -12,10 +12,7 @@ import {
     MapPinIcon
 } from '@heroicons/react/24/outline';
 import { 
-    CheckBadgeIcon as CheckBadgeIconSolid, 
-    HomeIcon as HomeIconSolid, 
-    MapIcon as MapIconSolid, 
-    ExclamationCircleIcon as ExclamationCircleIconSolid
+    MapIcon as MapIconSolid
 } from '@heroicons/react/24/solid';
 import { getStatusBadgeProps } from '../../utils/data/statusBadgeHelper';
 
@@ -89,11 +86,6 @@ const OrderItem = memo(({
     const raw = (order as any).raw || {};
     const coords = (order as any).coords || {};
     const meta = (order as any).locationMeta || {};
-
-    const locType = order.locationType || coords.locationType || raw.locationType;
-    const isRooftop = locType === 'ROOFTOP';
-    const isInterpolated = locType === 'RANGE_INTERPOLATED';
-    const streetMatched = order.streetNumberMatched ?? raw.streetNumberMatched ?? coords.streetNumberMatched;
 
     return (
         <div style={style} className="pr-1">
@@ -211,36 +203,16 @@ const OrderItem = memo(({
                         </p>
 
                         <div className="flex flex-wrap items-center gap-1.5 text-xs mb-2">
-                            {/* Verified Status v42.1 */}
-                            {isRooftop && (
-                                <div className={clsx(
-                                    "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
-                                    isDark ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-700"
-                                )}>
-                                    <CheckBadgeIconSolid className="w-3.5 h-3.5" />
-                                    ТОЧНИЙ АДРЕС
-                                </div>
-                            )}
 
-                            {/* Locked Status v42.1 */}
-                            {(order as any).isLocked && (
-                                <div className={clsx(
-                                    "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
-                                    isDark ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-green-50 border-green-200 text-green-700"
-                                )}>
-                                    <CheckBadgeIconSolid className="w-3.5 h-3.5" />
-                                    ПЕРЕВІРЕНО
-                                </div>
-                            )}
 
                             {/* Sector / KML v42.3 */}
                             {(() => {
-                                const opZone = (order as any).deliveryZone || raw.deliveryZone;
+                                const opZone = (order as any).deliveryZone || raw.deliveryZone || raw?.['Зона доставки'] || raw?.['Зона'];
                                 const kmlZone = order.kmlZone || meta.kmlZone || coords.kmlZone;
                                 const hub = order.kmlHub || meta.hubName || coords.kmlHub;
                                 
                                 const kmlFull = kmlZone ? `${hub ? hub + ' - ' : ''}${kmlZone}` : null;
-                                const same = opZone && kmlFull && opZone.trim().toLowerCase() === kmlFull.trim().toLowerCase();
+                                const same = opZone && kmlFull && String(opZone).trim().toLowerCase() === String(kmlFull).trim().toLowerCase();
 
                                 return (
                                     <div className={clsx(
@@ -252,56 +224,19 @@ const OrderItem = memo(({
                                         <MapIconSolid className="w-3.5 h-3.5 opacity-70" />
                                         <span className="opacity-60 mr-0.5">СЕКТОР:</span>
                                         {(() => {
-                                            if (same) return `FO/KML:${opZone.trim()}`.toUpperCase();
+                                            if (same) return `FO/KML:${String(opZone).trim()}`.toUpperCase();
                                             const zones = [
-                                                opZone ? `FO:${opZone}` : null,
+                                                opZone ? `FO:${String(opZone).trim()}` : null,
                                                 kmlFull ? `KML:${kmlFull}` : null
-                                            ].filter(Boolean).join(' | ').toUpperCase();
+                                            ].filter(Boolean).sort().join(' | ').toUpperCase();
                                             return zones || '—';
                                         })()}
                                     </div>
                                 );
                             })()}
 
-                            {/* Street Match v42.1 */}
-                            <div className={clsx(
-                                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
-                                locType && !isInterpolated && locType !== 'APPROXIMATE'
-                                    ? (isDark ? "bg-teal-500/10 border-teal-500/30 text-teal-400" : "bg-teal-50 border-teal-100 text-teal-700")
-                                    : (isDark ? "bg-rose-500/10 border-rose-500/30 text-rose-400" : "bg-rose-50 border-rose-200 text-rose-700")
-                            )}>
-                                <MapIconSolid className="w-3.5 h-3.5 opacity-70" />
-                                <span className="opacity-60 mr-0.5">ВУЛИЦЯ:</span>
-                                {locType && !isInterpolated && locType !== 'APPROXIMATE' ? 'ТАК' : 'НІ'}
-                            </div>
 
-                            {/* House Match v42.1 */}
-                            {(() => {
-                                const houseMatched = streetMatched || isInterpolated || isRooftop;
-                                return (
-                                    <div className={clsx(
-                                        "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
-                                        houseMatched
-                                            ? (isDark ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400" : "bg-cyan-50 border-cyan-100 text-cyan-700")
-                                            : (isDark ? "bg-orange-500/10 border-orange-500/30 text-orange-400" : "bg-orange-50 border-orange-200 text-orange-700")
-                                    )}>
-                                        <HomeIconSolid className="w-3.5 h-3.5 opacity-70" />
-                                        <span className="opacity-60 mr-0.5">БУДИНОК:</span>
-                                        {houseMatched ? 'ТАК' : 'НІ'}
-                                    </div>
-                                );
-                            })()}
 
-                            {/* Unverified Warning */}
-                            {(!(order.lat || (order as any).coords?.lat) || !(order.lng || (order as any).coords?.lng)) && (
-                                <div className={clsx(
-                                    "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 animate-pulse shadow-sm",
-                                    isDark ? "bg-amber-500/10 border-amber-500/30 text-amber-500" : "bg-amber-50 border-amber-200 text-amber-700 shadow-amber-500/10"
-                                )}>
-                                    <ExclamationCircleIconSolid className="w-3.5 h-3.5" />
-                                    УТОЧНИТИ АДРЕСУ
-                                </div>
-                            )}
                         </div>
 
                         <div className="flex items-center gap-3 text-xs">
@@ -313,17 +248,6 @@ const OrderItem = memo(({
                                     <ClockIcon className="w-3.5 h-3.5 opacity-70" />
                                     {order.plannedTime}
                                 </div>
-                            )}
-                            {locType && (
-                                <span className={clsx(
-                                    "px-2 py-0.5 rounded font-black text-[9px] tracking-wider border shadow-sm",
-                                    locType === 'ROOFTOP' ? (isDark ? "bg-green-500/20 text-green-400 border-green-500/30" : "bg-green-50 text-green-700 border-green-200") :
-                                    locType === 'RANGE_INTERPOLATED' ? (isDark ? "bg-blue-500/20 text-blue-400 border-blue-500/30" : "bg-blue-50 text-blue-700 border-blue-200") :
-                                    (isDark ? "bg-yellow-500/20 text-yellow-500 border-yellow-500/30" : "bg-yellow-50 text-yellow-700 border-yellow-200")
-                                )}>
-                                    {locType === 'ROOFTOP' ? 'ТОЧНО' : 
-                                     locType === 'RANGE_INTERPOLATED' ? 'ДОМ' : 'ПРИМЕРНО'}
-                                </span>
                             )}
                             <span className={clsx('font-black ml-auto', isDark ? 'text-white' : 'text-gray-900')}>
                                 {order.amount} ₴

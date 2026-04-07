@@ -12,6 +12,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { useDashboardStore } from '../stores/useDashboardStore'
 
 import { clsx } from 'clsx'
+import { HomeIcon } from '@heroicons/react/24/outline'
+import { DashboardHeader } from '../components/shared/DashboardHeader'
 import * as api from '../services/api'
 import { mergeExcelData } from '../utils/data/dataMerging'
 const ExcelDebugLogs = lazy(() => import('../components/excel/ExcelDebugLogs').then(module => ({ default: module.ExcelDebugLogs })))
@@ -310,6 +312,22 @@ export const Dashboard: React.FC = () => {
       'space-y-4 transition-colors duration-300',
       isDark ? 'text-gray-100' : 'text-gray-900'
     )}>
+      <DashboardHeader
+        icon={HomeIcon}
+        title="ГОЛОВНИЙ ХАБ"
+        statusMetrics={[
+          {
+            label: "ВІДКРИТИХ ЗАКАЗІВ",
+            value: excelData?.orders?.length || 0,
+            color: "bg-blue-500"
+          },
+          {
+            label: "РАССЧИТАНО",
+            value: excelData?.routes?.length || 0,
+            color: "bg-[#10b981]"
+          }
+        ]}
+      />
       <div className="space-y-4">
         <DashboardApiSection />
 

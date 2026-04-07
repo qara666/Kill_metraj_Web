@@ -34,7 +34,7 @@ export class OSRMService {
     const url = `${OSRM_BASE_URL}/route/v1/driving/${coordsStr}?overview=false&steps=false`
 
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(10000) })
+      const response = await fetch(url, { signal: AbortSignal.timeout(5000) })
       if (!response.ok) return { feasible: false }
 
       const data = await response.json()

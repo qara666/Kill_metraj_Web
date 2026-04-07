@@ -32,6 +32,8 @@ interface ExcelDataContextType {
 
 const ExcelDataContext = createContext<ExcelDataContextType | undefined>(undefined)
 
+
+
 export const useExcelData = () => {
   const context = useContext(ExcelDataContext)
   if (context === undefined) {
@@ -67,10 +69,11 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       }
     }
     
-    // Build URL with date parameter
+    // Build URL with date parameter and cache buster
+    const cacheBuster = `t=${Date.now()}`;
     const url = normalizedDate 
-      ? `${API_URL}/api/routes/calculated?date=${encodeURIComponent(normalizedDate)}`
-      : `${API_URL}/api/routes/calculated`;
+      ? `${API_URL}/api/routes/calculated?date=${encodeURIComponent(normalizedDate)}&${cacheBuster}`
+      : `${API_URL}/api/routes/calculated?${cacheBuster}`;
     
     const routesRes = await fetch(url, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -100,6 +103,18 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       hasInit.current = true
 
       const loadData = async () => {
+        const rehydrateManualRoutes = (data: any) => {
+          if (!data || !Array.isArray(data.routes) || !Array.isArray(data.orders)) return;
+          data.routes.forEach((r: any) => {
+            if (String(r.id || '').startsWith('route_') && Array.isArray(r.orders)) {
+              r.orders = r.orders.map((strippedOrder: any) => {
+                const fullOrder = data.orders.find((po: any) => String(po.id) === String(strippedOrder.id));
+                return fullOrder ? { ...strippedOrder, ...fullOrder } : strippedOrder;
+              });
+            }
+          });
+        };
+
         try {
           // 1. Сначала пробуем загрузить с сервера
           const token = localStorage.getItem('km_access_token');
@@ -135,6 +150,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                 if (localData && localData.orders && localData.orders.length > 0) {
                   if (!serverHasOrders || (localData.lastModified && (!json.data.lastModified || localData.lastModified > json.data.lastModified))) {
                     // Using localStorage data
+                    rehydrateManualRoutes(localData);
                     setExcelDataState(localData);
                     return;
                   } else {
@@ -205,8 +221,12 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
 
                       // v5.147: Update courier distances from these routes (skip "Не назначено")
                       // Normalize both courier names for proper matching
+                      // v5.201: Create couriers from routes if they don't exist
+                      let existingCourierNames = new Set<string>();
                       if (serverData.couriers && Array.isArray(serverData.couriers)) {
                         serverData.couriers.forEach((c: any) => {
+                            existingCourierNames.add(normalizeCourierName(c.name || c.courierName || '').toUpperCase());
+                            
                             const normName = normalizeCourierName(c.name || c.courierName);
                             if (normName === 'Не назначено' || !normName) return;
                             
@@ -216,7 +236,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                             });
                             
                             if (courierRoutes.length > 0) {
-                                // v5.157: Handle both snake_case (DB) and camelCase (JSON/API) field names
                                 const totalDist = courierRoutes.reduce((acc: number, curr: any) => 
                                   acc + (Number(curr.totalDistance || curr.total_distance || 0)), 0);
                                 const totalOrders = courierRoutes.reduce((acc: number, curr: any) => 
@@ -226,6 +245,27 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                             }
                         });
                       }
+                      
+                      // v5.201: Create couriers from routes if they don't exist
+                      mergedRoutes.forEach((r: any) => {
+                        const routeCourier = normalizeCourierName(r.courier || r.courier_id || '');
+                        if (!routeCourier || routeCourier === 'Не назначено') return;
+                        const upperName = routeCourier.toUpperCase();
+                        
+                        if (!existingCourierNames.has(upperName)) {
+                          existingCourierNames.add(upperName);
+                          const totalDist = Number(r.totalDistance || r.total_distance || 0);
+                          const totalOrders = Number(r.ordersCount || r.orders_count || r.orders?.length || 0);
+                          serverData.couriers = serverData.couriers || [];
+                          serverData.couriers.push({
+                            name: routeCourier,
+                            distanceKm: Number(totalDist.toFixed(2)),
+                            calculatedOrders: totalOrders,
+                            isActive: true,
+                            vehicleType: 'car'
+                          });
+                        }
+                      });
                     }
                   } catch (e) {
                     console.warn('[ExcelSync] Failed to fetch routes from database:', e);
@@ -294,6 +334,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             });
             
             // Priority 3: Local manual routes (from parsed data)
+            rehydrateManualRoutes(parsed);
             existingRoutes.forEach((r: any) => {
               const rid = String(r.id || '');
               // Only add manual routes (start with 'route_')
@@ -307,9 +348,13 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             // Merged routes
             
             // v5.147: Update courier distances when loading from localStorage + DB routes
+            // v5.201: Also create couriers from routes if they don't exist
+            let existingCourierNames = new Set<string>();
             if (parsed.couriers && Array.isArray(parsed.couriers)) {
               const allRoutes = parsed.routes || [];
               parsed.couriers.forEach((c: any) => {
+                existingCourierNames.add((c.name || c.courierName || '').toString().trim().toUpperCase());
+                
                 const rawName = (c.name || c.courierName || '').toString().trim();
                 const normName = rawName.replace(/\s+/g, ' ').toUpperCase();
                 if (normName === 'НЕ НАЗНАЧЕНО' || !rawName) return;
@@ -320,21 +365,61 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                 });
                 
                 if (courierRoutes.length > 0) {
-                  const totalDist = courierRoutes.reduce((acc: number, curr: any) => acc + (Number(curr.total_distance) || 0), 0);
-                  const totalOrders = courierRoutes.reduce((acc: number, curr: any) => acc + (Number(curr.ordersCount) || 0), 0);
+                  const totalDist = courierRoutes.reduce((acc: number, curr: any) => acc + (Number(curr.totalDistance || curr.total_distance) || 0), 0);
+                  const totalOrders = courierRoutes.reduce((acc: number, curr: any) => acc + (Number(curr.ordersCount || curr.orders_count) || 0), 0);
                   c.distanceKm = Number(totalDist.toFixed(2));
                   c.calculatedOrders = totalOrders;
                 }
               });
             }
             
+            // v5.201: Create couriers from routes if they don't exist
+            (parsed.routes || []).forEach((r: any) => {
+                const routeCourier = normalizeCourierName(r.courier || r.courier_id || '');
+                if (!routeCourier || routeCourier === 'Не назначено') return;
+                const upperName = routeCourier.toUpperCase();
+                
+                if (!existingCourierNames.has(upperName)) {
+                    existingCourierNames.add(upperName);
+                    const totalDist = Number(r.totalDistance || r.total_distance || 0);
+                    const totalOrders = Number(r.ordersCount || r.orders_count || r.orders?.length || 0);
+                    parsed.couriers = parsed.couriers || [];
+                    parsed.couriers.push({
+                        name: routeCourier,
+                        distanceKm: Number(totalDist.toFixed(2)),
+                        calculatedOrders: totalOrders,
+                        isActive: true,
+                        vehicleType: 'car'
+                    });
+                }
+            });
+            
             setExcelDataState(parsed)
           } else if (dbRoutes.length > 0) {
             // No local data, but we have DB routes - create minimal state
+            // v5.201: Create couriers from routes
+            const courierMap = new Map<string, { km: number; orders: number }>();
+            dbRoutes.forEach((r: any) => {
+                const courier = normalizeCourierName(r.courier || r.courier_id || '');
+                if (!courier || courier === 'Не назначено') return;
+                const existing = courierMap.get(courier) || { km: 0, orders: 0 };
+                existing.km += Number(r.totalDistance || r.total_distance || 0);
+                existing.orders += Number(r.ordersCount || r.orders_count || r.orders?.length || 0);
+                courierMap.set(courier, existing);
+            });
+            
+            const createdCouriers = Array.from(courierMap.entries()).map(([name, metrics]) => ({
+                name,
+                distanceKm: Number(metrics.km.toFixed(2)),
+                calculatedOrders: metrics.orders,
+                isActive: true,
+                vehicleType: 'car'
+            }));
+            
             // DB routes only
             setExcelDataState({
               orders: [],
-              couriers: [],
+              couriers: createdCouriers,
               paymentMethods: [],
               routes: dbRoutes,
               errors: [],
@@ -359,7 +444,24 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             // Storage event updated routes
             setExcelDataState(prev => {
               if (prev) {
-                return { ...prev, routes };
+                // Also update courier distances
+                const updatedCouriers = (prev.couriers || []).map((c: any) => {
+                    const normName = c.name?.toString().replace(/\s+/g, ' ').toUpperCase().trim();
+                    if (!normName || normName === 'НЕ НАЗНАЧЕНО') return c;
+                    
+                    const courierRoutes = routes.filter((r: any) => {
+                        const rc = (r.courier || r.courier_id || '').toString().replace(/\s+/g, ' ').toUpperCase().trim();
+                        return rc === normName;
+                    });
+                    
+                    if (courierRoutes.length > 0) {
+                        const km = courierRoutes.reduce((acc: number, r: any) => acc + (Number(r.totalDistance || r.total_distance) || 0), 0);
+                        const orders = courierRoutes.reduce((acc: number, r: any) => acc + (Number(r.ordersCount || r.orders_count) || (r.orders ? r.orders.length : 0)), 0);
+                        return { ...c, distanceKm: Number(km.toFixed(2)), calculatedOrders: orders };
+                    }
+                    return c;
+                });
+                return { ...prev, routes, couriers: updatedCouriers };
               }
               return prev;
             });
@@ -450,7 +552,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
 
             // v5.160: Enrich each order with master data (address, courier, etc.)
             const enrichedOrders = dedupedOrders.map((order: any) => {
-              const masterById = masterOrdersMap.get(String(order.id));
+              const masterById = masterOrdersMap.get(String(order.id || order._id));
               const masterByNumber = masterOrdersByNumber.get(String(order.orderNumber));
               const master = masterById || masterByNumber;
 
@@ -464,17 +566,17 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                   lng: order.lng || master.lng || order.coords?.lng || master.coords?.lng,
                   kmlZone: order.kmlZone || master.kmlZone || master.deliveryZone,
                   kmlHub: order.kmlHub || master.kmlHub,
-                  address: order.address || master.address || 'Адрес не указан',
-                  orderNumber: order.orderNumber || master.orderNumber || 'N/A',
-                  plannedTime: order.plannedTime || master.plannedTime || master.deliverBy,
+                  address: order.address || master.address || (master as any).raw?.address || (master as any).raw?.full_address || 'Адрес не указан',
+                  orderNumber: order.orderNumber || master.orderNumber || (master as any).id || (master as any)._id || 'N/A',
+                  plannedTime: order.plannedTime || master.plannedTime || (master as any).deliverBy,
                 };
               }
 
               // No master found - ensure minimum fields
               return {
                 ...order,
-                address: order.address || 'Адрес не указан',
-                orderNumber: order.orderNumber || 'N/A',
+                address: order.address || (order as any).raw?.address || (order as any).raw?.full_address || 'Адрес не указан',
+                orderNumber: order.orderNumber || (order as any).id || (order as any)._id || 'N/A',
               };
             });
 
@@ -919,11 +1021,12 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
 
         // v5.153: Update courier distanceKm from DB routes immediately
         // This ensures the Couriers tab shows correct km after refreshRoutesFromDB (robot finish / page load)
+        // v5.201: Fixed - create couriers from routes if they don't exist
         let updatedCouriers = prevSafe.couriers || [];
-        if (dbRoutesToMerge.length > 0 && updatedCouriers.length > 0) {
-          const distMap = new Map<string, { km: number; orders: number }>();
-          dbRoutesToMerge.forEach((r: any) => {
-            // v5.180: Use normalized courier name
+        
+        // Calculate metrics from all routes (DB + manual)
+        const distMap = new Map<string, { km: number; orders: number }>();
+        finalRoutes.forEach((r: any) => {
             const rawCourier = (r.courier || r.courier_id || '').toString().trim();
             const normKey = normalizeCourierName(rawCourier);
             if (!normKey || normKey === 'Не назначено') return;
@@ -931,18 +1034,36 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             existing.km += Number(r.totalDistance || r.total_distance || 0);
             existing.orders += Number(r.ordersCount || r.orders_count || (r.orders?.length) || 0);
             distMap.set(normKey, existing);
-          });
-          if (distMap.size > 0) {
-            updatedCouriers = updatedCouriers.map((c: any) => {
-              const rawName = (c.name || c.courierName || '').toString().trim();
-              const normName = rawName.replace(/\s+/g, ' ').toUpperCase();
-              const calc = distMap.get(normName);
-              if (calc && calc.km > 0) {
-                return { ...c, distanceKm: Number(calc.km.toFixed(2)), calculatedOrders: calc.orders };
-              }
-              return c;
+        });
+        
+        if (distMap.size > 0) {
+            // Update existing couriers with new metrics
+            const existingCourierNames = new Set((updatedCouriers || []).map((c: any) => 
+                normalizeCourierName(c.name || c.courierName || '').toUpperCase()
+            ));
+            
+            updatedCouriers = (updatedCouriers || []).map((c: any) => {
+                const rawName = (c.name || c.courierName || '').toString().trim();
+                const normName = normalizeCourierName(rawName).toUpperCase();
+                const calc = distMap.get(normName);
+                if (calc && calc.km > 0) {
+                    return { ...c, distanceKm: Number(calc.km.toFixed(2)), calculatedOrders: calc.orders };
+                }
+                return c;
             });
-          }
+            
+            // Add new couriers from routes that don't exist yet
+            distMap.forEach((metrics, courierName) => {
+                if (!existingCourierNames.has(courierName.toUpperCase())) {
+                    updatedCouriers.push({
+                        name: courierName,
+                        distanceKm: Number(metrics.km.toFixed(2)),
+                        calculatedOrders: metrics.orders,
+                        isActive: true,
+                        vehicleType: 'car'
+                    });
+                }
+            });
         }
 
         return {

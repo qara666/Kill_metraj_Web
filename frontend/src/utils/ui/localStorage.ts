@@ -54,6 +54,26 @@ export const localStorageUtils = {
     localStorage.removeItem('km_courier_vehicle_map')
   },
 
+  // Courier performance settings (Target KM per order, etc.)
+  getCourierSettings: (): Record<string, { targetKmPerOrder?: number, kpiHudEnabled?: boolean, comparisonEnabled?: boolean }> => {
+    if (typeof window === 'undefined') return {}
+    try {
+      const existing = localStorage.getItem('km_courier_settings')
+      return existing ? JSON.parse(existing) : {}
+    } catch {
+      return {}
+    }
+  },
+
+  setCourierSettings: (settings: Record<string, { targetKmPerOrder?: number, kpiHudEnabled?: boolean, comparisonEnabled?: boolean }>): void => {
+    if (typeof window === 'undefined') return
+    try {
+      localStorage.setItem('km_courier_settings', JSON.stringify(settings))
+    } catch (error) {
+      console.error('Error saving courier settings:', error)
+    }
+  },
+
   getApiKey: (): string | null => {
     if (typeof window === 'undefined') return null
     return localStorage.getItem('google_maps_api_key')

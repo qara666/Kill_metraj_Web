@@ -1,28 +1,25 @@
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import {
   TruckIcon,
   PencilIcon,
   TrashIcon,
   ClockIcon,
   PlayIcon,
-  ArrowPathIcon
+  ArrowPathIcon,
+  ChevronDownIcon,
+  ChevronUpIcon
 } from '@heroicons/react/24/outline';
 import {
   ExclamationTriangleIcon,
-  CheckBadgeIcon,
-  HomeIcon,
-  MapIcon,
-  ExclamationCircleIcon
+  MapIcon as MapIconSolid
 } from '@heroicons/react/24/solid';
 import { clsx } from 'clsx';
 import { Route, Order } from '../../types/route';
-import { isOrderCompleted } from '../../utils/data/orderStatus';
 
 interface RouteCardProps {
   route: Route;
   isDark: boolean;
   courierVehicle: string;
-  anomalyCheck: any;
   formatDistance: (dist: number) => string;
   formatDuration: (dur: number) => string;
   onOpenGoogleMaps: (route: Route) => void;
@@ -37,7 +34,6 @@ export const RouteCard: React.FC<RouteCardProps> = memo(({
   route,
   isDark,
   courierVehicle,
-  anomalyCheck,
   formatDistance,
   formatDuration,
   onOpenGoogleMaps,
@@ -47,399 +43,270 @@ export const RouteCard: React.FC<RouteCardProps> = memo(({
   onEditAddress,
   isCalculating
 }) => {
+  const [isExpanded, setIsExpanded] = useState(true); // v6.12: expanded by default so orders/addresses/badges are immediately visible
   return (
     <div className={clsx(
-      'group rounded-[2.5rem] border-2 p-8 transition-all duration-200 relative overflow-hidden',
+      'group rounded-[2rem] border-2 p-6 transition-all duration-300 relative overflow-hidden',
       route.isVirtual ? 'animate-pulse-slow shadow-blue-500/10' : '',
       isDark
-        ? clsx('bg-gray-800/40 border-gray-700 hover:border-blue-500/50 hover:bg-gray-800/80 shadow-black/20', route.isVirtual && 'border-blue-500/40 bg-blue-500/5')
-        : clsx('bg-white border-blue-50 shadow-blue-500/5 hover:shadow-2xl hover:border-blue-400', route.isVirtual && 'border-blue-200 bg-blue-50/30')
+        ? clsx('bg-gray-800/20 border-white/5 hover:border-blue-500/30 hover:bg-gray-800/40 shadow-black/20', route.isVirtual && 'border-blue-500/40 bg-blue-500/5')
+        : clsx('bg-white border-slate-100 shadow-blue-500/5 hover:shadow-2xl hover:border-blue-400', route.isVirtual && 'border-blue-200 bg-blue-50/30')
     )}>
       {/* Линия-акцент */}
       <div className={clsx(
-        "absolute top-0 left-0 w-2 h-full transition-all duration-200",
-        courierVehicle === 'car' ? "bg-green-500/50" : "bg-orange-500/50",
-        "group-hover:w-4"
+        "absolute top-0 left-0 w-1.5 h-full transition-all duration-300",
+        courierVehicle === 'car' ? "bg-emerald-500/50" : "bg-orange-500/50",
+        "group-hover:w-2"
       )}></div>
 
-      <div className="flex flex-col lg:flex-row items-start justify-between gap-8 mb-8">
-        <div className="flex items-center gap-6">
+      <div className="flex flex-col lg:flex-row items-center justify-between gap-6 mb-8 relative z-10">
+        <div className="flex items-center gap-5">
           <div className={clsx(
-            'w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-110',
+            'w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-105',
             courierVehicle === 'car'
-              ? (isDark ? 'bg-green-600/20 text-green-400' : 'bg-green-600 text-white')
+              ? (isDark ? 'bg-emerald-600/20 text-emerald-400' : 'bg-emerald-600 text-white')
               : (isDark ? 'bg-orange-600/20 text-orange-400' : 'bg-orange-600 text-white')
           )}>
-            <TruckIcon className="w-8 h-8" />
+            <TruckIcon className="w-7 h-7" />
           </div>
           <div>
-            <div className="flex items-center gap-3 mb-1">
+            <div className="flex items-center gap-2.5 mb-1">
               <h3 className={clsx(
-                'text-2xl font-black tracking-tight',
-                isDark ? 'text-gray-100' : 'text-gray-900'
+                'text-lg font-black tracking-tight leading-none uppercase',
+                isDark ? 'text-white' : 'text-slate-900'
               )}>{String(route.courier)}</h3>
               <span className={clsx(
-                'text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-widest',
+                'text-[8px] px-2 py-0.5 rounded-lg font-black uppercase tracking-[0.15em]',
                 courierVehicle === 'car'
-                  ? (isDark ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-700')
-                  : (isDark ? 'bg-orange-500/20 text-orange-400' : 'bg-orange-100 text-orange-700')
+                  ? (isDark ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-emerald-50 text-emerald-700 border border-emerald-100')
+                  : (isDark ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' : 'bg-orange-50 text-orange-700 border border-orange-100')
               )}>
                 {courierVehicle === 'car' ? 'Авто' : 'Мото'}
               </span>
               {route.isVirtual && (
                 <span className={clsx(
-                  "text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-widest animate-pulse",
-                  isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
+                  "text-[8px] px-2 py-0.5 rounded-lg font-black uppercase tracking-[0.15em] animate-pulse",
+                  isDark ? "bg-blue-500/10 text-blue-400 border border-blue-500/20" : "bg-blue-600 text-white shadow-lg"
                 )}>
                   НОВИЙ БЛОК
                 </span>
               )}
-              {route.orders.every(o => isOrderCompleted(o.status)) && !route.isVirtual && (
-                <span className="bg-green-500 text-white text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-widest flex items-center gap-1">
-                  <CheckBadgeIcon className="w-3 h-3" />
-                  ГОТОВ
-                </span>
-              )}
             </div>
-            <p className={clsx(
-              'text-sm font-bold opacity-50 uppercase tracking-widest',
-              isDark ? 'text-gray-400' : 'text-gray-500'
-            )}>
-              {route.orders.length} заказов в списке
+            <p className="text-[10px] font-black opacity-30 uppercase tracking-[0.2em]">
+              {route.orders.length} ЗАКАЗОВ В СПИСКЕ
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-4 self-center lg:self-start">
-          <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/30 p-2 rounded-2xl">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-white/5 border border-white/5">
               <button
                 onClick={() => onOpenGoogleMaps(route)}
                 disabled={isCalculating}
                 className={clsx(
-                  'p-3 rounded-xl transition-all hover:scale-110 active:scale-90',
-                  isDark ? 'text-blue-400 hover:bg-blue-900/20' : 'text-blue-600 hover:bg-blue-50'
+                  'p-2.5 rounded-xl transition-all hover:scale-110 active:scale-95',
+                  isDark ? 'text-blue-400 hover:bg-blue-500/10' : 'text-blue-600 hover:bg-blue-50'
                 )}
-                title={route.isOptimized ? "Открыть в Google Maps" : "Рассчитать"}
+                title="Google Maps"
               >
-                <MapIcon className="h-6 w-6" />
+                <MapIconSolid className="h-5 w-5" />
               </button>
               <button
                 onClick={() => onOpenValhalla(route)}
                 disabled={isCalculating || !route.isOptimized}
                 className={clsx(
-                  'p-3 rounded-xl transition-all hover:scale-110 active:scale-90',
-                  isDark ? 'text-green-400 hover:bg-green-900/20' : 'text-green-600 hover:bg-blue-50',
-                  !route.isOptimized && 'opacity-30 grayscale cursor-not-allowed'
+                  'p-2.5 rounded-xl transition-all hover:scale-110 active:scale-95',
+                  isDark ? 'text-emerald-400 hover:bg-emerald-500/10' : 'text-emerald-600 hover:bg-blue-50',
+                  !route.isOptimized && 'opacity-20 grayscale cursor-not-allowed'
                 )}
-                title="Открыть в Valhalla"
+                title="Valhalla"
               >
-                <PlayIcon className="h-6 w-6 transform rotate-90" />
+                <PlayIcon className="h-5 w-5 transform rotate-90" />
               </button>
               <button
                 onClick={() => onRecalculate(route)}
                 disabled={isCalculating}
                 className={clsx(
-                  'p-3 rounded-xl transition-all hover:scale-110 active:scale-90',
-                  isDark ? 'text-green-400 hover:bg-green-900/20' : 'text-green-600 hover:bg-blue-50'
+                  'p-2.5 rounded-xl transition-all hover:scale-110 active:scale-95',
+                  isDark ? 'text-emerald-400 hover:bg-emerald-500/10' : 'text-emerald-600 hover:bg-blue-50'
                 )}
                 title="Пересчитать"
               >
-                <ArrowPathIcon className="h-6 w-6" />
+                <ArrowPathIcon className="h-5 w-5" />
               </button>
-              <div className="w-px h-6 bg-gray-200 dark:bg-gray-600 mx-1"></div>
+              <div className="w-px h-5 bg-white/10 mx-1"></div>
               <button
                 onClick={() => onDelete(route.id || '')}
                 className={clsx(
-                  'p-3 rounded-xl transition-all hover:scale-110 active:scale-90',
-                  isDark ? 'text-red-400 hover:bg-red-900/20' : 'text-red-600 hover:bg-red-50'
+                  'p-2.5 rounded-xl transition-all hover:scale-110 active:scale-95',
+                  isDark ? 'text-red-400 hover:bg-red-500/10' : 'text-red-600 hover:bg-red-50'
                 )}
                 title="Удалить"
               >
-                <TrashIcon className="h-6 w-6" />
+                <TrashIcon className="h-5 w-5" />
+              </button>
+              <div className="w-px h-5 bg-white/10 mx-1"></div>
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className={clsx(
+                  'p-2.5 rounded-xl transition-all hover:scale-110 active:scale-95',
+                  isDark ? 'text-gray-400 hover:bg-white/5' : 'text-gray-600 hover:bg-gray-100'
+                )}
+                title={isExpanded ? "Свернуть" : "Развернуть"}
+              >
+                {isExpanded ? <ChevronUpIcon className="h-5 w-5" /> : <ChevronDownIcon className="h-5 w-5" />}
               </button>
           </div>
         </div>
       </div>
 
-      {/* Prominent Address Warning Block v41 */}
+      {isExpanded && (
+        <div className="animate-in fade-in slide-in-from-top-4 duration-500">
+
+      {/* Address Warning Block v42.1 */}
       {(() => {
-        const missingCoordsOrders = route.orders.filter(o => !o.coords?.lat || !o.coords?.lng);
+        const missingCoordsOrders = route.orders.filter(o => !o.coords?.lat && !(o as any).lat);
         if (missingCoordsOrders.length === 0) return null;
 
         return (
           <div className={clsx(
-            "mb-8 p-6 rounded-[2rem] border-2 animate-pulse-slow transition-all duration-300",
+            "mb-6 p-5 rounded-3xl border-2 animate-pulse-slow relative z-10",
             isDark 
-              ? "bg-red-500/10 border-red-500/30 text-red-400 shadow-[0_8px_32px_rgba(239,68,68,0.1)]" 
-              : "bg-red-50 border-red-100 text-red-600 shadow-[0_8px_32px_rgba(239,68,68,0.05)]"
+              ? "bg-red-500/5 border-red-500/20 text-red-400" 
+              : "bg-red-50 border-red-100 text-red-600"
           )}>
-            <div className="flex items-center gap-4 mb-4">
-              <div className={clsx(
-                "p-2 rounded-xl",
-                isDark ? "bg-red-500/20" : "bg-red-100"
-              )}>
-                <ExclamationTriangleIcon className="w-6 h-6" />
-              </div>
+            <div className="flex items-center gap-3 mb-4">
+              <ExclamationTriangleIcon className="w-5 h-5" />
               <div>
-                <h4 className="text-sm font-black uppercase tracking-[0.15em] leading-tight">
-                  Потребує уточнення адреси
-                </h4>
-                <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mt-0.5">
-                  Відсутні координати для {missingCoordsOrders.length} {missingCoordsOrders.length === 1 ? 'замовлення' : 'замовлень'}
-                </p>
+                <h4 className="text-[10px] font-black uppercase tracking-[0.15em]">Потребує уточнення адреси</h4>
+                <p className="text-[8px] font-bold opacity-60 uppercase mt-0.5">Відсутні координати для {missingCoordsOrders.length} замовлень</p>
               </div>
             </div>
 
-            <div className="space-y-3">
-              {missingCoordsOrders.map((order, pIdx) => (
-                <div 
-                  key={`missing-coords-${order.id || pIdx}`}
-                  className={clsx(
-                    "flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl border border-dashed transition-all group/item",
-                    isDark ? "border-red-500/20 bg-red-500/5 hover:bg-red-500/10" : "border-red-200 bg-white hover:bg-red-50/50"
-                  )}
-                >
-                  <div className="flex items-center gap-3 min-w-0 mb-3 sm:mb-0">
-                    <div className={clsx(
-                      "w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-xs font-black",
-                      isDark ? "bg-red-500/20" : "bg-red-50"
-                    )}>
-                      {pIdx + 1}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                         <span className="font-black text-sm">#{order.orderNumber || 'N/A'}</span>
+            <div className="space-y-2">
+              {missingCoordsOrders.map((order, pIdx) => {
+                 const dispId = order.orderNumber || (order as any).id || (order as any)._id || 'N/A';
+                 const dispAddr = order.address || (order as any).raw?.address || (order as any).raw?.full_address || 'Адрес не указан';
+                 
+                 return (
+                  <div key={`missing-${order.id || pIdx}`} className={clsx("flex items-center justify-between p-3 rounded-2xl border border-dashed", isDark ? "border-red-500/20 bg-black/20" : "border-red-200 bg-white")}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="text-[10px] font-black opacity-30">{pIdx+1}</div>
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-black">#{dispId}</div>
+                        <div className="text-[9px] truncate opacity-60 font-medium">{dispAddr}</div>
                       </div>
-                      <p className="text-xs truncate opacity-70 leading-tight mt-0.5" title={order.address || 'Адрес не указан'}>{order.address || 'Адрес не указан'}</p>
                     </div>
+                    <button onClick={() => onEditAddress(order)} className="px-4 py-1.5 rounded-lg bg-red-500 text-white text-[9px] font-black uppercase tracking-widest hover:bg-red-600 transition-colors">УТОЧНИТИ</button>
                   </div>
-                  <button
-                    onClick={() => onEditAddress(order)}
-                    className={clsx(
-                      "group flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-[0.1em] transition-all transform active:scale-95 shadow-md",
-                      isDark 
-                        ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" 
-                        : "bg-red-600 text-white hover:bg-red-700 shadow-red-500/20"
-                    )}
-                  >
-                    <PencilIcon className="w-4 h-4" />
-                    УТОЧНИТИ
-                  </button>
-                </div>
-              ))}
+                 );
+              })}
             </div>
           </div>
         );
       })()}
 
-      <div className="space-y-4">
+      <div className="space-y-2 relative z-10">
         {route.orders.map((order: Order, index: number) => {
           const raw = (order as any).raw || {};
           const coords = (order as any).coords || {};
           const meta = (order as any).locationMeta || {};
-
           const routeMeta = (route as any).geoMeta?.waypoints?.[index];
-          const locType = routeMeta?.locationType || order.locationType || coords.locationType || raw.locationType;
-          const isRooftop = locType === 'ROOFTOP';
-          const isInterpolated = locType === 'RANGE_INTERPOLATED';
           
-          const streetMatched = routeMeta?.streetNumberMatched ?? (order as any)?.masterOrder?.streetNumberMatched ?? order.streetNumberMatched ?? raw.streetNumberMatched ?? coords.streetNumberMatched;
-
-          const opZone = routeMeta?.zoneName || order.deliveryZone || raw.deliveryZone;
+          // v5.260: Comprehensive Zone Extraction (Matching OrderList logic)
+          const opZone = (order as any).deliveryZone || raw.deliveryZone || raw?.['Зона доставки'] || raw?.['Зона'] || routeMeta?.zoneName;
           const kmlZone = order.kmlZone || meta.kmlZone || coords.kmlZone;
-          const hub = order.kmlHub || meta.hubName || coords.kmlHub;
-          
-          const metaBadge = (
-            <div className="mt-2 flex items-center flex-wrap gap-1">
-              {/* Verified Status v42.1 */}
-              {(isRooftop) && (
-                <div className={clsx(
-                  "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
-                  isDark ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-700"
-                )}>
-                  <CheckBadgeIcon className="w-3.5 h-3.5" />
-                  ТОЧНИЙ АДРЕС
-                </div>
-              )}
+          const hubName = order.kmlHub || meta.hubName || coords.kmlHub;
 
-              {/* Locked/Verified Status v42.1 */}
-              {(order as any).isLocked && (
-                <div className={clsx(
-                  "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
-                  isDark ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-green-50 border-green-200 text-green-700"
-                )}>
-                  <CheckBadgeIcon className="w-3.5 h-3.5" />
-                  ПЕРЕВІРЕНО
-                </div>
-              )}
-
-              {(() => {
-                const kmlFull = kmlZone ? `${hub ? hub + ' - ' : ''}${kmlZone}` : null;
-                const same = opZone && kmlFull && opZone.trim().toLowerCase() === kmlFull.trim().toLowerCase();
-                
-                return (
-                  <div className={clsx(
-                    "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
-                    ((String(opZone || '').includes('ID:0') || String(kmlZone || '').includes('ID:0')) && !same)
-                      ? (isDark ? "bg-red-500/20 border-red-500/40 text-red-400 animate-pulse" : "bg-red-50 border-red-200 text-red-600 shadow-red-500/10")
-                      : (isDark ? "bg-indigo-500/10 border-indigo-500/30 text-indigo-300" : "bg-indigo-50 border-indigo-100 text-indigo-700")
-                  )}>
-                    <MapIcon className="w-3.5 h-3.5 opacity-70" />
-                    <span className="opacity-60 mr-0.5">СЕКТОР:</span>
-                    {(() => {
-                      if (same) return `FO/KML:${opZone.trim()}`.toUpperCase();
-                      
-                      const zones = [
-                        opZone ? `FO:${opZone}` : null,
-                        kmlFull ? `KML:${kmlFull}` : null
-                      ].filter(Boolean).join(' | ').toUpperCase();
-                      return zones || '—';
-                    })()}
-                  </div>
-                );
-              })()}
-
-              {/* Street Match v42.1 */}
-              <div className={clsx(
-                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
-                locType && locType !== 'APPROXIMATE' && !isInterpolated
-                  ? (isDark ? "bg-teal-500/10 border-teal-500/30 text-teal-400" : "bg-teal-50 border-teal-100 text-teal-700")
-                  : (isDark ? "bg-rose-500/10 border-rose-500/30 text-rose-400" : "bg-rose-50 border-rose-200 text-rose-700")
-              )}>
-                <MapIcon className="w-3.5 h-3.5 opacity-70" />
-                <span className="opacity-60 mr-0.5">ВУЛИЦЯ:</span>
-                {locType && locType !== 'APPROXIMATE' && !isInterpolated ? 'ТАК' : 'НІ'}
-              </div>
-
-              {/* House Match v42.1 */}
-              {(() => {
-                const houseMatched = streetMatched || isInterpolated || isRooftop;
-                return (
-                  <div className={clsx(
-                    "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
-                    houseMatched
-                      ? (isDark ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400" : "bg-cyan-50 border-cyan-100 text-cyan-700")
-                      : (isDark ? "bg-orange-500/10 border-orange-500/30 text-orange-400" : "bg-orange-50 border-orange-200 text-orange-700")
-                  )}>
-                    <HomeIcon className="w-3.5 h-3.5 opacity-70" />
-                    <span className="opacity-60 mr-0.5">БУДИНОК:</span>
-                    {houseMatched ? 'ТАК' : 'НІ'}
-                  </div>
-                );
-              })()}
-
-              {(!(order.lat || (order as any).coords?.lat) || !(order.lng || (order as any).coords?.lng)) && (
-                <div className={clsx(
-                  "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 animate-pulse shadow-sm",
-                  isDark ? "bg-amber-500/10 border-amber-500/30 text-amber-500" : "bg-amber-50 border-amber-200 text-amber-700 shadow-amber-500/10"
-                )}>
-                   <ExclamationCircleIcon className="w-3.5 h-3.5" />
-                   УТОЧНИТИ АДРЕСУ
-                </div>
-              )}
-            </div>
-          );
-
-
-          const hasAddressIssues = anomalyCheck?.errors.some((error: string) =>
-            error.includes('адрес') || error.includes('адресов')
-          )
+          const dispId = order.orderNumber || (order as any).id || (order as any)._id || 'N/A';
+          const dispAddr = order.address || raw.address || raw.full_address || raw.fullAddress || 'Адрес не указан';
 
           return (
             <div
-              key={`${order.id || order.orderNumber || 'order'}-${index}`}
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer.setData('orderId', order.id);
-                e.dataTransfer.effectAllowed = 'move';
-              }}
+              key={`${order.id || index}-${index}`}
               className={clsx(
-                "flex items-start justify-between p-4 rounded-2xl transition-all duration-200",
-                isDark ? "hover:bg-gray-700/30" : "hover:bg-gray-50",
-                "cursor-grab active:cursor-grabbing"
+                "group/order flex items-start justify-between p-3 rounded-2xl transition-all border border-transparent",
+                isDark ? "hover:bg-white/[0.03] hover:border-white/5" : "hover:bg-slate-50 hover:border-slate-100"
               )}
             >
-              <div className="flex items-start gap-4 flex-1">
+              <div className="flex items-start gap-4 flex-1 min-w-0">
                 <span className={clsx(
-                  'w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black shadow-inner flex-shrink-0',
-                  isDark
-                    ? 'bg-gray-700 text-blue-400'
-                    : 'bg-white text-blue-600 border border-blue-100'
-                )}>
-                  {index + 1}
-                </span>
+                  'w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0 transition-colors',
+                  isDark ? 'bg-white/5 text-blue-400 group-hover/order:bg-blue-500/20' : 'bg-slate-100 text-blue-600 group-hover/order:bg-blue-100'
+                )}>{index + 1}</span>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center flex-wrap gap-2 mb-1">
-                    <span className={clsx(
-                      'font-black text-sm tracking-tight',
-                      isDark ? 'text-gray-100' : 'text-gray-900'
-                    )}>#{order.orderNumber || 'N/A'}</span>
-                    {order.plannedTime && order.plannedTime !== '00:00' && order.plannedTime !== '00:00:00' && order.plannedTime !== 'Без времени' && (
-                      <span className={clsx(
-                        'flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider',
-                        isDark ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'bg-purple-50 text-purple-700 border border-purple-200 shadow-sm'
-                      )}>
-                        <ClockIcon className="w-3.5 h-3.5 opacity-70" />
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className={clsx('font-black text-[13px] tracking-tight', isDark ? 'text-white' : 'text-slate-900')}>#{dispId}</span>
+                    {order.plannedTime && order.plannedTime !== '00:00' && (
+                      <span className={clsx('flex items-center gap-1 text-[9px] font-black uppercase opacity-60', isDark ? 'text-purple-400' : 'text-purple-600')}>
+                        <ClockIcon className="w-3" />
                         {order.plannedTime}
                       </span>
                     )}
                   </div>
-                  <div className={clsx(
-                    'truncate text-sm font-medium',
-                    isDark ? 'text-gray-400' : 'text-gray-600',
-                    hasAddressIssues && 'text-red-500'
-                  )} title={order.address || 'Адрес не указан'}>{order.address || 'Адрес не указан'}</div>
-                  {metaBadge}
+                  <div className={clsx('text-[12px] font-medium truncate opacity-60', isDark ? 'text-gray-300' : 'text-slate-600')}>{dispAddr}</div>
+                  
+                  {/* ELITE BADGES v5.260: Optimized & Direct */}
+                  <div className="mt-2 flex flex-wrap gap-1.5 items-center">
+                    {/* Operational Status */}
+                    <div className={clsx(
+                      "flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[8px] font-black uppercase tracking-widest transition-all",
+                      order.status === 'исполнен' ? (isDark ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-emerald-50 border-emerald-100 text-emerald-700") :
+                      order.status === 'доставляется' ? (isDark ? "bg-blue-500/10 border-blue-500/20 text-blue-400" : "bg-blue-50 border-blue-100 text-blue-700") :
+                      order.status === 'собран' ? (isDark ? "bg-amber-500/10 border-amber-500/20 text-amber-400" : "bg-amber-50 border-amber-100 text-amber-700") :
+                      (isDark ? "bg-gray-500/10 border-white/5 text-gray-400" : "bg-gray-50 border-gray-100 text-gray-500")
+                    )}>
+                      {String(order.status || 'В ОБРАБОТКЕ').toUpperCase()}
+                    </div>
+
+                    {/* Sector / Zone (v5.260 Combined Logic) */}
+                    {(opZone || kmlZone) && (
+                      <div className={clsx(
+                        "flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[8px] font-black uppercase tracking-widest",
+                        isDark ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-400" : "bg-indigo-50 border-indigo-100 text-indigo-700"
+                      )}>
+                        <MapIconSolid className="w-3.5 h-3.5 opacity-40" />
+                        <span>
+                          {opZone && kmlZone && String(opZone).trim().toUpperCase() === String(kmlZone).trim().toUpperCase()
+                            ? `FO/KML: ${opZone}`
+                            : `${opZone ? `FO: ${opZone}` : ''}${opZone && kmlZone ? ' | ' : ''}${kmlZone ? `KML: ${hubName ? hubName + ' - ' : ''}${kmlZone}` : ''}`}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 pl-4">
-                <button
-                  onClick={() => onEditAddress(order)}
-                  className={clsx(
-                    'p-2 rounded-xl transition-all hover:scale-110 active:scale-90',
-                    isDark
-                      ? 'text-gray-400 hover:text-blue-400 hover:bg-blue-900/20'
-                      : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
-                  )}
-                  title="Редактировать адрес"
-                >
-                  <PencilIcon className="h-4 w-4" />
-                </button>
-                {hasAddressIssues && (
-                  <ExclamationTriangleIcon className="h-5 w-5 text-red-500 animate-bounce" title="Проблемы с адресом" />
-                )}
-              </div>
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditAddress(order);
+                }} 
+                className="p-2 text-slate-400 hover:text-blue-500 transition-all opacity-0 group-hover/order:opacity-100 hover:scale-110 active:scale-90"
+              >
+                <PencilIcon className="w-4 h-4" />
+              </button>
             </div>
-          )
+          );
         })}
       </div>
+    </div>
+  )}
 
-      {/* Метрики маршрута */}
-      <div className="mt-8 pt-8 border-t border-gray-100 dark:border-gray-700/50">
-        {(route.totalDistance || route.totalDuration) ? (
-          <div className="flex flex-wrap items-center gap-6">
-            <div className={clsx(
-              "flex items-center gap-3 px-4 py-2 rounded-2xl",
-              isDark ? "bg-blue-500/10 text-blue-300" : "bg-blue-50 text-blue-700"
-            )}>
-              <MapIcon className="w-5 h-5" />
-              <span className="text-sm font-black tracking-tight">{formatDistance(Number(route.totalDistance || 0))} км</span>
+      {/* Footer statistics (Simplified - Only visible when collapsed) */}
+      {!isExpanded && (
+        <div className="mt-4 pt-4 border-t border-white/5 flex items-center gap-4 opacity-60">
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 text-[10px] font-black uppercase tracking-widest">
+              <MapIconSolid className="w-3.5 h-3.5" />
+              {formatDistance(Number(route.totalDistance || 0))}
             </div>
-            <div className={clsx(
-              "flex items-center gap-3 px-4 py-2 rounded-2xl",
-              isDark ? "bg-purple-500/10 text-purple-300" : "bg-purple-50 text-purple-700"
-            )}>
-              <ClockIcon className="w-5 h-5" />
-              <span className="text-sm font-black tracking-tight">{formatDuration(Number(route.totalDuration || 0))}</span>
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 text-[10px] font-black uppercase tracking-widest">
+              <ClockIcon className="w-3.5 h-3.5" />
+              {formatDuration(Number(route.totalDuration || 0))}
             </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-3 text-sm font-bold opacity-30 uppercase tracking-widest px-4">
-            <ExclamationCircleIcon className="w-5 h-5" />
-            <span>{route.isVirtual ? 'Потрібен розрахунок' : 'Расстояние не рассчитано'}</span>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 });
+
+RouteCard.displayName = 'RouteCard';

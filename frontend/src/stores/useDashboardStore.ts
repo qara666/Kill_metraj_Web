@@ -40,10 +40,12 @@ interface DashboardStoreState {
         totalCouriers: number;
         // v5.133: Detailed stats for transparency
         skippedGeocoding: number;
+        geoErrors: { orderNumber: string; address: string; courier: string }[]; // v6.9: Failed geocode addresses
         skippedInRoutes: number;
         skippedNoCourier: number;
         skippedOther: number;
         isBulkImport: boolean; // v5.160: For logic reporting
+        userStopped: boolean; // v5.202: Track if user explicitly stopped
     };
 
     // Actions
@@ -108,10 +110,12 @@ export const useDashboardStore = create<DashboardStoreState>()(
                 processedCouriers: 0,
                 totalCouriers: 0,
                 skippedGeocoding: 0,
+                geoErrors: [],
                 skippedInRoutes: 0,
                 skippedNoCourier: 0,
                 skippedOther: 0,
                 isBulkImport: false,
+                userStopped: false, // v5.202: Track if user explicitly stopped
             },
 
             setApiKey: (key) => set({ apiKey: key }),
@@ -152,6 +156,8 @@ export const useDashboardStore = create<DashboardStoreState>()(
                     autoRoutingStatus: {
                         isActive: persistentState.autoRoutingStatus.isActive,
                         lastUpdate: persistentState.autoRoutingStatus.lastUpdate,
+                        // v5.202: Persist userStopped flag
+                        userStopped: persistentState.autoRoutingStatus.userStopped || false,
                         // v5.155: Preserve counters during active calculation
                         processedCount: persistentState.autoRoutingStatus.isActive 
                             ? persistentState.autoRoutingStatus.processedCount 
@@ -168,6 +174,9 @@ export const useDashboardStore = create<DashboardStoreState>()(
                         skippedGeocoding: persistentState.autoRoutingStatus.isActive 
                             ? persistentState.autoRoutingStatus.skippedGeocoding 
                             : 0,
+                        geoErrors: persistentState.autoRoutingStatus.isActive 
+                            ? (persistentState.autoRoutingStatus.geoErrors || [])
+                            : [],
                         skippedInRoutes: persistentState.autoRoutingStatus.isActive 
                             ? persistentState.autoRoutingStatus.skippedInRoutes 
                             : 0,

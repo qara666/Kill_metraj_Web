@@ -47,7 +47,14 @@ function normalizeDateISO(dateStr) {
 class OrderCalculator {
     constructor() {
         this.isRunning = false;
-        this.interval = 15000;
+        // v6.11: Idle tick every 30s — actual recalc throttled to MIN_CALC_INTERVAL per division
+        this.interval = 30000;
+        // v6.11: Minimum time between two consecutive calculations for the same division
+        this.MIN_CALC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutes
+        // v6.11: Track timestamp of last completed calculation per division
+        this.lastCalculatedAt = new Map();
+        // v6.11: Track if FO data changed since last calc (to wake up immediately)
+        this.newFODataPending = new Map(); // divisionId -> true
         this.timer = null;
         this.isProcessing = false;
         this.io = null;
@@ -64,8 +71,8 @@ class OrderCalculator {
         this.kmlGridIndex = new Map(); // Spatial grid: "lat,lng" -> [zones]
         this.GRID_SIZE = 0.01; // ~1.1km at equator
 
-        // v5.180: Route calculation concurrency limit
-        this.routeLimit = pLimit(3); // Max 3 concurrent route calculations
+        // v5.180: Route calculation concurrency limit (v6.10: increased for faster processing)
+        this.routeLimit = pLimit(10); // Max 10 concurrent route calculations
 
         // v5.180: GeoCache fuzzy match threshold
         this.FUZZY_THRESHOLD = 3; // Max Levenshtein distance for fuzzy match
@@ -207,6 +214,7 @@ class OrderCalculator {
     }
 
     // v5.172: Check if point is inside expected KML zone (with fallback to other active zones)
+    // v6.11 FIX: Fallback is now STRICT — only adjacent zones accepted, not any zone in the city
     validatePointInZone(lat, lng, expectedZoneName, allowFallback = true) {
         if (!expectedZoneName) return { valid: true, zone: null };
 
@@ -224,13 +232,33 @@ class OrderCalculator {
             return { valid: true, zone: matchingZone };
         }
 
-        // If not in expected zone but in another active zone, and fallback is allowed
+        // v6.11 STRICT FALLBACK: Only accept a fallback if the fallback zone is near the expected zone.
+        // "Near" means the point (which IS in the fallback zone) is within 5km of the expected zone's boundary.
         if (allowFallback && zones[0]) {
-            return { valid: true, zone: zones[0], fallback: true };
+            // Find the expected zone to compute distance to it
+            const expectedZoneObj = this.kmlZones.find(z => z.name.toLowerCase().includes(expectedNormalized));
+            if (!expectedZoneObj || !expectedZoneObj.bounds) {
+                // Can't validate distance — reject the fallback to be safe
+                logger.warn(`[TurboCalculator] 🚫 Strict fallback: expected zone "${expectedZoneName}" not found in KML index — rejecting point ${lat},${lng}`);
+                return { valid: false, zone: zones[0], reason: 'expected_zone_not_found' };
+            }
+            // Compute distance from point to the expected zone's center (bounding box centroid)
+            const zoneCenterLat = (expectedZoneObj.bounds.north + expectedZoneObj.bounds.south) / 2;
+            const zoneCenterLng = (expectedZoneObj.bounds.east + expectedZoneObj.bounds.west) / 2;
+            const distMeters = this.haversineDistance(lat, lng, zoneCenterLat, zoneCenterLng);
+            const MAX_FALLBACK_DIST_M = 5000; // 5km — adjacent zone is ok, cross-city is not
+            if (distMeters <= MAX_FALLBACK_DIST_M) {
+                logger.info(`[TurboCalculator] ℹ️ Accepted nearby fallback zone "${zones[0].name}" (${(distMeters/1000).toFixed(1)}km from expected "${expectedZoneName}")`);
+                return { valid: true, zone: zones[0], fallback: true };
+            } else {
+                logger.warn(`[TurboCalculator] 🚫 REJECTED cross-city fallback: point ${lat},${lng} is in zone "${zones[0].name}" but ${(distMeters/1000).toFixed(1)}km from expected "${expectedZoneName}"`);
+                return { valid: false, zone: zones[0], reason: 'fallback_too_far' };
+            }
         }
 
         return { valid: false, zone: zones[0], reason: 'not_in_expected_zone' };
     }
+
 
     // v5.180: Find nearest zone within distance threshold (fallback when point is outside all zones)
     findNearestZone(lat, lng, maxDistanceMeters = 500) {
@@ -356,8 +384,7 @@ class OrderCalculator {
                             date: this.activeDivisionDate,
                             priorityQueue: [],
                             currentPriority: null,
-                            isActive: true,
-                            isLegacyResumed: true
+                            isActive: false, // v6.11 FIX: Do NOT auto-resume legacy divisions, they cause infinite high-load loops for old dates
                         });
                     }
                 }
@@ -381,30 +408,43 @@ class OrderCalculator {
                 const divId = r.division_id;
                 const date = r.date;
                 const isActive = r.is_active;
-                if (!divId) continue;
-                let state = this.divisionStates.get(divId);
-                if (!state) {
-                    state = { users: new Set(), date: date || new Date().toISOString().split('T')[0], priorityQueue: [], currentPriority: null, isActive: !!isActive };
-                    this.divisionStates.set(divId, state);
-                }
-                if (userId) {
-                    if (!state.users) state.users = new Set();
-                    state.users.add(userId);
-                }
-                if (date) state.date = date;
-                state.isActive = !!isActive;
+                if (divId) {
+                    let state = this.divisionStates.get(divId);
+                    if (!state) {
+                        state = { 
+                            users: new Set(), 
+                            date: date || new Date().toISOString().split('T')[0], 
+                            priorityQueue: [], 
+                            currentPriority: null, 
+                            // v6.10: DO NOT auto-resume from DB - only start when user clicks "Запустить расчёт"
+                            isActive: false 
+                        };
+                        this.divisionStates.set(divId, state);
+                    }
+                    
+                    // v5.185: Re-initialize users if missing (Sequelize JSON hydration safety)
+                    if (!state.users || typeof state.users.add !== 'function') {
+                        state.users = new Set();
+                    }
+                    
+                    if (userId) {
+                        state.users.add(userId);
+                    }
+                    if (date) state.date = date;
+                    // v6.10: Keep isActive as false when loading from DB - wait for user trigger
+                    // state.isActive = !!isActive; // REMOVED - don't auto-resume
 
-                // v25.0: If division is active, ensure it's processed in the next tick
-                if (state.isActive) {
-                    logger.info(`[TurboCalculator] 🔄 Auto-resuming division: ${divId} for date ${state.date}`);
+                    if (state.isActive) {
+                        logger.info(`[TurboCalculator] 🔄 Auto-resuming division: ${divId} for date ${state.date}`);
+                    } else {
+                        logger.info(`[TurboCalculator] 📥 Loaded division ${divId} (inactive - waiting for user trigger)`);
+                    }
                 }
             }
             logger.info('[TurboCalculator] ✅ Loaded division states from DB into memory');
 
-            // Initial trigger for all active divisions
-            if (this.isRunning && !this.isProcessing) {
-                this.tick();
-            }
+            // v6.10: DO NOT auto-trigger on server start - only trigger when user explicitly clicks "Запустить расчёт"
+            // Removed: if (this.isRunning && !this.isProcessing) { this.tick(); }
         } catch (err) {
             logger.warn('[TurboCalculator] ⚠️ Could not load division states from DB:', err.message);
         }
@@ -441,10 +481,11 @@ class OrderCalculator {
         await this.loadSavedState();
         await this.loadAllDivisionStatesFromDB();
 
-        logger.info(`[TurboCalculator] 🚀 v5.185 INITIALIZED — Resumed active divisions from DB.`);
+        logger.info(`[TurboCalculator] 🚀 v5.185 INITIALIZED — Loaded active divisions from DB.`);
 
-        // Start the tick loop (force initial tick to ensure process starts)
-        this.scheduleNextTick(true);
+        // v6.10: DO NOT auto-start tick loop on server start
+        // Only start calculation when user explicitly triggers via "Запустить расчёт"
+        // this.scheduleNextTick(true);
     }
 
     scheduleNextTick(forceInitial = false) {
@@ -454,7 +495,7 @@ class OrderCalculator {
         // But on initial start, always schedule first tick
         const hasActiveDivision = Array.from(this.divisionStates.values()).some(s => s.isActive);
         if (!forceInitial && !hasActiveDivision) {
-            logger.info('[TurboCalculator] ⏸️ No active divisions — stopping tick loop');
+            logger.info('[TurboCalculator] ⏸️ No active divisions — pausing tick loop until trigger()');
             return;
         }
 
@@ -532,7 +573,12 @@ class OrderCalculator {
             state.date = targetDate;
             state.forceFull = forceFull; // Store force flag in state
         }
-        if (userId) state.users.add(userId);
+        if (userId) {
+            if (!state.users || typeof state.users.add !== 'function') {
+                state.users = new Set();
+            }
+            state.users.add(userId);
+        }
 
         // Persist activation to DB
         try {
@@ -544,18 +590,18 @@ class OrderCalculator {
                     division_id: String(divisionId),
                     date: targetDate,
                     is_active: true,
-                    data: { forceFull }
-                }).catch(err => logger.warn('[TurboCalculator] Failed to persist division state:', err.message));
+                    last_triggered_at: new Date()
+                });
             }
-        } catch (e) { /* ignore */ }
+        } catch (e) { /* ignore DB persistence errors */ }
 
-        // Trigger calculation
+        // v6.10: START IMMEDIATELY - don't wait for next tick cycle
+        logger.info(`[TurboCalculator] 🚀 Starting immediate processing for ${divisionId} on ${targetDate}`);
         if (!this.isProcessing) {
             this.tick();
         } else {
             this.needsReRun = true;
         }
-        logger.info(`[TurboCalculator] 🎯 Active divisions: ${Array.from(this.divisionStates.keys()).join(', ')}`);
     }
 
     /**
@@ -667,6 +713,23 @@ class OrderCalculator {
             for (const [divId, state] of this.divisionStates.entries()) {
                 if (!state.isActive) continue;
 
+                // v6.11: Cooldown check — skip if calculated recently AND no new FO data pending
+                const lastCalc = this.lastCalculatedAt.get(divId);
+                const timeSinceLastCalc = lastCalc ? Date.now() - lastCalc : Infinity;
+                const hasPendingFOData = this.newFODataPending.get(divId) === true;
+
+                if (!hasPendingFOData && timeSinceLastCalc < this.MIN_CALC_INTERVAL_MS) {
+                    const waitSec = Math.ceil((this.MIN_CALC_INTERVAL_MS - timeSinceLastCalc) / 1000);
+                    logger.info(`[TurboCalculator] ⏸️ ${divId}: Cooldown active — last calc ${Math.round(timeSinceLastCalc/1000)}s ago, waiting ${waitSec}s more`);
+                    continue;
+                }
+
+                // Clear pending FO data flag (we're about to process it)
+                if (hasPendingFOData) {
+                    this.newFODataPending.delete(divId);
+                    logger.info(`[TurboCalculator] 🔔 ${divId}: Processing triggered by new FO data`);
+                }
+
                 let targetDate = state.date;
                 logger.info(`[TurboCalculator] ⚙️ Starting tick for ${divId} on ${targetDate}`);
                 tasks.push(this.processDay(targetDate, divId));
@@ -686,10 +749,42 @@ class OrderCalculator {
             }
         } finally {
             this.isProcessing = false;
+            // v6.11: Always keep scheduling so we can wake up for next 3-min check or FO data event
             this.scheduleNextTick();
             if (this.needsReRun) {
                 this.trigger();
             }
+        }
+    }
+
+    /**
+     * v6.11: Called by dashboardRoutes after FO data is saved.
+     * Wakes up the calculator for this division ONLY IF it is already active.
+     * Does NOT activate a stopped division.
+     */
+    notifyNewFOData(divisionId, date) {
+        if (!divisionId) return;
+        const divIdStr = String(divisionId);
+        const state = this.divisionStates.get(divIdStr);
+        if (!state || !state.isActive) {
+            return; // Division not running — ignore
+        }
+
+        // Mark that new FO data is available for this division
+        this.newFODataPending.set(divIdStr, true);
+
+        // Clear the stale hash so processCache detects the change
+        const targetDate = date || state.date;
+        if (targetDate) {
+            this.processedHashes.delete(`${divIdStr}_${targetDate}`);
+        }
+
+        logger.info(`[TurboCalculator] 🔔 New FO data for division ${divIdStr} (${targetDate}) — will recalculate on next tick (within 30s)`);
+
+        // If calculator is idle, wake it up immediately
+        if (!this.isProcessing && this.timer) {
+            clearTimeout(this.timer);
+            this.timer = setTimeout(() => this.tick(), 2000); // 2s delay to batch rapid saves
         }
     }
 
@@ -938,12 +1033,14 @@ class OrderCalculator {
                     this.io.emit('robot_status', {
                         divisionId: cache.division_id,
                         date: targetDateNorm || cache.target_date,
-                        isActive: false,
-                        currentPhase: 'complete',
-                        message: 'Data up-to-date (no changes)',
-                        totalCount: data.orders.length
+                        isActive: true, // v6.12: Keep active so tick loop continues
+                        currentPhase: 'idle',
+                        message: `Ожидание новых данных... (${data.orders.length} заказов)`,
+                        totalCount: data.orders.length,
+                        processedCount: data.orders.length // v6.12: Show all orders as processed
                     });
                 }
+                logger.info(`[TurboCalculator] 💤 ${cache.division_id}: Data unchanged — sleeping, will check again in ${this.interval/1000}s`);
                 return;
             }
 
@@ -1087,8 +1184,23 @@ class OrderCalculator {
                     const totalToGeo = trulyNeedsGeo.length;
                     const startTime = Date.now();
                     
-                    for (let i = 0; i < totalToGeo; i += 10) {
-                        const chunk = trulyNeedsGeo.slice(i, i + 10);
+                    // v6.10: Emit status BEFORE starting geocoding for immediate feedback
+                    if (this.io) {
+                        this.io.emit('robot_status', {
+                            divisionId: cache.division_id,
+                            date: cache.target_date,
+                            isActive: true,
+                            totalCount: data.orders.length,
+                            processedCount: Math.round(data.orders.length * 0.1),
+                            currentPhase: 'geocoding',
+                            message: `Starting geocoding: ${totalToGeo} addresses...`
+                        });
+                    }
+                    
+                    // v6.10: Increase chunk size for faster processing
+                    const CHUNK_SIZE = 20;
+                    for (let i = 0; i < totalToGeo; i += CHUNK_SIZE) {
+                        const chunk = trulyNeedsGeo.slice(i, i + CHUNK_SIZE);
                         await Promise.all(chunk.map(async o => {
                             try {
                                 const cacheKey2 = (o.address || o.addressGeo || '').toLowerCase().trim();
@@ -1097,11 +1209,22 @@ class OrderCalculator {
                                     if (cached) o.coords = { lat: cached.latitude, lng: cached.longitude };
                                     return;
                                 }
-                                const coords = await this.getRobustGeocode(o.address || o.addressGeo, cityBias);
+                                // v6.11 FIX: Pass expectedZone to batch geocoder so KML validation fires here too
+                                const expectedZone0 = String(o.deliveryZone || o.kmlZone || o.sector || o.zone || '').trim();
+                                const coords = await this.getRobustGeocode(o.address || o.addressGeo, cityBias, expectedZone0 || null, allKmlZones);
                                 if (coords) {
                                     o.coords = { lat: coords.latitude, lng: coords.longitude };
                                     this.geocache.set(cacheKey2, coords);
-                                } else { this.geocache.set(cacheKey2, null); }
+                                } else {
+                                    this.geocache.set(cacheKey2, null);
+                                    // v6.9: Track failed geocode - add to geoErrors
+                                    const orderNum = o.orderNumber || o.id || 'unknown';
+                                    stats.geoErrors.push({
+                                        orderNumber: orderNum,
+                                        address: o.address || o.addressGeo || 'no address',
+                                        courier: o.courier || o.courierName || ''
+                                    });
+                                }
                             } catch (err) { }
                         }));
 
@@ -1180,6 +1303,7 @@ class OrderCalculator {
                 totalCouriers: deliveryWindows.size,
                 processedCouriers: 0,
                 skippedGeocoding: 0,
+                geoErrors: [], // v6.9: Track failed addresses with order numbers
                 skippedInRoutes: alreadyRouted,
                 skippedNoCourier: totalCount - ordersWithRealCourier - alreadyRouted,
                 message: `Analyzing delivery queues...`,
@@ -1202,6 +1326,7 @@ class OrderCalculator {
                         isActive: stats.isActive,
                         couriers: couriersList,
                         skippedGeocoding: stats.skippedGeocoding || 0,
+                        geoErrors: stats.geoErrors || [], // v6.9: Failed geocode addresses
                         skippedInRoutes: stats.skippedInRoutes || 0,
                         skippedNoCourier: stats.skippedNoCourier || stats.unassignedCount || 0,
                         lastUpdate: Date.now()
@@ -1574,12 +1699,45 @@ class OrderCalculator {
                             const timeBlockLabel = timeGroup.windowLabel;
                             const distanceKm = Math.round((routeResult.distance / 1000) * 100) / 100;
 
-                            // v36.0: CRITICAL SANITY CHECK
-                            // If a single route in a 15-30m block is > 100km, it's almost certainly 
-                            // a geocoding error (wrong city) or routing loop. REJECT IT.
-                            if (distanceKm > 100) {
-                                logger.error(`[TurboCalculator] ❌ REJECTED HUGE ROUTE: ${normName} [${timeBlockLabel}] shows ${distanceKm}km. Likely geocoding error.`);
+                            // v6.11: STRICT SANITY CHECK — tightened thresholds
+                            // Single-order route > 30km is almost certainly a geocoding error
+                            // Multi-order route > 50km is very suspicious for urban delivery
+                            const maxAllowedKm = validOrders.length === 1 ? 30 : 50;
+                            if (distanceKm > maxAllowedKm) {
+                                logger.error(`[TurboCalculator] ❌ REJECTED ROUTE: ${normName} [${timeBlockLabel}] ${distanceKm}km for ${validOrders.length} order(s) (limit: ${maxAllowedKm}km). Likely geocoding error — invalidating cache.`);
+                                // Invalidate geocache entries for orders in this block so they get re-geocoded next run
+                                validOrders.forEach(o => {
+                                    const addrKey = (o.address || o.addressGeo || '').toLowerCase().trim();
+                                    if (addrKey) {
+                                        this.geocache.delete(addrKey);
+                                        logger.warn(`[TurboCalculator] 🗑️ Evicted bad geocache entry: "${addrKey}"`);
+                                        // Also try to delete from DB cache
+                                        const GeoCache2 = this.getModel('GeoCache');
+                                        if (GeoCache2) GeoCache2.destroy({ where: { address_key: addrKey } }).catch(() => {});
+                                    }
+                                });
                                 continue;
+                            }
+
+                            // v6.11: Extra guard — if only 1 order and start point defined, check distance to start
+                            if (validOrders.length === 1 && globalStartPoint) {
+                                const o1 = validOrders[0];
+                                if (o1.coords?.lat && o1.coords?.lng) {
+                                    const distToStart = this.haversineDistance(
+                                        globalStartPoint.lat, globalStartPoint.lng,
+                                        o1.coords.lat, o1.coords.lng
+                                    ) / 1000;
+                                    if (distToStart > 25) {
+                                        logger.error(`[TurboCalculator] ❌ REJECTED: Order ${o1.orderNumber} is ${distToStart.toFixed(1)}km from hub — coordinates are wrong. Invalidating.`);
+                                        const addrKey = (o1.address || o1.addressGeo || '').toLowerCase().trim();
+                                        if (addrKey) {
+                                            this.geocache.delete(addrKey);
+                                            const GeoCache2 = this.getModel('GeoCache');
+                                            if (GeoCache2) GeoCache2.destroy({ where: { address_key: addrKey } }).catch(() => {});
+                                        }
+                                        continue;
+                                    }
+                                }
                             }
 
 
@@ -1815,7 +1973,8 @@ class OrderCalculator {
 
                         // v35.2: Weekly Analytics - Calculate Active Days & Normalized Efficiency
                         const DashboardCache = this.getModel('DashboardCache');
-                        let weeklyActivity = {}; // normName -> Set of dates
+                        // v5.185: Use null prototype to avoid collisions with toString, etc.
+                        let weeklyActivity = Object.create(null); 
 
                         if (DashboardCache) {
                             try {
@@ -1913,10 +2072,15 @@ class OrderCalculator {
             emitStatus();
             logger.info(`[TurboCalculator] ✅ DONE: ${totalResultCount} total routes (${newlyCreated} new + ${existingCount} cached), ${stats.processedCouriers} couriers`);
 
+            // v6.11: Record completion timestamp for cooldown logic
+            this.lastCalculatedAt.set(String(cache.division_id), Date.now());
+            logger.info(`[TurboCalculator] ⏱️ Division ${cache.division_id} cooldown started — next recalc in 3 minutes (or when new FO data arrives)`);
+
         } catch (err) {
             logger.error(`[OrderCalculator] ❌ processCache fatal: ${err.message}`);
         }
     }
+
 
     async getRobustGeocode(address, city = 'Київ', expectedZoneName = null, allZones = []) {
         if (!address) return null;

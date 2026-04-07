@@ -1,4 +1,4 @@
-import { ReactNode, useState, useEffect } from 'react'
+import { ReactNode, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   HomeIcon,
@@ -22,6 +22,7 @@ import {
 import { clsx } from 'clsx'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useAuth } from '../../contexts/AuthContext'
+import { CalculationOverlay } from '../common/CalculationOverlay'
 
 
 interface LayoutProps {
@@ -49,14 +50,13 @@ export function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  
+  // v5.241: Elite Hover Expansion logic
+  // v5.275: Sidebar expansion is now purely CSS-driven to prevent UI lag.
+  // Removed isHovered state and JS handlers to eliminate hundreds of re-renders.
 
-  // v5.228: Persistence handled in useEffect to avoid dispatcher context issues
-  useEffect(() => {
-    const saved = localStorage.getItem('km_sidebar_collapsed')
-    if (saved === 'true') {
-      setIsCollapsed(true)
-    }
-  }, [])
+  // v5.275: Sidebar expansion is now purely CSS-driven to prevent UI lag.
+
   const location = useLocation()
   const navigate = useNavigate()
   const { toggleTheme, isDark } = useTheme()
@@ -87,7 +87,7 @@ export function Layout({ children }: LayoutProps) {
       )}>
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
         <div className={clsx(
-          'fixed inset-y-0 left-0 flex w-72 flex-col shadow-2xl transition-transform duration-300 ease-out transform-gpu will-change-transform',
+          'fixed inset-y-0 left-0 flex w-72 flex-col shadow-2xl transition-transform duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] transform-gpu will-change-transform',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full',
           isDark ? 'bg-[#151B2C]' : 'bg-white'
         )}>
@@ -103,7 +103,6 @@ export function Layout({ children }: LayoutProps) {
              </button>
            </div>
            <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto custom-scrollbar">
-             {/* Shared menu contents for mobile */}
              {navigation.map((item) => {
                const isAllowed = user?.allowedTabs ? user.allowedTabs.includes(item.id) : !item.restricted;
                if (!isAdmin && !isAllowed) return null;
@@ -130,72 +129,78 @@ export function Layout({ children }: LayoutProps) {
       </div>
 
 
-      {/* Desktop sidebar - Optimized for weak PCs v5.240 */}
-      <div className={clsx(
-        "hidden lg:fixed lg:inset-y-0 lg:flex lg:flex-col transition-[width] duration-500 ease-in-out z-50 will-change-[width]",
-        isCollapsed ? "lg:w-20" : "lg:w-64"
-      )}>
+      {/* Desktop sidebar - Optimized for weak PCs v5.250 */}
+      <div 
+        className={clsx(
+          "hidden lg:fixed lg:inset-y-0 lg:flex lg:flex-col transition-all duration-300 ease-[cubic-bezier(0.2,1,0.2,1)] z-[100] transform-gpu will-change-[width,box-shadow] group/sidebar",
+          isCollapsed ? "lg:w-20 hover:lg:w-72" : "lg:w-72"
+        )}
+      >
         <div className={clsx(
-          'flex flex-col flex-grow shadow-lg transition-colors border-r relative overflow-hidden',
+          'flex flex-col flex-grow shadow-lg border-r relative overflow-hidden transition-colors',
           isDark
             ? 'bg-[#0F1424] border-white/5'
-            : 'bg-white border-gray-200'
+            : 'bg-white border-gray-100'
         )}>
-          {/* Static header for performance */}
+          {/* Header */}
           <div className={clsx(
-            'flex h-16 items-center px-4 border-b shrink-0',
-            isDark ? 'border-white/5' : 'border-gray-200'
+            'flex h-20 items-center px-5 border-b shrink-0',
+            isDark ? 'border-white/5' : 'border-gray-100'
           )}>
             <div className="flex items-center w-full">
               <div className="flex-shrink-0">
-                <div className="h-10 w-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg transform transition-transform hover:rotate-12 active:scale-95 cursor-pointer">
+                <div className="h-10 w-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg transform transition-transform hover:rotate-6 active:scale-90 cursor-pointer">
                   <span className="text-white font-black text-xs">KM</span>
                 </div>
               </div>
               <div className={clsx(
-                "ml-6 transition-all duration-500 overflow-hidden",
-                isCollapsed ? "opacity-0 w-0 -translate-x-4" : "opacity-100 w-auto"
+                "ml-6 transition-all duration-300 transform-gpu will-change-[opacity,transform]",
+                isCollapsed ? "opacity-0 translate-x-4 pointer-events-none group-hover/sidebar:opacity-100 group-hover/sidebar:translate-x-0 group-hover/sidebar:pointer-events-auto" : "opacity-100 translate-x-0"
               )}>
                 <h1 className={clsx(
-                  'text-xs font-black tracking-[0.2em] uppercase whitespace-nowrap',
-                  isDark ? 'text-gray-400' : 'text-gray-500'
+                  'text-[10px] font-black tracking-[0.3em] uppercase whitespace-nowrap',
+                  isDark ? 'text-gray-500' : 'text-gray-400'
                 )}>
-                  СИСТЕМА РАССЧЕТОВ
+                  СИСТЕМА КОНТРОЛЯ
                 </h1>
               </div>
             </div>
           </div>
 
-          <nav className="flex-1 px-3 py-6 space-y-1.5 overflow-y-auto overflow-x-hidden custom-scrollbar scroll-smooth">
+          <nav className="flex-1 px-4 py-8 space-y-2 overflow-y-auto overflow-x-hidden custom-scrollbar">
             {/* Admin Section */}
             {isAdmin && (
-              <div className="mb-6">
-                {!isCollapsed && (
-                  <div className="px-4 mb-2 text-[10px] font-black uppercase tracking-widest opacity-30">Админ</div>
-                )}
+              <div className="mb-8">
+                 <div className={clsx(
+                   "px-4 mb-4 text-[9px] font-black uppercase tracking-[0.25em] transition-opacity duration-300",
+                   isCollapsed ? "opacity-0 group-hover/sidebar:opacity-30" : "opacity-30"
+                 )}>АДМИНИСТРИРОВАНИЕ</div>
                 {adminNavigation.map((item) => (
                     <Link
                       key={item.href}
                       to={item.href}
                       className={clsx(
-                        'group flex items-center px-4 py-3 rounded-xl transition-all duration-300 relative will-change-transform',
+                        'group flex items-center px-4 py-4 rounded-2xl transition-all duration-300 relative transform-gpu will-change-transform',
                         location.pathname === item.href
-                          ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/20 translate-x-1'
-                          : isDark ? 'text-gray-500 hover:text-white hover:bg-white/5' : 'text-gray-400 hover:text-black hover:bg-gray-50'
+                          ? 'bg-blue-600 text-white shadow-[0_10px_20px_rgba(37,99,235,0.2)]'
+                          : isDark ? 'text-gray-500 hover:text-white hover:bg-white/5' : 'text-gray-400 hover:text-black hover:bg-blue-50/50'
                       )}
-                      title={isCollapsed ? item.name : undefined}
                     >
                       <item.icon className="h-5 w-5 shrink-0" />
-                      {!isCollapsed && <span className="ml-4 text-xs font-black uppercase tracking-widest truncate">{item.name}</span>}
+                      <span className={clsx(
+                        "ml-5 text-[11px] font-black uppercase tracking-[0.15em] whitespace-nowrap transition-all duration-300 transform-gpu",
+                        isCollapsed ? "opacity-0 translate-x-10 group-hover/sidebar:opacity-100 group-hover/sidebar:translate-x-0" : "opacity-100 translate-x-0"
+                      )}>{item.name}</span>
                     </Link>
                 ))}
               </div>
             )}
 
             {/* Standard Nav */}
-            {!isCollapsed && (
-              <div className="px-4 mb-2 text-[10px] font-black uppercase tracking-widest opacity-30">Меню</div>
-            )}
+            <div className={clsx(
+               "px-4 mb-4 text-[9px] font-black uppercase tracking-[0.25em] opacity-30 transition-opacity duration-300",
+               isCollapsed ? "opacity-0" : "opacity-30"
+             )}>ГЛАВНОЕ МЕНЮ</div>
             {navigation.map((item) => {
               const isAllowed = user?.allowedTabs ? user.allowedTabs.includes(item.id) : !item.restricted;
               if (!isAdmin && !isAllowed) return null;
@@ -205,30 +210,32 @@ export function Layout({ children }: LayoutProps) {
                   key={item.id}
                   to={item.href}
                   className={clsx(
-                    'group flex items-center px-4 py-3 rounded-xl transition-all duration-300 relative will-change-transform',
+                    'group flex items-center px-4 py-4 rounded-2xl transition-all duration-300 relative transform-gpu will-change-transform',
                     isActive
-                      ? 'bg-blue-600 text-white shadow-xl shadow-blue-500/20 translate-x-1'
-                      : isDark ? 'text-gray-500 hover:text-white hover:bg-white/5' : 'text-gray-400 hover:text-black hover:bg-gray-50'
+                      ? 'bg-blue-600 text-white shadow-[0_10px_20px_rgba(37,99,235,0.2)]'
+                      : isDark ? 'text-gray-500 hover:text-white hover:bg-white/5' : 'text-gray-400 hover:text-black hover:bg-blue-50/50'
                   )}
-                  title={isCollapsed ? item.name : undefined}
                 >
                   <item.icon className="h-5 w-5 shrink-0" />
-                  {!isCollapsed && <span className="ml-4 text-xs font-black uppercase tracking-widest truncate">{item.name}</span>}
+                  <span className={clsx(
+                    "ml-5 text-[11px] font-black uppercase tracking-[0.15em] whitespace-nowrap transition-all duration-300 transform-gpu",
+                    isCollapsed ? "opacity-0 translate-x-10 group-hover/sidebar:opacity-100 group-hover/sidebar:translate-x-0" : "opacity-100 translate-x-0"
+                  )}>{item.name}</span>
                 </Link>
               )
             })}
           </nav>
 
-          {/* Toggle Button at the bottom for better reach */}
-          <div className="p-4 border-t border-black/5 dark:border-white/5">
+          {/* Toggle Button */}
+          <div className="p-4 border-t border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.01]">
              <button
                onClick={toggleSidebar}
                className={clsx(
-                 "w-full py-3 rounded-xl flex items-center justify-center transition-all bg-black/5 hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10 group",
-                 isCollapsed ? "px-0" : "px-4"
+                 "w-full h-12 rounded-xl flex items-center justify-center transition-all bg-black/5 hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10 group active:scale-95",
                )}
+               title={isCollapsed ? "Развернуть" : "Свернуть"}
              >
-               <Bars3Icon className={clsx("h-5 w-5 transition-transform duration-500", isCollapsed ? "rotate-90" : "")} />
+               <Bars3Icon className={clsx("h-5 w-5 transition-transform duration-500", isCollapsed ? "rotate-90" : "rotate-0")} />
              </button>
           </div>
         </div>
@@ -236,7 +243,7 @@ export function Layout({ children }: LayoutProps) {
 
       {/* Main content wrapper */}
       <div className={clsx(
-        "flex flex-col min-h-screen transition-all duration-500 ease-in-out transform-gpu will-change-[padding]",
+        "flex flex-col min-h-screen transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] transform-gpu will-change-transform",
         isCollapsed ? "lg:pl-20" : "lg:pl-64"
       )}>
         {/* Simplified Header for performance */}
@@ -285,7 +292,7 @@ export function Layout({ children }: LayoutProps) {
               isDark ? "bg-gray-800 border-white/5 text-gray-500" : "bg-white border-gray-100 text-gray-400"
             )}>
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              SYSTEM ACTIVE
+              СИСТЕМА АКТИВНА
             </div>
           </div>
         </header>
@@ -301,6 +308,9 @@ export function Layout({ children }: LayoutProps) {
            </div>
         </footer>
       </div>
+
+      {/* SOTA 5.68: Global Routing Overlay (Fixed to Viewport) */}
+      <CalculationOverlay isDark={isDark} />
     </div>
   )
 }

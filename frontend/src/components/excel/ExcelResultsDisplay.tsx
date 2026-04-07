@@ -45,7 +45,7 @@ export const ExcelResultsDisplay: React.FC<ExcelResultsDisplayProps> = ({ data, 
   const { isDark } = useTheme()
   const [expandedCourierZones, setExpandedCourierZones] = useState<Set<string>>(new Set())
   const [expandedSections, setExpandedSections] = useState({
-    couriers: true,
+    couriers: false,
     orders: false,
     paymentMethods: false,
     errors: false,

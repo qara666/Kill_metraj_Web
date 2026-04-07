@@ -23,8 +23,9 @@ export const DashboardApiSection: React.FC = () => {
     const apiLastVisitDate = useDashboardStore(s => s.apiLastVisitDate);
     const setApiLastVisitDate = useDashboardStore(s => s.setApiLastVisitDate);
     const triggerApiManualSync = useDashboardStore(s => s.triggerApiManualSync);
-    const autoRoutingStatus = useDashboardStore(s => s.autoRoutingStatus);
     const setAutoRoutingStatus = useDashboardStore(s => s.setAutoRoutingStatus);
+    // v5.202: Get autoRoutingStatus early to use in useEffect
+    const autoRoutingStatus = useDashboardStore(s => s.autoRoutingStatus);
 
     const { clearExcelData } = useExcelData();
     const { user } = useAuth();
@@ -89,7 +90,7 @@ export const DashboardApiSection: React.FC = () => {
         }
     };
 
-    // v5.159: Hydrate status from server on mount
+    // v5.202: Hydrate status from server on mount - always show as active if there are orders to process
     React.useEffect(() => {
         const hydrateStatus = async () => {
             if (!user?.divisionId) return;
@@ -103,7 +104,16 @@ export const DashboardApiSection: React.FC = () => {
                     const key = `${user.divisionId}_${selectedDate}`;
                     const status = json.data[key];
                     if (status) {
-                        setAutoRoutingStatus(status);
+                        // v5.202: Auto-activate if there are orders to process AND user hasn't explicitly stopped
+                        const currentStatus = useDashboardStore.getState().autoRoutingStatus;
+                        const hasOrdersToProcess = (status.totalCount || 0) > 0 && 
+                            (status.processedCount || 0) < (status.totalCount || 0);
+                        const shouldBeActive = !currentStatus.userStopped && hasOrdersToProcess;
+                        
+                        setAutoRoutingStatus({
+                            ...status,
+                            isActive: status.isActive || shouldBeActive
+                        });
                     }
                 }
             } catch (err) {
@@ -361,7 +371,8 @@ export const DashboardApiSection: React.FC = () => {
                                     toast.success(data.message || 'Очистка завершена');
                                     // v5.195: WIPE FRONTEND CACHES DEAD
                                     localStorage.removeItem('km_routes');
-                                    setAutoRoutingStatus({ isActive: false, processedCount: 0, totalCount: 0, skippedGeocoding: 0, skippedInRoutes: 0 });
+                                    // v5.202: Mark as user stopped - prevents auto-activation
+                                    setAutoRoutingStatus({ isActive: false, processedCount: 0, totalCount: 0, skippedGeocoding: 0, skippedInRoutes: 0, userStopped: true });
                                     try {
                                         if (typeof window !== 'undefined') {
                                             window.dispatchEvent(new CustomEvent('km:turbo:routes_update', {
@@ -401,8 +412,11 @@ export const DashboardApiSection: React.FC = () => {
                                 } catch (e) {
                                     console.error('Error stopping calculation:', e);
                                 }
-                                setAutoRoutingStatus({ isActive: false });
+                                // v5.202: Mark as user stopped - prevents auto-activation
+                                setAutoRoutingStatus({ isActive: false, userStopped: true });
                             } else {
+                                // v5.202: Clear userStopped when starting new calculation
+                                setAutoRoutingStatus({ userStopped: false });
                                 triggerPriorityCalculation();
                             }
                         }}
@@ -449,29 +463,38 @@ export const DashboardApiSection: React.FC = () => {
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div className={clsx("p-5 rounded-2xl flex flex-col justify-center", isDark ? "bg-white/[0.02]" : "bg-slate-50")}>
-                            <div className={clsx('text-[10px] font-bold uppercase tracking-widest mb-1.5', isDark ? 'text-gray-500' : 'text-gray-400')}>
+                            <div className={clsx('text-[10px] font-bold uppercase tracking-widest mb-2', isDark ? 'text-gray-500' : 'text-gray-400')}>
                                 Всего заказов
                             </div>
-                            <div className={clsx('text-3xl font-black', isDark ? 'text-white' : 'text-gray-900')}>
-                                {autoRoutingStatus.totalCount || 0}
+                            <div className="flex items-baseline gap-2">
+                                <div className={clsx('text-3xl font-black leading-none', isDark ? 'text-white' : 'text-gray-900')}>
+                                    {autoRoutingStatus.totalCount || 0}
+                                </div>
+                                <span className="text-[10px] font-black opacity-30 uppercase tracking-widest leading-none text-nowrap">Всего</span>
                             </div>
                         </div>
 
                         <div className={clsx("p-5 rounded-2xl flex flex-col justify-center", isDark ? "bg-white/[0.02]" : "bg-slate-50")}>
-                            <div className={clsx('text-[10px] font-bold uppercase tracking-widest mb-1.5', isDark ? 'text-emerald-500/70' : 'text-emerald-600/70')}>
+                            <div className={clsx('text-[10px] font-bold uppercase tracking-widest mb-2', isDark ? 'text-emerald-500/70' : 'text-emerald-600/70')}>
                                 Обработано
                             </div>
-                            <div className={clsx('text-3xl font-black text-emerald-500')}>
-                                {autoRoutingStatus.processedCount || 0}
+                            <div className="flex items-baseline gap-2">
+                                <div className={clsx('text-3xl font-black text-emerald-500', isDark ? 'text-emerald-400' : 'text-emerald-600')}>
+                                    {autoRoutingStatus.processedCount || 0}
+                                </div>
+                                <span className="text-[10px] font-black opacity-30 uppercase tracking-widest leading-none">Зак</span>
                             </div>
                         </div>
 
                         <div className={clsx("p-5 rounded-2xl flex flex-col justify-center", isDark ? "bg-white/[0.02]" : "bg-slate-50")}>
-                            <div className={clsx('text-[10px] font-bold uppercase tracking-widest mb-1.5', isDark ? 'text-blue-400/70' : 'text-blue-500/70')}>
+                            <div className={clsx('text-[10px] font-bold uppercase tracking-widest mb-2', isDark ? 'text-blue-400/70' : 'text-blue-500/70')}>
                                 В маршрутах
                             </div>
-                            <div className={clsx('text-3xl font-black', isDark ? 'text-blue-400' : 'text-blue-600')}>
-                                {autoRoutingStatus.skippedInRoutes || 0}
+                            <div className="flex items-baseline gap-2">
+                                <div className={clsx('text-3xl font-black', isDark ? 'text-blue-400' : 'text-blue-600')}>
+                                    {autoRoutingStatus.skippedInRoutes || 0}
+                                </div>
+                                <span className="text-[10px] font-black opacity-30 uppercase tracking-widest leading-none text-nowrap">Подготовлено</span>
                             </div>
                         </div>
 
@@ -479,9 +502,24 @@ export const DashboardApiSection: React.FC = () => {
                             <div className={clsx('text-[10px] font-bold uppercase tracking-widest mb-1.5', isDark ? 'text-red-400/70' : 'text-red-500/70')}>
                                 Ошибки гео
                             </div>
-                            <div className={clsx('text-3xl font-black', autoRoutingStatus.skippedGeocoding > 0 ? (isDark ? 'text-red-400' : 'text-red-500') : (isDark ? 'text-gray-500' : 'text-gray-400'))}>
+                            <div 
+                                className={clsx('text-3xl font-black cursor-pointer hover:underline', autoRoutingStatus.skippedGeocoding > 0 ? (isDark ? 'text-red-400' : 'text-red-500') : (isDark ? 'text-gray-500' : 'text-gray-400'))}
+                                onClick={() => {
+                                    const errors = autoRoutingStatus.geoErrors || [];
+                                    if (errors.length > 0) {
+                                        const msg = errors.map(e => `• ${e.orderNumber}: ${e.address}`).join('\n');
+                                        alert(`Неудалось определить координаты:\n\n${msg}`);
+                                    }
+                                }}
+                                title={autoRoutingStatus.geoErrors?.length ? 'Нажмите для деталей' : ''}
+                            >
                                 {autoRoutingStatus.skippedGeocoding || 0}
                             </div>
+                            {(autoRoutingStatus.geoErrors?.length || 0) > 0 && (
+                                <div className="text-[8px] mt-1 opacity-50">
+                                    Нажмите для деталей
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
