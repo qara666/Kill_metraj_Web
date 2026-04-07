@@ -489,50 +489,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     }
   }, [courierOrders, excelData?.couriers, courierMetricsMap])
 
-   // ─── Wire "ЗАПУСТИТЬ РАСЧЕТ" button from CourierCard ──────────────────────
-   // The button fires this event globally. We listen here and recalculate
-   // any routes that do not yet have a totalDistance (i.e. not geocoded).
-   const recalculateRouteRef = useRef(recalculateRoute);
-   useEffect(() => { recalculateRouteRef.current = recalculateRoute; }, [recalculateRoute]);
-   
-   useEffect(() => {
-     const handler = async (e: Event) => {
-       const customEvent = e as CustomEvent;
-       const targetCourierName = customEvent.detail?.courierName;
-       
-       if (!excelData?.routes) return;
-       
-       let routes: Route[] = excelData.routes;
-       
-       // v5.202: Filter by courier if specified
-       if (targetCourierName) {
-         routes = routes.filter(r => 
-           normalizeCourierName(r.courier) === normalizeCourierName(targetCourierName)
-         );
-       }
-       
-       const incomplete = routes.filter(r =>
-         !r.totalDistance ||
-         r.totalDistance === 0 ||
-         r.orders.some((o: any) => !o.coords?.lat)
-       );
 
-       if (incomplete.length === 0) {
-         toast.success('Все маршруты рассчитаны');
-         return;
-       }
-
-       toast(`🔄 Запускаю расчёт ${incomplete.length} маршрут(ов)...`);
-       for (const route of incomplete) {
-         await recalculateRouteRef.current(route);
-         await new Promise(r => setTimeout(r, 50)); // yield to UI
-       }
-       toast.success(`✅ Расчёт завершён`);
-     };
-
-     window.addEventListener('km-force-auto-routing', handler);
-     return () => window.removeEventListener('km-force-auto-routing', handler);
-   }, [excelData?.routes]);
 
   // Trigger on-demand geocoding when the returning modal is opened
 
@@ -1529,21 +1486,61 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     setEditingOrder(null);
   };
 
-  // Функция для пересчета конкретного маршрута
-  const recalculateRoute = async (route: Route) => {
-    // Проверяем аномалии перед пересчетом
-    const anomalyCheck = AddressValidationService.checkRouteAnomalies(route)
-    setRouteAnomalies(prev => new Map(prev).set(route.id, anomalyCheck))
+   // Функция для пересчета конкретного маршрута
+   const recalculateRoute = async (route: Route) => {
+     // Проверяем аномалии перед пересчетом
+     const anomalyCheck = AddressValidationService.checkRouteAnomalies(route)
+     setRouteAnomalies(prev => new Map(prev).set(route.id, anomalyCheck))
 
-    if (anomalyCheck.hasAnomalies && anomalyCheck.errors.length > 0) {
-      const errorMessage = `Обнаружены ошибки в маршруте:\n${anomalyCheck.errors.join('\n')}\n\nПересчет невозможен. Исправьте ошибки в адресах.`
-      toast.error(errorMessage)
-      return
-    }
+     if (anomalyCheck.hasAnomalies && anomalyCheck.errors.length > 0) {
+       const errorMessage = `Обнаружены ошибки в маршруте:\n${anomalyCheck.errors.join('\n')}\n\nПересчет невозможен. Исправьте ошибки в адресах.`
+       toast.error(errorMessage)
+       return
+     }
 
-    // Выполняем пересчет
-    await calculateRouteDistance(route)
-  }
+     // Выполняем пересчет
+     await calculateRouteDistance(route)
+   }
+
+    // ─── Wire "ЗАПУСТИТЬ РАСЧЕТ" button from CourierCard ──────────────────────
+    useEffect(() => {
+      const handler = async (e: Event) => {
+        const customEvent = e as CustomEvent;
+        const targetCourierName = customEvent.detail?.courierName;
+        
+        if (!excelData?.routes) return;
+        
+        let routes: Route[] = excelData.routes;
+        
+        // v5.202: Filter by courier if specified
+        if (targetCourierName) {
+          routes = routes.filter(r => 
+            normalizeCourierName(r.courier) === normalizeCourierName(targetCourierName)
+          );
+        }
+        
+        const incomplete = routes.filter(r =>
+          !r.totalDistance ||
+          r.totalDistance === 0 ||
+          r.orders.some((o: any) => !o.coords?.lat)
+        );
+
+        if (incomplete.length === 0) {
+          toast.success('Все маршруты рассчитаны');
+          return;
+        }
+
+        toast(`🔄 Запускаю расчёт ${incomplete.length} маршрут(ов)...`);
+        for (const route of incomplete) {
+          await recalculateRoute(route);
+          await new Promise(r => setTimeout(r, 50)); // yield to UI
+        }
+        toast.success(`✅ Расчёт завершён`);
+      };
+
+      window.addEventListener('km-force-auto-routing', handler);
+      return () => window.removeEventListener('km-force-auto-routing', handler);
+    }, [excelData?.routes, recalculateRoute]);
 
   const clearAllRoutes = () => {
     if (window.confirm('Вы уверены, что хотите удалить все маршруты?')) {
