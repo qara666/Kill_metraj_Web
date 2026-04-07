@@ -489,35 +489,36 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     }
   }, [courierOrders, excelData?.couriers, courierMetricsMap])
 
-  // ─── Wire "ЗАПУСТИТЬ РАСЧЕТ" button from CourierCard ──────────────────────
-  // The button fires this event globally. We listen here and recalculate
-  // any routes that do not yet have a totalDistance (i.e. not geocoded).
-  useEffect(() => {
-    const handler = async () => {
-      const routes: Route[] = excelData?.routes || [];
-      const incomplete = routes.filter(r =>
-        !r.totalDistance ||
-        r.totalDistance === 0 ||
-        r.orders.some((o: any) => !o.coords?.lat)
-      );
+   // ─── Wire "ЗАПУСТИТЬ РАСЧЕТ" button from CourierCard ──────────────────────
+   // The button fires this event globally. We listen here and recalculate
+   // any routes that do not yet have a totalDistance (i.e. not geocoded).
+   useEffect(() => {
+     const handler = async () => {
+       if (!excelData?.routes) return;
+       
+       const routes: Route[] = excelData.routes;
+       const incomplete = routes.filter(r =>
+         !r.totalDistance ||
+         r.totalDistance === 0 ||
+         r.orders.some((o: any) => !o.coords?.lat)
+       );
 
-      if (incomplete.length === 0) {
-        toast.success('Все маршруты рассчитаны');
-        return;
-      }
+       if (incomplete.length === 0) {
+         toast.success('Все маршруты рассчитаны');
+         return;
+       }
 
-      toast(`🔄 Запускаю расчёт ${incomplete.length} маршрут(ов)...`);
-      for (const route of incomplete) {
-        await recalculateRoute(route);
-        await new Promise(r => setTimeout(r, 50)); // yield to UI
-      }
-      toast.success(`✅ Расчёт завершён`);
-    };
+       toast(`🔄 Запускаю расчёт ${incomplete.length} маршрут(ов)...`);
+       for (const route of incomplete) {
+         await recalculateRoute(route);
+         await new Promise(r => setTimeout(r, 50)); // yield to UI
+       }
+       toast.success(`✅ Расчёт завершён`);
+     };
 
-    window.addEventListener('km-force-auto-routing', handler);
-    return () => window.removeEventListener('km-force-auto-routing', handler);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [excelData?.routes]);
+     window.addEventListener('km-force-auto-routing', handler);
+     return () => window.removeEventListener('km-force-auto-routing', handler);
+   }, [excelData]); // Only re-setup if excelData object changes, not its internal properties
 
   // Trigger on-demand geocoding when the returning modal is opened
 
@@ -1156,27 +1157,30 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
     // v5.22: Set isCalculating early to prevent UI hangs and multiple clicks
 
-    // Добавляем новый маршрут и синхронизируем курьера в списке всех заказов
-    updateExcelData((prev: any) => {
-      const currentOrders = prev?.orders || []
-      const orderIdsToUpdate = new Set(selectedOrdersList.map(so => String(so.id)))
+     // Добавляем новый маршрут и синхронизируем курьера в списке всех заказов
+     updateExcelData((prev: any) => {
+       const currentOrders = prev?.orders || []
+       const orderIdsToUpdate = new Set(selectedOrdersList.map(so => String(so.id)))
 
-      const updatedOrders = currentOrders.map((order: any) => {
-        // Если ID заказа в списке создаваемого маршрута, обновляем его курьера
-        if (orderIdsToUpdate.has(String(order.id))) {
-          return { ...order, courier: courier }
-        }
-        return order
-      })
+       const updatedOrders = currentOrders.map((order: any) => {
+         // Если ID заказа в списке создаваемого маршрута, обновляем его курьера
+         if (orderIdsToUpdate.has(String(order.id))) {
+           return { ...order, courier: courier }
+         }
+         return order
+       })
 
-      return {
-        ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
-        routes: [...(prev?.routes || []), newRoute],
-        orders: updatedOrders
-      }
-    })
-
-    // Сбрасываем выбор заказов и порядок
+       return {
+         ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
+         routes: [...(prev?.routes || []), newRoute],
+         orders: updatedOrders
+       }
+     })
+     
+     // v5.201: Trigger UI refresh across all tabs after route creation
+     setLastBatchUpdate(Date.now());
+     
+     // Сбрасываем выбор заказов и порядок
     setSelectedOrders(new Set())
     setSelectedOrdersOrder([])
 
@@ -2279,13 +2283,16 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
                               console.log(`[Батч] Финальный коммит: ${finalRoutes.length} маршрутов, ${updatedOrders.filter((o: any) => allOrderIdsToUpdate.has(String(o.id))).length} обновленных заказов, ${updatedCouriers.length} курьеров`);
 
-                              return {
-                                ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
-                                routes: finalRoutes,
-                                orders: updatedOrders,
-                                couriers: updatedCouriers
-                              };
-                            }, true /* force: true to ensure new routes are NOT dropped by protectData */);
+                               return {
+                                 ...(prev || { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: undefined }),
+                                 routes: finalRoutes,
+                                 orders: updatedOrders,
+                                 couriers: updatedCouriers
+                               };
+                             }, true /* force: true to ensure new routes are NOT dropped by protectData */);
+                             
+                             // v5.201: Trigger UI refresh across all tabs after batch calculation
+                             setLastBatchUpdate(Date.now());
 
                             const successCount = calculatedRoutes.filter(Boolean).length;
                             if (successCount > 0) {

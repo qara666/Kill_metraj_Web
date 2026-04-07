@@ -129,52 +129,81 @@ export const GlobalDashboardFetcher: React.FC = () => {
     useDashboardWebSocket({ 
         onDataLoaded: (data) => {
             if (data && typeof setExcelData === 'function') {
+                // v5.202: NEVER overwrite existing orders with empty/partial server data
+                const hasExistingOrders = excelData?.orders && excelData.orders.length > 0;
+                
                 // v5.180: Validate backend data before setting
                 const validatedData = validateBackendData(data);
                 
-                // v5.154: Don't overwrite existing data with empty data
-                // v5.180: Also check for routes - robot may send route updates without orders
-                // v5.200: Improved merge - preserve local orders and routes
-                // v5.201: Fixed courier merge to preserve local data
+                // v5.202: Enrich route orders with full order data
                 const hasNewOrders = validatedData.orders && validatedData.orders.length > 0;
-                const hasExistingOrders = excelData?.orders && excelData.orders.length > 0;
                 const hasNewRoutes = validatedData.routes && validatedData.routes.length > 0;
+                
+                // v5.202: If we already have orders and server sends none, ONLY update routes
+                if (hasExistingOrders && !hasNewOrders) {
+                    if (hasNewRoutes) {
+                        // v5.202: Enrich route orders with full order data from existing orders
+                        const masterOrdersMap = new Map(
+                            (excelData?.orders || []).map((o: any) => [String(o.id), o])
+                        );
+                        const masterOrdersByNumber = new Map(
+                            (excelData?.orders || []).map((o: any) => [String(o.orderNumber), o])
+                        );
+                        
+                        const enrichedRoutes = validatedData.routes.map((route: any) => {
+                            if (!route.orders || !Array.isArray(route.orders)) return route;
+                            return {
+                                ...route,
+                                orders: route.orders.map((routeOrder: any) => {
+                                    const masterById = masterOrdersMap.get(String(routeOrder.id));
+                                    const masterByNumber = masterOrdersByNumber.get(String(routeOrder.orderNumber));
+                                    const master = masterById || masterByNumber;
+                                    if (master) {
+                                        return { ...routeOrder, ...master };
+                                    }
+                                    return routeOrder;
+                                })
+                            };
+                        });
+                        
+                        // Merge routes - keep existing, add new ones
+                        const existingRouteIds = new Set(
+                            (excelData?.routes || []).map((r: any) => String(r.id))
+                        );
+                        const newServerRoutes = enrichedRoutes.filter(
+                            (r: any) => !existingRouteIds.has(String(r.id))
+                        );
+                        const mergedRoutes = [
+                            ...(excelData?.routes || []),
+                            ...newServerRoutes
+                        ];
+                        
+                        // Merge couriers
+                        const mergedCouriers = mergeCouriers(
+                            excelData?.couriers || [],
+                            validatedData.couriers || [],
+                            mergedRoutes
+                        );
+                        
+                        setExcelData({
+                            ...validatedData,
+                            orders: excelData.orders, // KEEP existing orders
+                            couriers: mergedCouriers,
+                            routes: mergedRoutes
+                        });
+                    }
+                    // v5.202: No new orders AND no new routes - SKIP completely
+                    return;
+                }
                 
                 if (hasNewOrders) {
                     // New data has orders - use it
                     setExcelData(validatedData);
-                } else if (hasNewRoutes) {
-                    // v5.200: New data has routes - merge them intelligently
-                    // Priority: keep local routes, add new ones from server that don't conflict
-                    const existingRouteIds = new Set(
-                        (excelData?.routes || []).map((r: any) => String(r.id))
-                    );
-                    const newServerRoutes = (validatedData.routes || []).filter(
-                        (r: any) => !existingRouteIds.has(String(r.id))
-                    );
-                    const mergedRoutes = [
-                        ...(excelData?.routes || []),
-                        ...newServerRoutes
-                    ];
-                    
-                    // v5.201: Properly merge couriers - preserve local, update from routes
-                    const mergedCouriers = mergeCouriers(
-                        excelData?.couriers || [],
-                        validatedData.couriers || [],
-                        mergedRoutes
-                    );
-                    
-                    setExcelData({
-                        ...validatedData,
-                        orders: excelData?.orders || validatedData.orders || [],
-                        couriers: mergedCouriers,
-                        routes: mergedRoutes
-                    });
-                } else if (!hasExistingOrders) {
-                    // No new orders AND no existing orders - OK to set
+                } else if (hasNewRoutes && !hasExistingOrders) {
+                    // No existing orders, only routes - set as is
                     setExcelData(validatedData);
                 } else {
-                    // No new orders but we have existing orders - skip to preserve data
+                    // Skip - preserve existing data
                 }
             }
         },
