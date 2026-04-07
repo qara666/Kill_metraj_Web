@@ -104,6 +104,27 @@ export const RouteCard: React.FC<RouteCardProps> = memo(({
             <p className="text-[10px] font-black opacity-30 uppercase tracking-[0.2em]">
               {route.orders.length} ЗАКАЗОВ В СПИСКЕ
             </p>
+            {/* v5.202: Show start/end points indicator */}
+            {(route.startAddress || route.endAddress) && (
+              <div className="flex items-center gap-2 mt-1">
+                {route.startAddress && (
+                  <span className={clsx(
+                    'text-[8px] px-1.5 py-0.5 rounded font-medium flex items-center gap-1',
+                    isDark ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                  )} title={route.startAddress}>
+                    📍 {route.startAddress.slice(0, 15)}{route.startAddress.length > 15 ? '...' : ''}
+                  </span>
+                )}
+                {route.endAddress && (
+                  <span className={clsx(
+                    'text-[8px] px-1.5 py-0.5 rounded font-medium flex items-center gap-1',
+                    isDark ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-blue-50 text-blue-700 border border-blue-100'
+                  )} title={route.endAddress}>
+                    🏁 {route.endAddress.slice(0, 15)}{route.endAddress.length > 15 ? '...' : ''}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
