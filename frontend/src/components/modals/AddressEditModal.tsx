@@ -9,7 +9,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { clsx } from 'clsx'
 import { GeocodingService, GeocodingResult } from '../../services/geocodingService'
-import { AddressValidationService, AddressValidationResult } from '../../services/addressValidation'
+import { AddressValidationService } from '../../services/addressValidation'
 
 import { robustGeocodingService } from '../../services/robust-geocoding/RobustGeocodingService'
 import { getCityBounds } from '../../services/robust-geocoding/cityBounds'
@@ -52,7 +52,6 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
   const [editedAddress, setEditedAddress] = useState(currentAddress)
   const [isGeocoding, setIsGeocoding] = useState(false)
   const [geocodingResult, setGeocodingResult] = useState<GeocodingResult | null>(null)
-  const [validationResult, setValidationResult] = useState<AddressValidationResult | null>(null)
   const [kmlZone, setKmlZone] = useState<string | null>(null)
   const [kmlHub, setKmlHub] = useState<string | null>(null)
   const [manualCoords, setManualCoords] = useState<{ lat: number; lng: number } | null>(null)
@@ -61,7 +60,6 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
     if (isOpen) {
       setEditedAddress(currentAddress)
       setGeocodingResult(null)
-      setValidationResult(null)
       setManualCoords(null)
       setKmlZone(null)
       setKmlHub(null)
@@ -70,10 +68,7 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
 
   useEffect(() => {
     if (editedAddress.trim()) {
-      const validation = AddressValidationService.validateAddress(editedAddress)
-      setValidationResult(validation)
-    } else {
-      setValidationResult(null)
+      AddressValidationService.validateAddress(editedAddress)
     }
   }, [editedAddress])
 
@@ -144,7 +139,7 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
   }
 
   const handleSave = () => { if (editedAddress.trim() || manualCoords) { let coords = manualCoords || (geocodingResult?.success ? { lat: geocodingResult.latitude!, lng: geocodingResult.longitude! } : undefined); onSave(editedAddress.trim() || 'Выбрано на карте', coords); onClose(); } }
-  const handleCancel = () => { setEditedAddress(currentAddress); setGeocodingResult(null); setValidationResult(null); onClose(); }
+  const handleCancel = () => { setEditedAddress(currentAddress); setGeocodingResult(null); onClose(); }
 
   if (!isOpen) return null
 

@@ -40,6 +40,8 @@ export const useDashboardWebSocket = ({
     const apiDateShift = useDashboardStore(s => s.apiDateShift);
     const apiDepartmentId = useDashboardStore(s => s.apiDepartmentId);
     const apiKey = useDashboardStore(s => s.apiKey);
+    const setAutoRoutingStatus = useDashboardStore(s => s.setAutoRoutingStatus);
+    const autoRoutingStatus = useDashboardStore(s => s.autoRoutingStatus);
 
     // Refs for stable logic
     const isConnectedRef = useRef(false);
@@ -69,8 +71,8 @@ export const useDashboardWebSocket = ({
     /**
      * Core fetch function - stable reference
      */
-    const fetchLatestData = useCallback(async (options: { isManual?: boolean } = {}) => {
-        const { isManual = false } = options;
+    const fetchLatestData = useCallback(async (options: { isManual?: boolean; isSilent?: boolean } = {}) => {
+        const { isManual = false, isSilent = false } = options;
         const now = Date.now();
 
         // Prevent overlapping fetches
@@ -113,28 +115,32 @@ export const useDashboardWebSocket = ({
                 const ordersRaw = response.data.orders || [];
                 const ordersCount = ordersRaw.length;
 
-                // v5.119: Content-based Diffing (Hyper-Drive Sync)
-                // Filter out volatile fields like 'updatedAt' if they exist, to only trigger on real changes.
+                // v36.1: Content-based Diffing (Hyper-Drive Sync)
+                // MUST track orders, couriers, routes AND statistics to trigger re-render
                 const currentSignature = JSON.stringify({
-                    orders: ordersRaw.map((o: any) => ({
-                        id: o.orderNumber || o.id,
-                        s: o.status,
-                        c: o.courier || o.driver,
-                        a: o.address,
-                        t: o.plannedTime || o.deliverBy
+                    orders: (ordersRaw || []).slice(0, 100).map((o: any) => ({
+                        id: o.id || o.orderNumber,
+                        s: o.status
                     })),
-                    // v6.9: MUST track courier metrics to trigger re-render when background engine finishes!
                     couriers: (response.data.couriers || []).map((c: any) => ({
-                        n: c.name || c.courierName,
+                        n: c.name,
                         d: c.distanceKm || 0,
                         o: c.calculatedOrders || 0
-                    }))
+                    })),
+                    routes: (response.data.routes || []).map((r: any) => ({
+                        id: r.id,
+                        d: r.totalDistance || 0,
+                        c: r.orders_count || 0
+                    })),
+                    stats: response.data.statistics || {}
                 });
 
                 if (currentSignature === lastDataSignatureRef.current && !isManual) {
                     logger.info(`[Sync] Skipping update — no content change detected (${ordersCount} orders)`);
                     setApiLastSyncTime(Date.now());
-                    setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);
+                    if (!isSilent) {
+                        setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);
+                    }
                     setApiSyncStatus('idle');
                     return;
                 }
@@ -143,7 +149,15 @@ export const useDashboardWebSocket = ({
                 logger.info(` Loaded dashboard data (${ordersCount} orders)`);
 
                 setApiLastSyncTime(Date.now());
-                setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);
+                
+                // v36.9: Synchronize Robot status timestamp with the main API sync
+                if (autoRoutingStatus.isActive) {
+                    setAutoRoutingStatus({ lastUpdate: Date.now() });
+                }
+
+                if (!isSilent) {
+                    setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);
+                }
                 setApiSyncStatus('idle');
                 setApiSyncError(null);
                 
@@ -178,8 +192,10 @@ export const useDashboardWebSocket = ({
                 toast.error(`Ошибка: ${errorMessage}`, { id: toastId });
             }
 
-            // Ensure timer resets even on failure so it retries later
-            setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);
+            // Ensure timer resets even on failure so it retries later (unless silent)
+            if (!isSilent) {
+                setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);
+            }
         } finally {
             isFetchingRef.current = false;
         }
@@ -200,7 +216,14 @@ export const useDashboardWebSocket = ({
 
         logger.info(' Received dashboard update via WebSocket');
         setApiLastSyncTime(Date.now());
-        setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);
+        
+        // v36.9: Synchronize Robot status timestamp with the WebSocket push
+        if (autoRoutingStatus.isActive) {
+            setAutoRoutingStatus({ lastUpdate: Date.now() });
+        }
+
+        // v5.137: WebSocket updates are "Silent" by default — they don't reset the scheduled timer
+        // unless they are the primary source of truth for the user.
         setApiSyncStatus('idle');
         setApiSyncError(null);
         
@@ -212,31 +235,10 @@ export const useDashboardWebSocket = ({
         } else if (!update.data) {
             // v19.0: If update has no data (Turbo Robot notification), trigger a full refetch
             logger.info('[Sync] 🤖 Turbo Robot signaled change — triggering refetch');
-            lastDataSignatureRef.current = null; // v5.136: Force state reset to allow same-data update
+            lastDataSignatureRef.current = null; // v36.1: Force state reset to allow same-data update
             
-            // v25.1: Check if routes were saved to localStorage
-            const savedRoutes = localStorage.getItem('km_routes');
-            if (savedRoutes) {
-                logger.info('[Sync] 🤖 Using routes from localStorage');
-                // Reload from localStorage instead of fetching from server
-                const localData = localStorage.getItem('km_dashboard_processed_data');
-                if (localData && onDataLoadedRef.current) {
-                    try {
-                        const parsed = JSON.parse(localData);
-                        const apiDate = stateRef.current.apiDateShift || formatDateForApi(new Date());
-                        const transformed = transformDashboardData(parsed, apiDate);
-                        onDataLoadedRef.current(transformed);
-                        logger.info('[Sync] 🤖 Reloaded data with routes from localStorage');
-                    } catch (e) {
-                        logger.warn('[Sync] Failed to parse localStorage data:', e);
-                        fetchLatestData();
-                    }
-                } else {
-                    fetchLatestData();
-                }
-            } else {
-                fetchLatestData();
-            }
+            // v36.1: Removed localStorage fallback—always fetch fresh from source of truth
+            fetchLatestData({ isSilent: true });
         }
     }, [setApiLastSyncTime, setApiNextSyncTime, setApiSyncStatus, setApiSyncError]);
 
@@ -248,6 +250,13 @@ export const useDashboardWebSocket = ({
         logger.info(' Connecting to WebSocket...');
         socketService.connect(token);
         socketService.onDashboardUpdate(handleDashboardUpdate);
+        
+        // v36.4: Listen for partial route updates from the Robot and trigger a refetch
+        socketService.on('routes_update', () => {
+            logger.info('[Sync] 🤖 Routes updated — triggering refetch');
+            lastDataSignatureRef.current = null; // Force update
+            fetchLatestData({ isSilent: true });
+        });
 
         socketService.on('connected', () => {
             isConnectedRef.current = true;

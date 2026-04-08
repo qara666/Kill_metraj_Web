@@ -28,7 +28,6 @@ import { CalculationOverlay } from '../common/CalculationOverlay'
 import { useCalculationProgress } from '../../store/calculationProgressStore'
 import { AddressValidationService, RouteAnomalyCheck } from '../../services/addressValidation'
 import { toast } from 'react-hot-toast'
-import { Tooltip } from '../shared/Tooltip'
 import { CourierTimeWindows } from './CourierTimeWindows'
 import { GridOrderCard } from './GridOrderCard'
 import { type TimeWindowGroup, groupOrdersByTimeWindow, formatTimeLabel } from '../../utils/route/routeCalculationHelpers'
@@ -109,10 +108,10 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
   const [routeToDelete, setRouteToDelete] = useState<Route | null>(null)
   
   // v5.201: Force refresh trigger for all tabs after batch calculation
-  const [lastBatchUpdate, setLastBatchUpdate] = useState<number>(0)
+  const [, setLastBatchUpdate] = useState<number>(0)
   const [showAddressEditModal, setShowAddressEditModal] = useState(false)
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
-  const [routeAnomalies, setRouteAnomalies] = useState<Map<string, RouteAnomalyCheck>>(new Map())
+  const [, setRouteAnomalies] = useState<Map<string, RouteAnomalyCheck>>(new Map())
   const {
     settings,
     selectedHubs,

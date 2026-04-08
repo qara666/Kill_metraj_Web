@@ -297,8 +297,14 @@ export const useRouteGeocoding = ({
             // 1. Check if we can use the "Super-Fast Fast-Path"
             // If all orders already have coordinates, we can skip the loop entirely
             const allOrdersHaveCoords = route.orders.every(o => o.coords?.lat && o.coords?.lng);
-            const startLat = settings.defaultStartLat ? Number(settings.defaultStartLat) : null;
-            const startLng = settings.defaultStartLng ? Number(settings.defaultStartLng) : null;
+            const parseCoordSafely = (val: any) => {
+                if (!val) return null;
+                const parsed = Number(String(val).replace(',', '.'));
+                return isNaN(parsed) ? null : parsed;
+            };
+
+            const startLat = parseCoordSafely(settings.defaultStartLat);
+            const startLng = parseCoordSafely(settings.defaultStartLng);
             const hasStartCoord = !!(startLat && startLng);
 
             // 1.1 Start point determination
@@ -696,8 +702,8 @@ export const useRouteGeocoding = ({
 
             // 3. End point
             let destinLoc: any = null
-            const endLat = settings.defaultEndLat ? Number(settings.defaultEndLat) : null
-            const endLng = settings.defaultEndLng ? Number(settings.defaultEndLng) : null
+            const endLat = parseCoordSafely(settings.defaultEndLat)
+            const endLng = parseCoordSafely(settings.defaultEndLng)
             if (endLat && endLng) {
                 destinLoc = makeLatLng(endLat, endLng)
             } else if (!route.endAddress || route.endAddress === route.startAddress) {

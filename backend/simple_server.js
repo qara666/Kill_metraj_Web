@@ -805,6 +805,7 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
     await ensureIndexes();
     await ensureKmlHubsTable();
     await ensureKmlZonesTable();
+    await ensureDashboardCacheV2(); // v33.2: Critical for real-time synchronization
 
     // v5.170: TurboCalculator initialization AFTER all database setup is complete
     // This ensures all models (DashboardCache, Route, GeoCache, etc.) are registered
@@ -1019,6 +1020,35 @@ $$;
 `);
 
     logger.info('DB Check: Dashboard cache V2 migration complete');
+    
+    // v33.6: Ensure function exists with current logic
+    await sequelize.query(`
+      CREATE OR REPLACE FUNCTION notify_dashboard_update()
+      RETURNS TRIGGER AS $$
+      BEGIN
+          IF NEW.status_code = 200 THEN
+              PERFORM pg_notify('dashboard_update', json_build_object(
+                  'id', NEW.id,
+                  'divisionId', NEW.division_id,
+                  'targetDate', NEW.target_date,
+                  'orderCount', NEW.order_count,
+                  'created_at', NEW.created_at,
+                  'status_code', NEW.status_code,
+                  'data_hash', NEW.data_hash,
+                  'source', 'db_trigger'
+              )::text);
+          END IF;
+          RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS dashboard_update_trigger ON api_dashboard_cache;
+      CREATE TRIGGER dashboard_update_trigger
+      AFTER INSERT OR UPDATE ON api_dashboard_cache
+      FOR EACH ROW
+      EXECUTE FUNCTION notify_dashboard_update();
+    `);
+    logger.info('DB Check: Updated dashboard_update_trigger to AFTER INSERT OR UPDATE (v33.6)');
   } catch (err) {
     logger.error('DB Check: Error migrating dashboard cache to V2', {
       error: err.message,

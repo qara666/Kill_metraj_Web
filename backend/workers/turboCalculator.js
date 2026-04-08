@@ -1105,10 +1105,15 @@ class OrderCalculator {
             const presets = await this.getDivisionPresets(cache.division_id);
             const processedCourierNames = new Set();
             const cityBias = presets?.cityBias || 'Київ';
+            const parsePresetParam = (val) => {
+                if (!val) return null;
+                const parsed = parseFloat(String(val).replace(',', '.'));
+                return isNaN(parsed) ? null : parsed;
+            };
             const globalStartPoint = presets?.defaultStartLat && presets?.defaultStartLng ?
-                { lat: parseFloat(presets.defaultStartLat), lng: parseFloat(presets.defaultStartLng) } : null;
+                { lat: parsePresetParam(presets.defaultStartLat), lng: parsePresetParam(presets.defaultStartLng) } : null;
             const globalEndPoint = presets?.defaultEndLat && presets?.defaultEndLng ?
-                { lat: parseFloat(presets.defaultEndLat), lng: parseFloat(presets.defaultEndLng) } : null;
+                { lat: parsePresetParam(presets.defaultEndLat), lng: parsePresetParam(presets.defaultEndLng) } : null;
 
             // Ensure ordersToGroup contains ALL valid orders
 
@@ -1299,7 +1304,7 @@ class OrderCalculator {
                 lastUpdate: Date.now(),
                 totalCount: totalCount,
                 unassignedCount: totalCount - ordersWithRealCourier - alreadyRouted,
-                processedCount: alreadyRouted,
+                processedCount: 0,
                 totalCouriers: deliveryWindows.size,
                 processedCouriers: 0,
                 skippedGeocoding: 0,
@@ -1311,73 +1316,71 @@ class OrderCalculator {
                 courierStats: {}
             };
 
-            const emitStatus = () => {
-                if (this.io) {
-                    const couriersList = Object.values(stats.courierStats || {});
-                    const payload = {
-                        divisionId: String(cache.division_id),
-                        date: cache.target_date,
-                        totalCount: stats.totalCount,
-                        totalCouriers: stats.totalCouriers,
-                        processedCount: stats.processedCount,
-                        processedCouriers: stats.processedCouriers,
-                        currentPhase: stats.currentPhase,
-                        message: stats.message,
-                        isActive: stats.isActive,
-                        couriers: couriersList,
-                        skippedGeocoding: stats.skippedGeocoding || 0,
-                        geoErrors: stats.geoErrors || [], // v6.9: Failed geocode addresses
-                        skippedInRoutes: stats.skippedInRoutes || 0,
-                        skippedNoCourier: stats.skippedNoCourier || stats.unassignedCount || 0,
-                        lastUpdate: Date.now()
-                    };
-                    this.divisionStates.set(String(cache.division_id), payload);
-                    this.io.emit('robot_status', payload);
-                    this.io.emit('division_status_update', payload);
-                    
-                    // v6.9: Also write to global status store for /api/turbo/statuses endpoint
-                    if (global.divisionStatusStore) {
-                        global.divisionStatusStore[`${payload.divisionId}_${payload.date}`] = payload;
-                    }
-                    
-                    // v6.9: Debug log for status emission
-                    logger.info(`[TurboCalculator] 📡 Status emitted: division=${payload.divisionId}, processed=${payload.processedCount}/${payload.totalCount}, phase=${payload.currentPhase}`);
+            const emitStatus = (force = false) => {
+                if (!this.io) return;
+                
+                const now = Date.now();
+                // Throttle: don't emit more than once per 500ms unless forced
+                if (!force && this.lastEmitTime && (now - this.lastEmitTime < 500)) return;
+                this.lastEmitTime = now;
 
-                    // v6.3: If in global mode, also emit an aggregated status
-                    if (this.globalStats) {
-                        try {
-                            const dateISO = cache.target_date;
-                            let totalProcessed = 0;
-                            let totalInRoutes = 0;
-                            let totalErrors = 0;
+                const couriersList = Object.values(stats.courierStats || {});
+                const payload = {
+                    divisionId: String(cache.division_id),
+                    date: cache.target_date,
+                    totalCount: stats.totalCount,
+                    totalCouriers: stats.totalCouriers,
+                    processedCount: stats.processedCount,
+                    processedCouriers: stats.processedCouriers,
+                    currentPhase: stats.currentPhase,
+                    message: stats.message,
+                    isActive: stats.isActive,
+                    couriers: couriersList,
+                    currentCourier: stats.currentCourier || null,
+                    skippedGeocoding: stats.skippedGeocoding || 0,
+                    geoErrors: stats.geoErrors || [], 
+                    skippedInRoutes: stats.skippedInRoutes || 0,
+                    skippedNoCourier: stats.skippedNoCourier || stats.unassignedCount || 0,
+                    lastUpdate: now
+                };
+                
+                this.divisionStates.set(String(cache.division_id), payload);
+                this.io.emit('robot_status', payload);
+                this.io.emit('division_status_update', payload);
 
-                            // Sum stats from all divisions for this date
-                            for (const [key, state] of this.divisionStates.entries()) {
-                                if (state.date === dateISO) {
-                                    totalProcessed += (state.processedCount || 0);
-                                    totalInRoutes += (state.skippedInRoutes || 0);
-                                    totalErrors += (state.skippedGeocoding || 0);
-                                }
+                // Global aggregation
+                if (this.globalStats) {
+                    try {
+                        const dateISO = cache.target_date;
+                        let totalProcessed = 0;
+                        let totalInRoutes = 0;
+                        let totalErrors = 0;
+
+                        for (const [key, state] of this.divisionStates.entries()) {
+                            if (state.date === dateISO) {
+                                totalProcessed += (state.processedCount || 0);
+                                totalInRoutes += (state.skippedInRoutes || 0);
+                                totalErrors += (state.skippedGeocoding || 0);
                             }
-
-                            const globalPayload = {
-                                ...this.globalStats,
-                                processedCount: totalProcessed,
-                                skippedInRoutes: totalInRoutes,
-                                skippedGeocoding: totalErrors,
-                                message: `Processing branch ${cache.division_id}: ${stats.message}`
-                            };
-                            this.io.emit('robot_status', globalPayload);
-                        } catch (e) {
-                            logger.warn(`[TurboCalculator] ⚠️ Global status aggregation failed: ${e.message}`);
                         }
+
+                        const globalPayload = {
+                            ...this.globalStats,
+                            processedCount: totalProcessed,
+                            skippedInRoutes: totalInRoutes,
+                            skippedGeocoding: totalErrors,
+                            message: `Processing branch ${cache.division_id}: ${stats.message}`
+                        };
+                        this.io.emit('robot_status', globalPayload);
+                    } catch (e) {
+                         // silently ignore
                     }
                 }
+                
+                if (global.divisionStatusStore) {
+                    global.divisionStatusStore[`${payload.divisionId}_${payload.date}`] = payload;
+                }
             };
-
-            // Use unique courier count
-            stats.totalCouriers = deliveryWindows.size;
-            emitStatus();
 
             // v5.145: Routes are now deleted ONCE in processDay, not here
 
@@ -1422,7 +1425,12 @@ class OrderCalculator {
                 const normName = courierName;
                 if (!windows || windows.length === 0) continue;
 
-                // Ensure courierStats entry exists for this courier
+                // v36.5: Refresh current courier and progress
+                stats.currentCourier = normName;
+                stats.message = `Processing: ${normName}...`;
+                emitStatus(true); 
+
+                // Ensure stat entry
                 if (!stats.courierStats[normName]) {
                     const totalOrdersInWindows = windows.reduce((acc, w) => acc + w.orders.length, 0);
                     stats.courierStats[normName] = {
@@ -1435,9 +1443,8 @@ class OrderCalculator {
                 }
 
                 logger.info(`[TurboCalculator] 🚚 Processing courier ${normName}: ${windows.length} time windows`);
-
                 let courierRoutesCreated = 0;
-                stats.processedCouriers++;
+                stats.processedCouriers++; 
                 emitStatus();
 
 
@@ -1481,10 +1488,14 @@ class OrderCalculator {
                         const existingR = existingRouteMap.get(blockSignature);
                         matchedExistingRouteIds.add(existingR.id);
                         
-                        stats.courierStats[normName].distanceKm += parseFloat(existingR.total_distance || 0);
-                        stats.courierStats[normName].calculatedOrders += existingR.orders_count;
+                        // v36.5: Aggressive addition to stats for immediate feedback
+                        if (stats.courierStats[normName]) {
+                            stats.courierStats[normName].distanceKm += parseFloat(existingR.total_distance || 0);
+                            stats.courierStats[normName].calculatedOrders += existingR.orders_count;
+                        }
                         stats.processedCount += dedupedOrders.length;
-                        
+                        stats.message = `Skipping ${normName} (${windowKey}) — already calculated`;
+                        emitStatus(); 
                         inMemoryFrontendRoutes.push({
                             id: existingR.id,
                             courier: existingR.courier_id,
@@ -1559,9 +1570,16 @@ class OrderCalculator {
 
                             // v5.180: Parallel geocoding with concurrency limit to prevent overwhelming APIs
                             const geoLimit = pLimit(5); // Max 5 concurrent geocoding requests
+                            let geoDone = 0;
                             await Promise.all(needsGeocoding.map(o => geoLimit(async () => {
                                 try {
                                     const cacheKey2 = (o.address || o.addressGeo || '').toLowerCase().trim();
+                                    
+                                    // v36.5: Pulse-update during geocoding 
+                                    stats.processedCount++; // Incremental progress!
+                                    stats.message = `Geocoding: ${o.address ? o.address.slice(0, 30) : '...'} (${++geoDone}/${needsGeocoding.length})`;
+                                    emitStatus(); 
+
                                     if (!cacheKey2) return;
 
                                     // Double-check (might have been cached by another parallel call)
@@ -1587,9 +1605,12 @@ class OrderCalculator {
                             })));
                         }
 
-                        // v5.162: CRITICAL - Increment processedCount AFTER the window's geocoding is handled
-                        // This applies to ALL orders in this window, even if they were already in cache.
-                        stats.processedCount += dedupedOrders.length;
+                        // v5.162: CRITICAL - Update count only for non-geocoded orders here 
+                        // as geocoded ones were already counted incrementally above
+                        const alreadyGeocodedCount = dedupedOrders.length - needsGeocoding.length;
+                        if (alreadyGeocodedCount > 0) {
+                            stats.processedCount += alreadyGeocodedCount;
+                        }
                         emitStatus();
 
                         // Use all valid orders (with coords OR a valid address for routing)
@@ -1668,34 +1689,48 @@ class OrderCalculator {
                             try {
                                 const routePoints = validOrders
                                     .filter(o => o.coords?.lat && o.coords?.lng)
-                                    .map(o => ({ lat: o.coords.lat, lng: o.coords.lng }));
+                                    .map((o, idx) => ({ lat: o.coords.lat, lng: o.coords.lng, origIndex: idx }));
 
                                 if (globalStartPoint) {
                                     routePoints.unshift({ lat: Number(globalStartPoint.lat), lng: Number(globalStartPoint.lng) });
                                 } else if (!globalEndPoint && routePoints.length > 1) {
-                                    // v7.0: No depot — mirror circular route: add first stop as implicit start
                                     routePoints.unshift({ lat: routePoints[0].lat, lng: routePoints[0].lng });
                                 }
 
                                 if (globalEndPoint) {
                                     routePoints.push({ lat: Number(globalEndPoint.lat), lng: Number(globalEndPoint.lng) });
                                 } else if (!globalStartPoint && routePoints.length > 2) {
-                                    // v7.0: No depot — mirror circular route: add first stop as implicit end
-                                    routePoints.push({ lat: routePoints[1].lat, lng: routePoints[1].lng }); // index 1 because index 0 is already the implicit start
+                                    routePoints.push({ lat: routePoints[1].lat, lng: routePoints[1].lng }); 
                                 }
 
                                 const optimized = this.optimizeRoute2Opt(routePoints, 50);
                                 if (optimized.improved && optimized.savingsPct > 1) {
-                                    // Recalculate route with optimized order
-                                    const optimizedResult = await this.calculateRoute(
-                                        validOrders,
-                                        cache.division_id,
-                                        globalStartPoint,
-                                        globalEndPoint
-                                    );
-                                    if (optimizedResult && optimizedResult.distance < routeResult.distance) {
-                                        logger.info(`[TurboCalculator] ✅ 2-opt improved route: ${(routeResult.distance / 1000).toFixed(2)}km -> ${(optimizedResult.distance / 1000).toFixed(2)}km`);
-                                        routeResult = optimizedResult;
+                                    // v7.1: REORDER validOrders based on optimized indices
+                                    // optimized.points contains { lat, lng, index }
+                                    // Indices 0..N match routePoints, which matches validOrders (offset by Start if present)
+                                    const offset = globalStartPoint ? 1 : 0;
+                                    const newOrders = [];
+                                    
+                                    // Extract orders from optimized points (skipping Start/End points)
+                                    optimized.points.forEach(p => {
+                                        if (p.origIndex !== undefined) {
+                                            // The point was an order
+                                            newOrders.push(validOrders[p.origIndex]);
+                                        }
+                                    });
+
+                                    if (newOrders.length === validOrders.length) {
+                                        const optimizedResult = await this.calculateRoute(
+                                            newOrders,
+                                            cache.division_id,
+                                            globalStartPoint,
+                                            globalEndPoint
+                                        );
+                                        if (optimizedResult && optimizedResult.distance < routeResult.distance) {
+                                            logger.info(`[TurboCalculator] ✅ 2-opt improved route: ${(routeResult.distance / 1000).toFixed(2)}km -> ${(optimizedResult.distance / 1000).toFixed(2)}km`);
+                                            routeResult = optimizedResult;
+                                            validOrders = newOrders; // Update orders for storage
+                                        }
                                     }
                                 }
                             } catch (optErr) {
@@ -1748,51 +1783,58 @@ class OrderCalculator {
                                 }
                             }
 
-
-                            // v5.149: CRITICAL FIX - Deduplicate by orderNumber FIRST (primary key)
-                            // The same order may have different IDs from different sources
-                            const seenOrderNumbers = new Set();
+                            // v5.149+: Stable deduplication by ID (to support split orders)
                             const seenIds = new Set();
                             const uniqueRouteOrders = [];
 
-                            // 🚀 v36.0 FIX: Keep ALL orders in the route block, even if geocoding failed!
-                            // calculateRoute used validOrders, but the DB representation must contain ALL orders in the block.
                             const nonCancelledOrders = dedupedOrders.filter(o => {
                                 const s = String(o.status || o.deliveryStatus || '').toLowerCase().trim();
                                 return !(s.includes('отказ') || s.includes('отменен') || s.includes('відмова'));
                             });
 
                             nonCancelledOrders.forEach(o => {
-                                const orderNum = String(o.orderNumber || '');
-                                const orderId = String(o.id || '');
-
-                                // Skip if we've seen this orderNumber before
-                                if (orderNum && seenOrderNumbers.has(orderNum)) {
-                                    logger.warn(`[TurboCalculator] ⚠️ Skipping duplicate orderNumber: ${orderNum}`);
+                                const orderId = String(o.id || o._id || o.orderNumber || '');
+                                if (!orderId) {
+                                    uniqueRouteOrders.push({
+                                        id: o.id,
+                                        orderNumber: o.orderNumber,
+                                        address: o.address || o.addressGeo || o.fullAddress || o.full_address || o.raw?.address || o.raw?.fullAddress || 'Адрес не указан',
+                                        coords: o.coords,
+                                        lat: o.coords?.lat || o.lat,
+                                        lng: o.coords?.lng || o.lng,
+                                        deliveryTime: o.deliverBy || o.plannedTime || o.deliveryTime,
+                                        locationType: o.locationType || o.coords?.locationType,
+                                        streetNumberMatched: o.streetNumberMatched || o.coords?.streetNumberMatched,
+                                        isAddressLocked: o.isAddressLocked || !!o.coords?.lat,
+                                        kmlZone: o.kmlZone || o.deliveryZone,
+                                        kmlHub: o.kmlHub,
+                                        plannedTime: o.plannedTime || o.deliverBy,
+                                        deliveryZone: o.deliveryZone,
+                                        status: o.status || null,
+                                        executionTime: getExecutionTime(o) || null,
+                                        handoverAt: o.handoverAt || null,
+                                        manualGroupId: o.manualGroupId,
+                                        readyAtPreview: o.readyAtPreview || o.kitchen || o.readyAtSource,
+                                        statusTimings: o.statusTimings || null,
+                                    });
                                     return;
                                 }
 
-                                // Also skip if we've seen this id before
-                                if (orderId && seenIds.has(orderId)) {
-                                    logger.warn(`[TurboCalculator] ⚠️ Skipping duplicate id: ${orderId}`);
+                                if (seenIds.has(orderId)) {
+                                    logger.warn(`[TurboCalculator] ⚠️ Skipping duplicate ID: ${orderId}`);
                                     return;
                                 }
 
-                                // Mark as seen
-                                if (orderNum) seenOrderNumbers.add(orderNum);
-                                if (orderId) seenIds.add(orderId);
+                                seenIds.add(orderId);
 
                                 uniqueRouteOrders.push({
                                     id: o.id,
                                     orderNumber: o.orderNumber,
-                                    // v5.170: CRITICAL - address can be empty, fallback to addressGeo
-                                    address: o.address || o.addressGeo || o.raw?.address || 'Адрес не указан',
+                                    address: o.address || o.addressGeo || o.fullAddress || o.full_address || o.raw?.address || o.raw?.fullAddress || 'Адрес не указан',
                                     coords: o.coords,
-                                    // v5.170: Add lat/lng at top level for frontend compatibility
                                     lat: o.coords?.lat || o.lat,
                                     lng: o.coords?.lng || o.lng,
                                     deliveryTime: o.deliverBy || o.plannedTime || o.deliveryTime,
-                                    // v5.170: Pass through geocoding metadata for badge display
                                     locationType: o.locationType || o.coords?.locationType,
                                     streetNumberMatched: o.streetNumberMatched || o.coords?.streetNumberMatched,
                                     isAddressLocked: o.isAddressLocked || !!o.coords?.lat,
@@ -1800,7 +1842,6 @@ class OrderCalculator {
                                     kmlHub: o.kmlHub,
                                     plannedTime: o.plannedTime || o.deliverBy,
                                     deliveryZone: o.deliveryZone,
-                                    // v31.0: Execution time tracking for accurate km calculation
                                     status: o.status || null,
                                     executionTime: getExecutionTime(o) || null,
                                     handoverAt: o.handoverAt || null,
@@ -1837,12 +1878,12 @@ class OrderCalculator {
                                     windowStart: timeGroup.windowStart,
                                     startAddress: presets?.defaultStartAddress || null,
                                     endAddress: presets?.defaultEndAddress || null,
-                                    startCoords: globalStartPoint, // v5.165: Save exact coordinates
-                                    endCoords: globalEndPoint,
-                                    isCircularRoute: !globalStartPoint && !globalEndPoint && uniqueRouteOrders.length > 0, // v7.0: Flag for frontend
-                                    geoMeta: { // v5.166: Save geoMeta for routeExport compatibility
+                                    startCoords: globalStartPoint,
+                                    endCoords: globalEndPoint || globalStartPoint, // Circular fallback
+                                    isCircularRoute: !globalStartPoint && !globalEndPoint && uniqueRouteOrders.length > 0, 
+                                    geoMeta: { 
                                         origin: globalStartPoint,
-                                        destination: globalEndPoint,
+                                        destination: globalEndPoint || globalStartPoint,
                                         waypoints: uniqueRouteOrders.map(o => o.coords).filter(Boolean)
                                     },
                                     orders: uniqueRouteOrders,
@@ -1910,6 +1951,10 @@ class OrderCalculator {
                     stats.processedCouriers = processedCourierNames.size;
                     stats.message = `Courier ${normName} completed`; // Update message so it doesn't get stuck
                     emitStatus(); // Push fresh status after each courier is done
+                    
+                    // v33.2: EMIT ROUTES PARTIALLY AFTER EACH COURIER
+                    // This fixed the "didn't pick up routes" feel, as user can see them appearing cow-by-cow!
+                    await emitCurrentRoutes(); 
                 }
             } // End of courier loop
 
@@ -1918,7 +1963,7 @@ class OrderCalculator {
             stats.processedCount = stats.totalCount;
             stats.currentPhase = 'complete';
             stats.message = 'Calculation complete!';
-            emitStatus(); // Emit final status after all couriers processed
+            emitStatus(true); // v36.5: FORCE final status to clear throttles
 
             // v5.195: Clean up obsolete routes that didn't match any of the calculated valid block signatures
             if (matchedExistingRouteIds.size > 0 && Route && cache.division_id) {
@@ -2279,12 +2324,9 @@ class OrderCalculator {
             } catch (e) { /* ignore */ }
         };
 
-        // v5.180: Primary attempt — parallel race with retry + exponential backoff
+        // v36.7: Google is strictly forbidden per user request. Use OSM-based providers only.
         const primaryQuery = cleaned + ', ' + city;
-        const primaryProviders = ['google', 'photon', 'komoot', 'nominatim'].filter(p => {
-            if (p === 'google') return !!process.env.GOOGLE_GEOCODE_API_KEY;
-            return true;
-        });
+        const primaryProviders = ['photon', 'komoot', 'nominatim'];
 
         // v5.180: Retry wrapper with exponential backoff
         const tryGeocodeWithRetry = async (query, provider, timeout) => {
@@ -2423,9 +2465,14 @@ class OrderCalculator {
         // circular route: first_stop → all_stops → first_stop.
         // This is the industry-standard logistics approach when no depot is defined and gives
         // a much more realistic total distance than simply measuring A→B between stops.
+        // v7.2: Depot consistency — If only one depot point is provided, use it for both start and end
+        // to ensure a circular route from base is calculated whenever a single hub coordinate is set.
         const hasDepot = !!(startPoint || endPoint);
         let effectiveStart = startPoint;
         let effectiveEnd = endPoint;
+
+        if (startPoint && !endPoint) effectiveEnd = startPoint;
+        if (!startPoint && endPoint) effectiveStart = endPoint;
 
         if (!hasDepot && orders.length > 1) {
             const firstWithCoords = orders.find(o =>
