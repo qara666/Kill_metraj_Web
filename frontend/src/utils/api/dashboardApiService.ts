@@ -36,17 +36,33 @@ export const dashboardApiService = {
                 };
             }
 
-            const response = await axios.post<FetchDashboardDataResponse>(
-                `${API_BASE_URL}/dashboard/fetch`,
-                request,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: 60000 // 60 секунд тайм-аут для тяжелых запросов
+            const executeFetch = async () => {
+                return await axios.post<FetchDashboardDataResponse>(
+                    `${API_BASE_URL}/dashboard/fetch`,
+                    request,
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        timeout: 60000 // 60 секунд тайм-аут для тяжелых запросов
+                    }
+                );
+            };
+
+            let response;
+            try {
+                response = await executeFetch();
+            } catch (err: any) {
+                // v5.204: Retry once if server is recycling (502/503/504)
+                if (err.response && [502, 503, 504].includes(err.response.status)) {
+                    console.warn('[dashboardApiService] Server recycling, retrying in 2s...');
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    response = await executeFetch();
+                } else {
+                    throw err;
                 }
-            );
+            }
 
             return response.data;
         } catch (error: any) {

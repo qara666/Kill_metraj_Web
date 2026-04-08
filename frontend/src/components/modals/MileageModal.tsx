@@ -408,22 +408,22 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
                   </div>
                   <div className="flex flex-col">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-4xl font-black tabular-nums">{distanceStats.totalDistance.toFixed(1)}</span>
+                      <span className="text-4xl font-black tabular-nums">{(distanceStats?.totalDistance || 0).toFixed(1)}</span>
                       <span className="text-[10px] font-black opacity-30 uppercase tracking-[0.2em]">ИТОГО</span>
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-4">
                       <div className="flex flex-col">
                         <span className="text-[9px] font-black opacity-40 uppercase tracking-widest leading-none mb-1 text-nowrap">Основной пробег</span>
                         <div className="flex items-center gap-2">
-                          <span className="text-lg font-black tabular-nums">{distanceStats.effectivePhysicalKm.toFixed(1)}</span>
-                          {distanceStats.robotDistance > 0 && (
+                          <span className="text-lg font-black tabular-nums">{(distanceStats?.effectivePhysicalKm || 0).toFixed(1)}</span>
+                          {(distanceStats?.robotDistance || 0) > 0 && (
                             <div className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-[7px] font-black text-emerald-500 border border-emerald-500/20">ROBOT OK</div>
                           )}
                         </div>
                       </div>
                       <div className="flex flex-col border-l border-white/5 pl-4">
                         <span className="text-[9px] font-black opacity-40 uppercase tracking-widest leading-none mb-1 text-nowrap text-blue-500">Доп (заказы)</span>
-                        <span className="text-lg font-black tabular-nums text-blue-500">+{distanceStats.bonusDistance.toFixed(1)}</span>
+                        <span className="text-lg font-black tabular-nums text-blue-500">+{(distanceStats?.bonusDistance || 0).toFixed(1)}</span>
                       </div>
                     </div>
                   </div>

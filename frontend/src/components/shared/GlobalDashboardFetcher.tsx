@@ -1,6 +1,7 @@
-import React from 'react';
+import * as React from 'react';
 import { useExcelData } from '../../contexts/ExcelDataContext';
 import { useDashboardWebSocket } from '../../hooks/useDashboardWebSocket';
+import { useDashboardStore } from '../../stores/useDashboardStore';
 import { normalizeCourierName } from '../../utils/data/courierName';
 
 /**
@@ -14,6 +15,30 @@ import { normalizeCourierName } from '../../utils/data/courierName';
  */
 export const GlobalDashboardFetcher: React.FC = () => {
     const { setExcelData, excelData } = useExcelData();
+    const apiDateShift = useDashboardStore(s => s.apiDateShift);
+    
+    // v5.204: Clear stale data if date changes
+    React.useEffect(() => {
+        if (!excelData || !excelData.orders || excelData.orders.length === 0) return;
+        
+        const normalize = (d: string) => {
+            if (!d) return '';
+            const part = d.split(' ')[0];
+            if (part.includes('-')) {
+                const [y, m, d_] = part.split('-');
+                return `${d_}.${m}.${y}`;
+            }
+            return part; // Assuming DD.MM.YYYY
+        };
+        
+        const currentDataDate = normalize(excelData.creationDate || (excelData.orders?.[0]?.creationDate || ''));
+        const targetDate = normalize(apiDateShift);
+        
+        if (currentDataDate && targetDate && currentDataDate !== targetDate) {
+            console.warn(`[GlobalDashboardFetcher] Date shift detected (${currentDataDate} -> ${targetDate}). Clearing state.`);
+            setExcelData(null);
+        }
+    }, [apiDateShift, setExcelData]);
     
     // v5.180: Validate and normalize backend data before setting
     const validateBackendData = React.useCallback((data: any) => {
@@ -142,12 +167,20 @@ export const GlobalDashboardFetcher: React.FC = () => {
                 // v5.180: Validate backend data before setting
                 const validatedData = validateBackendData(data);
                 
+                // v5.204: Check if total order count changed - if so, we MUST update
+                const currentOrderCount = currentExcelData?.orders?.length || 0;
+                const newOrderCount = validatedData.orders?.length || 0;
+                const countChanged = currentOrderCount !== newOrderCount;
+
                 // v5.203: Check for routes only - we ALWAYS preserve local orders
                 const hasNewOrders = validatedData.orders && Array.isArray(validatedData.orders) && validatedData.orders.length > 0;
                 const hasNewRoutes = validatedData.routes && Array.isArray(validatedData.routes) && validatedData.routes.length > 0;
                 
                 // v5.203: ALWAYS merge routes but PRESERVE local orders completely
-                if (hasNewRoutes) {
+                if (hasNewRoutes || (hasNewOrders && countChanged)) {
+                    if (countChanged) {
+                        console.log(`[GlobalDashboardFetcher] Order count changed: ${currentOrderCount} -> ${newOrderCount}. Updating.`);
+                    }
                     // Enrich route orders with full order data from existing orders
                     const masterOrdersMap = new Map(
                         (currentExcelData?.orders || []).map((o: any) => [String(o.id), o])
@@ -204,13 +237,14 @@ export const GlobalDashboardFetcher: React.FC = () => {
                         mergedRoutes
                     );
                     
-                    // v5.203: CRITICAL - ALWAYS preserve local orders
+                    // v5.204: CRITICAL - Trust server orders as Source of Truth during sync, 
+                    // but maintain enrichment from local master records if available
                     setExcelData({
                         ...validatedData,
-                        orders: currentExcelData?.orders || validatedData.orders || [], // Keep local orders
+                        orders: validatedData.orders && validatedData.orders.length > 0 ? validatedData.orders : (currentExcelData?.orders || []),
                         couriers: mergedCouriers,
                         routes: mergedRoutes
-                    });
+                    }, true); // Bypasses protectData to ensure count stays in sync
                     return;
                 }
                 
@@ -222,7 +256,7 @@ export const GlobalDashboardFetcher: React.FC = () => {
                 
                 // No local orders and no routes - use new data
                 if (hasNewOrders) {
-                    setExcelData(validatedData);
+                    setExcelData(validatedData, true);
                 }
             }
         },
