@@ -124,86 +124,105 @@ export const GlobalDashboardFetcher: React.FC = () => {
         }));
     };
     
+    // v36.5: Use a ref to track the latest excelData for the closure below
+    const excelDataRef = React.useRef(excelData);
+    React.useEffect(() => {
+        excelDataRef.current = excelData;
+    }, [excelData]);
+    
     // Listen for real-time updates (inc. Robot calculation signals)
     // Synchronizes the received data into the global Excel context.
     useDashboardWebSocket({ 
         onDataLoaded: (data) => {
+            const currentExcelData = excelDataRef.current;
             if (data && typeof setExcelData === 'function') {
-                // v5.202: NEVER overwrite existing orders with empty/partial server data
-                const hasExistingOrders = excelData?.orders && excelData.orders.length > 0;
+                // v5.203: ALWAYS preserve local orders - never overwrite them
+                const hasExistingOrders = currentExcelData?.orders && Array.isArray(currentExcelData.orders) && currentExcelData.orders.length > 0;
                 
                 // v5.180: Validate backend data before setting
                 const validatedData = validateBackendData(data);
                 
-                // v5.202: Enrich route orders with full order data
-                const hasNewOrders = validatedData.orders && validatedData.orders.length > 0;
-                const hasNewRoutes = validatedData.routes && validatedData.routes.length > 0;
+                // v5.203: Check for routes only - we ALWAYS preserve local orders
+                const hasNewOrders = validatedData.orders && Array.isArray(validatedData.orders) && validatedData.orders.length > 0;
+                const hasNewRoutes = validatedData.routes && Array.isArray(validatedData.routes) && validatedData.routes.length > 0;
                 
-                // v5.202: If we already have orders and server sends none, ONLY update routes
-                if (hasExistingOrders && !hasNewOrders) {
-                    if (hasNewRoutes) {
-                        // v5.202: Enrich route orders with full order data from existing orders
-                        const masterOrdersMap = new Map(
-                            (excelData?.orders || []).map((o: any) => [String(o.id), o])
-                        );
-                        const masterOrdersByNumber = new Map(
-                            (excelData?.orders || []).map((o: any) => [String(o.orderNumber), o])
-                        );
-                        
-                        const enrichedRoutes = validatedData.routes.map((route: any) => {
-                            if (!route.orders || !Array.isArray(route.orders)) return route;
-                            return {
-                                ...route,
-                                orders: route.orders.map((routeOrder: any) => {
-                                    const masterById = masterOrdersMap.get(String(routeOrder.id));
-                                    const masterByNumber = masterOrdersByNumber.get(String(routeOrder.orderNumber));
-                                    const master = masterById || masterByNumber;
-                                    if (master) {
-                                        return { ...routeOrder, ...master };
-                                    }
-                                    return routeOrder;
-                                })
-                            };
-                        });
-                        
-                        // Merge routes - keep existing, add new ones
-                        const existingRouteIds = new Set(
-                            (excelData?.routes || []).map((r: any) => String(r.id))
-                        );
-                        const newServerRoutes = enrichedRoutes.filter(
-                            (r: any) => !existingRouteIds.has(String(r.id))
-                        );
-                        const mergedRoutes = [
-                            ...(excelData?.routes || []),
-                            ...newServerRoutes
-                        ];
-                        
-                        // Merge couriers
-                        const mergedCouriers = mergeCouriers(
-                            excelData?.couriers || [],
-                            validatedData.couriers || [],
-                            mergedRoutes
-                        );
-                        
-                        setExcelData({
-                            ...validatedData,
-                            orders: excelData.orders, // KEEP existing orders
-                            couriers: mergedCouriers,
-                            routes: mergedRoutes
+                // v5.203: ALWAYS merge routes but PRESERVE local orders completely
+                if (hasNewRoutes) {
+                    // Enrich route orders with full order data from existing orders
+                    const masterOrdersMap = new Map(
+                        (currentExcelData?.orders || []).map((o: any) => [String(o.id), o])
+                    );
+                    const masterOrdersByNumber = new Map(
+                        (currentExcelData?.orders || []).map((o: any) => [String(o.orderNumber), o])
+                    );
+                    
+                    // Also use new orders from server if they exist (but prefer local)
+                    if (hasNewOrders) {
+                        validatedData.orders.forEach((o: any) => {
+                            const idKey = String(o.id);
+                            const numKey = String(o.orderNumber);
+                            if (!masterOrdersMap.has(idKey)) {
+                                masterOrdersMap.set(idKey, o);
+                            }
+                            if (!masterOrdersByNumber.has(numKey)) {
+                                masterOrdersByNumber.set(numKey, o);
+                            }
                         });
                     }
-                    // v5.202: No new orders AND no new routes - SKIP completely
+                    
+                    const enrichedRoutes = validatedData.routes.map((route: any) => {
+                        if (!route.orders || !Array.isArray(route.orders)) return route;
+                        return {
+                            ...route,
+                            orders: route.orders.map((routeOrder: any) => {
+                                const masterById = masterOrdersMap.get(String(routeOrder.id));
+                                const masterByNumber = masterOrdersByNumber.get(String(routeOrder.orderNumber));
+                                const master = masterById || masterByNumber;
+                                if (master) {
+                                    return { ...routeOrder, ...master };
+                                }
+                                return routeOrder;
+                            })
+                        };
+                    });
+                    
+                    // Merge routes - keep existing, add new ones
+                    const existingRouteMap = new Map(
+                        (currentExcelData?.routes || []).map((r: any) => [String(r.id), r])
+                    );
+                    
+                    enrichedRoutes.forEach((nr: any) => {
+                        existingRouteMap.set(String(nr.id), nr);
+                    });
+                    
+                    const mergedRoutes = Array.from(existingRouteMap.values());
+                    
+                    // Merge couriers - preserve local, update from routes
+                    const mergedCouriers = mergeCouriers(
+                        currentExcelData?.couriers || [],
+                        validatedData.couriers || [],
+                        mergedRoutes
+                    );
+                    
+                    // v5.203: CRITICAL - ALWAYS preserve local orders
+                    setExcelData({
+                        ...validatedData,
+                        orders: currentExcelData?.orders || validatedData.orders || [], // Keep local orders
+                        couriers: mergedCouriers,
+                        routes: mergedRoutes
+                    });
                     return;
                 }
                 
+                // No new routes - if we have local orders, skip completely
+                if (hasExistingOrders) {
+                    console.log('[GlobalDashboardFetcher] Skipping - have local orders, no new routes');
+                    return;
+                }
+                
+                // No local orders and no routes - use new data
                 if (hasNewOrders) {
-                    // New data has orders - use it
                     setExcelData(validatedData);
-                } else if (hasNewRoutes && !hasExistingOrders) {
-                    // No existing orders, only routes - set as is
-                    setExcelData(validatedData);
-                } else {
-                    // Skip - preserve existing data
                 }
             }
         },

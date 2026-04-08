@@ -277,21 +277,15 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                         serverData.couriers.forEach((c: any) => {
                             existingCourierNames.add(normalizeCourierName(c.name || c.courierName || '').toUpperCase());
                             
+                            // v5.147: Update courier statistics only if not already present
+                            // Note: We avoid overwriting distanceKm here to preserve "Base" distance
+                            // which is later added to calculated route distances in CourierManagement stats
                             const normName = normalizeCourierName(c.name || c.courierName);
                             if (normName === 'Не назначено' || !normName) return;
                             
-                            const courierRoutes = mergedRoutes.filter((r: any) => {
-                              const routeCourier = normalizeCourierName(r.courier || r.courier_id);
-                              return routeCourier === normName;
-                            });
-                            
-                            if (courierRoutes.length > 0) {
-                                const totalDist = courierRoutes.reduce((acc: number, curr: any) => 
-                                  acc + (Number(curr.totalDistance || curr.total_distance || 0)), 0);
-                                const totalOrders = courierRoutes.reduce((acc: number, curr: any) => 
-                                  acc + (Number(curr.ordersCount || curr.orders_count || 0)), 0);
-                                c.distanceKm = Number(totalDist.toFixed(2));
-                                c.calculatedOrders = totalOrders;
+                            // Initialize calculatedOrders if not present
+                            if (c.calculatedOrders === undefined) {
+                                c.calculatedOrders = 0;
                             }
                         });
                       }
@@ -396,8 +390,27 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     const handleTurboRoutes = (e: Event) => {
       const { routes, couriers: eventCouriers } = (e as CustomEvent).detail || {};
       if (routes && Array.isArray(routes) && routes.length > 0) {
-        // v5.180: Mark timestamp to prevent stale DB overwrites
-        lastSocketRouteUpdateRef.current = Date.now();
+        // v5.203: IMMEDIATE update for new routes - no debounce for new routes
+        // Only debounce for updates to EXISTING routes (same route IDs)
+        const now = Date.now();
+        const prevRouteIds = new Set((lastProcessedRouteIdsRef.current || []).map((r: any) => String(r.id)));
+        const newRoutes = routes.filter((r: any) => !prevRouteIds.has(String(r.id)));
+        
+        // If all routes are new, process immediately
+        // If some are existing, debounce those
+        const hasOnlyNewRoutes = newRoutes.length === routes.length;
+        
+        if (!hasOnlyNewRoutes && lastSocketRouteUpdateRef.current && now - lastSocketRouteUpdateRef.current < 300) {
+            console.log('[ExcelSync] Debouncing update to existing routes only');
+            return;
+        }
+        
+        if (newRoutes.length > 0) {
+            console.log(`[ExcelSync] 🚀 Processing ${newRoutes.length} NEW routes immediately!`);
+        }
+        
+        lastSocketRouteUpdateRef.current = now;
+        lastProcessedRouteIdsRef.current = routes;
         
         // v5.180: FRONTEND VALIDATION — Normalize backend routes to match frontend expectations
         const validatedRoutes = routes.map((route: any) => {
@@ -502,67 +515,22 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             return { ...route, orders: enrichedOrders };
           });
 
-          // DB routes take priority; remove duplicates by id
-          const dbIds = new Set(enrichedRoutes.map((r: any) => String(r.id)));
-          const manualRoutes = (prev.routes || []).filter((r: any) => {
-            const id = String(r.id || '');
-            return id.startsWith('route_') && !dbIds.has(id);
+          // v36.5: MERGE logic instead of REPLACE to prevent flickering
+          // Create a map of existing routes to merge new ones into
+          const routesMap = new Map((prev.routes || []).map((r: any) => [String(r.id), r]));
+          
+          // Add/Update routes from the event
+          enrichedRoutes.forEach((route: any) => {
+            routesMap.set(String(route.id), route);
           });
-          const mergedRoutes = [...enrichedRoutes, ...manualRoutes];
+          
+          const mergedRoutes = Array.from(routesMap.values());
 
-          // v5.153: Update courier distanceKm — two paths:
-          // Path A (Fast): Use the enriched couriers array sent directly by the robot
-          // Path B (Computed): Build from route objects if no enriched array available
-          let updatedCouriers = prev.couriers || [];
-
-          if (eventCouriers && Array.isArray(eventCouriers) && eventCouriers.length > 0) {
-            // PATH A: Direct enriched couriers from robot (fastest, most accurate)
-            const enrichedMap = new Map<string, { km: number; orders: number }>();
-            eventCouriers.forEach((c: any) => {
-              const name = normalizeCourierName(c.name || c.courierName);
-              if (name && name !== 'Не назначено') {
-                enrichedMap.set(name, { km: Number(c.distanceKm || 0), orders: Number(c.calculatedOrders || 0) });
-              }
-            });
-            if (enrichedMap.size > 0) {
-              updatedCouriers = updatedCouriers.map((c: any) => {
-                const normName = normalizeCourierName(c.name || c.courierName);
-                const calc = enrichedMap.get(normName);
-                if (calc && calc.km >= 0) {
-                  return { ...c, distanceKm: Number(calc.km.toFixed(2)), calculatedOrders: calc.orders };
-                }
-                return c;
-              });
-            }
-          } else if (updatedCouriers.length > 0 && mergedRoutes.length > 0) {
-            // PATH B: compute from route objects (fallback)
-            const distMap = new Map<string, { km: number; orders: number }>();
-            mergedRoutes.forEach((r: any) => {
-              const normKey = normalizeCourierName(r.courier || r.courier_id);
-              if (!normKey || normKey === 'Не назначено') return;
-              const existing = distMap.get(normKey) || { km: 0, orders: 0 };
-              existing.km += Number(r.totalDistance || r.total_distance || 0);
-              existing.orders += Number(r.ordersCount || r.orders_count || (r.orders?.length) || 0);
-              distMap.set(normKey, existing);
-            });
-            if (distMap.size > 0) {
-              updatedCouriers = updatedCouriers.map((c: any) => {
-                const normName = normalizeCourierName(c.name || c.courierName);
-                const calc = distMap.get(normName);
-                if (calc && calc.km >= 0) {
-                  return { ...c, distanceKm: Number(calc.km.toFixed(2)), calculatedOrders: calc.orders };
-                }
-                return { ...c, distanceKm: 0, calculatedOrders: 0 }; // v5.195: reset if no route matches
-              });
-            } else {
-              // v5.195: Reset all if no routes computed
-              updatedCouriers = updatedCouriers.map((c: any) => ({ ...c, distanceKm: 0, calculatedOrders: 0 }));
-            }
-          } else {
-             // v5.195: Reset all if no routes available and no eventCouriers
-             updatedCouriers = updatedCouriers.map((c: any) => ({ ...c, distanceKm: 0, calculatedOrders: 0 }));
-          }
-
+          // v36.6: DO NOT overwrite courier.distanceKm here. 
+          // CourierManagement.tsx handles the addition of baseDistance (file) + routesDistance (active).
+          // Overwriting here causes double-counting in the UI.
+          const updatedCouriers = [...(prev.couriers || [])];
+          
           return { ...prev, routes: mergedRoutes, couriers: updatedCouriers };
         });
       }
@@ -574,34 +542,8 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       const data = (e as CustomEvent).detail;
       if (!data) return;
       // turbo:dashboard_update received
-      if (data.couriers && Array.isArray(data.couriers)) {
-        setExcelDataState(prev => {
-          if (!prev) return prev;
-          // Merge distanceKm from robot-enriched couriers into current state
-          const enrichedMap = new Map<string, number>();
-          data.couriers.forEach((c: any) => {
-            const name = (c.courierName || c.name || '').toString().trim().toUpperCase();
-            if (name && (c.distanceKm || 0) > 0) {
-              enrichedMap.set(name, Number(c.distanceKm));
-            }
-          });
-          if (enrichedMap.size === 0) return prev;
-          const updatedCouriers = (prev.couriers || []).map((c: any) => {
-            const name = (c.courierName || c.name || '').toString().trim().toUpperCase();
-            const calc = enrichedMap.get(name);
-            if (calc !== undefined && calc > 0) {
-              const robotData = data.couriers?.find((rc: any) => (rc.courierName || rc.name || '').toString().trim().toUpperCase() === name);
-              return { 
-                ...c, 
-                distanceKm: calc, 
-                calculatedOrders: robotData?.calculatedOrders || robotData?.orders || c.calculatedOrders 
-              };
-            }
-            return c;
-          });
-          return { ...prev, couriers: updatedCouriers };
-        });
-      }
+      // Note: We intentionally skip updating distanceKm here to avoid double-counting in the HUD.
+      // The HUD calculates final distance as Base + Current Routes.
     };
     
     window.addEventListener('storage', handleStorageChange);
@@ -839,9 +781,10 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   }, []);
 
   // v25.4: Refresh routes from database when excelData is loaded
-  // v5.141: Improved deduplication to avoid duplicate routes
+  // v5.141: Improved deduplication to avoid stale DB overwrites
   // v5.180: Track last socket route update to prevent stale DB overwrites
   const lastSocketRouteUpdateRef = useRef<number>(0);
+  const lastProcessedRouteIdsRef = useRef<any[]>([]); // v5.203: Track route IDs for immediate new route detection
   
   const refreshRoutesFromDB = useCallback(async () => {
     try {

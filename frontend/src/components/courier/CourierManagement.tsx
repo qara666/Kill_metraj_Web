@@ -73,13 +73,18 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
       sum + (Number(r.ordersCount || r.orders_count || (r.orders ? r.orders.length : 0))), 0);
 
     const baseKm = base?.distanceKm || 0;
-    
-    // User requested +0.5 km per EACH order/address (18 orders * 0.5 = 9 km)
-    const stopsBonus = routes.reduce((sum: number, r: any) => 
-      sum + ((r.orders?.length || 0) * 0.5), 0);
 
-    // Total should be Base (traveled from excel) + Bonus (0.5km per stop)
-    const totalDist = baseKm + stopsBonus;
+    // v9.7: REPLACEMENT logic to prevent double counting
+    // The robot physical distance is a refined version of the base distance, NOT an addition to it.
+    const robotPhysicalKm = routes.reduce((sum: number, r: any) => 
+      sum + ((r.isOptimized && Number(r.totalDistance) > 0) ? Number(r.totalDistance) : 0), 0);
+    
+    const bonusKm = routes.reduce((sum: number, r: any) => 
+      sum + (Number(r.ordersCount || r.orders_count || (r.orders ? r.orders.length : 0)) * 0.5), 0);
+
+    // Final Physical is Robot if available, else File Base
+    const effectivePhysicalKm = robotPhysicalKm > 0 ? robotPhysicalKm : baseKm;
+    const totalDist = effectivePhysicalKm + bonusKm;
 
     return {
       totalDistance: totalDist,
@@ -87,7 +92,9 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
       totalOrders: base?.calculatedOrders || (excelData?.orders || []).filter((o: any) => normalizeCourierName(getCourierName(o.courier)) === norm).length,
       ordersInRoutes: routeOrders,
       baseDistance: baseKm,
-      additionalDistance: stopsBonus
+      robotDistance: robotPhysicalKm,
+      bonusDistance: bonusKm,
+      effectivePhysicalKm: effectivePhysicalKm
     }
   }, [excelData])
 
@@ -253,7 +260,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
       )}
 
       {showKpiModal && selectedCourier && (
-        <Suspense fallback={null}><KpiAnalysisModal courier={selectedCourier} allCouriers={couriers} isDark={isDark} onClose={() => setShowKpiModal(false)} excelData={excelData} /></Suspense>
+        <Suspense fallback={null}><KpiAnalysisModal courier={selectedCourier} allCouriers={couriers} isDark={isDark} onClose={() => setShowKpiModal(false)} /></Suspense>
       )}
 
       {showDistanceModal && selectedCourier && (

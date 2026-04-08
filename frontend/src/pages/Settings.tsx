@@ -28,11 +28,11 @@ interface SettingsForm {
   googleMapsApiKey: string
   mapboxToken: string
   defaultStartAddress: string
-  defaultStartLat: number | null
-  defaultStartLng: number | null
+  defaultStartLat: number | string | null
+  defaultStartLng: number | string | null
   defaultEndAddress: string
-  defaultEndLat: number | null
-  defaultEndLng: number | null
+  defaultEndLat: number | string | null
+  defaultEndLng: number | string | null
   cityBias: '' | 'Киев' | 'Харьков' | 'Полтава' | 'Одесса'
   anomalyFilterEnabled: boolean
   anomalyMaxLegDistanceKm: number
@@ -183,7 +183,7 @@ export const Settings: React.FC = () => {
         setValue('geoapifyApiKey', settings.geoapifyApiKey || '')
         setValue('yapikoOsrmUrl', settings.yapikoOsrmUrl || '')
         setValue('distanceMatrixEnabled', settings.distanceMatrixEnabled ?? false)
-        setValue('distanceMatrixProvider', settings.distanceMatrixProvider || 'valhalla')
+        setValue('distanceMatrixProvider', settings.distanceMatrixProvider === 'google' ? 'valhalla' : (settings.distanceMatrixProvider || 'valhalla'))
         
         // Dashboard fields
         setValue('fastopertorApiKey', settings.fastopertorApiKey || '')
@@ -211,8 +211,22 @@ export const Settings: React.FC = () => {
   }, [setValue, user?.id])
 
   const onSubmit = async (data: SettingsForm) => {
+    const parseCoord = (val: any) => {
+        if (!val) return null;
+        if (typeof val === 'number') return val;
+        const parsed = Number(String(val).replace(',', '.'));
+        return isNaN(parsed) ? null : parsed;
+    };
+
     const normalizedToken = (data.mapboxToken || '').trim()
-    const normalizedData = { ...data, mapboxToken: normalizedToken }
+    const normalizedData = { 
+        ...data, 
+        mapboxToken: normalizedToken,
+        defaultStartLat: parseCoord(data.defaultStartLat),
+        defaultStartLng: parseCoord(data.defaultStartLng),
+        defaultEndLat: parseCoord(data.defaultEndLat),
+        defaultEndLng: parseCoord(data.defaultEndLng),
+    }
     
     // Save to localStorage
     localStorageUtils.setAllSettings(normalizedData)
@@ -681,7 +695,6 @@ export const Settings: React.FC = () => {
                       <option value="nominatim">⚡️ Отказоустойчивый (Nominatim+Смешанный)</option>
                       <option value="photon">Photon</option>
                       <option value="geoapify">Geoapify</option>
-                      <option value="google">Google Maps</option>
                     </select>
                   </div>
                 </div>
@@ -727,12 +740,7 @@ export const Settings: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="space-y-2 mt-4 p-4 rounded-xl border border-orange-200 bg-orange-50/50 dark:bg-orange-900/10 dark:border-orange-500/20 block opacity-60">
-                      <label className="text-xs font-semibold text-orange-600 dark:text-orange-400 uppercase tracking-wider">Google Maps API (Deprecated)</label>
-                      <div className="flex gap-2 mt-1">
-                          <input type="password" className="input flex-1 bg-gray-50/50" placeholder="AIzaSy..." {...register('googleMapsApiKey')} disabled={!canModify} />
-                      </div>
-                  </div>
+                  {/* v36.7: Google Maps API section removed per user request for full decoupling. Use OSM/Photon/Valhalla instead. */}
                 </div>
               </div>
             </CollapsibleSection>
@@ -759,22 +767,20 @@ export const Settings: React.FC = () => {
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Широта (LAT)</label>
                     <input 
-                      type="number" 
-                      step="any"
+                      type="text" 
                       className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
                       placeholder="50.4501" 
-                      {...register('defaultStartLat', { valueAsNumber: true })} 
+                      {...register('defaultStartLat')} 
                       disabled={!canModify} 
                     />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Долгота (LNG)</label>
                     <input 
-                      type="number" 
-                      step="any"
+                      type="text" 
                       className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
                       placeholder="30.5234" 
-                      {...register('defaultStartLng', { valueAsNumber: true })} 
+                      {...register('defaultStartLng')} 
                       disabled={!canModify} 
                     />
                   </div>
@@ -799,22 +805,20 @@ export const Settings: React.FC = () => {
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Широта (LAT)</label>
                     <input 
-                      type="number" 
-                      step="any"
+                      type="text" 
                       className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
                       placeholder="50.4501" 
-                      {...register('defaultEndLat', { valueAsNumber: true })} 
+                      {...register('defaultEndLat')} 
                       disabled={!canModify} 
                     />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Долгота (LNG)</label>
                     <input 
-                      type="number" 
-                      step="any"
+                      type="text" 
                       className="w-full p-3 rounded-lg border text-sm font-semibold bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 focus:border-blue-400 dark:focus:border-blue-500 outline-none transition-all disabled:opacity-50" 
                       placeholder="30.5234" 
-                      {...register('defaultEndLng', { valueAsNumber: true })} 
+                      {...register('defaultEndLng')} 
                       disabled={!canModify} 
                     />
                   </div>

@@ -46,6 +46,7 @@ interface DashboardStoreState {
         skippedOther: number;
         isBulkImport: boolean; // v5.160: For logic reporting
         userStopped: boolean; // v5.202: Track if user explicitly stopped
+        currentCourier?: string | null; // v36.3: Track specific courier being processed
     };
 
     // Actions
@@ -116,6 +117,7 @@ export const useDashboardStore = create<DashboardStoreState>()(
                 skippedOther: 0,
                 isBulkImport: false,
                 userStopped: false, // v5.202: Track if user explicitly stopped
+                currentCourier: null, // v36.3: Track specific courier being processed
             },
 
             setApiKey: (key) => set({ apiKey: key }),
@@ -189,6 +191,9 @@ export const useDashboardStore = create<DashboardStoreState>()(
                         isBulkImport: persistentState.autoRoutingStatus.isActive
                             ? persistentState.autoRoutingStatus.isBulkImport
                             : false,
+                        currentCourier: persistentState.autoRoutingStatus.isActive
+                            ? persistentState.autoRoutingStatus.currentCourier
+                            : null,
                     }
                 };
             }

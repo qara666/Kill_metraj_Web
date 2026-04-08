@@ -1,4 +1,4 @@
-import { useMemo, memo, useCallback, useEffect, useState } from 'react';
+import { useMemo, memo, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 import { 
@@ -177,14 +177,15 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
   const ordersCount = route.orders?.length || 0;
   
   const metrics = useMemo(() => {
-    const baseDist = route.isOptimized && route.totalDistance ? route.totalDistance : 1.0;
+    // v9.5: Sync with CourierManagement formula
+    const baseDist = route.isOptimized && route.totalDistance ? route.totalDistance : 0;
     // Each stop gets +0.5 km as per user requirement
     const stopsBonus = (route.orders?.length || 0) * 0.5;
     
     return {
-      base: baseDist,
-      additional: stopsBonus,
-      total: baseDist + stopsBonus
+      total: baseDist + stopsBonus,
+      physical: baseDist,
+      bonus: stopsBonus
     };
   }, [route]);
 
@@ -324,11 +325,13 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
           <div className="grid grid-cols-3 gap-6 min-w-[240px]">
             <div className="flex flex-col">
               <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">Итого</span>
-              <span className="text-sm font-black">{metrics.total.toFixed(1)} км</span>
+              <span className="text-sm font-black text-blue-500">{metrics.total.toFixed(1)} км</span>
             </div>
             <div className="flex flex-col border-l pl-4 border-black/5 dark:border-white/5">
-              <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">База</span>
-              <span className="text-sm font-black opacity-60">{metrics.base.toFixed(1)} км</span>
+              <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">Пробег + Доп</span>
+              <span className="text-sm font-black opacity-60">
+                {metrics.physical.toFixed(1)} <span className="text-[10px] text-blue-400">+{metrics.bonus.toFixed(1)}</span>
+              </span>
             </div>
             <div className="flex flex-col border-l pl-4 border-black/5 dark:border-white/5">
               <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">Время</span>
@@ -338,9 +341,10 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
           {!route.isOptimized && (
             <div className={clsx(
               "flex items-center gap-2 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest",
-              route.hasGeoErrors ? (isDark ? "bg-red-500/20 text-red-500" : "bg-red-50 text-red-600") : (isDark ? "bg-amber-500/10 text-amber-500" : "bg-amber-50 text-amber-700")
+              problematicOrders.length > 0 ? (isDark ? "bg-red-500/20 text-red-500" : "bg-red-50 text-red-600") : (isDark ? "bg-blue-500/10 text-blue-500" : "bg-blue-50 text-blue-700")
             )}>
-              {route.hasGeoErrors ? 'ОШИБКА (АДРЕС)' : 'Требует уточнения'}
+              <ExclamationCircleIcon className="w-3.5 h-3.5" />
+              {problematicOrders.length > 0 ? 'ТРЕБУЕТ УТОЧНЕНИЯ' : 'ОБРАБОТКА...'}
             </div>
           )}
         </div>
@@ -409,12 +413,17 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-4">
                       <div className="flex flex-col">
-                        <span className="text-[9px] font-black opacity-40 uppercase tracking-widest leading-none mb-1 text-nowrap">База (файл)</span>
-                        <span className="text-lg font-black tabular-nums">{distanceStats.baseDistance.toFixed(1)}</span>
+                        <span className="text-[9px] font-black opacity-40 uppercase tracking-widest leading-none mb-1 text-nowrap">Основной пробег</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg font-black tabular-nums">{distanceStats.effectivePhysicalKm.toFixed(1)}</span>
+                          {distanceStats.robotDistance > 0 && (
+                            <div className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-[7px] font-black text-emerald-500 border border-emerald-500/20">ROBOT OK</div>
+                          )}
+                        </div>
                       </div>
                       <div className="flex flex-col border-l border-white/5 pl-4">
                         <span className="text-[9px] font-black opacity-40 uppercase tracking-widest leading-none mb-1 text-nowrap text-blue-500">Доп (заказы)</span>
-                        <span className="text-lg font-black tabular-nums text-blue-500">+{distanceStats.additionalDistance.toFixed(1)}</span>
+                        <span className="text-lg font-black tabular-nums text-blue-500">+{distanceStats.bonusDistance.toFixed(1)}</span>
                       </div>
                     </div>
                   </div>

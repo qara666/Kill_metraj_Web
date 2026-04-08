@@ -129,16 +129,27 @@ export const DashboardApiSection: React.FC = () => {
         // return () => clearInterval(interval);
     }, [user?.divisionId, selectedDate, setAutoRoutingStatus]);
 
-    // v5.96: New Day Detection - only auto-set today on first run of the day
+    // v36.3: Listen for real-time Robot signals for ultra-fast UI updates
+    React.useEffect(() => {
+        const handleStatus = (e: any) => {
+            const data = e.detail;
+            if (data && typeof setAutoRoutingStatus === 'function') {
+                setAutoRoutingStatus(data);
+            }
+        };
+
+        window.addEventListener('km:robot:status', handleStatus);
+        return () => window.removeEventListener('km:robot:status', handleStatus);
+    }, [setAutoRoutingStatus]);
+
+    // v5.96: New Day Detection
     React.useEffect(() => {
         const today = format(new Date(), 'yyyy-MM-dd');
-        // Only set Today if it's a new day OR no date is set yet
         if (apiLastVisitDate !== today) {
             setApiDateShift(today);
             setApiLastVisitDate(today);
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []); // Only run ONCE on component mount
+    }, [apiLastVisitDate, setApiDateShift, setApiLastVisitDate]);
 
     // Countdown logic
     React.useEffect(() => {
@@ -320,16 +331,19 @@ export const DashboardApiSection: React.FC = () => {
             <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
                 <div className="flex items-center gap-4">
                     <div className={clsx(
-                        'w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform',
+                        'w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform relative',
                         autoRoutingStatus.isActive 
-                            ? (isDark ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white')
+                            ? (isDark ? 'bg-blue-600 shadow-[0_0_20px_rgba(37,99,235,0.3)] text-white' : 'bg-blue-600 text-white shadow-[0_0_20px_rgba(37,99,235,0.2)]')
                             : (isDark ? 'bg-white/5 text-gray-400' : 'bg-slate-50 border border-slate-100 text-gray-500')
                     )}>
                         <CpuChipIcon className={clsx("w-6 h-6", autoRoutingStatus.isActive && "animate-pulse")} />
+                        {autoRoutingStatus.isActive && (
+                            <div className="absolute inset-0 rounded-2xl border-2 border-white/20 animate-ping" />
+                        )}
                     </div>
-                    <div>
+                    <div className="flex flex-col gap-1">
                         <h3 className={clsx(
-                            'font-black text-lg tracking-tight mb-1',
+                            'font-black text-lg tracking-tight leading-none',
                             isDark ? 'text-white' : 'text-slate-900'
                         )}>
                             Фоновый расчет заказов
@@ -337,20 +351,33 @@ export const DashboardApiSection: React.FC = () => {
                         <div className="flex flex-wrap items-center gap-2">
                             <div className={clsx(
                                 "w-1.5 h-1.5 rounded-full",
-                                autoRoutingStatus.isActive ? "bg-green-500" : "bg-gray-400"
+                                autoRoutingStatus.isActive ? "bg-green-500 animate-pulse" : "bg-gray-400"
                             )} />
                             <span className={clsx(
                                 'text-[10px] font-bold uppercase tracking-widest flex items-center gap-1',
                                 isDark ? 'text-gray-400' : 'text-gray-500'
                             )}>
-                                {autoRoutingStatus.isActive ? 'Активен' : 'Режим ожидания'}
+                                {autoRoutingStatus.isActive 
+                                    ? (autoRoutingStatus.currentCourier ? `Расчет: ${autoRoutingStatus.currentCourier}` : 'Активен') 
+                                    : 'Режим ожидания'
+                                }
                                 {autoRoutingStatus.lastUpdate && (
                                     <span className="opacity-50 tracking-normal lowercase">
-                                         • {format(autoRoutingStatus.lastUpdate, 'HH:mm:ss')}
+                                         • {format(new Date(autoRoutingStatus.lastUpdate), 'HH:mm:ss')}
                                     </span>
                                 )}
                             </span>
                         </div>
+                        
+                        {/* v36.3: Animated Progress Bar */}
+                        {autoRoutingStatus.isActive && autoRoutingStatus.totalCount > 0 && (
+                            <div className="mt-1 w-full max-w-[200px] h-1.5 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
+                                <div 
+                                    className="h-full bg-blue-500 transition-all duration-500 ease-out"
+                                    style={{ width: `${Math.min(100, Math.round(((autoRoutingStatus.processedCount || 0) / autoRoutingStatus.totalCount) * 100))}%` }}
+                                />
+                            </div>
+                        )}
                     </div>
                 </div>
 

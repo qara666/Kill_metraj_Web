@@ -272,7 +272,6 @@ function getExecutionTime(o, baseDate) {
 function getAllOrderIds(order) {
     const ids = new Set();
     if (order.id) ids.add(String(order.id));
-    if (order.orderNumber) ids.add(String(order.orderNumber));
     if (order._id) ids.add(String(order._id));
     if (order.raw?.id) ids.add(String(order.raw.id));
     return ids;
@@ -345,8 +344,8 @@ function groupOrdersByTimeWindow(orders, courierId, courierName) {
     const uniqueOrders = [];
     for (const order of orders) {
         // Use orderNumber as primary stable ID
-        const orderNum = String(order.orderNumber || '');
-        const stableId = orderNum || String(order._id || order.id || '');
+        // v6.3: Use unique ID first, then orderNumber (to support split orders)
+        const stableId = String(order.id || order._id || order.orderNumber || '');
         if (!stableId) {
             uniqueOrders.push(order); // no ID — keep
         } else if (!seenIds.has(stableId)) {

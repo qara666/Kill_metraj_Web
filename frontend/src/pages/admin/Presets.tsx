@@ -308,13 +308,13 @@ export const AdminPresets: React.FC = () => {
                                     <div className="space-y-2">
                                         <label className="text-xs font-bold uppercase text-gray-500">Провайдер карты</label>
                                         <select
-                                            value={settings.mapProvider || 'google'}
+                                            value={settings.mapProvider || 'osm'}
                                             onChange={(e) => isAdmin && setSettings({ ...settings, mapProvider: e.target.value })}
                                             className="input"
                                             disabled={!isAdmin}
                                         >
-                                            <option value="google">Google Maps</option>
                                             <option value="osm">OpenStreetMap (Бесплатно)</option>
+                                            <option value="google">Google Maps (Требуется ключ)</option>
                                         </select>
                                     </div>
                                     <div className="space-y-2">
@@ -343,7 +343,6 @@ export const AdminPresets: React.FC = () => {
                                             <option value="nominatim">⚡️ Отказоустойчивый (Nominatim+Смешанный)</option>
                                             <option value="photon">Photon</option>
                                             <option value="geoapify">Geoapify</option>
-                                            <option value="google">Google Maps</option>
                                         </select>
                                     </div>
                                 </div>
@@ -384,7 +383,6 @@ export const AdminPresets: React.FC = () => {
                                           <option value="valhalla">🗺 Valhalla Sources-to-Targets (OSM, Рекомендовано)</option>
                                           <option value="yapiko_osrm">🏙 Yapiko OSRM (Локально, Высокая скорость)</option>
                                           <option value="osrm">⚡ OSRM Table (Бесплатно)</option>
-                                          <option value="google">💳 Google Distance Matrix API (Платный)</option>
                                         </select>
                                       </div>
                                       <div className="p-3 rounded-xl bg-white/50 dark:bg-gray-950/30 border border-white/50 dark:border-gray-800 flex items-center gap-3">
@@ -393,9 +391,7 @@ export const AdminPresets: React.FC = () => {
                                              ? 'Valhalla позволяет рассчитать матрицу 100x100 за один запрос. Идеально для оптимизации курьерских маршрутов.' 
                                              : settings.distanceMatrixProvider === 'yapiko_osrm' 
                                              ? 'Yapiko OSRM — самый быстрый способ получить таблицу расстояний через локальный сервер.' 
-                                             : settings.distanceMatrixProvider === 'osrm'
-                                             ? 'OSRM Table — бесплатный публичный сервис для таблиц расстояний.'
-                                             : 'Google Matrix — максимальная точность, но каждая ячейка таблицы оплачивается отдельно согласно тарифам Google.'}
+                                             : 'OSRM Table — бесплатный публичный сервис для таблиц расстояний.'}
                                          </div>
                                       </div>
                                     </div>
@@ -452,19 +448,7 @@ export const AdminPresets: React.FC = () => {
                                     </div>
                                   </div>
 
-                                  <div className="space-y-2 mt-4 p-4 rounded-xl border border-orange-200 bg-orange-50/50 dark:bg-orange-900/10 dark:border-orange-500/20 block opacity-60">
-                                      <label className="text-xs font-semibold text-orange-600 dark:text-orange-400 uppercase tracking-wider">Google Maps API (Deprecated)</label>
-                                      <div className="flex gap-2 mt-1">
-                                          <input
-                                              type="password"
-                                              value={settings.googleMapsApiKey || ''}
-                                              onChange={(e) => isAdmin && setSettings({ ...settings, googleMapsApiKey: e.target.value })}
-                                              className="input flex-1 bg-gray-50/50"
-                                              placeholder="AIzaSy..."
-                                              disabled={!isAdmin}
-                                          />
-                                      </div>
-                                  </div>
+                                  {/* v36.7: Google Calculations are restricted per user request. */}
                                 </div>
                             </CollapsibleSection>
 

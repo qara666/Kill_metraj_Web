@@ -2,16 +2,13 @@ import React, { useMemo } from 'react';
 import { clsx } from 'clsx';
 import { 
   XMarkIcon, 
-  ChartBarIcon, 
   ArrowTrendingUpIcon, 
   UserGroupIcon,
   CurrencyDollarIcon,
-  CheckBadgeIcon,
   BoltIcon,
   ShieldCheckIcon
 } from '@heroicons/react/24/outline';
 import { localStorageUtils } from '../../utils/ui/localStorage';
-import { normalizeCourierName } from '../../utils/data/courierName';
 
 // v8.1: KPI ELITE ANALYSIS HUB (RU)
 // Замена 'Юнит' на 'Курьер', валюта ГРИВНЫ (₴), Рейтинг курьера
@@ -21,15 +18,13 @@ interface KpiAnalysisModalProps {
   allCouriers: any[];
   isDark: boolean;
   onClose: () => void;
-  excelData: any;
 }
 
 export const KpiAnalysisModal: React.FC<KpiAnalysisModalProps> = ({ 
   courier, 
   allCouriers, 
   isDark, 
-  onClose,
-  excelData 
+  onClose
 }) => {
   const settings = useMemo(() => localStorageUtils.getCourierSettings()[courier.name] || {}, [courier.name]);
   const targetKm = settings.targetKmPerOrder || 5.0;

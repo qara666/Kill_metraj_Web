@@ -117,7 +117,7 @@ export const localStorageUtils = {
         console.warn(`⚠️ localStorage переполнен для ключа "${key}". Попытка очистки...`)
         // Пробуем очистить старые данные (v23.0 Smart Headroom)
         try {
-          const criticalKeys = ['google_maps_api_key', 'km_settings', 'km_courier_vehicle_map']
+          const criticalKeys = ['km_settings', 'km_courier_vehicle_map']
           const allKeys = Object.keys(localStorage)
           
           // v23.0: Only clear enough to make room, keep most recent data
@@ -359,7 +359,6 @@ export const localStorageUtils = {
     if (typeof window === 'undefined') return
     // Keep courier vehicle map in separate storage - IT SURVIVES CLEAR ALL DATA
     // Also preserve API keys for convenience
-    const googleApiKey = localStorage.getItem('google_maps_api_key')
     const mapboxToken = localStorage.getItem('km_mapbox_token')
     const fastopertorApiKey = localStorage.getItem('km_fastopertor_api_key')
     const fastopertorDeptId = localStorage.getItem('km_fastopertor_department_id')
@@ -385,9 +384,6 @@ export const localStorageUtils = {
     keysToRemove.forEach(key => localStorage.removeItem(key))
 
     // Restore API keys
-    if (googleApiKey) {
-      localStorage.setItem('google_maps_api_key', googleApiKey)
-    }
     if (mapboxToken) {
       localStorage.setItem('km_mapbox_token', mapboxToken)
     }

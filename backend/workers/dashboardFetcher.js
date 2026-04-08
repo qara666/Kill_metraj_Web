@@ -51,7 +51,7 @@ class DashboardFetcher {
         this.pool = new Pool(poolConfig);
 
         // Configuration
-        this.fetchInterval = parseInt(process.env.DASHBOARD_FETCH_INTERVAL || '900000'); // 15 min
+        this.fetchInterval = parseInt(process.env.DASHBOARD_FETCH_INTERVAL || '300000'); // 5 min
         this.maxRetries = parseInt(process.env.DASHBOARD_MAX_RETRIES || '5');
         this.baseBackoff = parseInt(process.env.DASHBOARD_BASE_BACKOFF || '5000');
         this.apiUrl = process.env.EXTERNAL_API_URL || 'http://app.yaposhka.kh.ua:4999/api/v1/dashboard';
@@ -863,14 +863,14 @@ class DashboardFetcher {
 
         const merged = new Map();
         existing.forEach(o => {
-            const num = String(o.orderNumber || o.num || '');
-            if (num) merged.set(num, o);
+            const key = String(o.id || o._id || o.orderNumber || o.num || '');
+            if (key) merged.set(key, o);
         });
         incoming.forEach(o => {
-            const num = String(o.orderNumber || o.num || '');
-            if (num) {
-                const existingOrder = merged.get(num) || {};
-                merged.set(num, { ...existingOrder, ...o });
+            const key = String(o.id || o._id || o.orderNumber || o.num || '');
+            if (key) {
+                const existingOrder = merged.get(key) || {};
+                merged.set(key, { ...existingOrder, ...o });
             }
         });
         return Array.from(merged.values());
