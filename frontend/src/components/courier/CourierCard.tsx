@@ -36,7 +36,7 @@ interface CourierCardProps {
   onDistanceClick: (courier: Courier) => void;
   distanceDetails: {
     baseDistance: number;
-    additionalDistance: number;
+    bonusDistance: number;
     totalDistance: number;
   };
 }
@@ -56,7 +56,7 @@ export const CourierCard = memo(({
   const calculatedCount = courier.ordersInRoutes || 0;
   const totalCount = courier.orders || 0;
   const dist = distanceDetails?.totalDistance || 0;
-  const additionalDist = distanceDetails?.additionalDistance || 0;
+  const bonusDist = distanceDetails?.bonusDistance || 0;
   const progressPercent = totalCount > 0 ? Math.round((calculatedCount / totalCount) * 100) : 0;
   const isFullyCalculated = dist > 0 || (totalCount > 0 && calculatedCount >= totalCount);
   const isCalculating = !isFullyCalculated && totalCount > 0 && courier.isActive;
@@ -156,9 +156,9 @@ export const CourierCard = memo(({
               км
             </div>
             {/* Show additional only when calculated */}
-            {isCalculated && additionalDist > 0 && (
+            {isCalculated && bonusDist > 0 && (
               <div className={clsx("text-[8px] font-medium mt-1", isDark ? "text-emerald-500/70" : "text-emerald-600")}>
-                +{additionalDist.toFixed(1)} дод
+                +{bonusDist.toFixed(1)} дод
               </div>
             )}
           </button>

@@ -1,6 +1,6 @@
 import { ProcessedExcelData, Order } from '../../types';
 import { DashboardOrderResponse, DashboardApiResponse } from '../../types/DashboardApiTypes';
-import { asNonEmptyString, isId0CourierName } from './courierName';
+import { asNonEmptyString, isId0CourierName, normalizeCourierName } from './courierName';
 
 /**
  * Преобразование данных Dashboard API в формат ProcessedExcelData
@@ -11,6 +11,7 @@ export const transformDashboardData = (
     fallbackDate?: string // format dd.mm.yyyy or YYYY-MM-DD HH:mm:ss
 ): ProcessedExcelData => {
     console.log(`[transformDashboardData] Incoming raw orders: ${apiData.orders?.length || 0}`);
+    
     // Truncate function to get only dd.mm.yyyy
     const getOnlyDate = (s: string) => s.split(' ')[0].split('T')[0];
 
@@ -31,19 +32,16 @@ export const transformDashboardData = (
     const errors: any[] = [];
 
     // Преобразование курьеров
-    apiData.couriers.forEach((apiCourier) => {
-        const courierName = asNonEmptyString((apiCourier as any)?.name);
+    (apiData.couriers || []).forEach((apiCourier: any) => {
+        const courierName = asNonEmptyString(apiCourier?.name);
 
         // Пропускаем "ID:0", так как это техническое обозначение неназначенного заказа в API
         if (isId0CourierName(courierName)) return;
 
-        // Если в будущем API добавит дату курьеру, мы сможем фильтровать здесь
-
         // Определяем тип транспорта из API или по умолчанию 'car'
         let vehicleType: 'car' | 'motorcycle' = 'car';
         if (apiCourier.vehicleType) {
-            // Нормализуем значение из API
-            const apiType = apiCourier.vehicleType.toLowerCase();
+            const apiType = String(apiCourier.vehicleType).toLowerCase();
             if (apiType === 'motorcycle' || apiType === 'мото' || apiType === 'мотоцикл') {
                 vehicleType = 'motorcycle';
             }
@@ -53,31 +51,16 @@ export const transformDashboardData = (
             name: courierName,
             isActive: apiCourier.isActive,
             vehicleType: vehicleType,
-            distanceKm: apiCourier.distanceKm || 0, // v5.136: Map calculated distance
+            distanceKm: apiCourier.distanceKm || 0,
             calculatedOrders: apiCourier.calculatedOrders || 0
         });
     });
 
-    // Если в списке курьеров нет "Не назначен", добавляем его для группировки неназначенных заказов
-    // Но фактически мы будем использовать это имя в заказах, и UI сам их сгруппирует
-
+    console.log(`[dashboardTransformer] Total orders to process: ${apiData.orders?.length || 0}`);
 
     // Преобразование заказов
-    apiData.orders.forEach((apiOrder, index) => {
+    (apiData.orders || []).forEach((apiOrder, index) => {
         try {
-            // CLIENT-SIDE FAIL-SAFE: Verify date and department if possible
-            // 1. Date check
-            /* DISABLED: API already filters by date range correctly. Client-side check causes issues with timezone differences or late night orders.
-            if (effectiveDate && apiOrder.creationDate) {
-                // creationDate is "dd.mm.yyyy HH:MM"
-                // effectiveDate is "dd.mm.yyyy"
-                if (!apiOrder.creationDate.includes(effectiveDate)) {
-                    // console.log(`[dashboardTransformer] Skipping order ${apiOrder.orderNumber}: Date mismatch (${apiOrder.orderNumber} vs ${effectiveDate})`);
-                    return; // Skip wrong date
-                }
-            }
-            */
-
             const order = transformDashboardOrder(apiOrder, effectiveDate, index);
             orders.push(order);
         } catch (error) {
@@ -89,27 +72,20 @@ export const transformDashboardData = (
         }
     });
 
-    // Sync couriers with orders: Ensure all couriers mentioned in orders exist in the couriers list
+    console.log(`[dashboardTransformer] Successfully transformed: ${orders.length}/${apiData.orders?.length || 0}`);
+
     // Sync couriers with orders: Ensure all couriers mentioned in orders exist in the couriers list
     const existingCourierNames = new Set(couriers.map(c => c.name));
     orders.forEach(order => {
-        // Only add if it's a REAL courier name (not 'Не назначено', not 'ID:0')
-        // The order.courier field has already been transformed in transformDashboardOrder
-        // where 'ID:0' becomes 'Не назначено'.
-        // So we just need to check if it's valid and not already in the list.
         if (order.courier &&
             order.courier !== 'Не назначено' &&
-            order.courier !== 'ID:0' && // Just in case
+            order.courier !== 'ID:0' && 
             !existingCourierNames.has(order.courier)) {
 
-            // Пытаемся определить тип транспорта по имени курьера
             let vehicleType: 'car' | 'motorcycle' = 'car';
             const courierNameLower = order.courier.toLowerCase();
 
-            // Проверяем, есть ли в имени указание на мото
-            if (courierNameLower.includes('мото') ||
-                courierNameLower.includes('moto') ||
-                courierNameLower.includes('motorcycle')) {
+            if (courierNameLower.includes('мото') || courierNameLower.includes('moto')) {
                 vehicleType = 'motorcycle';
             }
 
@@ -122,15 +98,21 @@ export const transformDashboardData = (
         }
     });
 
+    // v5.204: Enrich routes and normalize courier names
+    const enrichedRoutes = (apiData.routes || []).map((r: any) => ({
+        ...r,
+        courier: normalizeCourierName(r.courier || r.courier_id) || r.courier
+    }));
+
     return {
         orders,
         couriers,
         paymentMethods: [],
-        routes: apiData.routes || [], // v5.136: PRESERVE BACKEND ROUTES (fix "Empty Routes" bug)
+        routes: enrichedRoutes,
         errors,
         lastModified: apiData.lastModified ? Number(apiData.lastModified) : Date.now(),
         summary: {
-            totalRows: apiData.orders.length,
+            totalRows: apiData.orders?.length || 0,
             successfulGeocoding: 0, 
             failedGeocoding: 0,
             orders: orders.length,

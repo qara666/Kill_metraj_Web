@@ -848,15 +848,19 @@ class OrderCalculator {
                     totalOrdersGlobal += (c.payload?.orders?.length || 0);
                 });
 
+                // v6.12: Preserve global progress count to avoid flickering
+                const globalStatus = global.divisionStatusStore ? global.divisionStatusStore['all_global'] : null;
+                const currentGlobalProcessed = globalStatus ? (globalStatus.processedCount || 0) : 0;
+
                 this.globalStats = {
                     divisionId: 'all',
                     date: dateISO,
                     isActive: true,
                     totalCount: totalOrdersGlobal,
-                    processedCount: 0,
-                    skippedInRoutes: 0,
-                    skippedGeocoding: 0,
-                    message: `Initial processing of ${caches.length} divisions (${totalOrdersGlobal} orders)...`
+                    processedCount: currentGlobalProcessed,
+                    skippedInRoutes: globalStatus ? (globalStatus.skippedInRoutes || 0) : 0,
+                    skippedGeocoding: globalStatus ? (globalStatus.skippedGeocoding || 0) : 0,
+                    message: `Processing all divisions (${totalOrdersGlobal} orders)...`
                 };
 
                 if (this.io) {
@@ -900,14 +904,19 @@ class OrderCalculator {
             // v5.196: Get real totalCount immediately as possible to avoid 'zeros' in UI
             const cacheTotalCount = data?.orders?.length || 0;
             if (this.io && cacheTotalCount > 0) {
+                // v6.12: Don't jump to 0 if we already have progress in the global store
+                const divStatusKey = `${cache.division_id}_${targetDateNorm}`;
+                const existingStatus = global.divisionStatusStore ? global.divisionStatusStore[divStatusKey] : null;
+                const currentProcessed = existingStatus ? (existingStatus.processedCount || 0) : 0;
+
                 this.io.emit('robot_status', {
                     divisionId: cache.division_id,
                     date: cache.target_date,
                     isActive: true,
                     totalCount: cacheTotalCount,
-                    processedCount: 0,
+                    processedCount: currentProcessed, // Keep current progress
                     currentPhase: 'initializing',
-                    message: `Analyzing ${cacheTotalCount} orders...`
+                    message: `Analyzing data (${currentProcessed}/${cacheTotalCount})...`
                 });
             }
 
@@ -1036,8 +1045,8 @@ class OrderCalculator {
                         isActive: true, // v6.12: Keep active so tick loop continues
                         currentPhase: 'idle',
                         message: `Ожидание новых данных... (${data.orders.length} заказов)`,
-                        totalCount: data.orders.length,
-                        processedCount: data.orders.length // v6.12: Show all orders as processed
+                        totalCount: cacheTotalCount,
+                        processedCount: cacheTotalCount // v6.12: Show all orders as processed
                     });
                 }
                 logger.info(`[TurboCalculator] 💤 ${cache.division_id}: Data unchanged — sleeping, will check again in ${this.interval/1000}s`);
@@ -1195,8 +1204,8 @@ class OrderCalculator {
                             divisionId: cache.division_id,
                             date: cache.target_date,
                             isActive: true,
-                            totalCount: data.orders.length,
-                            processedCount: Math.round(data.orders.length * 0.1),
+                            totalCount: cacheTotalCount,
+                            processedCount: Math.round(cacheTotalCount * 0.1),
                             currentPhase: 'geocoding',
                             message: `Starting geocoding: ${totalToGeo} addresses...`
                         });
@@ -1245,8 +1254,8 @@ class OrderCalculator {
                                 divisionId: cache.division_id,
                                 date: cache.target_date,
                                 isActive: true,
-                                totalCount: data.orders.length,
-                                processedCount: Math.round((current / totalToGeo) * (data.orders.length * 0.3)), // Move progress bar up to 30% during geocoding
+                                totalCount: cacheTotalCount,
+                                processedCount: Math.round((current / totalToGeo) * (cacheTotalCount * 0.3)), // Move progress bar up to 30% during geocoding
                                 currentPhase: 'geocoding',
                                 message: `Geocoding: ${Math.round((current/totalToGeo)*100)}% (${current}/${totalToGeo}) ${eta > 0 ? `~${eta}s left` : ''}`
                             });
@@ -1269,8 +1278,8 @@ class OrderCalculator {
                         divisionId: cache.division_id,
                         date: cache.target_date,
                         isActive: true,
-                        totalCount: data.orders.length,
-                        processedCount: Math.round(data.orders.length * 0.3),
+                        totalCount: cacheTotalCount,
+                        processedCount: Math.round(cacheTotalCount * 0.3),
                         currentPhase: 'grouping',
                         message: `Grouped ${ordersToGroup.length} orders into ${totalBlocksCount} blocks...`
                     });
@@ -1287,7 +1296,7 @@ class OrderCalculator {
                     isActive: true,
                     currentPhase: 'grouping',
                     message: `Grouping ${ordersToGroup.length} orders into 30m blocks...`,
-                    totalCount: data.orders.length
+                    totalCount: cacheTotalCount
                 });
             }
 

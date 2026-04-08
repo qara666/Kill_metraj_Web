@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback, useMemo } from 'react'
+import * as React from 'react'
+import { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback, useMemo } from 'react'
 import { localStorageUtils } from '../utils/ui/localStorage'
 import { toast } from 'react-hot-toast'
 import { normalizeCourierName, isId0CourierName, getCourierName } from '../utils/data/courierName'
@@ -22,7 +23,7 @@ interface ExcelData {
 
 interface ExcelDataContextType {
   excelData: ExcelData | null
-  setExcelData: (data: ExcelData | null) => void
+  setExcelData: (data: ExcelData | null, force?: boolean) => void
   updateExcelData: (dataOrUpdater: ExcelData | ((prev: ExcelData) => ExcelData), force?: boolean) => void
   clearExcelData: (options?: { skipServerWipe?: boolean }) => void;
   updateRouteData: (routes: any[]) => void
@@ -149,11 +150,37 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             } catch (e) {}
           }
           
+          // v5.204: VALIDATE DATE before using local data
+          // Discard if date mismatch to prevent "Yesterday's orders" bug
+          if (localData) {
+            const currentShift = useDashboardStore.getState().apiDateShift; // YYYY-MM-DD
+            
+            // Normalize currentShift to DD.MM.YYYY
+            let targetDate = currentShift;
+            if (/^\d{4}-\d{2}-\d{2}$/.test(currentShift)) {
+               const [y, m, d] = currentShift.split('-');
+               targetDate = `${d}.${m}.${y}`;
+            }
+            
+            // Normalize localData date
+            const localDateRaw = localData.creationDate || (localData.orders?.[0]?.creationDate ? localData.orders[0].creationDate.split(' ')[0] : null);
+            let localDateNormalized = localDateRaw;
+            if (localDateRaw && /^\d{4}-\d{2}-\d{2}$/.test(localDateRaw)) {
+                const [y, m, d] = localDateRaw.split('-');
+                localDateNormalized = `${d}.${m}.${y}`;
+            }
+
+            if (targetDate && localDateNormalized && targetDate !== localDateNormalized) {
+                console.warn(`[ExcelSync] Cache date mismatch (${localDateNormalized} vs ${targetDate}). Clearing stale cache.`);
+                localStorage.removeItem('km_dashboard_processed_data');
+                localData = null;
+            }
+          }
+          
           // v5.202: If we have valid local data, use it IMMEDIATELY
-          // This prevents orders from disappearing when server is slow/unavailable
           if (localData && localData.orders && localData.orders.length > 0) {
             // v5.202: Enrich route orders with full order data
-            enrichRouteOrders(localData);
+            try { enrichRouteOrders(localData); } catch (e) {}
             
             // v5.202: Merge with DB routes for completeness
             try {
@@ -199,13 +226,12 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
           const token = localStorage.getItem('km_access_token');
           if (token) {
             try {
-              const response = await fetch('/api/v1/state', {
+              const response = await fetch(`${API_URL}/api/v1/state`, {
                 headers: { 'Authorization': `Bearer ${token}` }
               });
               
               const contentType = response.headers.get('content-type');
               if (!contentType || !contentType.includes('application/json')) {
-                  // v5.202: Server returned non-JSON (e.g. HTML from sleeping Render.com)
                   console.warn('[ExcelSync] Server returned non-JSON response, skipping server data');
                   throw new Error('Server returned non-JSON');
               }
@@ -215,115 +241,102 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                 
                 if (json.success && json.data && json.data.orders && json.data.orders.length > 0) {
                   const serverData = json.data;
-                  const localOverrides = localStorage.getItem('km_manual_overrides');
-                  if (localOverrides && serverData.orders) {
-                    try {
-                      const overrides = JSON.parse(localOverrides);
-                      serverData.orders = serverData.orders.map((o: any) => {
-                        const sid = getStableOrderId(o);
-                        const num = o.orderNumber ? String(o.orderNumber) : null;
-                        let override = sid ? overrides[sid] : null;
-                        if (!override && num) override = overrides[num];
-                        if (!override && o.id) override = overrides[Number(o.id)];
-
-                        if (override) {
-                            return { 
-                                ...o, 
-                                ...override,
-                                status: override.settledDate ? (override.status || 'исполнен') : (o.status || override.status)
-                            };
-                        }
-                        return o;
-                      });
-                    } catch (e) {}
-                  }
                   
-                  // v5.202: Enrich route orders with full order data
-                  enrichRouteOrders(serverData);
+                  // v5.204: VALIDATE DATE of server-rehydrated state
+                  const currentShift = useDashboardStore.getState().apiDateShift;
+                  const normalize = (d: string | undefined) => {
+                      if (!d) return '';
+                      const part = d.split(' ')[0].split('T')[0];
+                      if (part.includes('-')) {
+                          const [y, m, d_] = part.split('-');
+                          return `${d_}.${m}.${y}`;
+                      }
+                      return part;
+                  };
                   
-                  // v25.3: Also fetch routes from database when using server data
-                  try {
-                    const token = localStorage.getItem('km_access_token');
-                    if (token) {
-                      const dbRoutes = await fetchRoutesWithDate(token);
-                      
-                      const existingRoutes = Array.isArray(serverData.routes) ? serverData.routes : [];
-                      const allRouteIds = new Set<string>();
-                      const mergedRoutes: any[] = [];
-                      
-                      existingRoutes.forEach((r: any) => {
-                        const rid = String(r.id || '');
-                        if (rid && !allRouteIds.has(rid)) {
-                          allRouteIds.add(rid);
-                          mergedRoutes.push(r);
-                        }
-                      });
-                      
-                      dbRoutes.forEach((r: any) => {
-                        const rid = String(r.id || '');
-                        if (rid && !allRouteIds.has(rid)) {
-                          allRouteIds.add(rid);
-                          mergedRoutes.push(r);
-                        }
-                      });
-                      
-                      serverData.routes = mergedRoutes;
+                  const targetDate = normalize(currentShift);
+                  const dataDate = normalize(serverData.creationDate || (serverData.orders?.[0]?.creationDate || ''));
+                  
+                  if (targetDate && dataDate && targetDate !== dataDate) {
+                      console.warn(`[ExcelSync] Server state date mismatch (${dataDate} vs ${targetDate}). Ignoring.`);
+                      // Will continue to fallback
+                  } else {
+                      const localOverrides = localStorage.getItem('km_manual_overrides');
+                      if (localOverrides && serverData.orders) {
+                        try {
+                          const overrides = JSON.parse(localOverrides);
+                          serverData.orders = serverData.orders.map((o: any) => {
+                            const sid = getStableOrderId(o);
+                            const num = o.orderNumber ? String(o.orderNumber) : null;
+                            let override = sid ? overrides[sid] : null;
+                            if (!override && num) override = overrides[num];
+                            if (!override && o.id) override = overrides[Number(o.id)];
 
-                      // v5.147: Update courier distances from these routes (skip "Не назначено")
-                      // Normalize both courier names for proper matching
-                      // v5.201: Create couriers from routes if they don't exist
-                      let existingCourierNames = new Set<string>();
-                      if (serverData.couriers && Array.isArray(serverData.couriers)) {
-                        serverData.couriers.forEach((c: any) => {
-                            existingCourierNames.add(normalizeCourierName(c.name || c.courierName || '').toUpperCase());
-                            
-                            // v5.147: Update courier statistics only if not already present
-                            // Note: We avoid overwriting distanceKm here to preserve "Base" distance
-                            // which is later added to calculated route distances in CourierManagement stats
-                            const normName = normalizeCourierName(c.name || c.courierName);
-                            if (normName === 'Не назначено' || !normName) return;
-                            
-                            // Initialize calculatedOrders if not present
-                            if (c.calculatedOrders === undefined) {
-                                c.calculatedOrders = 0;
+                            if (override) {
+                                return { ...o, ...override, status: override.settledDate ? (override.status || 'исполнен') : (o.status || override.status) };
                             }
-                        });
+                            return o;
+                          });
+                        } catch (e) {}
                       }
                       
-                      // v5.201: Create couriers from routes if they don't exist
-                      mergedRoutes.forEach((r: any) => {
-                        const routeCourier = normalizeCourierName(r.courier || r.courier_id || '');
-                        if (!routeCourier || routeCourier === 'Не назначено') return;
-                        const upperName = routeCourier.toUpperCase();
+                      enrichRouteOrders(serverData);
+                      
+                      try {
+                        const dbRoutes = await fetchRoutesWithDate(token);
+                        const existingRoutes = Array.isArray(serverData.routes) ? serverData.routes : [];
+                        const allRouteIds = new Set<string>();
+                        const mergedRoutes: any[] = [];
                         
-                        if (!existingCourierNames.has(upperName)) {
-                          existingCourierNames.add(upperName);
-                          const totalDist = Number(r.totalDistance || r.total_distance || 0);
-                          const totalOrders = Number(r.ordersCount || r.orders_count || r.orders?.length || 0);
-                          serverData.couriers = serverData.couriers || [];
-                          serverData.couriers.push({
-                            name: routeCourier,
-                            distanceKm: Number(totalDist.toFixed(2)),
-                            calculatedOrders: totalOrders,
-                            isActive: true,
-                            vehicleType: 'car'
+                        existingRoutes.forEach((r: any) => {
+                          const rid = String(r.id || '');
+                          if (rid && !allRouteIds.has(rid)) { allRouteIds.add(rid); mergedRoutes.push(r); }
+                        });
+                        
+                        dbRoutes.forEach((r: any) => {
+                          const rid = String(r.id || '');
+                          if (rid && !allRouteIds.has(rid)) { allRouteIds.add(rid); mergedRoutes.push(r); }
+                        });
+                        
+                        serverData.routes = mergedRoutes;
+                        let existingCourierNames = new Set<string>();
+                        if (serverData.couriers && Array.isArray(serverData.couriers)) {
+                          serverData.couriers.forEach((c: any) => {
+                              existingCourierNames.add(normalizeCourierName(c.name || c.courierName || '').toUpperCase());
+                              if (c.calculatedOrders === undefined) c.calculatedOrders = 0;
                           });
                         }
-                      });
-                    }
-                  } catch (e) {
-                    console.warn('[ExcelSync] Failed to fetch routes from database:', e);
-                  }
+                        
+                        mergedRoutes.forEach((r: any) => {
+                          const routeCourier = normalizeCourierName(r.courier || r.courier_id || '');
+                          if (routeCourier && routeCourier !== 'Не назначено') {
+                            const upperName = routeCourier.toUpperCase();
+                            if (!existingCourierNames.has(upperName)) {
+                              existingCourierNames.add(upperName);
+                              serverData.couriers = serverData.couriers || [];
+                              serverData.couriers.push({
+                                name: routeCourier,
+                                distanceKm: Number((r.totalDistance || 0).toFixed(2)),
+                                calculatedOrders: Number(r.ordersCount || r.orders?.length || 0),
+                                isActive: true, vehicleType: 'car'
+                              });
+                            }
+                          }
+                        });
+                      } catch (e) {
+                         console.warn('[ExcelSync] DB route fetch failed:', e);
+                      }
 
-                  // Using server data
-                  setExcelDataState(serverData);
-                  return;
+                      setExcelDataState(serverData);
+                      return;
+                  }
                 }
               }
             } catch (e) {
               console.warn('[ExcelSync] Server load failed:', e);
             }
           }
+
 
           // v5.202: Final fallback - if neither localStorage nor server worked, try DB routes only
           // This block should only be reached if localData was empty/missing at the top
@@ -560,6 +573,25 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
    const protectData = useCallback((next: ExcelData, current: ExcelData | null): ExcelData => {
      if (!current || !next) return next;
      
+     // v5.204: Check dates. If dates differ (e.g. user changed date), NEVER merge/protect.
+     const normalize = (d: string | null | undefined) => {
+         if (!d) return null;
+         const part = d.split(' ')[0].split('T')[0];
+         if (part.includes('-')) {
+             const [y, m, d_] = part.split('-');
+             return `${d_}.${m}.${y}`;
+         }
+         return part;
+     };
+
+     const currentDate = normalize(current.creationDate || (current.orders?.[0]?.creationDate));
+     const nextDate = normalize(next.creationDate || (next.orders?.[0]?.creationDate));
+     
+     if (currentDate && nextDate && currentDate !== nextDate) {
+         console.log(`[ExcelSync] Date mismatch (${currentDate} vs ${nextDate}), bypassing data protection.`);
+         return next;
+     }
+
      // v5.202: NEVER overwrite existing orders with empty/partial data
      const hasLocalOrders = (current.orders || []).length > 0;
      const hasServerOrders = (next.orders || []).length > 0;
@@ -687,10 +719,10 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     };
   }, [excelData]);
 
-  const setExcelData = useCallback((incomingData: ExcelData | null) => {
+  const setExcelData = useCallback((incomingData: ExcelData | null, force?: boolean) => {
     if (incomingData) {
       setExcelDataState(prev => {
-        const val = protectData(incomingData, prev);
+        const val = force ? incomingData : protectData(incomingData, prev);
         return val;
       });
     } else {
@@ -730,7 +762,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       const token = localStorage.getItem('km_access_token');
       if (token) {
         const emptyState = { orders: [], couriers: [], paymentMethods: [], routes: [], errors: [], summary: {} };
-        fetch('/api/v1/state', {
+        fetch(`${API_URL}/api/v1/state`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

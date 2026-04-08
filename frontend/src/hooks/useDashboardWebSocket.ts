@@ -48,6 +48,7 @@ export const useDashboardWebSocket = ({
     const isFetchingRef = useRef(false);
     const lastProcessedTriggerRef = useRef<number | null>(null);
     const lastFetchTimeRef = useRef<number>(0);
+    const robotSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const lastDataSignatureRef = useRef<string | null>(null);
     const onDataLoadedRef = useRef(onDataLoaded);
     const intervalRef = useRef<any>(null);
@@ -117,11 +118,17 @@ export const useDashboardWebSocket = ({
 
                 // v36.1: Content-based Diffing (Hyper-Drive Sync)
                 // MUST track orders, couriers, routes AND statistics to trigger re-render
+                // v36.9: Improved Content-based Diffing
+                // Include total length and samples from start/middle/end to detect shifts
+                const ordersSample = (ordersRaw || []);
                 const currentSignature = JSON.stringify({
-                    orders: (ordersRaw || []).slice(0, 100).map((o: any) => ({
-                        id: o.id || o.orderNumber,
-                        s: o.status
-                    })),
+                    len: ordersSample.length,
+                    // Sample of 30 orders spread across the list
+                    orders: [0, 0.25, 0.5, 0.75, 0.99].flatMap(p => {
+                        const idx = Math.floor(ordersSample.length * p);
+                        const o = ordersSample[idx];
+                        return o ? { id: o.id || o.orderNumber, s: o.status } : null;
+                    }).filter(Boolean),
                     couriers: (response.data.couriers || []).map((c: any) => ({
                         n: c.name,
                         d: c.distanceKm || 0,
@@ -217,6 +224,9 @@ export const useDashboardWebSocket = ({
         logger.info(' Received dashboard update via WebSocket');
         setApiLastSyncTime(Date.now());
         
+        // v5.204: Reset the refresh timer to align with this push update
+        setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);
+        
         // v36.9: Synchronize Robot status timestamp with the WebSocket push
         if (autoRoutingStatus.isActive) {
             setAutoRoutingStatus({ lastUpdate: Date.now() });
@@ -249,13 +259,27 @@ export const useDashboardWebSocket = ({
 
         logger.info(' Connecting to WebSocket...');
         socketService.connect(token);
-        socketService.onDashboardUpdate(handleDashboardUpdate);
+        // v36.9: Debounced robot-triggered sync (avoid spamming API)
+        const triggerRobotSync = () => {
+            if (robotSyncTimeoutRef.current) clearTimeout(robotSyncTimeoutRef.current);
+            robotSyncTimeoutRef.current = setTimeout(() => {
+                logger.info('[Sync] 🤖 Robot signaled change — triggering debounced refetch');
+                lastDataSignatureRef.current = null; // Force update
+                fetchLatestData({ isSilent: true });
+            }, 2000); // 2-second debounce
+        };
+
+        socketService.onDashboardUpdate((update: any) => {
+            if (update.data) {
+                handleDashboardUpdate(update);
+            } else {
+                triggerRobotSync();
+            }
+        });
         
         // v36.4: Listen for partial route updates from the Robot and trigger a refetch
         socketService.on('routes_update', () => {
-            logger.info('[Sync] 🤖 Routes updated — triggering refetch');
-            lastDataSignatureRef.current = null; // Force update
-            fetchLatestData({ isSilent: true });
+            triggerRobotSync();
         });
 
         socketService.on('connected', () => {
