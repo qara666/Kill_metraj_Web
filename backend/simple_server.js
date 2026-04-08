@@ -142,10 +142,13 @@ const corsOptions = {
   maxAge: 86400
 };
 
-// Explicitly handle 127.0.0.1 for local loops
+// Explicitly handle local and production origins for preflight
 const explicitAllow = (origin) => {
   if (!origin) return true;
-  return origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1');
+  return origin.startsWith('http://localhost') || 
+         origin.startsWith('http://127.0.0.1') ||
+         origin === FRONTEND_URL ||
+         origin.endsWith('.onrender.com');
 };
 
 // Custom Middleware to handle CORS Preflight explicitly
@@ -153,12 +156,7 @@ const explicitAllow = (origin) => {
 app.use((req, res, next) => {
   if (req.method === 'OPTIONS') {
     const origin = req.headers.origin;
-    const isAllowed =
-      !origin ||
-      origin.startsWith('http://localhost') ||
-      origin === FRONTEND_URL ||
-      origin.endsWith('.onrender.com');
-
+    
     if (explicitAllow(origin)) {
       res.header('Access-Control-Allow-Origin', origin || '*');
       res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
