@@ -436,14 +436,14 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
                   </div>
                   <div className="flex flex-col">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-4xl font-black tabular-nums text-blue-500">{distanceStats.totalOrders}</span>
+                      <span className="text-4xl font-black tabular-nums text-blue-500">{distanceStats?.totalOrders || 0}</span>
                       <span className="text-xs font-black opacity-30 uppercase">Заказов</span>
                     </div>
                     <div className="mt-2 flex items-center gap-3">
                        <div className={clsx("flex-1 h-1.5 rounded-full overflow-hidden", isDark ? "bg-white/5" : "bg-gray-100")}>
-                         <div className={clsx("h-full transition-all duration-1000", distanceStats.ordersInRoutes === distanceStats.totalOrders ? "bg-emerald-500" : "bg-blue-500")} style={{ width: `${(distanceStats.ordersInRoutes / Math.max(1, distanceStats.totalOrders)) * 100}%` }} />
+                         <div className={clsx("h-full transition-all duration-1000", (distanceStats?.ordersInRoutes || 0) === (distanceStats?.totalOrders || 0) ? "bg-emerald-500" : "bg-blue-500")} style={{ width: `${((distanceStats?.ordersInRoutes || 0) / Math.max(1, distanceStats?.totalOrders || 0)) * 100}%` }} />
                        </div>
-                       <span className="text-[10px] font-black opacity-40">{Math.round((distanceStats.ordersInRoutes / Math.max(1, distanceStats.totalOrders)) * 100)}%</span>
+                       <span className="text-[10px] font-black opacity-40">{Math.round(((distanceStats?.ordersInRoutes || 0) / Math.max(1, distanceStats?.totalOrders || 0)) * 100)}%</span>
                     </div>
                   </div>
                 </div>

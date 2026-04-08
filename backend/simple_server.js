@@ -647,211 +647,104 @@ app.use((err, req, res, next) => {
 
 
 // Запуск сервера (Start listening IMMEDIATELY to pass liveness checks)
-httpServer.listen(PORT, '0.0.0.0', async () => {
-  logger.info(`Сервер запущен на 0.0.0.0:${PORT}`, {
-    port: PORT,
-    env: process.env.NODE_ENV || 'development'
-  });
-
-  // v28.2: TurboCalculator initialization AFTER database is ready
-  // (moved below syncDatabase to ensure models are registered)
-
-  // Background Initialization
-  try {
-    await testConnection();
-    logger.info('PostgreSQL подключен');
-
-    // CRITICAL: Robust Database Initialization
-    // Check if core tables exist by trying to count users
-    const { User, UserPreset } = require('./src/models');
-    let dbNeedsSync = false;
-
+httpServer.listen(PORT, '0.0.0.0', () => {
+  logger.info(`🚀 [SERVER] Listening on 0.0.0.0:${PORT} (READY for health checks)`);
+  
+  // v35.1: Run heavy initialization in the background to avoid blocking Render deployment flow
+  (async () => {
+    logger.info('📦 [INIT] Starting background initialization...');
     try {
-      await User.count();
-      logger.info('SUCCESS: Core tables exist (User.count succeeded)');
-    } catch (dbErr) {
-      logger.warn('WARNING: Core tables (users) might be missing. Triggering sync...', { error: dbErr.message });
-      dbNeedsSync = true;
-    }
+      await testConnection();
+      
+      const { User, UserPreset } = require('./src/models');
+      let dbNeedsSync = false;
 
-    // Skip sync in production unless explicitly requested via DB_ALTER_SYNC OR if tables are missing
-    if (process.env.NODE_ENV !== 'production' || process.env.DB_ALTER_SYNC === 'true' || dbNeedsSync) {
-      logger.info(`Starting syncDatabase (Reason: ${dbNeedsSync ? 'Tables missing' : 'Dev/Forced mode'})`);
-      await syncDatabase();
-    } else {
-      logger.info('SUCCESS: Database sync skipped (production mode & tables exist)');
-    }
-
-    // v5.180: Production migration — add missing columns that sync({alter:false}) won't add
-    if (process.env.NODE_ENV === 'production') {
       try {
-        const columns = await sequelize.query(
-          "SELECT column_name FROM information_schema.columns WHERE table_name = 'users'",
-          { type: sequelize.QueryTypes.SELECT }
-        );
-        const existingCols = columns.map(c => c.column_name);
-        const missingCols = ['allowedTabs'].filter(c => !existingCols.includes(c));
-        
-        for (const col of missingCols) {
-          if (col === 'allowedTabs') {
-            await sequelize.query(
-              `ALTER TABLE users ADD COLUMN IF NOT EXISTS "allowedTabs" JSON DEFAULT '["dashboard","routes","couriers","financials","analytics","telegram-parsing","settings"]'`
-            );
-            logger.info(`[Migration] ✅ Added column: allowedTabs`);
-          }
-        }
-        if (missingCols.length === 0) {
-          logger.info('[Migration] ✅ All columns up to date');
-        }
-      } catch (err) {
-        logger.warn('[Migration] ⚠️ Could not run migration:', err.message);
-      }
-    }
-
-    logger.info('STARTING ADMIN CHECK/CREATION...');
-    try {
-      // Use environment variables or fallback to hardcoded defaults for guaranteed access
-      const seedUsername = process.env.SEED_ADMIN_USERNAME || 'admin';
-      const seedPassword = process.env.SEED_ADMIN_PASSWORD || 'password2026';
-      const seedEmail = process.env.SEED_ADMIN_EMAIL || 'admin@kill-metraj.com';
-
-      logger.info(`[ADMIN_SEED] Using credentials Source: ${process.env.SEED_ADMIN_PASSWORD ? 'Environment' : 'Defaults (password2026)'}`);
-
-      const [admin, created] = await User.findOrCreate({
-        where: { username: seedUsername },
-        defaults: {
-          passwordHash: seedPassword, // Will be hashed via hook
-          email: seedEmail,
-          role: 'admin',
-          isActive: true,
-          canModifySettings: true,
-          divisionId: 'all'
-        }
-      });
-
-      if (created) {
-        logger.info(`УСПЕХ: Аккаунт администратора "${seedUsername}" создан автоматически.`);
-      } else {
-        logger.info(`ИНФО: Аккаунт администратора "${seedUsername}" уже существует.Проверка пароля...`);
-
-        // Force update password if it doesn't match to ensure user can log in
-        const isMatch = await admin.comparePassword(seedPassword);
-        if (!isMatch) {
-          admin.passwordHash = seedPassword; // Will be hashed via beforeUpdate hook
-          await admin.save();
-          logger.info(`УСПЕХ: Пароль администратора "${seedUsername}" принудительно обновлен до значения по умолчанию.`);
-        }
+        await User.count();
+        logger.info('✅ [INIT] Core tables verified');
+      } catch (dbErr) {
+        logger.warn('⚠️ [INIT] Core tables missing, sync required');
+        dbNeedsSync = true;
       }
 
-      if (created || !created) { // Run for both new and existing
-        // Ensure admin has correct role, division and is active
-        let needsUpdate = false;
-        if (admin.role !== 'admin') { admin.role = 'admin'; needsUpdate = true; }
-        if (admin.divisionId !== 'all') { admin.divisionId = 'all'; needsUpdate = true; }
-        if (!admin.isActive) { admin.isActive = true; needsUpdate = true; }
+      if (process.env.NODE_ENV !== 'production' || process.env.DB_ALTER_SYNC === 'true' || dbNeedsSync) {
+        logger.info(`🔄 [INIT] Starting syncDatabase (alter: ${process.env.DB_ALTER_SYNC || 'false'})`);
+        await syncDatabase();
+      }
 
-        if (needsUpdate) {
-          await admin.save();
-          logger.info('ИНФО: Права и подразделение администратора обновлены.');
-        }
-
-        // Create/Update default preset
+      // v5.180: Production migration
+      if (process.env.NODE_ENV === 'production') {
         try {
-          const [preset, presetCreated] = await UserPreset.findOrCreate({
-            where: { userId: admin.id },
-            defaults: {
-              settings: { theme: 'dark', cityBias: 'Kyiv, Ukraine' },
-              updatedBy: admin.id
-            }
-          });
-          if (presetCreated) {
-            logger.info('УСПЕХ: Профиль настроек (UserPreset) для администратора создан.');
-          }
-        } catch (presetErr) {
-          logger.error('ПРЕДУПРЕЖДЕНИЕ: Не удалось проверить/создать UserPreset', { error: presetErr.message });
+          await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "allowedTabs" JSON DEFAULT '["dashboard","routes","couriers","financials","analytics","telegram-parsing","settings"]'`);
+          logger.info(`✅ [INIT] Migrations applied`);
+        } catch (err) {
+          logger.warn('⚠️ [INIT] Migration skipped or failed');
         }
       }
-    } catch (createErr) {
-      logger.error('КРИТИЧЕСКАЯ ОШИБКА: Не удалось проверить/создать администратора', { error: createErr.message });
-    }
 
-    // Diagnostics for adm_mak
-    try {
-      const diagUser = await User.findOne({ where: { username: 'adm_mak' } });
-      if (diagUser) {
-        if (diagUser.role !== 'user') {
-          diagUser.role = 'user';
-          await diagUser.save();
-          logger.info('Пользователь adm_mak понижен до роли user');
-        }
-        logger.info(`Диагностика пользователя[adm_mak]: role = ${diagUser.role}, divisionId = ${diagUser.divisionId}, isActive = ${diagUser.isActive}`);
-      } else {
-        logger.warn('Диагностика пользователя [adm_mak]: НЕ НАЙДЕН');
-      }
-    } catch (diagErr) {
-      logger.error('Ошибка диагностики пользователя:', diagErr.message);
-    }
-
-
-
-    await setupDashboardListener();
-
-    // Start manual migration check
-    await ensureDashboardCacheTable(); // Ensure base table exists first
-    await ensureStatusHistoryTable();
-    await ensureDivisionIdColumn();
-    await ensureManualOverridesTable();
-    await ensureRoutesTable(); // v5.170: CRITICAL — calculated_routes table for Turbo Robot
-    await ensureIndexes();
-    await ensureKmlHubsTable();
-    await ensureKmlZonesTable();
-    await ensureDashboardCacheV2(); // v33.2: Critical for real-time synchronization
-
-    // v5.170: TurboCalculator initialization AFTER all database setup is complete
-    // This ensures all models (DashboardCache, Route, GeoCache, etc.) are registered
-    try {
-      turboCalculator = require('./workers/turboCalculator');
-      if (turboCalculator) {
-        turboCalculator.io = io;
-        await turboCalculator.start(io);
-        // v6.11: Expose as global so dashboardRoutes can call notifyNewFOData()
-        global.turboCalculator = turboCalculator;
-        logger.info('[TurboCalculator] 🚀 v6.11 запущен после инициализации БД (Render-safe)');
-      }
-    } catch (calcError) {
-      logger.error('Failed to start TurboCalculator worker:', calcError.message);
-    }
-
-    // Start Kafka CDC Consumer if enabled
-    if (process.env.CDC_ENABLED === 'true') {
+      // Admin Seed
       try {
-        await dashboardConsumer.start();
-      } catch (cdcError) {
-        logger.error('Не удалось запустить Dashboard CDC Consumer', cdcError);
+        const seedUsername = process.env.SEED_ADMIN_USERNAME || 'admin';
+        const seedPassword = process.env.SEED_ADMIN_PASSWORD || 'password2026';
+        await User.findOrCreate({
+          where: { username: seedUsername },
+          defaults: {
+            passwordHash: seedPassword,
+            email: process.env.SEED_ADMIN_EMAIL || 'admin@kill-metraj.com',
+            role: 'admin', isActive: true, canModifySettings: true, divisionId: 'all'
+          }
+        });
+        logger.info(`✅ [INIT] Admin account verified: ${seedUsername}`);
+      } catch (adminErr) {
+        logger.error('❌ [INIT] Admin check failed', adminErr);
       }
+
+      await setupDashboardListener();
+      
+      // Sequence of table checks
+      const ensureTable = async (name, fn) => {
+          try { await fn(); } catch (e) { logger.error(`❌ [INIT] Failed to ensure table ${name}`, e); }
+      };
+
+      await ensureTable('DashboardCache', ensureDashboardCacheTable);
+      await ensureTable('StatusHistory', ensureStatusHistoryTable);
+      await ensureTable('DivisionIdCol', ensureDivisionIdColumn);
+      await ensureTable('ManualOverrides', ensureManualOverridesTable);
+      await ensureTable('Routes', ensureRoutesTable);
+      await ensureTable('Indexes', ensureIndexes);
+      await ensureTable('KmlHubs', ensureKmlHubsTable);
+      await ensureTable('KmlZones', ensureKmlZonesTable);
+      await ensureTable('DashboardCacheV2', ensureDashboardCacheV2);
+
+      // Workers
+      try {
+        turboCalculator = require('./workers/turboCalculator');
+        if (turboCalculator) {
+          turboCalculator.io = io;
+          await turboCalculator.start(io);
+          global.turboCalculator = turboCalculator;
+          logger.info('🚀 [INIT] TurboCalculator worker started');
+        }
+      } catch (te) { logger.error('❌ [INIT] TurboCalculator failed', te); }
+
+      try {
+        const DashboardFetcher = require('./workers/dashboardFetcher');
+        const fetcher = new DashboardFetcher();
+        fetcher.start();
+        logger.info('🚀 [INIT] DashboardFetcher started');
+      } catch (fe) { logger.error('❌ [INIT] DashboardFetcher failed', fe); }
+
+      try {
+        grpcServer = startGrpcServer(process.env.GRPC_PORT || '50051');
+        logger.info('🚀 [INIT] gRPC server started');
+      } catch (ge) { logger.error('❌ [INIT] gRPC failed', ge); }
+
+      logger.info('🏁 [INIT] Full system initialization complete');
+
+    } catch (globalInitErr) {
+      logger.error('💥 [INIT] FATAL initialization error', globalInitErr);
     }
-
-    // Start Dashboard Fetcher worker within the main process
-    try {
-      const DashboardFetcher = require('./workers/dashboardFetcher');
-      const fetcher = new DashboardFetcher();
-      fetcher.start();
-      logger.info('Загрузчик дашборда запущен внутри основного процесса');
-    } catch (fetcherError) {
-      logger.error('Не удалось запустить загрузчик дашборда', fetcherError);
-    }
-
-    // v19.0: Turbo Instant Order Calculator (Lazy started in listen callback)
-
-  } catch (dbError) {
-    logger.error('КРИТИЧЕСКАЯ ОШИБКА: Ошибка инициализации базы данных, сервер продолжает работу для отображения логов', { error: dbError.message });
-  }
-
-  try {
-    grpcServer = startGrpcServer(process.env.GRPC_PORT || '50051');
-  } catch (grpcError) {
-    logger.error('Не удалось запустить gRPC сервер', grpcError);
-  }
+  })();
 });
 
 /**
