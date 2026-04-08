@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback, useDeferredValue, useTransition, lazy, Suspense, useRef } from 'react'
+import * as React from 'react'
+import { useState, useEffect, useMemo, useCallback, useDeferredValue, useTransition, lazy, Suspense, useRef } from 'react'
 import { FixedSizeList as List } from 'react-window'
 import { OrderList } from './OrderList'
 import { RouteCard } from './RouteCard'
@@ -17,7 +18,7 @@ import {
   UserIcon
 } from '@heroicons/react/24/outline'
 import { localStorageUtils } from '../../utils/ui/localStorage'
-import { cleanAddress, } from '../../utils/data/addressUtils'
+import { cleanAddress } from '../../utils/data/addressUtils'
 import { googleMapsLoader } from '../../utils/maps/googleMapsLoader'
 import { useExcelData } from '../../contexts/ExcelDataContext'
 import { getStableOrderId } from '../../utils/data/orderId';
