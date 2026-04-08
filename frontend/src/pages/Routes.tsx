@@ -1,4 +1,4 @@
-import React from 'react'
+import * as React from 'react'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { RouteManagement } from '../components/route/RouteManagement'
 
