@@ -31,6 +31,7 @@ type DivisionStatus = {
 const DivisionStatusPanel: React.FC = () => {
   const [data, setData] = useState<DivisionStatus[]>([]);
   const [debug, setDebug] = useState<string>('');
+  const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
     // Initial hydration from global window store or REST API
@@ -81,18 +82,8 @@ const DivisionStatusPanel: React.FC = () => {
     };
   }, []);
 
-  if (!data.length) {
-    return (
-      <section style={{ padding: 20, marginTop: 20, border: '1px dashed #d1d5db', borderRadius: 16, textAlign: 'center', color: '#6b7280' }}>
-        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500 }}>
-          Ожидание данных для фонового расчета...
-        </h3>
-        <p style={{ fontSize: 13, marginTop: 8 }}>
-          Нажмите "Запустить расчет" или дождитесь планового обновления.
-        </p>
-        {debug && <p style={{ fontSize: 11, marginTop: 8, color: '#9ca3af' }}>Debug: {debug}</p>}
-      </section>
-    );
+  if (!data.length && !debug) {
+    return null;
   }
 
   return (
@@ -104,18 +95,50 @@ const DivisionStatusPanel: React.FC = () => {
       borderRadius: '16px',
       boxShadow: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)'
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+      <div 
+        onClick={() => setIsExpanded(!isExpanded)}
+        style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'space-between',
+          cursor: 'pointer',
+          userSelect: 'none'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ 
+            width: '10px', 
+            height: '10px', 
+            borderRadius: '50%', 
+            background: '#10b981', 
+            boxShadow: '0 0 8px #10b981',
+            animation: 'pulse 2s infinite' 
+          }} />
+          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#111827' }}>
+            Фоновый расчет дистанции (Real-time)
+          </h3>
+          {!isExpanded && data.length > 0 && (
+            <span style={{ 
+              fontSize: '11px', 
+              background: '#3b82f6', 
+              color: 'white', 
+              padding: '1px 6px', 
+              borderRadius: '10px',
+              fontWeight: 800
+            }}>
+              {data.length}
+            </span>
+          )}
+        </div>
         <div style={{ 
-          width: '10px', 
-          height: '10px', 
-          borderRadius: '50%', 
-          background: '#10b981', 
-          boxShadow: '0 0 8px #10b981',
-          animation: 'pulse 2s infinite' 
-        }} />
-        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#111827' }}>
-          Фоновый расчет дистанции (Real-time)
-        </h3>
+          transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+          transition: 'transform 0.3s ease',
+          color: '#6b7280'
+        }}>
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+          </svg>
+        </div>
       </div>
       
       <style>{`
@@ -126,108 +149,122 @@ const DivisionStatusPanel: React.FC = () => {
         }
       `}</style>
 
-      <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', 
-        gap: '20px' 
-      }}>
-        {data.map(d => (
-          <div key={`${d.divisionId}_${d.date}`} style={{ 
-            border: '1px solid #e5e7eb', 
-            borderRadius: '14px', 
-            padding: '16px', 
-            background: 'white', 
-            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)' 
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontWeight: 700, color: '#2563eb', fontSize: '15px' }}>
-                Подразделение: {d.divisionId}
-              </div>
-              <div style={{ fontSize: '12px', color: '#6b7280', background: '#f3f4f6', padding: '2px 8px', borderRadius: '12px' }}>
-                {d.date}
-              </div>
-            </div>
-            
+      {isExpanded && (
+        <div style={{ marginTop: '20px', animation: 'fadeIn 0.3s ease' }}>
+          {data.length === 0 ? (
+             <div style={{ textAlign: 'center', py: '20px', color: '#6b7280', fontSize: '14px' }}>
+                Ожидание данных...
+             </div>
+          ) : (
             <div style={{ 
-              fontSize: '13px', 
-              color: d.currentPhase === 'complete' ? '#059669' : '#4b5563', 
-              marginTop: '8px', 
-              fontWeight: 500,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', 
+              gap: '20px' 
             }}>
-              {d.currentPhase !== 'complete' && (
-                <div style={{ width: '12px', height: '12px', border: '2px solid #3b82f6', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-              )}
-              {d.message || (d.currentPhase === 'complete' ? 'Расчет завершен' : 'Выполняется расчет...')}
-            </div>
-
-            <style>{`
-              @keyframes spin {
-                to { transform: rotate(360deg); }
-              }
-            `}</style>
-
-            <div style={{ marginTop: '16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginTop: '6px' }}>
-                <span style={{ color: '#6b7280' }}>Прогресс (заказы):</span>
-                <span style={{ fontWeight: 600 }}>{d.processedCount} / {d.totalCount}</span>
-              </div>
-              <div style={{ width: '100%', height: '6px', background: '#e5e7eb', borderRadius: '3px', marginTop: '4px', overflow: 'hidden' }}>
-                <div style={{ 
-                  width: `${Math.min(100, (d.processedCount / (d.totalCount || 1)) * 100)}%`, 
-                  height: '100%', 
-                  background: '#3b82f6', 
-                  transition: 'width 0.5s ease' 
-                }} />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginTop: '10px' }}>
-                <span style={{ color: '#6b7280' }}>Обработано курьеров:</span>
-                <span style={{ fontWeight: 600 }}>{d.processedCouriers} / {d.totalCouriers}</span>
-              </div>
-            </div>
-
-            {d.couriers && d.couriers.length > 0 && (
-              <div style={{ marginTop: '16px', borderTop: '1px solid #f3f4f6', paddingTop: '12px' }}>
-                <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '8px', fontWeight: 600, letterSpacing: '0.05em' }}>
-                  КИЛОМЕТРАЖ ПО КУРЬЕРАМ:
-                </div>
-                <div style={{ 
-                  maxHeight: '150px', 
-                  overflowY: 'auto', 
-                  paddingRight: '4px',
-                  scrollbarWidth: 'thin'
+              {data.map(d => (
+                <div key={`${d.divisionId}_${d.date}`} style={{ 
+                  border: '1px solid #e5e7eb', 
+                  borderRadius: '14px', 
+                  padding: '16px', 
+                  background: 'white', 
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)' 
                 }}>
-                  {d.couriers.map(c => (
-                    <div key={c.name} style={{ 
-                      display: 'flex', 
-                      justifyContent: 'space-between', 
-                      fontSize: '13px', 
-                      padding: '6px 0',
-                      borderBottom: '1px Math.min(1, 0.5) solid #f9fafb'
-                    }}>
-                      <span style={{ 
-                        whiteSpace: 'nowrap', 
-                        overflow: 'hidden', 
-                        textOverflow: 'ellipsis', 
-                        marginRight: '8px',
-                        color: '#374151' 
-                      }}>
-                        {c.name}
-                      </span>
-                      <span style={{ color: '#2563eb', fontWeight: 700 }}>
-                        {typeof c.distanceKm === 'number' ? c.distanceKm.toFixed(1) : c.distanceKm} км
-                      </span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: 700, color: '#2563eb', fontSize: '15px' }}>
+                      Подразделение: {d.divisionId}
                     </div>
-                  ))}
+                    <div style={{ fontSize: '12px', color: '#6b7280', background: '#f3f4f6', padding: '2px 8px', borderRadius: '12px' }}>
+                      {d.date}
+                    </div>
+                  </div>
+                  
+                  <div style={{ 
+                    fontSize: '13px', 
+                    color: d.currentPhase === 'complete' ? '#059669' : '#4b5563', 
+                    marginTop: '8px', 
+                    fontWeight: 500,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}>
+                    {d.currentPhase !== 'complete' && (
+                      <div style={{ width: '12px', height: '12px', border: '2px solid #3b82f6', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                    )}
+                    {d.message || (d.currentPhase === 'complete' ? 'Расчет завершен' : 'Выполняется расчет...')}
+                  </div>
+
+                  <style>{`
+                    @keyframes spin {
+                      to { transform: rotate(360deg); }
+                    }
+                    @keyframes fadeIn {
+                      from { opacity: 0; transform: translateY(-10px); }
+                      to { opacity: 1; transform: translateY(0); }
+                    }
+                  `}</style>
+
+                  <div style={{ marginTop: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginTop: '6px' }}>
+                      <span style={{ color: '#6b7280' }}>Прогресс (заказы):</span>
+                      <span style={{ fontWeight: 600 }}>{d.processedCount} / {d.totalCount}</span>
+                    </div>
+                    <div style={{ width: '100%', height: '6px', background: '#e5e7eb', borderRadius: '3px', marginTop: '4px', overflow: 'hidden' }}>
+                      <div style={{ 
+                        width: `${Math.min(100, (d.processedCount / (d.totalCount || 1)) * 100)}%`, 
+                        height: '100%', 
+                        background: '#3b82f6', 
+                        transition: 'width 0.5s ease' 
+                      }} />
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginTop: '10px' }}>
+                      <span style={{ color: '#6b7280' }}>Обработано курьеров:</span>
+                      <span style={{ fontWeight: 600 }}>{d.processedCouriers} / {d.totalCouriers}</span>
+                    </div>
+                  </div>
+
+                  {d.couriers && d.couriers.length > 0 && (
+                    <div style={{ marginTop: '16px', borderTop: '1px solid #f3f4f6', paddingTop: '12px' }}>
+                      <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '8px', fontWeight: 600, letterSpacing: '0.05em' }}>
+                        КИЛОМЕТРАЖ ПО КУРЬЕРАМ:
+                      </div>
+                      <div style={{ 
+                        maxHeight: '150px', 
+                        overflowY: 'auto', 
+                        paddingRight: '4px',
+                        scrollbarWidth: 'thin'
+                      }}>
+                        {d.couriers.map(c => (
+                          <div key={c.name} style={{ 
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            fontSize: '13px', 
+                            padding: '6px 0',
+                            borderBottom: '1px solid #f9fafb'
+                          }}>
+                            <span style={{ 
+                              whiteSpace: 'nowrap', 
+                              overflow: 'hidden', 
+                              textOverflow: 'ellipsis', 
+                              marginRight: '8px',
+                              color: '#374151' 
+                            }}>
+                              {c.name}
+                            </span>
+                            <span style={{ color: '#2563eb', fontWeight: 700 }}>
+                              {typeof c.distanceKm === 'number' ? c.distanceKm.toFixed(1) : c.distanceKm} км
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 };

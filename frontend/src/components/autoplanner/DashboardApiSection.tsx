@@ -36,6 +36,7 @@ export const DashboardApiSection: React.FC = () => {
 
     const [timeLeft, setTimeLeft] = useState<string>('--:--');
     const [isTriggeringPriority, setIsTriggeringPriority] = useState(false);
+    const [isRobotExpanded, setIsRobotExpanded] = useState(false);
 
     // Function to trigger priority calculation
     const triggerPriorityCalculation = async () => {
@@ -202,17 +203,39 @@ export const DashboardApiSection: React.FC = () => {
         }
     };
 
+    // v5.207: Stop calculation worker
+    const stopCalculation = async () => {
+        try {
+            const token = localStorage.getItem('km_access_token') || localStorage.getItem('accessToken');
+            if (token && token !== 'null' && token !== 'undefined') {
+                await fetch(`${API_URL}/api/turbo/stop`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+            }
+            // Mark as user stopped - prevents auto-activation
+            setAutoRoutingStatus({ isActive: false, userStopped: true });
+        } catch (e) {
+            console.error('Error stopping calculation:', e);
+        }
+    };
+
     const handleDateChange = (date: string) => {
         setSelectedDate(date);
         
-        // v5.109: User requested immediate visual clear of old data while fetching new date
-        // Note: Using clearExcelData with a flag to prevent full localStorage wipe might be safer, 
-        // but for now we wipe everything so the UI correctly resets to "0 orders"
-        clearExcelData(); 
+        // v5.207: Halt calculation on date change
+        if (autoRoutingStatus.isActive) {
+            stopCalculation();
+            toast.secondary('Расчет остановлен из-за смены даты');
+        }
 
-        // Сразу загружаем данные при смене даты
-        setTimeout(() => triggerApiManualSync(), 100);
-        toast.success(`Загрузка данных за ${date}...`);
+        // v5.207: User requested delay in loading.
+        // We only clear the UI and state. Loading happens ONLY on button click.
+        clearExcelData(); 
+        localStorage.removeItem('km_dashboard_processed_data');
+        localStorage.removeItem('km_routes');
+        
+        toast.success(`Дата изменена на ${date}. Нажмите кнопку загрузки.`);
     };
 
     return (
@@ -271,40 +294,71 @@ export const DashboardApiSection: React.FC = () => {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-                    {/* Auto Update Toggle */}
-                    <div className={clsx(
-                        "flex items-center gap-3 px-4 py-2 rounded-xl border transition-colors",
-                        isDark ? "bg-white/5 border-white/5 hover:border-white/10" : "bg-slate-50 border-slate-100 hover:border-slate-200"
-                    )}>
-                        <div className="flex items-center gap-2">
-                            <div className={clsx(
-                                "w-2 h-2 rounded-full",
-                                apiAutoRefreshEnabled ? "bg-green-500" : "bg-gray-400"
-                            )} />
-                            <span className={clsx(
-                                "text-[11px] uppercase tracking-wider font-bold",
-                                isDark ? "text-gray-300" : "text-gray-700"
-                            )}>
-                                Автообновление
-                            </span>
-                        </div>
+                    {/* v5.206: Adaptive Action Button */}
+                    <button
+                        onClick={() => {
+                            const today = format(new Date(), 'yyyy-MM-dd');
+                            const isToday = selectedDate === today;
+                            
+                            // v5.205: Aggressive clearing
+                            clearExcelData(); 
+                            localStorage.removeItem('km_dashboard_processed_data');
+                            localStorage.removeItem('km_routes');
+                            
+                            if (isToday) {
+                                // For Today: Turn on auto-updates
+                                setApiAutoRefreshEnabled(true);
+                                toast.success('Синхронизация за СЕГОДНЯ: Автообновление ВКЛ');
+                            } else {
+                                // For History: Turn off auto-updates to prevent state pollution
+                                setApiAutoRefreshEnabled(false);
+                                toast.success(`Загрузка АРХИВА за ${selectedDate}: Автообновление ВЫКЛ`);
+                            }
+                            
+                            // Trigger sync
+                            setTimeout(() => triggerApiManualSync(), 100);
+                        }}
+                        className={clsx(
+                            "flex items-center gap-3 px-5 h-10 rounded-[1.2rem] border transition-all duration-300 active:scale-95 group shrink-0",
+                            isDark 
+                                ? "bg-blue-600/10 border-blue-500/20 text-blue-400 hover:bg-blue-600/20" 
+                                : "bg-blue-50 border-blue-100 text-blue-700 hover:bg-blue-100 shadow-sm"
+                        )}
+                        title={selectedDate === format(new Date(), 'yyyy-MM-dd') ? "Очистить кеш и включить автообновление за сегодня" : "Загрузить данные из архива за выбранную дату"}
+                    >
+                        <div className={clsx(
+                            "w-2 h-2 rounded-full",
+                            (selectedDate === format(new Date(), 'yyyy-MM-dd') && apiAutoRefreshEnabled) ? "bg-green-500 animate-pulse" : "bg-blue-400"
+                        )} />
+                        <span className="text-[10px] font-black uppercase tracking-widest">
+                            {selectedDate === format(new Date(), 'yyyy-MM-dd') 
+                                ? (apiAutoRefreshEnabled ? 'Синхронизировать Сегодня' : 'Включить Сегодня') 
+                                : 'Загрузить Архив'}
+                        </span>
+                    </button>
+                    
+                    {/* v5.206: Toggle button to quickly switch back to TODAY */}
+                    {selectedDate !== format(new Date(), 'yyyy-MM-dd') && (
                         <button
-                            onClick={handleToggleAutoUpdate}
+                            onClick={() => {
+                                const today = format(new Date(), 'yyyy-MM-dd');
+                                setApiDateShift(today);
+                                setApiAutoRefreshEnabled(true);
+                                clearExcelData();
+                                setTimeout(() => triggerApiManualSync(), 100);
+                                toast.success('Возврат к СЕГОДНЯШНИМ данным');
+                            }}
                             className={clsx(
-                                'relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 focus:outline-none',
-                                apiAutoRefreshEnabled ? 'bg-blue-600' : (isDark ? 'bg-gray-700' : 'bg-gray-300')
+                                "flex items-center justify-center p-2.5 rounded-xl border transition-all hover:scale-105",
+                                isDark ? "bg-white/5 border-white/5 text-gray-400 hover:text-white" : "bg-white border-slate-200 text-gray-500 shadow-sm"
                             )}
+                            title="Вернуться к сегодня"
                         >
-                            <span
-                                className={clsx(
-                                    'inline-block h-4 w-4 transform rounded-full bg-white transition-all duration-300',
-                                    apiAutoRefreshEnabled ? 'translate-x-[24px]' : 'translate-x-1'
-                                )}
-                            />
+                            <ArrowPathIcon className="w-5 h-5" />
                         </button>
-                    </div>
+                    )}
 
-                    {/* Date Picker */}
+                    {/* Date Picker - v5.206 UNLOCKED */}
                     <div className="relative">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <CalendarIcon className="h-5 w-5 text-gray-400" />
@@ -312,12 +366,17 @@ export const DashboardApiSection: React.FC = () => {
                         <input
                             type="date"
                             value={selectedDate}
-                            disabled={apiAutoRefreshEnabled}
-                            onChange={(e) => handleDateChange(e.target.value)}
-                            title={apiAutoRefreshEnabled ? "Отключите автообновление для выбора другой даты" : ""}
+                            onChange={(e) => {
+                                const newDate = e.target.value;
+                                const today = format(new Date(), 'yyyy-MM-dd');
+                                handleDateChange(newDate);
+                                // v5.206: If archive picked, automatically disable auto-refresh 
+                                if (newDate !== today && apiAutoRefreshEnabled) {
+                                    setApiAutoRefreshEnabled(false);
+                                }
+                            }}
                             className={clsx(
                                 'pl-10 h-10 w-full sm:w-44 rounded-xl font-bold transition-all border outline-none',
-                                apiAutoRefreshEnabled && 'opacity-60 cursor-not-allowed',
                                 isDark ? 'bg-white/5 border-white/5 text-white focus:border-blue-500/50' : 'bg-slate-50 border-slate-200 text-gray-900 focus:border-blue-400'
                             )}
                         />
@@ -327,232 +386,215 @@ export const DashboardApiSection: React.FC = () => {
 
             <div className={clsx("h-px w-full", isDark ? "bg-white/5" : "bg-slate-100")} />
 
+            <div className={clsx("h-px w-full", isDark ? "bg-white/5" : "bg-slate-100")} />
+
             {/* Robot Control Row */}
-            <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
-                <div className="flex items-center gap-4">
-                    <div className={clsx(
-                        'w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform relative',
-                        autoRoutingStatus.isActive 
-                            ? (isDark ? 'bg-blue-600 shadow-[0_0_20px_rgba(37,99,235,0.3)] text-white' : 'bg-blue-600 text-white shadow-[0_0_20px_rgba(37,99,235,0.2)]')
-                            : (isDark ? 'bg-white/5 text-gray-400' : 'bg-slate-50 border border-slate-100 text-gray-500')
-                    )}>
-                        <CpuChipIcon className={clsx("w-6 h-6", autoRoutingStatus.isActive && "animate-pulse")} />
-                        {autoRoutingStatus.isActive && (
-                            <div className="absolute inset-0 rounded-2xl border-2 border-white/20 animate-ping" />
-                        )}
-                    </div>
-                    <div className="flex flex-col gap-1">
-                        <h3 className={clsx(
-                            'font-black text-lg tracking-tight leading-none',
-                            isDark ? 'text-white' : 'text-slate-900'
+            <div className="flex flex-col gap-6">
+                <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
+                    <div className="flex items-center gap-4">
+                        <div className={clsx(
+                            'w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform relative',
+                            autoRoutingStatus.isActive 
+                                ? (isDark ? 'bg-blue-600 shadow-[0_0_20px_rgba(37,99,235,0.3)] text-white' : 'bg-blue-600 text-white shadow-[0_0_20px_rgba(37,99,235,0.2)]')
+                                : (isDark ? 'bg-white/5 text-gray-400' : 'bg-slate-50 border border-slate-100 text-gray-500')
                         )}>
-                            Фоновый расчет заказов
-                        </h3>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <div className={clsx(
-                                "w-1.5 h-1.5 rounded-full",
-                                autoRoutingStatus.isActive ? "bg-green-500 animate-pulse" : "bg-gray-400"
-                            )} />
-                            <span className={clsx(
-                                'text-[10px] font-bold uppercase tracking-widest flex items-center gap-1',
-                                isDark ? 'text-gray-400' : 'text-gray-500'
+                            <CpuChipIcon className={clsx("w-6 h-6", autoRoutingStatus.isActive && "animate-pulse")} />
+                            {autoRoutingStatus.isActive && (
+                                <div className="absolute inset-0 rounded-2xl border-2 border-white/20 animate-ping" />
+                            )}
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <h3 className={clsx(
+                                'font-black text-lg tracking-tight leading-none',
+                                isDark ? 'text-white' : 'text-slate-900'
                             )}>
-                                {autoRoutingStatus.isActive 
-                                    ? (autoRoutingStatus.currentCourier ? `Расчет: ${autoRoutingStatus.currentCourier}` : 'Активен') 
-                                    : 'Режим ожидания'
-                                }
-                                {autoRoutingStatus.lastUpdate && (
-                                    <span className="opacity-50 tracking-normal lowercase">
-                                         • {format(new Date(autoRoutingStatus.lastUpdate), 'HH:mm:ss')}
-                                    </span>
-                                )}
-                            </span>
-                        </div>
-                        
-                        {/* v36.3: Animated Progress Bar */}
-                        {autoRoutingStatus.isActive && autoRoutingStatus.totalCount > 0 && (
-                            <div className="mt-1 w-full max-w-[200px] h-1.5 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
-                                <div 
-                                    className="h-full bg-blue-500 transition-all duration-500 ease-out"
-                                    style={{ width: `${Math.min(100, Math.round(((autoRoutingStatus.processedCount || 0) / autoRoutingStatus.totalCount) * 100))}%` }}
-                                />
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                <div className="flex flex-col lg:flex-row items-center gap-3 w-full lg:w-auto">
-                    <button
-                        onClick={async () => {
-                            if (!user?.divisionId) return;
-                            try {
-                                const token = localStorage.getItem('km_access_token') || localStorage.getItem('accessToken');
-                                const res = await fetch(`${API_URL}/api/turbo/clear`, {
-                                    method: 'POST',
-                                    headers: {
-                                        'Content-Type': 'application/json',
-                                        'Authorization': `Bearer ${token}`
-                                    },
-                                    body: JSON.stringify({ divisionId: user.divisionId, date: selectedDate })
-                                });
-                                const data = await res.json();
-                                if (data.success) {
-                                    toast.success(data.message || 'Очистка завершена');
-                                    // v5.195: WIPE FRONTEND CACHES DEAD
-                                    localStorage.removeItem('km_routes');
-                                    // v5.202: Mark as user stopped - prevents auto-activation
-                                    setAutoRoutingStatus({ isActive: false, processedCount: 0, totalCount: 0, skippedGeocoding: 0, skippedInRoutes: 0, userStopped: true });
-                                    try {
-                                        if (typeof window !== 'undefined') {
-                                            window.dispatchEvent(new CustomEvent('km:turbo:routes_update', {
-                                                detail: { routes: [], couriers: [] }
-                                            }));
-                                        }
-                                    } catch(e) {}
-                                    triggerApiManualSync();
-                                } else {
-                                    toast.error(data.error || 'Ошибка очистки');
-                                }
-                            } catch(e) {
-                                toast.error('Ошибка сервера при очистке');
-                            }
-                        }}
-                        disabled={isTriggeringPriority || autoRoutingStatus.isActive}
-                        className={clsx(
-                            'flex items-center justify-center gap-2 px-6 h-10 rounded-xl font-bold text-[12px] uppercase tracking-widest transition-all active:scale-[0.98] outline-none',
-                            isDark ? 'bg-white/5 hover:bg-white/10 text-red-400' : 'bg-slate-50 hover:bg-red-50 text-red-500 border border-slate-200',
-                            (isTriggeringPriority || autoRoutingStatus.isActive) && 'opacity-50 cursor-not-allowed'
-                        )}
-                        title="Очистить и сбросить маршруты Турбо-робота"
-                    >
-                         Очистить
-                    </button>
-                    <button
-                        onClick={async () => {
-                            if (autoRoutingStatus.isActive) {
-                                try {
-                                    const token = localStorage.getItem('km_access_token') || localStorage.getItem('accessToken');
-                                    if (token && token !== 'null' && token !== 'undefined') {
-                                        await fetch(`${API_URL}/api/turbo/stop`, {
-                                            method: 'POST',
-                                            headers: { 'Authorization': `Bearer ${token}` }
-                                        });
+                                Фоновый расчет заказов
+                            </h3>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <div className={clsx(
+                                    "w-1.5 h-1.5 rounded-full",
+                                    autoRoutingStatus.isActive ? "bg-green-500 animate-pulse" : "bg-gray-400"
+                                )} />
+                                <span className={clsx(
+                                    'text-[10px] font-bold uppercase tracking-widest flex items-center gap-1',
+                                    isDark ? 'text-gray-400' : 'text-gray-500'
+                                )}>
+                                    {autoRoutingStatus.isActive 
+                                        ? (autoRoutingStatus.currentCourier ? `Расчет: ${autoRoutingStatus.currentCourier}` : 'Активен') 
+                                        : 'Режим ожидания'
                                     }
-                                } catch (e) {
-                                    console.error('Error stopping calculation:', e);
-                                }
-                                // v5.202: Mark as user stopped - prevents auto-activation
-                                setAutoRoutingStatus({ isActive: false, userStopped: true });
-                            } else {
-                                // v5.202: Clear userStopped when starting new calculation
-                                setAutoRoutingStatus({ userStopped: false });
-                                triggerPriorityCalculation();
-                            }
-                        }}
-                        disabled={isTriggeringPriority}
-                        className={clsx(
-                            'flex items-center justify-center gap-2 px-8 h-10 rounded-xl font-bold text-[12px] uppercase tracking-widest transition-all active:scale-[0.98] w-full lg:w-auto outline-none focus:outline-none',
-                            autoRoutingStatus.isActive
-                                ? (isDark ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20' : 'bg-red-50 text-red-600 hover:bg-red-100')
-                                : (isDark ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'),
-                            isTriggeringPriority && 'opacity-50 cursor-not-allowed'
-                        )}
-                    >
-                        {isTriggeringPriority ? (
-                            <>
-                                <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                                <span>Запуск...</span>
-                            </>
-                        ) : autoRoutingStatus.isActive ? (
-                            <>
-                                <span>Остановить расчет</span>
-                            </>
-                        ) : (
-                            <>
-                                <BoltIcon className="w-4 h-4" />
-                                <span>Запустить расчёт</span>
-                            </>
-                        )}
-                    </button>
-                </div>
-            </div>
-
-            {/* Real-time Stats */}
-            {(autoRoutingStatus.isActive || (autoRoutingStatus.processedCount || 0) > 0) && (
-                <div className={clsx(
-                    'mt-2 pt-6 border-t flex flex-col gap-5',
-                    isDark ? 'border-white/5' : 'border-slate-100'
-                )}>
-                    <div className="flex items-center gap-2">
-                        <BoltIcon className="w-4 h-4 text-amber-500" />
-                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">
-                            Статистика в реальном времени
-                        </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div className={clsx("p-5 rounded-2xl flex flex-col justify-center", isDark ? "bg-white/[0.02]" : "bg-slate-50")}>
-                            <div className={clsx('text-[10px] font-bold uppercase tracking-widest mb-2', isDark ? 'text-gray-500' : 'text-gray-400')}>
-                                Всего заказов
+                                    {autoRoutingStatus.lastUpdate && (
+                                        <span className="opacity-50 tracking-normal lowercase">
+                                                • {format(new Date(autoRoutingStatus.lastUpdate), 'HH:mm:ss')}
+                                        </span>
+                                    )}
+                                </span>
                             </div>
-                            <div className="flex items-baseline gap-2">
-                                <div className={clsx('text-3xl font-black leading-none', isDark ? 'text-white' : 'text-gray-900')}>
-                                    {autoRoutingStatus.totalCount || 0}
-                                </div>
-                                <span className="text-[10px] font-black opacity-30 uppercase tracking-widest leading-none text-nowrap">Всего</span>
-                            </div>
-                        </div>
-
-                        <div className={clsx("p-5 rounded-2xl flex flex-col justify-center", isDark ? "bg-white/[0.02]" : "bg-slate-50")}>
-                            <div className={clsx('text-[10px] font-bold uppercase tracking-widest mb-2', isDark ? 'text-emerald-500/70' : 'text-emerald-600/70')}>
-                                Обработано
-                            </div>
-                            <div className="flex items-baseline gap-2">
-                                <div className={clsx('text-3xl font-black text-emerald-500', isDark ? 'text-emerald-400' : 'text-emerald-600')}>
-                                    {autoRoutingStatus.processedCount || 0}
-                                </div>
-                                <span className="text-[10px] font-black opacity-30 uppercase tracking-widest leading-none">Зак</span>
-                            </div>
-                        </div>
-
-                        <div className={clsx("p-5 rounded-2xl flex flex-col justify-center", isDark ? "bg-white/[0.02]" : "bg-slate-50")}>
-                            <div className={clsx('text-[10px] font-bold uppercase tracking-widest mb-2', isDark ? 'text-blue-400/70' : 'text-blue-500/70')}>
-                                В маршрутах
-                            </div>
-                            <div className="flex items-baseline gap-2">
-                                <div className={clsx('text-3xl font-black', isDark ? 'text-blue-400' : 'text-blue-600')}>
-                                    {autoRoutingStatus.skippedInRoutes || 0}
-                                </div>
-                                <span className="text-[10px] font-black opacity-30 uppercase tracking-widest leading-none text-nowrap">Подготовлено</span>
-                            </div>
-                        </div>
-
-                        <div className={clsx("p-5 rounded-2xl flex flex-col justify-center", isDark ? "bg-white/[0.02]" : "bg-slate-50")}>
-                            <div className={clsx('text-[10px] font-bold uppercase tracking-widest mb-1.5', isDark ? 'text-red-400/70' : 'text-red-500/70')}>
-                                Ошибки гео
-                            </div>
-                            <div 
-                                className={clsx('text-3xl font-black cursor-pointer hover:underline', autoRoutingStatus.skippedGeocoding > 0 ? (isDark ? 'text-red-400' : 'text-red-500') : (isDark ? 'text-gray-500' : 'text-gray-400'))}
-                                onClick={() => {
-                                    const errors = autoRoutingStatus.geoErrors || [];
-                                    if (errors.length > 0) {
-                                        const msg = errors.map(e => `• ${e.orderNumber}: ${e.address}`).join('\n');
-                                        alert(`Неудалось определить координаты:\n\n${msg}`);
-                                    }
-                                }}
-                                title={autoRoutingStatus.geoErrors?.length ? 'Нажмите для деталей' : ''}
-                            >
-                                {autoRoutingStatus.skippedGeocoding || 0}
-                            </div>
-                            {(autoRoutingStatus.geoErrors?.length || 0) > 0 && (
-                                <div className="text-[8px] mt-1 opacity-50">
-                                    Нажмите для деталей
+                            
+                            {autoRoutingStatus.isActive && autoRoutingStatus.totalCount > 0 && (
+                                <div className="mt-1 w-full max-w-[200px] h-1.5 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
+                                    <div 
+                                        className="h-full bg-blue-500 transition-all duration-500 ease-out"
+                                        style={{ width: `${Math.min(100, Math.round(((autoRoutingStatus.processedCount || 0) / autoRoutingStatus.totalCount) * 100))}%` }}
+                                    />
                                 </div>
                             )}
                         </div>
                     </div>
+
+                    <div className="flex flex-col lg:flex-row items-center gap-3 w-full lg:w-auto">
+                        <button
+                            onClick={async () => {
+                                if (!user?.divisionId) return;
+                                try {
+                                    const token = localStorage.getItem('km_access_token') || localStorage.getItem('accessToken');
+                                    const res = await fetch(`${API_URL}/api/turbo/clear`, {
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/json',
+                                            'Authorization': `Bearer ${token}`
+                                        },
+                                        body: JSON.stringify({ divisionId: user.divisionId, date: selectedDate })
+                                    });
+                                    const data = await res.json();
+                                    if (data.success) {
+                                        toast.success(data.message || 'Очистка завершена');
+                                        localStorage.removeItem('km_routes');
+                                        setAutoRoutingStatus({ isActive: false, processedCount: 0, totalCount: 0, skippedGeocoding: 0, skippedInRoutes: 0, userStopped: true });
+                                        try {
+                                            if (typeof window !== 'undefined') {
+                                                window.dispatchEvent(new CustomEvent('km:turbo:routes_update', {
+                                                    detail: { routes: [], couriers: [] }
+                                                }));
+                                            }
+                                        } catch(e) {}
+                                        triggerApiManualSync();
+                                    } else {
+                                        toast.error(data.error || 'Ошибка очистки');
+                                    }
+                                } catch(e) {
+                                    toast.error('Ошибка сервера при очистке');
+                                }
+                            }}
+                            disabled={isTriggeringPriority || autoRoutingStatus.isActive}
+                            className={clsx(
+                                'flex items-center justify-center gap-2 px-6 h-10 rounded-xl font-bold text-[12px] uppercase tracking-widest transition-all active:scale-[0.98] outline-none',
+                                isDark ? 'bg-white/5 hover:bg-white/10 text-red-400' : 'bg-slate-50 hover:bg-red-50 text-red-500 border border-slate-200',
+                                (isTriggeringPriority || autoRoutingStatus.isActive) && 'opacity-50 cursor-not-allowed'
+                            )}
+                            title="Очистить и сбросить маршруты Турбо-робота"
+                        >
+                                Очистить
+                        </button>
+                        <button
+                            onClick={async () => {
+                                if (autoRoutingStatus.isActive) {
+                                    await stopCalculation();
+                                } else {
+                                    setAutoRoutingStatus({ userStopped: false });
+                                    triggerPriorityCalculation();
+                                }
+                            }}
+                            disabled={isTriggeringPriority}
+                            className={clsx(
+                                'flex items-center justify-center gap-2 px-8 h-10 rounded-xl font-bold text-[12px] uppercase tracking-widest transition-all active:scale-[0.98] w-full lg:w-auto outline-none focus:outline-none',
+                                autoRoutingStatus.isActive
+                                    ? (isDark ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20' : 'bg-red-50 text-red-600 hover:bg-red-100')
+                                    : (isDark ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'),
+                                isTriggeringPriority && 'opacity-50 cursor-not-allowed'
+                            )}
+                        >
+                            {isTriggeringPriority ? (
+                                <>
+                                    <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                                    <span>Запуск...</span>
+                                </>
+                            ) : autoRoutingStatus.isActive ? (
+                                <>
+                                    <span>Остановить расчет</span>
+                                </>
+                            ) : (
+                                <>
+                                    <BoltIcon className="w-4 h-4" />
+                                    <span>Запустить расчёт</span>
+                                </>
+                            )}
+                        </button>
+                    </div>
                 </div>
-            )}
+
+                {/* Real-time Stats */}
+                {(autoRoutingStatus.isActive || (autoRoutingStatus.processedCount || 0) > 0) && (
+                    <div className={clsx(
+                        'pt-6 border-t flex flex-col gap-5',
+                        isDark ? 'border-white/5' : 'border-slate-100'
+                    )}>
+                        <div className="flex items-center gap-2">
+                            <BoltIcon className="w-4 h-4 text-amber-500" />
+                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">
+                                Статистика в реальном времени
+                              </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div className={clsx("p-5 rounded-2xl flex flex-col justify-center", isDark ? "bg-white/[0.02]" : "bg-slate-50")}>
+                                <div className={clsx('text-[10px] font-bold uppercase tracking-widest mb-2', isDark ? 'text-gray-500' : 'text-gray-400')}>
+                                    Всего заказов
+                                </div>
+                                <div className="flex items-baseline gap-2">
+                                    <div className={clsx('text-3xl font-black leading-none', isDark ? 'text-white' : 'text-gray-900')}>
+                                        {autoRoutingStatus.totalCount || 0}
+                                    </div>
+                                    <span className="text-[10px] font-black opacity-30 uppercase tracking-widest leading-none text-nowrap">Всего</span>
+                                </div>
+                            </div>
+
+                            <div className={clsx("p-5 rounded-2xl flex flex-col justify-center", isDark ? "bg-white/[0.02]" : "bg-slate-50")}>
+                                <div className={clsx('text-[10px] font-bold uppercase tracking-widest mb-2', isDark ? 'text-emerald-500/70' : 'text-emerald-600/70')}>
+                                    Обработано
+                                </div>
+                                <div className="flex items-baseline gap-2">
+                                    <div className={clsx('text-3xl font-black text-emerald-500', isDark ? 'text-emerald-400' : 'text-emerald-600')}>
+                                        {autoRoutingStatus.processedCount || 0}
+                                    </div>
+                                    <span className="text-[10px] font-black opacity-30 uppercase tracking-widest leading-none">Зак</span>
+                                </div>
+                            </div>
+
+                            <div className={clsx("p-5 rounded-2xl flex flex-col justify-center", isDark ? "bg-white/[0.02]" : "bg-slate-50")}>
+                                <div className={clsx('text-[10px] font-bold uppercase tracking-widest mb-2', isDark ? 'text-blue-400/70' : 'text-blue-500/70')}>
+                                    В маршрутах
+                                </div>
+                                <div className="flex items-baseline gap-2">
+                                    <div className={clsx('text-3xl font-black', isDark ? 'text-blue-400' : 'text-blue-600')}>
+                                        {autoRoutingStatus.skippedInRoutes || 0}
+                                    </div>
+                                    <span className="text-[10px] font-black opacity-30 uppercase tracking-widest leading-none text-nowrap">Подготовлено</span>
+                                </div>
+                            </div>
+
+                            <div className={clsx("p-5 rounded-2xl flex flex-col justify-center", isDark ? "bg-white/[0.02]" : "bg-slate-50")}>
+                                <div className={clsx('text-[10px] font-bold uppercase tracking-widest mb-1.5', isDark ? 'text-red-400/70' : 'text-red-500/70')}>
+                                    Ошибки гео
+                                </div>
+                                <div 
+                                    className={clsx('text-3xl font-black cursor-pointer hover:underline', autoRoutingStatus.skippedGeocoding > 0 ? (isDark ? 'text-red-400' : 'text-red-500') : (isDark ? 'text-gray-500' : 'text-gray-400'))}
+                                    onClick={() => {
+                                        const errors = autoRoutingStatus.geoErrors || [];
+                                        if (errors.length > 0) {
+                                            const msg = errors.map(e => `• ${e.orderNumber}: ${e.address}`).join('\n');
+                                            alert(`Неудалось определить координаты:\n\n${msg}`);
+                                        }
+                                    }}
+                                    title={autoRoutingStatus.geoErrors?.length ? 'Нажмите для деталей' : ''}
+                                >
+                                    {autoRoutingStatus.skippedGeocoding || 0}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
     );
 };

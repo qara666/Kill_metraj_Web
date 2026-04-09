@@ -1,5 +1,5 @@
 /**
- * Backend Address Utilities v23.0 (THE GOD-SPEED UPGRADE)
+ * Backend Address Utilities v24.0 (THE GOD-SPEED UPGRADE)
  * Ported from frontend for Turbo Robot autonomy.
  * Includes 130+ street renames and robust Slavic normalization.
  */
@@ -14,6 +14,7 @@ const KYIV_RENAMES = [
     ['Дружбы Народов', 'Николая Михновского'],
     ['Московська', 'Князів Острозьких'],
     ['пушкінська', 'Євгена Чикаленка'],
+    ['Пушкінська', 'Євгена Чикаленка'],
     ['Льва Толстого', 'Гетьмана Павла Скоропадського'],
     ['Маяковського', 'Червоної Калини'],
     ['бульвар Перова', 'проспект Воскресенський'],
@@ -66,7 +67,6 @@ const KYIV_RENAMES = [
     ['Воровського', 'Бульварно-Кудрявська'],
     ['Чкалова', 'Олеся Гончара'],
     ['Кіквідзе', 'Михайла Бойчука'],
-    ['Пушкінська', 'Євгена Чикаленка'],
     ['Мурманська', 'Академіка Кухаря'],
     ['Юрія Гагаріна', 'Леоніда Каденюка'],
     ['Соборності', 'Возз\'єднання'],
@@ -83,7 +83,23 @@ const KYIV_RENAMES = [
     ['Рудницького', 'Степана Рудницького']
 ];
 
-const ALL_RENAMES = [...KYIV_RENAMES]; // Extend with KHARKIV_RENAMES, etc. if needed
+const KHARKIV_RENAMES = [
+    ['Московський проспект', 'Героїв Харкова'],
+    ['Московский проспект', 'Героев Харькова'],
+    ['Мурманська', 'Академіка Кухаря'],
+    ['Гагаріна', 'Аерокосмічний'],
+    ['Гагарина', 'Аэрокосмический'],
+    ['Пушкінська', 'Григорія Сковороди'],
+    ['Пушкинская', 'Григория Сковороды'],
+    ['Плеханівська', 'Георгія Тарасенко'],
+    ['Плехановская', 'Георгия Тарасенко'],
+    ['Героїв Сталінграда', 'Байрона'],
+    ['Героев Сталинграда', 'Байрона'],
+    ['Маршала Бажанова', 'Чорноглазівська'],
+    ['Маршала Конева', 'Гончарівська'],
+];
+
+const ALL_RENAMES = [...KYIV_RENAMES, ...KHARKIV_RENAMES];
 
 /**
  * Strips technical noise like phone numbers, floors, apartment numbers.
@@ -92,15 +108,19 @@ function cleanAddress(address) {
     if (!address) return '';
     let cleaned = address.replace(/[?*ʼ`']/g, ' '); // v23.0: Enhanced quote stripping
     
+    // v24.0: Remove subway station hints if followed by a name (e.g. "м.Турбоатом")
+    // This is often noise for street-level geocoding
+    cleaned = cleaned.replace(/\bм\s*\.\s*[А-Яа-яA-Za-z-]+\b[, ]*/gu, '');
+
     // Stop at common separators
-    const stopWords = /\b(эт\.?|кв\.?|под\.?|пд\.?|п-д|квартира|этаж|подъезд|д\/ф|моб|д\.?ф\.?|эт|кв|под|домофон|тел\.?\b|мобільний|моб\.?)\b.*$/iu;
+    const stopWords = /\b(эт\.?|кв\.?|под\.?|пд\.?|п-д|квартира|этаж|подъезд|д\/ф|моб|д\.?ф\.?|эт|кв|под|домофон|тел\.?\b|мобільний|моб\.?|Україна|Украина)\b.*$/iu;
     cleaned = cleaned.replace(stopWords, '');
 
-    // Deep cleaning version 3.5:
+    // Deep cleaning version 3.6: more specific technical noise mid-string
     cleaned = cleaned.replace(/\b(д\/ф|моб|моб\.?|под\.?\d+|эт\.?\d+|кв\.?\d+|корп\.?\d+|офис\.?\d+|оф\.?\d+)\b/iu, '');
 
     // Cleanup whitespace and common prefixes
-    cleaned = cleaned.replace(/\s+/g, ' ').trim();
+    cleaned = cleaned.replace(/\s+/g, ' ').replace(/^[, ]+|[, ]+$/g, '').trim();
     return cleaned;
 }
 
@@ -110,7 +130,7 @@ function cleanAddress(address) {
 function slavicNormalize(s) {
     if (!s) return '';
     return s.toLowerCase()
-        .replace(/\b(вулиця|вул|улица|ул|проспект|просп|пр|бульвар|бул|б-р|провулок|пров|переулок|пер|шосе|шоссе|площа|площадь|пл|тупик|туп|дорога|дор)\.?\b/gi, '')
+        .replace(/\b(вулиця|вул|улица|ул|проспект|просп|пр-т|пр|бульвар|бул|б-р|провулок|пров|переулок|пер|шосе|шоссе|площа|площадь|пл|тупик|туп|дорога|дор)\.?\b/gi, '')
         .replace(/['"«»‘’“”""ʼ`]/g, '')
         .replace(/[\s,.-]+/g, ' ')
         .trim();
@@ -124,21 +144,29 @@ function generateVariants(raw, city = 'Київ', limit = 0) {
     const cleaned = cleanAddress(raw);
     const variants = new Set();
     
-    const base = city && !cleaned.toLowerCase().includes(city.toLowerCase()) 
-        ? `${city}, ${cleaned}` 
+    // Determine the likely city from raw address
+    let effectiveCity = city;
+    const rawLower = (raw || '').toLowerCase();
+    if (rawLower.includes('харьков') || rawLower.includes('харків')) effectiveCity = 'Харків';
+    else if (rawLower.includes('киев') || rawLower.includes('київ')) effectiveCity = 'Київ';
+    else if (rawLower.includes('одесса') || rawLower.includes('одеса')) effectiveCity = 'Одеса';
+    else if (rawLower.includes('днепр') || rawLower.includes('дніпро')) effectiveCity = 'Дніпро';
+
+    const base = effectiveCity && !cleaned.toLowerCase().includes(effectiveCity.toLowerCase()) 
+        ? `${effectiveCity}, ${cleaned}` 
         : cleaned;
         
     variants.add(base);
 
-    // 1. Rename check
-    for (const [oldName, newName] of KYIV_RENAMES) {
+    // 1. Rename check (All cities)
+    for (const [oldName, newName] of ALL_RENAMES) {
         if (cleaned.toLowerCase().includes(oldName.toLowerCase())) {
             const renamed = cleaned.replace(new RegExp(oldName, 'gi'), newName);
-            variants.add(city ? `${city}, ${renamed}` : renamed);
+            variants.add(effectiveCity ? `${effectiveCity}, ${renamed}` : renamed);
         }
         if (cleaned.toLowerCase().includes(newName.toLowerCase())) {
             const renamed = cleaned.replace(new RegExp(newName, 'gi'), oldName);
-            variants.add(city ? `${city}, ${renamed}` : renamed);
+            variants.add(effectiveCity ? `${effectiveCity}, ${renamed}` : renamed);
         }
         if (limit > 0 && variants.size >= limit) break;
     }
@@ -149,9 +177,14 @@ function generateVariants(raw, city = 'Київ', limit = 0) {
         if (districtHint && districtHint.length > 5 && !/^\d+$/.test(districtHint)) {
             // Only if it's not a technical hint
             if (!/^(д\/ф|моб|кв|под)/i.test(districtHint)) {
-                variants.add(city ? `${city}, ${districtHint}, ${cleaned}` : `${districtHint}, ${cleaned}`);
+                variants.add(effectiveCity ? `${effectiveCity}, ${districtHint}, ${cleaned}` : `${districtHint}, ${cleaned}`);
             }
         }
+    }
+
+    // 3. Fallback: just the cleaned string without city if still failing (some engines prefer less noise)
+    if (variants.size < (limit || 5)) {
+        variants.add(cleaned);
     }
 
     const result = Array.from(variants);
@@ -161,6 +194,6 @@ function generateVariants(raw, city = 'Київ', limit = 0) {
 module.exports = {
     cleanAddress,
     generateVariants,
-    STREET_RENAMES: KYIV_RENAMES,
+    STREET_RENAMES: ALL_RENAMES,
     slavicNormalize
 };

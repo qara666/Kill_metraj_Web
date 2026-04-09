@@ -1320,12 +1320,23 @@ app.post('/api/turbo/priority', authenticateToken, async (req, res) => {
         res.status(500).json({ success: false, error: 'Trigger failed: ' + triggerErr.message });
       }
     } else {
-      logger.error(`[API] turboCalculator not available (is null: ${turboCalculator === null}, has trigger: ${turboCalculator ? typeof turboCalculator.trigger === 'function' : 'N/A'})`);
-      res.status(500).json({ success: false, error: 'TurboCalculator not available' });
+      const why = !turboCalculator ? 'null_instance' : (typeof turboCalculator.trigger !== 'function' ? 'missing_trigger_fn' : 'unknown');
+      logger.error(`[API] turboCalculator not available (reason: ${why}, is null: ${turboCalculator === null}, type: ${typeof turboCalculator})`);
+      res.status(500).json({ 
+        success: false, 
+        error: 'TurboCalculator not available', 
+        details: why,
+        is_global_set: !!global.turboCalculator 
+      });
     }
   } catch (error) {
     logger.error('[API] Error triggering priority calculation:', error);
-    res.status(500).json({ success: false, error: 'Failed to trigger priority calculation', details: process.env.NODE_ENV === 'production' ? null : error.message });
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to trigger priority calculation', 
+      details: error.message,
+      stack: process.env.NODE_ENV === 'production' ? null : error.stack
+    });
   }
 });
 

@@ -17,13 +17,11 @@ export const GlobalDashboardFetcher: React.FC = () => {
     const { setExcelData, excelData } = useExcelData();
     const apiDateShift = useDashboardStore(s => s.apiDateShift);
     
-    // v5.204: Clear stale data if date changes
+    // v5.205: Aggressively clear stale data if date changes
     React.useEffect(() => {
-        if (!excelData || !excelData.orders || excelData.orders.length === 0) return;
-        
         const normalize = (d: string) => {
             if (!d) return '';
-            const part = d.split(' ')[0];
+            const part = d.split(' ')[0].split('T')[0];
             if (part.includes('-')) {
                 const [y, m, d_] = part.split('-');
                 return `${d_}.${m}.${y}`;
@@ -31,14 +29,35 @@ export const GlobalDashboardFetcher: React.FC = () => {
             return part; // Assuming DD.MM.YYYY
         };
         
-        const currentDataDate = normalize(excelData.creationDate || (excelData.orders?.[0]?.creationDate || ''));
         const targetDate = normalize(apiDateShift);
-        
-        if (currentDataDate && targetDate && currentDataDate !== targetDate) {
-            console.warn(`[GlobalDashboardFetcher] Date shift detected (${currentDataDate} -> ${targetDate}). Clearing state.`);
-            setExcelData(null);
+
+        // Check in-memory data
+        if (excelData && excelData.orders && excelData.orders.length > 0) {
+            const currentDataDate = normalize(excelData.creationDate || (excelData.orders?.[0]?.creationDate || ''));
+            if (currentDataDate && targetDate && currentDataDate !== targetDate) {
+                console.warn(`[GlobalDashboardFetcher] Date shift detected (${currentDataDate} -> ${targetDate}). Wiping EVERYTHING.`);
+                setExcelData(null);
+                localStorage.removeItem('km_dashboard_processed_data');
+                localStorage.removeItem('km_routes');
+                localStorage.removeItem('km_manual_overrides');
+            }
         }
-    }, [apiDateShift, setExcelData]);
+
+        // Also check localStorage directly on date shift to be safe
+        const localRaw = localStorage.getItem('km_dashboard_processed_data');
+        if (localRaw) {
+            try {
+                const localData = JSON.parse(localRaw);
+                const localDateRaw = localData.creationDate || (localData.orders?.[0]?.creationDate ? localData.orders[0].creationDate.split(' ')[0] : null);
+                const localDateNormalized = normalize(localDateRaw || '');
+                if (localDateNormalized && targetDate && localDateNormalized !== targetDate) {
+                    console.warn(`[GlobalDashboardFetcher] Local storage date mismatch detected during shift. Clearing.`);
+                    localStorage.removeItem('km_dashboard_processed_data');
+                    localStorage.removeItem('km_routes');
+                }
+            } catch (e) {}
+        }
+    }, [apiDateShift, setExcelData, excelData]);
     
     // v5.180: Validate and normalize backend data before setting
     const validateBackendData = React.useCallback((data: any) => {
@@ -171,6 +190,24 @@ export const GlobalDashboardFetcher: React.FC = () => {
                 const currentOrderCount = currentExcelData?.orders?.length || 0;
                 const newOrderCount = validatedData.orders?.length || 0;
                 const countChanged = currentOrderCount !== newOrderCount;
+
+                // v5.205: REJECT data if it doesn't match the current active date
+                const normalize = (d: string) => {
+                    if (!d) return '';
+                    const part = d.split(' ')[0].split('T')[0];
+                    if (part.includes('-')) {
+                        const [y, m, d_] = part.split('-');
+                        return `${d_}.${m}.${y}`;
+                    }
+                    return part;
+                };
+                const targetDate = normalize(apiDateShift);
+                const incomingDate = normalize(validatedData.creationDate || (validatedData.orders?.[0]?.creationDate || ''));
+                
+                if (targetDate && incomingDate && targetDate !== incomingDate) {
+                    console.log(`[GlobalDashboardFetcher] 🛑 Blocking incoming stale data for ${incomingDate} (Target: ${targetDate})`);
+                    return;
+                }
 
                 // v5.203: Check for routes only - we ALWAYS preserve local orders
                 const hasNewOrders = validatedData.orders && Array.isArray(validatedData.orders) && validatedData.orders.length > 0;
