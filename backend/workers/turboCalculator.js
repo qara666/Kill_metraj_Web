@@ -15,10 +15,65 @@ const {
     getOrderHash,
     haversineDistance
 } = require('./turboGroupingHelpers');
-const QuickLRU = require('quick-lru').default;
-const pRetry = require('p-retry').default;
-const pLimit = require('p-limit').default;
-const leven = require('leven').default;
+// v36.9: CommonJS-safe local implementations of essential utilities (zero-dependency)
+const pLimit = (concurrency) => {
+    const queue = [];
+    let activeCount = 0;
+    const next = () => {
+        activeCount--;
+        if (queue.length > 0) queue.shift()();
+    };
+    return (fn) => new Promise((resolve, reject) => {
+        const run = () => {
+            activeCount++;
+            fn().then(resolve, reject).finally(next);
+        };
+        if (activeCount < concurrency) run();
+        else queue.push(run);
+    });
+};
+
+const pRetry = async (fn, options = {}) => {
+    const { retries = 3, minTimeout = 1000 } = options;
+    for (let i = 0; i <= retries; i++) {
+        try { return await fn(); } catch (err) {
+            if (i === retries) throw err;
+            await new Promise(r => setTimeout(r, minTimeout * Math.pow(2, i)));
+        }
+    }
+};
+
+const leven = (a, b) => {
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+    const matrix = [];
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) matrix[i][j] = matrix[i - 1][j - 1];
+            else matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1);
+        }
+    }
+    return matrix[b.length][a.length];
+};
+
+class SimpleLRU {
+    constructor({ maxSize }) { this.maxSize = maxSize; this.cache = new Map(); }
+    get(key) {
+        if (!this.cache.has(key)) return undefined;
+        const val = this.cache.get(key);
+        this.cache.delete(key);
+        this.cache.set(key, val);
+        return val;
+    }
+    set(key, val) {
+        if (this.cache.has(key)) this.cache.delete(key);
+        else if (this.cache.size >= this.maxSize) this.cache.delete(this.cache.keys().next().value);
+        this.cache.set(key, val);
+    }
+    has(key) { return this.cache.has(key); }
+}
 
 /**
  * v5.164: Robust date normalization to YYYY-MM-DD
@@ -62,8 +117,8 @@ class OrderCalculator {
         // Settings
         this.osrmUrl = process.env.YAPIKO_OSRM_URL || process.env.OSRM_URL || 'http://116.204.153.171:5050';
 
-        // v23.1: Persistent Geocache
-        this.geocache = new QuickLRU({ maxSize: 5000, maxAge: 24 * 60 * 60 * 1000 }); // 5000 entries, 24h TTL
+        // v23.1: Persistent Geocache (Zero-dependency LRU)
+        this.geocache = new SimpleLRU({ maxSize: 5000, maxAge: 24 * 60 * 60 * 1000 });
         this.addressUtils = require('../src/utils/addressUtils');
 
         // v5.172: KML Zone Spatial Grid Index for O(1) lookup
@@ -471,6 +526,7 @@ class OrderCalculator {
     }
 
     async start(io = null) {
+        this.io = io || this.io;
         if (this.isRunning) return;
         // v5.185: INTITIALIZING
         this.isRunning = true;
@@ -1215,23 +1271,27 @@ class OrderCalculator {
                     const CHUNK_SIZE = 20;
                     for (let i = 0; i < totalToGeo; i += CHUNK_SIZE) {
                         const chunk = trulyNeedsGeo.slice(i, i + CHUNK_SIZE);
-                        await Promise.all(chunk.map(async o => {
+                        await Promise.all(chunk.map(async (o) => {
                             try {
-                                const cacheKey2 = (o.address || o.addressGeo || '').toLowerCase().trim();
-                                if (this.geocache.has(cacheKey2)) {
-                                    const cached = this.geocache.get(cacheKey2);
-                                    if (cached) o.coords = { lat: cached.latitude, lng: cached.longitude };
-                                    return;
-                                }
-                                // v6.11 FIX: Pass expectedZone to batch geocoder so KML validation fires here too
+                                const cacheKey2 = cleanAddress(o.address || o.addressGeo || '').toLowerCase();
+                                const isRetry = !!o.geocoding_attempted;
                                 const expectedZone0 = String(o.deliveryZone || o.kmlZone || o.sector || o.zone || '').trim();
-                                const coords = await this.getRobustGeocode(o.address || o.addressGeo, cityBias, expectedZone0 || null, allKmlZones);
+                                
+                                const coords = await this.getRobustGeocode(
+                                    o.address || o.addressGeo, 
+                                    cityBias, 
+                                    expectedZone0 || null, 
+                                    allKmlZones, 
+                                    isRetry
+                                );
+
                                 if (coords) {
                                     o.coords = { lat: coords.latitude, lng: coords.longitude };
                                     this.geocache.set(cacheKey2, coords);
                                 } else {
                                     this.geocache.set(cacheKey2, null);
-                                    // v6.9: Track failed geocode - add to geoErrors
+                                    o.geocoding_attempted = true;
+                                    
                                     const orderNum = o.orderNumber || o.id || 'unknown';
                                     stats.geoErrors.push({
                                         orderNumber: orderNum,
@@ -1600,13 +1660,22 @@ class OrderCalculator {
 
                                     // Pass extracted delivery zone down for strict KML bounding validation
                                     const expectedZone = String(o.deliveryZone || o.kmlZone || o.sector || o.zone || '').trim();
-                                    const coords = await this.getRobustGeocode(o.address || o.addressGeo, cityBias, expectedZone, allKmlZones);
+                                    const isRetry = !!o.geocoding_attempted;
+                                    
+                                    const coords = await this.getRobustGeocode(
+                                        o.address || o.addressGeo, 
+                                        cityBias, 
+                                        expectedZone, 
+                                        allKmlZones, 
+                                        isRetry
+                                    );
 
                                     if (coords) {
                                         o.coords = { lat: coords.latitude, lng: coords.longitude };
                                         this.geocache.set(cacheKey2, coords);
                                     } else {
                                         this.geocache.set(cacheKey2, null);
+                                        o.geocoding_attempted = true;
                                     }
                                 } catch (err) {
                                     // ignore
@@ -2145,7 +2214,7 @@ class OrderCalculator {
     }
 
 
-    async getRobustGeocode(address, city = 'Київ', expectedZoneName = null, allZones = []) {
+    async getRobustGeocode(address, city = 'Київ', expectedZoneName = null, allZones = [], deepRecovery = false) {
         if (!address) return null;
 
         const GeoCache = this.getModel('GeoCache');
@@ -2159,8 +2228,6 @@ class OrderCalculator {
         if (expectedZoneName) {
             targetZoneName = expectedZoneName.replace(/FO\/KML:\s*/i, '').trim();
         }
-
-        const KmlService = require('../src/services/KmlService');
 
         // v5.172: Use spatial grid index for fast validation + multi-zone fallback
         const validateCandidate = (lat, lng) => {
@@ -2334,7 +2401,6 @@ class OrderCalculator {
         };
 
         // v36.7: Google is strictly forbidden per user request. Use OSM-based providers only.
-        const primaryQuery = cleaned + ', ' + city;
         const primaryProviders = ['photon', 'komoot', 'nominatim'];
 
         // v5.180: Retry wrapper with exponential backoff
@@ -2345,91 +2411,65 @@ class OrderCalculator {
                 maxTimeout: 3000,
                 factor: 2,
                 onFailedAttempt: error => {
-                    logger.warn(`[TurboCalculator] 🔄 ${provider} attempt ${error.attemptNumber} failed: ${error.message}`);
+                    // logger.warn(`[TurboCalculator] 🔄 ${provider} attempt ${error.attemptNumber} failed: ${error.message}`);
                 }
             });
         };
 
-        try {
-            const result = await Promise.any(
-                primaryProviders.map(p => tryGeocodeWithRetry(primaryQuery, p, 5000))
-            );
-            await cacheResult(result, result.provider);
-            // v5.180: Store in LRU cache
-            this.geocache.set(normalized, { latitude: result.latitude, longitude: result.longitude });
-            return result;
-        } catch (e) {
-            // All primary providers failed — try fallback strategies
-        }
+        // v5.186: NEW BROAD-SPECTRUM GEOCODING v2.0
+        // Instead of one query, we try the prioritized variants from our addressUtils
+        const apiVariants = generateVariants(address, city, 5); 
+        
+        // v6.13: Multi-stage logic: if deepRecovery is false, try ONLY the first (cleanest) variant.
+        // This stops massive API floods for fresh divisions.
+        const variantsToTry = deepRecovery ? apiVariants : [apiVariants[0]];
+        logger.info(`[TurboCalculator] 🧭 Geocoding "${address}" with ${variantsToTry.length} variants (deep: ${deepRecovery})...`);
 
-        logger.info(`[TurboCalculator] 🔄 Primary geocoding failed for "${address}", trying fallback strategies...`);
-
-        // v5.170: Fallback strategies — also parallel
-        const fallbackStrategies = [];
-
-        // Strategy 1: Remove house number
-        const noHouse = cleaned.replace(/\b\d+[а-яА-Яa-zA-ZіІєЄґґ]*(?:[\/\-]\d*)?\b/g, '').trim();
-        if (noHouse && noHouse !== cleaned) {
-            fallbackStrategies.push({ query: noHouse + ', ' + city, strategy: 'no-house' });
-        }
-
-        // Strategy 2: Simplified address
-        const simplified = cleaned
-            .replace(/(?:под\.?|подъезд|п)\s*\d+/gi, '')
-            .replace(/(?:кв\.?|квартира)\s*\d+/gi, '')
-            .replace(/(?:эт\.?|этаж)\s*\d+/gi, '')
-            .replace(/(?:оф\.?|офис)\s*\w+/gi, '')
-            .replace(/д\/ф\s*\w*/gi, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-        if (simplified && simplified !== cleaned) {
-            fallbackStrategies.push({ query: simplified + ', ' + city, strategy: 'simplified' });
-        }
-
-        // Strategy 3: Just city + street name
-        const streetMatch = cleaned.match(/((?:вул\.?|просп\.?|пр-т|пров\.?|пер\.?|бульвар)\s*[\w\s'-]+)/i);
-        if (streetMatch) {
-            const cityMatch = cleaned.match(/(Київ|Киев|Дніпро|Одеса|Харків|Львів)/i);
-            const minimalQuery = cityMatch ? `${cityMatch[1]}, ${streetMatch[1]}` : streetMatch[1];
-            fallbackStrategies.push({ query: minimalQuery, strategy: 'street-only' });
-        }
-
-        // Strategy 4: Deep Recovery - Everything before the first comma (often the pure street + house)
-        const beforeComma = cleaned.split(',')[0].trim();
-        // Remove common fast-food comments that might be before the comma
-        const cleanedBeforeComma = beforeComma.replace(/(?:кв|квартира|под|подъезд|эт|этаж|п|оф|офис)\s*\d*.*/gi, '').trim();
-        if (cleanedBeforeComma && cleanedBeforeComma !== cleaned && cleanedBeforeComma !== simplified) {
-            fallbackStrategies.push({ query: cleanedBeforeComma + ', ' + city, strategy: 'before-comma' });
-        }
-
-        // Strategy 5: Deep Recovery - First two words + first number (e.g. "Леся курбаса 5")
-        const words = cleaned.split(/[\s,]+/);
-        const textWords = words.filter(w => /[a-zA-Zа-яА-ЯіІєЄїЇ]/.test(w) && w.length > 2 && !/^(вул|просп|пр-т|пров|пер|бульвар)$/i.test(w)).slice(0, 2).join(' ');
-        const firstNumMatch = cleaned.match(/\b\d+[а-яА-Яa-zA-ZіІєЄїЇ]{0,2}\b/);
-        const firstNum = firstNumMatch ? firstNumMatch[0] : '';
-        const desperateQuery = `${textWords} ${firstNum}, ${city}`.trim();
-        if (textWords && desperateQuery !== cleaned && desperateQuery !== (cleanedBeforeComma + ', ' + city)) {
-            fallbackStrategies.push({ query: desperateQuery, strategy: 'desperate-text-num' });
-        }
-
-        // Strategy 6: Deep Recovery - Relaxed search using just the first significant word and city (e.g., "Соборная, Киев")
-        const firstLongWord = words.find(w => /[a-zA-Zа-яА-ЯіІєЄїЇ]/.test(w) && w.length > 4);
-        if (firstLongWord) {
-            fallbackStrategies.push({ query: `${firstLongWord}, ${city}`, strategy: 'first-long-word' });
-        }
-
-
-        for (const fb of fallbackStrategies) {
-            logger.info(`[TurboCalculator]   Strategy ${fb.strategy}: "${fb.query}"`);
+        for (let i = 0; i < variantsToTry.length; i++) {
+            const query = variantsToTry[i];
             try {
+                // Try current variant against all providers in parallel
                 const result = await Promise.any(
-                    primaryProviders.map(p => tryGeocode(fb.query, p, 4000))
+                    primaryProviders.map(p => tryGeocodeWithRetry(query, p, 5000))
                 );
-                logger.info(`[TurboCalculator]   ✅ Fallback success (${fb.strategy}) via ${result.provider}`);
-                await cacheResult(result, result.provider);
-                return result;
-            } catch (e) {
-                // This strategy failed, try next
+                
+                if (result) {
+                    logger.info(`[TurboCalculator]   ✅ Success for variant "${query}" via ${result.provider}`);
+                    await cacheResult(result, result.provider);
+                    this.geocache.set(normalized, { latitude: result.latitude, longitude: result.longitude });
+                    return result;
+                }
+            } catch (err) {
+                // This variant failed on all providers, try next one
+            }
+        }
+
+        // v6.12: LEGACY FALLBACK STRATEGIES (if all primary variants failed)
+        // Only run these if deepRecovery is active
+        if (deepRecovery) {
+            const fallbackStrategies = [];
+
+            // Strategy 1: Remove house number (if not already tried by generateVariants)
+            const noHouse = cleaned.replace(/\b\d+[а-яА-Яa-zA-ZіІєЄґґ]*(?:[\/\-]\d*)?\b/g, '').trim();
+            if (noHouse && !variantsToTry.includes(noHouse + ', ' + city)) {
+                fallbackStrategies.push({ query: noHouse + ', ' + city, strategy: 'no-house' });
+            }
+
+            // Strategy 2: Deep simplified (everything before commas/common comments)
+            const splitByComma = cleaned.split(',')[0].trim();
+            if (splitByComma && splitByComma.length > 5 && !variantsToTry.includes(splitByComma + ', ' + city)) {
+                 fallbackStrategies.push({ query: splitByComma + ', ' + city, strategy: 'before-comma' });
+            }
+
+            for (const fb of fallbackStrategies) {
+                try {
+                    const result = await Promise.any(
+                        primaryProviders.map(p => tryGeocode(fb.query, p, 4000))
+                    );
+                    logger.info(`[TurboCalculator]   ✅ Fallback success (${fb.strategy}) via ${result.provider}`);
+                    await cacheResult(result, result.provider);
+                    return result;
+                } catch (e) { }
             }
         }
 

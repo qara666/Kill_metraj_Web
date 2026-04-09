@@ -12,6 +12,7 @@ import { useExcelData } from '../../contexts/ExcelDataContext'
 import { useTheme } from '../../contexts/ThemeContext'
 import { toast } from 'react-hot-toast'
 import { normalizeCourierName, getCourierName } from '../../utils/data/courierName'
+import { getStableOrderId } from '../../utils/data/orderId'
 import { localStorageUtils } from '../../utils/ui/localStorage'
 import { DashboardHeader } from '../shared/DashboardHeader'
 import { KpiAnalysisModal } from './KpiAnalysisModal'
@@ -60,7 +61,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
 
   const getCourierStats = useCallback((name: string) => {
     const norm = normalizeCourierName(name);
-    // Base data from uploaded excel/db
+    // Base data from uploaded excel/db (for historic mileage or static settings)
     const base = (excelData?.couriers || []).find((cur: any) => normalizeCourierName(cur.name) === norm);
     
     // Dynamic data from currently calculated routes (real-time sync)
@@ -69,8 +70,26 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
       return rc === norm && rc !== 'Не назначено';
     });
     
-    const routeOrders = routes.reduce((sum: number, r: any) => 
-      sum + (Number(r.ordersCount || r.orders_count || (r.orders ? r.orders.length : 0))), 0);
+    // v9.8: ACCURATE UNIQUE ORDER COUNTING (Sync with RouteManagement)
+    // Counts unique orders found in calculated routes
+    const uniqueRouteOrderIds = new Set<string>();
+    routes.forEach((r: any) => {
+      (r.orders || []).forEach((o: any) => {
+         const sid = getStableOrderId(o);
+         if (sid) uniqueRouteOrderIds.add(sid);
+      });
+    });
+    const ordersInRoutes = uniqueRouteOrderIds.size;
+
+    // Counts unique total orders assigned to this courier in FO data
+    const uniqueTotalOrderIds = new Set<string>();
+    (excelData?.orders || []).forEach((o: any) => {
+       if (normalizeCourierName(getCourierName(o.courier)) === norm) {
+         const sid = getStableOrderId(o);
+         if (sid) uniqueTotalOrderIds.add(sid);
+       }
+    });
+    const totalOrdersCount = uniqueTotalOrderIds.size;
 
     const baseKm = base?.distanceKm || 0;
 
@@ -89,8 +108,9 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     return {
       totalDistance: totalDist,
       history: base?.distanceHistory || [],
-      totalOrders: base?.calculatedOrders || (excelData?.orders || []).filter((o: any) => normalizeCourierName(getCourierName(o.courier)) === norm).length,
-      ordersInRoutes: routeOrders,
+      // v9.8: Always calculate from active orders to preserve sync with Routes tab
+      totalOrders: totalOrdersCount,
+      ordersInRoutes: ordersInRoutes,
       baseDistance: baseKm,
       robotDistance: robotPhysicalKm,
       bonusDistance: bonusKm,
@@ -102,6 +122,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     const n = normalizeCourierName(name);
     return (excelData?.routes || []).filter((r: any) => normalizeCourierName(getCourierName(r.courier || r.courier_id)) === n)
   }, [excelData])
+
 
   useEffect(() => {
     if (!excelData?.orders) return

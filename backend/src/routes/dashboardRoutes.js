@@ -220,34 +220,64 @@ router.post('/dashboard/fetch', async (req, res) => {
             const orderCount = payload.orders.length;
             const courierCount = payload.couriers.length;
 
-            // v31.2: PRESERVE robot-calculated distances from existing cache
+            // v5.208: RESTORE calculated routes and distances from DB
             try {
-                const oldCache = await sequelize.query(
-                    `SELECT payload FROM api_dashboard_cache WHERE division_id = :divId AND target_date = :targetDate LIMIT 1`,
+                // Determine target ISO date from targetDateISO in parent scope
+                // 1. Fetch routes from calculated_routes table
+                const dbRoutesRaw = await sequelize.query(
+                    `SELECT id, courier_id, total_distance, total_duration, orders_count, route_data, created_at
+                     FROM calculated_routes 
+                     WHERE (division_id = :divId OR division_id IS NULL) 
+                     AND route_data->>'target_date' = :targetDate`,
                     { replacements: { divId: String(deptId), targetDate: targetDateISO }, type: sequelize.QueryTypes.SELECT }
                 );
-                if (oldCache && oldCache.length > 0) {
-                    const oldPayload = typeof oldCache[0].payload === 'string' ? JSON.parse(oldCache[0].payload) : oldCache[0].payload;
-                    if (oldPayload && oldPayload.couriers && Array.isArray(oldPayload.couriers)) {
-                        const metricMap = new Map();
-                        oldPayload.couriers.forEach(c => {
-                            const name = (c.name || c.courierName || c.courier || '').toString().trim().toUpperCase();
-                            if (name && (c.distanceKm > 0 || c.calculatedOrders > 0)) {
-                                metricMap.set(name, { distanceKm: c.distanceKm, calculatedOrders: c.calculatedOrders });
-                            }
-                        });
+
+                if (dbRoutesRaw && dbRoutesRaw.length > 0) {
+                    const formattedRoutes = dbRoutesRaw.map(r => {
+                        const timeBlock = r.route_data?.deliveryWindow || r.route_data?.timeBlocks || r.route_data?.timeBlock || '';
+                        return {
+                            id: r.id,
+                            courier: r.courier_id,
+                            courier_id: r.courier_id,
+                            totalDistance: Math.round(parseFloat(r.total_distance || 0) * 100) / 100,
+                            totalDuration: Math.round((r.total_duration || 0) / 60),
+                            ordersCount: r.orders_count,
+                            timeBlocks: timeBlock || 'Без часу',
+                            targetDate: r.route_data?.target_date || targetDateISO,
+                            orders: r.route_data?.orders || [],
+                            geometry: r.route_data?.geometry || null,
+                            isOptimized: true,
+                            isTurboRoute: true,
+                            createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now()
+                        };
+                    });
+
+                    // Add formatted routes to payload
+                    payload.routes = formattedRoutes;
+
+                    // v5.208: Also update courier metrics to match these routes
+                    const courierStatusMap = new Map();
+                    formattedRoutes.forEach(fr => {
+                        const cId = String(fr.courier_id).toUpperCase();
+                        const existing = courierStatusMap.get(cId) || { dist: 0, orders: 0 };
+                        existing.dist += fr.totalDistance;
+                        existing.orders += (fr.orders?.length || fr.ordersCount || 0);
+                        courierStatusMap.set(cId, existing);
+                    });
+
+                    if (payload.couriers && Array.isArray(payload.couriers)) {
                         payload.couriers.forEach(c => {
-                            const name = (c.name || c.courierName || c.courier || '').toString().trim().toUpperCase();
-                            const metrics = metricMap.get(name);
-                            if (metrics) {
-                                c.distanceKm = metrics.distanceKm;
-                                c.calculatedOrders = metrics.calculatedOrders;
+                            const cName = (c.name || '').toUpperCase();
+                            const stats = courierStatusMap.get(cName);
+                            if (stats) {
+                                c.distanceKm = Number(stats.dist.toFixed(2));
+                                c.calculatedOrders = stats.orders;
                             }
                         });
                     }
                 }
             } catch (err) {
-                logger.warn(`[FETCH] Metric restoration failed: ${err.message}`);
+                logger.warn(`[FETCH] Route restoration failed: ${err.message}`);
             }
 
             // V2: UPSERT pattern matching the fetcher worker
