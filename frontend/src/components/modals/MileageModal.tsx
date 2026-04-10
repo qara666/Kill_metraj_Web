@@ -177,15 +177,24 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
   const ordersCount = route.orders?.length || 0;
   
   const metrics = useMemo(() => {
-    // v9.5: Sync with CourierManagement formula
-    const baseDist = route.isOptimized && route.totalDistance ? route.totalDistance : 0;
+    // SOTA v9.5: Handle both Live and History routes. History routes lose the explicit 'isOptimized' flag.
+    // If we have any distance > 0 or duration > 0, the route was successfully optimized.
+    const rawDist = Number(route.totalDistance || route.totalDistanceKm || route.route_data?.totalDistance || 0);
+    const rawDur = Number(route.totalDuration || route.totalDurationMin || route.route_data?.totalDuration || 0);
+    
+    // Explicit 'false' means it's actively calculating right now. Otherwise infer from data.
+    const isActuallyOptimized = route.isOptimized === true || (route.isOptimized !== false && (rawDist > 0 || rawDur > 0));
+
+    const baseDist = isActuallyOptimized ? rawDist : 0;
     // Each stop gets +0.5 km as per user requirement
     const stopsBonus = (route.orders?.length || 0) * 0.5;
     
     return {
       total: baseDist + stopsBonus,
       physical: baseDist,
-      bonus: stopsBonus
+      bonus: stopsBonus,
+      isOptimized: isActuallyOptimized,
+      duration: rawDur
     };
   }, [route]);
 
@@ -351,7 +360,7 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
             <div className="flex flex-col border-l pl-4 border-black/5 dark:border-white/5 group/metric">
               <span className="text-[8px] font-black uppercase tracking-[0.2em] opacity-30 group-hover/metric:opacity-60 transition-opacity">Время</span>
               <div className="pt-0.5">
-                {(!route.isOptimized && !route.totalDuration && !route.totalDurationMin) ? (
+                {(!metrics.isOptimized && !metrics.duration) ? (
                    <div className="flex items-center gap-1 text-[10px] font-black text-blue-500 animate-pulse">
                      <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
                      <span>РАСЧЁТ...</span>
@@ -359,7 +368,7 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
                 ) : (
                   <span className="text-sm font-black opacity-60">
                     {(() => {
-                      const val = route.totalDuration || route.totalDurationMin;
+                      const val = metrics.duration;
                       if (!val || val > 960) return '—';
                       return formatDuration(val);
                     })()}
@@ -369,7 +378,7 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
             </div>
           </div>
 
-          {!route.isOptimized && (
+          {!metrics.isOptimized && (
             <div className={clsx(
               "flex items-center gap-2 px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm",
               problematicOrders.length > 0 
