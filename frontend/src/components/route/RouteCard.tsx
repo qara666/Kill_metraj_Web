@@ -103,7 +103,15 @@ export const RouteCard: React.FC<RouteCardProps> = memo(({
               )}
             </div>
             <p className="text-[10px] font-black opacity-30 uppercase tracking-[0.2em]">
-              {route.orders.length} ЗАКАЗОВ В СПИСКЕ
+              {(() => {
+                const count = route.orders.length;
+                const lastDigit = count % 10;
+                const lastTwoDigits = count % 100;
+                if (lastTwoDigits >= 11 && lastTwoDigits <= 19) return `${count} заказов`;
+                if (lastDigit === 1) return `${count} заказ`;
+                if (lastDigit >= 2 && lastDigit <= 4) return `${count} заказа`;
+                return `${count} заказов`;
+              })()} в списке
             </p>
             {/* v33.10: Removed start/end points indicator as requested */}
           </div>

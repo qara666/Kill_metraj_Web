@@ -113,7 +113,6 @@ class SocketService {
         // v22.6: Live status updates for the Robot counter (0/126)
         this.socket.on('robot_status', (data) => {
             const now = Date.now();
-            // v36.2: Check if this update matches our current view to avoid "bleeding" stats from other branches
             try {
                 const store = useDashboardStore.getState();
                 const currentDivisionStr = String(store.divisionId || 'all');
@@ -122,9 +121,11 @@ class SocketService {
 
                 const isGlobalUpdate = (String(data.divisionId) === 'all');
                 
-                if (!isGlobalUpdate && currentDivisionStr !== 'all' && String(data.divisionId) !== currentDivisionStr) {
+                // v6.20: Allow aggregations for Admin but filter specific view for everyone else
+                if (currentDivisionStr !== 'all' && String(data.divisionId) !== currentDivisionStr) {
                     return;
                 }
+                
                 if (dashboardDate && robotDate && dashboardDate !== robotDate) {
                     return;
                 }
@@ -138,12 +139,20 @@ class SocketService {
                 
                 store.setAutoRoutingStatus({
                     ...data,
-                    isActive: forceActive || shouldBeActive || data.isActive
+                    isActive: forceActive || shouldBeActive || data.isActive,
+                    lastUpdate: now
                 });
 
-                if (data.processedCount === data.totalCount && data.totalCount > 0 && currentState.processedCount !== data.totalCount) {
-                    // v36.8: We NO LONGER reset the timer here. 
-                    // This allows the main 2-minute timer (from useDashboardWebSocket) to remain the single source of truth.
+                // v6.20: Admin aggregate logic
+                if (currentDivisionStr === 'all' && !isGlobalUpdate) {
+                     // Update current big bar if matches date
+                     if (dashboardDate === robotDate) {
+                        store.setAggregateRoutingStatus({
+                            date: data.date,
+                            isActive: true,
+                            lastUpdate: now
+                        });
+                     }
                 }
 
                 // v36.2: Dispatch ULTRA-FAST DOM event for UI components
@@ -151,6 +160,26 @@ class SocketService {
             } catch (e) {
                 // Ignore
             }
+        });
+
+        // v6.19: Handle aggregate global status for Admins
+        this.socket.on('global_robot_status', (data) => {
+            try {
+                const store = useDashboardStore.getState();
+                const currentDivisionStr = String(store.divisionId || 'all');
+                if (currentDivisionStr !== 'all') return; // Only relevant for Admin global view
+
+                const dashboardDate = normalizeDate(store.apiDateShift);
+                const robotDate = normalizeDate(data.date);
+                if (dashboardDate && robotDate && dashboardDate !== robotDate) return;
+
+                store.setAutoRoutingStatus({
+                    ...data,
+                    isActive: data.isActive
+                });
+                
+                window.dispatchEvent(new CustomEvent('km:robot:status', { detail: data }));
+            } catch (e) {}
         });
     }
 

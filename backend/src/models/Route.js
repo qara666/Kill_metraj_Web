@@ -46,7 +46,27 @@ const Route = sequelize.define('Route', {
 }, {
     tableName: 'calculated_routes',
     timestamps: true,
-    underscored: true
+    underscored: true,
+    indexes: [
+        {
+            unique: true,
+            name: 'idx_calculated_routes_upsert',
+            fields: [
+                'division_id',
+                'courier_id',
+                sequelize.literal("(route_data->>'time_block')")
+            ]
+        },
+        {
+            name: 'idx_calculated_routes_date',
+            using: 'gin',
+            fields: [sequelize.literal("(route_data->>'target_date')")]
+        },
+        {
+            name: 'idx_calculated_routes_timeblock',
+            fields: [sequelize.literal("(route_data->>'time_block')")]
+        }
+    ]
 });
 
 module.exports = Route;

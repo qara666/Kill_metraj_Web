@@ -273,6 +273,7 @@ function getAllOrderIds(order) {
     const ids = new Set();
     if (order.id) ids.add(String(order.id));
     if (order._id) ids.add(String(order._id));
+    if (order.orderNumber) ids.add(String(order.orderNumber));
     if (order.raw?.id) ids.add(String(order.raw.id));
     return ids;
 }
@@ -339,23 +340,9 @@ function formatTimeRange(startTime, endTime) {
 function groupOrdersByTimeWindow(orders, courierId, courierName) {
     if (!orders || orders.length === 0) return [];
 
-    // STEP 0: Deduplicate by stable ID (mirrors frontend STEP 0)
-    const seenIds = new Set();
-    const uniqueOrders = [];
-    for (const order of orders) {
-        // Use orderNumber as primary stable ID
-        // v6.3: Use unique ID first, then orderNumber (to support split orders)
-        const stableId = String(order.id || order._id || order.orderNumber || '');
-        if (!stableId) {
-            uniqueOrders.push(order); // no ID — keep
-        } else if (!seenIds.has(stableId)) {
-            seenIds.add(stableId);
-            uniqueOrders.push(order);
-        }
-    }
-    if (uniqueOrders.length < orders.length) {
-        logger.warn(`[turboGrouping] ⚠️ ${courierName}: removed ${orders.length - uniqueOrders.length} duplicates`);
-    }
+    // STEP 0: Preserving all orders for accurate load statistics
+    // v6.33: Removed deduplication to ensure multi-item orders count towards the numerator
+    const uniqueOrders = [...orders];
 
     const noTimeOrders = [];
     const ordersWithData = [];

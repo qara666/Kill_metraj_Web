@@ -108,7 +108,7 @@ export const useDashboardWebSocket = ({
             const response = await dashboardApiService.fetchDataForDate({
                 date: apiDate,
                 divisionId: deptId ? String(deptId) : 'all',
-                force: true,
+                force: isManual, // v38.2: Use cache for initial loads, force only for manual syncs
                 apiKey: key // Pass the user-specific API key
             });
 
@@ -209,11 +209,25 @@ export const useDashboardWebSocket = ({
     }, [setApiLastSyncTime, setApiNextSyncTime, setApiSyncStatus, setApiSyncError]);
 
     const handleDashboardUpdate = useCallback((update: any) => {
-        // v5.136: Robust Date Normalization for comparison
-        const normalize = (val: string) => (val || '').split(' ')[0].replace(/\./g, '-');
+        // v5.165: Robust Date Normalization (handles YYYY-MM-DD, DD-MM-YYYY, DD.MM.YYYY)
+        const normalize = (dateStr: string | null): string | null => {
+            if (!dateStr) return null;
+            const clean = dateStr.split(' ')[0].split('T')[0];
+            if (clean.includes('-')) {
+                const parts = clean.split('-');
+                if (parts[0].length === 4) return clean; // YYYY-MM-DD
+                if (parts[2].length === 4) return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD-MM-YYYY
+            }
+            if (clean.includes('.')) {
+                const parts = clean.split('.');
+                if (parts[2].length === 4) return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD.MM.YYYY
+            }
+            return clean;
+        };
+
         const currentStoreDate = normalize(stateRef.current.apiDateShift);
         
-        const updateRaw = update.data?.creationDate || (update.data?.orders?.[0]?.creationDate);
+        const updateRaw = update.data?.creationDate || (update.data?.orders?.[0]?.creationDate) || update.targetDate || update.date;
         const updateDateStr = normalize(updateRaw);
 
         if (currentStoreDate && updateDateStr && currentStoreDate !== updateDateStr) {

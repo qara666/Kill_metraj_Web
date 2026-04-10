@@ -31,23 +31,23 @@ router.get('/calculated', async (req, res) => {
             ];
         }
 
-        // v5.143: Filter by date if provided (route_data->>'target_date')
-        if (targetDate) {
+        // v5.150: Normalize targetDate to YYYY-MM-DD for database query consistency
+        let queryDate = targetDate;
+        if (queryDate && queryDate.includes('.')) {
+            const parts = queryDate.split('.');
+            if (parts.length === 3 && parts[2].length === 4) {
+                queryDate = `${parts[2]}-${parts[1]}-${parts[0]}`; // DD.MM.YYYY -> YYYY-MM-DD
+            }
+        } else if (!queryDate) {
+            queryDate = new Date().toISOString().split('T')[0];
+        }
+
+        if (queryDate) {
             whereClause[Op.and] = whereClause[Op.and] || [];
             whereClause[Op.and].push(
                 sequelize.where(
                     sequelize.literal("route_data->>'target_date'"),
-                    targetDate
-                )
-            );
-        } else {
-            // v5.156: If no date provided, fallback to today
-            const today = new Date().toISOString().split('T')[0];
-            whereClause[Op.and] = whereClause[Op.and] || [];
-            whereClause[Op.and].push(
-                sequelize.where(
-                    sequelize.literal("route_data->>'target_date'"),
-                    today
+                    queryDate
                 )
             );
         }

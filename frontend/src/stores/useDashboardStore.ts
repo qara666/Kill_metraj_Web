@@ -49,6 +49,25 @@ interface DashboardStoreState {
         currentCourier?: string | null; // v36.3: Track specific courier being processed
     };
 
+    // v6.19: Aggregate status for Admin multi-division view
+    aggregateRoutingStatus: {
+        isActive: boolean;
+        lastUpdate: number | null;
+        processedCount: number;
+        totalCount: number;
+        processedCouriers: number;
+        totalCouriers: number;
+        skippedGeocoding: number;
+        geoErrors: { orderNumber: string; address: string; courier: string }[];
+        skippedInRoutes: number;
+        skippedNoCourier: number;
+        skippedOther: number;
+        isBulkImport: boolean;
+        userStopped: boolean;
+        currentCourier?: string | null;
+    };
+    setAggregateRoutingStatus: (status: Partial<DashboardStoreState['autoRoutingStatus']>) => void;
+
     // Actions
     setApiKey: (apiKey: string) => void;
     setApiDepartmentId: (departmentId: number | null) => void;
@@ -139,6 +158,26 @@ export const useDashboardStore = create<DashboardStoreState>()(
             setAutoRoutingStatus: (status: Partial<DashboardStoreState['autoRoutingStatus']>) => set((state) => {
                 const newStatus = { ...state.autoRoutingStatus, ...status };
                 return { autoRoutingStatus: newStatus };
+            }),
+            aggregateRoutingStatus: {
+                isActive: false,
+                lastUpdate: null,
+                processedCount: 0,
+                totalCount: 0,
+                processedCouriers: 0,
+                totalCouriers: 0,
+                skippedGeocoding: 0,
+                geoErrors: [],
+                skippedInRoutes: 0,
+                skippedNoCourier: 0,
+                skippedOther: 0,
+                isBulkImport: false,
+                userStopped: false,
+                currentCourier: null,
+            },
+            setAggregateRoutingStatus: (status: Partial<DashboardStoreState['autoRoutingStatus']>) => set((state) => {
+                const newStatus = { ...state.aggregateRoutingStatus, ...status };
+                return { aggregateRoutingStatus: newStatus };
             }),
         }),
         {
