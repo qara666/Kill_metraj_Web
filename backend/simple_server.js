@@ -416,42 +416,62 @@ app.post('/api/upload/excel', authenticateToken, uploadLimiter, upload.single('f
     logger.info(`Результат: успех=${result.success}, заказов=${result.data?.orders?.length || 0}`);
 
     if (result.success) {
-      // Upsert into DashboardCache for background processor (TurboCalculator)
+      // v6.20: FINAL Robust Split logic
+      const divisionsToProcess = new Map();
+      const allOrders = result.data.orders || [];
+      const allCouriers = result.data.couriers || [];
+      const allAddresses = result.data.addresses || [];
+      
+      if (divisionId === 'all' && allOrders.length > 0) {
+          allOrders.forEach(o => {
+              // Try multiple division ID fields used across different FO versions
+              const dId = String(o.departmentId || o.division_id || o.divisionId || '1');
+              if (!divisionsToProcess.has(dId)) {
+                  divisionsToProcess.set(dId, { ...result.data, orders: [], couriers: [...allCouriers], addresses: [...allAddresses] });
+              }
+              divisionsToProcess.get(dId).orders.push(o);
+          });
+      } else {
+          divisionsToProcess.set(String(divisionId), result.data);
+      }
+
+      // v6.20: Persistence with Protection
       try {
         const crypto = require('crypto');
-        const dataHash = crypto.createHash('sha256').update(JSON.stringify(result.data)).digest('hex');
-        
-        let targetDate = new Date().toISOString().split('T')[0];
-        if (result.data?.orders?.length > 0) {
-            const sampleDateStr = result.data.orders[0].creationDate || result.data.orders[0]['Дата создания'];
+        for (const [dId, dData] of divisionsToProcess.entries()) {
+            if (!dData.orders || dData.orders.length === 0) continue;
+
+            const n = dData.orders.length;
+            let targetDate = new Date().toISOString().split('T')[0];
+            const o = dData.orders[0];
+            const sampleDateStr = o.creationDate || o['Дата создания'] || o.createdAt || o.date;
             if (sampleDateStr) {
                 const dateOnly = String(sampleDateStr).split(' ')[0];
-                if (dateOnly.includes('.')) {
-                    const parts = dateOnly.split('.');
-                    if (parts.length === 3) {
-                        // Assume DD.MM.YYYY
-                        targetDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
-                    }
-                } else if (dateOnly.includes('-')) {
-                    targetDate = dateOnly;
-                }
+                if (dateOnly.includes('.')) { const p = dateOnly.split('.'); if (p.length === 3) targetDate = `${p[2]}-${p[0+1]}-${p[0]}`; }
+                else if (dateOnly.includes('-')) { const p = dateOnly.split('-'); if (p[0].length === 4) targetDate = dateOnly; else if (p.length === 3) targetDate = `${p[2]}-${p[1]}-${p[0]}`; }
             }
+
+            // Sync check
+            const existing = await DashboardCache.findOne({ where: { division_id: dId, target_date: targetDate } });
+            if (existing && existing.order_count > n && n < (existing.order_count * 0.1)) {
+                logger.warn(`💾 [Protection] Skipping update for div ${dId} on ${targetDate}: current ${existing.order_count} > new ${n}`);
+                continue;
+            }
+
+            const dataHash = crypto.createHash('sha256').update(JSON.stringify(dData)).digest('hex');
+            await DashboardCache.upsert({
+                division_id: dId,
+                target_date: targetDate,
+                payload: dData,
+                data_hash: dataHash,
+                order_count: n,
+                courier_count: dData.couriers.length,
+                updated_at: new Date()
+            });
+            logger.info(`💾 Division Cache Split: Saved ${n} orders for division ${dId} on ${targetDate}`);
         }
-        
-        await DashboardCache.upsert({
-          division_id: divisionId === 'all' ? '1' : String(divisionId), // Default to '1' if admin uploads
-          target_date: targetDate,
-          payload: result.data,
-          data_hash: dataHash,
-          status_code: 200,
-          order_count: result.data.orders.length,
-          courier_count: result.data.couriers.length,
-          created_at: new Date(),
-          updated_at: new Date()
-        });
-        logger.info(`💾 Excel data saved to DashboardCache for division: ${divisionId}, date: ${targetDate}`);
-      } catch (cacheErr) {
-        logger.error(`⚠️ Failed to save Excel data to cache: ${cacheErr.message}`);
+      } catch (e) {
+        logger.error(`⚠️ Failed to save Excel to cache: ${e.message}`);
       }
 
       // Добавляем дополнительную информацию для предпросмотра
@@ -1288,11 +1308,13 @@ app.post('/api/turbo/priority', authenticateToken, async (req, res) => {
     let divisionId = req.body?.divisionId || user?.divisionId;
     const date = req.body?.date;
     const userId = user?.id || req.body?.userId;
+    const courierName = req.body?.courierName; // v37.1: Optional target courier
+
     if (!divisionId) {
       logger.warn('[API] divisionId missing - trying to get from user profile');
       return res.status(400).json({ success: false, error: 'divisionId is required. Please login again or provide divisionId in request body.' });
     }
-    logger.info(`[API] Priority trigger requested for division ${divisionId} by user ${userId}`);
+    logger.info(`[API] Priority trigger requested for division ${divisionId} by user ${userId}${courierName ? ` (Target: ${courierName})` : ''}`);
 
     // Save active division to DashboardState (per-user)
     const DashboardState = require('./src/models/DashboardState');
@@ -1308,13 +1330,20 @@ app.post('/api/turbo/priority', authenticateToken, async (req, res) => {
       lastSavedAt: new Date()
     });
 
-    logger.info(`[API] About to trigger turboCalculator with divisionId=${divisionId}, date=${date}`);
+    logger.info(`[API] About to trigger turboCalculator with divisionId=${divisionId}, date=${date}, courier=${courierName || 'ALL'}`);
     if (turboCalculator && typeof turboCalculator.trigger === 'function') {
       try {
         // v5.172: Manual trigger = FULL recalculation (forceFull=true)
-        turboCalculator.trigger(divisionId, date, userId, true);
-        logger.info(`[API] turboCalculator.trigger() called with forceFull=true`);
-        res.json({ success: true, message: `Priority calculation started for division ${divisionId}`, divisionId, date: date || new Date().toISOString().split('T')[0] });
+        // v37.1: Pass courierName to trigger
+        turboCalculator.trigger(divisionId, date, userId, true, courierName);
+        logger.info(`[API] turboCalculator.trigger() called with forceFull=true, courier=${courierName || 'ALL'}`);
+        res.json({ 
+            success: true, 
+            message: courierName ? `Recalculation started for ${courierName}` : `Priority calculation started for division ${divisionId}`, 
+            divisionId, 
+            date: date || new Date().toISOString().split('T')[0],
+            courier: courierName
+        });
       } catch (triggerErr) {
         logger.error('[API] turboCalculator.trigger() threw error:', triggerErr);
         res.status(500).json({ success: false, error: 'Trigger failed: ' + triggerErr.message });
@@ -1403,6 +1432,21 @@ app.post('/api/turbo/clear', authenticateToken, async (req, res) => {
       
       return res.json({ success: true, message: `Данные очищены! Удалено маршрутов: ${deleted}` });
     }
+
+  // v32: Force priority calculation
+    app.post('/api/turbo/priority', async (req, res) => {
+        const { divisionId, targetDate, courierName } = req.query;
+        if (!divisionId) return res.status(400).json({ error: 'divisionId required' });
+
+        logger.info(`[Server] ⚡ Manual priority calculation requested for division ${divisionId}, date ${targetDate}, courier ${courierName}`);
+        
+        if (global.turboCalculator) {
+            global.turboCalculator.trigger(divisionId, targetDate, null, false, courierName);
+            return res.json({ success: true, message: 'Priority calculation triggered' });
+        }
+        
+        res.status(503).json({ error: 'TurboCalculator not available' });
+    });
 
     res.status(500).json({ success: false, error: 'Route DB init skipped' });
   } catch (error) {

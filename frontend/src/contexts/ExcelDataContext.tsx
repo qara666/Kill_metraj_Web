@@ -141,8 +141,8 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
         };
 
         try {
-          // v5.202: FIRST try localStorage - it's always the most reliable source
-          const localRaw = localStorage.getItem('km_dashboard_processed_data');
+          // v5.205: bumped to v3 to clear bugged 1/18 states
+          const localRaw = localStorage.getItem('km_dashboard_processed_data_v3');
           let localData = null;
           if (localRaw) {
             try {
@@ -172,7 +172,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
 
             if (targetDate && localDateNormalized && targetDate !== localDateNormalized) {
                 console.warn(`[ExcelSync] Cache date mismatch (${localDateNormalized} vs ${targetDate}). Clearing stale cache.`);
-                localStorage.removeItem('km_dashboard_processed_data');
+                localStorage.removeItem('km_dashboard_processed_data_v3');
                 localData = null;
             }
           }
@@ -406,22 +406,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
         // v5.203: IMMEDIATE update for new routes - no debounce for new routes
         // Only debounce for updates to EXISTING routes (same route IDs)
         const now = Date.now();
-        const prevRouteIds = new Set((lastProcessedRouteIdsRef.current || []).map((r: any) => String(r.id)));
-        const newRoutes = routes.filter((r: any) => !prevRouteIds.has(String(r.id)));
-        
-        // If all routes are new, process immediately
-        // If some are existing, debounce those
-        const hasOnlyNewRoutes = newRoutes.length === routes.length;
-        
-        if (!hasOnlyNewRoutes && lastSocketRouteUpdateRef.current && now - lastSocketRouteUpdateRef.current < 300) {
-            console.log('[ExcelSync] Debouncing update to existing routes only');
-            return;
-        }
-        
-        if (newRoutes.length > 0) {
-            console.log(`[ExcelSync] 🚀 Processing ${newRoutes.length} NEW routes immediately!`);
-        }
-        
         lastSocketRouteUpdateRef.current = now;
         lastProcessedRouteIdsRef.current = routes;
         
@@ -466,17 +450,15 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
         
         // turbo:routes_update received
         setExcelDataState(prev => {
-          // v5.180: If no data loaded yet, create minimal state with routes
+          // v6.19: Initialize if empty, to hold incoming routes until orders arrive
           if (!prev) {
-            console.log('[ExcelSync] handleTurboRoutes: creating initial state from socket routes');
-            return {
-              orders: [],
-              couriers: eventCouriers || [],
-              paymentMethods: [],
-              routes: validatedRoutes,
-              errors: [],
-              summary: {}
-            } as any;
+              return {
+                  orders: [], couriers: [], addresses: [], paymentMethods: [],
+                  routes: validatedRoutes,
+                  statistics: { totalOrders: 0, totalAmount: 0, averageAmount: 0, deliveryCount: 0, pickupCount: 0 },
+                  summary: { orders: 0, couriers: 0, successfulGeocoding: 0, failedGeocoding: 0, totalRows: 0, paymentMethods: 0, errors: [] },
+                  lastModified: Date.now()
+              } as any;
           }
 
           // v5.160: Enrich route orders with master order data (address, courier, etc.)
@@ -486,14 +468,8 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
           const enrichedRoutes = validatedRoutes.map((route: any) => {
             if (!route.orders) return route;
 
-            // v5.160: Deduplicate orders within this route by orderNumber
-            const seenOrderNumbers = new Set<string>();
-            const dedupedOrders = route.orders.filter((o: any) => {
-              const key = String(o.orderNumber || o.id || '');
-              if (!key || seenOrderNumbers.has(key)) return false;
-              seenOrderNumbers.add(key);
-              return true;
-            });
+            // v5.160: Keep ALL orders for accurate load statistics
+            const dedupedOrders = route.orders || [];
 
             // v5.160: Enrich each order with master data (address, courier, etc.)
             const enrichedOrders = dedupedOrders.map((order: any) => {
@@ -654,7 +630,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
         const routesNoGeo = (excelDataRef.current.routes || []).map((r: any) => ({ ...r, geometry: undefined }));
         const fullData = { ...excelDataRef.current, orders: orders, routes: routesNoGeo };
         fullData.lastModified = Date.now();
-        localStorageUtils.setData('km_dashboard_processed_data', fullData);
+        localStorageUtils.setData('km_dashboard_processed_data_v3', fullData);
       }
     } catch (e) {
       console.warn('Manual overrides save failed:', e);
@@ -705,7 +681,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
           routes: routesNoGeo, 
           lastModified: Date.now() 
         };
-        localStorageUtils.setData('km_dashboard_processed_data', dataToSave);
+        localStorageUtils.setData('km_dashboard_processed_data_v3', dataToSave);
         // Auto-saved (optimized)
       } catch (e) {
         console.warn('[ExcelSync] Failed to auto-save dashboard data:', e);
@@ -727,7 +703,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       });
     } else {
       setExcelDataState(null);
-      localStorage.removeItem('km_dashboard_processed_data');
+      localStorage.removeItem('km_dashboard_processed_data_v3');
     }
   }, [protectData]);
 
@@ -756,7 +732,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     }
 
     setExcelDataState(null)
-    localStorage.removeItem('km_dashboard_processed_data')
+    localStorage.removeItem('km_dashboard_processed_data_v3')
 
     if (!options?.skipServerWipe) {
       const token = localStorage.getItem('km_access_token');

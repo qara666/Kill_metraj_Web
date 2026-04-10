@@ -206,6 +206,15 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
     return hours > 0 ? `${hours}ч ${mins}мин` : `${mins}мин`;
   };
 
+  const pluralizeOrders = (count: number) => {
+    const lastDigit = count % 10;
+    const lastTwoDigits = count % 100;
+    if (lastTwoDigits >= 11 && lastTwoDigits <= 19) return `${count} заказов`;
+    if (lastDigit === 1) return `${count} заказ`;
+    if (lastDigit >= 2 && lastDigit <= 4) return `${count} заказа`;
+    return `${count} заказов`;
+  };
+
   const routeTitle = useMemo(() => {
     if (!route.orders || route.orders.length === 0) return `Маршрут #${index + 1}`;
     const numbers = route.orders.map((o: any) => o.orderNumber).filter(Boolean);
@@ -240,7 +249,7 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
                 <h4 className="font-black text-[15px] leading-tight break-all">{routeTitle}</h4>
                 <ChevronDownIcon className={clsx("w-5 h-5 opacity-40 transition-transform duration-300", isExpanded ? "rotate-180" : "")} />
               </div>
-              <p className="text-xs font-bold opacity-40 uppercase tracking-widest mt-0.5">{ordersCount} заказов</p>
+              <p className="text-xs font-bold opacity-40 uppercase tracking-widest mt-0.5">{pluralizeOrders(ordersCount)}</p>
             </div>
           </div>
           
@@ -319,31 +328,55 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
         )}
 
         <div className={clsx(
-          "px-6 py-4 rounded-b-[2rem] flex flex-wrap gap-4 items-center justify-between",
-          isDark ? "bg-white/[0.02]" : "bg-slate-50/50"
+          "px-6 py-4 rounded-b-[2rem] flex flex-wrap gap-4 items-center justify-between transition-all",
+          isDark ? "bg-white/[0.04] backdrop-blur-md" : "bg-slate-50/80 backdrop-blur-sm"
         )}>
-          <div className="grid grid-cols-3 gap-6 min-w-[240px]">
-            <div className="flex flex-col">
-              <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">Итого</span>
+          <div className="grid grid-cols-3 gap-6 min-w-[280px]">
+            <div className="flex flex-col group/metric">
+              <span className="text-[8px] font-black uppercase tracking-[0.2em] opacity-30 group-hover/metric:opacity-60 transition-opacity">Итого</span>
               <span className="text-sm font-black text-blue-500">{metrics.total.toFixed(1)} км</span>
             </div>
-            <div className="flex flex-col border-l pl-4 border-black/5 dark:border-white/5">
-              <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">Пробег + Доп</span>
-              <span className="text-sm font-black opacity-60">
-                {metrics.physical.toFixed(1)} <span className="text-[10px] text-blue-400">+{metrics.bonus.toFixed(1)}</span>
-              </span>
+
+            <div className="flex flex-col border-l pl-4 border-black/5 dark:border-white/5 group/metric">
+              <span className="text-[8px] font-black uppercase tracking-[0.2em] opacity-30 group-hover/metric:opacity-60 transition-opacity">Пробег + Доп</span>
+              <div className="flex items-center gap-1.5 pt-0.5">
+                <span className="text-sm font-black opacity-60">{metrics.physical.toFixed(1)}</span>
+                <span className="text-[10px] text-blue-400 font-black">+{metrics.bonus.toFixed(1)}</span>
+                {metrics.physical === 0 && metrics.bonus > 0 && (
+                   <span className="ml-1 px-1.5 py-0.5 rounded-[4px] bg-blue-500/10 text-blue-400 text-[6px] font-black uppercase whitespace-nowrap">Bonus</span>
+                )}
+              </div>
             </div>
-            <div className="flex flex-col border-l pl-4 border-black/5 dark:border-white/5">
-              <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">Время</span>
-              <span className="text-sm font-black opacity-60">{route.totalDuration ? formatDuration(route.totalDuration) : '—'}</span>
+
+            <div className="flex flex-col border-l pl-4 border-black/5 dark:border-white/5 group/metric">
+              <span className="text-[8px] font-black uppercase tracking-[0.2em] opacity-30 group-hover/metric:opacity-60 transition-opacity">Время</span>
+              <div className="pt-0.5">
+                {(!route.isOptimized && !route.totalDuration && !route.totalDurationMin) ? (
+                   <div className="flex items-center gap-1 text-[10px] font-black text-blue-500 animate-pulse">
+                     <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                     <span>РАСЧЁТ...</span>
+                   </div>
+                ) : (
+                  <span className="text-sm font-black opacity-60">
+                    {(() => {
+                      const val = route.totalDuration || route.totalDurationMin;
+                      if (!val || val > 960) return '—';
+                      return formatDuration(val);
+                    })()}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
+
           {!route.isOptimized && (
             <div className={clsx(
-              "flex items-center gap-2 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest",
-              problematicOrders.length > 0 ? (isDark ? "bg-red-500/20 text-red-500" : "bg-red-50 text-red-600") : (isDark ? "bg-blue-500/10 text-blue-500" : "bg-blue-50 text-blue-700")
+              "flex items-center gap-2 px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm",
+              problematicOrders.length > 0 
+                ? (isDark ? "bg-red-500/20 text-red-400 border border-red-500/30" : "bg-red-50 text-red-600 border border-red-100") 
+                : (isDark ? "bg-blue-500/10 text-blue-400 border border-blue-500/20" : "bg-blue-50 text-blue-600 border border-blue-100")
             )}>
-              <ExclamationCircleIcon className="w-3.5 h-3.5" />
+              <div className={clsx("w-2 h-2 rounded-full", problematicOrders.length > 0 ? "bg-red-500" : "bg-blue-500 animate-pulse")} />
               {problematicOrders.length > 0 ? 'ТРЕБУЕТ УТОЧНЕНИЯ' : 'ОБРАБОТКА...'}
             </div>
           )}

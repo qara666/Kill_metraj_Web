@@ -24,8 +24,15 @@ export const DashboardApiSection: React.FC = () => {
     const setApiLastVisitDate = useDashboardStore(s => s.setApiLastVisitDate);
     const triggerApiManualSync = useDashboardStore(s => s.triggerApiManualSync);
     const setAutoRoutingStatus = useDashboardStore(s => s.setAutoRoutingStatus);
-    // v5.202: Get autoRoutingStatus early to use in useEffect
-    const autoRoutingStatus = useDashboardStore(s => s.autoRoutingStatus);
+
+    // v6.19: Determine if we are in Admin Global View
+    const divisionId = useDashboardStore(s => s.divisionId);
+    const isGlobalView = divisionId === 'all' || !divisionId || divisionId === '1';
+
+    // v6.19: Aggregate status for Admin multi-division view
+    const autoRoutingStatusObj = useDashboardStore(s => s.autoRoutingStatus);
+    const aggregateStatusObj = useDashboardStore(s => s.aggregateRoutingStatus);
+    const autoRoutingStatus = isGlobalView ? aggregateStatusObj : autoRoutingStatusObj;
 
     const { clearExcelData } = useExcelData();
     const { user } = useAuth();

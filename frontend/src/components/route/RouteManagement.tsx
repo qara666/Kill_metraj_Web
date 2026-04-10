@@ -198,6 +198,27 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     base = cleanAddress(base).trim();
     if (!base) return base;
 
+  // v32: Targeted recalculation listener
+  useEffect(() => {
+    const handleTargetedCalc = async (e: any) => {
+      const { courierName } = e.detail || {};
+      if (!courierName) return;
+
+      console.info(`[RouteManagement] 🚀 Forcing targeted recalculation for: ${courierName}`);
+      try {
+        // Call the priority calculation API with courierName
+        await fetch(`/api/turbo/priority?divisionId=${selectedDivision?.id}&targetDate=${targetDate}&courierName=${encodeURIComponent(courierName)}`, {
+          method: 'POST'
+        });
+      } catch (err) {
+        console.error('[RouteManagement] Targeted calculation trigger failed:', err);
+      }
+    };
+
+    window.addEventListener('km-force-auto-routing' as any, handleTargetedCalc);
+    return () => window.removeEventListener('km-force-auto-routing' as any, handleTargetedCalc);
+  }, [selectedDivision, targetDate]);
+
     const lower = base.toLowerCase()
     const { city, country } = getSelectedCity()
     if (!city) return base
