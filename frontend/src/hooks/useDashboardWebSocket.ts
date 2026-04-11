@@ -157,8 +157,36 @@ export const useDashboardWebSocket = ({
 
                 setApiLastSyncTime(Date.now());
                 
-                // v36.9: Synchronize Robot status timestamp with the main API sync
-                if (autoRoutingStatus.isActive) {
+                // v7.2: Synchronize Robot status stats so that archival dates visually mirror loaded data immediately
+                const routableOrders = ordersRaw.filter((o: any) => {
+                    const c = String(o.courier || o.courierName || o.courierId || '').toUpperCase().trim();
+                    const s = String(o.status || o.deliveryStatus || '').toLowerCase().trim();
+                    if (!c || c === 'НЕ НАЗНАЧЕНО' || c === 'UNASSIGNED' || c === 'ПО' || c === 'ID:0') return false;
+                    if (s.includes('отказ') || s.includes('отменен') || s.includes('відмова')) return false;
+                    if (s.includes('самовывоз') || s.includes('на месте')) return false;
+                    return true;
+                });
+                
+                const routesArr = response.data.routes || [];
+                const ordersInRoutes = routesArr.reduce((acc: number, r: any) => {
+                    const cnt = parseInt(r.ordersCount || r.orders_count) || r.orders?.length || 0;
+                    return acc + cnt;
+                }, 0);
+                
+                // Keep `dateStr` comparison robust
+                const isHistorical = apiDate !== dashboardApiService.convertDateToApiFormat(formatDateForApi(new Date()));
+
+                // Complete state reset matching the fetched archive
+                if (isHistorical || !autoRoutingStatus.isActive) {
+                    setAutoRoutingStatus({
+                        totalCount: routableOrders.length,
+                        processedCount: isHistorical ? routableOrders.length : Math.max(autoRoutingStatus.processedCount || 0, ordersInRoutes),
+                        skippedInRoutes: ordersInRoutes,
+                        skippedGeocoding: response.data.statistics?.geoErrors?.length || 0,
+                        isActive: isHistorical ? false : autoRoutingStatus.isActive,
+                        lastUpdate: Date.now()
+                    });
+                } else if (autoRoutingStatus.isActive) {
                     setAutoRoutingStatus({ lastUpdate: Date.now() });
                 }
 

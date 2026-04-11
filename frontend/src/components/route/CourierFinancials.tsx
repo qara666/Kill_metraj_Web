@@ -522,8 +522,14 @@ export function CourierFinancials({
 
     const cashToCollect = useMemo(() => {
         return completedCashOrders.reduce((sum, o: any) => {
-            const val = (o.effectiveAmount !== undefined && o.effectiveAmount !== null) ? o.effectiveAmount : o.amount;
-            return sum + (parseFloat(val) || 0);
+            const amount = parseFloat(o.amount || o.totalAmount || 0);
+            const changeAmount = parseFloat(o.changeAmount || 0);
+            const expectedReturn = changeAmount > amount ? changeAmount : amount;
+            
+            // If order was refused (effectiveAmount is 0), then expected return is 0
+            const val = (o.effectiveAmount === 0 || o.effectiveAmount === '0') ? 0 : expectedReturn;
+            
+            return sum + val;
         }, 0);
     }, [completedCashOrders]);
 
