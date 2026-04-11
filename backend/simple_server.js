@@ -65,7 +65,6 @@ const io = new Server(httpServer, {
 global.divisionStatusStore = global.divisionStatusStore || {};
 let turboCalculator = null;
 let turboCalculatorReady = false; // v7.3: readiness flag for TurboCalculator initialization
-let turboCalculatorReady = false; // v7.3: Flag to track initialization completion
 
 // WebSocket authentication via handshake (JWT)
 io.use((socket, next) => {
@@ -126,7 +125,10 @@ const corsOptions = {
     const allowed = !origin || 
                    origin.startsWith('http://localhost') || 
                    origin.startsWith('http://127.0.0.1') || 
-                   origin === FRONTEND_URL;
+                   origin === FRONTEND_URL ||
+                   // Support alternate dev port (5174)
+                   origin.startsWith('http://localhost:5174') ||
+                   origin.startsWith('http://127.0.0.1:5174');
     
     if (allowed) {
       return callback(null, true);
@@ -151,6 +153,8 @@ const explicitAllow = (origin) => {
   return origin.startsWith('http://localhost') || 
          origin.startsWith('http://127.0.0.1') ||
          origin === FRONTEND_URL ||
+         origin.startsWith('http://localhost:5174') ||
+         origin.startsWith('http://127.0.0.1:5174') ||
          origin.endsWith('.onrender.com');
 };
 
