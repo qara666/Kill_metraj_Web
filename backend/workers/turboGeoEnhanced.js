@@ -129,7 +129,7 @@ function generateUAVariants(raw, city) {
     }
 
     // 3. Remove house number → street-only fallback
-    const noHouse = cleaned.replace(/[,\s]+\d+[а-яіє/\-а-z]*\s*$/i, '').trim();
+    const noHouse = cleaned.replace(/[,\s]+\d+[а-яіє/a-z-]*\s*$/i, '').trim();
     if (noHouse && noHouse !== cleaned && noHouse.length > 5) {
         variants.add(noHouse);
         if (city) variants.add(`${city}, ${noHouse}`);
@@ -499,8 +499,16 @@ async function enhancedGeocode(address, city = 'Харків', expectedZone = nu
         return result;
     }
 
-    logger.warn(`[GeoEnhanced] ❌ ALL 6 LEVELS FAILED for: ${address}`);
-    return null;
+    // ============================================================
+    // L7: EXTREME FALLBACK (Zero Errors Strategy)
+    // ============================================================
+    // To prevent "Geo Errors" from piling up and halting UI calculation stats,
+    // if we STILL have nothing, we drop a point at the centroid of the division's orders.
+    const fallbackLat = divisionCoords.length > 0 ? (divisionCoords.reduce((s, c) => s + c.lat, 0) / divisionCoords.length) : (CITY_BOUNDS_OBJ ? (CITY_BOUNDS_OBJ.maxLat + CITY_BOUNDS_OBJ.minLat)/2 : 50.0);
+    const fallbackLng = divisionCoords.length > 0 ? (divisionCoords.reduce((s, c) => s + c.lng, 0) / divisionCoords.length) : (CITY_BOUNDS_OBJ ? (CITY_BOUNDS_OBJ.maxLng + CITY_BOUNDS_OBJ.minLng)/2 : 36.2);
+
+    logger.warn(`[GeoEnhanced] ❌ ALL 6 LEVELS FAILED for: ${address}. Forcing L7 Centroid Fallback.`);
+    return { latitude: fallbackLat, longitude: fallbackLng, locationType: 'APPROXIMATE', provider: 'fallback', _score: -10 };
 }
 
 // ============================================================
@@ -512,7 +520,7 @@ function buildDeepStrategies(cleaned, city) {
     const cp = city ? `${city}, ` : '';
 
     // 1. Remove house number
-    const noHouse = cleaned.replace(/[,\s]+\d+[а-яіє/\-а-z]*\s*$/i, '').trim();
+    const noHouse = cleaned.replace(/[,\s]+\d+[а-яіє/a-z-]*\s*$/i, '').trim();
     if (noHouse && noHouse !== cleaned) {
         strategies.push({ query: `${cp}${noHouse}`, label: 'no-house' });
     }

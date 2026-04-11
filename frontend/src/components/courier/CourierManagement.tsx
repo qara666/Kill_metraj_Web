@@ -96,7 +96,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     // v9.7: REPLACEMENT logic to prevent double counting
     // The robot physical distance is a refined version of the base distance, NOT an addition to it.
     const robotPhysicalKm = routes.reduce((sum: number, r: any) => 
-      sum + ((r.isOptimized && Number(r.totalDistance) > 0) ? Number(r.totalDistance) : 0), 0);
+      sum + ((Number(r.totalDistance) > 0) ? Number(r.totalDistance) : 0), 0);
     
     const bonusKm = routes.reduce((sum: number, r: any) => 
       sum + (Number(r.ordersCount || r.orders_count || (r.orders ? r.orders.length : 0)) * 0.5), 0);
@@ -221,7 +221,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
         // v9.9: Also dispatch local event for compatibility
         window.dispatchEvent(new CustomEvent('km-force-auto-routing', { detail: { courierName: c.name } }));
       } else {
-        throw new Error(data.message || 'Ошибка запуска');
+        throw new Error(data.error || data.message || 'Ошибка запуска');
       }
     } catch (e: any) {
       console.error('[CourierManagement] Failed to trigger calculation:', e);

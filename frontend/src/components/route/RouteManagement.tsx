@@ -199,30 +199,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     base = cleanAddress(base).trim();
     if (!base) return base;
 
-  // v32: Targeted recalculation listener
-  useEffect(() => {
-    const handleTargetedCalc = async (e: any) => {
-      const { courierName } = e.detail || {};
-      if (!courierName) return;
 
-      console.info(`[RouteManagement] 🚀 Forcing targeted recalculation for: ${courierName}`);
-      try {
-        // Get division and date from store
-        const store = useDashboardStore.getState();
-        const divisionId = store.divisionId;
-        const targetDate = store.apiDateShift;
-        
-        await fetch(`/api/turbo/priority?divisionId=${divisionId}&targetDate=${targetDate}&courierName=${encodeURIComponent(courierName)}`, {
-          method: 'POST'
-        });
-      } catch (err) {
-        console.error('[RouteManagement] Targeted calculation trigger failed:', err);
-      }
-    };
-
-    window.addEventListener('km:targeted-recalc', handleTargetedCalc);
-    return () => window.removeEventListener('km:targeted-recalc', handleTargetedCalc);
-  }, []);
 
     const lower = base.toLowerCase()
     const { city, country } = getSelectedCity()
@@ -1550,40 +1527,61 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
      await calculateRouteDistance(route)
    }
 
-    // ─── Wire "ЗАПУСТИТЬ РАСЧЕТ" button from CourierCard ──────────────────────
+    // v32: Wire "ЗАПУСТИТЬ РАСЧЕТ" button to BACKEND Turbo Robot
+    // v37.2: Unified backend trigger for all manual calculation requests
     useEffect(() => {
       const handler = async (e: Event) => {
         const customEvent = e as CustomEvent;
         const targetCourierName = customEvent.detail?.courierName;
         
-        if (!excelData?.routes) return;
-        
-        let routes: Route[] = excelData.routes;
-        
-        // v5.202: Filter by courier if specified
-        if (targetCourierName) {
-          routes = routes.filter(r => 
-            normalizeCourierName(r.courier) === normalizeCourierName(targetCourierName)
-          );
-        }
-        
-        const incomplete = routes.filter(r =>
-          !r.totalDistance ||
-          r.totalDistance === 0 ||
-          r.orders.some((o: any) => !o.coords?.lat)
-        );
+        // Get division and date from store
+        const store = useDashboardStore.getState();
+        const divisionId = store.divisionId;
+        const targetDate = store.apiDateShift;
 
-        if (incomplete.length === 0) {
-          toast.success('Все маршруты рассчитаны');
-          return;
+        console.info(`[RouteManagement] 🚀 Redirecting calculation request to BACKEND Turbo Robot${targetCourierName ? ` for ${targetCourierName}` : ''}`);
+        
+        try {
+          toast.loading(targetCourierName ? `Синхронизация ${targetCourierName}...` : 'Запуск Турбо-Робота...', { id: 'turbo-trigger' });
+          
+          const token = localStorage.getItem('km_access_token');
+          const apiBase = window.location.origin.includes('localhost') ? 'http://localhost:5001' : '';
+          const res = await fetch(`${apiBase}/api/turbo/priority`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              divisionId,
+              date: targetDate,
+              force: true,
+              ...(targetCourierName ? { courierName: targetCourierName } : {})
+            })
+          });
+          
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || err.message || `Server error ${res.status}`);
+          }
+          
+          toast.success(targetCourierName ? `Расчет для ${targetCourierName} запущен` : 'Турбо-Робот запущен', { id: 'turbo-trigger' });
+        } catch (err: any) {
+          console.error('[RouteManagement] Backend trigger failed:', err);
+          toast.error(`Ошибка запуска: ${err.message}`, { id: 'turbo-trigger' });
+          
+          // Fallback to local calculation if backend is down/busy
+          if (targetCourierName && excelData?.routes) {
+            const routes = excelData.routes.filter((r: Route) => 
+              normalizeCourierName(r.courier) === normalizeCourierName(targetCourierName)
+            );
+            const incomplete = routes.filter((r: Route) => !r.totalDistance || r.totalDistance === 0);
+            if (incomplete.length > 0) {
+              toast('⚠️ Переход на локальный расчет (fallback)...');
+              for (const route of incomplete) await recalculateRoute(route);
+            }
+          }
         }
-
-        toast(`🔄 Запускаю расчёт ${incomplete.length} маршрут(ов)...`);
-        for (const route of incomplete) {
-          await recalculateRoute(route);
-          await new Promise(r => setTimeout(r, 50)); // yield to UI
-        }
-        toast.success(`✅ Расчёт завершён`);
       };
 
       window.addEventListener('km-force-auto-routing', handler);

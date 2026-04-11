@@ -87,8 +87,9 @@ export const DashboardApiSection: React.FC = () => {
     // Auto-trigger calculation for today on first load (no date change)
     React.useEffect(() => {
         const todayISO = format(new Date(), 'yyyy-MM-dd');
-        // If current view is today, perform an automatic sync to refresh data
-        if (selectedDate?.toString?.() === todayISO || selectedDateISO === todayISO) {
+        // If current view is today and NO data is loaded, perform an automatic sync
+        const hasDataLoad = excelData && excelData.orders && excelData.orders.length > 0;
+        if (!hasDataLoad && (selectedDate?.toString?.() === todayISO || selectedDateISO === todayISO)) {
             // Delay slightly to ensure the UI has mounted
             const t = setTimeout(() => {
                 handleSync();

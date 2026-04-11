@@ -1367,12 +1367,12 @@ app.get('/api/turbo/status_today', authenticateToken, (req, res) => {
 // Priority trigger endpoint for turboCalculator
 app.post('/api/turbo/priority', authenticateToken, async (req, res) => {
   try {
-    // First try to get from request body, then fall back to user profile
+    // v37.1: Support both body and query params, and multiple date field names
     const user = req.user;
-    let divisionId = req.body?.divisionId || user?.divisionId;
-    const date = req.body?.date;
-    const userId = user?.id || req.body?.userId;
-    const courierName = req.body?.courierName; // v37.1: Optional target courier
+    let divisionId = req.body?.divisionId || req.query?.divisionId || user?.divisionId;
+    const date = req.body?.date || req.query?.date || req.body?.targetDate || req.query?.targetDate;
+    const userId = user?.id || req.body?.userId || req.query?.userId;
+    const courierName = req.body?.courierName || req.query?.courierName; // v37.1: Optional target courier
 
     // v7.2: If divisionId is missing or empty from JWT, look it up from the DB
     if (!divisionId && userId) {
@@ -1437,7 +1437,7 @@ app.post('/api/turbo/priority', authenticateToken, async (req, res) => {
 
     const calculator = turboCalculator || global.turboCalculator;
     
-    // v7.3: Check if turboCalculator is ready (initialization complete)
+    // v7.3: Allow manual triggers even during initialization if module is available
     if (!turboCalculatorReady && !calculator) {
       // Fallback: try to serve today's data from local cache if available
       try {
@@ -1447,18 +1447,20 @@ app.post('/api/turbo/priority', authenticateToken, async (req, res) => {
           const { DashboardCache } = require('./src/models');
           const cached = await DashboardCache.findOne({ where: { division_id: divisionId, target_date: todayDate } });
           if (cached && cached.payload) {
-            logger.info('[API] Serving local today data from DashboardCache (fallback)');
-            return res.json({ success: true, data: cached.payload, date: todayDate, local: true });
+            logger.info('[API] Serving local today data from DashboardCache (init fallback)');
+            // v37.1: Return 200 with local:true so UI knows engine is warming up but data is here
+            return res.json({ success: true, data: cached.payload, date: todayDate, local: true, status: 'initializing' });
           }
         }
       } catch (fallbackErr) {
         logger.warn('[API] Local today data fetch fallback failed:', fallbackErr.message);
       }
-      logger.error('[API] turboCalculator not available (reason: initialization_in_progress, is_ready: ' + turboCalculatorReady + ')');
+      
+      logger.error('[API] turboCalculator not available (initialization_in_progress)');
       return res.status(503).json({ 
         success: false, 
-        error: 'TurboCalculator is initializing, please retry in a few seconds',
-        is_ready: turboCalculatorReady 
+        error: 'TurboCalculator is initializing, please retry in 10-15 seconds',
+        is_ready: false 
       });
     }
     
@@ -1564,20 +1566,6 @@ app.post('/api/turbo/clear', authenticateToken, async (req, res) => {
       return res.json({ success: true, message: `Данные очищены! Удалено маршрутов: ${deleted}` });
     }
 
-  // v32: Force priority calculation
-    app.post('/api/turbo/priority', async (req, res) => {
-        const { divisionId, targetDate, courierName } = req.query;
-        if (!divisionId) return res.status(400).json({ error: 'divisionId required' });
-
-        logger.info(`[Server] ⚡ Manual priority calculation requested for division ${divisionId}, date ${targetDate}, courier ${courierName}`);
-        
-        if (global.turboCalculator) {
-            global.turboCalculator.trigger(divisionId, targetDate, null, false, courierName);
-            return res.json({ success: true, message: 'Priority calculation triggered' });
-        }
-        
-        res.status(503).json({ error: 'TurboCalculator not available' });
-    });
 
     res.status(500).json({ success: false, error: 'Route DB init skipped' });
   } catch (error) {

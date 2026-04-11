@@ -16,7 +16,7 @@ const {
     haversineDistance
 } = require('./turboGroupingHelpers');
 const { batchEnhancedGeocode, checkAnomalyDistance, deepCleanAddress } = require('./turboGeoEnhanced');
-const { enhanceAllOrderCoords, buildZoneCentroids, calculateTotalRouteDistance } = require('./turboCoordValidator');
+const { enhanceAllOrderCoords, buildZoneCentroids, calculateTotalRouteDistance, haversineKm } = require('./turboCoordValidator');
 
 // v36.9: CommonJS-safe local implementations of essential utilities (zero-dependency)
 const pLimit = (concurrency) => {
@@ -1209,10 +1209,38 @@ class OrderCalculator {
 
 
             logger.info(`[TurboCalculator] 🔄 ${cacheKey}: ${existingHash === dataHash ? 'forceFull=true bypassed hash skip' : 'Data changed'} — triggering recalculation`);
-            // v7.2: Reset forceFull flag so future ticks run normally (only bypass once per manual trigger)
+            // v37.2: CRITICAL — Extract flags BEFORE clearing divState so they are available in the courier loop
+            const forceFull = !!divState?.forceFull;
+            const targetCourier = divState?.targetCourier || null;
+            
+            // v7.2: Reset flags so future ticks run normally (only bypass once per manual trigger)
             if (divState?.forceFull) {
                 divState.forceFull = false;
                 logger.info(`[TurboCalculator] 🔓 ${cache.division_id}: Cleared forceFull flag after manual trigger`);
+            }
+            if (divState?.targetCourier) {
+                divState.targetCourier = null;
+                logger.info(`[TurboCalculator] 🎯 ${cache.division_id}: Cleared targetCourier flag (was: ${targetCourier})`);
+            }
+
+            // v37.9: Explicitly delete TARGET COURIER'S old routes BEFORE recalculation to prevent dupes!
+            if (targetCourier && Route) {
+                try {
+                    const normTarget = normalizeCourierName(targetCourier);
+                    const delCount = await Route.destroy({
+                        where: {
+                            division_id: cache.division_id,
+                            courier_id: normTarget,
+                            [Op.and]: sequelize.where(
+                                sequelize.literal("route_data->>'target_date'"),
+                                targetDateNorm || cache.target_date
+                            )
+                        }
+                    });
+                    logger.info(`[TurboCalculator] 🗑️ Wiped ${delCount} old routes for targetCourier ${normTarget} to prevent dupes!`);
+                } catch(e) {
+                    logger.warn(`[TurboCalculator] Failed to wipe old routes for ${targetCourier}: ${e.message}`);
+                }
             }
 
             const existingRoutedOrderNumbers = new Set();
@@ -1351,10 +1379,10 @@ class OrderCalculator {
             logger.info(`[TurboCalculator] 📍 Coord resolver: validated ${enhanced} orders (${fromGPS} GPS, ${fromGeocoder} DB, ${lowConfidence} low-conf)`);
 
             // v7.8: Immediate emission after geocoding to update map and initial counters
-            if (this.io && priorityDivisionId && enhanced > 0) {
+            if (this.io && enhanced > 0) {
                 this.io.emit('dashboard:update', {
-                    divisionId: priorityDivisionId,
-                    date: dateISO,
+                    divisionId: cache.division_id,
+                    date: targetDateNorm || cache.target_date,
                     source: 'turbo_calculator_geocoding',
                     data: { ...data, orders: data.orders }
                 });
@@ -1388,15 +1416,21 @@ class OrderCalculator {
             };
 
             // v7.1 SOTA: ENHANCED GEOCODING — 6-level cascaded engine with Ukrainian specialization
-            const GeoCache = this.getModel('GeoCache');
+            // NOTE: GeoCache already declared above at line ~1314 — reuse it here
             
             // v7.5: Geocode ALL orders (assigned and unassigned) so they have coordinates immediately
-            const allOrdersNeedsGeo = data.orders.filter(o => {
+            let allOrdersNeedsGeo = data.orders.filter(o => {
                 const s = String(o.status || o.deliveryStatus || '').toLowerCase().trim();
                 if (s.includes('отказ') || s.includes('отменен') || s.includes('відмова')) return false;
                 if (s.includes('самовывоз') || s.includes('на месте')) return false;
                 return !o.coords?.lat;
             });
+            
+            if (targetCourier) {
+                const normTarget = normalizeCourierName(targetCourier);
+                allOrdersNeedsGeo = allOrdersNeedsGeo.filter(o => normalizeCourierName(o.courier) === normTarget);
+                logger.info(`[TurboCalculator] 🎯 targetCourier override: Only geocoding ${allOrdersNeedsGeo.length} unassigned coordinates for ${targetCourier}`);
+            }
 
             if (allOrdersNeedsGeo.length > 0) {
                 const totalToGeo = allOrdersNeedsGeo.length;
@@ -1649,8 +1683,11 @@ class OrderCalculator {
                     logger.info(`[TurboCalculator] 🚚 [${windowKey}] Processing ${normName} with ${dedupedOrders.length} orders`);
 
                     // v5.195: INCREMENTAL ROUTING LOGIC - Keep block if existing calculation exists
+                    // v37.1: Bypass cache if forceFull is true OR this is the target courier
                     const blockSignature = getBlockSignature(dedupedOrders);
-                    if (existingRouteMap.has(blockSignature)) {
+                    const isTarget = targetCourier && (normalizeCourierName(normName) === normalizeCourierName(targetCourier));
+                    
+                    if (existingRouteMap.has(blockSignature) && !forceFull && !isTarget) {
                         const existingR = existingRouteMap.get(blockSignature);
                         matchedExistingRouteIds.add(existingR.id);
                         
@@ -1672,6 +1709,8 @@ class OrderCalculator {
                             timeBlock: existingR.route_data?.deliveryWindow || existingR.route_data?.timeBlocks,
                             startAddress: existingR.route_data?.startAddress,
                             endAddress: existingR.route_data?.endAddress,
+                            isOptimized: true, // v37.3: Critical for CourierManagement filtering
+                            isTurboRoute: true,
                             orders: (existingR.route_data?.orders || []).map(o => ({
                                 id: o.id,
                                 orderNumber: o.orderNumber,
@@ -1703,6 +1742,7 @@ class OrderCalculator {
                     stats.processedCount += dedupedOrders.length;
                     emitStatus();
 
+                    try {
                         // Use all valid orders (with coords OR a valid address for routing)
                         // Use deduplicated orders from this block
                         let validOrders = dedupedOrders.filter(o => {
@@ -1856,10 +1896,11 @@ class OrderCalculator {
                             if (validOrders.length === 1 && globalStartPoint) {
                                 const o1 = validOrders[0];
                                 if (o1.coords?.lat && o1.coords?.lng) {
-                                    const distToStart = this.haversineDistance(
+                                    // v37.3: Fix method call + unit (haversineDistance returns KM)
+                                    const distToStart = haversineDistance(
                                         globalStartPoint.lat, globalStartPoint.lng,
                                         o1.coords.lat, o1.coords.lng
-                                    ) / 1000;
+                                    );
                                     if (distToStart > 25) {
                                         logger.error(`[TurboCalculator] ❌ REJECTED: Order ${o1.orderNumber} is ${distToStart.toFixed(1)}km from hub — coordinates are wrong. Invalidating.`);
                                         const addrKey = (o1.address || o1.addressGeo || '').toLowerCase().trim();
@@ -2581,8 +2622,13 @@ class OrderCalculator {
 
         // Need at least 2 points for a route
         if (points.length < 2) {
-            logger.warn(`[TurboCalculator] ⚠️ Not enough points for route: ${points.length}`);
-            return null;
+            return {
+                distance: 0,
+                duration: 0,
+                geometry: '',
+                feasible: true,
+                engine: 'implicit'
+            };
         }
 
         const coordsStr = points.map(p => `${p.lng.toFixed(7)},${p.lat.toFixed(7)}`).join(';');
@@ -2591,9 +2637,9 @@ class OrderCalculator {
 
         // Only warn about huge base-to-base if using REAL (non-implicit) depot points
         if (effectiveStart && effectiveEnd && !effectiveStart.isImplicit && !effectiveEnd.isImplicit) {
-            const distHaversine = this.calculateDistance(effectiveStart, effectiveEnd);
-            if (distHaversine > 100000) { // Check > 100km
-                logger.warn(`[TurboCalculator] ⚠️ Base-to-Base distance is huge (${(distHaversine / 1000).toFixed(1)}km). Check settings!`);
+            const distHaversine = haversineKm(effectiveStart.lat, effectiveStart.lng, effectiveEnd.lat, effectiveEnd.lng);
+            if (distHaversine > 100) { // Check > 100km
+                logger.warn(`[TurboCalculator] ⚠️ Base-to-Base distance is huge (${distHaversine.toFixed(1)}km). Check settings!`);
             }
         }
 
