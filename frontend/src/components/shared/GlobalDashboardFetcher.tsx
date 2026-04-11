@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useExcelData } from '../../contexts/ExcelDataContext';
 import { useDashboardWebSocket } from '../../hooks/useDashboardWebSocket';
 import { useDashboardStore } from '../../stores/useDashboardStore';
+import { normalizeDateToIso } from '../../utils/data/dateUtils';
 import { normalizeCourierName } from '../../utils/data/courierName';
 
 /**
@@ -19,31 +20,35 @@ export const GlobalDashboardFetcher: React.FC = () => {
     
     // v5.205: Aggressively clear stale data if date changes
     React.useEffect(() => {
-        const normalize = (d: any): string => {
-            if (!d || typeof d !== 'string') return '';
-            try {
-                const part = d.split(' ')[0].split('T')[0];
-                if (part.includes('-')) {
-                    const [y, m, d_] = part.split('-');
-                    return `${d_}.${m}.${y}`;
-                }
-                return part;
-            } catch (e) {
-                return '';
-            }
-        };
-        
-        const targetDate = normalize(String(apiDateShift || ''));
+        const targetDate = normalizeDateToIso(apiDateShift);
+
+        // Local presence for target date
+        let localHasTargetDate = false;
+        const localRawTmp = localStorage.getItem('km_dashboard_processed_data');
+        if (localRawTmp) {
+          try {
+            const localDataTmp = JSON.parse(localRawTmp);
+            const localDateRaw = localDataTmp.creationDate || localDataTmp.orders?.[0]?.creationDate;
+            const localDateNormalized = normalizeDateToIso(localDateRaw);
+            if (localDateNormalized && localDateNormalized === targetDate) localHasTargetDate = true;
+          } catch {
+            // ignore parse errors
+          }
+        }
 
         // Check in-memory data
         if (excelData && excelData.orders && excelData.orders.length > 0) {
-            const currentDataDate = normalize(String(excelData.creationDate || (excelData.orders?.[0]?.creationDate || '')));
+            const currentDataDate = normalizeDateToIso(excelData.creationDate || excelData.orders?.[0]?.creationDate);
             if (currentDataDate && targetDate && currentDataDate !== targetDate) {
-                console.warn(`[GlobalDashboardFetcher] Date shift detected (${currentDataDate} -> ${targetDate}). Wiping EVERYTHING.`);
-                setExcelData(null);
-                localStorage.removeItem('km_dashboard_processed_data');
-                localStorage.removeItem('km_routes');
-                localStorage.removeItem('km_manual_overrides');
+                if (!localHasTargetDate) {
+                    console.warn(`[GlobalDashboardFetcher] Date shift detected (${currentDataDate} -> ${targetDate}). Wiping EVERYTHING.`);
+                    setExcelData(null);
+                    localStorage.removeItem('km_dashboard_processed_data');
+                    localStorage.removeItem('km_routes');
+                    localStorage.removeItem('km_manual_overrides');
+                } else {
+                    console.info('[GlobalDashboardFetcher] Local data exists for target date; skipping wipe to preserve data.');
+                }
             }
         }
 
@@ -52,12 +57,16 @@ export const GlobalDashboardFetcher: React.FC = () => {
         if (localRaw) {
             try {
                 const localData = JSON.parse(localRaw);
-                const localDateRaw = localData.creationDate || (localData.orders?.[0]?.creationDate ? String(localData.orders[0].creationDate).split(' ')[0] : null);
-                const localDateNormalized = normalize(String(localDateRaw || ''));
+                const localDateRaw = localData.creationDate || localData.orders?.[0]?.creationDate;
+                const localDateNormalized = normalizeDateToIso(localDateRaw);
                 if (localDateNormalized && targetDate && localDateNormalized !== targetDate) {
-                    console.warn(`[GlobalDashboardFetcher] Local storage date mismatch detected during shift. Clearing.`);
-                    localStorage.removeItem('km_dashboard_processed_data');
-                    localStorage.removeItem('km_routes');
+                    if (!localHasTargetDate) {
+                        console.warn(`[GlobalDashboardFetcher] Local storage date mismatch detected during shift. Clearing.`);
+                        localStorage.removeItem('km_dashboard_processed_data');
+                        localStorage.removeItem('km_routes');
+                    } else {
+                        console.info('[GlobalDashboardFetcher] Local data exists for target date; skipping wipe to preserve data.');
+                    }
                 }
             } catch (e) {}
         }
@@ -197,22 +206,8 @@ export const GlobalDashboardFetcher: React.FC = () => {
 
                 // v5.205: REJECT data if it doesn't match the current active date (only for archive dates)
                 // For TODAY - always accept data as we want fresh sync
-                const normalize = (d: any): string => {
-                    if (!d || typeof d !== 'string') return '';
-                    try {
-                        const dateStr = String(d);
-                        const part = dateStr.split(' ')[0].split('T')[0];
-                        if (part.includes('-')) {
-                            const [y, m, d_] = part.split('-');
-                            return `${d_}.${m}.${y}`;
-                        }
-                        return part;
-                    } catch (e) {
-                        return '';
-                    }
-                };
-                const targetDate = normalize(String(apiDateShift || ''));
-                const incomingDate = normalize(String(validatedData.creationDate || (validatedData.orders?.[0]?.creationDate || '')));
+                const targetDate = normalizeDateToIso(apiDateShift);
+                const incomingDate = normalizeDateToIso(validatedData.creationDate || validatedData.orders?.[0]?.creationDate);
                 const todayISO = new Date().toISOString().split('T')[0];
                 const isToday = apiDateShift === todayISO;
                 

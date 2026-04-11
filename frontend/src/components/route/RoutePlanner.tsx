@@ -148,8 +148,14 @@ export const RoutePlanner: React.FC = () => {
 
   // Расчет расстояния между адресами
   const calculateDistance = (address1: string, address2: string): number => {
-    const words1 = address1.toLowerCase().split(' ')
-    const words2 = address2.toLowerCase().split(' ')
+    if (!address1 || !address2) return 5.0 // Fallback penalty for missing address
+    
+    // v9.92: Robust lowerCase + split
+    const str1 = String(address1).toLowerCase()
+    const str2 = String(address2).toLowerCase()
+    
+    const words1 = str1.split(' ')
+    const words2 = str2.split(' ')
     
     let commonWords = 0
     for (const word of words1) {

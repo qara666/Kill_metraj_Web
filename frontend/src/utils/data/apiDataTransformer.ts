@@ -16,7 +16,11 @@ export const transformDashboardData = (
     const getOnlyDate = (s: any): string => {
         if (!s || typeof s !== 'string') return '';
         try {
-            return s.split(' ')[0].split('T')[0];
+            // v9.92: Robust split with null check
+            const parts = s.split(' ');
+            if (!parts || parts.length === 0) return '';
+            const datePart = parts[0];
+            return datePart.includes('T') ? datePart.split('T')[0] : datePart;
         } catch (e) {
             return '';
         }

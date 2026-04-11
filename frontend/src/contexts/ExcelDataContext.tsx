@@ -559,18 +559,8 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
      if (!current || !next) return next;
      
      // v5.204: Check dates. If dates differ (e.g. user changed date), NEVER merge/protect.
-     const normalize = (d: string | null | undefined) => {
-         if (!d) return null;
-         const part = d.split(' ')[0].split('T')[0];
-         if (part.includes('-')) {
-             const [y, m, d_] = part.split('-');
-             return `${d_}.${m}.${y}`;
-         }
-         return part;
-     };
-
-     const currentDate = normalize(current.creationDate || (current.orders?.[0]?.creationDate));
-     const nextDate = normalize(next.creationDate || (next.orders?.[0]?.creationDate));
+     const currentDate = normalizeDateToIso(current.creationDate || current.orders?.[0]?.creationDate);
+     const nextDate = normalizeDateToIso(next.creationDate || next.orders?.[0]?.creationDate);
      
      if (currentDate && nextDate && currentDate !== nextDate) {
          console.log(`[ExcelSync] Date mismatch (${currentDate} vs ${nextDate}), bypassing data protection.`);

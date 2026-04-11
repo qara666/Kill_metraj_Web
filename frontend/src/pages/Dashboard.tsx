@@ -14,6 +14,7 @@ import { useDashboardStore } from '../stores/useDashboardStore'
 import { clsx } from 'clsx'
 import { HomeIcon } from '@heroicons/react/24/outline'
 import { DashboardHeader } from '../components/shared/DashboardHeader'
+import { useDashboardWebSocket } from '../hooks/useDashboardWebSocket'
 import * as api from '../services/api'
 import { mergeExcelData } from '../utils/data/dataMerging'
 const ExcelDebugLogs = lazy(() => import('../components/excel/ExcelDebugLogs').then(module => ({ default: module.ExcelDebugLogs })))
@@ -32,6 +33,14 @@ export const Dashboard: React.FC = () => {
   const [showDataPreview, setShowDataPreview] = useState(false)
   const [previewData, setPreviewData] = useState<any>(null)
   const queryClient = useQueryClient()
+
+  // v7.0: Use WebSocket hook for real-time updates and manual sync trigger support
+  useDashboardWebSocket({
+    onDataLoaded: (data) => {
+      setExcelData(data);
+    },
+    enabled: true
+  });
 
   const log = useCallback((message: string) => {
     const entry = `${new Date().toLocaleTimeString()} — ${message}`
@@ -83,6 +92,9 @@ export const Dashboard: React.FC = () => {
       setDivisionId(user.divisionId);
     }
   }, [user?.divisionId, setDivisionId]);
+  
+  const autoRoutingStatus = useDashboardStore(s => s.autoRoutingStatus);
+  const isCalcActive = autoRoutingStatus.isActive && (Date.now() - (autoRoutingStatus.lastUpdate || 0) < 120000);
 
 
   const processFileMutation = useMutation({
@@ -318,12 +330,14 @@ export const Dashboard: React.FC = () => {
         statusMetrics={[
           {
             label: "ВІДКРИТИХ ЗАКАЗІВ",
-            value: excelData?.orders?.length || 0,
+            value: (isCalcActive && autoRoutingStatus.totalCount) ? autoRoutingStatus.totalCount : (excelData?.orders?.length || 0),
             color: "bg-blue-500"
           },
           {
             label: "РАССЧИТАНО",
-            value: excelData?.routes?.length || 0,
+            value: isCalcActive 
+              ? Math.max(excelData?.routes?.length || 0, autoRoutingStatus.processedCount || 0)
+              : (excelData?.routes?.length || 0),
             color: "bg-[#10b981]"
           }
         ]}

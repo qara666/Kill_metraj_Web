@@ -1441,8 +1441,30 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
   }, [updateExcelData, selectedCourier])
 
   // Функция для сохранения измененного адреса
-  const handleAddressUpdate = (newAddress: string, coords?: { lat: number; lng: number }) => {
+  const handleAddressUpdate = async (newAddress: string, coords?: { lat: number; lng: number }) => {
     if (!editingOrder) return
+
+    // v9.9: Persist manual fix to backend GeoCache ALWAYS
+    if (coords) {
+      try {
+        const token = localStorage.getItem('km_access_token');
+        await fetch('/api/geocache/manual-correct', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            address: newAddress,
+            lat: coords.lat,
+            lng: coords.lng
+          })
+        });
+        console.log('[RouteManagement] Manual geocode persisted to backend');
+      } catch (e) {
+        console.warn('[RouteManagement] Failed to persist manual geocode:', e);
+      }
+    }
 
     const affectedRouteIds: string[] = [];
 

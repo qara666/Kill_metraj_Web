@@ -18,6 +18,7 @@ import { ProcessedExcelData } from '../types';
 import { logger } from '../utils/ui/logger';
 import { formatDateForApi, transformDashboardData } from '../utils/data/apiDataTransformer';
 import { dashboardApiService } from '../utils/api/dashboardApiService';
+import { normalizeDateToIso } from '../utils/data/dateUtils';
 
 interface DashboardWebSocketParams {
     onDataLoaded: (data: ProcessedExcelData) => void;
@@ -257,29 +258,10 @@ export const useDashboardWebSocket = ({
 
     const handleDashboardUpdate = useCallback((update: any) => {
         // v5.165: Robust Date Normalization (handles YYYY-MM-DD, DD-MM-YYYY, DD.MM.YYYY)
-        const normalize = (dateStr: any): string | null => {
-            if (!dateStr || typeof dateStr !== 'string') return null;
-            try {
-                const clean = dateStr.split(' ')[0].split('T')[0];
-                if (clean.includes('-')) {
-                    const parts = clean.split('-');
-                    if (parts[0].length === 4) return clean; // YYYY-MM-DD
-                    if (parts[2].length === 4) return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD-MM-YYYY
-                }
-                if (clean.includes('.')) {
-                    const parts = clean.split('.');
-                    if (parts[2].length === 4) return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD.MM.YYYY
-                }
-                return clean;
-            } catch (e) {
-                return null;
-            }
-        };
-
-        const currentStoreDate = normalize(stateRef.current.apiDateShift);
+        const currentStoreDate = normalizeDateToIso(stateRef.current.apiDateShift);
         
         const updateRaw = update.data?.creationDate || (update.data?.orders?.[0]?.creationDate) || update.targetDate || update.date;
-        const updateDateStr = normalize(String(updateRaw || ''));
+        const updateDateStr = normalizeDateToIso(updateRaw);
 
         if (currentStoreDate && updateDateStr && currentStoreDate !== updateDateStr) {
             logger.info(`Ignoring WebSocket update for mismatched date: Update is ${updateDateStr}, UI is ${currentStoreDate}`);

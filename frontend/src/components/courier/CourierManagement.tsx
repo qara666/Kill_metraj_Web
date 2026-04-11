@@ -193,9 +193,41 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     })
   }, [updateExcelData])
 
-  const handleRecalculateUnit = useCallback((c: any) => {
-    window.dispatchEvent(new CustomEvent('km-force-auto-routing', { detail: { courierName: c.name } }));
-  }, [])
+  const handleRecalculateUnit = useCallback(async (c: any) => {
+    try {
+      const token = localStorage.getItem('km_access_token');
+      const divId = excelData?.divisionId || 'all';
+      const todayIso = new Date().toISOString().split('T')[0];
+      
+      toast(`🚀 Запуск Turbo Калькулятора для ${c.name}...`, { icon: '⚡' });
+      
+      const res = await fetch(`${window.location.origin.includes('localhost') ? 'http://localhost:5001' : ''}/api/turbo/priority`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+            divisionId: divId,
+            date: todayIso,
+            force: true,
+            courierName: c.name // v9.9: Match backend param name
+        })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        toast.success(`Розрахунок запущено для ${c.name}`);
+        // v9.9: Also dispatch local event for compatibility
+        window.dispatchEvent(new CustomEvent('km-force-auto-routing', { detail: { courierName: c.name } }));
+      } else {
+        throw new Error(data.message || 'Ошибка запуска');
+      }
+    } catch (e: any) {
+      console.error('[CourierManagement] Failed to trigger calculation:', e);
+      toast.error('Не вдалося запустити розрахунок: ' + e.message);
+    }
+  }, [excelData?.divisionId])
 
   const handleDeleteCourier = useCallback((id: string) => {
     if (window.confirm('Удалить курьера?')) setCouriers(p => p.filter(c => c.id !== id));
@@ -214,8 +246,31 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     setShowAddressModal(true);
   }, [])
 
-  const handleSaveAddress = useCallback((newAddr: string, coords?: { lat: number; lng: number }) => {
+  const handleSaveAddress = useCallback(async (newAddr: string, coords?: { lat: number; lng: number }) => {
     if (!editingOrder) return;
+
+    // v9.9: Persist manual fix to backend GeoCache ALWAYS
+    if (coords) {
+        try {
+            const token = localStorage.getItem('km_access_token');
+            await fetch('/api/geocache/manual-correct', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    address: newAddr,
+                    lat: coords.lat,
+                    lng: coords.lng
+                })
+            });
+            console.log('[CourierManagement] Manual geocode persisted to backend');
+        } catch (e) {
+            console.warn('[CourierManagement] Failed to persist manual geocode:', e);
+        }
+    }
+
     updateExcelData?.((prev: any) => {
         const newData = { ...prev };
         newData.orders = (prev.orders || []).map((o: any) => o.id === editingOrder.id ? { ...o, address: newAddr, coords, geocoded: !!coords, geoError: false, locationType: coords ? 'ROOFTOP' : 'FAILED' } : o);

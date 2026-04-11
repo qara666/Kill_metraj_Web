@@ -163,7 +163,7 @@ router.post('/dashboard/fetch', async (req, res) => {
         }
 
         const { date, divisionId: requestDivisionId, force = false } = req.body;
-        if (!date || !/^\d{2}\.\d{2}\.\d{4}$/.test(date)) {
+        if (!date || (!/^\d{2}\.\d{2}\.\d{4}$/.test(date) && !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
             return res.status(422).json({ success: false, error: 'Неверный формат даты' });
         }
 
@@ -195,8 +195,20 @@ router.post('/dashboard/fetch', async (req, res) => {
         }
 
         const targetDateStr = date.trim();
-        const [d, m, y] = targetDateStr.split('.');
-        const targetDateISO = `${y}-${m}-${d}`;
+        // v7.5: Robust date parsing (Handle both DD.MM.YYYY and YYYY-MM-DD)
+        let targetDateISO = '';
+        if (targetDateStr.includes('-')) {
+            // Assume YYYY-MM-DD
+            targetDateISO = targetDateStr.split(' ')[0].split('T')[0];
+        } else if (targetDateStr.includes('.')) {
+            // Assume DD.MM.YYYY
+            const [d, m, y] = targetDateStr.split('.');
+            targetDateISO = `${y}-${m}-${d}`;
+        } else {
+            // Fallback
+            targetDateISO = targetDateStr;
+        }
+
         const isGlobal = (divisionId === 'all' || !divisionId);
 
         logger.info(`📅 Fetch request: date=${targetDateStr}, divisionId=${divisionId || 'NONE'}, isGlobal=${isGlobal}, user=${user.username}`);

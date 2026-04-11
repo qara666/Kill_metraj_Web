@@ -15,7 +15,7 @@ const {
     getOrderHash,
     haversineDistance
 } = require('./turboGroupingHelpers');
-const { batchEnhancedGeocode, checkAnomalyDistance } = require('./turboGeoEnhanced');
+const { batchEnhancedGeocode, checkAnomalyDistance, deepCleanAddress } = require('./turboGeoEnhanced');
 const { enhanceAllOrderCoords, buildZoneCentroids, calculateTotalRouteDistance } = require('./turboCoordValidator');
 
 // v36.9: CommonJS-safe local implementations of essential utilities (zero-dependency)
@@ -558,15 +558,15 @@ class OrderCalculator {
         // No longer stops when there are no "active" user-started divisions.
         this.timer = setTimeout(() => this.tick(), this.interval);
     }
-
     /**
      * Trigger calculation for a division - supports multi-division (memory only)
      * @param {string} divisionId - Division to start
      * @param {string} date - Date to process
      * @param {string} userId - User initiating trigger
      * @param {boolean} forceFull - If true, recalculate ALL orders (not incremental)
+     * @param {string|number} targetCourier - Optional courier ID to filter
      */
-    trigger(divisionId, date = null, userId = null, forceFull = false) {
+    trigger(divisionId, date = null, userId = null, forceFull = false, targetCourier = null) {
         if (!divisionId) {
             if (!this.isProcessing) this.tick();
             return;
@@ -618,12 +618,12 @@ class OrderCalculator {
                 emitInitial(0);
             }
             
-            logger.info(`[TurboCalculator] 📡 Emitted initial status link for division ${divIdStr}`);
+            logger.info(`[TurboCalculator] 📡 Emitted initial status for division ${divIdStr}${targetCourier ? ` (Target: ${targetCourier})` : ''}`);
         }
 
         let state = this.divisionStates.get(divisionId);
         if (!state) {
-            state = { users: new Set(), date: targetDate, priorityQueue: [], currentPriority: null, isActive: true, forceFull };
+            state = { users: new Set(), date: targetDate, priorityQueue: [], currentPriority: null, isActive: true, forceFull, targetCourier };
             this.divisionStates.set(divisionId, state);
         } else {
             // v5.170: Reactivate if was stopped and UPDATE the date!
@@ -635,6 +635,7 @@ class OrderCalculator {
             }
             state.date = targetDate;
             state.forceFull = forceFull; // Store force flag in state
+            state.targetCourier = targetCourier; // v37.1: Optional target courier
         }
         if (userId) {
             if (!state.users || typeof state.users.add !== 'function') {
@@ -874,15 +875,14 @@ class OrderCalculator {
 
         logger.info(`[TurboCalculator] 🔔 New FO data for division ${divIdStr} (${targetDate}) — AUTO-ACTIVATING calculation`);
 
-        // If calculator is idle, wake it up immediately
+        // v7.3: Reduce delay for instant-feel (500ms)
         if (this.isProcessing) {
             this.needsReRun = true;
         } else if (this.timer) {
             clearTimeout(this.timer);
-            this.timer = setTimeout(() => this.tick(), 2000); // 2s delay to batch rapid saves
+            this.timer = setTimeout(() => this.tick(), 500); 
         } else {
-            // Timer was stopped — restart it
-            this.timer = setTimeout(() => this.tick(), 2000);
+            this.timer = setTimeout(() => this.tick(), 500);
         }
     }
 
@@ -909,13 +909,33 @@ class OrderCalculator {
 
             if (!caches || caches.length === 0) {
                 logger.warn(`[TurboCalculator] ⚠️ No DashboardCache found for date ${dateISO} (division: ${priorityDivisionId || 'all'})`);
+                // Seed empty cache so UI can display 0 results immediately
+                try {
+                    const DashboardCache = this.getModel('DashboardCache');
+                    if (DashboardCache) {
+                        await DashboardCache.upsert({
+                          division_id: String(priorityDivisionId || 'all'),
+                          target_date: dateISO,
+                          payload: { orders: [], routes: [], couriers: [] },
+                          data_hash: 'empty',
+                          created_at: new Date(),
+                          updated_at: new Date()
+                        });
+                        logger.info(`[TurboCalculator] 🔄 Seeded empty DashboardCache for ${priorityDivisionId || 'all'} on ${dateISO}`);
+                        // Update today-diagnostics cache/status
+                        global.turboTodayCacheExists = true;
+                        global.turboTodayLastCalc = Date.now();
+                      }
+                    } catch (seedErr) {
+                      logger.warn('[TurboCalculator] Failed to seed empty DashboardCache:', seedErr.message);
+                    }
                 if (this.io) {
                     this.io.emit('robot_status', {
                         divisionId: priorityDivisionId,
                         date: dateISO,
                         isActive: false,
-                        currentPhase: 'error',
-                        message: `Нет данных за ${dateISO}. Проверьте Dashboard Fetcher.`,
+                        currentPhase: 'no_data',
+                        message: `Нет данных за ${dateISO}. Фоновый расчет пропущен`,
                         totalCount: 0,
                         processedCount: 0
                     });
@@ -966,6 +986,18 @@ class OrderCalculator {
                 }
             } else {
                 this.globalStats = null;
+                // v7.7: Emit immediate 'starting' status for specific division to wake up UI
+                if (this.io && priorityDivisionId) {
+                    this.io.emit('robot_status', {
+                        divisionId: priorityDivisionId,
+                        date: dateISO,
+                        isActive: true,
+                        totalCount: caches[0]?.payload?.orders?.length || 0,
+                        processedCount: 0,
+                        currentPhase: 'initializing',
+                        message: 'Подготовка к расчету...'
+                    });
+                }
             }
 
             // v5.198: Process all caches for 'all' division, otherwise pick primary
@@ -1176,7 +1208,7 @@ class OrderCalculator {
             }
 
 
-            logger.info(`[TurboCalculator] 🔄 ${cacheKey}: ${existingHash === dataHash ? 'forceFull=true bypassed hash skip' : 'Data changed'} — triggering recalculation`);\n
+            logger.info(`[TurboCalculator] 🔄 ${cacheKey}: ${existingHash === dataHash ? 'forceFull=true bypassed hash skip' : 'Data changed'} — triggering recalculation`);
             // v7.2: Reset forceFull flag so future ticks run normally (only bypass once per manual trigger)
             if (divState?.forceFull) {
                 divState.forceFull = false;
@@ -1269,13 +1301,64 @@ class OrderCalculator {
                 return true;
             });
 
+            // v7.6 CRITICAL: Frontload Manual Corrections from GeoCache
+            // This ensures manual fixes are respected BEFORE FO GPS or other sources
+            const GeoCache = this.getModel('GeoCache');
+            if (GeoCache) {
+                try {
+                    const addressesToLookup = data.orders.map(o => {
+                        const addr = o.address || o.addressGeo || '';
+                        return addr ? deepCleanAddress(addr).toLowerCase().trim() : null;
+                    }).filter(Boolean);
+                    
+                    if (addressesToLookup.length > 0) {
+                        const uniqueKeys = Array.from(new Set(addressesToLookup));
+                        const cachedCoords = await GeoCache.findAll({
+                            where: { address_key: { [Op.in]: uniqueKeys }, is_success: true }
+                        });
+                        
+                        const coordMap = new Map();
+                        cachedCoords.forEach(c => coordMap.set(c.address_key, c));
+                        
+                        data.orders.forEach(o => {
+                            const addr = o.address || o.addressGeo || '';
+                            if (!addr) return;
+                            const key = deepCleanAddress(addr).toLowerCase().trim();
+                            const hit = coordMap.get(key);
+                            if (hit) {
+                                // v7.6: If it's a manual or high-quality geocoded entry, pre-set it
+                                // so resolveOrderCoords sees it as 'Already geocoded' (P3)
+                                o.coords = { 
+                                    lat: hit.lat, 
+                                    lng: hit.lng, 
+                                    provider: hit.provider,
+                                    locationType: hit.location_type || 'CACHED'
+                                };
+                            }
+                        });
+                        logger.info(`[TurboCalculator] 🧠 Pre-loaded ${cachedCoords.length} coordinates from GeoCache (including manual fixes)`);
+                    }
+                } catch (cacheErr) {
+                    logger.warn(`[TurboCalculator] ⚠️ Failed pre-loading GeoCache: ${cacheErr.message}`);
+                }
+            }
+
             // v7.1 SOTA: Smart Coordinate Resolver & Validator
-            // Frontload coordinate extraction using ALL sources: FO GPS -> Lat/Lng -> Geocoder + validates against KML zone centroids.
             const kmlIndex = { findBestZoneForPoint: (lat, lng) => this.findBestZoneForPoint(lat, lng) };
-            if (!this.zoneCentroids) this.zoneCentroids = buildZoneCentroids(this.kmlZones);
+            if (!this.zoneCentroids) this.zoneCentroids = buildZoneCentroids(this.allKmlZones || allKmlZones);
             
-            const { enhanced, fromGPS, fromGeocoder, lowConfidence } = enhanceAllOrderCoords(ordersToGroup, kmlIndex, this.zoneCentroids);
+            const { enhanced, fromGPS, fromGeocoder, lowConfidence } = enhanceAllOrderCoords(data.orders, kmlIndex, this.zoneCentroids);
             logger.info(`[TurboCalculator] 📍 Coord resolver: validated ${enhanced} orders (${fromGPS} GPS, ${fromGeocoder} DB, ${lowConfidence} low-conf)`);
+
+            // v7.8: Immediate emission after geocoding to update map and initial counters
+            if (this.io && priorityDivisionId && enhanced > 0) {
+                this.io.emit('dashboard:update', {
+                    divisionId: priorityDivisionId,
+                    date: dateISO,
+                    source: 'turbo_calculator_geocoding',
+                    data: { ...data, orders: data.orders }
+                });
+            }
 
             // v5.197: Standardize stats for real-time UI tracking
             const totalCount = data.orders.length;
@@ -1306,7 +1389,14 @@ class OrderCalculator {
 
             // v7.1 SOTA: ENHANCED GEOCODING — 6-level cascaded engine with Ukrainian specialization
             const GeoCache = this.getModel('GeoCache');
-            const allOrdersNeedsGeo = ordersToGroup.filter(o => !o.coords?.lat);
+            
+            // v7.5: Geocode ALL orders (assigned and unassigned) so they have coordinates immediately
+            const allOrdersNeedsGeo = data.orders.filter(o => {
+                const s = String(o.status || o.deliveryStatus || '').toLowerCase().trim();
+                if (s.includes('отказ') || s.includes('отменен') || s.includes('відмова')) return false;
+                if (s.includes('самовывоз') || s.includes('на месте')) return false;
+                return !o.coords?.lat;
+            });
 
             if (allOrdersNeedsGeo.length > 0) {
                 const totalToGeo = allOrdersNeedsGeo.length;
@@ -1322,7 +1412,7 @@ class OrderCalculator {
                         totalCount: totalCount,
                         processedCount: Math.round(totalCount * 0.05),
                         currentPhase: 'geocoding',
-                        message: `Геокодирование: ${totalToGeo} адресов (2-проходной алгоритм)...`
+                        message: `Геокодирование: ${totalToGeo} адресов...`
                     });
                 }
 
@@ -2118,12 +2208,13 @@ class OrderCalculator {
 
             // Final status push - routing complete!
             stats.currentPhase = 'complete';
+            stats.processedCount = totalCount; // Ensure reached 100% for UI
             const totalResultCount = inMemoryFrontendRoutes.length;
             const existingCount = matchedExistingRouteIds.size;
             const newlyCreated = totalRoutesCreated;
             stats.message = `Complete! ${totalResultCount} routes (${newlyCreated > 0 ? `${newlyCreated} new, ` : ''}${existingCount} cached)`;
             stats.isActive = false;
-            emitStatus();
+            emitStatus(true);
             logger.info(`[TurboCalculator] ✅ DONE: ${totalResultCount} total routes (${newlyCreated} new + ${existingCount} cached), ${stats.processedCouriers} couriers`);
 
             // v6.11: Record completion timestamp for cooldown logic

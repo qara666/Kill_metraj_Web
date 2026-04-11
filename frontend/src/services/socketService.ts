@@ -12,6 +12,7 @@
 import { io, Socket } from 'socket.io-client';
 import { API_URL } from '../config/apiConfig';
 import { useDashboardStore } from '../stores/useDashboardStore';
+import { normalizeDateToIso } from '../utils/data/dateUtils';
 
 type DashboardUpdateCallback = (data: {
     data: any;
@@ -116,8 +117,8 @@ class SocketService {
             try {
                 const store = useDashboardStore.getState();
                 const currentDivisionStr = String(store.divisionId || 'all');
-                const dashboardDate = normalizeDate(store.apiDateShift);
-                const robotDate = normalizeDate(data.date);
+                const dashboardDate = normalizeDateToIso(store.apiDateShift);
+                const robotDate = normalizeDateToIso(data.date);
 
                 // v7.2: Unified handling for robot updates
                 const isGlobalUpdate = String(data.divisionId) === 'all';
@@ -385,17 +386,7 @@ class SocketService {
  * v5.161: Robust date normalization to avoid format mismatches (DD-MM-YYYY vs YYYY-MM-DD)
  */
 function normalizeDate(dateStr: string | null): string | null {
-    if (!dateStr) return null;
-    if (dateStr.includes('-')) {
-        const parts = dateStr.split('-');
-        if (parts[0].length === 4) return dateStr; // YYYY-MM-DD
-        if (parts[2].length === 4) return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD-MM-YYYY
-    }
-    if (dateStr.includes('.')) {
-        const parts = dateStr.split('.');
-        if (parts[2].length === 4) return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD.MM.YYYY
-    }
-    return dateStr;
+    return normalizeDateToIso(dateStr);
 }
 
 // Export singleton instance

@@ -65,6 +65,9 @@ const io = new Server(httpServer, {
 global.divisionStatusStore = global.divisionStatusStore || {};
 let turboCalculator = null;
 let turboCalculatorReady = false; // v7.3: readiness flag for TurboCalculator initialization
+// Today-cache status for diagnostics UI
+global.turboTodayCacheExists = false;
+global.turboTodayLastCalc = null;
 
 // WebSocket authentication via handshake (JWT)
 io.use((socket, next) => {
@@ -768,7 +771,41 @@ httpServer.listen(PORT, '0.0.0.0', () => {
         logger.info('🚀 [INIT] gRPC server started');
       } catch (ge) { logger.error('❌ [INIT] gRPC failed', ge); }
 
-      logger.info('🏁 [INIT] Full system initialization complete');
+    logger.info('🏁 [INIT] Full system initialization complete');
+
+    // Schedule daily TurboCalculator background calculation at midnight local time
+    try {
+      const scheduleDailyTurbo = () => {
+        try {
+          const now = new Date();
+          const nextMidnight = new Date(now);
+          nextMidnight.setHours(24, 0, 0, 0);
+          const delay = nextMidnight.getTime() - now.getTime();
+          setTimeout(async () => {
+            try {
+              if (turboCalculatorReady && global.turboCalculator) {
+                const today = new Date().toISOString().split('T')[0];
+                await global.turboCalculator.trigger(undefined, today, null, true);
+                logger.info(`[Turbo] Daily background calc triggered for ${today}`);
+              } else {
+                logger.info('[Turbo] Daily background calc skipped: TurboCalculator not ready yet');
+              }
+            } catch (err) {
+              logger.error('[Turbo] Daily background calc failed', err);
+            } finally {
+              // Schedule next run
+              scheduleDailyTurbo();
+            }
+          }, delay);
+        } catch (e) {
+          logger.error('[Turbo] Scheduling daily calc failed', e);
+        }
+      };
+      // Initialize the daily scheduler after startup
+      scheduleDailyTurbo();
+    } catch (err) {
+      logger.error('⚠️ [INIT] Failed to initialize daily TurboCalculator scheduler', err);
+    }
 
     } catch (globalInitErr) {
       logger.error('💥 [INIT] FATAL initialization error', globalInitErr);
@@ -1316,6 +1353,17 @@ app.get('/api/turbo/ready', authenticateToken, (req, res) => {
   res.json({ success: true, ready: turboCalculatorReady && !!global.turboCalculator });
 });
 
+// Diagnostic: status today
+app.get('/api/turbo/status_today', authenticateToken, (req, res) => {
+  res.json({
+    success: true,
+    date: new Date().toISOString().split('T')[0],
+    ready: turboCalculatorReady && !!global.turboCalculator,
+    hasTodayCache: !!global.turboTodayCacheExists,
+    lastCalcEpoch: global.turboTodayLastCalc
+  });
+});
+
 // Priority trigger endpoint for turboCalculator
 app.post('/api/turbo/priority', authenticateToken, async (req, res) => {
   try {
@@ -1367,6 +1415,12 @@ app.post('/api/turbo/priority', authenticateToken, async (req, res) => {
     if (!turboCalculator || !global.turboCalculator) {
       try {
         logger.warn('[API] turboCalculator is null, attempting emergency require recovery...');
+        // v7.5: Clear require cache to ensure fresh load of fixed files
+        try {
+          delete require.cache[require.resolve('./workers/turboCalculator')];
+          delete require.cache[require.resolve('./workers/turboGroupingHelpers')];
+          delete require.cache[require.resolve('./workers/turboGeoEnhanced')];
+        } catch (e) {}
         const recoveredWorker = require('./workers/turboCalculator');
         if (recoveredWorker) {
           recoveredWorker.io = io;
@@ -1385,6 +1439,21 @@ app.post('/api/turbo/priority', authenticateToken, async (req, res) => {
     
     // v7.3: Check if turboCalculator is ready (initialization complete)
     if (!turboCalculatorReady && !calculator) {
+      // Fallback: try to serve today's data from local cache if available
+      try {
+        const todayDate = (date) ? date : (new Date().toISOString().split('T')[0]);
+        const isToday = todayDate === new Date().toISOString().split('T')[0];
+        if (isToday) {
+          const { DashboardCache } = require('./src/models');
+          const cached = await DashboardCache.findOne({ where: { division_id: divisionId, target_date: todayDate } });
+          if (cached && cached.payload) {
+            logger.info('[API] Serving local today data from DashboardCache (fallback)');
+            return res.json({ success: true, data: cached.payload, date: todayDate, local: true });
+          }
+        }
+      } catch (fallbackErr) {
+        logger.warn('[API] Local today data fetch fallback failed:', fallbackErr.message);
+      }
       logger.error('[API] turboCalculator not available (reason: initialization_in_progress, is_ready: ' + turboCalculatorReady + ')');
       return res.status(503).json({ 
         success: false, 
