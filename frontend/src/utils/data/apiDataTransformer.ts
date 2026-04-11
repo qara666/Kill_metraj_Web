@@ -13,7 +13,14 @@ export const transformDashboardData = (
     console.log(`[transformDashboardData] Incoming raw orders: ${apiData.orders?.length || 0}`);
     
     // Truncate function to get only dd.mm.yyyy
-    const getOnlyDate = (s: string) => s.split(' ')[0].split('T')[0];
+    const getOnlyDate = (s: any): string => {
+        if (!s || typeof s !== 'string') return '';
+        try {
+            return s.split(' ')[0].split('T')[0];
+        } catch (e) {
+            return '';
+        }
+    };
 
     let effectiveDate = baseDate ? getOnlyDate(baseDate) : '';
 
@@ -187,12 +194,13 @@ const transformDashboardOrder = (apiOrder: DashboardOrderResponse, baseDate: str
         orderType: apiOrder.orderType,
         creationDate: (() => {
             if (!apiOrder.creationDate) return Date.now();
+            const dateStr = String(apiOrder.creationDate);
             // Safe parse DD.MM.YYYY
-            if (/^\d{2}\.\d{2}\.\d{4}/.test(apiOrder.creationDate)) {
-                const [d, m, y] = apiOrder.creationDate.split(' ')[0].split('.').map(Number);
+            if (/^\d{2}\.\d{2}\.\d{4}/.test(dateStr)) {
+                const [d, m, y] = dateStr.split(' ')[0].split('.').map(Number);
                 return new Date(y, m - 1, d).getTime();
             }
-            const d = new Date(apiOrder.creationDate).getTime();
+            const d = new Date(dateStr).getTime();
             return isNaN(d) ? Date.now() : d;
         })(),
         deliveryTime: apiOrder.deliveryTime,

@@ -37,6 +37,7 @@ import { getReturnETA, getAccurateReturnETA, getCourierSpeed, enrichRoutesWithCo
 import { calculateDistance } from '../../utils/geoUtils'
 import { isOrderCompleted, isOrderCancelled } from '../../utils/data/orderStatus'
 import { DashboardHeader } from '../shared/DashboardHeader'
+import { useDashboardStore } from '../../stores/useDashboardStore'
 
 // --- Hooks ---
 
@@ -206,8 +207,12 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
 
       console.info(`[RouteManagement] 🚀 Forcing targeted recalculation for: ${courierName}`);
       try {
-        // Call the priority calculation API with courierName
-        await fetch(`/api/turbo/priority?divisionId=${selectedDivision?.id}&targetDate=${targetDate}&courierName=${encodeURIComponent(courierName)}`, {
+        // Get division and date from store
+        const store = useDashboardStore.getState();
+        const divisionId = store.divisionId;
+        const targetDate = store.apiDateShift;
+        
+        await fetch(`/api/turbo/priority?divisionId=${divisionId}&targetDate=${targetDate}&courierName=${encodeURIComponent(courierName)}`, {
           method: 'POST'
         });
       } catch (err) {
@@ -215,9 +220,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
       }
     };
 
-    window.addEventListener('km-force-auto-routing' as any, handleTargetedCalc);
-    return () => window.removeEventListener('km-force-auto-routing' as any, handleTargetedCalc);
-  }, [selectedDivision, targetDate]);
+    window.addEventListener('km:targeted-recalc', handleTargetedCalc);
+    return () => window.removeEventListener('km:targeted-recalc', handleTargetedCalc);
+  }, []);
 
     const lower = base.toLowerCase()
     const { city, country } = getSelectedCity()

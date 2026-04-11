@@ -18,28 +18,22 @@ export interface OSRMRouteResult {
   totalDistance?: number
 }
 
+import { API_URL } from '../config/apiConfig';
+
 export class YapikoOSRMService {
   /**
-   * Build the backend base URL directly from window.location — NO imports required.
+   * Build the backend base URL.
    */
   private static getBackendBaseUrl(): string | null {
-    if (typeof window === 'undefined') return null;
-    const hostname = window.location.hostname;
-    if (!hostname.includes('onrender.com')) return null;
-
-    if (hostname === 'yapiko-auto-km-frontend-live.onrender.com') {
-      return 'https://yapiko-auto-km-backend.onrender.com';
-    }
-    if (hostname.includes('frontend')) {
-      return `https://${hostname.replace('frontend', 'backend')}`;
-    }
-    return null;
+    return API_URL;
   }
 
   private static getMaybeProxiedUrl(targetUrl: string): string {
     const backendBase = this.getBackendBaseUrl();
     if (backendBase) {
-      return `${backendBase}/api/proxy/osrm?url=${encodeURIComponent(targetUrl)}`;
+      // Clean backendBase to avoid double slashes
+      const cleanBase = backendBase.replace(/\/+$/, '');
+      return `${cleanBase}/api/proxy/osrm?url=${encodeURIComponent(targetUrl)}`;
     }
     return targetUrl;
   }

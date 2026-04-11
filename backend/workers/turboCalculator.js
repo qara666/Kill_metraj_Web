@@ -261,6 +261,7 @@ class OrderCalculator {
         // Sort: delivery zones first, then technical
         matches.sort((a, b) => {
             if (a.is_technical !== b.is_technical) return a.is_technical ? 1 : -1;
+
             return 0;
         });
 
@@ -588,30 +589,36 @@ class OrderCalculator {
 
         if (this.io) {
             const divIdStr = String(divisionId);
-            this.io.emit('robot_status', {
-                divisionId: divIdStr,
-                date: targetDate,
-                isActive: true,
-                currentPhase: 'initializing',
-                message: 'Preparing data for analysis...',
-                totalCount: 0,
-                processedCount: 0
-            });
             
-            // v6.9: Also write to global status store
-            if (global.divisionStatusStore) {
-                global.divisionStatusStore[`${divIdStr}_${targetDate}`] = {
+            // v7.5: Try to get totalCount from current cache to avoid "flashing 0" in UI
+            const DashboardCache = this.getModel('DashboardCache');
+            const emitInitial = (count = 0) => {
+                const initStatus = {
                     divisionId: divIdStr,
                     date: targetDate,
                     isActive: true,
                     currentPhase: 'initializing',
                     message: 'Preparing data for analysis...',
-                    totalCount: 0,
+                    totalCount: count,
                     processedCount: 0
                 };
+                if (this.io) this.io.emit('robot_status', initStatus);
+                if (global.divisionStatusStore) {
+                    global.divisionStatusStore[`${divIdStr}_${targetDate}`] = initStatus;
+                }
+            };
+
+            if (DashboardCache) {
+                 DashboardCache.findOne({ where: { division_id: divIdStr, target_date: targetDate } })
+                    .then(c => {
+                        const count = (c && c.payload && Array.isArray(c.payload.orders)) ? c.payload.orders.length : 0;
+                        emitInitial(count);
+                    }).catch(() => emitInitial(0));
+            } else {
+                emitInitial(0);
             }
             
-            logger.info(`[TurboCalculator] 📡 Emitted initial status for division ${divIdStr}`);
+            logger.info(`[TurboCalculator] 📡 Emitted initial status link for division ${divIdStr}`);
         }
 
         let state = this.divisionStates.get(divisionId);
@@ -767,8 +774,10 @@ class OrderCalculator {
                 const timeSinceLastCalc = lastCalc ? Date.now() - lastCalc : Infinity;
                 const cooldownOk = timeSinceLastCalc >= this.MIN_CALC_INTERVAL_MS;
 
-                if (!hasPendingFOData && (!state.isActive || !cooldownOk)) {
-                    if (!cooldownOk) {
+                // v7.2: Bypass cooldown if forceFull=true (manual trigger from user)
+                const isForceFull = state.forceFull === true;
+                if (!hasPendingFOData && (!state.isActive || (!cooldownOk && !isForceFull))) {
+                    if (!cooldownOk && !isForceFull) {
                         const waitSec = Math.ceil((this.MIN_CALC_INTERVAL_MS - timeSinceLastCalc) / 1000);
                         logger.info(`[TurboCalculator] ⏸️ ${divId}: Cooldown (${waitSec}s left), no new FO data — skip`);
                     }
@@ -818,6 +827,35 @@ class OrderCalculator {
         const divIdStr = String(divisionId);
         const targetDate = date || new Date().toISOString().split('T')[0];
 
+        if (divIdStr === 'all') {
+            const DashboardCache = this.getModel('DashboardCache');
+            if (DashboardCache) {
+                DashboardCache.findAll({
+                    where: { target_date: targetDate },
+                    attributes: ['division_id']
+                }).then(caches => {
+                    const uniqueDivs = new Set(caches.map(c => String(c.division_id)));
+                    uniqueDivs.forEach(divId => {
+                        let st = this.divisionStates.get(divId);
+                        if (!st) {
+                            st = { users: new Set(), date: targetDate, priorityQueue: [], currentPriority: null, isActive: true, forceFull: false };
+                            this.divisionStates.set(divId, st);
+                        } else {
+                            st.isActive = true;
+                            st.date = targetDate;
+                        }
+                        this.newFODataPending.set(divId, true);
+                        this.processedHashes.delete(`${divId}_${targetDate}`);
+                    });
+                    logger.info(`[TurboCalculator] 🔔 Global trigger: Woke up ${uniqueDivs.size} divisions from DB.`);
+                    this.trigger(); 
+                }).catch(err => {
+                    logger.error(`[TurboCalculator] Failed to wake up divisions: ${err.message}`);
+                });
+            }
+            return;
+        }
+
         // v7.0: ALWAYS activate this division — no isActive check anymore
         let state = this.divisionStates.get(divIdStr);
         if (!state) {
@@ -830,19 +868,21 @@ class OrderCalculator {
 
         // Mark that new FO data is available for this division
         this.newFODataPending.set(divIdStr, true);
-
+        
         // Clear the stale hash so processCache detects the change
         this.processedHashes.delete(`${divIdStr}_${targetDate}`);
 
         logger.info(`[TurboCalculator] 🔔 New FO data for division ${divIdStr} (${targetDate}) — AUTO-ACTIVATING calculation`);
 
         // If calculator is idle, wake it up immediately
-        if (!this.isProcessing && this.timer) {
+        if (this.isProcessing) {
+            this.needsReRun = true;
+        } else if (this.timer) {
             clearTimeout(this.timer);
             this.timer = setTimeout(() => this.tick(), 2000); // 2s delay to batch rapid saves
-        } else if (!this.timer) {
+        } else {
             // Timer was stopped — restart it
-            this.scheduleNextTick();
+            this.timer = setTimeout(() => this.tick(), 2000);
         }
     }
 
@@ -1106,9 +1146,10 @@ class OrderCalculator {
             const existingHash = this.processedHashes.get(cacheKey);
 
             // If hash unchanged — put division to SLEEP, wake only on new FO data
-            if (existingHash === dataHash) {
+            // v7.2: If forceFull=true (manual trigger), SKIP the hash check and always recalculate
+            const divState = this.divisionStates.get(String(cache.division_id));
+            if (existingHash === dataHash && !divState?.forceFull) {
                 // v7.1: Deactivate division — tick will skip it until notifyNewFOData() reactivates
-                const divState = this.divisionStates.get(String(cache.division_id));
                 if (divState) {
                     divState.isActive = false;
                     logger.info(`[TurboCalculator] 💤 ${cache.division_id}: Data unchanged — DEACTIVATED. Will reactivate on new FO data.`);
@@ -1135,7 +1176,12 @@ class OrderCalculator {
             }
 
 
-            logger.info(`[TurboCalculator] 🔄 Data changed for ${cacheKey}: hashing trigged recalculation`);
+            logger.info(`[TurboCalculator] 🔄 ${cacheKey}: ${existingHash === dataHash ? 'forceFull=true bypassed hash skip' : 'Data changed'} — triggering recalculation`);\n
+            // v7.2: Reset forceFull flag so future ticks run normally (only bypass once per manual trigger)
+            if (divState?.forceFull) {
+                divState.forceFull = false;
+                logger.info(`[TurboCalculator] 🔓 ${cache.division_id}: Cleared forceFull flag after manual trigger`);
+            }
 
             const existingRoutedOrderNumbers = new Set();
             const existingRoutedOrderIds = new Set();
@@ -1231,6 +1277,33 @@ class OrderCalculator {
             const { enhanced, fromGPS, fromGeocoder, lowConfidence } = enhanceAllOrderCoords(ordersToGroup, kmlIndex, this.zoneCentroids);
             logger.info(`[TurboCalculator] 📍 Coord resolver: validated ${enhanced} orders (${fromGPS} GPS, ${fromGeocoder} DB, ${lowConfidence} low-conf)`);
 
+            // v5.197: Standardize stats for real-time UI tracking
+            const totalCount = data.orders.length;
+            const ordersWithRealCourier = ordersToGroup.length;
+            const alreadyRouted = existingRoutedOrderNumbers.size;
+
+            // v7.2: Start with orders already in routes to prevent "jump back to 0"
+            // If geocoding just finished, we might already have high progress in the UI.
+            // We should pick the LARGEST of (alreadyRouted, current processedCount).
+            const initialProcessed = Math.max(alreadyRouted, Math.round(cacheTotalCount * 0.35));
+
+            const stats = {
+                isActive: true,
+                lastUpdate: Date.now(),
+                totalCount: totalCount,
+                unassignedCount: Math.max(0, totalCount - ordersWithRealCourier - alreadyRouted),
+                processedCount: initialProcessed, 
+                totalCouriers: 0, // Will be set after grouping
+                processedCouriers: 0,
+                skippedGeocoding: 0,
+                geoErrors: [], // v6.9: Track failed addresses with order numbers
+                skippedInRoutes: alreadyRouted,
+                skippedNoCourier: totalCount - ordersWithRealCourier - alreadyRouted,
+                message: `Analyzing delivery queues...`,
+                currentPhase: 'processing',
+                courierStats: {}
+            };
+
             // v7.1 SOTA: ENHANCED GEOCODING — 6-level cascaded engine with Ukrainian specialization
             const GeoCache = this.getModel('GeoCache');
             const allOrdersNeedsGeo = ordersToGroup.filter(o => !o.coords?.lat);
@@ -1246,8 +1319,8 @@ class OrderCalculator {
                         divisionId: cache.division_id,
                         date: cache.target_date,
                         isActive: true,
-                        totalCount: cacheTotalCount,
-                        processedCount: Math.round(cacheTotalCount * 0.05),
+                        totalCount: totalCount,
+                        processedCount: Math.round(totalCount * 0.05),
                         currentPhase: 'geocoding',
                         message: `Геокодирование: ${totalToGeo} адресов (2-проходной алгоритм)...`
                     });
@@ -1267,8 +1340,8 @@ class OrderCalculator {
                                 divisionId: cache.division_id,
                                 date: cache.target_date,
                                 isActive: true,
-                                totalCount: cacheTotalCount,
-                                processedCount: Math.round((done / total) * cacheTotalCount * 0.40),
+                                totalCount: totalCount,
+                                processedCount: Math.round((done / total) * totalCount * 0.40),
                                 currentPhase: 'geocoding',
                                 message: `Геокодирование ${pass === 'pass2' ? '(точный поиск) ' : ''}${pct}% (${done}/${total})${eta > 0 ? ` ~${eta}с` : ''}`
                             });
@@ -1284,6 +1357,7 @@ class OrderCalculator {
                             address: o.address || o.addressGeo || 'no address',
                             courier: o.courier || o.courierName || ''
                         });
+                        stats.skippedGeocoding++;
                     }
                 });
 
@@ -1298,6 +1372,7 @@ class OrderCalculator {
             try {
                 deliveryWindows = groupAllOrdersByTimeWindow(ordersToGroup);
                 deliveryWindows.forEach((windows) => { totalBlocksCount += windows.length; });
+                stats.totalCouriers = deliveryWindows.size; // Update stats
                 logger.info(`[TurboCalculator] 📦 Grouped ${ordersToGroup.length} orders into ${totalBlocksCount} blocks across ${deliveryWindows.size} couriers`);
                 
                 // v6.0: Emit status immediately after grouping completes
@@ -1306,8 +1381,8 @@ class OrderCalculator {
                         divisionId: cache.division_id,
                         date: cache.target_date,
                         isActive: true,
-                        totalCount: cacheTotalCount,
-                        processedCount: Math.round(cacheTotalCount * 0.3),
+                        totalCount: totalCount,
+                        processedCount: Math.max(stats.processedCount, Math.round(totalCount * 0.35)),
                         currentPhase: 'grouping',
                         message: `Grouped ${ordersToGroup.length} orders into ${totalBlocksCount} blocks...`
                     });
@@ -1316,42 +1391,6 @@ class OrderCalculator {
                 logger.error('[TurboCalculator] Backend grouping failed', err);
                 deliveryWindows = new Map();
             }
-
-            if (this.io) {
-                this.io.emit('robot_status', {
-                    divisionId: cache.division_id,
-                    date: cache.target_date,
-                    isActive: true,
-                    currentPhase: 'grouping',
-                    message: `Grouping ${ordersToGroup.length} orders into 30m blocks...`,
-                    totalCount: cacheTotalCount
-                });
-            }
-
-            // v27.0: Match frontend's groupOrdersByTimeWindow() logic EXACTLY
-            // Already calculated at the start of processCache as 'deliveryWindows'
-
-            // v5.197: Standardize stats for real-time UI tracking
-            const totalCount = data.orders.length;
-            const ordersWithRealCourier = ordersToGroup.length;
-            const alreadyRouted = existingRoutedOrderNumbers.size;
-
-            const stats = {
-                isActive: true,
-                lastUpdate: Date.now(),
-                totalCount: totalCount,
-                unassignedCount: totalCount - ordersWithRealCourier - alreadyRouted,
-                processedCount: 0,
-                totalCouriers: deliveryWindows.size,
-                processedCouriers: 0,
-                skippedGeocoding: 0,
-                geoErrors: [], // v6.9: Track failed addresses with order numbers
-                skippedInRoutes: alreadyRouted,
-                skippedNoCourier: totalCount - ordersWithRealCourier - alreadyRouted,
-                message: `Analyzing delivery queues...`,
-                currentPhase: 'processing',
-                courierStats: {}
-            };
 
             const emitStatus = (force = false) => {
                 if (!this.io) return;
@@ -1569,95 +1608,10 @@ class OrderCalculator {
                         continue; // Skip the rest of the loop! No geocoding, no OSRM hit
                     }
 
-                    try {
-                        const isValidCourier = (courier) => {
-                            if (!courier) return false;
-                            const n = String(courier).toUpperCase().trim();
-                            if (n === 'НЕ НАЗНАЧЕНО' || n === 'UNASSIGNED' || n === 'ПО') return false;
-                            if (n.includes('НЕ НАЗНАЧЕН') || n.includes('НЕНАЗНАЧЕН')) return false;
-                            return true;
-                        };
-                        
-                        const isSelfPickup = (order) => {
-                            const delivery = String(order.deliveryType || order.delivery || '').toLowerCase();
-                            const address = String(order.address || '').toLowerCase();
-                            return delivery.includes('самови') || delivery.includes('самовыв') || 
-                                   delivery.includes('pickup') || delivery.includes('self') ||
-                                   address.includes('самови') || address.includes('самовыв');
-                        };
-
-                        const needsGeocoding = dedupedOrders.filter(o => {
-                            const s = String(o.status || '').toLowerCase().trim();
-                            if (s.includes('отказ') || s.includes('отменен') || s.includes('відмова')) return false;
-                            if (isSelfPickup(o)) return false; 
-                            if (!isValidCourier(o.courier)) return false; 
-                            if (o.coords?.lat) return false; 
-
-                            const addrKey = (o.address || o.addressGeo || '').toLowerCase().trim();
-                            if (this.geocache.has(addrKey)) {
-                                const cached = this.geocache.get(addrKey);
-                                if (cached) o.coords = { lat: cached.latitude, lng: cached.longitude };
-                                return false;
-                            }
-                            return true;
-                        });
-
-                        if (needsGeocoding.length > 0) {
-                            logger.info(`[TurboCalculator] 🧭 Need geocoding: ${needsGeocoding.length} orders for ${normName}`);
-
-                            // v5.180: Parallel geocoding with concurrency limit to prevent overwhelming APIs
-                            const geoLimit = pLimit(5); // Max 5 concurrent geocoding requests
-                            let geoDone = 0;
-                            await Promise.all(needsGeocoding.map(o => geoLimit(async () => {
-                                try {
-                                    const cacheKey2 = (o.address || o.addressGeo || '').toLowerCase().trim();
-                                    
-                                    // v36.5: Pulse-update during geocoding 
-                                    stats.processedCount++; // Incremental progress!
-                                    stats.message = `Geocoding: ${o.address ? o.address.slice(0, 30) : '...'} (${++geoDone}/${needsGeocoding.length})`;
-                                    emitStatus(); 
-
-                                    if (!cacheKey2) return;
-
-                                    // Double-check (might have been cached by another parallel call)
-                                    if (this.geocache.has(cacheKey2)) {
-                                        const cached = this.geocache.get(cacheKey2);
-                                        if (cached) o.coords = { lat: cached.latitude, lng: cached.longitude };
-                                        return;
-                                    }
-
-                                    // Pass extracted delivery zone down for strict KML bounding validation
-                                    const expectedZone = String(o.deliveryZone || o.kmlZone || o.sector || o.zone || '').trim();
-                                    const isRetry = !!o.geocoding_attempted;
-                                    
-                                    const coords = await this.getRobustGeocode(
-                                        o.address || o.addressGeo, 
-                                        cityBias, 
-                                        expectedZone, 
-                                        allKmlZones, 
-                                        isRetry
-                                    );
-
-                                    if (coords) {
-                                        o.coords = { lat: coords.latitude, lng: coords.longitude };
-                                        this.geocache.set(cacheKey2, coords);
-                                    } else {
-                                        this.geocache.set(cacheKey2, null);
-                                        o.geocoding_attempted = true;
-                                    }
-                                } catch (err) {
-                                    // ignore
-                                }
-                            })));
-                        }
-
-                        // v5.162: CRITICAL - Update count only for non-geocoded orders here 
-                        // as geocoded ones were already counted incrementally above
-                        const alreadyGeocodedCount = dedupedOrders.length - needsGeocoding.length;
-                        if (alreadyGeocodedCount > 0) {
-                            stats.processedCount += alreadyGeocodedCount;
-                        }
-                        emitStatus();
+                    // v7.2: No more inner geocoding loop. Everything is geocoded upfront by batchEnhancedGeocode.
+                    // We simply increment the processedCount for this block and proceed to routing.
+                    stats.processedCount += dedupedOrders.length;
+                    emitStatus();
 
                         // Use all valid orders (with coords OR a valid address for routing)
                         // Use deduplicated orders from this block

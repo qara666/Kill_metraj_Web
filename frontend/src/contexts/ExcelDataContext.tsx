@@ -163,14 +163,19 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             }
             
             // Normalize localData date
-            const localDateRaw = localData.creationDate || (localData.orders?.[0]?.creationDate ? localData.orders[0].creationDate.split(' ')[0] : null);
+            const localDateRaw = localData.creationDate || (localData.orders?.[0]?.creationDate ? String(localData.orders[0].creationDate).split(' ')[0] : null);
             let localDateNormalized = localDateRaw;
-            if (localDateRaw && /^\d{4}-\d{2}-\d{2}$/.test(localDateRaw)) {
+            if (localDateRaw && typeof localDateRaw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(localDateRaw)) {
                 const [y, m, d] = localDateRaw.split('-');
                 localDateNormalized = `${d}.${m}.${y}`;
             }
 
-            if (targetDate && localDateNormalized && targetDate !== localDateNormalized) {
+            // v5.205: FOR TODAY - always use local data if it has orders, even without date match
+            // This ensures we see previously calculated routes immediately after sync
+            const todayISO = new Date().toISOString().split('T')[0];
+            const isToday = currentShift === todayISO;
+            
+            if (!isToday && targetDate && localDateNormalized && targetDate !== localDateNormalized) {
                 console.warn(`[ExcelSync] Cache date mismatch (${localDateNormalized} vs ${targetDate}). Clearing stale cache.`);
                 localStorage.removeItem('km_dashboard_processed_data_v3');
                 localData = null;
@@ -244,18 +249,22 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                   
                   // v5.204: VALIDATE DATE of server-rehydrated state
                   const currentShift = useDashboardStore.getState().apiDateShift;
-                  const normalize = (d: string | undefined) => {
-                      if (!d) return '';
-                      const part = d.split(' ')[0].split('T')[0];
-                      if (part.includes('-')) {
-                          const [y, m, d_] = part.split('-');
-                          return `${d_}.${m}.${y}`;
+                  const normalize = (d: any): string => {
+                      if (!d || typeof d !== 'string') return '';
+                      try {
+                          const part = d.split(' ')[0].split('T')[0];
+                          if (part.includes('-')) {
+                              const [y, m, d_] = part.split('-');
+                              return `${d_}.${m}.${y}`;
+                          }
+                          return part;
+                      } catch (e) {
+                          return '';
                       }
-                      return part;
                   };
                   
-                  const targetDate = normalize(currentShift);
-                  const dataDate = normalize(serverData.creationDate || (serverData.orders?.[0]?.creationDate || ''));
+                  const targetDate = normalize(String(currentShift || ''));
+                  const dataDate = normalize(String(serverData.creationDate || (serverData.orders?.[0]?.creationDate || '')));
                   
                   if (targetDate && dataDate && targetDate !== dataDate) {
                       console.warn(`[ExcelSync] Server state date mismatch (${dataDate} vs ${targetDate}). Ignoring.`);
