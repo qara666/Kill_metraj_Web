@@ -155,9 +155,15 @@ export const SmartRouteOptimizer: React.FC = () => {
 
   // Расчет расстояния между адресами (упрощенный)
   const calculateDistance = (address1: string, address2: string): number => {
+    // v9.92: Robust guards
+    if (!address1 || !address2) return 5.0
+
+    const a1 = String(address1).toLowerCase()
+    const a2 = String(address2).toLowerCase()
+
     // Простая эвристика на основе длины адреса и общих слов
-    const words1 = address1.toLowerCase().split(' ')
-    const words2 = address2.toLowerCase().split(' ')
+    const words1 = a1.split(' ')
+    const words2 = a2.split(' ')
     
     let commonWords = 0
     for (const word of words1) {

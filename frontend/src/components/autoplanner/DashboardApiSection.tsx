@@ -48,8 +48,9 @@ export const DashboardApiSection: React.FC = () => {
     const setSelectedDate = setApiDateShift;
 
     // v7.2: Normalize any date format to YYYY-MM-DD for logic and <input type="date">
-    const normalizeToISO = (d: string | null | undefined): string => {
-        if (!d) return format(new Date(), 'yyyy-MM-dd');
+    const normalizeToISO = (dateValue: any): string => {
+        if (!dateValue) return format(new Date(), 'yyyy-MM-dd');
+        const d = typeof dateValue === 'string' ? dateValue : String(dateValue);
         if (d.includes('.')) {
             const [day, mon, year] = d.split('.');
             return `${year}-${mon}-${day}`;
@@ -59,10 +60,43 @@ export const DashboardApiSection: React.FC = () => {
 
     const selectedDateISO = normalizeToISO(selectedDate);
     const todayISO = format(new Date(), 'yyyy-MM-dd');
+    const [todayStatus, setTodayStatus] = React.useState<{ ready: boolean | null; date: string } | null>({ ready: null, date: todayISO });
+    const fetchTodayStatus = React.useCallback(async () => {
+      try {
+        const token = localStorage.getItem('km_access_token');
+        if (!token) return;
+        const res = await fetch('/api/turbo/status_today', {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.success) {
+            setTodayStatus({ ready: data.ready, date: data.date || todayISO });
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }, []);
     const isToday = selectedDateISO === todayISO;
 
     const [timeLeft, setTimeLeft] = useState<string>('--:--');
     const [isSyncing, setIsSyncing] = useState(false);
+
+    // Auto-trigger calculation for today on first load (no date change)
+    React.useEffect(() => {
+        const todayISO = format(new Date(), 'yyyy-MM-dd');
+        // If current view is today, perform an automatic sync to refresh data
+        if (selectedDate?.toString?.() === todayISO || selectedDateISO === todayISO) {
+            // Delay slightly to ensure the UI has mounted
+            const t = setTimeout(() => {
+                handleSync();
+            }, 500);
+            return () => clearTimeout(t);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // v7.0: Listen for real-time robot status updates
     React.useEffect(() => {
@@ -75,6 +109,13 @@ export const DashboardApiSection: React.FC = () => {
         window.addEventListener('km:robot:status', handleStatus);
         return () => window.removeEventListener('km:robot:status', handleStatus);
     }, [setAutoRoutingStatus]);
+
+    // Periodically refresh today's status for UI indicator
+    React.useEffect(() => {
+      fetchTodayStatus();
+      const t = setInterval(fetchTodayStatus, 30000);
+      return () => clearInterval(t);
+    }, [fetchTodayStatus]);
 
     // New Day Detection
     React.useEffect(() => {
@@ -114,15 +155,13 @@ export const DashboardApiSection: React.FC = () => {
                 return;
             }
 
-            const today = format(new Date(), 'yyyy-MM-dd');
-            // v7.2: Send normalized date and forced redistribution in body
-            const body: any = { 
+            const body = { 
+                divisionId, 
                 date: dateISO, 
-                forceFull: dateISO === today,
-                // v5.206: Explicitly include divisionId
-                divisionId: divisionId ? String(divisionId) : undefined
+                force: true,
+                // v7.3: Priority flag to move this division to the front of the queue
+                priority: true 
             };
-
             console.log('[DashboardApiSection] 📤 Sending turbo/priority request:', body);
             
             const res = await fetch('/api/turbo/priority', {
@@ -141,27 +180,54 @@ export const DashboardApiSection: React.FC = () => {
                     errMsg = `Status: ${res.status}`;
                 }
                 
-                // v7.3: Retry logic for 503 (initialization in progress)
-                if (res.status === 503 && errData?.is_ready === false) {
-                    console.warn('[DashboardApiSection] turbo/priority not ready, retrying in 2s...');
-                    await new Promise(r => setTimeout(r, 2000));
-                    const retryRes = await fetch('/api/turbo/priority', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                        body: JSON.stringify(body)
-                    });
-                    if (retryRes.ok) {
-                        const result = await retryRes.json();
-                        console.log('[DashboardApiSection] ✅ turbo/priority retried successfully for', dateISO, '- result:', result);
-                        toast.success('Расчет запущен!');
-                        return;
-                    } else {
-                        try {
-                            const retryErr = await retryRes.json();
-                            errMsg = retryErr.error || retryErr.message || retryErr.details || `Status: ${retryRes.status}`;
-                        } catch {
-                            errMsg = `Status: ${retryRes.status}`;
+                // Robust handling for initialization-in-progress (503)
+                if (res.status === 503) {
+                    // Poll readiness for up to ~30s, then retry once if ready
+                    let ready = false;
+                    try {
+                        for (let i = 0; i < 30; i++) {
+                            const readyRes = await fetch('/api/turbo/ready', {
+                                method: 'GET',
+                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+                            });
+                            if (readyRes.ok) {
+                                const readyData = await readyRes.json();
+                                ready = !!readyData?.ready;
+                                if (ready) break;
+                            }
+                            await new Promise(r => setTimeout(r, 1000));
                         }
+                    } catch {
+                        // ignore readiness fetch errors, fall back to showing error below
+                    }
+
+                    if (ready) {
+                        try {
+                            const retryRes = await fetch('/api/turbo/priority', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                                body: JSON.stringify(body)
+                            });
+                            if (retryRes.ok) {
+                                const result = await retryRes.json();
+                                console.log('[DashboardApiSection] ✅ turbo/priority retried successfully for', dateISO, '- result:', result);
+                                toast.success('Расчет запущен!');
+                                return;
+                            } else {
+                                try {
+                                    const retryErr = await retryRes.json();
+                                    errMsg = retryErr.error || retryErr.message || retryErr.details || `Status: ${retryRes.status}`;
+                                } catch {
+                                    errMsg = `Status: ${retryRes.status}`;
+                                }
+                            }
+                        } catch (retryErr) {
+                            errMsg = retryErr?.message || String(retryErr);
+                        }
+                    } else {
+                        // Still not ready
+                        toast.error('TurboCalculator ещё инициализируется, повторите позже');
+                        return;
                     }
                 }
                 
@@ -187,50 +253,29 @@ export const DashboardApiSection: React.FC = () => {
         localStorage.removeItem('km_dashboard_processed_data');
         localStorage.removeItem('km_routes');
 
-        // v5.205: Also clear React state for fresh start
-        clearExcelData();
-
+        // Sync logic for current day or archive
         if (isToday) {
             setApiAutoRefreshEnabled(true);
-            // v5.205: Reset robot status for fresh calculation - but preserve userStopped: false to allow auto-start
-            setAutoRoutingStatus({
-                isActive: true,
-                userStopped: false, // Allow robot to auto-start
-                totalCount: 0,
-                processedCount: 0,
-                processedCouriers: 0,
-                totalCouriers: 0,
-                skippedGeocoding: 0,
-                skippedInRoutes: 0,
-                skippedNoCourier: 0,
-                skippedOther: 0,
-                lastUpdate: Date.now()
-            });
         } else {
             setApiAutoRefreshEnabled(false);
-            // Archive - also reset for fresh load
-            setAutoRoutingStatus({
-                isActive: true,
-                userStopped: false,
-                totalCount: 0,
-                processedCount: 0,
-                lastUpdate: Date.now()
-            });
         }
 
-        // Pull fresh data from FO API
+        // v5.205: Update robot status for fresh calculation - preserve existing counts to avoid flicker
+        setAutoRoutingStatus({
+            isActive: true,
+            userStopped: false,
+            lastUpdate: Date.now()
+        });
+
+        // v7.2: Pull fresh data from FO API IMMEDIATELY
+        triggerApiManualSync();
+        
+        // v7.3: Trigger server calculation with a SHORTER delay
         setTimeout(async () => {
-            triggerApiManualSync();
-            
-            // v5.206: Wait longer for data to be saved first (2s instead of 500ms)
-            // Then trigger server calculation
-            setTimeout(async () => {
-                console.log('[DashboardApiSection] 🚀 Calling triggerServerCalculation for:', selectedDateISO);
-                await triggerServerCalculation(selectedDateISO);
-            }, 2000);
-            
+            console.log('[DashboardApiSection] 🚀 Calling triggerServerCalculation for:', selectedDateISO);
+            await triggerServerCalculation(selectedDateISO);
             setIsSyncing(false);
-        }, 100);
+        }, 1200);
 
         toast.success(isToday
             ? 'Синхронізація поточних замовлень та запуск розрахунку...'
@@ -328,6 +373,9 @@ export const DashboardApiSection: React.FC = () => {
                                         ? 'Маршруты готовы'
                                         : 'Синхронизация с сервером'}
                             </h3>
+                            {todayStatus && todayStatus.ready !== null && (
+                              <span className="ml-2 text-xs text-gray-500 inline-block align-middle">Расчёт сегодня: {todayStatus.ready ? 'готов' : 'идёт'}</span>
+                            )}
                             <div className="flex items-center gap-2 mt-1">
                                 <div className={clsx(
                                     "w-1.5 h-1.5 rounded-full",

@@ -6,7 +6,8 @@
     "start": "node backend/simple_server.js",
     "dev": "nodemon backend/server.js",
     "analyze:functions": "node scripts/analyze_functions.js",
-    "generate:func-report": "node scripts/generate_function_report.js"
+    "generate:func-report": "node scripts/generate_function_report.js",
+    "test:today-sync": "node backend/scripts/test_today_full_sync.js"
   },
   "dependencies": {
     "express": "^4.17.1",

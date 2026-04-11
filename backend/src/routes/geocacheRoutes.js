@@ -209,4 +209,52 @@ router.get('/hubs/:hubId/zones', async (req, res) => {
     }
 });
 
+/**
+ * POST /api/geocache/manual-correct
+ * Saves a manual address fix to the cache
+ */
+router.post('/manual-correct', async (req, res) => {
+    try {
+        const { address, lat, lng, locationType = 'ROOFTOP' } = req.body;
+        if (!address || !lat || !lng) {
+            return res.status(400).json({ success: false, error: 'Missing address, lat or lng' });
+        }
+
+        // v9.91: Use exactly the same cleaning as TurboCalculator
+        let deepCleanAddress;
+        try {
+            const enhanced = require('../../workers/turboGeoEnhanced');
+            deepCleanAddress = enhanced.deepCleanAddress;
+        } catch (e) {
+            console.warn('[GeoCache] Could not import deepCleanAddress, falling back to basic cleaning');
+        }
+
+        let clean;
+        if (deepCleanAddress) {
+            clean = deepCleanAddress(address).toLowerCase();
+        } else {
+            clean = address.toLowerCase()
+                .replace(/\b(кв|квартира|апарт|оф|офис|офіс)\s*\.?\s*\d+[а-яіє]*\b/gi, '')
+                .replace(/\b(под\.?|підʼїзд|подъезд|п-д)\s*\.?\s*\d+\b/gi, '')
+                .replace(/\s+/g, ' ').trim();
+        }
+
+        await GeoCache.upsert({
+            address_key: clean,
+            lat: lat,
+            lng: lng,
+            is_success: true,
+            location_type: locationType,
+            provider: 'manual',
+            hit_count: 1,
+            expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // 1 year for manual fixes
+        });
+
+        res.json({ success: true, cleanKey: clean });
+    } catch (error) {
+        console.error('[GeoCache] Error in manual-correct:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 module.exports = router;
