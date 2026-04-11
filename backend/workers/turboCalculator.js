@@ -15,6 +15,9 @@ const {
     getOrderHash,
     haversineDistance
 } = require('./turboGroupingHelpers');
+const { batchEnhancedGeocode, checkAnomalyDistance } = require('./turboGeoEnhanced');
+const { enhanceAllOrderCoords, buildZoneCentroids, calculateTotalRouteDistance } = require('./turboCoordValidator');
+
 // v36.9: CommonJS-safe local implementations of essential utilities (zero-dependency)
 const pLimit = (concurrency) => {
     const queue = [];
@@ -102,10 +105,10 @@ function normalizeDateISO(dateStr) {
 class OrderCalculator {
     constructor() {
         this.isRunning = false;
-        // v6.11: Idle tick every 30s — actual recalc throttled to MIN_CALC_INTERVAL per division
-        this.interval = 30000;
-        // v6.11: Minimum time between two consecutive calculations for the same division
-        this.MIN_CALC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutes
+        // v7.1: Idle tick every 5 minutes — notifyNewFOData() wakes divisions immediately on real changes
+        this.interval = 5 * 60 * 1000; // 5 minutes
+        // v7.1: Per-division cooldown: minimum time before re-running even with new data
+        this.MIN_CALC_INTERVAL_MS = 90 * 1000; // 90 seconds minimum between recalculations
         // v6.11: Track timestamp of last completed calculation per division
         this.lastCalculatedAt = new Map();
         // v6.11: Track if FO data changed since last calc (to wake up immediately)
@@ -186,8 +189,11 @@ class OrderCalculator {
 
             // Build spatial grid index
             this.buildKmlSpatialGrid();
+            
+            // v7.1: Precompute zone centroids for fast coordinate validation
+            this.zoneCentroids = buildZoneCentroids(this.kmlZones);
 
-            logger.info(`[TurboCalculator] 📦 Pre-loaded ${this.kmlZones.length} KML zones with spatial grid index`);
+            logger.info(`[TurboCalculator] 📦 Pre-loaded ${this.kmlZones.length} KML zones with spatial grid index and centroids`);
         } catch (e) {
             logger.warn('[TurboCalculator] Failed to preload KML zones:', e.message);
         }
@@ -537,24 +543,18 @@ class OrderCalculator {
         await this.loadSavedState();
         await this.loadAllDivisionStatesFromDB();
 
-        logger.info(`[TurboCalculator] 🚀 v5.185 INITIALIZED — Loaded active divisions from DB.`);
+        logger.info(`[TurboCalculator] 🚀 v7.0 SERVER-FIRST — Initialized. Auto-starting tick loop.`);
 
-        // v6.10: DO NOT auto-start tick loop on server start
-        // Only start calculation when user explicitly triggers via "Запустить расчёт"
-        // this.scheduleNextTick(true);
+        // v7.0: SERVER-FIRST — always auto-start the tick loop.
+        // Calculations run automatically when FO data arrives.
+        this.scheduleNextTick(true);
     }
 
     scheduleNextTick(forceInitial = false) {
         if (this.timer) clearTimeout(this.timer);
 
-        // v5.170: Only schedule next tick if there are active divisions
-        // But on initial start, always schedule first tick
-        const hasActiveDivision = Array.from(this.divisionStates.values()).some(s => s.isActive);
-        if (!forceInitial && !hasActiveDivision) {
-            logger.info('[TurboCalculator] ⏸️ No active divisions — pausing tick loop until trigger()');
-            return;
-        }
-
+        // v7.0: SERVER-FIRST — always keep the tick loop running.
+        // No longer stops when there are no "active" user-started divisions.
         this.timer = setTimeout(() => this.tick(), this.interval);
     }
 
@@ -741,12 +741,16 @@ class OrderCalculator {
     async tick() {
         if (this.isProcessing) return;
 
-        const activeDivs = Array.from(this.divisionStates.entries()).filter(([id, s]) => s.isActive).map(([id]) => id);
-        logger.info(`[TurboCalculator] 🔄 tick() called. Active divisions: [${activeDivs.join(', ')}]`);
+        const pendingDivs = Array.from(this.newFODataPending.keys());
+        const activeDivs = Array.from(this.divisionStates.entries())
+            .filter(([id, s]) => s.isActive || this.newFODataPending.has(id))
+            .map(([id]) => id);
+
+        logger.info(`[TurboCalculator] 🔄 tick() — active: [${activeDivs.join(', ')}], pending: [${pendingDivs.join(', ')}]`);
 
         if (activeDivs.length === 0) {
-            logger.info('[TurboCalculator] ⏸️ No active divisions — tick skipped');
-            this.isProcessing = false;
+            logger.info('[TurboCalculator] 💤 All divisions idle, no pending FO data — tick skipped, timer rescheduled');
+            this.scheduleNextTick();
             return;
         }
 
@@ -754,46 +758,40 @@ class OrderCalculator {
         this.needsReRun = false;
 
         try {
-            // v5.185: Emit minimal "Heartbeat" status so UI knows the robot is awake.
-            // We use divisionId: 'all' to avoid resetting specific division bars.
-            if (this.io) {
-                this.io.emit('robot_status', {
-                    divisionId: 'all',
-                    isActive: true,
-                    lastUpdate: Date.now(),
-                    message: 'Robot is awake and processing...'
-                });
-            }
-
             const tasks = [];
             for (const [divId, state] of this.divisionStates.entries()) {
-                if (!state.isActive) continue;
-
-                // v6.11: Cooldown check — skip if calculated recently AND no new FO data pending
-                const lastCalc = this.lastCalculatedAt.get(divId);
-                const timeSinceLastCalc = lastCalc ? Date.now() - lastCalc : Infinity;
                 const hasPendingFOData = this.newFODataPending.get(divId) === true;
 
-                if (!hasPendingFOData && timeSinceLastCalc < this.MIN_CALC_INTERVAL_MS) {
-                    const waitSec = Math.ceil((this.MIN_CALC_INTERVAL_MS - timeSinceLastCalc) / 1000);
-                    logger.info(`[TurboCalculator] ⏸️ ${divId}: Cooldown active — last calc ${Math.round(timeSinceLastCalc/1000)}s ago, waiting ${waitSec}s more`);
+                // v7.1: Only process if: (a) isActive AND cooldown passed, OR (b) new FO data arrived
+                const lastCalc = this.lastCalculatedAt.get(divId);
+                const timeSinceLastCalc = lastCalc ? Date.now() - lastCalc : Infinity;
+                const cooldownOk = timeSinceLastCalc >= this.MIN_CALC_INTERVAL_MS;
+
+                if (!hasPendingFOData && (!state.isActive || !cooldownOk)) {
+                    if (!cooldownOk) {
+                        const waitSec = Math.ceil((this.MIN_CALC_INTERVAL_MS - timeSinceLastCalc) / 1000);
+                        logger.info(`[TurboCalculator] ⏸️ ${divId}: Cooldown (${waitSec}s left), no new FO data — skip`);
+                    }
                     continue;
                 }
 
-                // Clear pending FO data flag (we're about to process it)
+                // Clear pending flag before processing
                 if (hasPendingFOData) {
                     this.newFODataPending.delete(divId);
-                    logger.info(`[TurboCalculator] 🔔 ${divId}: Processing triggered by new FO data`);
+                    // Reactivate if it was idle
+                    if (!state.isActive) {
+                        state.isActive = true;
+                        logger.info(`[TurboCalculator] 🔔 ${divId}: Reactivated by new FO data`);
+                    }
                 }
 
-                let targetDate = state.date;
-                logger.info(`[TurboCalculator] ⚙️ Starting tick for ${divId} on ${targetDate}`);
+                let targetDate = state.date || new Date().toISOString().split('T')[0];
+                logger.info(`[TurboCalculator] ⚙️ Starting calculation for ${divId} on ${targetDate}`);
                 tasks.push(this.processDay(targetDate, divId));
             }
             await Promise.all(tasks);
         } catch (err) {
-            logger.error('[OrderCalculator] ❌ Robot Tick critical failure:', err);
-            // v5.170: Emit error status so frontend knows something went wrong
+            logger.error('[TurboCalculator] ❌ Robot Tick critical failure:', err);
             if (this.io) {
                 this.io.emit('robot_status', {
                     isActive: false,
@@ -805,42 +803,46 @@ class OrderCalculator {
             }
         } finally {
             this.isProcessing = false;
-            // v6.11: Always keep scheduling so we can wake up for next 3-min check or FO data event
             this.scheduleNextTick();
-            if (this.needsReRun) {
-                this.trigger();
-            }
+            if (this.needsReRun) this.trigger();
         }
     }
 
     /**
-     * v6.11: Called by dashboardRoutes after FO data is saved.
-     * Wakes up the calculator for this division ONLY IF it is already active.
-     * Does NOT activate a stopped division.
+     * v7.0: SERVER-FIRST — called by server when fresh FO data arrives.
+     * NOW ALWAYS activates calculation for this division, regardless of user action.
+     * The server is self-sufficient: no user action needed to start calculations.
      */
     notifyNewFOData(divisionId, date) {
         if (!divisionId) return;
         const divIdStr = String(divisionId);
-        const state = this.divisionStates.get(divIdStr);
-        if (!state || !state.isActive) {
-            return; // Division not running — ignore
+        const targetDate = date || new Date().toISOString().split('T')[0];
+
+        // v7.0: ALWAYS activate this division — no isActive check anymore
+        let state = this.divisionStates.get(divIdStr);
+        if (!state) {
+            state = { users: new Set(), date: targetDate, priorityQueue: [], currentPriority: null, isActive: true, forceFull: false };
+            this.divisionStates.set(divIdStr, state);
+        } else {
+            state.isActive = true;
+            state.date = targetDate;
         }
 
         // Mark that new FO data is available for this division
         this.newFODataPending.set(divIdStr, true);
 
         // Clear the stale hash so processCache detects the change
-        const targetDate = date || state.date;
-        if (targetDate) {
-            this.processedHashes.delete(`${divIdStr}_${targetDate}`);
-        }
+        this.processedHashes.delete(`${divIdStr}_${targetDate}`);
 
-        logger.info(`[TurboCalculator] 🔔 New FO data for division ${divIdStr} (${targetDate}) — will recalculate on next tick (within 30s)`);
+        logger.info(`[TurboCalculator] 🔔 New FO data for division ${divIdStr} (${targetDate}) — AUTO-ACTIVATING calculation`);
 
         // If calculator is idle, wake it up immediately
         if (!this.isProcessing && this.timer) {
             clearTimeout(this.timer);
             this.timer = setTimeout(() => this.tick(), 2000); // 2s delay to batch rapid saves
+        } else if (!this.timer) {
+            // Timer was stopped — restart it
+            this.scheduleNextTick();
         }
     }
 
@@ -958,7 +960,18 @@ class OrderCalculator {
             // Op and sequelize are fine — they're declared at module scope (lines 4-5).
             const Route = this.getModel('Route');
             // v5.196: Get real totalCount immediately as possible to avoid 'zeros' in UI
-            const cacheTotalCount = data?.orders?.length || 0;
+            // v7.2: Use ONLY routeable orders for the status count to perfectly match the Frontend Results table
+            let cacheTotalCount = 0;
+            if (data?.orders) {
+                cacheTotalCount = data.orders.filter(o => {
+                    const c = String(o.courier || o.courierName || o.courierId || '').toUpperCase().trim();
+                    const s = String(o.status || o.deliveryStatus || '').toLowerCase().trim();
+                    if (!c || c === 'НЕ НАЗНАЧЕНО' || c === 'UNASSIGNED' || c === 'ПО' || c === 'ID:0') return false;
+                    if (s.includes('отказ') || s.includes('отменен') || s.includes('відмова')) return false;
+                    if (s.includes('самовывоз') || s.includes('на месте')) return false;
+                    return true;
+                }).length;
+            }
             if (this.io && cacheTotalCount > 0) {
                 // v6.12: Don't jump to 0 if we already have progress in the global store
                 const divStatusKey = `${cache.division_id}_${targetDateNorm}`;
@@ -1092,22 +1105,35 @@ class OrderCalculator {
 
             const existingHash = this.processedHashes.get(cacheKey);
 
-            // If hash unchanged skip entirely!
+            // If hash unchanged — put division to SLEEP, wake only on new FO data
             if (existingHash === dataHash) {
+                // v7.1: Deactivate division — tick will skip it until notifyNewFOData() reactivates
+                const divState = this.divisionStates.get(String(cache.division_id));
+                if (divState) {
+                    divState.isActive = false;
+                    logger.info(`[TurboCalculator] 💤 ${cache.division_id}: Data unchanged — DEACTIVATED. Will reactivate on new FO data.`);
+                }
+
+                // Fetch last known status for accurate UI display
+                const divStatusKey = `${cache.division_id}_${targetDateNorm}`;
+                const lastStatus = global.divisionStatusStore?.[divStatusKey] || {};
+
                 if (this.io) {
                     this.io.emit('robot_status', {
                         divisionId: cache.division_id,
                         date: targetDateNorm || cache.target_date,
-                        isActive: true, // v6.12: Keep active so tick loop continues
-                        currentPhase: 'idle',
-                        message: `Ожидание новых данных... (${data.orders.length} заказов)`,
+                        isActive: false,
+                        currentPhase: 'complete',
+                        message: `Расчёт завершён. Ожидание новых данных...`,
                         totalCount: cacheTotalCount,
-                        processedCount: cacheTotalCount // v6.12: Show all orders as processed
+                        processedCount: lastStatus.processedCount || cacheTotalCount,
+                        skippedInRoutes: lastStatus.skippedInRoutes || 0,
+                        skippedGeocoding: lastStatus.skippedGeocoding || 0
                     });
                 }
-                logger.info(`[TurboCalculator] 💤 ${cache.division_id}: Data unchanged — sleeping, will check again in ${this.interval/1000}s`);
                 return;
             }
+
 
             logger.info(`[TurboCalculator] 🔄 Data changed for ${cacheKey}: hashing trigged recalculation`);
 
@@ -1197,132 +1223,74 @@ class OrderCalculator {
                 return true;
             });
 
-            // v28.9: Frontload coordinate extraction from all possible sources (including addressGeo)
-            // This ensures grouping and validOrders filters have accurate GPS data immediately.
-            ordersToGroup.forEach(o => {
-                if (o.coords?.lat) return;
+            // v7.1 SOTA: Smart Coordinate Resolver & Validator
+            // Frontload coordinate extraction using ALL sources: FO GPS -> Lat/Lng -> Geocoder + validates against KML zone centroids.
+            const kmlIndex = { findBestZoneForPoint: (lat, lng) => this.findBestZoneForPoint(lat, lng) };
+            if (!this.zoneCentroids) this.zoneCentroids = buildZoneCentroids(this.kmlZones);
+            
+            const { enhanced, fromGPS, fromGeocoder, lowConfidence } = enhanceAllOrderCoords(ordersToGroup, kmlIndex, this.zoneCentroids);
+            logger.info(`[TurboCalculator] 📍 Coord resolver: validated ${enhanced} orders (${fromGPS} GPS, ${fromGeocoder} DB, ${lowConfidence} low-conf)`);
 
-                // 1. Try addressGeo (Common in user's 347 orders)
-                if (o.addressGeo) {
-                    const parsed = this.parseAddressGeo(o.addressGeo);
-                    if (parsed) {
-                        o.coords = parsed;
-                        return;
-                    }
-                }
-
-                // 2. Try lat/lng fields directly
-                if (o.lat && o.lng) {
-                    const lat = parseFloat(o.lat);
-                    const lng = parseFloat(o.lng);
-                    if (!isNaN(lat) && !isNaN(lng)) {
-                        o.coords = { lat, lng };
-                        return;
-                    }
-                }
-            });
-
-            // v5.197: BATCH GEOCODING FIRST - Ensures grouping can use geographic splitting
+            // v7.1 SOTA: ENHANCED GEOCODING — 6-level cascaded engine with Ukrainian specialization
             const GeoCache = this.getModel('GeoCache');
             const allOrdersNeedsGeo = ordersToGroup.filter(o => !o.coords?.lat);
+
             if (allOrdersNeedsGeo.length > 0) {
-                // v5.170/v5.197: Pre-check GeoCache DB to skip already-geocoded addresses
-                const dbCachedAddresses = new Map();
-                const uniqueAddresses = new Set(allOrdersNeedsGeo.map(o => (o.address || o.addressGeo || '').toLowerCase().trim()));
-                
-                if (GeoCache && uniqueAddresses.size > 0) {
-                    try {
-                        const cached = await GeoCache.findAll({
-                            where: { address_key: Array.from(uniqueAddresses), is_success: true }
-                        });
-                        cached.forEach(c => dbCachedAddresses.set(c.address_key, { latitude: c.lat, longitude: c.lng }));
-                        logger.info(`[TurboCalculator] 📦 GeoCache DB hit: ${dbCachedAddresses.size}/${uniqueAddresses.size} addresses`);
-                    } catch (e) { logger.warn(`[TurboCalculator] ⚠️ GeoCache check failed: ${e.message}`); }
+                const totalToGeo = allOrdersNeedsGeo.length;
+                const startTime = Date.now();
+
+                logger.info(`[TurboCalculator] 🌍 Enhanced geocoding: ${totalToGeo} addresses (6-level SOTA engine)...`);
+
+                if (this.io) {
+                    this.io.emit('robot_status', {
+                        divisionId: cache.division_id,
+                        date: cache.target_date,
+                        isActive: true,
+                        totalCount: cacheTotalCount,
+                        processedCount: Math.round(cacheTotalCount * 0.05),
+                        currentPhase: 'geocoding',
+                        message: `Геокодирование: ${totalToGeo} адресов (2-проходной алгоритм)...`
+                    });
                 }
 
-                const trulyNeedsGeo = allOrdersNeedsGeo.filter(o => {
-                    const addrKey = (o.address || o.addressGeo || '').toLowerCase().trim();
-                    const cached = dbCachedAddresses.get(addrKey) || this.geocache.get(addrKey);
-                    if (cached) {
-                        o.coords = { lat: cached.latitude, lng: cached.longitude };
-                        return false;
-                    }
-                    return !!addrKey;
-                });
-
-                if (trulyNeedsGeo.length > 0) {
-                    const totalToGeo = trulyNeedsGeo.length;
-                    const startTime = Date.now();
-                    
-                    // v6.10: Emit status BEFORE starting geocoding for immediate feedback
-                    if (this.io) {
-                        this.io.emit('robot_status', {
-                            divisionId: cache.division_id,
-                            date: cache.target_date,
-                            isActive: true,
-                            totalCount: cacheTotalCount,
-                            processedCount: Math.round(cacheTotalCount * 0.1),
-                            currentPhase: 'geocoding',
-                            message: `Starting geocoding: ${totalToGeo} addresses...`
-                        });
-                    }
-                    
-                    // v6.10: Increase chunk size for faster processing
-                    const CHUNK_SIZE = 20;
-                    for (let i = 0; i < totalToGeo; i += CHUNK_SIZE) {
-                        const chunk = trulyNeedsGeo.slice(i, i + CHUNK_SIZE);
-                        await Promise.all(chunk.map(async (o) => {
-                            try {
-                                const cacheKey2 = cleanAddress(o.address || o.addressGeo || '').toLowerCase();
-                                const isRetry = !!o.geocoding_attempted;
-                                const expectedZone0 = String(o.deliveryZone || o.kmlZone || o.sector || o.zone || '').trim();
-                                
-                                const coords = await this.getRobustGeocode(
-                                    o.address || o.addressGeo, 
-                                    cityBias, 
-                                    expectedZone0 || null, 
-                                    allKmlZones, 
-                                    isRetry
-                                );
-
-                                if (coords) {
-                                    o.coords = { lat: coords.latitude, lng: coords.longitude };
-                                    this.geocache.set(cacheKey2, coords);
-                                } else {
-                                    this.geocache.set(cacheKey2, null);
-                                    o.geocoding_attempted = true;
-                                    
-                                    const orderNum = o.orderNumber || o.id || 'unknown';
-                                    stats.geoErrors.push({
-                                        orderNumber: orderNum,
-                                        address: o.address || o.addressGeo || 'no address',
-                                        courier: o.courier || o.courierName || ''
-                                    });
-                                }
-                            } catch (err) { }
-                        }));
-
-                        // Progress Percent + ETA for Geocoding
-                        const current = i + chunk.length;
+                await batchEnhancedGeocode(allOrdersNeedsGeo, cityBias, allKmlZones, {
+                    photonUrl: process.env.PHOTON_URL || this.osrmUrl?.replace(':5050', ':2322') || 'http://localhost:2322',
+                    geoCacheDb: GeoCache,
+                    gcacheLRU: this.geocache,
+                    onProgress: (done, total, pass) => {
+                        const pct = Math.round((done / total) * 100);
                         const elapsed = (Date.now() - startTime) / 1000;
-                        const perOrder = elapsed / current;
-                        const remaining = totalToGeo - current;
-                        const eta = Math.ceil(remaining * perOrder);
-                        
+                        const eta = done > 0 ? Math.ceil((elapsed / done) * (total - done)) : 0;
+
                         if (this.io) {
                             this.io.emit('robot_status', {
                                 divisionId: cache.division_id,
                                 date: cache.target_date,
                                 isActive: true,
                                 totalCount: cacheTotalCount,
-                                processedCount: Math.round((current / totalToGeo) * (cacheTotalCount * 0.3)), // Move progress bar up to 30% during geocoding
+                                processedCount: Math.round((done / total) * cacheTotalCount * 0.40),
                                 currentPhase: 'geocoding',
-                                message: `Geocoding: ${Math.round((current/totalToGeo)*100)}% (${current}/${totalToGeo}) ${eta > 0 ? `~${eta}s left` : ''}`
+                                message: `Геокодирование ${pass === 'pass2' ? '(точный поиск) ' : ''}${pct}% (${done}/${total})${eta > 0 ? ` ~${eta}с` : ''}`
                             });
                         }
                     }
-                }
+                });
+
+                // Collect remaining geo errors for stats
+                allOrdersNeedsGeo.forEach(o => {
+                    if (!o.coords?.lat) {
+                        stats.geoErrors.push({
+                            orderNumber: o.orderNumber || o.id || 'unknown',
+                            address: o.address || o.addressGeo || 'no address',
+                            courier: o.courier || o.courierName || ''
+                        });
+                    }
+                });
+
+                const succeeded = allOrdersNeedsGeo.filter(o => o.coords?.lat).length;
+                logger.info(`[TurboCalculator] ✅ Geocoding complete: ${succeeded}/${totalToGeo} success, ${stats.geoErrors.length} errors (${(Date.now() - startTime) / 1000}s)`);
             }
+
 
             // v28.8: Grouping happens AFTER geocoding so geographic splitting works!
             let deliveryWindows = new Map();

@@ -48,7 +48,12 @@ export function SettlementModal({
         const initial: Record<string, string> = {};
         orders.forEach((o: any) => {
             const id = String(o.id || o.orderNumber);
-            initial[id] = String(o.effectiveAmount ?? o.amount ?? 0);
+            const amount = parseFloat(o.amount || o.totalAmount || 0);
+            const changeAmount = parseFloat(o.changeAmount || 0);
+            const expectedReturn = changeAmount > amount ? changeAmount : amount;
+            
+            const isRefused = o.effectiveAmount === 0 || o.effectiveAmount === '0';
+            initial[id] = String(isRefused ? 0 : expectedReturn);
         });
         return initial;
     });
@@ -81,9 +86,12 @@ export function SettlementModal({
             const id = String(o.id || o.orderNumber);
             if (!selectedOrderIds.has(id)) return;
 
-            // Use the original effective amount or amount, ignoring manual subtractions so the "Expected" stays static
-            const val = o.effectiveAmount ?? o.amount ?? 0;
-            total += parseFloat(String(val)) || 0;
+            const amount = parseFloat(o.amount || o.totalAmount || 0);
+            const changeAmount = parseFloat(o.changeAmount || 0);
+            const expectedReturn = changeAmount > amount ? changeAmount : amount;
+            const isRefused = o.effectiveAmount === 0 || o.effectiveAmount === '0';
+            
+            total += isRefused ? 0 : expectedReturn;
         });
         return total;
     }, [orders, selectedOrderIds]);
@@ -106,29 +114,11 @@ export function SettlementModal({
         const order = orders.find((o: any) => String(o.id || o.orderNumber) === id);
         if (!order) return;
 
-        const billVal = parseFloat(order.changeAmount || 0);     // e.g. 700
-        const orderVal = parseFloat(order.amount || order.totalAmount || 0); // e.g. 652
-        
-        const advance = billVal - orderVal; // e.g. 1000 - 751 = 249 UAH
-        if (advance <= 0) return;
-
         const newSet = new Set(untakenChanges);
-        const isNowUntaken = !newSet.has(id);
-
-        if (isNowUntaken) {
-            newSet.add(id);
-            // v5.111: If customer didn't take change, courier has MORE money (bill size 1000 instead of price 751)
-            setOrderAmounts(prev => ({
-                ...prev,
-                [id]: (parseFloat(prev[id] || '0') + advance).toString()
-            }));
-        } else {
+        if (newSet.has(id)) {
             newSet.delete(id);
-            // Revert advance addition
-            setOrderAmounts(prev => ({
-                ...prev,
-                [id]: (parseFloat(prev[id] || '0') - advance).toString()
-            }));
+        } else {
+            newSet.add(id);
         }
         setUntakenChanges(newSet);
     };

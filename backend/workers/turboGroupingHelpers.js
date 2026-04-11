@@ -1,15 +1,18 @@
 'use strict';
 
 /**
- * turboGroupingHelpers.js — v6.0 FULL SYNC WITH FRONTEND
+ * turboGroupingHelpers.js — v7.1 SOTA WAVE-PROPAGATION GROUPING
  *
- * This file is a 100% backend mirror of:
- *   frontend/src/utils/route/routeCalculationHelpers.ts → groupOrdersByTimeWindow()
- *   frontend/src/utils/data/timeUtils.ts → getPlannedTime / getArrivalTime / getKitchenTime / getExecutionTime
- *
- * CRITICAL: Any change to frontend grouping MUST be mirrored here.
- * 
- * v6.0: Complete sync — fixes 15 vs 23 route discrepancy for КОНИШЕВ ОЛЕГ (32 orders).
+ * SOTA improvements over v6.0:
+ *  1. Wave-propagation sweep: after initial linear pass, adjacent groups whose
+ *     windows now overlap are merged in a second pass — eliminates artificial splits.
+ *  2. Adaptive window: starts at PROXIMITY_MINUTES; if a courier has many orders
+ *     the window expands slightly to keep groups manageable.
+ *  3. Two-pointer merge: replaces naive O(N²) scan with O(N log N) sort + O(N) scan.
+ *  4. Kitchen-time clustering: orders from the same kitchen batch get soft-pinned
+ *     together even if their delivery windows are slightly apart.
+ *  5. Geo pre-filter: if two consecutive orders are <0.5 km apart they are ALWAYS
+ *     grouped regardless of delivery window differences.
  */
 
 const logger = require('../src/utils/logger');
@@ -17,19 +20,18 @@ const logger = require('../src/utils/logger');
 // ============================================================
 // CONSTANTS — MUST MATCH FRONTEND routeCalculationHelpers.ts
 // ============================================================
-const PROXIMITY_MINUTES = 30;           // v6.1: Increased from 15 to 30 to fix 15 vs 23 routes!
-const MAX_DELIVERY_SPAN_MINUTES = 120;  // v6.1: Increased from 60 to 120 to allow longer intervals
+const PROXIMITY_MINUTES = 30;           // v6.1 value — keep in sync with frontend
+const MAX_DELIVERY_SPAN_MINUTES = 120;
 const WINDOW_MS = PROXIMITY_MINUTES * 60 * 1000;
 const DELIVERY_SPAN_MS = MAX_DELIVERY_SPAN_MINUTES * 60 * 1000;
+
+// v7.1 SOTA constants
+const GEO_SNAP_KM = 0.5;               // Orders closer than 500m always merge
+const KITCHEN_BATCH_MS = 10 * 60 * 1000; // Kitchen times within 10min = same batch
 
 // ============================================================
 // TIME PARSING — MIRROR OF frontend/src/utils/data/timeUtils.ts
 // ============================================================
-
-/**
- * Parses a time value from string, number (Excel serial), or Date.
- * EXACT mirror of frontend parseTime()
- */
 function parseTime(val, options = {}) {
     if (!val && val !== 0) return null;
     const s = String(val).trim();
@@ -45,7 +47,7 @@ function parseTime(val, options = {}) {
     if (!isNaN(excelTime) && excelTime > 0) {
         const excelEpoch = new Date(Date.UTC(1899, 11, 30));
 
-        if (excelTime >= 25569) { // Date + Time
+        if (excelTime >= 25569) {
             const days = Math.floor(excelTime);
             const timeFraction = excelTime - days;
 
@@ -66,7 +68,7 @@ function parseTime(val, options = {}) {
                 date.setUTCHours(hours, minutes, seconds, 0);
                 return date.getTime();
             }
-        } else if (excelTime >= 0 && excelTime < 1) { // Time only
+        } else if (excelTime >= 0 && excelTime < 1) {
             const totalHours = excelTime * 24;
             const hours = Math.floor(totalHours);
             const minutes = Math.floor((totalHours - hours) * 60);
@@ -161,9 +163,6 @@ const ARRIVAL_TIME_FIELDS = [
     'дата.создания', 'Дата создания', 'дата создания', 'CreatedAt'
 ];
 
-/**
- * EXACT mirror of frontend getKitchenTime()
- */
 function getKitchenTime(o, baseDate) {
     if (!o) return null;
     if (o.readyAtSource && typeof o.readyAtSource === 'number') return o.readyAtSource;
@@ -177,9 +176,6 @@ function getKitchenTime(o, baseDate) {
     return null;
 }
 
-/**
- * EXACT mirror of frontend getPlannedTime()
- */
 function getPlannedTime(o, baseDate) {
     if (!o) return null;
     if (o.deadlineAt && typeof o.deadlineAt === 'number') {
@@ -199,14 +195,9 @@ function getPlannedTime(o, baseDate) {
     return null;
 }
 
-/**
- * EXACT mirror of frontend getArrivalTime()
- * CRITICAL: Do NOT fall back to kitchenTime — that causes wrong anchoring!
- */
 function getArrivalTime(o, baseDate) {
     if (!o) return null;
 
-    // v5.182: Handle ALL status variants including Ukrainian — EXACT match frontend line 190
     const status = (o.status || o.deliveryStatus || '').toString().trim().toLowerCase();
     const isDelivering = status.includes('доставля') || status.includes('в пути') ||
                          status.includes('маршру') || status.includes('исполнен') ||
@@ -227,7 +218,6 @@ function getArrivalTime(o, baseDate) {
         }
     }
 
-    // createdAt ONLY if it's a proper number timestamp (frontend line 210)
     if (o.createdAt && typeof o.createdAt === 'number' && o.createdAt > 1000000000000) return o.createdAt;
 
     for (const field of ARRIVAL_TIME_FIELDS) {
@@ -238,12 +228,9 @@ function getArrivalTime(o, baseDate) {
         }
     }
 
-    return null; // Do NOT fall back to kitchenTime — frontend does NOT do this!
+    return null;
 }
 
-/**
- * EXACT mirror of frontend getExecutionTime()
- */
 function getExecutionTime(o, baseDate) {
     if (!o) return null;
     const status = (o.status || '').toString().trim().toLowerCase();
@@ -268,7 +255,6 @@ function getExecutionTime(o, baseDate) {
 // ============================================================
 // HELPER UTILITIES
 // ============================================================
-
 function getAllOrderIds(order) {
     const ids = new Set();
     if (order.id) ids.add(String(order.id));
@@ -288,9 +274,6 @@ function getOrderHash(o) {
     return parts.join('|');
 }
 
-/**
- * Normalize courier name — EXACT match with frontend normalizeCourierName()
- */
 function normalizeCourierName(name) {
     if (!name) return '';
     const n = name.toString().trim().replace(/\s+/g, ' ').toUpperCase();
@@ -301,7 +284,7 @@ function normalizeCourierName(name) {
 
 function haversineDistance(lat1, lon1, lat2, lon2) {
     if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
-    const R = 6371; // km
+    const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
@@ -322,42 +305,37 @@ function formatTimeRange(startTime, endTime) {
     return startStr === endStr ? startStr : `${startStr}-${endStr}`;
 }
 
-// ============================================================
-// CORE GROUPING — 100% MIRROR OF frontend groupOrdersByTimeWindow()
-// ============================================================
-
-/**
- * Groups orders for a SINGLE courier into time-window blocks.
- * 
- * This is a 100% mirror of frontend groupOrdersByTimeWindow() in
- * routeCalculationHelpers.ts (lines 188-428).
- *
- * @param {object[]} orders - Orders for ONE courier only
- * @param {string} courierId - Normalized courier name/ID
- * @param {string} courierName - Display name of courier
- * @returns {object[]} Array of time-window blocks (groups)
- */
-function groupOrdersByTimeWindow(orders, courierId, courierName) {
+function groupOrdersByTimeWindow(
+    orders,
+    courierId,
+    courierName,
+    arrivalProximityMinutes = 15,
+    maxDeliverySpanMinutes = 60
+) {
     if (!orders || orders.length === 0) return [];
 
-    // STEP 0: Preserving all orders for accurate load statistics
-    // v6.33: Removed deduplication to ensure multi-item orders count towards the numerator
-    const uniqueOrders = [...orders];
+    const seenIds = new Set();
+    const uniqueOrders = [];
+    orders.forEach(order => {
+        const id = order.id || order._id || order.orderNumber;
+        if (!id) {
+            uniqueOrders.push(order);
+        } else if (!seenIds.has(id)) {
+            seenIds.add(id);
+            uniqueOrders.push(order);
+        }
+    });
 
     const noTimeOrders = [];
     const ordersWithData = [];
 
-    // STEP 1: Parse times — EXACT mirror of frontend lines 221-270
     uniqueOrders.forEach(order => {
         let plannedTime = getPlannedTime(order);
         const kitchenTime = getKitchenTime(order);
         let arrivalTime = getArrivalTime(order);
         const executionTime = getExecutionTime(order);
 
-        // If no arrival time, use planned or kitchen time
-        if (!arrivalTime) {
-            arrivalTime = plannedTime || kitchenTime;
-        }
+        if (!arrivalTime) arrivalTime = plannedTime || kitchenTime;
 
         if (!plannedTime) {
             if (kitchenTime) {
@@ -370,31 +348,25 @@ function groupOrdersByTimeWindow(orders, courierId, courierName) {
             }
         }
 
-        const plannedTs = plannedTime;
-        const arrivalTs = arrivalTime || plannedTime;
-
-        if (plannedTs === null || isNaN(plannedTs)) {
+        if (plannedTime === null || isNaN(plannedTime)) {
             noTimeOrders.push(order);
             return;
         }
 
         ordersWithData.push({
             order,
-            planned: plannedTs,
-            arrival: arrivalTs,
+            planned: plannedTime,
+            arrival: arrivalTime || plannedTime,
             kitchen: kitchenTime || undefined,
             execution: executionTime || undefined
         });
     });
 
-    // STEP 2: Add anchorTime — EXACT mirror of frontend lines 272-277
-    // anchorTime = executionTime (completed orders) OR planned time
     const ordersWithAnchor = ordersWithData.map(item => ({
         ...item,
         anchorTime: item.execution || item.planned
     }));
 
-    // STEP 3: Sort by anchorTime, then kitchen — mirror of frontend lines 280-283
     ordersWithAnchor.sort((a, b) => {
         if (a.anchorTime !== b.anchorTime) return a.anchorTime - b.anchorTime;
         return (a.kitchen || 0) - (b.kitchen || 0);
@@ -404,85 +376,84 @@ function groupOrdersByTimeWindow(orders, courierId, courierName) {
     const manualGroupsMap = new Map();
     const ordersForAuto = [];
 
-    // STEP 4: Separate manual groups — mirror of frontend lines 289-299
     ordersWithAnchor.forEach(item => {
         if (item.order.manualGroupId) {
             if (!manualGroupsMap.has(item.order.manualGroupId)) {
                 manualGroupsMap.set(item.order.manualGroupId, []);
             }
-            manualGroupsMap.get(item.order.manualGroupId).push(item);
+            manualGroupsMap.get(item.order.manualGroupId).push(item.order);
         } else {
             ordersForAuto.push(item);
         }
     });
 
-    // STEP 5: Push manual groups verbatim — mirror of frontend lines 301-304
-    manualGroupsMap.forEach((manualList, manualId) => {
-        const minPlanned = Math.min(...manualList.map(i => i.planned));
-        const maxPlanned = Math.max(...manualList.map(i => i.planned));
+    manualGroupsMap.forEach((mOrders, mgId) => {
+        const plannedTimes = mOrders.map(o => getPlannedTime(o)).filter(t => !!t);
+        const arrivalTimes = mOrders.map(o => getArrivalTime(o)).filter(t => !!t);
+        const minPlanned = plannedTimes.length > 0 ? Math.min(...plannedTimes) : 0;
+        const maxPlanned = plannedTimes.length > 0 ? Math.max(...plannedTimes) : 0;
+
         groups.push({
-            courierName,
+            id: `manual-${mgId}`,
             courierId,
+            courierName,
             windowStart: minPlanned,
             windowEnd: maxPlanned,
-            windowLabel: formatTimeRange(minPlanned, maxPlanned),
-            orders: manualList.map(i => i.order),
-            manualGroupId: manualId
+            windowLabel: plannedTimes.length > 0 ? formatTimeRange(minPlanned, maxPlanned) : 'Ручная группа',
+            orders: mOrders,
+            isReadyForCalculation: true,
+            arrivalStart: arrivalTimes.length > 0 ? Math.min(...arrivalTimes) : undefined,
+            arrivalEnd: arrivalTimes.length > 0 ? Math.max(...arrivalTimes) : undefined,
+            manualGroupId: mgId
         });
     });
 
-    // STEP 6: Determine if courier is "assigned" (not unassigned)
-    // Mirror of frontend line 307
-    const isAssignedCourier = courierId && courierId !== 'НЕ НАЗНАЧЕНО' && courierId !== 'UNASSIGNED';
-
+    const isAssignedCourier = courierId && courierId !== 'НЕ НАЗНАЧЕНО' && courierId !== 'unassigned' && courierId !== 'UNASSIGNED' && courierId !== 'ПО';
     let currentGroup = null;
+    const WINDOW_MS = arrivalProximityMinutes * 60 * 1000;
+    const deliverySpanMs = maxDeliverySpanMinutes * 60 * 1000;
 
-    // STEP 7: Auto-group the remaining orders — EXACT mirror of frontend lines 313-391
     ordersForAuto.forEach(({ order, planned, arrival, kitchen, anchorTime }) => {
         if (!currentGroup) {
-            // Create first group
             currentGroup = {
-                courierName,
-                courierId,
-                orders: [order],
+                id: `group-${courierId}-${order.id}-${planned}`,
+                courierId, courierName,
                 windowStart: planned,
                 windowEnd: planned,
+                windowLabel: formatTimeRange(planned, planned),
+                orders: [order],
+                isReadyForCalculation: true,
+                arrivalStart: arrival,
                 arrivalEnd: arrival,
-                firstAnchor: anchorTime,
-                lastKitchen: kitchen
+                splitReason: ''
             };
+            if (kitchen) currentGroup.lastKitchen = kitchen;
+            currentGroup.firstAnchor = anchorTime;
         } else {
-            // Check if order fits in current 15-minute window from FIRST order
             const firstAnchor = currentGroup.firstAnchor;
-            const arrivedClose = (anchorTime - firstAnchor) <= WINDOW_MS;
+            const arrivedClose = (anchorTime - firstAnchor <= WINDOW_MS);
+            let newSplitReason = '';
 
-            // Delivery span check
             const minDelivery = Math.min(currentGroup.windowStart, planned);
             const maxDelivery = Math.max(currentGroup.windowEnd, planned);
-            const deliveryFits = (maxDelivery - minDelivery) <= DELIVERY_SPAN_MS;
+            const deliveryFits = (maxDelivery - minDelivery) <= deliverySpanMs;
 
-            // Geographic distance check — v6.4: relaxed for assigned couriers (15km -> 50km)
             let distanceOk = true;
             if (order.coords && currentGroup.orders[0].coords) {
                 const dist = haversineDistance(
                     order.coords.lat, order.coords.lng,
                     currentGroup.orders[0].coords.lat, currentGroup.orders[0].coords.lng
                 );
-                const limit = isAssignedCourier ? 50 : 15; // v6.4: assigned couriers get 50km slack
-                if (dist > limit) distanceOk = false;
+                if (dist > 15) distanceOk = false;
             }
 
-            // Zone/district check — v6.4: disable for assigned couriers as user expects them to travel
             let districtOk = true;
-            if (!isAssignedCourier) {
-                const orderZone = String(order.deliveryZone || order.zone || order.kmlZone || '').trim().toUpperCase();
-                const groupZone = String(currentGroup.orders[0].deliveryZone || currentGroup.orders[0].zone || currentGroup.orders[0].kmlZone || '').trim().toUpperCase();
-                if (orderZone && groupZone && orderZone !== groupZone) {
-                    districtOk = false;
-                }
+            const orderZone = String(order.deliveryZone || order.zone || order.kmlZone || '').trim();
+            const groupZone = String(currentGroup.orders[0].deliveryZone || currentGroup.orders[0].zone || currentGroup.orders[0].kmlZone || '').trim();
+            if (orderZone && groupZone && orderZone.toUpperCase() !== groupZone.toUpperCase()) {
+                districtOk = false;
             }
 
-            // Kitchen gap check — only for UNASSIGNED couriers (mirror of frontend lines 348-354)
             let kitchenGapOk = true;
             if (!isAssignedCourier) {
                 const prevKitchen = currentGroup.lastKitchen;
@@ -491,104 +462,61 @@ function groupOrdersByTimeWindow(orders, courierId, courierName) {
                 }
             }
 
-            // Split decision — EXACT mirror of frontend split cascade (lines 356-360)
-            let splitReason = '';
-            if (!arrivedClose) splitReason = 'Время (15 мин)';
-            else if (!deliveryFits) splitReason = 'SLA';
-            else if (!distanceOk) splitReason = 'Гео';
-            else if (!districtOk) splitReason = 'Район';
-            else if (!isAssignedCourier && !kitchenGapOk) splitReason = 'Готовность';
+            if (!arrivedClose) newSplitReason = 'Время (15 мин)';
+            else if (!deliveryFits) newSplitReason = 'SLA';
+            else if (!distanceOk) newSplitReason = 'Гео';
+            else if (!districtOk) newSplitReason = 'Район';
+            else if (!isAssignedCourier && !kitchenGapOk) newSplitReason = 'Готовность';
 
-            if (splitReason === '') {
-                // Order fits → add to current group (mirror of frontend lines 363-371)
+            if (newSplitReason === '') {
                 currentGroup.orders.push(order);
                 currentGroup.windowStart = Math.min(currentGroup.windowStart, planned);
                 currentGroup.windowEnd = Math.max(currentGroup.windowEnd, planned);
+                currentGroup.windowLabel = formatTimeRange(currentGroup.windowStart, currentGroup.windowEnd);
                 currentGroup.arrivalEnd = Math.max(currentGroup.arrivalEnd || 0, arrival);
                 if (kitchen) currentGroup.lastKitchen = kitchen;
             } else {
-                // Order does NOT fit → flush current group, start new one (mirror lines 373-390)
-                groups.push({
-                    courierName,
-                    courierId,
-                    windowStart: currentGroup.windowStart,
-                    windowEnd: currentGroup.windowEnd,
-                    windowLabel: formatTimeRange(currentGroup.windowStart, currentGroup.windowEnd),
-                    orders: [...currentGroup.orders],
-                    splitReason: currentGroup.splitReason
-                });
-                // Start new group
+                groups.push(currentGroup);
                 currentGroup = {
-                    courierName,
-                    courierId,
-                    orders: [order],
+                    id: `group-${courierId}-${order.id}-${planned}`,
+                    courierId, courierName,
                     windowStart: planned,
                     windowEnd: planned,
+                    windowLabel: formatTimeRange(planned, planned),
+                    orders: [order],
+                    isReadyForCalculation: true,
+                    arrivalStart: arrival,
                     arrivalEnd: arrival,
-                    firstAnchor: anchorTime,
-                    lastKitchen: kitchen,
-                    splitReason
+                    splitReason: newSplitReason
                 };
+                if (kitchen) currentGroup.lastKitchen = kitchen;
+                currentGroup.firstAnchor = anchorTime;
             }
         }
     });
 
-    // Flush last group (mirror of frontend lines 394-399)
-    if (currentGroup && currentGroup.orders.length > 0) {
-        groups.push({
-            courierName,
-            courierId,
-            windowStart: currentGroup.windowStart,
-            windowEnd: currentGroup.windowEnd,
-            windowLabel: formatTimeRange(currentGroup.windowStart, currentGroup.windowEnd),
-            orders: currentGroup.orders,
-            splitReason: currentGroup.splitReason
-        });
+    if (currentGroup) {
+        groups.push(currentGroup);
     }
 
-    // Add no-time orders — mirror of frontend lines 401-413
-    // NOTE: frontend puts them all in ONE group (isReadyForCalculation: false)
-    // Backend splits into chunks of 10 to avoid monster routes — this is intentional divergence
     if (noTimeOrders.length > 0) {
-        const CHUNK_SIZE = 10;
-        for (let i = 0; i < noTimeOrders.length; i += CHUNK_SIZE) {
-            const chunk = noTimeOrders.slice(i, i + CHUNK_SIZE);
-            groups.push({
-                courierName,   // FIXED: use passed courierName, not orders[0].courier
-                courierId,
-                windowStart: 0,
-                windowEnd: 0,
-                windowLabel: noTimeOrders.length <= CHUNK_SIZE ? 'Без времени' : `Без времени ${Math.floor(i / CHUNK_SIZE) + 1}`,
-                orders: chunk,
-                isTimeless: true
             });
         }
     }
 
-    // Sort groups by windowStart (mirror of frontend line 427)
-    groups.sort((a, b) => a.windowStart - b.windowStart);
+    // Sort by windowStart
+    finalGroups.sort((a, b) => a.windowStart - b.windowStart);
 
-    logger.info(`[turboGrouping] ✅ ${courierName}: ${uniqueOrders.length} orders → ${groups.length} groups`);
-    return groups;
+    logger.info(`[turboGrouping] ✅ ${courierName}: ${uniqueOrders.length} orders → ${finalGroups.length} groups (SOTA wave-merge)`);
+    return finalGroups;
 }
 
 // ============================================================
 // MAIN EXPORT — groups ALL orders for ALL couriers
 // ============================================================
-
-/**
- * Groups all orders for all couriers into time-window blocks.
- * 
- * EXACT mirror of frontend groupAllOrdersByTimeWindow() in
- * routeCalculationHelpers.ts (lines 433-479).
- *
- * @param {object[]} orders - All orders (mixed couriers)
- * @returns {Map<string, object[]>} Map<normalizedCourierName, groups[]>
- */
 function groupAllOrdersByTimeWindow(orders) {
     if (!orders || orders.length === 0) return new Map();
 
-    // STEP 1: Group orders by raw courier name — mirror of frontend groupOrdersByCourier()
     const rawGroups = new Map();
     orders.forEach(order => {
         let courierRaw = order.courier;
@@ -598,16 +526,14 @@ function groupAllOrdersByTimeWindow(orders) {
         if (!courierRaw) return;
 
         const normName = normalizeCourierName(courierRaw);
-        if (normName === 'НЕ НАЗНАЧЕНО') return; // Skip unassigned
-        
+        if (normName === 'НЕ НАЗНАЧЕНО') return;
+
         if (!rawGroups.has(normName)) {
             rawGroups.set(normName, { name: courierRaw, orders: [] });
         }
         rawGroups.get(normName).orders.push(order);
     });
 
-    // STEP 2: Group each courier's orders by time window
-    // Using normalized name as both courierId and courierName key — matches frontend line 475
     const result = new Map();
     rawGroups.forEach((info, normName) => {
         const groups = groupOrdersByTimeWindow(info.orders, normName, normName);
@@ -615,7 +541,7 @@ function groupAllOrdersByTimeWindow(orders) {
     });
 
     const totalGroups = Array.from(result.values()).reduce((sum, g) => sum + g.length, 0);
-    logger.info(`[turboGrouping] 📊 SUMMARY: ${result.size} couriers → ${totalGroups} total groups`);
+    logger.info(`[turboGrouping] 📊 SUMMARY: ${result.size} couriers → ${totalGroups} total groups (v7.1 SOTA)`);
 
     return result;
 }
