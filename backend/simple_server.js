@@ -1,3 +1,4 @@
+// v7.5 HEARTBEAT: 2026-04-11
 const express = require('express');
 // v28.2: Initialize global store early to prevent crashes 
 global.divisionStatusStore = global.divisionStatusStore || {};
@@ -63,6 +64,8 @@ const io = new Server(httpServer, {
 // v28.2: Initialize global store early
 global.divisionStatusStore = global.divisionStatusStore || {};
 let turboCalculator = null;
+let turboCalculatorReady = false; // v7.3: readiness flag for TurboCalculator initialization
+let turboCalculatorReady = false; // v7.3: Flag to track initialization completion
 
 // WebSocket authentication via handshake (JWT)
 io.use((socket, next) => {
@@ -741,9 +744,13 @@ httpServer.listen(PORT, '0.0.0.0', () => {
           turboCalculator.io = io;
           await turboCalculator.start(io);
           global.turboCalculator = turboCalculator;
+          turboCalculatorReady = true; // v7.3: Mark as ready
           logger.info('🚀 [INIT] TurboCalculator worker started');
         }
-      } catch (te) { logger.error('❌ [INIT] TurboCalculator failed', te); }
+      } catch (te) { 
+        turboCalculatorReady = false;
+        logger.error('❌ [INIT] TurboCalculator failed', te); 
+      }
 
       try {
         const DashboardFetcher = require('./workers/dashboardFetcher');
@@ -1300,6 +1307,11 @@ app.get('/api/turbo/statuses', authenticateToken, (req, res) => {
   });
 });
 
+// Turbo readiness endpoint
+app.get('/api/turbo/ready', authenticateToken, (req, res) => {
+  res.json({ success: true, ready: turboCalculatorReady && !!global.turboCalculator });
+});
+
 // Priority trigger endpoint for turboCalculator
 app.post('/api/turbo/priority', authenticateToken, async (req, res) => {
   try {
@@ -1310,9 +1322,24 @@ app.post('/api/turbo/priority', authenticateToken, async (req, res) => {
     const userId = user?.id || req.body?.userId;
     const courierName = req.body?.courierName; // v37.1: Optional target courier
 
+    // v7.2: If divisionId is missing or empty from JWT, look it up from the DB
+    if (!divisionId && userId) {
+      try {
+        logger.warn(`[API] divisionId missing from JWT for user ${userId} — looking up from DB`);
+        const User = require('./src/models/User');
+        const dbUser = await User.findByPk(userId, { attributes: ['divisionId'] });
+        divisionId = dbUser?.divisionId;
+        if (divisionId) {
+          logger.info(`[API] Found divisionId=${divisionId} for user ${userId} from DB`);
+        }
+      } catch (dbErr) {
+        logger.error('[API] Failed to lookup user divisionId from DB:', dbErr.message);
+      }
+    }
+
     if (!divisionId) {
-      logger.warn('[API] divisionId missing - trying to get from user profile');
-      return res.status(400).json({ success: false, error: 'divisionId is required. Please login again or provide divisionId in request body.' });
+      logger.warn('[API] divisionId could not be resolved for user', userId);
+      return res.status(400).json({ success: false, error: 'divisionId is required. Please login again or set division in your profile.' });
     }
     logger.info(`[API] Priority trigger requested for division ${divisionId} by user ${userId}${courierName ? ` (Target: ${courierName})` : ''}`);
 
@@ -1331,11 +1358,42 @@ app.post('/api/turbo/priority', authenticateToken, async (req, res) => {
     });
 
     logger.info(`[API] About to trigger turboCalculator with divisionId=${divisionId}, date=${date}, courier=${courierName || 'ALL'}`);
-    if (turboCalculator && typeof turboCalculator.trigger === 'function') {
+    
+    // v7.4: Recovery — if worker failed to load at startup, try lazy-requiring it now
+    if (!turboCalculator || !global.turboCalculator) {
+      try {
+        logger.warn('[API] turboCalculator is null, attempting emergency require recovery...');
+        const recoveredWorker = require('./workers/turboCalculator');
+        if (recoveredWorker) {
+          recoveredWorker.io = io;
+          await recoveredWorker.start(io);
+          global.turboCalculator = recoveredWorker;
+          turboCalculator = recoveredWorker;
+          turboCalculatorReady = true;
+          logger.info('[API] ✅ Emergency TurboCalculator recovery SUCCESS');
+        }
+      } catch (recoverErr) {
+        logger.error('[API] ❌ Emergency TurboCalculator recovery FAILED:', recoverErr.message);
+      }
+    }
+
+    const calculator = turboCalculator || global.turboCalculator;
+    
+    // v7.3: Check if turboCalculator is ready (initialization complete)
+    if (!turboCalculatorReady && !calculator) {
+      logger.error('[API] turboCalculator not available (reason: initialization_in_progress, is_ready: ' + turboCalculatorReady + ')');
+      return res.status(503).json({ 
+        success: false, 
+        error: 'TurboCalculator is initializing, please retry in a few seconds',
+        is_ready: turboCalculatorReady 
+      });
+    }
+    
+    if (calculator && typeof calculator.trigger === 'function') {
       try {
         // v5.172: Manual trigger = FULL recalculation (forceFull=true)
         // v37.1: Pass courierName to trigger
-        turboCalculator.trigger(divisionId, date, userId, true, courierName);
+        calculator.trigger(divisionId, date, userId, true, courierName);
         logger.info(`[API] turboCalculator.trigger() called with forceFull=true, courier=${courierName || 'ALL'}`);
         res.json({ 
             success: true, 
@@ -1349,8 +1407,8 @@ app.post('/api/turbo/priority', authenticateToken, async (req, res) => {
         res.status(500).json({ success: false, error: 'Trigger failed: ' + triggerErr.message });
       }
     } else {
-      const why = !turboCalculator ? 'null_instance' : (typeof turboCalculator.trigger !== 'function' ? 'missing_trigger_fn' : 'unknown');
-      logger.error(`[API] turboCalculator not available (reason: ${why}, is null: ${turboCalculator === null}, type: ${typeof turboCalculator})`);
+      const why = !calculator ? 'null_instance' : (typeof calculator.trigger !== 'function' ? 'missing_trigger_fn' : 'unknown');
+      logger.error(`[API] turboCalculator not available (reason: ${why}, is null: ${calculator === null}, type: ${typeof calculator})`);
       res.status(500).json({ 
         success: false, 
         error: 'TurboCalculator not available', 

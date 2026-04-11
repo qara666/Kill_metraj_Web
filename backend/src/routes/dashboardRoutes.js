@@ -167,13 +167,39 @@ router.post('/dashboard/fetch', async (req, res) => {
             return res.status(422).json({ success: false, error: 'Неверный формат даты' });
         }
 
-        const divisionId = user.role === 'admin' ? (requestDivisionId || user.divisionId || 'all') : user.divisionId;
+        // v7.2: Resolve divisionId robustly for ALL user types
+        let divisionId;
+        if (user.role === 'admin') {
+            divisionId = requestDivisionId || user.divisionId || 'all';
+        } else {
+            // For non-admin: JWT divisionId is primary, fallback to request body, then DB lookup
+            divisionId = user.divisionId || requestDivisionId;
+            if (!divisionId) {
+                try {
+                    const User = require('../models/User');
+                    const dbUser = await User.findByPk(user.id, { attributes: ['divisionId'] });
+                    divisionId = dbUser?.divisionId;
+                    if (divisionId) {
+                        logger.info(`[FETCH] Retrieved divisionId=${divisionId} for user ${user.username} from DB`);
+                    }
+                } catch (dbErr) {
+                    logger.warn(`[FETCH] DB lookup for divisionId failed: ${dbErr.message}`);
+                }
+            }
+        }
+        
+        // Last resort: if still no divisionId and no admin/global, use 'all' for safety
+        if (!divisionId) {
+            logger.warn(`[FETCH] No divisionId for user ${user.username} — defaulting to 'all'`);
+            divisionId = user.role === 'admin' ? 'all' : null;
+        }
+
         const targetDateStr = date.trim();
         const [d, m, y] = targetDateStr.split('.');
         const targetDateISO = `${y}-${m}-${d}`;
-        const isGlobal = (divisionId === 'all');
+        const isGlobal = (divisionId === 'all' || !divisionId);
 
-        logger.info(`📅 Fetch request: date=${targetDateStr}, divisionId=${divisionId}, isGlobal=${isGlobal}, user=${user.username}`);
+        logger.info(`📅 Fetch request: date=${targetDateStr}, divisionId=${divisionId || 'NONE'}, isGlobal=${isGlobal}, user=${user.username}`);
 
         // 1. Initial Cache Check (Skip if force=true)
         if (!force && !isGlobal) {
@@ -222,8 +248,6 @@ router.post('/dashboard/fetch', async (req, res) => {
 
             // v5.208: RESTORE calculated routes and distances from DB
             try {
-                // Determine target ISO date from targetDateISO in parent scope
-                // 1. Fetch routes from calculated_routes table
                 const dbRoutesRaw = await sequelize.query(
                     `SELECT id, courier_id, total_distance, total_duration, orders_count, route_data, created_at
                      FROM calculated_routes 
@@ -251,11 +275,12 @@ router.post('/dashboard/fetch', async (req, res) => {
                             createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now()
                         };
                     });
-
-                    // Add formatted routes to payload
                     payload.routes = formattedRoutes;
-
-                    // v5.208: Also update courier metrics to match these routes
+                    payload.statistics = {
+                        ...(payload.statistics || {}),
+                        calculatedRoutes: formattedRoutes,
+                        routesCount: formattedRoutes.length
+                    };
                     const courierStatusMap = new Map();
                     formattedRoutes.forEach(fr => {
                         const cId = String(fr.courier_id).toUpperCase();
@@ -264,7 +289,6 @@ router.post('/dashboard/fetch', async (req, res) => {
                         existing.orders += (fr.orders?.length || fr.ordersCount || 0);
                         courierStatusMap.set(cId, existing);
                     });
-
                     if (payload.couriers && Array.isArray(payload.couriers)) {
                         payload.couriers.forEach(c => {
                             const cName = (c.name || '').toUpperCase();
@@ -280,7 +304,6 @@ router.post('/dashboard/fetch', async (req, res) => {
                 logger.warn(`[FETCH] Route restoration failed: ${err.message}`);
             }
 
-            // V2: UPSERT pattern matching the fetcher worker
             await sequelize.query(
                 `INSERT INTO api_dashboard_cache (payload, data_hash, status_code, division_id, target_date, order_count, courier_count, updated_at)
                  VALUES (:payload, :dataHash, 200, :divisionId, :targetDate, :orderCount, :courierCount, NOW())
@@ -291,74 +314,86 @@ router.post('/dashboard/fetch', async (req, res) => {
                    order_count = EXCLUDED.order_count,
                    courier_count = EXCLUDED.courier_count,
                    updated_at = NOW()`,
-                {
-                    replacements: {
-                        payload: JSON.stringify(payload),
-                        dataHash,
-                        divisionId: String(deptId),
-                        targetDate: targetDateISO,
-                        orderCount,
-                        courierCount
-                    }
-                }
+                { replacements: { payload: JSON.stringify(payload), dataHash, divisionId: String(deptId), targetDate: targetDateISO, orderCount, courierCount } }
             );
 
-            // Notify WebSocket clients via PG Notify (consistent with fetcher)
+
+
+
+            // Notify WebSocket clients via PG Notify
             await sequelize.query('SELECT pg_notify(\'dashboard_update\', :notifyData)', {
                 replacements: {
-                    notifyData: JSON.stringify({
-                        divisionId: deptId,
-                        targetDate: targetDateISO,
-                        orderCount,
-                        courierCount,
-                        source: 'on_demand_fetch'
-                    })
+                    notifyData: JSON.stringify({ divisionId: deptId, targetDate: targetDateISO, orderCount, courierCount, source: 'on_demand_fetch' })
                 },
                 type: sequelize.QueryTypes.SELECT
             });
+
+            // v7.3: Direct trigger for this specific department
+            if (global.turboCalculator && typeof global.turboCalculator.notifyNewFOData === 'function') {
+                try {
+                    global.turboCalculator.notifyNewFOData(String(deptId), targetDateISO);
+                } catch (tcErr) {}
+            }
 
             return payload;
         };
 
         if (isGlobal) {
-            // Split global data by department and cache each
             const deptGroups = {};
             responseData.orders.forEach(o => {
                 const dId = String(o.departmentId || o.divisionId || 'UNKNOWN');
                 if (!deptGroups[dId]) deptGroups[dId] = { orders: [], couriers: [] };
                 deptGroups[dId].orders.push(o);
             });
-
-            // Associate couriers with departments (if they have departmentId)
             if (responseData.couriers) {
                 responseData.couriers.forEach(c => {
                     const dId = String(c.departmentId || c.divisionId || '');
                     if (dId && deptGroups[dId]) {
                         deptGroups[dId].couriers.push(c);
                     } else {
-                        // If no explicit dept, add to all active departments
                         Object.keys(deptGroups).forEach(dKey => {
                             deptGroups[dKey].couriers.push(c);
                         });
                     }
                 });
             }
-
-            // Save each group to cache
+            let globalRoutes = [];
+            let globalDistance = 0;
+            
             for (const dId of Object.keys(deptGroups)) {
-                await processAndCache(dId, deptGroups[dId]);
+                const resultPayload = await processAndCache(dId, deptGroups[dId]);
+                if (resultPayload.routes && resultPayload.routes.length > 0) {
+                    globalRoutes = globalRoutes.concat(resultPayload.routes);
+                }
             }
 
-            logger.info(`✅ Global fetch: Cached ${Object.keys(deptGroups).length} departments`);
+            globalRoutes.forEach(r => {
+                globalDistance += (r.totalDistance || 0);
+            });
+
+            // v7.3: Enrich response with aggregated routes and trigger global robot
+            responseData.statistics = {
+                ...(responseData.statistics || {}),
+                calculatedRoutes: globalRoutes,
+                routesCount: globalRoutes.length,
+                totalDistanceKm: Number(globalDistance.toFixed(2))
+            };
+            responseData.routes = globalRoutes;
+
+            if (global.turboCalculator && typeof global.turboCalculator.notifyNewFOData === 'function') {
+                global.turboCalculator.notifyNewFOData('all', targetDateISO);
+                logger.info(`⚡ [FETCH] Global robot trigger (all, ${targetDateISO})`);
+            }
+
             return res.json({
                 success: true,
                 data: responseData,
-                message: `Загружено ${responseData.orders.length} заказов из всех отделений`,
+                message: `Обработано ${Object.keys(deptGroups).length} подразделений`,
+                isGlobal: true,
                 fetchedAt: new Date().toISOString()
             });
         }
 
-        // Single department fetch
         const resultPayload = await processAndCache(divisionId, responseData);
         return res.json({
             success: true,

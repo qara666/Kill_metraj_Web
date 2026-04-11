@@ -30,17 +30,36 @@ export const DashboardApiSection: React.FC = () => {
     const setAutoRoutingStatus = useDashboardStore(s => s.setAutoRoutingStatus);
 
     const divisionId = useDashboardStore(s => s.divisionId);
-    const isGlobalView = divisionId === 'all' || !divisionId || divisionId === '1';
+    const { user } = useAuth();
+    // v7.2: isGlobalView should be TRUE only for admins viewing 'all' divisions
+    // Regular users ALWAYS read their own autoRoutingStatus (not the aggregate that's always empty)
+    const isAdminGlobalView = user?.role === 'admin' && (divisionId === 'all' || !divisionId);
+    const isGlobalView = isAdminGlobalView;
 
     const autoRoutingStatusObj = useDashboardStore(s => s.autoRoutingStatus);
     const aggregateStatusObj = useDashboardStore(s => s.aggregateRoutingStatus);
+    // For regular users: always use autoRoutingStatusObj (gets specific division robot updates)
+    // For admins in global view: use aggregateStatusObj
     const autoRoutingStatus = isGlobalView ? aggregateStatusObj : autoRoutingStatusObj;
 
-    const { clearExcelData } = useExcelData();
-    const { user } = useAuth();
+    const { excelData, clearExcelData } = useExcelData();
 
     const selectedDate = apiDateShift;
     const setSelectedDate = setApiDateShift;
+
+    // v7.2: Normalize any date format to YYYY-MM-DD for logic and <input type="date">
+    const normalizeToISO = (d: string | null | undefined): string => {
+        if (!d) return format(new Date(), 'yyyy-MM-dd');
+        if (d.includes('.')) {
+            const [day, mon, year] = d.split('.');
+            return `${year}-${mon}-${day}`;
+        }
+        return d;
+    };
+
+    const selectedDateISO = normalizeToISO(selectedDate);
+    const todayISO = format(new Date(), 'yyyy-MM-dd');
+    const isToday = selectedDateISO === todayISO;
 
     const [timeLeft, setTimeLeft] = useState<string>('--:--');
     const [isSyncing, setIsSyncing] = useState(false);
@@ -59,12 +78,11 @@ export const DashboardApiSection: React.FC = () => {
 
     // New Day Detection
     React.useEffect(() => {
-        const today = format(new Date(), 'yyyy-MM-dd');
-        if (apiLastVisitDate !== today) {
-            setApiDateShift(today);
-            setApiLastVisitDate(today);
+        if (apiLastVisitDate !== todayISO) {
+            setApiDateShift(todayISO);
+            setApiLastVisitDate(todayISO);
         }
-    }, [apiLastVisitDate, setApiDateShift, setApiLastVisitDate]);
+    }, [apiLastVisitDate, todayISO, setApiDateShift, setApiLastVisitDate]);
 
     // Countdown logic
     React.useEffect(() => {
@@ -87,40 +105,147 @@ export const DashboardApiSection: React.FC = () => {
         return () => clearInterval(interval);
     }, [apiNextSyncTime, apiAutoRefreshEnabled]);
 
-    // v7.0: Main sync action — just pull data, server has already calculated
+    // v7.3: Helper to trigger server-side calculation after data is fetched
+    const triggerServerCalculation = React.useCallback(async (dateISO: string) => {
+        try {
+            const token = localStorage.getItem('km_access_token');
+            if (!token) {
+                console.warn('[DashboardApiSection] No token - cannot trigger calculation');
+                return;
+            }
+
+            const today = format(new Date(), 'yyyy-MM-dd');
+            // v7.2: Send normalized date and forced redistribution in body
+            const body: any = { 
+                date: dateISO, 
+                forceFull: dateISO === today,
+                // v5.206: Explicitly include divisionId
+                divisionId: divisionId ? String(divisionId) : undefined
+            };
+
+            console.log('[DashboardApiSection] 📤 Sending turbo/priority request:', body);
+            
+            const res = await fetch('/api/turbo/priority', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(body)
+            });
+            
+            if (!res.ok) {
+                let errMsg = 'Unknown error';
+                let errData: any = null;
+                try {
+                    errData = await res.json();
+                    errMsg = errData.error || errData.message || errData.details || `Status: ${res.status}`;
+                } catch (e) {
+                    errMsg = `Status: ${res.status}`;
+                }
+                
+                // v7.3: Retry logic for 503 (initialization in progress)
+                if (res.status === 503 && errData?.is_ready === false) {
+                    console.warn('[DashboardApiSection] turbo/priority not ready, retrying in 2s...');
+                    await new Promise(r => setTimeout(r, 2000));
+                    const retryRes = await fetch('/api/turbo/priority', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify(body)
+                    });
+                    if (retryRes.ok) {
+                        const result = await retryRes.json();
+                        console.log('[DashboardApiSection] ✅ turbo/priority retried successfully for', dateISO, '- result:', result);
+                        toast.success('Расчет запущен!');
+                        return;
+                    } else {
+                        try {
+                            const retryErr = await retryRes.json();
+                            errMsg = retryErr.error || retryErr.message || retryErr.details || `Status: ${retryRes.status}`;
+                        } catch {
+                            errMsg = `Status: ${retryRes.status}`;
+                        }
+                    }
+                }
+                
+                console.warn('[DashboardApiSection] turbo/priority error:', errMsg);
+                toast.error('Ошибка запуска расчета: ' + errMsg);
+            } else {
+                const result = await res.json();
+                console.log('[DashboardApiSection] ✅ turbo/priority triggered for', dateISO, '- result:', result);
+                toast.success('Расчет запущен!');
+            }
+        } catch (e: any) {
+            console.warn('[DashboardApiSection] Could not trigger server calculation:', e);
+            toast.error('Ошибка: ' + (e?.message || e?.toString() || 'Unknown'));
+        }
+    }, [divisionId]);
+
+    // v7.0: Main sync action — pull data, then trigger server calculation
     const handleSync = async () => {
-        if (isSyncing) return;
         setIsSyncing(true);
 
-        const today = format(new Date(), 'yyyy-MM-dd');
-        const isToday = selectedDate === today;
-
-        clearExcelData();
+        // v7.1: Clear local cache to ensure fresh state
+        localStorage.removeItem('km_dashboard_processed_data_v3');
         localStorage.removeItem('km_dashboard_processed_data');
         localStorage.removeItem('km_routes');
 
+        // v5.205: Also clear React state for fresh start
+        clearExcelData();
+
         if (isToday) {
             setApiAutoRefreshEnabled(true);
+            // v5.205: Reset robot status for fresh calculation - but preserve userStopped: false to allow auto-start
+            setAutoRoutingStatus({
+                isActive: true,
+                userStopped: false, // Allow robot to auto-start
+                totalCount: 0,
+                processedCount: 0,
+                processedCouriers: 0,
+                totalCouriers: 0,
+                skippedGeocoding: 0,
+                skippedInRoutes: 0,
+                skippedNoCourier: 0,
+                skippedOther: 0,
+                lastUpdate: Date.now()
+            });
         } else {
             setApiAutoRefreshEnabled(false);
+            // Archive - also reset for fresh load
+            setAutoRoutingStatus({
+                isActive: true,
+                userStopped: false,
+                totalCount: 0,
+                processedCount: 0,
+                lastUpdate: Date.now()
+            });
         }
 
-        setTimeout(() => {
+        // Pull fresh data from FO API
+        setTimeout(async () => {
             triggerApiManualSync();
+            
+            // v5.206: Wait longer for data to be saved first (2s instead of 500ms)
+            // Then trigger server calculation
+            setTimeout(async () => {
+                console.log('[DashboardApiSection] 🚀 Calling triggerServerCalculation for:', selectedDateISO);
+                await triggerServerCalculation(selectedDateISO);
+            }, 2000);
+            
             setIsSyncing(false);
         }, 100);
 
         toast.success(isToday
-            ? 'Синхронизация данных...'
-            : `Загрузка архива за ${selectedDate}...`
+            ? 'Синхронізація поточних замовлень та запуск розрахунку...'
+            : `Завантаження архіву за ${selectedDateISO} та перерахунок...`
         );
     };
 
     const handleDateChange = (date: string) => {
         setSelectedDate(date);
         clearExcelData();
+        // v5.205: Clear both localStorage versions
         localStorage.removeItem('km_dashboard_processed_data');
+        localStorage.removeItem('km_dashboard_processed_data_v3');
         localStorage.removeItem('km_routes');
+        
         const today = format(new Date(), 'yyyy-MM-dd');
         if (date !== today && apiAutoRefreshEnabled) {
             setApiAutoRefreshEnabled(false);
@@ -136,20 +261,27 @@ export const DashboardApiSection: React.FC = () => {
             lastUpdate: Date.now()
         });
 
-        // Auto-trigger sync so archive loads immediately upon changing date
-        setTimeout(() => {
+        // Auto-trigger sync so archive data loads immediately
+        setTimeout(async () => {
             triggerApiManualSync();
+            // v5.206: Wait for data to load then trigger calculation
+            setTimeout(async () => {
+                await triggerServerCalculation(date);
+            }, 2000);
         }, 100);
         
-        toast.success(`Загрузка архива за ${date}...`);
+        toast.success(`Перехід на дату: ${date}`);
     };
 
-    const calcProgress = autoRoutingStatus.totalCount > 0
-        ? Math.min(100, Math.round(((autoRoutingStatus.processedCount || 0) / autoRoutingStatus.totalCount) * 100))
-        : 0;
-
-    const isCalcActive = autoRoutingStatus.isActive;
-    const calcDone = (autoRoutingStatus.processedCount || 0) >= (autoRoutingStatus.totalCount || 1) && (autoRoutingStatus.totalCount || 0) > 0;
+    const lastRobotUpdate = autoRoutingStatus.lastUpdate || 0;
+    const now = Date.now();
+    // v7.2: isCalcActive is true if robot is active AND recent, OR if we just triggered a sync manually
+    const isCalcActive = (autoRoutingStatus.isActive && (now - lastRobotUpdate < 120000)) || isSyncing;
+    const calcDone = !isCalcActive && (autoRoutingStatus.processedCount || 0) > 0 && (autoRoutingStatus.processedCount || 0) >= (autoRoutingStatus.totalCount || 1) && (autoRoutingStatus.totalCount || 0) > 0;
+    
+    // v7.2: Fallback totalCount from excelData if robot reports 0 (warming up)
+    const displayTotalCount = (autoRoutingStatus.totalCount || 0) > 0 ? autoRoutingStatus.totalCount : (excelData?.orders?.length || 0);
+    const calcProgress = displayTotalCount > 0 ? Math.min(100, Math.round(((autoRoutingStatus.processedCount || 0) / displayTotalCount) * 100)) : 0;
 
     return (
         <div className={clsx(
@@ -216,7 +348,7 @@ export const DashboardApiSection: React.FC = () => {
                         </div>
 
                         {/* Server Calculation Progress Bar */}
-                        {(isCalcActive || calcDone) && (autoRoutingStatus.totalCount || 0) > 0 && (
+                        {(isCalcActive || calcDone) && (displayTotalCount > 0) && (
                             <div className="flex items-center gap-3 mt-1">
                                 <div className="w-36 h-1.5 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
                                     <div
@@ -251,15 +383,14 @@ export const DashboardApiSection: React.FC = () => {
                         )}
                     >
                         <ArrowPathIcon className={clsx("w-4 h-4 transition-transform", (isSyncing || apiSyncStatus === 'syncing') && "animate-spin")} />
-                        <span>{isSyncing || apiSyncStatus === 'syncing' ? 'Загрузка...' : (selectedDate !== format(new Date(), 'yyyy-MM-dd') ? 'Загрузить архив' : 'Синхронизировать')}</span>
+                        <span>{isSyncing || apiSyncStatus === 'syncing' ? 'Загрузка...' : (selectedDateISO !== todayISO ? 'Загрузить архив' : 'Синхронизировать')}</span>
                     </button>
 
                     {/* Back to Today (only if archive) */}
-                    {selectedDate !== format(new Date(), 'yyyy-MM-dd') && (
+                    {selectedDateISO !== todayISO && (
                         <button
                             onClick={() => {
-                                const today = format(new Date(), 'yyyy-MM-dd');
-                                setApiDateShift(today);
+                                setApiDateShift(todayISO);
                                 setApiAutoRefreshEnabled(true);
                                 clearExcelData();
                                 setTimeout(() => triggerApiManualSync(), 100);
@@ -282,7 +413,7 @@ export const DashboardApiSection: React.FC = () => {
                         </div>
                         <input
                             type="date"
-                            value={selectedDate}
+                            value={selectedDateISO}
                             onChange={(e) => handleDateChange(e.target.value)}
                             className={clsx(
                                 'pl-10 h-10 w-full sm:w-44 rounded-xl font-bold transition-all border outline-none',

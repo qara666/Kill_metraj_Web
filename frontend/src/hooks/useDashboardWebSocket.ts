@@ -175,19 +175,38 @@ export const useDashboardWebSocket = ({
                 
                 // Keep `dateStr` comparison robust
                 const isHistorical = apiDate !== dashboardApiService.convertDateToApiFormat(formatDateForApi(new Date()));
+                const todayISO = formatDateForApi(new Date());
+                const isToday = apiDate === dashboardApiService.convertDateToApiFormat(todayISO);
 
-                // Complete state reset matching the fetched archive
-                if (isHistorical || !autoRoutingStatus.isActive) {
+                // v5.206: For TODAY - always set full stats including processedCount
+                // For historical dates - mark as complete
+                if (isToday) {
+                    // Today: Show real stats - total routes and orders already in routes
                     setAutoRoutingStatus({
                         totalCount: routableOrders.length,
-                        processedCount: isHistorical ? routableOrders.length : Math.max(autoRoutingStatus.processedCount || 0, ordersInRoutes),
+                        processedCount: ordersInRoutes, // v5.206: Show how many are in routes
                         skippedInRoutes: ordersInRoutes,
                         skippedGeocoding: response.data.statistics?.geoErrors?.length || 0,
-                        isActive: isHistorical ? false : autoRoutingStatus.isActive,
+                        isActive: autoRoutingStatus.isActive, // Keep active for robot to continue
+                        lastUpdate: Date.now()
+                    });
+                } else if (isHistorical || !autoRoutingStatus.isActive) {
+                    // Historical/archive: Mark as complete
+                    setAutoRoutingStatus({
+                        totalCount: routableOrders.length,
+                        processedCount: routableOrders.length,
+                        skippedInRoutes: ordersInRoutes,
+                        skippedGeocoding: response.data.statistics?.geoErrors?.length || 0,
+                        isActive: false,
                         lastUpdate: Date.now()
                     });
                 } else if (autoRoutingStatus.isActive) {
-                    setAutoRoutingStatus({ lastUpdate: Date.now() });
+                    // Fallback for active robot
+                    setAutoRoutingStatus({ 
+                        totalCount: routableOrders.length,
+                        processedCount: ordersInRoutes,
+                        lastUpdate: Date.now() 
+                    });
                 }
 
                 if (!isSilent) {
@@ -238,25 +257,29 @@ export const useDashboardWebSocket = ({
 
     const handleDashboardUpdate = useCallback((update: any) => {
         // v5.165: Robust Date Normalization (handles YYYY-MM-DD, DD-MM-YYYY, DD.MM.YYYY)
-        const normalize = (dateStr: string | null): string | null => {
-            if (!dateStr) return null;
-            const clean = dateStr.split(' ')[0].split('T')[0];
-            if (clean.includes('-')) {
-                const parts = clean.split('-');
-                if (parts[0].length === 4) return clean; // YYYY-MM-DD
-                if (parts[2].length === 4) return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD-MM-YYYY
+        const normalize = (dateStr: any): string | null => {
+            if (!dateStr || typeof dateStr !== 'string') return null;
+            try {
+                const clean = dateStr.split(' ')[0].split('T')[0];
+                if (clean.includes('-')) {
+                    const parts = clean.split('-');
+                    if (parts[0].length === 4) return clean; // YYYY-MM-DD
+                    if (parts[2].length === 4) return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD-MM-YYYY
+                }
+                if (clean.includes('.')) {
+                    const parts = clean.split('.');
+                    if (parts[2].length === 4) return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD.MM.YYYY
+                }
+                return clean;
+            } catch (e) {
+                return null;
             }
-            if (clean.includes('.')) {
-                const parts = clean.split('.');
-                if (parts[2].length === 4) return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD.MM.YYYY
-            }
-            return clean;
         };
 
         const currentStoreDate = normalize(stateRef.current.apiDateShift);
         
         const updateRaw = update.data?.creationDate || (update.data?.orders?.[0]?.creationDate) || update.targetDate || update.date;
-        const updateDateStr = normalize(updateRaw);
+        const updateDateStr = normalize(String(updateRaw || ''));
 
         if (currentStoreDate && updateDateStr && currentStoreDate !== updateDateStr) {
             logger.info(`Ignoring WebSocket update for mismatched date: Update is ${updateDateStr}, UI is ${currentStoreDate}`);

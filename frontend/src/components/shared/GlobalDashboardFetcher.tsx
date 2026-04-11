@@ -19,21 +19,25 @@ export const GlobalDashboardFetcher: React.FC = () => {
     
     // v5.205: Aggressively clear stale data if date changes
     React.useEffect(() => {
-        const normalize = (d: string) => {
-            if (!d) return '';
-            const part = d.split(' ')[0].split('T')[0];
-            if (part.includes('-')) {
-                const [y, m, d_] = part.split('-');
-                return `${d_}.${m}.${y}`;
+        const normalize = (d: any): string => {
+            if (!d || typeof d !== 'string') return '';
+            try {
+                const part = d.split(' ')[0].split('T')[0];
+                if (part.includes('-')) {
+                    const [y, m, d_] = part.split('-');
+                    return `${d_}.${m}.${y}`;
+                }
+                return part;
+            } catch (e) {
+                return '';
             }
-            return part; // Assuming DD.MM.YYYY
         };
         
-        const targetDate = normalize(apiDateShift);
+        const targetDate = normalize(String(apiDateShift || ''));
 
         // Check in-memory data
         if (excelData && excelData.orders && excelData.orders.length > 0) {
-            const currentDataDate = normalize(excelData.creationDate || (excelData.orders?.[0]?.creationDate || ''));
+            const currentDataDate = normalize(String(excelData.creationDate || (excelData.orders?.[0]?.creationDate || '')));
             if (currentDataDate && targetDate && currentDataDate !== targetDate) {
                 console.warn(`[GlobalDashboardFetcher] Date shift detected (${currentDataDate} -> ${targetDate}). Wiping EVERYTHING.`);
                 setExcelData(null);
@@ -48,8 +52,8 @@ export const GlobalDashboardFetcher: React.FC = () => {
         if (localRaw) {
             try {
                 const localData = JSON.parse(localRaw);
-                const localDateRaw = localData.creationDate || (localData.orders?.[0]?.creationDate ? localData.orders[0].creationDate.split(' ')[0] : null);
-                const localDateNormalized = normalize(localDateRaw || '');
+                const localDateRaw = localData.creationDate || (localData.orders?.[0]?.creationDate ? String(localData.orders[0].creationDate).split(' ')[0] : null);
+                const localDateNormalized = normalize(String(localDateRaw || ''));
                 if (localDateNormalized && targetDate && localDateNormalized !== targetDate) {
                     console.warn(`[GlobalDashboardFetcher] Local storage date mismatch detected during shift. Clearing.`);
                     localStorage.removeItem('km_dashboard_processed_data');
@@ -191,20 +195,29 @@ export const GlobalDashboardFetcher: React.FC = () => {
                 const newOrderCount = validatedData.orders?.length || 0;
                 const countChanged = currentOrderCount !== newOrderCount;
 
-                // v5.205: REJECT data if it doesn't match the current active date
-                const normalize = (d: string) => {
-                    if (!d) return '';
-                    const part = d.split(' ')[0].split('T')[0];
-                    if (part.includes('-')) {
-                        const [y, m, d_] = part.split('-');
-                        return `${d_}.${m}.${y}`;
+                // v5.205: REJECT data if it doesn't match the current active date (only for archive dates)
+                // For TODAY - always accept data as we want fresh sync
+                const normalize = (d: any): string => {
+                    if (!d || typeof d !== 'string') return '';
+                    try {
+                        const dateStr = String(d);
+                        const part = dateStr.split(' ')[0].split('T')[0];
+                        if (part.includes('-')) {
+                            const [y, m, d_] = part.split('-');
+                            return `${d_}.${m}.${y}`;
+                        }
+                        return part;
+                    } catch (e) {
+                        return '';
                     }
-                    return part;
                 };
-                const targetDate = normalize(apiDateShift);
-                const incomingDate = normalize(validatedData.creationDate || (validatedData.orders?.[0]?.creationDate || ''));
+                const targetDate = normalize(String(apiDateShift || ''));
+                const incomingDate = normalize(String(validatedData.creationDate || (validatedData.orders?.[0]?.creationDate || '')));
+                const todayISO = new Date().toISOString().split('T')[0];
+                const isToday = apiDateShift === todayISO;
                 
-                if (targetDate && incomingDate && targetDate !== incomingDate) {
+                // v5.206: Only block stale data for ARCHIVE dates, not for today
+                if (!isToday && targetDate && incomingDate && targetDate !== incomingDate) {
                     console.log(`[GlobalDashboardFetcher] 🛑 Blocking incoming stale data for ${incomingDate} (Target: ${targetDate})`);
                     return;
                 }

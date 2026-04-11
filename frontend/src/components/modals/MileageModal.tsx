@@ -1,4 +1,4 @@
-import { useMemo, memo, useEffect, useState } from 'react';
+import { useMemo, memo, useEffect, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 import { 
@@ -13,13 +13,18 @@ import {
   CheckBadgeIcon,
   HomeIcon,
   ExclamationCircleIcon,
-  ChevronDownIcon
+  ChevronDownIcon,
+  ArrowsUpDownIcon
 } from '@heroicons/react/24/outline';
 import { exportToGoogleMaps, exportToValhalla } from '../../utils/routes/routeExport';
 import { needsAddressClarification } from '../../utils/data/addressUtils';
+import { toast } from 'react-hot-toast';
+import { localStorageUtils } from '../../utils/ui/localStorage';
+import { YapikoOSRMService } from '../../services/YapikoOSRMService';
 
-// v6.31: РУССКАЯ ЛОКАЛИЗАЦИЯ (MileageModal)
-// Все метрики и статусы переведены на русский язык для консистентного HUD
+// v8.0: MileageModal with Deduplication + Drag-and-Drop between routes
+
+// ─── Order Record ──────────────────────────────────────────────────────────────
 
 interface OrderRecordProps {
   order: any;
@@ -27,9 +32,13 @@ interface OrderRecordProps {
   route: any;
   isDark: boolean;
   onEditAddress: (order: any, routeId: string) => void;
+  draggable?: boolean;
+  onDragStart?: (e: React.DragEvent, orderId: string, fromRouteId: string) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
+  isDragging?: boolean;
 }
 
-const OrderRecord = memo(({ order, orderIndex, route, isDark, onEditAddress }: OrderRecordProps) => {
+const OrderRecord = memo(({ order, orderIndex, route, isDark, onEditAddress, draggable, onDragStart, onDragEnd, isDragging }: OrderRecordProps) => {
   const meta = route.geoMeta?.waypoints?.[orderIndex];
   const hasCoords = !!((order.lat || order.coords?.lat) && (order.lng || order.coords?.lng));
   
@@ -42,13 +51,27 @@ const OrderRecord = memo(({ order, orderIndex, route, isDark, onEditAddress }: O
   const hasZones = opZone || kmlZone;
 
   return (
-    <div className={clsx(
-      "flex items-center justify-between p-3 rounded-2xl",
-      isDark ? "bg-white/[0.03] hover:bg-white/10" : "bg-slate-50 hover:bg-slate-100"
-    )}>
+    <div
+      className={clsx(
+        "flex items-center justify-between p-3 rounded-2xl transition-all border",
+        isDragging ? "opacity-40 scale-95" : "",
+        draggable ? "cursor-grab active:cursor-grabbing" : "",
+        isDark
+          ? `bg-white/[0.03] hover:bg-white/10 ${isDragging ? 'border-blue-500/50' : 'border-transparent'}`
+          : `bg-slate-50 hover:bg-slate-100 ${isDragging ? 'border-blue-300' : 'border-transparent'}`
+      )}
+      draggable={draggable}
+      onDragStart={onDragStart ? (e) => onDragStart(e, String(order.orderNumber || order.id), String(route.id)) : undefined}
+      onDragEnd={onDragEnd}
+    >
       <div className="flex items-center gap-4 flex-1 min-w-0">
+        {draggable && (
+          <div className="shrink-0 opacity-30 hover:opacity-70 transition-opacity">
+            <ArrowsUpDownIcon className="w-4 h-4" />
+          </div>
+        )}
         <div className={clsx(
-          "w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black",
+          "w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0",
           isDark ? "bg-white/5 text-gray-400" : "bg-white text-gray-500 border border-slate-100"
         )}>
           {orderIndex + 1}
@@ -62,7 +85,7 @@ const OrderRecord = memo(({ order, orderIndex, route, isDark, onEditAddress }: O
             <button
               onClick={() => onEditAddress(order, route.id)}
               className={clsx(
-                "p-1.5 rounded-lg active:scale-95",
+                "p-1.5 rounded-lg active:scale-95 shrink-0",
                 isDark ? "hover:bg-white/5 text-blue-400" : "hover:bg-blue-50 text-blue-600"
               )}
               title="Редактировать адрес"
@@ -155,14 +178,12 @@ const OrderRecord = memo(({ order, orderIndex, route, isDark, onEditAddress }: O
           </div>
         </div>
       </div>
-      <div className="text-[10px] font-black opacity-30 px-3 uppercase tracking-widest hidden sm:flex items-center gap-1">
-        <BoltIcon className="w-3 h-3" />
-        +0.5 км
-      </div>
     </div>
   );
 });
 OrderRecord.displayName = 'OrderRecord';
+
+// ─── Route Summary Card ────────────────────────────────────────────────────────
 
 interface RouteSummaryCardProps {
   route: any;
@@ -170,24 +191,39 @@ interface RouteSummaryCardProps {
   isDark: boolean;
   onEditAddress: (order: any, routeId: string) => void;
   onDeleteRoute: (id: string) => void;
+  // Drag-and-drop
+  onDragStart: (e: React.DragEvent, orderId: string, fromRouteId: string) => void;
+  onDragEnd: (e: React.DragEvent) => void;
+  onDrop: (e: React.DragEvent, toRouteId: string) => void;
+  draggingOrderId: string | null;
+  draggingFromRouteId: string | null;
 }
 
-const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRoute }: RouteSummaryCardProps) => {
+const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRoute, onDragStart, onDragEnd, onDrop, draggingOrderId, draggingFromRouteId }: RouteSummaryCardProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const ordersCount = route.orders?.length || 0;
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  // v8.0: Deduplicate orders by orderNumber to avoid showing the same order twice
+  const uniqueOrders = useMemo(() => {
+    const seen = new Set<string>();
+    return (route.orders || []).filter((o: any) => {
+      const key = String(o.orderNumber || o.id || '');
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [route.orders]);
+
+  const ordersCount = uniqueOrders.length;
   
   const metrics = useMemo(() => {
-    // SOTA v9.5: Handle both Live and History routes. History routes lose the explicit 'isOptimized' flag.
-    // If we have any distance > 0 or duration > 0, the route was successfully optimized.
     const rawDist = Number(route.totalDistance || route.totalDistanceKm || route.route_data?.totalDistance || 0);
     const rawDur = Number(route.totalDuration || route.totalDurationMin || route.route_data?.totalDuration || 0);
     
-    // Explicit 'false' means it's actively calculating right now. Otherwise infer from data.
     const isActuallyOptimized = route.isOptimized === true || (route.isOptimized !== false && (rawDist > 0 || rawDur > 0));
 
     const baseDist = isActuallyOptimized ? rawDist : 0;
-    // Each stop gets +0.5 km as per user requirement
-    const stopsBonus = (route.orders?.length || 0) * 0.5;
+    const stopsBonus = ordersCount * 0.5;
     
     return {
       total: baseDist + stopsBonus,
@@ -196,18 +232,18 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
       isOptimized: isActuallyOptimized,
       duration: rawDur
     };
-  }, [route]);
+  }, [route, ordersCount]);
 
   const problematicOrders = useMemo(() => {
-    return route.orders?.filter((order: any, idx: number) => {
+    return uniqueOrders.filter((order: any, idx: number) => {
       const meta = route.geoMeta?.waypoints?.[idx];
       return needsAddressClarification({
         locationType: meta?.locationType || order.locationType,
         streetNumberMatched: meta?.streetNumberMatched ?? order.streetNumberMatched,
         hasCoords: !!(order.coords?.lat || meta?.location?.lat)
       });
-    }) || [];
-  }, [route]);
+    });
+  }, [uniqueOrders, route]);
 
   const formatDuration = (minutes: number) => {
     const hours = Math.floor(minutes / 60);
@@ -225,23 +261,53 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
   };
 
   const routeTitle = useMemo(() => {
-    if (!route.orders || route.orders.length === 0) return `Маршрут #${index + 1}`;
-    const numbers = route.orders.map((o: any) => o.orderNumber).filter(Boolean);
+    if (!uniqueOrders || uniqueOrders.length === 0) return `Маршрут #${index + 1}`;
+    const numbers = uniqueOrders.map((o: any) => o.orderNumber).filter(Boolean);
     if (numbers.length === 0) return `Маршрут #${index + 1}`;
-    return `Маршрут #${numbers.join(' #')}`;
-  }, [route.orders, index]);
+    if (numbers.length <= 3) return `Маршрут #${numbers.join(' #')}`;
+    return `Маршрут #${numbers[0]} ... #${numbers[numbers.length - 1]} (${numbers.length})`;
+  }, [uniqueOrders, index]);
+
+  const isDropTarget = draggingOrderId !== null && draggingFromRouteId !== String(route.id);
 
   return (
-    <div className="relative group p-1" data-route-card="true">
+    <div
+      className={clsx(
+        "relative group p-1 transition-all",
+        isDragOver && isDropTarget ? "scale-[1.01]" : ""
+      )}
+      data-route-card="true"
+      onDragOver={(e) => {
+        if (!isDropTarget) return;
+        e.preventDefault();
+        setIsDragOver(true);
+      }}
+      onDragLeave={() => setIsDragOver(false)}
+      onDrop={(e) => {
+        setIsDragOver(false);
+        if (isDropTarget) onDrop(e, String(route.id));
+      }}
+    >
       <div className={clsx(
         "absolute -left-[1.375rem] top-4 w-4 h-4 rounded-full border-4 z-10 transition-transform group-hover:scale-125",
         isDark ? "bg-[#1e1e1e] border-blue-500" : "bg-white border-blue-500"
       )} />
 
       <div className={clsx(
-        "rounded-[2rem] border transition-colors",
-        isDark ? "bg-white/5 border-white/5 hover:bg-white/[0.08]" : "bg-white border-slate-100 hover:border-blue-100 hover:shadow-xl"
+        "rounded-[2rem] border transition-all",
+        isDragOver && isDropTarget
+          ? (isDark ? "bg-blue-500/10 border-blue-500/50 shadow-lg shadow-blue-500/10" : "bg-blue-50 border-blue-300 shadow-lg shadow-blue-100")
+          : (isDark ? "bg-white/5 border-white/5 hover:bg-white/[0.08]" : "bg-white border-slate-100 hover:border-blue-100 hover:shadow-xl")
       )}>
+        {isDragOver && isDropTarget && (
+          <div className={clsx(
+            "text-center py-2 text-[10px] font-black uppercase tracking-widest",
+            isDark ? "text-blue-400" : "text-blue-600"
+          )}>
+            ↓ ПЕРЕНЕСТИ ЗАКАЗ СЮДА
+          </div>
+        )}
+
         <div 
           className="flex items-start md:items-center justify-between p-6 pb-4 border-b border-white/5 flex-col md:flex-row gap-4 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
           onClick={() => setIsExpanded(!isExpanded)}
@@ -264,7 +330,7 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
           
           <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={(e) => { e.stopPropagation(); window.open(exportToGoogleMaps({ route, orders: route.orders || [], startAddress: route.startAddress || '', endAddress: route.endAddress || '', startCoords: route.startCoords || route.route_data?.startCoords, endCoords: route.endCoords || route.route_data?.endCoords }), '_blank'); }}
+              onClick={(e) => { e.stopPropagation(); window.open(exportToGoogleMaps({ route, orders: uniqueOrders, startAddress: route.startAddress || '', endAddress: route.endAddress || '', startCoords: route.startCoords || route.route_data?.startCoords, endCoords: route.endCoords || route.route_data?.endCoords }), '_blank'); }}
               className={clsx(
                 "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-colors",
                 isDark ? "bg-blue-500/10 text-blue-400 hover:bg-blue-500/20" : "bg-blue-50 text-blue-600 hover:bg-blue-100"
@@ -273,7 +339,7 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
               <MapIcon className="w-4 h-4" /> Google
             </button>
             <button
-              onClick={(e) => { e.stopPropagation(); window.open(exportToValhalla({ route, orders: route.orders || [], startAddress: route.startAddress || '', endAddress: route.endAddress || '', startCoords: route.startCoords || route.route_data?.startCoords, endCoords: route.endCoords || route.route_data?.endCoords }), '_blank'); }}
+              onClick={(e) => { e.stopPropagation(); window.open(exportToValhalla({ route, orders: uniqueOrders, startAddress: route.startAddress || '', endAddress: route.endAddress || '', startCoords: route.startCoords || route.route_data?.startCoords, endCoords: route.endCoords || route.route_data?.endCoords }), '_blank'); }}
               className={clsx(
                 "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-colors",
                 isDark ? "bg-green-500/10 text-green-400 hover:bg-green-500/20" : "bg-green-50 text-green-600 hover:bg-green-100"
@@ -321,15 +387,27 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
               </div>
             )}
 
+            {/* Drag tip */}
+            <div className={clsx(
+              "mx-6 mt-4 mb-2 flex items-center gap-2 text-[9px] font-black uppercase tracking-widest opacity-40"
+            )}>
+              <ArrowsUpDownIcon className="w-3.5 h-3.5" />
+              Перетащите заказ в другой маршрут
+            </div>
+
             <div className="p-6 space-y-3">
-              {route.orders?.map((order: any, orderIndex: number) => (
+              {uniqueOrders.map((order: any, orderIndex: number) => (
                 <OrderRecord 
-                  key={order.id || orderIndex} 
+                  key={`${order.orderNumber || order.id}-${orderIndex}`} 
                   order={order} 
                   orderIndex={orderIndex} 
                   route={route} 
                   isDark={isDark} 
                   onEditAddress={onEditAddress}
+                  draggable={true}
+                  onDragStart={onDragStart}
+                  onDragEnd={onDragEnd}
+                  isDragging={draggingOrderId === String(order.orderNumber || order.id)}
                 />
               ))}
             </div>
@@ -396,6 +474,8 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
 });
 RouteSummaryCard.displayName = 'RouteSummaryCard';
 
+// ─── Main Modal ────────────────────────────────────────────────────────────────
+
 interface MileageModalProps {
   courier: any;
   isDark: boolean;
@@ -407,8 +487,174 @@ interface MileageModalProps {
 }
 
 export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCourierRoutes, onEditAddress, onDeleteRoute }: MileageModalProps) => {
+  const presets = localStorageUtils.getAllSettings();
   const distanceStats = useMemo(() => getCourierStats(courier.name), [courier.name, getCourierStats]);
-  const courierRoutes = useMemo(() => getCourierRoutes(courier.name), [courier.name, getCourierRoutes]);
+  const baseRoutes = useMemo(() => getCourierRoutes(courier.name), [courier.name, getCourierRoutes]);
+
+  // Local mutable state — allows drag-and-drop without mutating global store
+  const [localRoutes, setLocalRoutes] = useState<any[]>(baseRoutes);
+  // Re-sync when base data changes (e.g. WebSocket push)
+  useEffect(() => { setLocalRoutes(baseRoutes); }, [baseRoutes]);
+
+  // Drag-and-drop state
+  const [draggingOrderId, setDraggingOrderId] = useState<string | null>(null);
+  const [draggingFromRouteId, setDraggingFromRouteId] = useState<string | null>(null);
+  const dragDataRef = useRef<{ orderId: string; fromRouteId: string } | null>(null);
+
+  const handleDragStart = useCallback((e: React.DragEvent, orderId: string, fromRouteId: string) => {
+    dragDataRef.current = { orderId, fromRouteId };
+    setDraggingOrderId(orderId);
+    setDraggingFromRouteId(fromRouteId);
+    e.dataTransfer.effectAllowed = 'move';
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggingOrderId(null);
+    setDraggingFromRouteId(null);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, toRouteId: string) => {
+    e.preventDefault();
+    const { orderId, fromRouteId } = dragDataRef.current || {};
+    if (!orderId || !fromRouteId || fromRouteId === toRouteId) return;
+
+    setLocalRoutes(prev => {
+      const next = prev.map(r => ({ ...r, orders: [...(r.orders || [])] }));
+      const fromRoute = next.find(r => String(r.id) === fromRouteId);
+      const toRoute = next.find(r => String(r.id) === toRouteId);
+      if (!fromRoute || !toRoute) return prev;
+
+      const orderIdx = fromRoute.orders.findIndex((o: any) => String(o.orderNumber || o.id) === orderId);
+      if (orderIdx === -1) return prev;
+
+      const [movedOrder] = fromRoute.orders.splice(orderIdx, 1);
+      toRoute.orders.push(movedOrder);
+
+      // Estimate the physical distance contribution per order
+      const fromOriginalCount = fromRoute.orders.length + 1; // It just lost one
+      const toOriginalCount = toRoute.orders.length - 1;     // It just gained one
+      const avgPhysicalPerOrder = fromOriginalCount > 0 ? (fromRoute.totalDistance || 0) / fromOriginalCount : 1.5;
+
+      const recalcOptimisticDistance = (route: any, isProvider: boolean) => {
+        const cnt = route.orders.length;
+        let newPhysical = route.totalDistance || 0;
+        
+        if (cnt === 0) {
+            newPhysical = 0;
+        } else if (isProvider) {
+            newPhysical = (newPhysical / fromOriginalCount) * cnt;
+        } else {
+            if (toOriginalCount <= 0) {
+                newPhysical = newPhysical + avgPhysicalPerOrder;
+            } else {
+                newPhysical = (newPhysical / toOriginalCount) * cnt;
+            }
+        }
+
+        return {
+          ...route,
+          totalDistance: Number(newPhysical.toFixed(2)),
+          isManuallyAdjusted: true,
+          ordersCount: cnt,
+          orders_count: cnt,
+        };
+      };
+
+      const finalNext = next.map(r => {
+        if (String(r.id) === fromRouteId) return recalcOptimisticDistance(r, true);
+        if (String(r.id) === toRouteId) return recalcOptimisticDistance(r, false);
+        return r;
+      });
+
+      // --- ASYNC EXACT OSRM RECALCULATION (SOTA) ---
+      // We do this AFTER state set to keep UI responsive
+      setTimeout(async () => {
+         try {
+             // We need to fetch true distance using coordinates
+             const hubLat = Number(presets.defaultStartLat) || 50.4501;
+             const hubLng = Number(presets.defaultStartLng) || 30.5234;
+             const osrmUrl = presets.osrmUrl || 'http://osrm.yapiko.kh.ua:5050';
+
+             const calcTrueDistance = async (route: any) => {
+                 if (!route || route.orders.length === 0) return { ...route, totalDistance: 0 };
+                 
+                 const locs = [
+                     { lat: hubLat, lng: hubLng },
+                     ...route.orders.map((o: any) => ({
+                         lat: Number(o.coords?.lat || o.lat || 0),
+                         lng: Number(o.coords?.lng || o.lng || 0)
+                     })).filter((l: any) => l.lat > 0 && l.lng > 0),
+                     { lat: hubLat, lng: hubLng }
+                 ];
+                 
+                 if (locs.length <= 2) return route; // No valid coords
+                 
+                 const res = await YapikoOSRMService.calculateRoute(locs, osrmUrl);
+                 if (res.feasible && res.totalDistance !== undefined) {
+                     return {
+                         ...route,
+                         totalDistance: Number((res.totalDistance / 1000).toFixed(2)),
+                         totalDuration: Math.round(res.totalDuration! / 60),
+                         isOptimized: true
+                     };
+                 }
+                 return route;
+             };
+
+             const [trueFrom, trueTo] = await Promise.all([
+                 calcTrueDistance(finalNext.find(r => String(r.id) === fromRouteId)),
+                 calcTrueDistance(finalNext.find(r => String(r.id) === toRouteId))
+             ]);
+
+             // Update state with TRUE values
+             setLocalRoutes(currentRoutes => currentRoutes.map(r => {
+                 if (String(r.id) === fromRouteId) return trueFrom;
+                 if (String(r.id) === toRouteId) return trueTo;
+                 return r;
+             }));
+         } catch (err) {
+             console.warn('Real-time OSRM Drag-and-Drop update failed:', err);
+         }
+      }, 50);
+
+      return finalNext;
+    });
+
+    toast.success(`Заказ #${orderId} перемещён в другой маршрут`, { icon: '🔄' });
+    dragDataRef.current = null;
+  }, []);
+
+  // Recalculated totals
+  const recalcStats = useMemo(() => {
+    let totalPhysical = 0;
+    let totalBonus = 0;
+    let totalOrders = 0;
+    let ordersInRoutes = 0;
+
+    localRoutes.forEach(r => {
+      const seen = new Set<string>();
+      const unique = (r.orders || []).filter((o: any) => {
+        const k = String(o.orderNumber || o.id || '');
+        if (!k || seen.has(k)) return false;
+        seen.add(k); return true;
+      });
+      const physical = Number(r.totalDistance || 0);
+      totalPhysical += physical;
+      totalBonus += unique.length * 0.5;
+      ordersInRoutes += unique.length;
+    });
+
+    (distanceStats?.totalOrders != null) && (totalOrders = distanceStats.totalOrders);
+
+    return {
+      totalDistance: totalPhysical + totalBonus,
+      effectivePhysicalKm: totalPhysical,
+      bonusDistance: totalBonus,
+      robotDistance: totalPhysical,
+      totalOrders: totalOrders || ordersInRoutes,
+      ordersInRoutes,
+    };
+  }, [localRoutes, distanceStats?.totalOrders]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -450,22 +696,22 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
                   </div>
                   <div className="flex flex-col">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-4xl font-black tabular-nums">{(distanceStats?.totalDistance || 0).toFixed(1)}</span>
+                      <span className="text-4xl font-black tabular-nums">{(recalcStats.totalDistance || 0).toFixed(1)}</span>
                       <span className="text-[10px] font-black opacity-30 uppercase tracking-[0.2em]">ИТОГО</span>
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-4">
                       <div className="flex flex-col">
                         <span className="text-[9px] font-black opacity-40 uppercase tracking-widest leading-none mb-1 text-nowrap">Основной пробег</span>
                         <div className="flex items-center gap-2">
-                          <span className="text-lg font-black tabular-nums">{(distanceStats?.effectivePhysicalKm || 0).toFixed(1)}</span>
-                          {(distanceStats?.robotDistance || 0) > 0 && (
+                          <span className="text-lg font-black tabular-nums">{(recalcStats.effectivePhysicalKm || 0).toFixed(1)}</span>
+                          {(recalcStats.robotDistance || 0) > 0 && (
                             <div className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-[7px] font-black text-emerald-500 border border-emerald-500/20">ROBOT OK</div>
                           )}
                         </div>
                       </div>
                       <div className="flex flex-col border-l border-white/5 pl-4">
                         <span className="text-[9px] font-black opacity-40 uppercase tracking-widest leading-none mb-1 text-nowrap text-blue-500">Доп (заказы)</span>
-                        <span className="text-lg font-black tabular-nums text-blue-500">+{(distanceStats?.bonusDistance || 0).toFixed(1)}</span>
+                        <span className="text-lg font-black tabular-nums text-blue-500">+{(recalcStats.bonusDistance || 0).toFixed(1)}</span>
                       </div>
                     </div>
                   </div>
@@ -478,14 +724,14 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
                   </div>
                   <div className="flex flex-col">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-4xl font-black tabular-nums text-blue-500">{distanceStats?.totalOrders || 0}</span>
+                      <span className="text-4xl font-black tabular-nums text-blue-500">{recalcStats.totalOrders || 0}</span>
                       <span className="text-xs font-black opacity-30 uppercase">Заказов</span>
                     </div>
                     <div className="mt-2 flex items-center gap-3">
                        <div className={clsx("flex-1 h-1.5 rounded-full overflow-hidden", isDark ? "bg-white/5" : "bg-gray-100")}>
-                         <div className={clsx("h-full transition-all duration-1000", (distanceStats?.ordersInRoutes || 0) === (distanceStats?.totalOrders || 0) ? "bg-emerald-500" : "bg-blue-500")} style={{ width: `${((distanceStats?.ordersInRoutes || 0) / Math.max(1, distanceStats?.totalOrders || 0)) * 100}%` }} />
+                         <div className={clsx("h-full transition-all duration-1000", (recalcStats.ordersInRoutes || 0) === (recalcStats.totalOrders || 0) ? "bg-emerald-500" : "bg-blue-500")} style={{ width: `${((recalcStats.ordersInRoutes || 0) / Math.max(1, recalcStats.totalOrders || 0)) * 100}%` }} />
                        </div>
-                       <span className="text-[10px] font-black opacity-40">{Math.round(((distanceStats?.ordersInRoutes || 0) / Math.max(1, distanceStats?.totalOrders || 0)) * 100)}%</span>
+                       <span className="text-[10px] font-black opacity-40">{Math.round(((recalcStats.ordersInRoutes || 0) / Math.max(1, recalcStats.totalOrders || 0)) * 100)}%</span>
                     </div>
                   </div>
                 </div>
@@ -510,14 +756,26 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
 
             <div className="space-y-8">
               <div className="flex items-center gap-4">
-                <h3 className="text-sm font-black uppercase tracking-[0.2em] opacity-50 shrink-0">История маршрутов ({courierRoutes.length})</h3>
+                <h3 className="text-sm font-black uppercase tracking-[0.2em] opacity-50 shrink-0">История маршрутов ({localRoutes.length})</h3>
                 <div className="flex-1 h-px bg-white/5" />
               </div>
-              {courierRoutes.length > 0 ? (
+              {localRoutes.length > 0 ? (
                 <div className="space-y-12 relative pl-8">
                   <div className={clsx("absolute left-[1.125rem] top-2 bottom-2 w-0.5", isDark ? "bg-white/5" : "bg-slate-200")} />
-                  {courierRoutes.map((route, idx) => (
-                    <RouteSummaryCard key={route.id || idx} route={route} index={idx} isDark={isDark} onEditAddress={onEditAddress} onDeleteRoute={onDeleteRoute} />
+                  {localRoutes.map((route, idx) => (
+                    <RouteSummaryCard
+                      key={route.id || idx}
+                      route={route}
+                      index={idx}
+                      isDark={isDark}
+                      onEditAddress={onEditAddress}
+                      onDeleteRoute={onDeleteRoute}
+                      onDragStart={handleDragStart}
+                      onDragEnd={handleDragEnd}
+                      onDrop={handleDrop}
+                      draggingOrderId={draggingOrderId}
+                      draggingFromRouteId={draggingFromRouteId}
+                    />
                   ))}
                 </div>
               ) : (

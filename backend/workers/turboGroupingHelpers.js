@@ -500,15 +500,23 @@ function groupOrdersByTimeWindow(
     }
 
     if (noTimeOrders.length > 0) {
-            });
-        }
+        groups.push({
+            id: `group-${courierId}-no-time`,
+            courierId,
+            courierName,
+            windowStart: 0,
+            windowEnd: 0,
+            windowLabel: 'Без времени',
+            orders: noTimeOrders,
+            isReadyForCalculation: true
+        });
     }
 
     // Sort by windowStart
-    finalGroups.sort((a, b) => a.windowStart - b.windowStart);
+    groups.sort((a, b) => a.windowStart - b.windowStart);
 
-    logger.info(`[turboGrouping] ✅ ${courierName}: ${uniqueOrders.length} orders → ${finalGroups.length} groups (SOTA wave-merge)`);
-    return finalGroups;
+    logger.info(`[turboGrouping] ✅ ${courierName}: ${uniqueOrders.length} orders → ${groups.length} groups`);
+    return groups;
 }
 
 // ============================================================

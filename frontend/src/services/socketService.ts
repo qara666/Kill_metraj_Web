@@ -119,17 +119,21 @@ class SocketService {
                 const dashboardDate = normalizeDate(store.apiDateShift);
                 const robotDate = normalizeDate(data.date);
 
-                const isGlobalUpdate = (String(data.divisionId) === 'all');
-                
-                // v6.20: Allow aggregations for Admin but filter specific view for everyone else
-                if (currentDivisionStr !== 'all' && String(data.divisionId) !== currentDivisionStr) {
+                // v7.2: Unified handling for robot updates
+                const isGlobalUpdate = String(data.divisionId) === 'all';
+                const storeHasSpecificDivision = store.divisionId && currentDivisionStr !== 'all';
+
+                // Skip if update is for a DIFFERENT specific division
+                if (storeHasSpecificDivision && !isGlobalUpdate && String(data.divisionId) !== currentDivisionStr) {
                     return;
                 }
-                
+
+                // Skip if date mismatch
                 if (dashboardDate && robotDate && dashboardDate !== robotDate) {
                     return;
                 }
 
+                // Determine active state logic
                 const currentState = store.autoRoutingStatus;
                 const hasOrdersToProcess = (data.totalCount || 0) > 0 && 
                     (data.processedCount || 0) < (data.totalCount || 0);
@@ -137,28 +141,28 @@ class SocketService {
                 const shouldBeActive = !currentState.userStopped && hasOrdersToProcess;
                 const forceActive = currentState.isActive && !currentState.userStopped;
                 
+                const finalActive = forceActive || shouldBeActive || data.isActive;
+
+                // Update current UI status
                 store.setAutoRoutingStatus({
                     ...data,
-                    isActive: forceActive || shouldBeActive || data.isActive,
+                    isActive: finalActive,
                     lastUpdate: now
                 });
 
-                // v6.20: Admin aggregate logic
-                if (currentDivisionStr === 'all' && !isGlobalUpdate) {
-                     // Update current big bar if matches date
-                     if (dashboardDate === robotDate) {
-                        store.setAggregateRoutingStatus({
-                            date: data.date,
-                            isActive: true,
-                            lastUpdate: now
-                        });
-                     }
+                // Update aggregate status for global view or admins
+                if (currentDivisionStr === 'all' || isGlobalUpdate) {
+                    store.setAggregateRoutingStatus({
+                        ...data,
+                        isActive: finalActive,
+                        lastUpdate: now
+                    });
                 }
 
-                // v36.2: Dispatch ULTRA-FAST DOM event for UI components
+                // Dispatch event for specialized UI components
                 window.dispatchEvent(new CustomEvent('km:robot:status', { detail: data }));
             } catch (e) {
-                // Ignore
+                console.warn('[SocketService] robot_status handling error:', e);
             }
         });
 
