@@ -1126,6 +1126,26 @@ async function ensureRoutesTable() {
     await sequelize.query('CREATE INDEX IF NOT EXISTS idx_routes_division ON calculated_routes(division_id)');
     await sequelize.query('CREATE INDEX IF NOT EXISTS idx_routes_date ON calculated_routes((route_data->>\'target_date\'))');
     await sequelize.query('CREATE INDEX IF NOT EXISTS idx_routes_courier ON calculated_routes(courier_id)');
+    
+    // v38.1: Fix unstable unique index — clear stale routes with old time_block format labels
+    // Old format: "11:20 - 11:49" (unstable, changes every run if window expands)
+    // New format: "2026-04-12_COURIER_NAME_1234567890000" (stable, deterministic)
+    try {
+      // Check if there are stale routes with old label-style time_block (contains " - ")
+      const [staleCheck] = await sequelize.query(`
+        SELECT COUNT(*) as cnt FROM calculated_routes 
+        WHERE route_data->>'time_block' LIKE '% - %'
+        LIMIT 1
+      `);
+      const staleCount = parseInt(staleCheck[0]?.cnt || '0');
+      if (staleCount > 0) {
+        await sequelize.query(`DELETE FROM calculated_routes WHERE route_data->>'time_block' LIKE '% - %'`);
+        logger.info(`DB Check: Removed ${staleCount} stale routes with old-format time_block labels`);
+      }
+    } catch (staleErr) {
+      logger.warn('DB Check: Could not clean stale routes:', staleErr.message);
+    }
+
     logger.info('DB Check: calculated_routes table verified/created with indexes');
   } catch (err) {
     logger.error('DB Check: Error creating calculated_routes table', { error: err.message });

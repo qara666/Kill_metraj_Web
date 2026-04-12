@@ -1058,7 +1058,7 @@ class OrderCalculator {
 
                 this.io.emit('robot_status', {
                     divisionId: cache.division_id,
-                    date: cache.target_date,
+                    date: targetDateNorm || cache.target_date,
                     isActive: true,
                     totalCount: cacheTotalCount,
                     processedCount: currentProcessed, // Keep current progress
@@ -1083,13 +1083,13 @@ class OrderCalculator {
                     if (this.io) {
                         this.io.emit('robot_status', {
                             divisionId: cache.division_id,
-                            date: cache.target_date,
+                            date: targetDateNorm || cache.target_date,
                             ...stats,
                             couriers: []
                         });
                         this.io.emit('division_status_update', {
                             divisionId: cache.division_id,
-                            date: cache.target_date,
+                            date: targetDateNorm || cache.target_date,
                             totalCount: 0,
                             totalCouriers: 0,
                             couriers: []
@@ -1259,7 +1259,13 @@ class OrderCalculator {
             
             // Map to store existing route signatures for PERFECT incremental routing without breaking groups
             const existingRouteMap = new Map();
-            const getBlockSignature = (orders) => orders.map(o => String(o.orderNumber || o.id)).sort().join('_');
+            const getBlockSignature = (orders) => {
+                if (!Array.isArray(orders)) {
+                    logger.warn(`[TurboCalculator] ⚠️ getBlockSignature called with non-array: ${typeof orders}`, orders);
+                    return '';
+                }
+                return orders.map(o => String(o.orderNumber || o.id)).sort().join('_');
+            };
 
             if (Route) {
                 try {
@@ -1342,7 +1348,7 @@ class OrderCalculator {
             // v7.6 CRITICAL: Frontload Manual Corrections from GeoCache
             // This ensures manual fixes are respected BEFORE FO GPS or other sources
             const GeoCache = this.getModel('GeoCache');
-            if (GeoCache) {
+            if (GeoCache && Array.isArray(data.orders)) {
                 try {
                     const addressesToLookup = data.orders.map(o => {
                         const addr = o.address || o.addressGeo || '';
@@ -1453,7 +1459,7 @@ class OrderCalculator {
                 if (this.io) {
                     this.io.emit('robot_status', {
                         divisionId: cache.division_id,
-                        date: cache.target_date,
+                        date: targetDateNorm || cache.target_date,
                         isActive: true,
                         totalCount: totalCount,
                         processedCount: Math.round(totalCount * 0.05),
@@ -1474,7 +1480,7 @@ class OrderCalculator {
                         if (this.io) {
                             this.io.emit('robot_status', {
                                 divisionId: cache.division_id,
-                                date: cache.target_date,
+                                date: targetDateNorm || cache.target_date,
                                 isActive: true,
                                 totalCount: totalCount,
                                 processedCount: Math.round((done / total) * totalCount * 0.40),
@@ -1507,7 +1513,18 @@ class OrderCalculator {
             let totalBlocksCount = 0;
             try {
                 deliveryWindows = groupAllOrdersByTimeWindow(ordersToGroup);
-                deliveryWindows.forEach((windows) => { totalBlocksCount += windows.length; });
+                deliveryWindows.forEach((windows, courierName) => { 
+                    totalBlocksCount += windows.length; 
+                    // v7.6: Initialize courier stats so distances/counts are recorded
+                    if (!stats.courierStats[courierName]) {
+                        stats.courierStats[courierName] = {
+                            name: courierName,
+                            orders: windows.reduce((sum, w) => sum + (w.orders?.length || 0), 0),
+                            distanceKm: 0,
+                            type: windows[0]?.orders?.[0]?.courierType || 'Car'
+                        };
+                    }
+                });
                 stats.totalCouriers = deliveryWindows.size; // Update stats
                 logger.info(`[TurboCalculator] 📦 Grouped ${ordersToGroup.length} orders into ${totalBlocksCount} blocks across ${deliveryWindows.size} couriers`);
                 
@@ -1515,7 +1532,7 @@ class OrderCalculator {
                 if (this.io) {
                     this.io.emit('robot_status', {
                         divisionId: cache.division_id,
-                        date: cache.target_date,
+                        date: targetDateNorm || cache.target_date,
                         isActive: true,
                         totalCount: totalCount,
                         processedCount: Math.max(stats.processedCount, Math.round(totalCount * 0.35)),
@@ -1532,14 +1549,14 @@ class OrderCalculator {
                 if (!this.io) return;
                 
                 const now = Date.now();
-                // Throttle: don't emit more than once per 500ms unless forced
-                if (!force && this.lastEmitTime && (now - this.lastEmitTime < 500)) return;
+                // v7.5 Throttle: don't emit more than once per 1000ms unless forced
+                if (!force && this.lastEmitTime && (now - this.lastEmitTime < 1000)) return;
                 this.lastEmitTime = now;
 
                 const couriersList = Object.values(stats.courierStats || {});
                 const payload = {
                     divisionId: String(cache.division_id),
-                    date: cache.target_date,
+                    date: targetDateNorm || cache.target_date,
                     totalCount: stats.totalCount,
                     totalCouriers: stats.totalCouriers,
                     processedCount: stats.processedCount,
@@ -1560,35 +1577,6 @@ class OrderCalculator {
                 this.io.emit('robot_status', payload);
                 this.io.emit('division_status_update', payload);
 
-                // Global aggregation
-                if (this.globalStats) {
-                    try {
-                        const dateISO = cache.target_date;
-                        let totalProcessed = 0;
-                        let totalInRoutes = 0;
-                        let totalErrors = 0;
-
-                        for (const [key, state] of this.divisionStates.entries()) {
-                            if (state.date === dateISO) {
-                                totalProcessed += (state.processedCount || 0);
-                                totalInRoutes += (state.skippedInRoutes || 0);
-                                totalErrors += (state.skippedGeocoding || 0);
-                            }
-                        }
-
-                        const globalPayload = {
-                            ...this.globalStats,
-                            processedCount: totalProcessed,
-                            skippedInRoutes: totalInRoutes,
-                            skippedGeocoding: totalErrors,
-                            message: `Processing branch ${cache.division_id}: ${stats.message}`
-                        };
-                        this.io.emit('robot_status', globalPayload);
-                    } catch (e) {
-                         // silently ignore
-                    }
-                }
-                
                 if (global.divisionStatusStore) {
                     global.divisionStatusStore[`${payload.divisionId}_${payload.date}`] = payload;
                 }
@@ -1620,7 +1608,7 @@ class OrderCalculator {
 
                     this.io.emit('routes_update', {
                         divisionId: cache.division_id,
-                        date: cache.target_date,
+                        date: targetDateNorm || cache.target_date,
                         couriers: enrichedCouriers,
                         timeBlocks: allWindowLabels,
                         routes: inMemoryFrontendRoutes
@@ -2013,38 +2001,70 @@ class OrderCalculator {
                                 }
                             }
 
-                            const createdRoute = await Route.create({
-                                courier_id: normName,
+                            // v38.1: Stable time_block key = target_date + rounded windowStart
+                            // This ensures ON CONFLICT correctly identifies the same route across recalculations
+                            // even if windowLabel changes (e.g. "11:20 - 11:49" vs "11:20 - 11:50")
+                            const PROXIMITY_MS = 30 * 60 * 1000;
+                            const stableWindowKey = timeGroup.windowStart
+                                ? Math.floor(timeGroup.windowStart / PROXIMITY_MS) * PROXIMITY_MS
+                                : 0;
+                            const stableTimeBlock = `${targetDateNorm || cache.target_date}_${normName}_${stableWindowKey}`;
+
+                            // v38.0: Use raw SQL with ON CONFLICT for reliable upsert
+                            const routeDataObj = {
+                                target_date: targetDateNorm,
                                 division_id: cache.division_id,
-                                total_distance: distanceKm,
-                                total_duration: Math.round(routeResult.duration),
-                                engine_used: routeResult.engine,
-                                orders_count: uniqueRouteOrders.length,
-                                calculated_at: new Date(),
-                                route_data: {
-                                    target_date: targetDateNorm, // v5.164: Save as YYYY-MM-DD
-                                    division_id: cache.division_id,
-                                    courier: normName,
-                                    deliveryWindow: timeBlockLabel,
-                                    timeBlocks: timeBlockLabel,
-                                    windowStart: timeGroup.windowStart,
-                                    startAddress: presets?.defaultStartAddress || null,
-                                    endAddress: presets?.defaultEndAddress || null,
-                                    startCoords: globalStartPoint,
-                                    endCoords: globalEndPoint || globalStartPoint, // Circular fallback
-                                    isCircularRoute: !globalStartPoint && !globalEndPoint && uniqueRouteOrders.length > 0, 
-                                    geoMeta: { 
-                                        origin: globalStartPoint,
-                                        destination: globalEndPoint || globalStartPoint,
-                                        waypoints: uniqueRouteOrders.map(o => o.coords).filter(Boolean)
-                                    },
-                                    orders: uniqueRouteOrders,
-                                    geometry: routeResult.geometry
-                                }
+                                courier: normName,
+                                deliveryWindow: timeBlockLabel,
+                                timeBlocks: timeBlockLabel,
+                                time_block: stableTimeBlock, // v38.1: STABLE KEY for ON CONFLICT matching
+                                windowStart: timeGroup.windowStart,
+                                startAddress: presets?.defaultStartAddress || null,
+                                endAddress: presets?.defaultEndAddress || null,
+                                startCoords: globalStartPoint,
+                                endCoords: globalEndPoint || globalStartPoint,
+                                isCircularRoute: !globalStartPoint && !globalEndPoint && uniqueRouteOrders.length > 0, 
+                                geoMeta: { 
+                                    origin: globalStartPoint,
+                                    destination: globalEndPoint || globalStartPoint,
+                                    waypoints: uniqueRouteOrders.map(o => o.coords).filter(Boolean)
+                                },
+                                orders: uniqueRouteOrders,
+                                geometry: routeResult.geometry
+                            };
+
+                            const [upsertResult] = await sequelize.query(`
+                                INSERT INTO calculated_routes 
+                                (courier_id, division_id, total_distance, total_duration, engine_used, orders_count, calculated_at, route_data, created_at, updated_at)
+                                VALUES 
+                                (:courier_id, :division_id, :total_distance, :total_duration, :engine_used, :orders_count, :calculated_at, :route_data, NOW(), NOW())
+                                ON CONFLICT (division_id, courier_id, ((route_data->>'time_block')::text))
+                                DO UPDATE SET
+                                    total_distance = EXCLUDED.total_distance,
+                                    total_duration = EXCLUDED.total_duration,
+                                    engine_used = EXCLUDED.engine_used,
+                                    orders_count = EXCLUDED.orders_count,
+                                    calculated_at = EXCLUDED.calculated_at,
+                                    route_data = EXCLUDED.route_data,
+                                    updated_at = NOW()
+                                RETURNING *
+                            `, {
+                                replacements: {
+                                    courier_id: normName,
+                                    division_id: String(cache.division_id),
+                                    total_distance: distanceKm,
+                                    total_duration: Math.round(routeResult.duration),
+                                    engine_used: routeResult.engine,
+                                    orders_count: uniqueRouteOrders.length,
+                                    calculated_at: new Date(),
+                                    route_data: JSON.stringify(routeDataObj)
+                                },
+                                type: sequelize.QueryTypes.INSERT
                             });
 
+                            const createdRoute = upsertResult[0];
+
                             // v33: Push into memory cache immediately!
-                            // v5.180: FRONTEND COMPATIBILITY — match frontend order structure EXACTLY
                             matchedExistingRouteIds.add(createdRoute.id);
                             inMemoryFrontendRoutes.push({
                                 id: createdRoute.id,
@@ -2076,7 +2096,7 @@ class OrderCalculator {
                                     handoverAt: o.handoverAt,
                                     executionTime: o.executionTime,
                                 })),
-                                isCalculated: true // v5.175: Force UI to treat this as solid data
+                                isCalculated: true 
                             });
 
                             courierRoutesCreated++;
@@ -2101,12 +2121,13 @@ class OrderCalculator {
                 if (!processedCourierNames.has(normName)) {
                     processedCourierNames.add(normName);
                     stats.processedCouriers = processedCourierNames.size;
-                    stats.message = `Courier ${normName} completed`; // Update message so it doesn't get stuck
-                    emitStatus(); // Push fresh status after each courier is done
+                    stats.message = `Courier ${normName} completed`;
                     
-                    // v33.2: EMIT ROUTES PARTIALLY AFTER EACH COURIER
-                    // This fixed the "didn't pick up routes" feel, as user can see them appearing cow-by-cow!
-                    await emitCurrentRoutes(); 
+                    // v7.6: Smooth progress tracking — increment processedCount as we finish couriers
+                    const courierOrders = stats.courierStats[normName]?.orders || 1;
+                    stats.processedCount = Math.min(stats.totalCount, stats.processedCount + courierOrders);
+                    
+                    emitStatus(); 
                 }
             } // End of courier loop
 
@@ -2117,43 +2138,46 @@ class OrderCalculator {
             stats.message = 'Calculation complete!';
             emitStatus(true); // v36.5: FORCE final status to clear throttles
 
-            // v5.195: Clean up obsolete routes that didn't match any of the calculated valid block signatures
-            if (matchedExistingRouteIds.size > 0 && Route && cache.division_id) {
+            // v38.2: ALWAYS clean up obsolete routes after every recalculation
+            // Delete ALL routes for this date+division that were NOT created/matched in this run
+            // This prevents route accumulation when time_block label changes between runs
+            if (Route && cache.division_id) {
                 try {
-                    const deletedCount = await Route.destroy({
-                        where: {
-                            division_id: cache.division_id,
-                            id: { [Op.notIn]: Array.from(matchedExistingRouteIds) },
-                            [Op.and]: sequelize.where(
-                                sequelize.literal("route_data->>'target_date'"),
-                                targetDateNorm || cache.target_date
-                            )
-                        }
-                    });
+                    let deletedCount = 0;
+                    if (matchedExistingRouteIds.size > 0) {
+                        deletedCount = await Route.destroy({
+                            where: {
+                                division_id: cache.division_id,
+                                id: { [Op.notIn]: Array.from(matchedExistingRouteIds) },
+                                [Op.and]: sequelize.where(
+                                    sequelize.literal("route_data->>'target_date'"),
+                                    targetDateNorm || cache.target_date
+                                )
+                            }
+                        });
+                    } else {
+                        // No routes matched at all — wipe the slate clean for this date+division
+                        deletedCount = await Route.destroy({
+                            where: {
+                                division_id: cache.division_id,
+                                [Op.and]: sequelize.where(
+                                    sequelize.literal("route_data->>'target_date'"),
+                                    targetDateNorm || cache.target_date
+                                )
+                            }
+                        });
+                    }
                     if (deletedCount > 0) {
-                        logger.info(`[TurboCalculator] 🗑️ Cleaned up ${deletedCount} obsolete incremental routes`);
+                        logger.info(`[TurboCalculator] 🗑️ Cleaned up ${deletedCount} stale routes for ${cache.division_id} on ${targetDateNorm}`);
                     }
                 } catch (cleanErr) {
-                    logger.warn(`[TurboCalculator] ⚠️ Failed cleaning up obsolete routes: ${cleanErr.message}`);
+                    logger.warn(`[TurboCalculator] ⚠️ Failed cleaning up stale routes: ${cleanErr.message}`);
                 }
-            } else if (matchedExistingRouteIds.size === 0 && Route && cache.division_id) {
-                // If NO routes were matched (all empty), destroy ALL routes for the day + division
-                try {
-                    await Route.destroy({
-                        where: {
-                            division_id: cache.division_id,
-                            [Op.and]: sequelize.where(
-                                sequelize.literal("route_data->>'target_date'"),
-                                targetDateNorm || cache.target_date
-                            )
-                        }
-                    });
-                } catch (e) {}
             }
 
             // v5.171: Fetch ALL routes (existing + newly created) for frontend
-            // Final comprehensive emit across all couriers just in case
-            await emitCurrentRoutes();
+            // v7.5: Emit once at the final end to avoid fetch flood
+            // await emitCurrentRoutes(); 
 
 
             // v29.0: Cache Enrichment - write calculated distances back to api_dashboard_cache
@@ -2237,6 +2261,19 @@ class OrderCalculator {
                         });
                     }
 
+                    // v7.6 CRITICAL: Sync routes and statistics back to dashboard payload BEFORE saving
+                    // This ensures "В маршрутах" is not 0 and courier cards show distances
+                    data.routes = inMemoryFrontendRoutes || [];
+                    
+                    if (!data.statistics) data.statistics = {};
+                    data.statistics.totalOrders = data.orders.length;
+                    data.statistics.deliveryCount = data.orders.length;
+                    data.statistics.totalAmount = data.orders.reduce((sum, o) => sum + (o.amount || 0), 0);
+                    data.statistics.successfulGeocoding = (data.orders || []).filter(o => o.coords?.lat).length;
+                    data.statistics.failedGeocoding = (data.orders || []).filter(o => !o.coords?.lat).length;
+                    data.statistics.totalRoutes = (inMemoryFrontendRoutes || []).length;
+                    data.statistics.ordersInRoutes = (inMemoryFrontendRoutes || []).reduce((acc, r) => acc + (r.orders_count || 0), 0);
+
                     data.lastModified = Date.now();
                     data.source = 'turbo_robot';
 
@@ -2255,13 +2292,14 @@ class OrderCalculator {
                     this.processedHashes.set(cacheKey, dataHash);
                     logger.info(`[TurboCalculator] 💾 Cache enriched: ${cacheKey}, ${stats.processedCouriers} couriers, ${totalRoutesCreated} routes`);
 
+                    // v7.5: FINAL EMIT after everything is saved and stable
+                    await emitCurrentRoutes();
+
                     if (this.io) {
-                        this.io.emit('dashboard:update', {
-                            divisionId: cache.division_id,
-                            date: cache.target_date,
-                            data: data,
-                            source: 'turbo_calculator_enrichment'
-                        });
+                        // v7.5: STOP emitting dashboard:update directly from worker.
+                        // The server's pgListen will handle this consistently when data hits the DB.
+                        // This prevents client-side "jitter" and double-loading.
+                        logger.debug(`[TurboCalculator] 🔔 Persistent storage updated for ${cacheKey} — deferring WS emit to pgListen`);
                     }
                 } catch (saveErr) {
                     logger.error(`[TurboCalculator] ❌ Failed to enrich cache: ${saveErr.message}`);

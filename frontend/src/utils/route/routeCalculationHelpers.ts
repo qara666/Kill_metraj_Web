@@ -29,7 +29,7 @@ export interface TimeWindowGroup {
 // ФУНКЦИИ ГРУППИРОВКИ ПО ВРЕМЕННЫМ ОКНАМ
 // ============================================
 
-const DEFAULT_WINDOW_MINUTES = 15; // v5.153: Finalized to 15m as per strict requirement
+const DEFAULT_WINDOW_MINUTES = 30; // v5.153: Increased to 30m to reduce fragmentation
 
 /**
  * Получает ключ временного окна для timestamp
@@ -75,7 +75,7 @@ export function getTimeWindowBounds(
 }
 
 // Константы для группировки
-const PROXIMITY_MINUTES = 15;            // v5.151: Strict adherence to 15-minute wait time (not 30)
+const PROXIMITY_MINUTES = 30;            // v5.151: Increased to 30m for stabilization sync
 const MAX_DELIVERY_SPAN_MINUTES = 60;   // Максимальный разброс доставки в одной группе
 
 /**
