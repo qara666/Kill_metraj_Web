@@ -537,23 +537,16 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
 
       const recalcOptimisticDistance = (route: any, isProvider: boolean) => {
         const cnt = route.orders.length;
-        let newPhysical = route.totalDistance || 0;
+        if (cnt === 0) return { ...route, totalDistance: 0, ordersCount: 0, orders_count: 0 };
         
-        if (cnt === 0) {
-            newPhysical = 0;
-        } else if (isProvider) {
-            newPhysical = (newPhysical / fromOriginalCount) * cnt;
-        } else {
-            if (toOriginalCount <= 0) {
-                newPhysical = newPhysical + avgPhysicalPerOrder;
-            } else {
-                newPhysical = (newPhysical / toOriginalCount) * cnt;
-            }
-        }
+        // v7.2: Smarter optimistic recalc. 
+        // We use a baseline of 5km + 2km per order as a very rough 'safe' estimate 
+        // until the real OSRM (async) returns. This avoids 37km flash.
+        const estimate = 5 + (cnt * 2);
 
         return {
           ...route,
-          totalDistance: Number(newPhysical.toFixed(2)),
+          totalDistance: Number(estimate.toFixed(2)),
           isManuallyAdjusted: true,
           ordersCount: cnt,
           orders_count: cnt,
@@ -578,13 +571,15 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
              const calcTrueDistance = async (route: any) => {
                  if (!route || route.orders.length === 0) return { ...route, totalDistance: 0 };
                  
+                 const startPt = route.startCoords || route.route_data?.startCoords || { lat: Number(presets.defaultStartLat) || 50.4501, lng: Number(presets.defaultStartLng) || 30.5234 };
+                 const endPt = route.endCoords || route.route_data?.endCoords || startPt;
                  const locs = [
-                     { lat: hubLat, lng: hubLng },
+                     { lat: Number(startPt.lat), lng: Number(startPt.lng) },
                      ...route.orders.map((o: any) => ({
                          lat: Number(o.coords?.lat || o.lat || 0),
                          lng: Number(o.coords?.lng || o.lng || 0)
                      })).filter((l: any) => l.lat > 0 && l.lng > 0),
-                     { lat: hubLat, lng: hubLng }
+                     { lat: Number(endPt.lat), lng: Number(endPt.lng) }
                  ];
                  
                  if (locs.length <= 2) return route; // No valid coords
