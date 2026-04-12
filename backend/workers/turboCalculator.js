@@ -1024,6 +1024,12 @@ class OrderCalculator {
         try {
             const data = cache.payload;
             const targetDateNorm = normalizeDateISO(cache.target_date);
+
+            // v37.9.1: Proactively RE-LOAD KML zones if they are missing or if we are doing a force full sync
+            // This ensures that new zones added via the UI are immediately picked up by the worker.
+            if (!this.kmlZones || this.kmlZones.length === 0 || divState?.forceFull) {
+                await this.preloadKmlZones();
+            }
             let totalRoutesCreated = 0;
 
             // v30.0 CRITICAL FIX: Route must be declared inside processCache.
@@ -1223,21 +1229,25 @@ class OrderCalculator {
                 logger.info(`[TurboCalculator] 🎯 ${cache.division_id}: Cleared targetCourier flag (was: ${targetCourier})`);
             }
 
-            // v37.9: Explicitly delete TARGET COURIER'S old routes BEFORE recalculation to prevent dupes!
+            // v37.9.2: IMPROVED CLEANUP — use Op.iLike and trim to ensure targetCourier's old routes are GONE.
             if (targetCourier && Route) {
                 try {
                     const normTarget = normalizeCourierName(targetCourier);
+                    // v37.9.3: Delete by both exact match and trimmed iLike to catch DB encoding/space weirdness
                     const delCount = await Route.destroy({
                         where: {
                             division_id: cache.division_id,
-                            courier_id: normTarget,
+                            [Op.or]: [
+                                { courier_id: normTarget },
+                                { courier_id: { [Op.iLike]: `%${normTarget}%` } }
+                            ],
                             [Op.and]: sequelize.where(
                                 sequelize.literal("route_data->>'target_date'"),
                                 targetDateNorm || cache.target_date
                             )
                         }
                     });
-                    logger.info(`[TurboCalculator] 🗑️ Wiped ${delCount} old routes for targetCourier ${normTarget} to prevent dupes!`);
+                    logger.info(`[TurboCalculator] 🗑️ Wiped ${delCount} old routes for targetCourier ${normTarget} (iLike lookup)`);
                 } catch(e) {
                     logger.warn(`[TurboCalculator] Failed to wipe old routes for ${targetCourier}: ${e.message}`);
                 }
@@ -1373,7 +1383,9 @@ class OrderCalculator {
 
             // v7.1 SOTA: Smart Coordinate Resolver & Validator
             const kmlIndex = { findBestZoneForPoint: (lat, lng) => this.findBestZoneForPoint(lat, lng) };
-            if (!this.zoneCentroids) this.zoneCentroids = buildZoneCentroids(this.allKmlZones || allKmlZones);
+            if (!this.zoneCentroids || divState?.forceFull) {
+                this.zoneCentroids = buildZoneCentroids(this.kmlZones);
+            }
             
             const { enhanced, fromGPS, fromGeocoder, lowConfidence } = enhanceAllOrderCoords(data.orders, kmlIndex, this.zoneCentroids);
             logger.info(`[TurboCalculator] 📍 Coord resolver: validated ${enhanced} orders (${fromGPS} GPS, ${fromGeocoder} DB, ${lowConfidence} low-conf)`);
@@ -1892,27 +1904,36 @@ class OrderCalculator {
                                 continue;
                             }
 
-                            // v6.11: Extra guard — if only 1 order and start point defined, check distance to start
-                            if (validOrders.length === 1 && globalStartPoint) {
-                                const o1 = validOrders[0];
-                                if (o1.coords?.lat && o1.coords?.lng) {
-                                    // v37.3: Fix method call + unit (haversineDistance returns KM)
-                                    const distToStart = haversineDistance(
-                                        globalStartPoint.lat, globalStartPoint.lng,
-                                        o1.coords.lat, o1.coords.lng
-                                    );
-                                    if (distToStart > 25) {
-                                        logger.error(`[TurboCalculator] ❌ REJECTED: Order ${o1.orderNumber} is ${distToStart.toFixed(1)}km from hub — coordinates are wrong. Invalidating.`);
-                                        const addrKey = (o1.address || o1.addressGeo || '').toLowerCase().trim();
-                                        if (addrKey) {
-                                            this.geocache.delete(addrKey);
-                                            const GeoCache2 = this.getModel('GeoCache');
-                                            if (GeoCache2) GeoCache2.destroy({ where: { address_key: addrKey } }).catch(() => {});
+                            // v6.11+: EXTRA GUARD — Check distance to Start Point for ALL orders in the block
+                            // If ANY order is completely absurdly far from the hub (> 25km straight line),
+                            // it strongly implies a Geocoding error (e.g. matched a street in another suburb).
+                            if (globalStartPoint) {
+                                let hasAbsurdPoint = false;
+                                for (const o of validOrders) {
+                                    if (o.coords?.lat && o.coords?.lng) {
+                                        const distToStart = haversineDistance(
+                                            globalStartPoint.lat, globalStartPoint.lng,
+                                            o.coords.lat, o.coords.lng
+                                        );
+                                        // 25km straight line is ~30-35km driving. Invalid for local delivery.
+                                        if (distToStart > 25) {
+                                            logger.error(`[TurboCalculator] ❌ REJECTED: Order ${o.orderNumber} is ${distToStart.toFixed(1)}km straight-line from hub. Too far! Invalidating.`);
+                                            const addrKey = (o.address || o.addressGeo || '').toLowerCase().trim();
+                                            if (addrKey) {
+                                                this.geocache.delete(addrKey);
+                                                const GeoCache2 = this.getModel('GeoCache');
+                                                if (GeoCache2) GeoCache2.destroy({ where: { address_key: addrKey } }).catch(() => {});
+                                            }
+                                            hasAbsurdPoint = true;
                                         }
-                                        continue;
                                     }
                                 }
+                                // If any point is garbage, we skip routing this block so it falls into errors
+                                if (hasAbsurdPoint) {
+                                    continue;
+                                }
                             }
+
 
                             // v5.149+: Stable deduplication by ID (to support split orders)
                             const seenIds = new Set();
