@@ -1,16 +1,11 @@
 const logger = require('../src/utils/logger');
 
 // ============================================================
-// CONSTANTS & HELPERS — Sync with frontend routeCalculationHelpers.ts
+// CONSTANTS — Synced with frontend routeCalculationHelpers.ts
 // ============================================================
-const PROXIMITY_MINUTES = 30;           // v5.151: Synced with frontend SOTA
-const MAX_DELIVERY_SPAN_MINUTES = 60;   // v5.151: Synced with frontend SOTA
-const GEO_SNAP_KM = 0.5;               
-const KITCHEN_BATCH_MS = 10 * 60 * 1000; 
+const PROXIMITY_MINUTES = 30;           // Must match frontend PROXIMITY_MINUTES
+const MAX_DELIVERY_SPAN_MINUTES = 60;   // Must match frontend MAX_DELIVERY_SPAN_MINUTES
 
-/**
- * Normalizes courier names for consistent grouping.
- */
 function normalizeCourierName(name) {
     if (!name) return 'НЕ НАЗНАЧЕНО';
     if (typeof name !== 'string') return 'НЕ НАЗНАЧЕНО';
@@ -19,40 +14,103 @@ function normalizeCourierName(name) {
     return n;
 }
 
-const parseTimeRobust = (t) => {
-    if (!t) return null;
-    // If it's already a number (timestamp), return it
-    if (typeof t === 'number') return t;
-    
-    // If it's a "HH:MM" or "HH:MM:SS" string without a date
-    if (typeof t === 'string' && /^\d{1,2}:\d{2}(:\d{2})?$/.test(t.trim())) {
-        const parts = t.trim().split(':');
-        const hour = parseInt(parts[0], 10);
-        const minute = parseInt(parts[1], 10);
-        const second = parts[2] ? parseInt(parts[2], 10) : 0;
-        
-        // Match frontend's logic: use current date (or baseDate) and set hours/minutes
-        const base = new Date();
-        base.setHours(hour, minute, second, 0);
-        return base.getTime();
+// ============================================================
+// TIME PARSING — Exact mirror of frontend src/utils/data/timeUtils.ts
+// ============================================================
+
+/**
+ * Parses a time value from string, number (Excel serial), or Date.
+ * Mirrors frontend parseTime() including Excel serial number support.
+ */
+const parseTimeRobust = (val, baseDate) => {
+    if (!val && val !== 0) return null;
+    const s = String(val).trim();
+    if (!s || s.includes('#')) return null;
+
+    const strVal = s.toLowerCase();
+    // Skip durations
+    if (strVal.includes('мин.') || strVal.includes('час') || strVal.includes('min') || strVal.includes('hour')) {
+        return null;
     }
-    
-    // Try to handle DD.MM.YYYY HH:MM:SS format
-    if (typeof t === 'string') {
-        const dotMatch = t.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
-        if (dotMatch) {
-            const d = parseInt(dotMatch[1], 10);
-            const m = parseInt(dotMatch[2], 10) - 1;
-            const y = parseInt(dotMatch[3], 10);
-            const hh = dotMatch[4] ? parseInt(dotMatch[4], 10) : 0;
-            const mm = dotMatch[5] ? parseInt(dotMatch[5], 10) : 0;
-            const ss = dotMatch[6] ? parseInt(dotMatch[6], 10) : 0;
-            return new Date(y, m, d, hh, mm, ss).getTime();
+
+    // 1. Excel serial number (number or numeric string)
+    const excelTime = typeof val === 'number' ? val : parseFloat(s);
+    if (!isNaN(excelTime) && excelTime > 0) {
+        const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+        if (excelTime >= 25569) { // Date + Time
+            const days = Math.floor(excelTime);
+            const timeFraction = excelTime - days;
+            const date = new Date(excelEpoch.getTime() + days * 86400 * 1000);
+            const totalHours = timeFraction * 24;
+            const hours = Math.floor(totalHours);
+            const minutes = Math.floor((totalHours - hours) * 60);
+            const seconds = Math.round(((totalHours - hours) * 60 - minutes) * 60);
+            date.setUTCHours(hours, minutes, seconds, 0);
+            return date.getTime();
+        } else if (excelTime >= 0 && excelTime < 1) { // Time only
+            const totalHours = excelTime * 24;
+            const hours = Math.floor(totalHours);
+            const minutes = Math.floor((totalHours - hours) * 60);
+            const seconds = Math.round(((totalHours - hours) * 60 - minutes) * 60);
+            const base = baseDate ? new Date(baseDate) : new Date();
+            base.setHours(hours, minutes, seconds, 0);
+            return base.getTime();
         }
     }
 
-    const d = new Date(t);
-    return isNaN(d.getTime()) ? null : d.getTime();
+    // 2. DD.MM.YYYY HH:MM:SS
+    const dotMatch = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+    if (dotMatch) {
+        const d = parseInt(dotMatch[1], 10);
+        const m = parseInt(dotMatch[2], 10) - 1;
+        const y = parseInt(dotMatch[3], 10);
+        const hh = dotMatch[4] ? parseInt(dotMatch[4], 10) : 0;
+        const mm = dotMatch[5] ? parseInt(dotMatch[5], 10) : 0;
+        const ss = dotMatch[6] ? parseInt(dotMatch[6], 10) : 0;
+        return new Date(y, m, d, hh, mm, ss).getTime();
+    }
+
+    // 3. M/d/yy HH:mm (Excel standard)
+    const excelDateTimeMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
+    if (excelDateTimeMatch) {
+        let first = parseInt(excelDateTimeMatch[1], 10);
+        let second = parseInt(excelDateTimeMatch[2], 10);
+        let year = parseInt(excelDateTimeMatch[3], 10);
+        let hour = parseInt(excelDateTimeMatch[4], 10);
+        const minute = parseInt(excelDateTimeMatch[5], 10);
+        const ampm = excelDateTimeMatch[7];
+        let month, day;
+        if (first > 12) { day = first; month = second; }
+        else if (second > 12) { month = first; day = second; }
+        else { month = first; day = second; }
+        if (year < 100) year += year < 50 ? 2000 : 1900;
+        if (ampm) {
+            if (ampm.toUpperCase() === 'PM' && hour !== 12) hour += 12;
+            else if (ampm.toUpperCase() === 'AM' && hour === 12) hour = 0;
+        }
+        return new Date(year, month - 1, day, hour, minute, 0).getTime();
+    }
+
+    // 4. HH:mm:ss or HH:mm
+    const timeMatch = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
+    if (timeMatch) {
+        let hour = parseInt(timeMatch[1], 10);
+        const minute = parseInt(timeMatch[2], 10);
+        const second = timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
+        const ampm = timeMatch[4];
+        if (ampm) {
+            if (ampm.toUpperCase() === 'PM' && hour !== 12) hour += 12;
+            else if (ampm.toUpperCase() === 'AM' && hour === 12) hour = 0;
+        }
+        const base = baseDate ? new Date(baseDate) : new Date();
+        base.setHours(hour, minute, second, 0);
+        return base.getTime();
+    }
+
+    const d = new Date(s);
+    if (!isNaN(d.getTime()) && d.getFullYear() > 2000) return d.getTime();
+
+    return null;
 };
 
 const KITCHEN_TIME_FIELDS = [
@@ -72,56 +130,138 @@ const PLANNED_TIME_FIELDS = [
     'deliverBy', 'deliver_by', 'DeliverBy',
     'Время доставки', 'время доставки', 'ВРЕМЯ ДОСТАВКИ',
     'доставить к', 'доставить_к', 'Доставить к',
-    'timeDeliveryEnd', 'time_delivery_end', 'TimeDeliveryEnd', 'planned'
+    'timeDeliveryEnd', 'time_delivery_end', 'TimeDeliveryEnd'
+    // NOTE: removed 'planned' — too generic, causes false positives
 ];
 
+// NOTE: Matches frontend exactly — does NOT include 'arrival' or 'time' (too generic)
 const ARRIVAL_TIME_FIELDS = [
     'создания', 'создание', 'creation', 'createdAt', 'Дата.создания',
-    'дата.создания', 'Дата создания', 'дата создания', 'CreatedAt',
-    'creationDate', 'arrival', 'time'
+    'дата.создания', 'Дата создания', 'дата создания', 'CreatedAt'
 ];
 
 const EXECUTION_TIME_FIELDS = [
-    'executionTime', 'Время выполнения', 'execution', 'handoverAt', 'completedAt', 'deliveringAt'
+    'executionTime', 'Время выполнения', 'handoverAt', 'completedAt', 'deliveringAt'
 ];
 
 const getFirstAvailableField = (o, fields) => {
     if (!o) return null;
     for (const field of fields) {
-        if (o[field] !== undefined && o[field] !== null) return String(o[field]);
-        if (o.raw && o.raw[field] !== undefined && o.raw[field] !== null) return String(o.raw[field]);
+        if (o[field] !== undefined && o[field] !== null) return o[field];
+        if (o.raw && o.raw[field] !== undefined && o.raw[field] !== null) return o.raw[field];
     }
     return null;
-}
-
-const getExecutionTime = (o) => {
-    if (o.statusTimings && o.statusTimings.completedAt) return parseTimeRobust(o.statusTimings.completedAt);
-    if (o.statusTimings && o.statusTimings.deliveringAt) return parseTimeRobust(o.statusTimings.deliveringAt);
-    const t = getFirstAvailableField(o, EXECUTION_TIME_FIELDS);
-    return parseTimeRobust(t);
 };
 
-const getPlannedTime = (o) => {
-    // If deadlineAt is already a timestamp from frontend
-    if (o.deadlineAt && typeof o.deadlineAt === 'number') {
-        const d = new Date(o.deadlineAt);
-        if (d.getHours() !== 0 || d.getMinutes() !== 0) return o.deadlineAt;
-    }
-    const t = getFirstAvailableField(o, PLANNED_TIME_FIELDS);
-    return parseTimeRobust(t);
-};
-
-const getArrivalTime = (o) => {
-    if (o.statusTimings && o.statusTimings.assembledAt) return parseTimeRobust(o.statusTimings.assembledAt);
-    if (o.createdAt && typeof o.createdAt === 'number' && o.createdAt > 1000000000000) return o.createdAt;
-    const t = getFirstAvailableField(o, ARRIVAL_TIME_FIELDS);
-    return parseTimeRobust(t);
-};
-
+/**
+ * Mirrors frontend getKitchenTime exactly.
+ */
 const getKitchenTime = (o) => {
-    const t = getFirstAvailableField(o, KITCHEN_TIME_FIELDS);
-    return parseTimeRobust(t);
+    if (!o) return null;
+    // Direct property first (matches frontend's explicit check)
+    if (o.readyAtSource && typeof o.readyAtSource === 'number') return o.readyAtSource;
+
+    for (const field of KITCHEN_TIME_FIELDS) {
+        const val = o[field] ?? o.raw?.[field];
+        if (val !== undefined && val !== null) {
+            const parsed = parseTimeRobust(val);
+            if (parsed) return parsed;
+        }
+    }
+    return null;
 };
+
+/**
+ * Mirrors frontend getPlannedTime exactly — skips '00:00' values.
+ */
+const getPlannedTime = (o) => {
+    if (!o) return null;
+
+    // Explicit typed property first (populated by API transformer)
+    if (o.deadlineAt && typeof o.deadlineAt === 'number') {
+        const date = new Date(o.deadlineAt);
+        if (date.getHours() !== 0 || date.getMinutes() !== 0) return o.deadlineAt;
+    }
+
+    for (const field of PLANNED_TIME_FIELDS) {
+        const val = o[field] ?? o.raw?.[field];
+        if (val !== undefined && val !== null) {
+            // Skip explicit '00:00' — same as frontend
+            if (typeof val === 'string' && (val === '00:00' || val === '00:00:00')) continue;
+            const parsed = parseTimeRobust(val);
+            if (parsed) return parsed;
+        }
+    }
+    return null;
+};
+
+/**
+ * Mirrors frontend getArrivalTime exactly — status-aware.
+ */
+const getArrivalTime = (o) => {
+    if (!o) return null;
+    const status = String(o.status || o.deliveryStatus || '').trim().toLowerCase();
+    const isDelivering = status.includes('доставля') || status.includes('в пути') ||
+                         status.includes('маршру') || status.includes('исполнен') ||
+                         status.includes('виконан') || status.includes('завер');
+
+    if (isDelivering) {
+        if (o.statusTimings?.deliveringAt) {
+            const dt = parseTimeRobust(o.statusTimings.deliveringAt);
+            if (dt) return dt;
+        }
+        if (o.handoverAt && typeof o.handoverAt === 'number') return o.handoverAt;
+    }
+
+    if (status.includes('собран') || status.includes('зібран')) {
+        if (o.statusTimings?.assembledAt) {
+            const at = parseTimeRobust(o.statusTimings.assembledAt);
+            if (at) return at;
+        }
+    }
+
+    // createdAt ONLY if it's a proper number timestamp — same rule as frontend
+    if (o.createdAt && typeof o.createdAt === 'number' && o.createdAt > 1000000000000) return o.createdAt;
+
+    for (const field of ARRIVAL_TIME_FIELDS) {
+        const val = o[field] ?? o.raw?.[field];
+        if (val !== undefined && val !== null) {
+            const parsed = parseTimeRobust(val);
+            if (parsed) return parsed;
+        }
+    }
+
+    return null; // Do NOT fall back to kitchenTime — causes wrong anchoring (same comment as frontend)
+};
+
+/**
+ * Mirrors frontend getExecutionTime exactly — status-gated.
+ */
+const getExecutionTime = (o) => {
+    if (!o) return null;
+    const status = String(o.status || '').trim().toLowerCase();
+    const isExecuted = status.includes('исполнен') || status.includes('выполнен') || status.includes('доставлен') ||
+                       status.includes('виконан') || status.includes('заверш');
+    if (!isExecuted) return null; // ← CRITICAL: backend was missing this gate!
+
+    if (o.statusTimings?.completedAt) {
+        const t = typeof o.statusTimings.completedAt === 'number'
+            ? o.statusTimings.completedAt
+            : parseTimeRobust(o.statusTimings.completedAt);
+        if (t) return t;
+    }
+    if (o.statusTimings?.deliveringAt) {
+        const t = parseTimeRobust(o.statusTimings.deliveringAt);
+        if (t) return t;
+    }
+    if (o.handoverAt && typeof o.handoverAt === 'number') return o.handoverAt;
+
+    return null;
+};
+
+
+
+
 
 /**
  * Returns all possible IDs for an order to prevent duplicates.

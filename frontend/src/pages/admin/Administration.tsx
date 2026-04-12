@@ -2,6 +2,7 @@ import React from 'react'
 import { useTheme } from '../../contexts/ThemeContext'
 import { clsx } from 'clsx'
 import { AdminDatabaseCleanup } from '../../components/admin/AdminDatabaseCleanup'
+import { AdminRouteReset } from '../../components/admin/AdminRouteReset'
 import { FetcherMetrics } from '../../components/admin/FetcherMetrics'
 import { CollapsibleSection } from '../../components/shared/CollapsibleSection'
 import ZoneInspector from '../../components/zone/ZoneInspector'
@@ -10,7 +11,8 @@ import {
     TrashIcon,
     ChartBarIcon,
     ServerIcon,
-    MagnifyingGlassIcon
+    MagnifyingGlassIcon,
+    MapIcon
 } from '@heroicons/react/24/outline'
 
 export const Administration: React.FC = () => {
@@ -54,6 +56,27 @@ export const Administration: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 gap-8">
+                {/* 🗂 Управление маршрутами (новый раздел) */}
+                <div className={clsx(
+                    'rounded-3xl border overflow-hidden transition-all duration-500',
+                    isDark
+                        ? 'bg-gray-800/50 border-gray-700/50 shadow-2xl shadow-black/20'
+                        : 'bg-white border-gray-200 shadow-2xl shadow-blue-100/50'
+                )}>
+                    <div className="p-6">
+                        <CollapsibleSection
+                            isDark={isDark}
+                            icon={<MapIcon className="h-5 w-5" />}
+                            title="Маршруты расчёта (Сброс и очистка)"
+                            defaultOpen={true}
+                        >
+                            <div className="mt-4">
+                                <AdminRouteReset />
+                            </div>
+                        </CollapsibleSection>
+                    </div>
+                </div>
+
                 {/* Административные инструменты */}
                 <div className={clsx(
                     'rounded-3xl border overflow-hidden transition-all duration-500',
@@ -66,7 +89,7 @@ export const Administration: React.FC = () => {
                             isDark={isDark}
                             icon={<TrashIcon className="h-5 w-5" />}
                             title="Обслуживание базы данных (Очистка)"
-                            defaultOpen={true}
+                            defaultOpen={false}
                         >
                             <div className="mt-4">
                                 <AdminDatabaseCleanup />

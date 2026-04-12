@@ -1594,6 +1594,33 @@ app.post('/api/turbo/clear', authenticateToken, async (req, res) => {
   }
 });
 
+// v38.2: Delete stale routes with old label-format time_block (e.g. "11:20 - 11:49")
+// These prevent ON CONFLICT from working correctly — must be cleared once before new format takes effect
+app.post('/api/turbo/reset-stale-routes', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user;
+    if (user?.role !== 'admin') {
+      return res.status(403).json({ success: false, error: 'Admin only' });
+    }
+    // Delete ALL routes whose time_block contains " - " (old label format)
+    const [result] = await sequelize.query(
+      `DELETE FROM calculated_routes WHERE route_data->>'time_block' LIKE '% - %' RETURNING id`
+    );
+    const count = Array.isArray(result) ? result.length : 0;
+    logger.info(`[API] 🗑️ Reset stale routes: deleted ${count} old-format routes`);
+
+    // Also emit a routes_update so UI refreshes
+    const divisionId = req.body?.divisionId || 'all';
+    io.emit('routes_update', { divisionId, routes: [], cleared: true });
+
+    res.json({ success: true, deletedCount: count, message: `Удалено ${count} устаревших маршрутов. Запустите Рассчитать для обновления.` });
+  } catch (error) {
+    logger.error('[API] Error resetting stale routes:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+
 /**
  * Hub for TurboCalculator events to maintain global state
  */

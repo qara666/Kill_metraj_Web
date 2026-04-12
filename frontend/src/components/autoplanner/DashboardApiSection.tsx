@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';
-import { ArrowPathIcon, CalendarIcon, CpuChipIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { ArrowPathIcon, CalendarIcon, CpuChipIcon, CheckCircleIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { clsx } from 'clsx';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useDashboardStore } from '../../stores/useDashboardStore';
@@ -81,8 +81,36 @@ export const DashboardApiSection: React.FC = () => {
     }, []);
     const isToday = selectedDateISO === todayISO;
 
+    const isAdmin = user?.role === 'admin';
     const [timeLeft, setTimeLeft] = useState<string>('--:--');
     const [isSyncing, setIsSyncing] = useState(false);
+    const [isResetting, setIsResetting] = useState(false);
+
+    // v38.2: Reset stale routes (old label-format time_block) — admin only
+    const resetStaleRoutes = React.useCallback(async () => {
+        setIsResetting(true);
+        try {
+            const token = localStorage.getItem('km_access_token');
+            const res = await fetch('/api/turbo/reset-stale-routes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ divisionId })
+            });
+            const data = await res.json();
+            if (data?.success) {
+                toast.success(data.message || `Сброс выполнен`);
+                // Auto-trigger recalculation after clearing
+                setTimeout(() => handleSync(), 800);
+            } else {
+                toast.error('Ошибка сброса: ' + (data?.error || 'Unknown'));
+            }
+        } catch (e: any) {
+            toast.error('Ошибка: ' + e?.message);
+        } finally {
+            setIsResetting(false);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [divisionId]);
 
     // Auto-trigger calculation for today on first load (no date change)
     React.useEffect(() => {
@@ -452,6 +480,26 @@ export const DashboardApiSection: React.FC = () => {
                             title="Вернуться к сегодня"
                         >
                             <ArrowPathIcon className="w-5 h-5" />
+                        </button>
+                    )}
+
+                    {/* Admin: Reset stale routes button */}
+                    {isAdmin && (
+                        <button
+                            onClick={resetStaleRoutes}
+                            disabled={isResetting || isSyncing}
+                            title="Удалить накопленные старые маршруты и пересчитать (только для администратора)"
+                            className={clsx(
+                                "flex items-center gap-2 px-4 h-10 rounded-[1.2rem] border font-bold text-[11px] uppercase tracking-widest transition-all duration-300 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed",
+                                isResetting
+                                    ? (isDark ? 'bg-red-600/20 border-red-500/30 text-red-400' : 'bg-red-50 border-red-200 text-red-600')
+                                    : (isDark
+                                        ? 'bg-red-600/10 border-red-500/20 text-red-400 hover:bg-red-600/20'
+                                        : 'bg-red-50 border-red-100 text-red-600 hover:bg-red-100 shadow-sm')
+                            )}
+                        >
+                            <TrashIcon className={clsx('w-4 h-4', isResetting && 'animate-spin')} />
+                            <span>{isResetting ? 'Сброс...' : 'Сброс маршрутов'}</span>
                         </button>
                     )}
 
