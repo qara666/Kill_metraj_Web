@@ -164,29 +164,25 @@ const getFirstAvailableField = (o, fields) => {
 
 /**
  * Mirrors frontend getKitchenTime exactly.
+ * CRITICAL: accepts baseDate to correctly parse HH:MM against the target date (not today).
  */
-const getKitchenTime = (o) => {
+const getKitchenTime = (o, baseDate) => {
     if (!o) return null;
-    // Direct property first (matches frontend's explicit check)
     if (o.readyAtSource && typeof o.readyAtSource === 'number') return o.readyAtSource;
 
     for (const field of KITCHEN_TIME_FIELDS) {
         const val = o[field] ?? o.raw?.[field];
         if (val !== undefined && val !== null) {
-            const parsed = parseTimeRobust(val);
+            const parsed = parseTimeRobust(val, baseDate);
             if (parsed) return parsed;
         }
     }
     return null;
 };
 
-/**
- * Mirrors frontend getPlannedTime exactly — skips '00:00' values.
- */
-const getPlannedTime = (o) => {
+const getPlannedTime = (o, baseDate) => {
     if (!o) return null;
 
-    // Explicit typed property first (populated by API transformer)
     if (o.deadlineAt && typeof o.deadlineAt === 'number') {
         const date = new Date(o.deadlineAt);
         if (date.getHours() !== 0 || date.getMinutes() !== 0) return o.deadlineAt;
@@ -195,19 +191,15 @@ const getPlannedTime = (o) => {
     for (const field of PLANNED_TIME_FIELDS) {
         const val = o[field] ?? o.raw?.[field];
         if (val !== undefined && val !== null) {
-            // Skip explicit '00:00' — same as frontend
             if (typeof val === 'string' && (val === '00:00' || val === '00:00:00')) continue;
-            const parsed = parseTimeRobust(val);
+            const parsed = parseTimeRobust(val, baseDate);
             if (parsed) return parsed;
         }
     }
     return null;
 };
 
-/**
- * Mirrors frontend getArrivalTime exactly — status-aware.
- */
-const getArrivalTime = (o) => {
+const getArrivalTime = (o, baseDate) => {
     if (!o) return null;
     const status = String(o.status || o.deliveryStatus || '').trim().toLowerCase();
     const isDelivering = status.includes('доставля') || status.includes('в пути') ||
@@ -216,7 +208,7 @@ const getArrivalTime = (o) => {
 
     if (isDelivering) {
         if (o.statusTimings?.deliveringAt) {
-            const dt = parseTimeRobust(o.statusTimings.deliveringAt);
+            const dt = parseTimeRobust(o.statusTimings.deliveringAt, baseDate);
             if (dt) return dt;
         }
         if (o.handoverAt && typeof o.handoverAt === 'number') return o.handoverAt;
@@ -224,34 +216,31 @@ const getArrivalTime = (o) => {
 
     if (status.includes('собран') || status.includes('зібран')) {
         if (o.statusTimings?.assembledAt) {
-            const at = parseTimeRobust(o.statusTimings.assembledAt);
+            const at = parseTimeRobust(o.statusTimings.assembledAt, baseDate);
             if (at) return at;
         }
     }
 
-    // createdAt ONLY if it's a proper number timestamp — same rule as frontend
     if (o.createdAt && typeof o.createdAt === 'number' && o.createdAt > 1000000000000) return o.createdAt;
+    if (o.creationDate && typeof o.creationDate === 'number' && o.creationDate > 1000000000000) return o.creationDate;
 
     for (const field of ARRIVAL_TIME_FIELDS) {
         const val = o[field] ?? o.raw?.[field];
         if (val !== undefined && val !== null) {
-            const parsed = parseTimeRobust(val);
+            const parsed = parseTimeRobust(val, baseDate);
             if (parsed) return parsed;
         }
     }
 
-    return null; // Do NOT fall back to kitchenTime — causes wrong anchoring (same comment as frontend)
+    return null;
 };
 
-/**
- * Mirrors frontend getExecutionTime exactly — status-gated.
- */
 const getExecutionTime = (o) => {
     if (!o) return null;
     const status = String(o.status || '').trim().toLowerCase();
     const isExecuted = status.includes('исполнен') || status.includes('выполнен') || status.includes('доставлен') ||
                        status.includes('виконан') || status.includes('заверш');
-    if (!isExecuted) return null; // ← CRITICAL: backend was missing this gate!
+    if (!isExecuted) return null;
 
     if (o.statusTimings?.completedAt) {
         const t = typeof o.statusTimings.completedAt === 'number'
