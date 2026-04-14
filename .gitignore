@@ -169,3 +169,6 @@ temp/
 
 
 
+backend/routing-data/ukraine-latest.osm.pbf
+backend/geocoding_db.json
+frontend/.vite/
