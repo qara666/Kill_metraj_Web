@@ -14,7 +14,6 @@ import { useDashboardStore } from '../stores/useDashboardStore'
 import { clsx } from 'clsx'
 import { HomeIcon } from '@heroicons/react/24/outline'
 import { DashboardHeader } from '../components/shared/DashboardHeader'
-import { useDashboardWebSocket } from '../hooks/useDashboardWebSocket'
 import * as api from '../services/api'
 import { mergeExcelData } from '../utils/data/dataMerging'
 const ExcelDebugLogs = lazy(() => import('../components/excel/ExcelDebugLogs').then(module => ({ default: module.ExcelDebugLogs })))
@@ -34,13 +33,8 @@ export const Dashboard: React.FC = () => {
   const [previewData, setPreviewData] = useState<any>(null)
   const queryClient = useQueryClient()
 
-  // v7.0: Use WebSocket hook for real-time updates and manual sync trigger support
-  useDashboardWebSocket({
-    onDataLoaded: (data) => {
-      setExcelData(data);
-    },
-    enabled: true
-  });
+  // WebSocket/data sync is handled centrally by GlobalDashboardFetcher in App.tsx.
+  // Keep Dashboard page as a pure consumer to avoid race conditions that overwrite routes.
 
   const log = useCallback((message: string) => {
     const entry = `${new Date().toLocaleTimeString()} — ${message}`

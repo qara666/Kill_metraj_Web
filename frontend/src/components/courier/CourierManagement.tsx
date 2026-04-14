@@ -61,6 +61,12 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
 
   const getCourierStats = useCallback((name: string) => {
     const norm = normalizeCourierName(name);
+    const isRoutableOrder = (o: any) => {
+      const status = String(o?.status || o?.deliveryStatus || '').toLowerCase().trim();
+      if (status.includes('отказ') || status.includes('отменен') || status.includes('відмова')) return false;
+      if (status.includes('самовывоз') || status.includes('на месте')) return false;
+      return true;
+    };
     // Base data from uploaded excel/db (for historic mileage or static settings)
     const base = (excelData?.couriers || []).find((cur: any) => normalizeCourierName(cur.name) === norm);
     
@@ -81,10 +87,10 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     });
     const ordersInRoutes = uniqueRouteOrderIds.size;
 
-    // Counts unique total orders assigned to this courier in FO data
+    // Counts unique routable orders assigned to this courier in FO data
     const uniqueTotalOrderIds = new Set<string>();
     (excelData?.orders || []).forEach((o: any) => {
-       if (normalizeCourierName(getCourierName(o.courier)) === norm) {
+       if (normalizeCourierName(getCourierName(o.courier)) === norm && isRoutableOrder(o)) {
          const sid = getStableOrderId(o);
          if (sid) uniqueTotalOrderIds.add(sid);
        }

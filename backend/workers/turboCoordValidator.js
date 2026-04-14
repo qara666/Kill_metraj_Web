@@ -245,7 +245,7 @@ async function getSegmentDistance(from, to, osrmUrl, roadType = 'urban') {
         try {
             const coordsStr = `${from.lng.toFixed(7)},${from.lat.toFixed(7)};${to.lng.toFixed(7)},${to.lat.toFixed(7)}`;
             const url = `${osrmUrl.trim().replace(/\/+$/, '')}/route/v1/driving/${coordsStr}?overview=false`;
-            const res = await axios.get(url, { timeout: 3000 });
+            const res = await axios.get(url, { timeout: 3000, proxy: false });
             const route = res.data?.routes?.[0];
             if (route) {
                 return {
@@ -305,7 +305,7 @@ async function calculateTotalRouteDistance(stops, startPoint, endPoint, osrmUrl)
         try {
             const coordsStr = waypoints.map(p => `${p.lng.toFixed(7)},${p.lat.toFixed(7)}`).join(';');
             const url = `${osrmUrl.trim().replace(/\/+$/, '')}/route/v1/driving/${coordsStr}?overview=false`;
-            const res = await axios.get(url, { timeout: 8000 });
+            const res = await axios.get(url, { timeout: 8000, proxy: false });
             const route = res.data?.routes?.[0];
             if (route?.distance > 0) {
                 // Extract per-leg distances

@@ -928,9 +928,10 @@ class DashboardFetcher {
                 
                 // V7: Preserve robot-calculated metrics from existing cache
                 const distanceKm = existingCourier.distanceKm || c.distanceKm;
-                const calculatedOrders = existingCourier.calculatedOrders || c.calculatedOrders;
+                const ordersInRoutes = existingCourier.ordersInRoutes || c.ordersInRoutes || existingCourier.calculatedOrders || c.calculatedOrders;
+                const calculatedOrders = ordersInRoutes;
                 
-                merged.set(id, { ...existingCourier, ...c, distanceKm, calculatedOrders });
+                merged.set(id, { ...existingCourier, ...c, distanceKm, ordersInRoutes, calculatedOrders });
             }
         });
 

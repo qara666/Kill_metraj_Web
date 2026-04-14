@@ -1,0 +1,62 @@
+# Full stack: API + self-hosted routing (OSRM + Valhalla).
+# Build / graph: run once: npm run setup:routing
+#
+#   docker compose -f docker-compose.stack.yml up -d --build
+#
+# Backend talks to OSRM/Valhalla by Docker service names (not localhost).
+version: "3.9"
+
+services:
+  osrm:
+    image: osrm/osrm-backend:latest
+    container_name: km-osrm
+    ports:
+      - "5050:5000"
+    volumes:
+      - ./routing-data:/data
+    command: osrm-routed --algorithm mld /data/ukraine-latest.osrm
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://127.0.0.1:5000/route/v1/driving/30.5234,50.4501;30.5240,50.4510?overview=false | grep -q routes || exit 1"
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  valhalla:
+    image: ghcr.io/gis-ops/docker-valhalla/valhalla:latest
+    container_name: km-valhalla
+    ports:
+      - "8002:8002"
+    environment:
+      - tile_urls=https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
+      - build_elevation=False
+      - serve_tiles=True
+      - use_tiles_ignore_pbf=True
+    volumes:
+      - ./valhalla-data:/custom_files
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: km-api
+    ports:
+      - "${API_PORT:-5001}:5001"
+    depends_on:
+      osrm:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "5001"
+      SELF_HOST_OSRM_URL: http://osrm:5000
+      REMOTE_OSRM_URL: ${REMOTE_OSRM_URL:-http://116.204.153.171:5050}
+      SELF_HOST_VALHALLA_URL: http://valhalla:8002
+      REMOTE_VALHALLA_URL: ${REMOTE_VALHALLA_URL:-http://valhalla.yapiko.kh.ua}
+      NOMINATIM_URL: ${NOMINATIM_URL:-http://127.0.0.1:8080}
+    restart: unless-stopped

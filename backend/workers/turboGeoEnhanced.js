@@ -28,7 +28,70 @@
 
 const axios = require('axios');
 const logger = require('../src/utils/logger');
+const selfHostRoutingHealth = require('../src/services/selfHostRoutingHealth');
 const { cleanAddress, generateVariants } = require('../src/utils/addressUtils');
+
+// ============================================================
+// PROVIDER CIRCUIT BREAKER (free public APIs are rate-limited)
+// ============================================================
+const GEO_FAIL_THRESHOLD = 3;
+const GEO_BLOCK_MS = 30 * 1000;       // 30s short cooldown on hard network errors
+const GEO_BLOCK_MS_429 = 90 * 1000;   // 90s on rate-limit
+const geoProviderFailures = new Map();     // provider -> { failures, blockedUntil, lastError }
+const providerNextAllowedAt = new Map();   // provider -> next epoch ms
+const providerQueue = new Map();           // provider -> promise chain
+const PROVIDER_MIN_INTERVAL_MS = 1000;     // hard rule: max 1 request/sec/provider
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isProviderBlocked(provider) {
+    const s = geoProviderFailures.get(provider);
+    return !!(s && s.blockedUntil && Date.now() < s.blockedUntil);
+}
+
+function markProviderSuccess(provider) {
+    geoProviderFailures.delete(provider);
+}
+
+function markProviderFailure(provider, err) {
+    const prev = geoProviderFailures.get(provider) || { failures: 0, blockedUntil: 0, lastError: null };
+    const failures = (prev.failures || 0) + 1;
+    const status = Number(err?.response?.status || 0);
+    const code = err?.code || err?.message || 'ERR';
+
+    let blockedUntil = prev.blockedUntil || 0;
+    const shouldBlock =
+        status === 429 ||
+        status === 401 ||
+        status === 403 ||
+        status === 404 ||
+        code === 'ECONNREFUSED' ||
+        code === 'ENOTFOUND' ||
+        failures >= GEO_FAIL_THRESHOLD;
+
+    if (shouldBlock) {
+        blockedUntil = Date.now() + (status === 429 ? GEO_BLOCK_MS_429 : GEO_BLOCK_MS);
+    }
+
+    geoProviderFailures.set(provider, { failures, blockedUntil, lastError: status ? `HTTP_${status}` : String(code) });
+}
+
+async function scheduleProviderCall(provider, fn) {
+    const prev = providerQueue.get(provider) || Promise.resolve();
+    const next = prev
+        .catch(() => {})
+        .then(async () => {
+            const now = Date.now();
+            const nextAllowed = providerNextAllowedAt.get(provider) || 0;
+            const waitMs = Math.max(0, nextAllowed - now);
+            if (waitMs > 0) await sleep(waitMs);
+            const startedAt = Date.now();
+            providerNextAllowedAt.set(provider, startedAt + PROVIDER_MIN_INTERVAL_MS);
+            return fn();
+        });
+    providerQueue.set(provider, next);
+    return next;
+}
 
 // ============================================================
 // CITY BOUNDING BOXES — guard against wild geocode results
@@ -174,7 +237,7 @@ function generateUAVariants(raw, city) {
 
 async function queryPhoton(query, photonUrl, timeout = 6000) {
     const url = `${photonUrl}/api?q=${encodeURIComponent(query)}&limit=5&lang=uk`;
-    const res = await axios.get(url, { timeout });
+    const res = await axios.get(url, { timeout, proxy: false });
     if (!res.data?.features?.length) return [];
     return res.data.features.map(f => ({
         lat: f.geometry.coordinates[1],
@@ -187,7 +250,7 @@ async function queryPhoton(query, photonUrl, timeout = 6000) {
 
 async function queryKomoot(query, timeout = 8000) {
     const url = `https://photon.komoot.io/api?q=${encodeURIComponent(query)}&limit=5&lang=uk`;
-    const res = await axios.get(url, { timeout, headers: { 'User-Agent': 'KillMetraj/2.0' } });
+    const res = await axios.get(url, { timeout, proxy: false, headers: { 'User-Agent': 'KillMetraj/2.0' } });
     if (!res.data?.features?.length) return [];
     return res.data.features.map(f => ({
         lat: f.geometry.coordinates[1],
@@ -200,7 +263,7 @@ async function queryKomoot(query, timeout = 8000) {
 
 async function queryNominatim(query, timeout = 8000) {
     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1&accept-language=uk`;
-    const res = await axios.get(url, { timeout, headers: { 'User-Agent': 'KillMetraj/2.0' } });
+    const res = await axios.get(url, { timeout, proxy: false, headers: { 'User-Agent': 'KillMetraj/2.0' } });
     if (!Array.isArray(res.data) || !res.data.length) return [];
     return res.data.map(r => ({
         lat: parseFloat(r.lat),
@@ -213,11 +276,111 @@ async function queryNominatim(query, timeout = 8000) {
     }));
 }
 
+async function queryNominatimLocal(query, timeout = 3000) {
+    const localBase = (process.env.NOMINATIM_URL || 'http://127.0.0.1:8080').trim().replace(/\/+$/, '');
+    const url = `${localBase}/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1&accept-language=uk`;
+    const res = await axios.get(url, { timeout, proxy: false, headers: { 'User-Agent': 'KillMetraj/2.0' } });
+    if (!Array.isArray(res.data) || !res.data.length) return [];
+    return res.data.map(r => ({
+        lat: parseFloat(r.lat),
+        lng: parseFloat(r.lon),
+        display: r.display_name,
+        provider: 'nominatim-local',
+        type: r.type,
+        importance: r.importance || 0,
+        confidence: Math.min(1, (r.importance || 0) * 2)
+    }));
+}
+
+async function queryNominatimMirror(query, timeout = 8000) {
+    const url = `https://nominatim.geocoding.ai/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1&accept-language=uk`;
+    const res = await axios.get(url, { timeout, proxy: false, headers: { 'User-Agent': 'KillMetraj/2.0' } });
+    if (!Array.isArray(res.data) || !res.data.length) return [];
+    return res.data.map(r => ({
+        lat: parseFloat(r.lat),
+        lng: parseFloat(r.lon),
+        display: r.display_name,
+        provider: 'nominatim-mirror',
+        type: r.type,
+        importance: r.importance || 0,
+        confidence: Math.min(1, (r.importance || 0) * 2)
+    }));
+}
+
+async function queryMapsCo(query, timeout = 8000) {
+    const url = `https://geocode.maps.co/search?q=${encodeURIComponent(query)}`;
+    const res = await axios.get(url, { timeout, proxy: false, headers: { 'User-Agent': 'KillMetraj/2.0' } });
+    if (!Array.isArray(res.data) || !res.data.length) return [];
+    return res.data.slice(0, 5).map(r => ({
+        lat: parseFloat(r.lat),
+        lng: parseFloat(r.lon),
+        display: r.display_name || query,
+        provider: 'maps-co',
+        type: r.type,
+        importance: r.importance || 0,
+        confidence: Math.min(1, (r.importance || 0) * 2)
+    }));
+}
+
 // Safe query wrapper — returns [] on any error
 async function safeQuery(fn, ...args) {
     try {
         return await fn(...args) || [];
-    } catch { return []; }
+    } catch {
+        return [];
+    }
+}
+
+function errCode(err) {
+    const status = err?.response?.status;
+    if (status) return `HTTP_${status}`;
+    return err?.code || 'ERR';
+}
+
+function mkSafeQueryTracked(onProviderEvent) {
+    return async (provider, fn, ...args) => {
+        if (isProviderBlocked(provider)) {
+            if (typeof onProviderEvent === 'function') {
+                const s = geoProviderFailures.get(provider);
+                onProviderEvent({
+                    provider,
+                    ok: false,
+                    ms: 0,
+                    error: `BLOCKED${s?.lastError ? `(${s.lastError})` : ''}`,
+                });
+            }
+            return [];
+        }
+
+        const t0 = Date.now();
+        try {
+            const res = await scheduleProviderCall(provider, () => fn(...args));
+            const arr = res || [];
+            // Consider "success" as getting any candidates back.
+            if (Array.isArray(arr) && arr.length > 0) {
+                markProviderSuccess(provider);
+            }
+            if (typeof onProviderEvent === 'function') {
+                onProviderEvent({
+                    provider,
+                    ok: Array.isArray(arr) && arr.length > 0,
+                    ms: Date.now() - t0,
+                });
+            }
+            return arr;
+        } catch (e) {
+            markProviderFailure(provider, e);
+            if (typeof onProviderEvent === 'function') {
+                onProviderEvent({
+                    provider,
+                    ok: false,
+                    ms: Date.now() - t0,
+                    error: errCode(e),
+                });
+            }
+            return [];
+        }
+    };
 }
 
 // ============================================================
@@ -335,7 +498,8 @@ function checkAnomalyDistance(candidateLat, candidateLng, existingCoords, maxAno
 async function enhancedGeocode(address, city = 'Харків', expectedZone = null, kmlZones = [], divisionCoords = [], options = {}) {
     if (!address || !address.trim()) return null;
 
-    const { photonUrl = 'http://localhost:2322', geoCacheDb = null, gcacheLRU = null } = options;
+    const { photonUrl = 'http://localhost:2322', geoCacheDb = null, gcacheLRU = null, onProviderEvent } = options;
+    const safeQueryTracked = mkSafeQueryTracked(onProviderEvent);
 
     const CITY_BOUNDS_OBJ = getCityBounds(city);
 
@@ -424,12 +588,16 @@ async function enhancedGeocode(address, city = 'Харків', expectedZone = nu
     const cityQuery = city ? `${cleanQuery}, ${city}` : cleanQuery;
 
     {
-        const [p, k, n] = await Promise.all([
-            safeQuery(queryPhoton, cityQuery, photonUrl, 6000),
-            safeQuery(queryKomoot, cityQuery, 8000),
-            safeQuery(queryNominatim, cityQuery, 8000),
+        const includeNl = selfHostRoutingHealth.shouldQueryNominatimLocal();
+        const [nl, p, k, n, nm, mc] = await Promise.all([
+            includeNl ? safeQueryTracked('nominatim-local', queryNominatimLocal, cityQuery, 3000) : Promise.resolve([]),
+            safeQueryTracked('photon', queryPhoton, cityQuery, photonUrl, 3500),
+            safeQueryTracked('komoot', queryKomoot, cityQuery, 4500),
+            safeQueryTracked('nominatim', queryNominatim, cityQuery, 4500),
+            safeQueryTracked('nominatim-mirror', queryNominatimMirror, cityQuery, 4500),
+            safeQueryTracked('maps-co', queryMapsCo, cityQuery, 4500),
         ]);
-        const all = scoreBatch([...p, ...k, ...n]);
+        const all = scoreBatch([...nl, ...p, ...k, ...n, ...nm, ...mc]);
         const result = tryAccept(all, 'L3-Turbo');
         if (result) { await saveToCache(result, result.provider); return result; }
     }
@@ -444,11 +612,15 @@ async function enhancedGeocode(address, city = 'Харків', expectedZone = nu
         const v = variants[i];
         if (v.toLowerCase() === cityQuery.toLowerCase()) continue; // Already tried
 
-        const [p, n] = await Promise.all([
-            safeQuery(queryPhoton, v, photonUrl, 5000),
-            safeQuery(queryNominatim, v, 6000),
+        const includeNlV = selfHostRoutingHealth.shouldQueryNominatimLocal();
+        const [nl, p, n, nm, mc] = await Promise.all([
+            includeNlV ? safeQueryTracked('nominatim-local', queryNominatimLocal, v, 3000) : Promise.resolve([]),
+            safeQueryTracked('photon', queryPhoton, v, photonUrl, 3500),
+            safeQueryTracked('nominatim', queryNominatim, v, 4500),
+            safeQueryTracked('nominatim-mirror', queryNominatimMirror, v, 4500),
+            safeQueryTracked('maps-co', queryMapsCo, v, 4500),
         ]);
-        const all = scoreBatch([...p, ...n]);
+        const all = scoreBatch([...nl, ...p, ...n, ...nm, ...mc]);
         const result = tryAccept(all, `L4-Variant[${i}]`);
         if (result) { await saveToCache(result, result.provider); return result; }
     }
@@ -458,12 +630,16 @@ async function enhancedGeocode(address, city = 'Харків', expectedZone = nu
     // ----------------------------------------
     const deepStrategies = buildDeepStrategies(cleanQuery, city);
     for (const { query, label } of deepStrategies) {
-        const [p, k, n] = await Promise.all([
-            safeQuery(queryPhoton, query, photonUrl, 5000),
-            safeQuery(queryKomoot, query, 6000),
-            safeQuery(queryNominatim, query, 6000),
+        const includeNlD = selfHostRoutingHealth.shouldQueryNominatimLocal();
+        const [nl, p, k, n, nm, mc] = await Promise.all([
+            includeNlD ? safeQueryTracked('nominatim-local', queryNominatimLocal, query, 3000) : Promise.resolve([]),
+            safeQueryTracked('photon', queryPhoton, query, photonUrl, 3500),
+            safeQueryTracked('komoot', queryKomoot, query, 4500),
+            safeQueryTracked('nominatim', queryNominatim, query, 4500),
+            safeQueryTracked('nominatim-mirror', queryNominatimMirror, query, 4500),
+            safeQueryTracked('maps-co', queryMapsCo, query, 4500),
         ]);
-        const all = scoreBatch([...p, ...k, ...n]);
+        const all = scoreBatch([...nl, ...p, ...k, ...n, ...nm, ...mc]);
         const result = tryAccept(all, `L5-Deep[${label}]`);
         if (result) {
             logger.info(`[GeoEnhanced] L5 deep fallback success (${label}) for: ${address}`);
@@ -477,13 +653,17 @@ async function enhancedGeocode(address, city = 'Харків', expectedZone = nu
     // ----------------------------------------
     logger.warn(`[GeoEnhanced] L6 Emergency: loosening zone constraint for: ${address}`);
     const emergencyQuery = `${city}, ${cleanQuery.split(',')[0]}`;
-    const [ep, ek, en] = await Promise.all([
-        safeQuery(queryPhoton, emergencyQuery, photonUrl, 6000),
-        safeQuery(queryKomoot, emergencyQuery, 7000),
-        safeQuery(queryNominatim, emergencyQuery, 7000),
+    const includeNlE = selfHostRoutingHealth.shouldQueryNominatimLocal();
+    const [enl, ep, ek, en, enm, emc] = await Promise.all([
+        includeNlE ? safeQueryTracked('nominatim-local', queryNominatimLocal, emergencyQuery, 3000) : Promise.resolve([]),
+        safeQueryTracked('photon', queryPhoton, emergencyQuery, photonUrl, 3500),
+        safeQueryTracked('komoot', queryKomoot, emergencyQuery, 4500),
+        safeQueryTracked('nominatim', queryNominatim, emergencyQuery, 4500),
+        safeQueryTracked('nominatim-mirror', queryNominatimMirror, emergencyQuery, 4500),
+        safeQueryTracked('maps-co', queryMapsCo, emergencyQuery, 4500),
     ]);
 
-    const emergencyCandidates = [...ep, ...ek, ...en]
+    const emergencyCandidates = [...enl, ...ep, ...ek, ...en, ...enm, ...emc]
         .filter(c => c && !isNaN(c.lat) && !isNaN(c.lng))
         .map(c => scoreCandidate(c, { city, kmlZones: [], anomalyRadiusKm: 9999 }))
         .filter(c => {
@@ -624,8 +804,8 @@ async function batchEnhancedGeocode(orders, city, kmlZones = [], options = {}) {
         const expectedZone = String(order.deliveryZone || order.kmlZone || '').trim();
 
         try {
-            // Pass 2 uses ALL 6 levels (pass 1 may have been limited) + extra delay for rate limits
-            await new Promise(r => setTimeout(r, 300)); // Be polite to Nominatim
+            // Pass 2: strict polite mode for free providers
+            await new Promise(r => setTimeout(r, 1000));
             const result = await enhancedGeocode(addr, city, expectedZone || null, kmlZones, divisionCoords, {
                 ...geoOptions,
                 _pass: 2

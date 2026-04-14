@@ -7,7 +7,6 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useDashboardStore } from '../../stores/useDashboardStore';
 import { useExcelData } from '../../contexts/ExcelDataContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { API_URL } from '../../config/apiConfig';
 
 // v7.0: SERVER-FIRST design.
 // No more user-controlled start/stop.
@@ -132,7 +131,19 @@ export const DashboardApiSection: React.FC = () => {
         const handleStatus = (e: any) => {
             const data = e.detail;
             if (data && typeof setAutoRoutingStatus === 'function') {
-                setAutoRoutingStatus(data);
+                // Keep progress stable: never regress active counters from duplicate event paths
+                const current = useDashboardStore.getState().autoRoutingStatus;
+                const nextTotal = data.isActive
+                    ? Math.max(current.totalCount || 0, data.totalCount || 0)
+                    : (data.totalCount ?? current.totalCount ?? 0);
+                const nextProcessed = data.isActive
+                    ? Math.min(nextTotal, Math.max(current.processedCount || 0, data.processedCount || 0))
+                    : Math.min((data.processedCount ?? current.processedCount ?? 0), nextTotal);
+                setAutoRoutingStatus({
+                    ...data,
+                    totalCount: nextTotal,
+                    processedCount: nextProcessed
+                });
             }
         };
         window.addEventListener('km:robot:status', handleStatus);
@@ -181,7 +192,7 @@ export const DashboardApiSection: React.FC = () => {
             const token = localStorage.getItem('km_access_token');
             if (!token) {
                 console.warn('[DashboardApiSection] No token - cannot trigger calculation');
-                return;
+                return false;
             }
 
             const body = { 
@@ -241,7 +252,7 @@ export const DashboardApiSection: React.FC = () => {
                                 const result = await retryRes.json();
                                 console.log('[DashboardApiSection] ✅ turbo/priority retried successfully for', dateISO, '- result:', result);
                                 toast.success('Расчет запущен!');
-                                return;
+                                return true;
                             } else {
                                 try {
                                     const retryErr = await retryRes.json();
@@ -250,30 +261,44 @@ export const DashboardApiSection: React.FC = () => {
                                     errMsg = `Status: ${retryRes.status}`;
                                 }
                             }
-                        } catch (retryErr) {
+                        } catch (retryErr: any) {
                             errMsg = retryErr?.message || String(retryErr);
                         }
                     } else {
                         // Still not ready
                         toast.error('TurboCalculator ещё инициализируется, повторите позже');
-                        return;
+                        return false;
                     }
                 }
                 
                 console.warn('[DashboardApiSection] turbo/priority error:', errMsg);
                 toast.error('Ошибка запуска расчета: ' + errMsg);
+                return false;
             } else {
                 const result = await res.json();
                 console.log('[DashboardApiSection] ✅ turbo/priority triggered for', dateISO, '- result:', result);
                 toast.success('Расчет запущен!');
+                return true;
             }
         } catch (e: any) {
             console.warn('[DashboardApiSection] Could not trigger server calculation:', e);
             toast.error('Ошибка: ' + (e?.message || e?.toString() || 'Unknown'));
+            return false;
         }
     }, [divisionId]);
 
     // v7.0: Main sync action — pull data, then trigger server calculation
+    const schedulePostCalcRefresh = React.useCallback((dateISO: string) => {
+        // First pull: get freshest FO snapshot immediately
+        triggerApiManualSync();
+        // Second pull: grab first robot-built routes quickly after start
+        setTimeout(() => triggerApiManualSync(), 2600);
+        // For "today" keep one extra pull to reflect live progress in UI
+        if (dateISO === todayISO) {
+            setTimeout(() => triggerApiManualSync(), 6200);
+        }
+    }, [todayISO, triggerApiManualSync]);
+
     const handleSync = async () => {
         setIsSyncing(true);
 
@@ -302,7 +327,11 @@ export const DashboardApiSection: React.FC = () => {
         // v7.3: Trigger server calculation with a SHORTER delay
         setTimeout(async () => {
             console.log('[DashboardApiSection] 🚀 Calling triggerServerCalculation for:', selectedDateISO);
-            await triggerServerCalculation(selectedDateISO);
+            const started = await triggerServerCalculation(selectedDateISO);
+            if (started) {
+                // Ensure all tabs receive routes built by robot (archive + live)
+                schedulePostCalcRefresh(selectedDateISO);
+            }
             setIsSyncing(false);
         }, 1200);
 
@@ -340,7 +369,10 @@ export const DashboardApiSection: React.FC = () => {
             triggerApiManualSync();
             // v5.206: Wait for data to load then trigger calculation
             setTimeout(async () => {
-                await triggerServerCalculation(date);
+                const started = await triggerServerCalculation(date);
+                if (started) {
+                    schedulePostCalcRefresh(date);
+                }
             }, 2000);
         }, 100);
         

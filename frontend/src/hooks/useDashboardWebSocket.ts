@@ -181,11 +181,17 @@ export const useDashboardWebSocket = ({
 
                 // v5.206: For TODAY - always set full stats including processedCount
                 // For historical dates - mark as complete
+                const prevStatus = useDashboardStore.getState().autoRoutingStatus;
                 if (isToday) {
                     // Today: Show real stats - total routes and orders already in routes
+                    const nextTotal = Math.max(prevStatus.totalCount || 0, routableOrders.length);
+                    const nextProcessed = Math.min(
+                        nextTotal,
+                        Math.max(prevStatus.processedCount || 0, ordersInRoutes)
+                    );
                     setAutoRoutingStatus({
-                        totalCount: routableOrders.length,
-                        processedCount: ordersInRoutes, // v5.206: Show how many are in routes
+                        totalCount: nextTotal,
+                        processedCount: nextProcessed, // keep monotonic while robot is active
                         skippedInRoutes: ordersInRoutes,
                         skippedGeocoding: response.data.statistics?.geoErrors?.length || 0,
                         isActive: autoRoutingStatus.isActive, // Keep active for robot to continue
@@ -203,9 +209,14 @@ export const useDashboardWebSocket = ({
                     });
                 } else if (autoRoutingStatus.isActive) {
                     // Fallback for active robot
+                    const nextTotal = Math.max(prevStatus.totalCount || 0, routableOrders.length);
+                    const nextProcessed = Math.min(
+                        nextTotal,
+                        Math.max(prevStatus.processedCount || 0, ordersInRoutes)
+                    );
                     setAutoRoutingStatus({ 
-                        totalCount: routableOrders.length,
-                        processedCount: ordersInRoutes,
+                        totalCount: nextTotal,
+                        processedCount: nextProcessed,
                         lastUpdate: Date.now() 
                     });
                 }
@@ -324,10 +335,8 @@ export const useDashboardWebSocket = ({
             }
         });
         
-        // v36.4: Listen for partial route updates from the Robot and trigger a refetch
-        socketService.on('routes_update', () => {
-            triggerRobotSync();
-        });
+        // v36.4: routes_update is already handled inside SocketService (km:turbo:routes_update + dashboard signals).
+        // Avoid double-refetch loops by not subscribing here.
 
         socketService.on('connected', () => {
             isConnectedRef.current = true;

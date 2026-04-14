@@ -116,16 +116,23 @@ class SocketService {
             const now = Date.now();
             try {
                 const store = useDashboardStore.getState();
-                const currentDivisionStr = String(store.divisionId || 'all');
+                const effectiveDivision = store.divisionId || (store.apiDepartmentId ? String(store.apiDepartmentId) : 'all');
+                const currentDivisionStr = String(effectiveDivision);
                 const dashboardDate = normalizeDateToIso(store.apiDateShift);
                 const robotDate = normalizeDateToIso(data.date);
+                const incomingDivision = String(data.divisionId || 'all');
 
                 // v7.2: Unified handling for robot updates
-                const isGlobalUpdate = String(data.divisionId) === 'all';
+                const isGlobalUpdate = incomingDivision === 'all';
                 const storeHasSpecificDivision = store.divisionId && currentDivisionStr !== 'all';
+                const hasSpecificFromDepartment = !storeHasSpecificDivision && !!store.apiDepartmentId && currentDivisionStr !== 'all';
 
                 // Skip if update is for a DIFFERENT specific division
                 if (storeHasSpecificDivision && !isGlobalUpdate && String(data.divisionId) !== currentDivisionStr) {
+                    return;
+                }
+                // If we can infer a specific division from selected department, apply same filter.
+                if (hasSpecificFromDepartment && !isGlobalUpdate && incomingDivision !== currentDivisionStr) {
                     return;
                 }
 
@@ -144,9 +151,21 @@ class SocketService {
                 
                 const finalActive = forceActive || shouldBeActive || data.isActive;
 
+                // Keep counters monotonic while active to prevent UI regressions/flicker
+                const incomingTotal = Number(data.totalCount || 0);
+                const incomingProcessed = Number(data.processedCount || 0);
+                const nextTotal = finalActive
+                    ? Math.max(Number(currentState.totalCount || 0), incomingTotal)
+                    : incomingTotal;
+                const nextProcessed = finalActive
+                    ? Math.min(nextTotal, Math.max(Number(currentState.processedCount || 0), incomingProcessed))
+                    : Math.min(incomingProcessed, nextTotal);
+
                 // Update current UI status
                 store.setAutoRoutingStatus({
                     ...data,
+                    totalCount: nextTotal,
+                    processedCount: nextProcessed,
                     isActive: finalActive,
                     lastUpdate: now
                 });
@@ -227,7 +246,8 @@ class SocketService {
         const relayStatus = (payload: any) => {
             try {
                 (window as any).__divisionStatuses = (window as any).__divisionStatuses || {};
-                (window as any).__divisionStatuses[payload.divisionId] = payload;
+                const key = `${payload.divisionId}_${payload.date || ''}`;
+                (window as any).__divisionStatuses[key] = payload;
                 this.emit('division_status_update', payload);
             } catch (e) {}
         };

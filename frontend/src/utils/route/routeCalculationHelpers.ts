@@ -102,6 +102,9 @@ function createNewGroup(
     _index: number,
     splitReason?: string
 ): TimeWindowGroup {
+    const kitchen = getKitchenTime(order);
+    const anchorTime = getExecutionTime(order) || planned;
+    
     const group: TimeWindowGroup = {
         id: `group-${courierId}-${order.id}-${planned}`,
         courierId,
@@ -113,14 +116,16 @@ function createNewGroup(
         isReadyForCalculation: true,
         arrivalStart: arrival,
         arrivalEnd: arrival,
-        splitReason
+        splitReason,
+        // Сохраняем якорь первой точки для проверки условий
+        predictedDepartureAt: kitchen ? kitchen + 5 * 60 * 1000 : undefined
     };
 
-    // Initial departure prediction
-    const kitchen = getKitchenTime(order);
-    if (kitchen) {
-        group.predictedDepartureAt = kitchen + 5 * 60 * 1000;
-    }
+    // Сохраняем firstAnchor, firstCoords, firstZone для проверки условий разбиения
+    (group as any).firstAnchor = anchorTime;
+    (group as any).firstCoords = order.coords || null;
+    (group as any).firstZone = order.deliveryZone || '';
+    (group as any).lastKitchen = kitchen || undefined;
 
     return group;
 }
@@ -320,45 +325,56 @@ export function groupOrdersByTimeWindow(
             if (kitchen) (currentGroup as any).lastKitchen = kitchen;
             (currentGroup as any).firstAnchor = anchorTime;
         } else {
-            // Проверяем, попадает ли заказ в 15-минутное окно от ПЕРВОГО заказа маршрута
+            // Проверяем 5 условий для добавления заказа в текущую группу
             const firstAnchor = (currentGroup as any).firstAnchor;
-            const arrivedClose = (anchorTime - firstAnchor <= WINDOW_MS);
-
-            let newSplitReason = '';
-
+            const firstOrder = currentGroup.orders[0];
+            
+            // Условие 1: Time proximity - anchor time within PROXIMITY_MINUTES AFTER first anchor
+            const anchorDiff = anchorTime - firstAnchor;
+            const timeWithinProximity = anchorDiff >= 0 && anchorDiff <= WINDOW_MS;
+            
+            // Условие 2: SLA / delivery span <= MAX_DELIVERY_SPAN_MINUTES
             const minDelivery = Math.min(currentGroup.windowStart, planned);
             const maxDelivery = Math.max(currentGroup.windowEnd, planned);
-            const deliveryFits = (maxDelivery - minDelivery) <= deliverySpanMs;
-
+            const deliverySpan = maxDelivery - minDelivery;
+            const deliveryFits = deliverySpan <= deliverySpanMs;
+            
+            // Условие 3: Geography - distance <= 15km from first order
             let distanceOk = true;
-            if (order.coords && currentGroup.orders[0].coords) {
-                const dist = haversineDistance(
+            let distanceToFirst = 0;
+            if (order.coords && firstOrder.coords) {
+                distanceToFirst = haversineDistance(
                     order.coords.lat, order.coords.lng,
-                    currentGroup.orders[0].coords.lat, currentGroup.orders[0].coords.lng
+                    firstOrder.coords.lat, firstOrder.coords.lng
                 );
-                if (dist > 15) distanceOk = false;
+                distanceOk = distanceToFirst <= 15;
             }
-
+            
+            // Условие 4: Zone - delivery zone must match first order
             let districtOk = true;
             const orderZone = order.deliveryZone || '';
-            const groupZone = currentGroup.orders[0].deliveryZone || '';
+            const groupZone = firstOrder.deliveryZone || '';
             if (orderZone && groupZone && orderZone !== groupZone) {
                 districtOk = false;
             }
-
+            
+            // Условие 5: Kitchen readiness gap (<= 30 min for unassigned)
             let kitchenGapOk = true;
-            if (!isAssignedCourier) {
+            if (!isAssignedCourier && kitchen) {
                 const prevKitchen = (currentGroup as any).lastKitchen;
-                if (prevKitchen && kitchen && Math.abs(kitchen - prevKitchen) > 30 * 60 * 1000) {
-                    kitchenGapOk = false;
+                if (prevKitchen) {
+                    const kitchenDiff = Math.abs(kitchen - prevKitchen);
+                    kitchenGapOk = kitchenDiff <= (30 * 60 * 1000);
                 }
             }
-
-            if (!arrivedClose) newSplitReason = 'Время (15 мин)';
-            else if (!deliveryFits) newSplitReason = 'SLA';
-            else if (!distanceOk) newSplitReason = 'Гео';
-            else if (!districtOk) newSplitReason = 'Район';
-            else if (!isAssignedCourier && !kitchenGapOk) newSplitReason = 'Готовность';
+            
+            // Определяем причину разбиения (приоритет: время, SLA, гео, район, готовность)
+            let newSplitReason = '';
+            if (!timeWithinProximity) newSplitReason = `Время (${Math.round(anchorDiff / 60000)} мин > ${PROXIMITY_MINUTES})`;
+            else if (!deliveryFits) newSplitReason = `SLA (${Math.round(deliverySpan / 60000)} мин > ${MAX_DELIVERY_SPAN_MINUTES})`;
+            else if (!distanceOk) newSplitReason = `Гео (>${Math.round(distanceToFirst)}км > 15км)`;
+            else if (!districtOk) newSplitReason = `Район (${orderZone} ≠ ${groupZone})`;
+            else if (!isAssignedCourier && !kitchenGapOk) newSplitReason = 'Готовность (>30м)';
 
             if (newSplitReason === '') {
                 // Заказ подходит
@@ -371,7 +387,7 @@ export function groupOrdersByTimeWindow(
                 if (kitchen) (currentGroup as any).lastKitchen = kitchen;
                 updatePredictedDeparture(currentGroup);
             } else {
-                // Заказ не подходит (прошло больше 15 мин или другая причина) - закрываем этот и начинаем новый
+                // Заказ не подходит - закрываем текущую группу и начинаем новую
                 const oldGroup = currentGroup as TimeWindowGroup;
                 const isAllCompleted = oldGroup.orders.every((o: Order) => isOrderCompleted(o.status));
                 if (isAllCompleted && isAssignedCourier) oldGroup.splitReason = 'Завершён';
@@ -386,8 +402,7 @@ export function groupOrdersByTimeWindow(
                     groups.length,
                     newSplitReason
                 );
-                if (kitchen) (currentGroup as any).lastKitchen = kitchen;
-                (currentGroup as any).firstAnchor = anchorTime;
+                // firstCoords и firstZone уже устанавливаются в createNewGroup
             }
         }
     });

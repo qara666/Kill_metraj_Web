@@ -6,11 +6,21 @@ const logger = require('../src/utils/logger');
 const PROXIMITY_MINUTES = 30;           // Must match frontend PROXIMITY_MINUTES
 const MAX_DELIVERY_SPAN_MINUTES = 60;   // Must match frontend MAX_DELIVERY_SPAN_MINUTES
 
+function hashString(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+    }
+    return hash;
+}
+
 function normalizeCourierName(name) {
     if (!name) return 'НЕ НАЗНАЧЕНО';
     if (typeof name !== 'string') return 'НЕ НАЗНАЧЕНО';
     const n = name.trim().toUpperCase();
-    if (n === '' || n === 'НЕ НАЗНАЧЕНО' || n === 'UNDEFINED' || n === 'NULL') return 'НЕ НАЗНАЧЕНО';
+    if (n === '' || n === 'НЕ НАЗНАЧЕНО' || n === 'UNDEFINED' || n === 'NULL' || n === 'UNASSIGNED') return 'НЕ НАЗНАЧЕНО';
     return n;
 }
 
@@ -131,7 +141,6 @@ const PLANNED_TIME_FIELDS = [
     'Время доставки', 'время доставки', 'ВРЕМЯ ДОСТАВКИ',
     'доставить к', 'доставить_к', 'Доставить к',
     'timeDeliveryEnd', 'time_delivery_end', 'TimeDeliveryEnd'
-    // NOTE: removed 'planned' — too generic, causes false positives
 ];
 
 // NOTE: Matches frontend exactly — does NOT include 'arrival' or 'time' (too generic)
@@ -322,55 +331,59 @@ function formatTimeRange(start, end) {
  * Groups orders for a SINGLE courier.
  * EXACT mirror of frontend groupOrdersByTimeWindow() logic.
  */
+/**
+ * v5.139: Stable order ID based on orderNumber, numeric ID, or address hash.
+ * Matches frontend getStableOrderId logic.
+ */
 function getStableOrderId(order) {
     if (!order) return '';
+    
+    // v6.32: Physical delivery prioritization - use orderNumber as primary ID (Synced with frontend)
     if (order.orderNumber) return String(order.orderNumber);
+
+    // Treat "ID:0" as an invalid/placeholder ID to avoid collisions
     const rawId = order.id;
     const isInvalidId = rawId === undefined || rawId === null || rawId === 0 ||
-        String(rawId).trim() === '' || String(rawId) === 'ID:0';
-    const idVal = isInvalidId ? '' : String(rawId);
+        (typeof rawId === 'string' && String(rawId).toUpperCase().includes('ID:0'));
+
+    const idVal = !isInvalidId ? String(rawId) : null;
+    
+    // v42.6: Final Strict Logic - Include excel_index to prevent collision of duplicate rows
     const indexSuffix = (order.excel_index !== undefined) ? `_r${order.excel_index}` : '';
-    // simplified fallback hash
-    const addr = (order.address || '').toLowerCase().trim();
-    let hash = 0;
-    for (let i = 0; i < addr.length; i++) {
-        hash = Math.imul(31, hash) + addr.charCodeAt(i) | 0;
-    }
-    const fallback = String(order._id || `gen_${Math.abs(hash)}${indexSuffix}`);
+    
+    // Use _id as secondary fallback, otherwise hash the address
+    const fallback = String(order._id || `gen_${Math.abs(hashString(order.address || ''))}${indexSuffix}`);
+    
     return idVal || fallback;
 }
 
-function groupOrdersByTimeWindow(orders, courierId, courierName) {
+function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate) {
     if (!orders || orders.length === 0) return [];
 
-    // STEP 0: Deduplicate orders by stable ID BEFORE processing (v5.139 fix)
-    // Use getStableOrderId which handles _id, orderNumber, and address hash
+    // STEP 0: Deduplicate orders by stable ID BEFORE processing
     const seenIds = new Set();
     const uniqueOrders = [];
     for (const order of orders) {
         const sid = getStableOrderId(order);
         if (!sid) {
-            // Orders without any ID - keep them (edge case)
             uniqueOrders.push(order);
         } else if (!seenIds.has(sid)) {
             seenIds.add(sid);
             uniqueOrders.push(order);
         }
     }
-    
-    // Debug: log if duplicates were found
     if (uniqueOrders.length < orders.length) {
         logger.warn(`[groupOrdersByTimeWindow] ⚠️ Removed ${orders.length - uniqueOrders.length} duplicate orders`);
     }
 
     const noTimeOrders = [];
     const ordersWithData = [];
-
+    const bDate = baseDate ? new Date(baseDate) : null;
     uniqueOrders.forEach(order => {
-        let plannedTime = getPlannedTime(order);
-        const kitchenTime = getKitchenTime(order);
-        let arrivalTime = getArrivalTime(order);
-        const executionTime = getExecutionTime(order);
+        let plannedTime = getPlannedTime(order, bDate);
+        const kitchenTime = getKitchenTime(order, bDate);
+        let arrivalTime = getArrivalTime(order, bDate);
+        const executionTime = getExecutionTime(order, bDate);
 
         if (!arrivalTime) {
             arrivalTime = plannedTime || kitchenTime;
@@ -449,15 +462,21 @@ function groupOrdersByTimeWindow(orders, courierId, courierName) {
         });
     });
 
-    const isAssignedCourier = courierId && courierId !== 'unassigned' && courierId !== 'unassigned_auto' && courierId !== 'Неизвестный курьер' && courierId !== 'НЕ НАЗНАЧЕНО';
+    const isAssignedCourier = courierId && 
+        courierId !== 'unassigned' && 
+        courierId !== 'unassigned_auto' && 
+        courierId !== 'Неизвестный курьер' && 
+        courierId !== 'НЕ НАЗНАЧЕНО' && 
+        courierId !== 'ПО';
     let currentGroup = null;
 
     const WINDOW_MS = PROXIMITY_MINUTES * 60 * 1000; 
+    const DELIVERY_SPAN_MS = MAX_DELIVERY_SPAN_MINUTES * 60 * 1000;
 
     ordersForAuto.forEach(({ order, planned, arrival, kitchen, anchorTime }) => {
-        const deliverySpanMs = MAX_DELIVERY_SPAN_MINUTES * 60 * 1000;
         
         if (!currentGroup) {
+            // Начинаем новую группу с первым заказом
             currentGroup = {
                 id: `group-${courierId}-${order.id}-${planned}`,
                 courierId, 
@@ -473,56 +492,78 @@ function groupOrdersByTimeWindow(orders, courierId, courierName) {
             };
             if (kitchen) currentGroup.lastKitchen = kitchen;
             currentGroup.firstAnchor = anchorTime;
+            currentGroup.firstCoords = order.coords || null;
+            currentGroup.firstZone = order.deliveryZone || '';
         } else {
+            // Проверяем 5 условий для добавления заказа в текущую группу
             const firstAnchor = currentGroup.firstAnchor;
-            const arrivedClose = (anchorTime - firstAnchor <= WINDOW_MS);
-
-            let newSplitReason = '';
-
-            const minDelivery = Math.min(currentGroup.windowStart, planned);
-            const maxDelivery = Math.max(currentGroup.windowEnd, planned);
-            const deliveryFits = (maxDelivery - minDelivery) <= deliverySpanMs;
-
+            const firstOrder = currentGroup.orders[0];
+            
+            // Условие 1: Time proximity (anchor time within 30 min of first anchor)
+            const timeDiff = anchorTime - firstAnchor;
+            const timeWithinProximity = timeDiff >= 0 && timeDiff <= WINDOW_MS;
+            
+            // Условие 2: SLA / delivery span (total planned time span <= 60 min)
+            const minPlannedInGroup = currentGroup.windowStart;
+            const maxPlannedInGroup = currentGroup.windowEnd;
+            const deliverySpan = Math.max(maxPlannedInGroup, planned) - Math.min(minPlannedInGroup, planned);
+            const deliverySpanFits = deliverySpan <= DELIVERY_SPAN_MS;
+            
+            // Условие 3: Geography (distance <= 15km from first order in group)
             let distanceOk = true;
-            if (order.coords && currentGroup.orders[0].coords) {
-                const dist = haversineDistance(
+            let distanceToFirst = 0;
+            if (order.coords && currentGroup.firstCoords) {
+                distanceToFirst = haversineDistance(
                     order.coords.lat, order.coords.lng,
-                    currentGroup.orders[0].coords.lat, currentGroup.orders[0].coords.lng
+                    currentGroup.firstCoords.lat, currentGroup.firstCoords.lng
                 );
-                if (dist > 15) distanceOk = false;
+                distanceOk = distanceToFirst <= 15;
             }
-
-            let districtOk = true;
+            
+            // Условие 4: Zone (delivery zone must match first order)
+            let zoneOk = true;
             const orderZone = order.deliveryZone || '';
-            const groupZone = currentGroup.orders[0].deliveryZone || '';
+            const groupZone = currentGroup.firstZone || '';
             if (orderZone && groupZone && orderZone !== groupZone) {
-                districtOk = false;
+                zoneOk = false;
             }
-
+            
+            // Условие 5: Kitchen readiness gap (<= 30 min for unassigned couriers)
             let kitchenGapOk = true;
-            if (!isAssignedCourier) {
-                const prevKitchen = currentGroup.lastKitchen;
-                if (prevKitchen && kitchen && Math.abs(kitchen - prevKitchen) > 30 * 60 * 1000) {
-                    kitchenGapOk = false;
-                }
+            if (!isAssignedCourier && kitchen && currentGroup.lastKitchen) {
+                const kitchenDiff = Math.abs(kitchen - currentGroup.lastKitchen);
+                kitchenGapOk = kitchenDiff <= (30 * 60 * 1000);
             }
-
-            if (!arrivedClose) newSplitReason = 'Время (15 мин)';
-            else if (!deliveryFits) newSplitReason = 'SLA';
-            else if (!distanceOk) newSplitReason = 'Гео';
-            else if (!districtOk) newSplitReason = 'Район';
-            else if (!isAssignedCourier && !kitchenGapOk) newSplitReason = 'Готовность';
-
+            
+            // Определяем причину разбиения (приоритет: время, SLA, гео, район, готовность)
+            let newSplitReason = '';
+            if (!timeWithinProximity) {
+                newSplitReason = `Время (${Math.round(timeDiff / 60000)} мин > ${PROXIMITY_MINUTES})`;
+            } else if (!deliverySpanFits) {
+                newSplitReason = `SLA (${Math.round(deliverySpan / 60000)} мин > ${MAX_DELIVERY_SPAN_MINUTES})`;
+            } else if (!distanceOk) {
+                newSplitReason = `Гео (>${Math.round(distanceToFirst)}км > 15км)`;
+            } else if (!zoneOk) {
+                newSplitReason = `Район (${orderZone} ≠ ${groupZone})`;
+            } else if (!isAssignedCourier && !kitchenGapOk) {
+                newSplitReason = `Готовность (>30м)`;
+            }
+            
             if (newSplitReason === '') {
+                // Все условия выполнены - добавляем заказ в текущую группу
                 currentGroup.orders.push(order);
                 currentGroup.windowStart = Math.min(currentGroup.windowStart, planned);
                 currentGroup.windowEnd = Math.max(currentGroup.windowEnd, planned);
                 currentGroup.windowLabel = formatTimeRange(currentGroup.windowStart, currentGroup.windowEnd);
-                
                 currentGroup.arrivalEnd = Math.max(currentGroup.arrivalEnd || 0, arrival);
                 if (kitchen) currentGroup.lastKitchen = kitchen;
             } else {
+                // Условие не выполнено - закрываем текущую группу и начинаем новую
+                logger.info(`[TurboGrouping] ✂️ Split group for ${courierName}: order ${order.orderNumber || order.id} - ${newSplitReason}`);
+                
                 const oldGroup = currentGroup;
+
+                // Проверяем, все ли заказы в группе завершены
                 const isAllCompleted = oldGroup.orders.every(o => {
                    const s = String(o.status || '').toLowerCase();
                    return ['завершен', 'добавлен в завершенные', 'завершено', 'доставлен', 'выполнен', 'виконано', 'completed'].includes(s);
@@ -530,6 +571,8 @@ function groupOrdersByTimeWindow(orders, courierId, courierName) {
                 if (isAllCompleted && isAssignedCourier) oldGroup.splitReason = 'Завершён';
 
                 groups.push(oldGroup);
+                
+                // Начинаем новую группу
                 currentGroup = {
                     id: `group-${courierId}-${order.id}-${planned}`,
                     courierId,
@@ -545,6 +588,8 @@ function groupOrdersByTimeWindow(orders, courierId, courierName) {
                 };
                 if (kitchen) currentGroup.lastKitchen = kitchen;
                 currentGroup.firstAnchor = anchorTime;
+                currentGroup.firstCoords = order.coords || null;
+                currentGroup.firstZone = order.deliveryZone || '';
             }
         }
     });
@@ -588,7 +633,7 @@ function groupOrdersByTimeWindow(orders, courierId, courierName) {
 /**
  * Groups ALL orders for ALL couriers.
  */
-function groupAllOrdersByTimeWindow(orders) {
+function groupAllOrdersByTimeWindow(orders, baseDate) {
     if (!orders || !Array.isArray(orders)) return new Map();
 
     const courierGroups = new Map();
@@ -610,7 +655,7 @@ function groupAllOrdersByTimeWindow(orders) {
 
     const result = new Map();
     courierGroups.forEach((info, normName) => {
-        const groups = groupOrdersByTimeWindow(info.orders, normName, info.rawName);
+        const groups = groupOrdersByTimeWindow(info.orders, normName, info.rawName, baseDate);
         result.set(normName, groups);
     });
 
@@ -627,5 +672,6 @@ module.exports = {
     getKitchenTime,
     getAllOrderIds,
     getOrderHash,
+    getStableOrderId,
     haversineDistance
 };

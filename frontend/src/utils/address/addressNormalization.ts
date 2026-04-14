@@ -19,12 +19,12 @@ const ADDR_REPLACEMENTS: [RegExp, string][] = [
     [/\bпр-т\.?\s+Победы\b/gi, 'проспект Победы'],
     [/\bпр-т\.?\s+Перемоги\b/gi, 'проспект Перемоги'],
     
-    // 1. Punctuation and special chars (unifies d/f, Luk'yanenka, etc.)
-    // v35.9.25: Excluded apostrophe (') from punctuation stripping to keep names like Luk'yanenka together
+    // 1. Punctuation and special chars (keep apostrophes for a later delete-without-space pass)
     [/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, ' '],
     
     // 2. Unify apostrophes and cleanup other quotes
-    [/[ʼ`]/g, "'"], 
+    // Remove apostrophes WITHOUT introducing spaces (лук'яненка -> лукяненка)
+    [/[’'ʼ`]/g, ''],
     [/[«»"]/g, ''],
     
     // 3. Remove technical separators (підʼїзд, этаж, квартира, etc.)

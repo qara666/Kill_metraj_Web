@@ -141,16 +141,33 @@ export async function runRoutePlanningAlgorithm(
 
             evaluations.sort((a, b) => b.score - a.score);
 
-            const topCandidate = evaluations.find(e => e.score > 0);
+            const positive = evaluations.filter(e => e.score > 0);
+            if (positive.length === 0) break;
 
-            if (!topCandidate) break;
+            // If not in turbo_instant, validate feasibility for top candidates in parallel and pick best feasible.
+            // This prevents adding a high-score but infeasible order (test expects this).
+            let chosen: any = null;
+            if (context.routingProvider !== 'turbo_instant' && apiManager?.checkRouteWithTraffic) {
+                const top = positive.slice(0, 5);
+                const checks = await Promise.all(top.map(async (e) => {
+                    try {
+                        const res = await apiManager.checkRouteWithTraffic([...routeChain, e.candidate], { includeStartEnd: true, priority: 'low' } as any);
+                        return { ...e, feasible: !!res?.feasible };
+                    } catch {
+                        return { ...e, feasible: false };
+                    }
+                }));
+                checks.sort((a, b) => b.score - a.score);
+                chosen = checks.find(c => c.feasible) || null;
+            } else {
+                chosen = positive[0];
+            }
 
-            // V37 Speedup: Stop calling OSRM for every single candidate stop.
-            // Just trust the heuristic score, add it to the chain. 
-            // We will only call OSRM once at the very end of the route construction.
-            routeChain.push(topCandidate.candidate);
-            usedOrderIds.add(getOrderId(topCandidate.candidate));
-            routeReasons.push(`Заказ #${topCandidate.candidate.orderNumber} добавлен (оценка: ${topCandidate.score.toFixed(1)})`);
+            if (!chosen) break;
+
+            routeChain.push(chosen.candidate);
+            usedOrderIds.add(getOrderId(chosen.candidate));
+            routeReasons.push(`Заказ #${chosen.candidate.orderNumber} добавлен (оценка: ${chosen.score.toFixed(1)})`);
 
             // Yield periodically in nested loops
             if (routeChain.length % 5 === 0) await new Promise(r => setTimeout(r, 0));

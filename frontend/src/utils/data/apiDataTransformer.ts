@@ -122,6 +122,18 @@ export const transformDashboardData = (
         routes: enrichedRoutes,
         errors,
         lastModified: apiData.lastModified ? Number(apiData.lastModified) : Date.now(),
+        creationDate: effectiveDate || (() => {
+            if (orders.length > 0 && orders[0].creationDate) {
+                const d = new Date(Number(orders[0].creationDate));
+                if (!isNaN(d.getTime())) {
+                    const dd = String(d.getDate()).padStart(2, '0');
+                    const mm = String(d.getMonth() + 1).padStart(2, '0');
+                    const yyyy = d.getFullYear();
+                    return `${dd}.${mm}.${yyyy}`;
+                }
+            }
+            return '';
+        })(),
         summary: {
             totalRows: apiData.orders?.length || 0,
             successfulGeocoding: 0, 
@@ -275,7 +287,8 @@ export const formatDateTimeForApi = (date: Date): string => {
     const dateStr = formatDateForApi(date);
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${dateStr} ${hours}:${minutes}:00`;
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${dateStr} ${hours}:${minutes}:${seconds}`;
 };
 
 /**

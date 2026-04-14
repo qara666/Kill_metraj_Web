@@ -524,10 +524,42 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
           
           const mergedRoutes = Array.from(routesMap.values());
 
-          // v36.6: DO NOT overwrite courier.distanceKm here. 
-          // CourierManagement.tsx handles the addition of baseDistance (file) + routesDistance (active).
-          // Overwriting here causes double-counting in the UI.
-          const updatedCouriers = [...(prev.couriers || [])];
+          // Keep couriers synchronized with live route metrics so all tabs
+          // (not only CourierManagement) show consistent km/progress.
+          const routeMetrics = new Map<string, { km: number; orders: number }>();
+          mergedRoutes.forEach((r: any) => {
+            const name = normalizeCourierName(r.courier || r.courier_id || '');
+            if (!name || name === 'Не назначено') return;
+            const m = routeMetrics.get(name) || { km: 0, orders: 0 };
+            m.km += Number(r.totalDistance || r.total_distance || 0);
+            m.orders += Number(r.ordersCount || r.orders_count || (Array.isArray(r.orders) ? r.orders.length : 0));
+            routeMetrics.set(name, m);
+          });
+
+          const existingCouriers = (prev.couriers || []);
+          const updatedCouriers = existingCouriers.map((c: any) => {
+            const norm = normalizeCourierName(c.name || c.courierName || c.courier || '');
+            const m = routeMetrics.get(norm);
+            if (!m) return c;
+            return {
+              ...c,
+              distanceKm: Number(m.km.toFixed(2)),
+              calculatedOrders: m.orders
+            };
+          });
+          // Add couriers present in routes but missing in list
+          routeMetrics.forEach((m, norm) => {
+            const exists = updatedCouriers.some((c: any) => normalizeCourierName(c.name || c.courierName || c.courier || '') === norm);
+            if (!exists) {
+              updatedCouriers.push({
+                name: norm,
+                courierName: norm,
+                distanceKm: Number(m.km.toFixed(2)),
+                calculatedOrders: m.orders,
+                isActive: true
+              });
+            }
+          });
           
           return { ...prev, routes: mergedRoutes, couriers: updatedCouriers };
         });

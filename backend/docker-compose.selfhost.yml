@@ -1,0 +1,53 @@
+version: "3.9"
+
+services:
+  osrm:
+    image: osrm/osrm-backend:latest
+    container_name: km-osrm
+    ports:
+      - "5050:5000"
+    volumes:
+      - ./routing-data:/data
+    command: osrm-routed --algorithm mld /data/ukraine-latest.osrm
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://127.0.0.1:5000/route/v1/driving/30.5234,50.4501;30.5240,50.4510?overview=false | grep -q routes || exit 1"
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  valhalla:
+    image: ghcr.io/gis-ops/docker-valhalla/valhalla:latest
+    container_name: km-valhalla
+    ports:
+      - "8002:8002"
+    environment:
+      - tile_urls=https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
+      - build_elevation=False
+      - serve_tiles=True
+      - use_tiles_ignore_pbf=True
+    volumes:
+      - ./valhalla-data:/custom_files
+    restart: unless-stopped
+
+  nominatim:
+    image: mediagis/nominatim:4.5
+    container_name: km-nominatim
+    ports:
+      - "8080:8080"
+    environment:
+      - PBF_URL=https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
+      - REPLICATION_URL=https://download.geofabrik.de/europe/ukraine-updates/
+      - IMPORT_WIKIPEDIA=false
+      - IMPORT_US_POSTCODES=false
+      - NOMINATIM_PASSWORD=localpass
+    volumes:
+      - ./nominatim-data:/var/lib/postgresql/16/main
+    shm_size: 1gb
+    restart: unless-stopped
+

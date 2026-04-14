@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "nodemon",
     "start": "npx pm2-runtime start ecosystem.config.js",
+    "start:with-routing": "node scripts/ensure_routing_stack.js && node simple_server.js",
+    "setup:routing": "bash scripts/setup_selfhost.sh",
     "test": "jest"
   },
   "dependencies": {

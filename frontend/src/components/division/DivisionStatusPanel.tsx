@@ -26,6 +26,8 @@ type DivisionStatus = {
   message: string;
   couriers?: CourierInfo[];
   isBulkImport?: boolean;
+  diagnostics?: any;
+  lastUpdate?: number;
 }
 
 const DivisionStatusPanel: React.FC = () => {
@@ -38,7 +40,10 @@ const DivisionStatusPanel: React.FC = () => {
     const hydrate = async () => {
       const raw = window.__divisionStatuses;
       if (raw && Object.keys(raw).length > 0) {
-        setData(Object.values(raw) as DivisionStatus[]);
+        const values = Object.values(raw) as DivisionStatus[];
+        // Prefer newest first for UX
+        values.sort((a: any, b: any) => Number(b?.lastUpdate || 0) - Number(a?.lastUpdate || 0));
+        setData(values);
         return;
       }
 
@@ -51,6 +56,7 @@ const DivisionStatusPanel: React.FC = () => {
         const json = await res.json();
         if (json.success && json.data) {
           const values = Object.values(json.data) as DivisionStatus[];
+          values.sort((a: any, b: any) => Number(b?.lastUpdate || 0) - Number(a?.lastUpdate || 0));
           setData(values);
         } else {
           setDebug('No active calculations found');
@@ -71,7 +77,9 @@ const DivisionStatusPanel: React.FC = () => {
         const key = `${payload.divisionId}_${payload.date}`;
         // Find existing or append
         const filtered = prev.filter(p => `${p.divisionId}_${p.date}` !== key);
-        return [...filtered, payload];
+        const next = [...filtered, payload];
+        next.sort((a: any, b: any) => Number(b?.lastUpdate || 0) - Number(a?.lastUpdate || 0));
+        return next;
       });
     };
 
@@ -222,6 +230,52 @@ const DivisionStatusPanel: React.FC = () => {
                       <span style={{ fontWeight: 600 }}>{d.processedCouriers} / {d.totalCouriers}</span>
                     </div>
                   </div>
+
+                  {d.diagnostics && (
+                    <details style={{ marginTop: '12px', background: '#f9fafb', border: '1px solid #eef2f7', borderRadius: '10px', padding: '10px' }}>
+                      <summary style={{ cursor: 'pointer', fontSize: '12px', fontWeight: 700, color: '#374151' }}>
+                        DIAGNOSTICS
+                      </summary>
+                      <div style={{ marginTop: '8px', fontSize: '12px', color: '#4b5563', lineHeight: 1.4 }}>
+                        {d.diagnostics?.geocoding?.providers && (
+                          <div style={{ marginBottom: '8px' }}>
+                            <div style={{ fontWeight: 700, color: '#111827', marginBottom: '4px' }}>Geocoding</div>
+                            {Object.entries(d.diagnostics.geocoding.providers).map(([name, v]: any) => (
+                              <div key={name} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span>{name}</span>
+                                <span>
+                                  ok={v?.ok ?? 0} fail={v?.fail ?? 0}
+                                  {v?.lastError ? ` last=${String(v.lastError)}` : ''}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {d.diagnostics?.routing?.engines && (
+                          <div>
+                            <div style={{ fontWeight: 700, color: '#111827', marginBottom: '4px' }}>Routing</div>
+                            {d.diagnostics.routing.selfHost && (
+                              <div style={{ marginBottom: '6px', fontSize: '11px', color: '#6b7280' }}>
+                                self-host: osrm={String(d.diagnostics.routing.selfHost.osrmLocal)} valhalla=
+                                {String(d.diagnostics.routing.selfHost.valhallaLocal)} nominatim=
+                                {String(d.diagnostics.routing.selfHost.nominatimLocal)}
+                              </div>
+                            )}
+                            {Object.entries(d.diagnostics.routing.engines).map(([name, v]: any) => (
+                              <div key={name} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span>{name}</span>
+                                <span>
+                                  ok={v?.ok ?? 0} fail={v?.fail ?? 0}
+                                  {v?.lastStatus ? ` status=${String(v.lastStatus)}` : ''}
+                                  {v?.lastError ? ` last=${String(v.lastError)}` : ''}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </details>
+                  )}
 
                   {d.couriers && d.couriers.length > 0 && (
                     <div style={{ marginTop: '16px', borderTop: '1px solid #f3f4f6', paddingTop: '12px' }}>

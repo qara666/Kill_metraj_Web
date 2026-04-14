@@ -11,12 +11,13 @@ const {
     getPlannedTime,
     getArrivalTime,
     getKitchenTime,
-    getAllOrderIds,
     getOrderHash,
+    getStableOrderId,
     haversineDistance
 } = require('./turboGroupingHelpers');
 const { batchEnhancedGeocode, checkAnomalyDistance, deepCleanAddress } = require('./turboGeoEnhanced');
 const { enhanceAllOrderCoords, buildZoneCentroids, calculateTotalRouteDistance, haversineKm } = require('./turboCoordValidator');
+const selfHostRoutingHealth = require('../src/services/selfHostRoutingHealth');
 
 // v36.9: CommonJS-safe local implementations of essential utilities (zero-dependency)
 const pLimit = (concurrency) => {
@@ -76,14 +77,26 @@ class SimpleLRU {
         this.cache.set(key, val);
     }
     has(key) { return this.cache.has(key); }
+    delete(key) { return this.cache.delete(key); }
 }
+
+// Helper deleted — use imported version from turboGroupingHelpers
 
 /**
  * v5.164: Robust date normalization to YYYY-MM-DD
  */
 function normalizeDateISO(dateStr) {
     if (!dateStr) return null;
-    if (typeof dateStr !== 'string') return dateStr;
+    if (dateStr instanceof Date) {
+        return dateStr.toISOString().split('T')[0];
+    }
+    if (typeof dateStr !== 'string') {
+        const asDate = new Date(dateStr);
+        if (!isNaN(asDate.getTime())) {
+            return asDate.toISOString().split('T')[0];
+        }
+        return String(dateStr);
+    }
 
     // Handle DD-MM-YYYY or DD.MM.YYYY
     const sep = dateStr.includes('-') ? '-' : (dateStr.includes('.') ? '.' : null);
@@ -96,7 +109,7 @@ function normalizeDateISO(dateStr) {
 
     // Already YYYY-MM-DD?
     if (dateStr.includes('-') && dateStr.split('-')[0].length === 4) {
-        return dateStr;
+        return dateStr.split('T')[0].split(' ')[0];
     }
 
     return dateStr;
@@ -117,8 +130,25 @@ class OrderCalculator {
         this.isProcessing = false;
         this.io = null;
 
-        // Settings
-        this.osrmUrl = process.env.YAPIKO_OSRM_URL || process.env.OSRM_URL || 'http://116.204.153.171:5050';
+        // v7.5: YAPIKO OSRM is ALWAYS first priority, then self-host, then remote/public
+        const yapikoEnv = process.env.YAPIKO_OSRM_URL || '';
+        const osrmEnv = process.env.OSRM_URL || '';
+        const valEnv = process.env.VALHALLA_URL || '';
+
+        this.yapikoOsrmUrl = yapikoEnv ? yapikoEnv.replace(/\/+$/, '') : (process.env.OSRM_URL || 'http://osrm.yapiko.kh.ua').replace(/\/+$/, '');
+        this.useDualOsrm = process.env.DISABLE_SELF_HOST_ROUTING !== '1' && process.env.DISABLE_SELF_HOST_ROUTING !== 'true';
+        this.osrmSingleUrl = null;
+
+        this.selfOsrmUrl = (process.env.SELF_HOST_OSRM_URL || 'http://127.0.0.1:5050').replace(/\/+$/, '');
+        this.remoteOsrmUrl = (process.env.REMOTE_OSRM_URL || osrmEnv || 'http://116.204.153.171:5050').replace(/\/+$/, '');
+
+        this.useDualValhalla = process.env.DISABLE_SELF_HOST_ROUTING !== '1' && process.env.DISABLE_SELF_HOST_ROUTING !== 'true';
+        this.valhallaSingleUrl = null;
+
+        this.selfValhallaUrl = (process.env.SELF_HOST_VALHALLA_URL || 'http://127.0.0.1:8002').replace(/\/+$/, '');
+        this.remoteValhallaUrl = (process.env.REMOTE_VALHALLA_URL || valEnv || 'http://valhalla.yapiko.kh.ua').replace(/\/+$/, '');
+
+        this.osrmUrl = this.osrmSingleUrl || this.remoteOsrmUrl;
 
         // v23.1: Persistent Geocache (Zero-dependency LRU)
         this.geocache = new SimpleLRU({ maxSize: 5000, maxAge: 24 * 60 * 60 * 1000 });
@@ -135,11 +165,15 @@ class OrderCalculator {
         // v5.180: GeoCache fuzzy match threshold
         this.FUZZY_THRESHOLD = 3; // Max Levenshtein distance for fuzzy match
 
-        // Per-division state
-        this.divisionStates = new Map();
+        // Per-division CONTROL state (drives tick scheduling and manual overrides)
+        this.divisionStates = new Map(); // divisionId -> { date, isActive, forceFull, targetCourier, ... }
         this.processedHashes = new Map();
         this.priorityQueue = [];
         this.currentPriority = null;
+
+        // Per-division STATUS store (last emitted payload for UI/admin)
+        this.divisionStatus = new Map(); // key `${divisionId}_${date}` -> payload
+        this.lastEmitTimeByKey = new Map(); // key -> epoch ms (throttle per division+date)
 
         // v5.170: NO auto-start — robot ONLY runs when user clicks "Запустить"
         this.activeDivisionId = null;
@@ -159,15 +193,15 @@ class OrderCalculator {
                 url: process.env.VHV_URL || 'http://hvv.example'
             }
         };
+        // Route engine circuit breaker: skip repeatedly failing engines for a short period.
+        this.engineFailures = new Map(); // engineName -> { failures, blockedUntil }
+        this.ENGINE_BLOCK_MS = 10 * 60 * 1000; // 10 minutes
+        this.ENGINE_FAIL_THRESHOLD = 3;
+        // Lightweight engine health counters for diagnostics/UI
+        this.routingHealth = new Map(); // engineName -> { ok, fail, lastError, lastStatus, lastMs }
 
         // v5.185: Haversine distance in meters
-        this.FUZZY_THRESHOLD = 3; // Max Levenshtein distance for fuzzy match
-
-        // Per-division state
-        this.divisionStates = new Map();
-        this.processedHashes = new Map();
-        this.priorityQueue = [];
-        this.currentPriority = null;
+        // (no-op; left intentionally blank — initialization already done above)
 
         // v5.185: Pre-load KML zones on construction
         this.preloadKmlZones();
@@ -543,6 +577,10 @@ class OrderCalculator {
         // This MUST happen after isRunning=true so that tick() can be triggered
         await this.loadSavedState();
         await this.loadAllDivisionStatesFromDB();
+
+        try {
+            await selfHostRoutingHealth.probeAll();
+        } catch (e) { /* non-fatal */ }
 
         logger.info(`[TurboCalculator] 🚀 v7.0 SERVER-FIRST — Initialized. Auto-starting tick loop.`);
 
@@ -1430,7 +1468,18 @@ class OrderCalculator {
                 skippedNoCourier: totalCount - ordersWithRealCourier - alreadyRouted,
                 message: `Analyzing delivery queues...`,
                 currentPhase: 'processing',
-                courierStats: {}
+                courierStats: {},
+                diagnostics: {
+                    geocoding: { providers: Object.create(null) },
+                }
+            };
+            const routedOrderIds = new Set();
+            const markOrdersAsRouted = (ordersArr = []) => {
+                for (const ro of (ordersArr || [])) {
+                    const sid = getStableOrderId(ro);
+                    if (sid) routedOrderIds.add(sid);
+                }
+                stats.skippedInRoutes = routedOrderIds.size;
             };
 
             // v7.1 SOTA: ENHANCED GEOCODING — 6-level cascaded engine with Ukrainian specialization
@@ -1469,9 +1518,20 @@ class OrderCalculator {
                 }
 
                 await batchEnhancedGeocode(allOrdersNeedsGeo, cityBias, allKmlZones, {
-                    photonUrl: process.env.PHOTON_URL || this.osrmUrl?.replace(':5050', ':2322') || 'http://localhost:2322',
+                    photonUrl: process.env.PHOTON_URL || 'https://photon.komoot.io',
                     geoCacheDb: GeoCache,
                     gcacheLRU: this.geocache,
+                    onProviderEvent: (evt) => {
+                        try {
+                            const p = String(evt?.provider || 'unknown');
+                            const cur = stats.diagnostics.geocoding.providers[p] || { ok: 0, fail: 0, lastError: null, lastMs: null };
+                            if (evt?.ok) cur.ok += 1;
+                            else cur.fail += 1;
+                            if (evt?.error) cur.lastError = String(evt.error);
+                            if (typeof evt?.ms === 'number') cur.lastMs = evt.ms;
+                            stats.diagnostics.geocoding.providers[p] = cur;
+                        } catch (e) {}
+                    },
                     onProgress: (done, total, pass) => {
                         const pct = Math.round((done / total) * 100);
                         const elapsed = (Date.now() - startTime) / 1000;
@@ -1512,7 +1572,8 @@ class OrderCalculator {
             let deliveryWindows = new Map();
             let totalBlocksCount = 0;
             try {
-                deliveryWindows = groupAllOrdersByTimeWindow(ordersToGroup);
+                const bDate = targetDateNorm || cache.target_date;
+                deliveryWindows = groupAllOrdersByTimeWindow(ordersToGroup, bDate);
                 deliveryWindows.forEach((windows, courierName) => { 
                     totalBlocksCount += windows.length; 
                     // v7.6: Initialize courier stats so distances/counts are recorded
@@ -1521,6 +1582,7 @@ class OrderCalculator {
                             name: courierName,
                             orders: windows.reduce((sum, w) => sum + (w.orders?.length || 0), 0),
                             distanceKm: 0,
+                            ordersInRoutes: 0, // v38.5: Rename from calculatedOrders
                             type: windows[0]?.orders?.[0]?.courierType || 'Car'
                         };
                     }
@@ -1550,13 +1612,17 @@ class OrderCalculator {
                 
                 const now = Date.now();
                 // v7.5 Throttle: don't emit more than once per 1000ms unless forced
-                if (!force && this.lastEmitTime && (now - this.lastEmitTime < 1000)) return;
-                this.lastEmitTime = now;
+                const divIdStr = String(cache.division_id);
+                const dateStr = String(targetDateNorm || cache.target_date || '');
+                const statusKey = `${divIdStr}_${dateStr}`;
+                const lastEmit = this.lastEmitTimeByKey?.get(statusKey) || 0;
+                if (!force && lastEmit && (now - lastEmit < 1000)) return;
+                if (this.lastEmitTimeByKey) this.lastEmitTimeByKey.set(statusKey, now);
 
                 const couriersList = Object.values(stats.courierStats || {});
                 const payload = {
-                    divisionId: String(cache.division_id),
-                    date: targetDateNorm || cache.target_date,
+                    divisionId: divIdStr,
+                    date: dateStr,
                     totalCount: stats.totalCount,
                     totalCouriers: stats.totalCouriers,
                     processedCount: stats.processedCount,
@@ -1570,15 +1636,29 @@ class OrderCalculator {
                     geoErrors: stats.geoErrors || [], 
                     skippedInRoutes: stats.skippedInRoutes || 0,
                     skippedNoCourier: stats.skippedNoCourier || stats.unassignedCount || 0,
+                    diagnostics: stats.diagnostics || null,
                     lastUpdate: now
                 };
+
+                // Attach routing engine health snapshot (global for this worker instance)
+                try {
+                    if (!payload.diagnostics) payload.diagnostics = {};
+                    if (this.routingHealth && typeof this.routingHealth.entries === 'function') {
+                        payload.diagnostics.routing = {
+                            ...(payload.diagnostics.routing || {}),
+                            engines: Object.fromEntries(Array.from(this.routingHealth.entries())),
+                            selfHost: selfHostRoutingHealth.getState()
+                        };
+                    }
+                } catch (e) {}
                 
-                this.divisionStates.set(String(cache.division_id), payload);
+                // Never overwrite control-state with status payload
+                if (this.divisionStatus) this.divisionStatus.set(statusKey, payload);
                 this.io.emit('robot_status', payload);
                 this.io.emit('division_status_update', payload);
 
                 if (global.divisionStatusStore) {
-                    global.divisionStatusStore[`${payload.divisionId}_${payload.date}`] = payload;
+                    global.divisionStatusStore[statusKey] = payload;
                 }
             };
 
@@ -1598,12 +1678,12 @@ class OrderCalculator {
                             name: normName,
                             courierName: normName,
                             distanceKm: Number((cs.distanceKm || 0).toFixed(2)),
-                            calculatedOrders: cs.orders || 0,
+                            ordersInRoutes: cs.ordersInRoutes || 0, // Synced with EliteCourierCard
                         };
                     }).filter(c => {
                         const norm = (c.name || '').toUpperCase().trim();
                         if (norm === 'НЕ НАЗНАЧЕНО' || norm === 'UNASSIGNED' || norm === 'ПО') return false;
-                        return c.distanceKm > 0 || c.calculatedOrders > 0;
+                        return c.distanceKm > 0 || c.ordersInRoutes > 0;
                     });
 
                     this.io.emit('routes_update', {
@@ -1637,16 +1717,13 @@ class OrderCalculator {
                         name: normName,
                         orders: totalOrdersInWindows,
                         distanceKm: 0,
-                        calculatedOrders: 0,
+                        ordersInRoutes: 0,
                         type: 'Car'
                     };
                 }
 
                 logger.info(`[TurboCalculator] 🚚 Processing courier ${normName}: ${windows.length} time windows`);
                 let courierRoutesCreated = 0;
-                stats.processedCouriers++; 
-                emitStatus();
-
 
                 for (const timeGroup of windows) {
                     const windowKey = timeGroup.windowLabel;
@@ -1689,21 +1766,32 @@ class OrderCalculator {
                     
                     if (existingRouteMap.has(blockSignature) && !forceFull && !isTarget) {
                         const existingR = existingRouteMap.get(blockSignature);
+                        const existingKm = parseFloat(existingR?.total_distance || 0);
+                        const existingHasGeometry = !!(existingR?.route_data?.geometry);
+                        const existingOrdersCount = Number(existingR?.orders_count || 0);
+
+                        // If a previously cached route has 0 km / missing geometry, it's likely a legacy bad calc.
+                        // Recalculate instead of endlessly skipping.
+                        const shouldRecalcLegacyZero = !existingR || existingKm <= 0.01 || !existingHasGeometry || existingOrdersCount <= 0;
+                        if (shouldRecalcLegacyZero) {
+                            logger.warn(`[TurboCalculator] ♻️ Recalculating legacy/invalid cached route for ${normName} (${windowKey}): km=${existingKm}, geom=${existingHasGeometry}, orders=${existingOrdersCount}`);
+                        } else {
                         matchedExistingRouteIds.add(existingR.id);
                         
                         // v36.5: Aggressive addition to stats for immediate feedback
                         if (stats.courierStats[normName]) {
-                            stats.courierStats[normName].distanceKm += parseFloat(existingR.total_distance || 0);
-                            stats.courierStats[normName].calculatedOrders += existingR.orders_count;
+                            stats.courierStats[normName].distanceKm += existingKm;
+                            stats.courierStats[normName].ordersInRoutes += existingR.orders_count;
                         }
+                        markOrdersAsRouted(existingR.route_data?.orders || dedupedOrders);
                         stats.processedCount += dedupedOrders.length;
                         stats.message = `Skipping ${normName} (${windowKey}) — already calculated`;
-                        emitStatus(); 
+                        emitStatus(true);
                         inMemoryFrontendRoutes.push({
                             id: existingR.id,
                             courier: existingR.courier_id,
                             courier_id: existingR.courier_id,
-                            totalDistance: parseFloat(existingR.total_distance || 0),
+                            totalDistance: existingKm,
                             totalDuration: existingR.total_duration,
                             ordersCount: existingR.orders_count,
                             timeBlock: existingR.route_data?.deliveryWindow || existingR.route_data?.timeBlocks,
@@ -1735,12 +1823,13 @@ class OrderCalculator {
                         
                         logger.info(`[TurboCalculator] ⏩ Skipped geocode & routing: exact block match found (${windowKey})`);
                         continue; // Skip the rest of the loop! No geocoding, no OSRM hit
+                        }
                     }
 
                     // v7.2: No more inner geocoding loop. Everything is geocoded upfront by batchEnhancedGeocode.
                     // We simply increment the processedCount for this block and proceed to routing.
                     stats.processedCount += dedupedOrders.length;
-                    emitStatus();
+                    emitStatus(true);
 
                     try {
                         // Use all valid orders (with coords OR a valid address for routing)
@@ -1755,7 +1844,8 @@ class OrderCalculator {
                                 (o.lat && o.lng) ||
                                 (o.latitude && o.longitude);
                             const isValid = hasCoords;
-                            if (!isValid) stats.skippedGeocoding++;
+                            // skippedGeocoding is tracked during batch geocoding.
+                            // Do not increment again here to avoid inflated geo error counters.
                             return isValid;
                         });
 
@@ -1802,8 +1892,8 @@ class OrderCalculator {
                             const firstAddr = (validOrders[0].address || 'Unknown').split(',')[0];
                             stats.message = `Calculating: ${normName} → ${firstAddr} (${validOrders.length} orders)`;
 
-                            // Let standard emitStatus handle it to ensure all fields are sent
-                            emitStatus();
+                            // Force emit so throttle cannot hide km / progress during fast routing
+                            emitStatus(true);
                         }
 
                         let routeResult = null;
@@ -2010,7 +2100,6 @@ class OrderCalculator {
                                 : 0;
                             const stableTimeBlock = `${targetDateNorm || cache.target_date}_${normName}_${stableWindowKey}`;
 
-                            // v38.0: Use raw SQL with ON CONFLICT for reliable upsert
                             const routeDataObj = {
                                 target_date: targetDateNorm,
                                 division_id: cache.division_id,
@@ -2033,36 +2122,62 @@ class OrderCalculator {
                                 geometry: routeResult.geometry
                             };
 
-                            const [upsertResult] = await sequelize.query(`
-                                INSERT INTO calculated_routes 
-                                (courier_id, division_id, total_distance, total_duration, engine_used, orders_count, calculated_at, route_data, created_at, updated_at)
-                                VALUES 
-                                (:courier_id, :division_id, :total_distance, :total_duration, :engine_used, :orders_count, :calculated_at, :route_data, NOW(), NOW())
-                                ON CONFLICT (division_id, courier_id, ((route_data->>'time_block')::text))
-                                DO UPDATE SET
-                                    total_distance = EXCLUDED.total_distance,
-                                    total_duration = EXCLUDED.total_duration,
-                                    engine_used = EXCLUDED.engine_used,
-                                    orders_count = EXCLUDED.orders_count,
-                                    calculated_at = EXCLUDED.calculated_at,
-                                    route_data = EXCLUDED.route_data,
+                            const routeRepl = {
+                                courier_id: normName,
+                                division_id: String(cache.division_id),
+                                total_distance: distanceKm,
+                                total_duration: Math.round(routeResult.duration),
+                                engine_used: routeResult.engine,
+                                orders_count: uniqueRouteOrders.length,
+                                calculated_at: new Date(),
+                                route_data: JSON.stringify(routeDataObj),
+                                time_block: stableTimeBlock
+                            };
+
+                            // Safe upsert that does not depend on a DB expression unique index.
+                            let upsertResult = await sequelize.query(`
+                                UPDATE calculated_routes
+                                SET total_distance = :total_distance,
+                                    total_duration = :total_duration,
+                                    engine_used = :engine_used,
+                                    orders_count = :orders_count,
+                                    calculated_at = :calculated_at,
+                                    route_data = :route_data,
                                     updated_at = NOW()
+                                WHERE division_id = :division_id
+                                  AND courier_id = :courier_id
+                                  AND route_data->>'time_block' = :time_block
                                 RETURNING *
                             `, {
-                                replacements: {
-                                    courier_id: normName,
-                                    division_id: String(cache.division_id),
-                                    total_distance: distanceKm,
-                                    total_duration: Math.round(routeResult.duration),
-                                    engine_used: routeResult.engine,
-                                    orders_count: uniqueRouteOrders.length,
-                                    calculated_at: new Date(),
-                                    route_data: JSON.stringify(routeDataObj)
-                                },
-                                type: sequelize.QueryTypes.INSERT
+                                replacements: routeRepl,
+                                type: sequelize.QueryTypes.SELECT
                             });
 
-                            const createdRoute = upsertResult[0];
+                            if (!Array.isArray(upsertResult) || upsertResult.length === 0) {
+                                upsertResult = await sequelize.query(`
+                                    INSERT INTO calculated_routes 
+                                    (courier_id, division_id, total_distance, total_duration, engine_used, orders_count, calculated_at, route_data, created_at, updated_at)
+                                    VALUES 
+                                    (:courier_id, :division_id, :total_distance, :total_duration, :engine_used, :orders_count, :calculated_at, :route_data, NOW(), NOW())
+                                    RETURNING *
+                                `, {
+                                    replacements: routeRepl,
+                                    type: sequelize.QueryTypes.SELECT
+                                });
+                            }
+
+                            // Sequelize may return different shapes depending on dialect/QueryType:
+                            // [row], [[row]], or row object itself.
+                            let createdRoute = upsertResult;
+                            if (Array.isArray(createdRoute) && createdRoute.length > 0) {
+                                createdRoute = createdRoute[0];
+                                if (Array.isArray(createdRoute) && createdRoute.length > 0) {
+                                    createdRoute = createdRoute[0];
+                                }
+                            }
+                            if (!createdRoute || !createdRoute.id) {
+                                throw new Error('Route upsert did not return created row');
+                            }
 
                             // v33: Push into memory cache immediately!
                             matchedExistingRouteIds.add(createdRoute.id);
@@ -2101,14 +2216,16 @@ class OrderCalculator {
 
                             courierRoutesCreated++;
                             totalRoutesCreated++;
-                            stats.skippedInRoutes += uniqueRouteOrders.length; // v5.170: Track in-route count for real-time stats
+                            markOrdersAsRouted(uniqueRouteOrders);
                             logger.info(`[TurboCalculator] ✅ Created route for ${normName}: ${uniqueRouteOrders.length} orders, ${(routeResult.distance / 1000).toFixed(2)}km`);
 
                             // v6.7: Restore distance accumulation + emit stats!
                             if (stats.courierStats[normName]) {
                                 stats.courierStats[normName].distanceKm += (routeResult.distance || 0) / 1000;
+                                stats.courierStats[normName].ordersInRoutes =
+                                    (stats.courierStats[normName].ordersInRoutes || 0) + uniqueRouteOrders.length;
                             }
-                            emitStatus();
+                            emitStatus(true);
                         }
                     } catch (e) {
                         logger.warn(`[TurboCalculator] ⚠️ Routing error for ${normName} [${windowKey}]: ${e.message}`);
@@ -2127,13 +2244,16 @@ class OrderCalculator {
                     const courierOrders = stats.courierStats[normName]?.orders || 1;
                     stats.processedCount = Math.min(stats.totalCount, stats.processedCount + courierOrders);
                     
-                    emitStatus(); 
+                    emitStatus(true);
                 }
             } // End of courier loop
 
-            // Update processedCount to match total processed orders
-            // v5.180: processedCount should reflect: already-routed + newly-routed + unassigned
-            stats.processedCount = stats.totalCount;
+            // Finalize progress from actual routed + explicitly skipped orders (not forced to 100% blindly).
+            const finalProcessed = Math.min(
+                stats.totalCount,
+                (stats.skippedInRoutes || 0) + (stats.skippedNoCourier || 0) + (stats.skippedGeocoding || 0) + (stats.skippedOther || 0)
+            );
+            stats.processedCount = Math.max(stats.processedCount || 0, finalProcessed);
             stats.currentPhase = 'complete';
             stats.message = 'Calculation complete!';
             emitStatus(true); // v36.5: FORCE final status to clear throttles
@@ -2245,7 +2365,8 @@ class OrderCalculator {
 
                             if (calc) {
                                 c.distanceKm = Number((calc.distanceKm || 0).toFixed(2));
-                                c.calculatedOrders = calc.orders || 0;
+                                c.ordersInRoutes = calc.ordersInRoutes || 0; // Synced with EliteCourierCard
+                                c.calculatedOrders = calc.orders || 0;       // Preserve for intensity
                                 c.courierType = calc.type || 'Car';
 
                                 // v35.2: Enrichment with Weekly Stats
@@ -2256,7 +2377,7 @@ class OrderCalculator {
                                 // Intensity = Total Orders / Active Days
                                 c.weeklyIntensity = Number((c.calculatedOrders / activeDays).toFixed(2));
 
-                                logger.info(`[TurboCalculator] 📏 Courier ${rawName}: ${c.distanceKm} km, Type: ${c.courierType}, ActiveDays/Week: ${activeDays}`);
+                                logger.info(`[TurboCalculator] 📏 Courier ${rawName}: ${c.distanceKm} km, Type: ${c.courierType}, ActiveDays/Week: ${activeDays}, Routes: ${c.ordersInRoutes}/${c.calculatedOrders}`);
                             }
                         });
                     }
@@ -2308,7 +2429,7 @@ class OrderCalculator {
 
             // Final status push - routing complete!
             stats.currentPhase = 'complete';
-            stats.processedCount = totalCount; // Ensure reached 100% for UI
+            stats.processedCount = Math.min(stats.totalCount, Math.max(stats.processedCount || 0, stats.skippedInRoutes || 0));
             const totalResultCount = inMemoryFrontendRoutes.length;
             const existingCount = matchedExistingRouteIds.size;
             const newlyCreated = totalRoutesCreated;
@@ -2432,7 +2553,7 @@ class OrderCalculator {
 
             if (provider === 'google' && googleKey) {
                 const googleUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${googleKey}&language=uk`;
-                const googleRes = await axios.get(googleUrl, { timeout });
+                const googleRes = await axios.get(googleUrl, { timeout, proxy: false });
                 if (googleRes.data?.status === 'OK' && googleRes.data.results?.[0]) {
                     const r = googleRes.data.results[0];
                     const lat = r.geometry.location.lat;
@@ -2448,7 +2569,7 @@ class OrderCalculator {
 
             if (provider === 'photon') {
                 const PHOTON_URL = process.env.PHOTON_URL || 'http://localhost:2322';
-                const photonRes = await axios.get(`${PHOTON_URL}/api?q=${encodeURIComponent(query)}&limit=1&lang=uk`, { timeout });
+                const photonRes = await axios.get(`${PHOTON_URL}/api?q=${encodeURIComponent(query)}&limit=1&lang=uk`, { timeout, proxy: false });
                 if (photonRes.data?.features?.length > 0) {
                     const f = photonRes.data.features[0];
                     const lat = f.geometry.coordinates[1];
@@ -2463,7 +2584,7 @@ class OrderCalculator {
             }
 
             if (provider === 'komoot') {
-                const photon2Res = await axios.get(`https://photon.komoot.io/api?q=${encodeURIComponent(query)}&limit=1&lang=uk`, { timeout });
+                const photon2Res = await axios.get(`https://photon.komoot.io/api?q=${encodeURIComponent(query)}&limit=1&lang=uk`, { timeout, proxy: false });
                 if (photon2Res.data?.features?.length > 0) {
                     const f = photon2Res.data.features[0];
                     const lat = f.geometry.coordinates[1];
@@ -2481,6 +2602,7 @@ class OrderCalculator {
                 const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&addressdetails=1&accept-language=uk`;
                 const nomRes = await axios.get(nomUrl, {
                     timeout,
+                    proxy: false,
                     headers: { 'User-Agent': 'KillMetraj/1.0' }
                 });
                 if (Array.isArray(nomRes.data) && nomRes.data.length > 0) {
@@ -2608,6 +2730,36 @@ class OrderCalculator {
         return null;
     }
 
+    /**
+     * Haversine chain (start → orders → end) with road-ish factor when graph routing cannot build ≥2 points.
+     */
+    estimateRouteChainMeters(orders, startPoint = null, endPoint = null) {
+        const pts = [];
+        if (startPoint && startPoint.lat != null && startPoint.lng != null) {
+            pts.push({ lat: Number(startPoint.lat), lng: Number(startPoint.lng) });
+        }
+        (orders || []).forEach(o => {
+            const lat = Number(o.coords?.lat || o.lat);
+            const lng = Number(o.coords?.lng || o.lng);
+            if (lat && lng) pts.push({ lat, lng });
+        });
+        if (endPoint && endPoint.lat != null && endPoint.lng != null) {
+            const elat = Number(endPoint.lat);
+            const elng = Number(endPoint.lng);
+            const last = pts[pts.length - 1];
+            if (!last || last.lat !== elat || last.lng !== elng) {
+                pts.push({ lat: elat, lng: elng });
+            }
+        }
+        if (pts.length < 2) return 0;
+        let total = 0;
+        for (let i = 0; i < pts.length - 1; i++) {
+            total += this.calculateDistance(pts[i], pts[i + 1]);
+        }
+        const factor = total > 5000 ? 1.4 : 1.3;
+        return total * factor;
+    }
+
     async calculateRoute(orders, divisionId = null, startPoint = null, endPoint = null) {
         if (orders.length < 1) {
             return null;
@@ -2636,7 +2788,7 @@ class OrderCalculator {
         if (startPoint && !endPoint) effectiveEnd = startPoint;
         if (!startPoint && endPoint) effectiveStart = endPoint;
 
-        if (!hasDepot && orders.length > 1) {
+        if (!hasDepot && orders.length >= 1) {
             const firstWithCoords = orders.find(o =>
                 (o.coords?.lat && o.coords?.lng) || (o.lat && o.lng)
             );
@@ -2654,22 +2806,20 @@ class OrderCalculator {
             points.push({ lat: Number(effectiveStart.lat), lng: Number(effectiveStart.lng), type: effectiveStart.isImplicit ? 'implicit-start' : 'start' });
         }
 
-        // Add order addresses - v28.7: Deduplicate consecutive same-coordinates to optimize OSRM
-        let lastCoordKey = effectiveStart ? `${Number(effectiveStart.lat).toFixed(5)},${Number(effectiveStart.lng).toFixed(5)}` : null;
-
+        // Add every order stop in sequence. Do NOT dedupe consecutive identical coords here:
+        // deduping collapsed multi-drop same-building routes to a single point and yielded 0 km in UI.
         orders.forEach(o => {
             const lat = Number(o.coords?.lat || o.lat);
             const lng = Number(o.coords?.lng || o.lng);
             if (lat && lng) {
-                const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
-                if (key !== lastCoordKey) {
-                    points.push({ lat, lng, type: 'order' });
-                    lastCoordKey = key;
-                }
+                points.push({ lat, lng, type: 'order' });
             }
         });
 
         // Add end point if provided (real depot OR implicit) and not same as last point
+        let lastCoordKey = points.length
+            ? `${Number(points[points.length - 1].lat).toFixed(5)},${Number(points[points.length - 1].lng).toFixed(5)}`
+            : null;
         if (effectiveEnd) {
             const lat = Number(effectiveEnd.lat);
             const lng = Number(effectiveEnd.lng);
@@ -2679,8 +2829,19 @@ class OrderCalculator {
             }
         }
 
-        // Need at least 2 points for a route
+        // Need at least 2 points for OSRM/Valhalla; otherwise estimate chain distance (depot + stops)
         if (points.length < 2) {
+            const chainM = this.estimateRouteChainMeters(orders, startPoint, endPoint);
+            if (chainM > 0) {
+                const avgSpeedKmH = chainM > 10000 ? 35 : 25;
+                return {
+                    distance: chainM,
+                    duration: (chainM / 1000) / avgSpeedKmH * 3600,
+                    geometry: '',
+                    feasible: true,
+                    engine: 'straight-line-fallback'
+                };
+            }
             return {
                 distance: 0,
                 duration: 0,
@@ -2702,76 +2863,138 @@ class OrderCalculator {
             }
         }
 
-        // v2.2: Multi-engine race - Yapiko OSRM is PRIORITY, others as fallback
-        // v5.180: Added retry with exponential backoff to each engine
-        const engines = [
-            {
-                name: 'yapiko-osrm',
-                priority: 1,
-                calculate: async () => {
-                    const baseUrl = (customOsrmUrl || this.osrmUrl).trim().replace(/\/+$/, '');
-                    const url = `${baseUrl}/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`;
-                    const response = await pRetry(
-                        () => axios.get(url, { timeout: 8000 }),
-                        { retries: 2, minTimeout: 1000, factor: 2 }
-                    );
-                    if (response.data?.routes?.[0]) {
-                        const r = response.data.routes[0];
-                        if (r.distance > 500000) return null; // Sanity check: > 500km is likely error
-                        return {
-                            distance: r.distance,
-                            duration: r.duration,
-                            geometry: r.geometry,
-                            engine: 'yapiko-osrm'
-                        };
-                    }
-                    return null;
-                }
-            },
-            {
-                name: 'valhalla',
-                priority: 2,
-                calculate: async () => {
-                    const vUrl = (customValhallaUrl || process.env.VALHALLA_URL || 'http://valhalla.yapiko.kh.ua').trim().replace(/\/+$/, '');
-                    const request = {
-                        locations: points.map(p => ({ lat: p.lat, lon: p.lng })),
-                        costing: 'auto',
-                        directions_options: { units: 'kilometers' }
+        const isEngineBlocked = (name) => {
+            const s = this.engineFailures.get(name);
+            return !!(s && s.blockedUntil && Date.now() < s.blockedUntil);
+        };
+        const markEngineSuccess = (name) => {
+            this.engineFailures.delete(name);
+            const prev = this.routingHealth.get(name) || { ok: 0, fail: 0, lastError: null, lastStatus: null, lastMs: null };
+            prev.ok += 1;
+            prev.lastError = null;
+            this.routingHealth.set(name, prev);
+        };
+        const markEngineFailure = (name, err) => {
+            const prev = this.engineFailures.get(name) || { failures: 0, blockedUntil: 0 };
+            const failures = (prev.failures || 0) + 1;
+            const status = Number(err?.response?.status || 0);
+            let blockedUntil = prev.blockedUntil || 0;
+            if (status === 401 || status === 403 || status === 404 || failures >= this.ENGINE_FAIL_THRESHOLD) {
+                blockedUntil = Date.now() + this.ENGINE_BLOCK_MS;
+            }
+            this.engineFailures.set(name, { failures, blockedUntil });
+
+            const h = this.routingHealth.get(name) || { ok: 0, fail: 0, lastError: null, lastStatus: null, lastMs: null };
+            h.fail += 1;
+            h.lastStatus = status || null;
+            h.lastError = err?.code || err?.message || 'ERR';
+            this.routingHealth.set(name, h);
+        };
+
+        // v2.2: Multi-engine — self-host OSRM/Valhalla when probe says healthy, then remote/public (soft fallback)
+        const hProbe = selfHostRoutingHealth.getState();
+        const remoteOsrmBase = (customOsrmUrl || this.remoteOsrmUrl || this.osrmUrl).trim().replace(/\/+$/, '');
+        const remoteValhallaBase = (customValhallaUrl || this.remoteValhallaUrl).trim().replace(/\/+$/, '');
+
+        const useSelfOsrm = this.useDualOsrm && !customOsrmUrl && hProbe.osrmLocal === true;
+        const useSelfValhalla = this.useDualValhalla && !customValhallaUrl && hProbe.valhallaLocal === true;
+
+        const engines = [];
+
+        const osrmEngine = (name, baseUrl, engineTag, priority) => ({
+            name,
+            priority,
+            calculate: async () => {
+                const baseUrlT = String(baseUrl || '').trim().replace(/\/+$/, '');
+                const url = `${baseUrlT}/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`;
+                const response = await pRetry(
+                    () => axios.get(url, { timeout: 8000, proxy: false }),
+                    { retries: 2, minTimeout: 1000, factor: 2 }
+                );
+                if (response.data?.routes?.[0]) {
+                    const r = response.data.routes[0];
+                    if (r.distance > 500000) return null;
+                    return {
+                        distance: r.distance,
+                        duration: r.duration,
+                        geometry: r.geometry,
+                        engine: engineTag
                     };
-                    const response = await pRetry(
-                        () => axios.post(`${vUrl}/route`, request, {
-                            timeout: 10000,
-                            headers: { 'Content-Type': 'application/json' }
-                        }),
-                        { retries: 2, minTimeout: 1000, factor: 2 }
-                    );
-                    if (response.data?.trip?.summary) {
-                        const trip = response.data.trip;
-                        const totalDistanceMeters = trip.summary.length * 1000;
-                        const totalDurationSeconds = trip.summary.time;
-
-                        if (totalDistanceMeters > 500000) return null;
-
-                        logger.info(`[TurboCalculator] 🏁 Valhalla result: ${trip.summary.length.toFixed(2)} km, ${totalDurationSeconds} sec`);
-
-                        return {
-                            distance: totalDistanceMeters,
-                            duration: totalDurationSeconds,
-                            geometry: this.decodeValhallaPath(trip.legs),
-                            engine: 'valhalla'
-                        };
-                    }
-                    return null;
                 }
-            },
+                return null;
+            }
+        });
+
+        const valhallaEngine = (name, vUrl, engineTag, priority) => ({
+            name,
+            priority,
+            calculate: async () => {
+                const base = String(vUrl || '').trim().replace(/\/+$/, '');
+                const request = {
+                    locations: points.map(p => ({ lat: p.lat, lon: p.lng })),
+                    costing: 'auto',
+                    directions_options: { units: 'kilometers' }
+                };
+                const response = await pRetry(
+                    () => axios.post(`${base}/route`, request, {
+                        timeout: 10000,
+                        proxy: false,
+                        headers: { 'Content-Type': 'application/json' }
+                    }),
+                    { retries: 2, minTimeout: 1000, factor: 2 }
+                );
+                if (response.data?.trip?.summary) {
+                    const trip = response.data.trip;
+                    const totalDistanceMeters = trip.summary.length * 1000;
+                    const totalDurationSeconds = trip.summary.time;
+                    if (totalDistanceMeters > 500000) return null;
+                    logger.info(`[TurboCalculator] 🏁 Valhalla result: ${trip.summary.length.toFixed(2)} km, ${totalDurationSeconds} sec`);
+                    return {
+                        distance: totalDistanceMeters,
+                        duration: totalDurationSeconds,
+                        geometry: this.decodeValhallaPath(trip.legs),
+                        engine: engineTag
+                    };
+                }
+                return null;
+            }
+        });
+
+        // v7.5: Priority order — Yapiko OSRM ALWAYS FIRST, then self-osrm, then remote, then Valhalla, Photon, public
+        if (customOsrmUrl) {
+            engines.push(osrmEngine('yapiko-osrm', customOsrmUrl, 'yapiko-osrm', 0));
+        } else {
+            engines.push(osrmEngine('yapiko-osrm', this.yapikoOsrmUrl, 'yapiko-osrm', 0));
+        }
+
+        if (useSelfOsrm && !customOsrmUrl) {
+            engines.push(osrmEngine('self-osrm', this.selfOsrmUrl, 'self-osrm', 1));
+        }
+
+        if (!customOsrmUrl) {
+            engines.push(osrmEngine('remote-osrm', remoteOsrmBase, 'remote-osrm', 2));
+        }
+
+        if (this.valhallaSingleUrl && !customValhallaUrl) {
+            engines.push(valhallaEngine('valhalla', this.valhallaSingleUrl, 'valhalla', 2));
+        } else if (customValhallaUrl) {
+            engines.push(valhallaEngine('valhalla', customValhallaUrl, 'valhalla', 2));
+        } else if (useSelfValhalla) {
+            engines.push(valhallaEngine('self-valhalla', this.selfValhallaUrl, 'self-valhalla', 2));
+            engines.push(valhallaEngine('valhalla', remoteValhallaBase, 'valhalla', 3));
+        } else {
+            engines.push(valhallaEngine('valhalla', remoteValhallaBase, 'valhalla', 2));
+        }
+
+        engines.push(
             {
                 name: 'photon-osrm',
-                priority: 3,
+                priority: 4,
                 calculate: async () => {
                     const pUrl = (customPhotonUrl || process.env.PHOTON_URL || 'https://photon.komoot.io').trim().replace(/\/+$/, '');
                     const url = `${pUrl}/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`;
                     const response = await pRetry(
-                        () => axios.get(url, { timeout: 10000 }),
+                        () => axios.get(url, { timeout: 10000, proxy: false }),
                         { retries: 2, minTimeout: 1000, factor: 2 }
                     );
                     if (response.data?.routes?.[0]) {
@@ -2789,11 +3012,11 @@ class OrderCalculator {
             },
             {
                 name: 'osrm-public',
-                priority: 4,
+                priority: 5,
                 calculate: async () => {
                     const url = `https://router.project-osrm.org/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`;
                     const response = await pRetry(
-                        () => axios.get(url, { timeout: 10000 }),
+                        () => axios.get(url, { timeout: 10000, proxy: false }),
                         { retries: 2, minTimeout: 1000, factor: 2 }
                     );
                     if (response.data?.routes?.[0]) {
@@ -2808,21 +3031,75 @@ class OrderCalculator {
                     }
                     return null;
                 }
+            },
+            {
+                name: 'osrm-de',
+                priority: 6,
+                calculate: async () => {
+                    const url = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`;
+                    const response = await pRetry(
+                        () => axios.get(url, { timeout: 10000, proxy: false }),
+                        { retries: 1, minTimeout: 1000, factor: 2 }
+                    );
+                    if (response.data?.routes?.[0]) {
+                        const r = response.data.routes[0];
+                        if (r.distance > 500000) return null;
+                        return {
+                            distance: r.distance,
+                            duration: r.duration,
+                            geometry: r.geometry,
+                            engine: 'osrm-de'
+                        };
+                    }
+                    return null;
+                }
+            },
+            {
+                name: 'osrm-fr',
+                priority: 7,
+                calculate: async () => {
+                    const url = `https://router.openstreetmap.fr/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`;
+                    const response = await pRetry(
+                        () => axios.get(url, { timeout: 10000, proxy: false }),
+                        { retries: 1, minTimeout: 1000, factor: 2 }
+                    );
+                    if (response.data?.routes?.[0]) {
+                        const r = response.data.routes[0];
+                        if (r.distance > 500000) return null;
+                        return {
+                            distance: r.distance,
+                            duration: r.duration,
+                            geometry: r.geometry,
+                            engine: 'osrm-fr'
+                        };
+                    }
+                    return null;
+                }
             }
-        ];
+        );
 
-        // Sort by priority (Yapiko first)
         engines.sort((a, b) => a.priority - b.priority);
 
         // Try engines in order, return first success
         for (const engine of engines) {
+            if (isEngineBlocked(engine.name)) {
+                continue;
+            }
             try {
+                const t0 = Date.now();
                 const result = await engine.calculate();
                 if (result && result.distance > 0) {
+                    markEngineSuccess(engine.name);
+                    const h = this.routingHealth.get(engine.name);
+                    if (h) {
+                        h.lastMs = Date.now() - t0;
+                        this.routingHealth.set(engine.name, h);
+                    }
                     logger.info(`[OrderCalculator] ✅ Route calculated with ${engine.name}: ${(result.distance / 1000).toFixed(2)} km, ${Math.round(result.duration / 60)} min`);
                     return result;
                 }
             } catch (err) {
+                markEngineFailure(engine.name, err);
                 logger.warn(`[OrderCalculator] ⚠️ ${engine.name} failed: ${err.message}`);
             }
         }
@@ -2844,6 +3121,7 @@ class OrderCalculator {
                 };
                 const googleRes = await axios.post(googleUrl, googleBody, {
                     timeout: 10000,
+                    proxy: false,
                     headers: { 'Content-Type': 'application/json' }
                 });
                 if (googleRes.data?.routes?.[0]) {

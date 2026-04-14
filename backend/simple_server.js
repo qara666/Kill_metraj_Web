@@ -17,6 +17,9 @@ const presetRoutes = require('./src/routes/presetRoutes');
 const logRoutes = require('./src/routes/logRoutes');
 const geocacheRoutes = require('./src/routes/geocacheRoutes');
 const logger = require('./src/utils/logger');
+const selfHostRoutingHealth = require('./src/services/selfHostRoutingHealth');
+selfHostRoutingHealth.startPeriodicProbe(120000);
+setImmediate(() => selfHostRoutingHealth.probeAll().catch(() => {}));
 // Константы и настройки загрузки файлов
 const { generalLimiter, strictLimiter, uploadLimiter, telegramLimiter } = require('./src/middleware/rateLimiter');
 const { sequelize, testConnection } = require('./src/config/database');

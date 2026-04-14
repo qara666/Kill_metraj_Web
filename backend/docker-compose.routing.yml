@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  osrm:
+    image: osrm/osrm-backend:latest
+    container_name: km-osrm
+    ports:
+      - "5050:5000"
+    volumes:
+      - ./routing-data:/data
+    command: osrm-routed --algorithm mld /data/ukraine-latest.osrm
+    restart: unless-stopped
+
+  valhalla:
+    image: ghcr.io/gis-ops/docker-valhalla/valhalla:latest
+    container_name: km-valhalla
+    ports:
+      - "8002:8002"
+    environment:
+      - tile_urls=https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
+      - build_elevation=False
+      - serve_tiles=True
+      - use_tiles_ignore_pbf=True
+    volumes:
+      - ./valhalla-data:/custom_files
+    restart: unless-stopped
+
+# Quick start:
+# 1) Put ukraine-latest.osm.pbf into ./routing-data
+# 2) Build OSRM data once:
+#    docker run --rm -t -v $(pwd)/routing-data:/data osrm/osrm-backend osrm-extract -p /opt/car.lua /data/ukraine-latest.osm.pbf
+#    docker run --rm -t -v $(pwd)/routing-data:/data osrm/osrm-backend osrm-partition /data/ukraine-latest.osrm
+#    docker run --rm -t -v $(pwd)/routing-data:/data osrm/osrm-backend osrm-customize /data/ukraine-latest.osrm
+# 3) Start services:
+#    docker compose -f docker-compose.routing.yml up -d
