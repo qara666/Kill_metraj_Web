@@ -18,39 +18,30 @@ router.get('/calculated', async (req, res) => {
         const divisionId = req.query.divisionId || req.user?.divisionId;
         const targetDate = req.query.date; // Optional date filter from frontend
 
-        // v5.170: Get routes with optional date filtering
+        // v5.171: Simplified query - fetch all routes for date first, filter in JS
+        // Complex Op.and + Op.or combination was causing issues with JSON extraction
         const { Op } = require('sequelize');
         const whereClause = {};
-
-        // Filter by division_id if explicitly provided
-        // v5.156: Admins (division_id === 'all') should see routes for ALL divisions
-        if (divisionId && divisionId !== 'all' && divisionId !== 'null' && divisionId !== 'undefined') {
-            whereClause[Op.or] = [
-                { division_id: String(divisionId) },
-                { division_id: null }
-            ];
-        }
 
         // v5.150: Normalize targetDate to YYYY-MM-DD for database query consistency
         let queryDate = targetDate;
         if (queryDate && queryDate.includes('.')) {
             const parts = queryDate.split('.');
             if (parts.length === 3 && parts[2].length === 4) {
-                queryDate = `${parts[2]}-${parts[1]}-${parts[0]}`; // DD.MM.YYYY -> YYYY-MM-DD
+                queryDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
             }
         } else if (!queryDate) {
             queryDate = new Date().toISOString().split('T')[0];
         }
 
-        if (queryDate) {
-            whereClause[Op.and] = whereClause[Op.and] || [];
-            whereClause[Op.and].push(
-                sequelize.where(
-                    sequelize.literal("route_data->>'target_date'"),
-                    queryDate
-                )
-            );
-        }
+        // Use simple where clause - fetch by target_date only
+        // Filter by division in JS after fetching
+        whereClause[Op.and] = [
+            sequelize.where(
+                sequelize.literal("route_data->>'target_date'"),
+                queryDate
+            )
+        ];
 
         // Get routes
         let routes = [];
@@ -69,9 +60,19 @@ router.get('/calculated', async (req, res) => {
             throw dbErr;
         }
 
-        logger.info(`[RouteAPI] Found ${routes.length} routes in database (date: ${targetDate || 'today'})`);
+        // v5.171: Filter by division in JS (after fetch)
+        const isAdminView = divisionId === 'all' || divisionId === 'all' || !divisionId;
+        const targetDivision = String(divisionId || '').trim();
+        
+        const filteredByDivision = routes.filter(r => {
+            if (isAdminView) return true;
+            const routeDiv = String(r.division_id || '').trim();
+            return routeDiv === targetDivision || routeDiv === '' || routeDiv === 'null' || routeDiv === 'undefined' || !routeDiv;
+        });
 
-        const formattedRoutes = routes.map(r => {
+        logger.info(`[RouteAPI] Found ${routes.length} routes, filtered to ${filteredByDivision.length} by division (${targetDivision})`);
+
+        const formattedRoutes = filteredByDivision.map(r => {
             const timeBlock = r.route_data?.deliveryWindow || r.route_data?.timeBlocks || r.route_data?.timeBlock || '';
 
             // v30.0: Only drop truly empty/null rows

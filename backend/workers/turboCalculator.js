@@ -11,6 +11,7 @@ const {
     getPlannedTime,
     getArrivalTime,
     getKitchenTime,
+    getAllOrderIds,
     getOrderHash,
     getStableOrderId,
     haversineDistance
@@ -834,6 +835,17 @@ class OrderCalculator {
                 }
 
                 let targetDate = state.date || new Date().toISOString().split('T')[0];
+                // v7.5: Always use today if the stored date is in the past
+                const today = new Date().toISOString().split('T')[0];
+                if (targetDate < today) {
+                    logger.info(`[TurboCalculator] 📅 ${divId}: Updating stale date ${targetDate} → ${today}`);
+                    // v7.8 FIX: Clear old date hash before updating — otherwise old hash key
+                    // becomes orphaned and new key has no hash → always triggers recalculation
+                    const oldKey = `${divId}_${targetDate}`;
+                    this.processedHashes.delete(oldKey);
+                    targetDate = today;
+                    state.date = today;
+                }
                 logger.info(`[TurboCalculator] ⚙️ Starting calculation for ${divId} on ${targetDate}`);
                 tasks.push(this.processDay(targetDate, divId));
             }
@@ -1063,9 +1075,10 @@ class OrderCalculator {
             const data = cache.payload;
             const targetDateNorm = normalizeDateISO(cache.target_date);
 
-            // v37.9.1: Proactively RE-LOAD KML zones if they are missing or if we are doing a force full sync
-            // This ensures that new zones added via the UI are immediately picked up by the worker.
-            if (!this.kmlZones || this.kmlZones.length === 0 || divState?.forceFull) {
+            // v37.9.1: Proactively RE-LOAD KML zones if they are missing.
+            // NOTE: divState is resolved below (line ~1234). Check forceFull after that point.
+            // v7.8 FIX: divState was referenced here before declaration — caused ReferenceError.
+            if (!this.kmlZones || this.kmlZones.length === 0) {
                 await this.preloadKmlZones();
             }
             let totalRoutesCreated = 0;
@@ -1255,6 +1268,10 @@ class OrderCalculator {
             logger.info(`[TurboCalculator] 🔄 ${cacheKey}: ${existingHash === dataHash ? 'forceFull=true bypassed hash skip' : 'Data changed'} — triggering recalculation`);
             // v37.2: CRITICAL — Extract flags BEFORE clearing divState so they are available in the courier loop
             const forceFull = !!divState?.forceFull;
+            // v7.8 FIX: Reload KML zones on forceFull (was in wrong place above — divState was not yet declared)
+            if (forceFull && this.kmlZones && this.kmlZones.length > 0) {
+                await this.preloadKmlZones();
+            }
             const targetCourier = divState?.targetCourier || null;
             
             // v7.2: Reset flags so future ticks run normally (only bypass once per manual trigger)

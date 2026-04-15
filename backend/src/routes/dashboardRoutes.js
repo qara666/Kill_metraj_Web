@@ -254,9 +254,27 @@ router.post('/dashboard/fetch', async (req, res) => {
         // 3. Process and Split Data
         const processAndCache = async (deptId, deptData) => {
             const payload = { ...deptData, orders: deptData.orders || [], couriers: deptData.couriers || [] };
-            const dataHash = crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+            // v7.8 FIX: Hash only orders+couriers (routes are added by robot — including them causes
+            // the hash to ALWAYS differ after first calculation, triggering endless recalculations)
+            const orderCourierPayload = { orders: payload.orders, couriers: payload.couriers };
+            const dataHash = crypto.createHash('sha256').update(JSON.stringify(orderCourierPayload)).digest('hex');
             const orderCount = payload.orders.length;
             const courierCount = payload.couriers.length;
+
+            // v7.8 FIX: Pre-check if data actually changed before triggering robot
+            let dataActuallyChanged = true;
+            try {
+                const existing = await sequelize.query(
+                    `SELECT data_hash FROM api_dashboard_cache WHERE division_id = :divId AND target_date = :targetDate LIMIT 1`,
+                    { replacements: { divId: String(deptId), targetDate: targetDateISO }, type: sequelize.QueryTypes.SELECT }
+                );
+                if (existing.length > 0 && existing[0].data_hash === dataHash) {
+                    dataActuallyChanged = false;
+                    logger.debug(`[FETCH] Data unchanged for ${deptId}/${targetDateISO} — skipping robot trigger`);
+                }
+            } catch (hashCheckErr) {
+                logger.warn(`[FETCH] Hash pre-check failed: ${hashCheckErr.message} — proceeding with trigger`);
+            }
 
             // v5.208: RESTORE calculated routes and distances from DB
             try {
@@ -329,20 +347,18 @@ router.post('/dashboard/fetch', async (req, res) => {
                 { replacements: { payload: JSON.stringify(payload), dataHash, divisionId: String(deptId), targetDate: targetDateISO, orderCount, courierCount } }
             );
 
-
-
-
-            // Notify WebSocket clients via PG Notify
-            await sequelize.query('SELECT pg_notify(\'dashboard_update\', :notifyData)', {
+            // Notify WebSocket clients via PG Notify (always — UI needs refresh signal)
+            await sequelize.query("SELECT pg_notify('dashboard_update', :notifyData)", {
                 replacements: {
                     notifyData: JSON.stringify({ divisionId: deptId, targetDate: targetDateISO, orderCount, courierCount, source: 'on_demand_fetch' })
                 },
                 type: sequelize.QueryTypes.SELECT
             });
 
-            // v7.3: Direct trigger for this specific department
-            if (global.turboCalculator && typeof global.turboCalculator.notifyNewFOData === 'function') {
+            // v7.8 FIX: Only trigger robot recalculation when order/courier data actually changed
+            if (dataActuallyChanged && global.turboCalculator && typeof global.turboCalculator.notifyNewFOData === 'function') {
                 try {
+                    logger.info(`[FETCH] Data changed for ${deptId}/${targetDateISO} — triggering robot`);
                     global.turboCalculator.notifyNewFOData(String(deptId), targetDateISO);
                 } catch (tcErr) {}
             }

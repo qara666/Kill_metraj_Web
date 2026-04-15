@@ -310,7 +310,7 @@ export function groupOrdersByTimeWindow(
     });
 
     // Определение типа курьера (назначенный или нет)
-    const isAssignedCourier = courierId && courierId !== 'unassigned' && courierId !== 'unassigned_auto' && courierId !== 'Неизвестный курьер';
+    const isAssignedCourier = courierId && courierId !== 'unassigned' && courierId !== 'unassigned_auto' && courierId !== 'Неизвестный курьер' && courierId !== 'НЕ НАЗНАЧЕНО' && courierId !== 'ПО';
     let currentGroup: TimeWindowGroup | null = null;
 
     // 2. Группируем автоматические заказы

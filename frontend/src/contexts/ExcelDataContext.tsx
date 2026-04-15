@@ -985,11 +985,12 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     refreshRoutesFromDB();
   }, [refreshRoutesFromDB]);
   
-  // Also refresh when orders change
+  // Also refresh when orders change (debounced to avoid UI flickering on rapid state updates)
   useEffect(() => {
     if (excelData && excelData.orders?.length > 0) {
-      // Orders changed
-      refreshRoutesFromDB();
+      // Orders changed — debounce to avoid rapid repeated refreshes
+      const t = setTimeout(() => refreshRoutesFromDB(), 2000);
+      return () => clearTimeout(t);
     }
   }, [excelData?.orders?.length, refreshRoutesFromDB]);
 

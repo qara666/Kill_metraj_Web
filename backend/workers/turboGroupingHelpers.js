@@ -284,7 +284,7 @@ function getOrderHash(input) {
         const id = String(o.id || o._id || '');
         if (id) return id;
         const addr = (o.address || o.addressGeo || '').toLowerCase().trim();
-        const time = getPlannedTime(o) || 0;
+        const time = getPlannedTime(o, null) || 0;
         return `${addr}_${time}`;
     }).sort().join('_');
 }
@@ -432,7 +432,7 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate) {
     });
 
     manualGroupsMap.forEach((mOrders, mgId) => {
-        const plannedTimes = mOrders.map(o => getPlannedTime(o)).filter(t => !!t);
+        const plannedTimes = mOrders.map(o => getPlannedTime(o, bDate)).filter(t => !!t);
         const minPlanned = plannedTimes.length > 0 ? Math.min(...plannedTimes) : 0;
         const maxPlanned = plannedTimes.length > 0 ? Math.max(...plannedTimes) : 0;
         
@@ -445,8 +445,8 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate) {
             windowLabel: plannedTimes.length > 0 ? formatTimeRange(minPlanned, maxPlanned) : 'Ручная группа',
             orders: mOrders,
             isReadyForCalculation: true,
-            arrivalStart: mOrders.length > 0 && getArrivalTime(mOrders[0]) ? Math.min(...mOrders.map(o => getArrivalTime(o)).filter(Boolean)) : undefined,
-            arrivalEnd: mOrders.length > 0 && getArrivalTime(mOrders[0]) ? Math.max(...mOrders.map(o => getArrivalTime(o)).filter(Boolean)) : undefined,
+            arrivalStart: mOrders.length > 0 && getArrivalTime(mOrders[0], bDate) ? Math.min(...mOrders.map(o => getArrivalTime(o, bDate)).filter(Boolean)) : undefined,
+            arrivalEnd: mOrders.length > 0 && getArrivalTime(mOrders[0], bDate) ? Math.max(...mOrders.map(o => getArrivalTime(o, bDate)).filter(Boolean)) : undefined,
             manualGroupId: mgId
         });
     });
@@ -608,8 +608,8 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate) {
 
     groups.forEach(group => {
         group.orders.sort((a, b) => {
-            const timeA = getPlannedTime(a) || a.plannedTime || 0;
-            const timeB = getPlannedTime(b) || b.plannedTime || 0;
+            const timeA = getPlannedTime(a, bDate) || a.plannedTime || 0;
+            const timeB = getPlannedTime(b, bDate) || b.plannedTime || 0;
             const tsA = typeof timeA === 'number' ? timeA : new Date(timeA).getTime();
             const tsB = typeof timeB === 'number' ? timeB : new Date(timeB).getTime();
             return tsA - tsB;
