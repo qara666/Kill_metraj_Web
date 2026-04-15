@@ -69,10 +69,13 @@ export const DashboardApiSection: React.FC = () => {
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
         });
         if (res.ok) {
-          const data = await res.json();
-          if (data?.success) {
-            setTodayStatus({ ready: data.ready, date: data.date || todayISO });
-          }
+          try {
+            const text = await res.text();
+            const data = JSON.parse(text);
+            if (data?.success) {
+              setTodayStatus({ ready: data.ready, date: data.date || todayISO });
+            }
+          } catch { /* ignore parse errors */ }
         }
       } catch {
         // ignore
@@ -95,7 +98,7 @@ export const DashboardApiSection: React.FC = () => {
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ divisionId })
             });
-            const data = await res.json();
+            const data = await res.text().then(t => JSON.parse(t)).catch(() => ({ success: false }));
             if (data?.success) {
                 toast.success(data.message || `Сброс выполнен`);
                 // Auto-trigger recalculation after clearing
@@ -231,7 +234,7 @@ export const DashboardApiSection: React.FC = () => {
                                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
                             });
                             if (readyRes.ok) {
-                                const readyData = await readyRes.json();
+                                const readyData = await readyRes.text().then(t => JSON.parse(t)).catch(() => ({ ready: false }));
                                 ready = !!readyData?.ready;
                                 if (ready) break;
                             }
@@ -249,7 +252,7 @@ export const DashboardApiSection: React.FC = () => {
                                 body: JSON.stringify(body)
                             });
                             if (retryRes.ok) {
-                                const result = await retryRes.json();
+                                const result = await retryRes.text().then(t => JSON.parse(t)).catch(() => ({}));
                                 console.log('[DashboardApiSection] ✅ turbo/priority retried successfully for', dateISO, '- result:', result);
                                 toast.success('Расчет запущен!');
                                 return true;
@@ -275,7 +278,7 @@ export const DashboardApiSection: React.FC = () => {
                 toast.error('Ошибка запуска расчета: ' + errMsg);
                 return false;
             } else {
-                const result = await res.json();
+                const result = await res.text().then(t => JSON.parse(t)).catch(() => ({}));
                 console.log('[DashboardApiSection] ✅ turbo/priority triggered for', dateISO, '- result:', result);
                 toast.success('Расчет запущен!');
                 return true;

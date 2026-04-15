@@ -246,9 +246,15 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
               }
 
               if (response.ok) {
-                const json = await response.json();
-                
-                if (json.success && json.data && json.data.orders && json.data.orders.length > 0) {
+                let json: any = null;
+                try {
+                  const text = await response.text();
+                  json = JSON.parse(text);
+                } catch (parseErr) {
+                  console.warn('[ExcelSync] /api/v1/state JSON parse error:', parseErr);
+                }
+
+                if (json && json.success && json.data && json.data.orders && json.data.orders.length > 0) {
                   const serverData = json.data;
                   
                   // v5.204: VALIDATE DATE of server-rehydrated state

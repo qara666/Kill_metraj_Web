@@ -1986,10 +1986,10 @@ class OrderCalculator {
                             const timeBlockLabel = timeGroup.windowLabel;
                             const distanceKm = Math.round((routeResult.distance / 1000) * 100) / 100;
 
-                            // v6.11: STRICT SANITY CHECK — tightened thresholds
-                            // Single-order route > 30km is almost certainly a geocoding error
-                            // Multi-order route > 50km is very suspicious for urban delivery
-                            const maxAllowedKm = validOrders.length === 1 ? 30 : 50;
+                            // v6.12: RELAXED SANITY CHECK for urban delivery
+                            // Kyiv is a large city — 1 order can legitimately be 50km round-trip
+                            // Multi-order routes can be 80km+ during peak hours
+                            const maxAllowedKm = validOrders.length === 1 ? 60 : 100;
                             if (distanceKm > maxAllowedKm) {
                                 logger.error(`[TurboCalculator] ❌ REJECTED ROUTE: ${normName} [${timeBlockLabel}] ${distanceKm}km for ${validOrders.length} order(s) (limit: ${maxAllowedKm}km). Likely geocoding error — invalidating cache.`);
                                 // Invalidate geocache entries for orders in this block so they get re-geocoded next run
@@ -2017,8 +2017,9 @@ class OrderCalculator {
                                             globalStartPoint.lat, globalStartPoint.lng,
                                             o.coords.lat, o.coords.lng
                                         );
-                                        // 25km straight line is ~30-35km driving. Invalid for local delivery.
-                                        if (distToStart > 25) {
+                                        // v6.12: RELAXED distance-to-hub check
+                            // 40km straight-line covers the entire Kyiv metro area including suburbs
+                            if (distToStart > 40) {
                                             logger.error(`[TurboCalculator] ❌ REJECTED: Order ${o.orderNumber} is ${distToStart.toFixed(1)}km straight-line from hub. Too far! Invalidating.`);
                                             const addrKey = (o.address || o.addressGeo || '').toLowerCase().trim();
                                             if (addrKey) {

@@ -40,6 +40,7 @@ export const useDashboardWebSocket = ({
     const apiAutoRefreshEnabled = useDashboardStore(s => s.apiAutoRefreshEnabled);
     const apiDateShift = useDashboardStore(s => s.apiDateShift);
     const apiDepartmentId = useDashboardStore(s => s.apiDepartmentId);
+    const divisionId = useDashboardStore(s => s.divisionId);
     const apiKey = useDashboardStore(s => s.apiKey);
     const setAutoRoutingStatus = useDashboardStore(s => s.setAutoRoutingStatus);
     const autoRoutingStatus = useDashboardStore(s => s.autoRoutingStatus);
@@ -59,12 +60,13 @@ export const useDashboardWebSocket = ({
         apiDateShift,
         apiDepartmentId,
         apiManualSyncTrigger,
-        apiKey
+        apiKey,
+        divisionId
     });
 
     useEffect(() => {
-        stateRef.current = { apiDateShift, apiDepartmentId, apiManualSyncTrigger, apiKey };
-    }, [apiDateShift, apiDepartmentId, apiManualSyncTrigger, apiKey]);
+        stateRef.current = { apiDateShift, apiDepartmentId, apiManualSyncTrigger, apiKey, divisionId };
+    }, [apiDateShift, apiDepartmentId, apiManualSyncTrigger, apiKey, divisionId]);
 
     useEffect(() => {
         onDataLoadedRef.current = onDataLoaded;
@@ -92,9 +94,12 @@ export const useDashboardWebSocket = ({
         isFetchingRef.current = true;
         lastFetchTimeRef.current = now;
 
-        const { apiDateShift: dateShift, apiDepartmentId: deptId, apiKey: key } = stateRef.current;
+        const { apiDateShift: dateShift, apiDepartmentId: deptId, apiKey: key, divisionId: userDivId } = stateRef.current;
         const dateStr = dateShift || formatDateForApi(new Date());
         const apiDate = dashboardApiService.convertDateToApiFormat(dateStr);
+
+        // v5.211: Use user's divisionId (from JWT) as fallback — never fetch 'all' by default
+        const effectiveDivisionId = deptId ? String(deptId) : (userDivId || 'all');
 
         setApiSyncStatus('syncing');
         setApiSyncError(null);
@@ -108,7 +113,7 @@ export const useDashboardWebSocket = ({
             logger.info(` Fetching dashboard for ${apiDate} (isManual=${isManual})`);
             const response = await dashboardApiService.fetchDataForDate({
                 date: apiDate,
-                divisionId: deptId ? String(deptId) : 'all',
+                divisionId: effectiveDivisionId,
                 force: isManual, // v38.2: Use cache for initial loads, force only for manual syncs
                 apiKey: key // Pass the user-specific API key
             });
