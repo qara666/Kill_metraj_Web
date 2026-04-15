@@ -10,7 +10,7 @@
  * - Manual sync trigger support
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
 import { useDashboardStore } from '../stores/useDashboardStore';
 import { socketService } from '../services/socketService';
@@ -364,9 +364,24 @@ export const useDashboardWebSocket = ({
         }
     }, [apiManualSyncTrigger, fetchLatestData]);
 
+// v5.210: Check if target date is TODAY (not archive) - only auto-refresh for TODAY
+    const isTodayForAutoRefresh = React.useMemo(() => {
+        const todayISO = new Date().toISOString().split('T')[0];
+        return apiDateShift === todayISO || !apiDateShift;
+    }, [apiDateShift]);
+
     // Main lifecycle effect - stable dependencies
     useEffect(() => {
         if (!enabled || !apiAutoRefreshEnabled) {
+            disconnectWebSocket();
+            if (intervalRef.current) clearInterval(intervalRef.current);
+            return;
+        }
+
+        // v5.210: For ARCHIVE dates - do NOT auto-refresh, only manual sync
+        // This prevents overwriting archive data with today's data
+        if (!isTodayForAutoRefresh) {
+            console.log('[Sync] 📦 Archive date detected, disabling auto-refresh');
             disconnectWebSocket();
             if (intervalRef.current) clearInterval(intervalRef.current);
             return;
@@ -379,8 +394,8 @@ export const useDashboardWebSocket = ({
         intervalRef.current = setInterval(() => {
             const currentStoreState = useDashboardStore.getState();
             if (currentStoreState.apiAutoRefreshEnabled && currentStoreState.apiNextSyncTime) {
-                // If the timer has lapsed according to the store, fetch and reset.
-                // This correctly synchronizes with pushes from the WebSocket.
+                // If the timer has lapsed according to the store
+                // This correctly synchronizes with pushes from WebSocket
                 if (Date.now() >= currentStoreState.apiNextSyncTime) {
                     fetchLatestData();
                 }
@@ -388,13 +403,13 @@ export const useDashboardWebSocket = ({
                 // Fallback if somehow missing
                 fetchLatestData();
             }
-        }, 1000); // Check every second to synchronize flawlessly with the UI countdown
+        }, 1000); // Check every second to synchronize flawlessly with UI countdown
 
         return () => {
             disconnectWebSocket();
             if (intervalRef.current) clearInterval(intervalRef.current);
         };
-    }, [enabled, apiAutoRefreshEnabled, apiDateShift, apiDepartmentId, connectWebSocket, disconnectWebSocket, fetchLatestData]);
+    }, [enabled, apiAutoRefreshEnabled, apiDateShift, apiDepartmentId, connectWebSocket, disconnectWebSocket, fetchLatestData, isTodayForAutoRefresh]);
 
     return {
         fetchLatestData,

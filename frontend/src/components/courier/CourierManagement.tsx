@@ -73,7 +73,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     // Dynamic data from currently calculated routes (real-time sync)
     const routes = (excelData?.routes || []).filter((r: any) => {
       const rc = normalizeCourierName(r.courier || r.courier_id);
-      return rc === norm && rc !== 'Не назначено';
+      return rc === norm && rc !== 'Не назначено' && rc !== '';
     });
     
     // v9.8: ACCURATE UNIQUE ORDER COUNTING (Sync with RouteManagement)
@@ -99,17 +99,14 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
 
     const baseKm = base?.distanceKm || 0;
 
-    // v9.7: REPLACEMENT logic to prevent double counting
-    // The robot physical distance is a refined version of the base distance, NOT an addition to it.
+    // v9.9: Use OSRM physical distance as-is (no artificial bonus)
+    // bonusKm was adding 0.5km per order, inflating distances
     const robotPhysicalKm = routes.reduce((sum: number, r: any) => 
       sum + ((Number(r.totalDistance) > 0) ? Number(r.totalDistance) : 0), 0);
-    
-    const bonusKm = routes.reduce((sum: number, r: any) => 
-      sum + (Number(r.ordersCount || r.orders_count || (r.orders ? r.orders.length : 0)) * 0.5), 0);
 
     // Final Physical is Robot if available, else File Base
     const effectivePhysicalKm = robotPhysicalKm > 0 ? robotPhysicalKm : baseKm;
-    const totalDist = effectivePhysicalKm + bonusKm;
+    const totalDist = effectivePhysicalKm;
 
     return {
       totalDistance: totalDist,
@@ -119,7 +116,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
       ordersInRoutes: ordersInRoutes,
       baseDistance: baseKm,
       robotDistance: robotPhysicalKm,
-      bonusDistance: bonusKm,
+      bonusDistance: 0,
       effectivePhysicalKm: effectivePhysicalKm
     }
   }, [excelData])

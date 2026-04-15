@@ -49,7 +49,7 @@ router.get('/calculated', async (req, res) => {
             routes = await Route.findAll({
                 where: whereClause,
                 order: [['created_at', 'DESC']],
-                limit: 1000
+                limit: 5000
             });
         } catch (dbErr) {
             // v5.170: If table doesn't exist yet (first deploy), return empty instead of 500
@@ -75,12 +75,22 @@ router.get('/calculated', async (req, res) => {
         const formattedRoutes = filteredByDivision.map(r => {
             const timeBlock = r.route_data?.deliveryWindow || r.route_data?.timeBlocks || r.route_data?.timeBlock || '';
 
-            // v30.0: Only drop truly empty/null rows
             if (!r.courier_id) return null;
 
             const routeOrders = (r.route_data?.orders || []).map(o => ({
-                ...o,
-                plannedTime: o.deliveryTime || o.plannedTime
+                id: o.id,
+                orderNumber: o.orderNumber,
+                address: o.address,
+                lat: o.lat,
+                lng: o.lng,
+                coords: o.coords,
+                courier: o.courier,
+                status: o.status,
+                plannedTime: o.deliveryTime || o.plannedTime,
+                deliveryTime: o.deliveryTime,
+                deliveryZone: o.deliveryZone,
+                kmlZone: o.kmlZone,
+                isAddressLocked: o.isAddressLocked
             }));
 
             return {
@@ -96,7 +106,6 @@ router.get('/calculated', async (req, res) => {
                 startAddress: r.route_data?.startAddress,
                 endAddress: r.route_data?.endAddress,
                 orders: routeOrders,
-                geometry: r.route_data?.geometry || null,
                 isOptimized: true,
                 isTurboRoute: true,
                 createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now()

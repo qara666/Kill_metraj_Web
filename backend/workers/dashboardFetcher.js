@@ -769,7 +769,8 @@ class DashboardFetcher {
                 couriers: mergedCouriers,
                 paymentMethods: data.paymentMethods || [],
                 addresses: data.addresses || [],
-                statistics: data.statistics || {}
+                routes: existingData.routes || [],
+                statistics: data.statistics || existingData.statistics || {}
             };
 
             // 5. V7: UPSERT — INSERT or UPDATE, exactly 1 row per division/date
@@ -909,35 +910,38 @@ class DashboardFetcher {
         const activeCourierIds = new Set();
         if (mergedOrders && Array.isArray(mergedOrders)) {
             mergedOrders.forEach(o => {
-                const cid = o.courierId || o.courierName || o.courier;
-                if (cid && cid !== 'ID:0' && cid !== 'по') activeCourierIds.add(String(cid));
+                const rawCid = o.courierId || o.courierName || o.courier;
+                const cid = String(rawCid || '').toUpperCase().trim();
+                if (cid && cid !== 'ID:0' && cid !== 'ПО' && cid !== 'UNASSIGNED' && cid !== 'НЕ НАЗНАЧЕНО') activeCourierIds.add(cid);
             });
         }
 
         if (existing && Array.isArray(existing)) {
             existing.forEach(c => {
-                const id = String(c.id || c.name || '');
+                const id = String(c.id || c.name || '').toUpperCase().trim();
                 if (id && activeCourierIds.has(id)) merged.set(id, c);
             });
         }
 
         incomingCouriers.forEach(c => {
-            const id = String(c.id || c.name || '');
-            if (id && id !== 'ID:0' && id !== 'по') {
+            const id = String(c.id || c.name || '').toUpperCase().trim();
+            if (id && id !== 'ID:0' && id !== 'ПО' && id !== 'UNASSIGNED' && id !== 'НЕ НАЗНАЧЕНО') {
                 const existingCourier = merged.get(id) || {};
                 
                 // V7: Preserve robot-calculated metrics from existing cache
-                const distanceKm = existingCourier.distanceKm || c.distanceKm;
-                const ordersInRoutes = existingCourier.ordersInRoutes || c.ordersInRoutes || existingCourier.calculatedOrders || c.calculatedOrders;
+                const distanceKm = existingCourier.distanceKm || c.distanceKm || 0;
+                const ordersInRoutes = existingCourier.ordersInRoutes || c.ordersInRoutes || existingCourier.calculatedOrders || c.calculatedOrders || 0;
                 const calculatedOrders = ordersInRoutes;
                 
+                // Keep original names from the API to avoid full-uppercase ugly names in UI if possible,
+                // but if existingCourier had it normalized, that's fine too.
                 merged.set(id, { ...existingCourier, ...c, distanceKm, ordersInRoutes, calculatedOrders });
             }
         });
 
         // Filter to only include active couriers
         const activeCouriers = Array.from(merged.values()).filter(c => {
-            const id = String(c.id || c.name || '');
+            const id = String(c.id || c.name || '').toUpperCase().trim();
             return activeCourierIds.has(id);
         });
 

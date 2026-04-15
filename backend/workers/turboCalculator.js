@@ -1220,14 +1220,21 @@ class OrderCalculator {
 
             // v5.195: Move Data Hash computation to the very beginning to prevent redundant DB hits
             const crypto = require('crypto');
-            const stablePayload = (data.orders || []).map(o => ({
-                id: o.id || o._id,
-                n: o.orderNumber,
-                c: String(o.courier || o.courierName || o.courierId || '').toUpperCase().trim(),
-                s: o.status || o.deliveryStatus,
-                a: String(o.address || o.addressGeo || '').toLowerCase(),
-                t: o.deliverBy || o.plannedTime || o.deliveryTime || o.handoverAt,
-            }));
+            const stablePayload = (data.orders || []).map(o => {
+                const s = String(o.status || o.deliveryStatus || '').toLowerCase().trim();
+                const isCancelled = s.includes('отказ') || s.includes('отменен') || s.includes('відмова');
+                const isPickup = s.includes('самовывоз') || s.includes('на месте');
+                const parsedTime = getPlannedTime(o, null) || 0;
+                const timeBucket = Math.floor(parsedTime / (15 * 60000)); // 15-minute buckets
+                return {
+                    id: o.id || o._id,
+                    n: o.orderNumber,
+                    c: String(o.courier || o.courierName || o.courierId || '').toUpperCase().trim(),
+                    s: isCancelled ? 'CX' : (isPickup ? 'PU' : 'ACTIVE'),
+                    a: String(o.address || o.addressGeo || '').toLowerCase(),
+                    t: timeBucket,
+                };
+            });
 
             const dataHash = crypto.createHash('sha256').update(JSON.stringify(stablePayload)).digest('hex');
             const cacheKey = `${cache.division_id}_${targetDateNorm || cache.target_date}`;
@@ -1475,14 +1482,14 @@ class OrderCalculator {
                 isActive: true,
                 lastUpdate: Date.now(),
                 totalCount: totalCount,
-                unassignedCount: Math.max(0, totalCount - ordersWithRealCourier - alreadyRouted),
+                unassignedCount: Math.max(0, totalCount - ordersWithRealCourier),
                 processedCount: initialProcessed, 
                 totalCouriers: 0, // Will be set after grouping
                 processedCouriers: 0,
                 skippedGeocoding: 0,
                 geoErrors: [], // v6.9: Track failed addresses with order numbers
                 skippedInRoutes: alreadyRouted,
-                skippedNoCourier: totalCount - ordersWithRealCourier - alreadyRouted,
+                skippedNoCourier: Math.max(0, totalCount - ordersWithRealCourier),
                 message: `Analyzing delivery queues...`,
                 currentPhase: 'processing',
                 courierStats: {},
@@ -2111,7 +2118,7 @@ class OrderCalculator {
                             // v38.1: Stable time_block key = target_date + rounded windowStart
                             // This ensures ON CONFLICT correctly identifies the same route across recalculations
                             // even if windowLabel changes (e.g. "11:20 - 11:49" vs "11:20 - 11:50")
-                            const PROXIMITY_MS = 30 * 60 * 1000;
+                            const PROXIMITY_MS = 45 * 60 * 1000; // v8.1: match PROXIMITY_MINUTES in turboGroupingHelpers
                             const stableWindowKey = timeGroup.windowStart
                                 ? Math.floor(timeGroup.windowStart / PROXIMITY_MS) * PROXIMITY_MS
                                 : 0;

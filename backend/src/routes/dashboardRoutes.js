@@ -223,7 +223,84 @@ router.post('/dashboard/fetch', async (req, res) => {
             );
             if (cached.length > 0) {
                 logger.debug(`✅ Cache hit for ${divisionId}`);
-                const payload = typeof cached[0].payload === 'string' ? JSON.parse(cached[0].payload) : cached[0].payload;
+                let payload = typeof cached[0].payload === 'string' ? JSON.parse(cached[0].payload) : cached[0].payload;
+                
+                // Safety net: Restore routes if they are missing from the cache payload
+                if (!payload.routes || payload.routes.length === 0) {
+                    try {
+                        const dbRoutesRaw = await sequelize.query(
+                            `SELECT id, courier_id, total_distance, total_duration, orders_count, route_data, created_at
+                             FROM calculated_routes 
+                             WHERE (division_id = :divId OR division_id IS NULL) 
+                             AND route_data->>'target_date' = :targetDate`,
+                            { replacements: { divId: String(divisionId), targetDate: targetDateISO }, type: sequelize.QueryTypes.SELECT }
+                        );
+
+                        if (dbRoutesRaw && dbRoutesRaw.length > 0) {
+                            const formattedRoutes = dbRoutesRaw.map(r => {
+                                const timeBlock = r.route_data?.deliveryWindow || r.route_data?.timeBlocks || r.route_data?.timeBlock || '';
+                                const rawOrders = r.route_data?.orders || [];
+                                const slimOrders = rawOrders.map(o => ({
+                                    id: o.id,
+                                    orderNumber: o.orderNumber,
+                                    address: o.address,
+                                    lat: o.lat,
+                                    lng: o.lng,
+                                    coords: o.coords,
+                                    courier: o.courier,
+                                    status: o.status,
+                                    plannedTime: o.deliveryTime || o.plannedTime,
+                                    deliveryTime: o.deliveryTime,
+                                    deliveryZone: o.deliveryZone,
+                                    kmlZone: o.kmlZone,
+                                    isAddressLocked: o.isAddressLocked
+                                }));
+                                return {
+                                    id: r.id,
+                                    courier: r.courier_id,
+                                    courier_id: r.courier_id,
+                                    totalDistance: Math.round(parseFloat(r.total_distance || 0) * 100) / 100,
+                                    totalDuration: Math.round((r.total_duration || 0) / 60),
+                                    ordersCount: r.orders_count,
+                                    timeBlocks: timeBlock || 'Без часу',
+                                    timeBlock: timeBlock || 'Без часу',
+                                    targetDate: r.route_data?.target_date || targetDateISO,
+                                    orders: slimOrders,
+                                    isOptimized: true,
+                                    isTurboRoute: true,
+                                    createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now()
+                                };
+                            });
+                            payload.routes = formattedRoutes;
+                            payload.statistics = {
+                                ...(payload.statistics || {}),
+                                routesCount: formattedRoutes.length
+                            };
+                            const courierStatusMap = new Map();
+                            formattedRoutes.forEach(fr => {
+                                const cId = String(fr.courier_id).toUpperCase();
+                                const existing = courierStatusMap.get(cId) || { dist: 0, orders: 0 };
+                                existing.dist += fr.totalDistance;
+                                existing.orders += (fr.orders?.length || fr.ordersCount || 0);
+                                courierStatusMap.set(cId, existing);
+                            });
+                            if (payload.couriers && Array.isArray(payload.couriers)) {
+                                payload.couriers.forEach(c => {
+                                    const cName = (c.name || '').toUpperCase();
+                                    const stats = courierStatusMap.get(cName);
+                                    if (stats) {
+                                        c.distanceKm = Number(stats.dist.toFixed(2));
+                                        c.calculatedOrders = stats.orders;
+                                    }
+                                });
+                            }
+                            logger.info(`🔄 Restored ${formattedRoutes.length} calculated routes into DB cache hit for ${divisionId}`);
+                        }
+                    } catch (restoreErr) {
+                        logger.warn(`⚠️ Failed to restore routes for cache hit: ${restoreErr.message}`);
+                    }
+                }
+
                 return res.json({ success: true, data: payload, fromCache: true });
             }
         }
@@ -289,6 +366,22 @@ router.post('/dashboard/fetch', async (req, res) => {
                 if (dbRoutesRaw && dbRoutesRaw.length > 0) {
                     const formattedRoutes = dbRoutesRaw.map(r => {
                         const timeBlock = r.route_data?.deliveryWindow || r.route_data?.timeBlocks || r.route_data?.timeBlock || '';
+                        const rawOrders = r.route_data?.orders || [];
+                        const slimOrders = rawOrders.map(o => ({
+                            id: o.id,
+                            orderNumber: o.orderNumber,
+                            address: o.address,
+                            lat: o.lat,
+                            lng: o.lng,
+                            coords: o.coords,
+                            courier: o.courier,
+                            status: o.status,
+                            plannedTime: o.deliveryTime || o.plannedTime,
+                            deliveryTime: o.deliveryTime,
+                            deliveryZone: o.deliveryZone,
+                            kmlZone: o.kmlZone,
+                            isAddressLocked: o.isAddressLocked
+                        }));
                         return {
                             id: r.id,
                             courier: r.courier_id,
@@ -297,9 +390,9 @@ router.post('/dashboard/fetch', async (req, res) => {
                             totalDuration: Math.round((r.total_duration || 0) / 60),
                             ordersCount: r.orders_count,
                             timeBlocks: timeBlock || 'Без часу',
+                            timeBlock: timeBlock || 'Без часу',
                             targetDate: r.route_data?.target_date || targetDateISO,
-                            orders: r.route_data?.orders || [],
-                            geometry: r.route_data?.geometry || null,
+                            orders: slimOrders,
                             isOptimized: true,
                             isTurboRoute: true,
                             createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now()
@@ -308,7 +401,6 @@ router.post('/dashboard/fetch', async (req, res) => {
                     payload.routes = formattedRoutes;
                     payload.statistics = {
                         ...(payload.statistics || {}),
-                        calculatedRoutes: formattedRoutes,
                         routesCount: formattedRoutes.length
                     };
                     const courierStatusMap = new Map();

@@ -82,11 +82,15 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     
     let allRoutes = [];
     if (routesRes.ok) {
-      const routesJson = await routesRes.json();
-      allRoutes = routesJson.data || [];
-      // Got routes
+      try {
+        const text = await routesRes.text();
+        const routesJson = JSON.parse(text);
+        allRoutes = routesJson.data || [];
+      } catch (parseErr) {
+        console.warn('[fetchRoutes] JSON parse error, returning empty:', parseErr);
+      }
     } else {
-      // API error
+      console.warn('[fetchRoutes] API returned status:', routesRes.status);
     }
     
     // Routes loaded

@@ -29,7 +29,7 @@ export interface TimeWindowGroup {
 // ФУНКЦИИ ГРУППИРОВКИ ПО ВРЕМЕННЫМ ОКНАМ
 // ============================================
 
-const DEFAULT_WINDOW_MINUTES = 30; // v5.153: Increased to 30m to reduce fragmentation
+const DEFAULT_WINDOW_MINUTES = 30; // display label only, grouping uses PROXIMITY_MINUTES below
 
 /**
  * Получает ключ временного окна для timestamp
@@ -75,8 +75,8 @@ export function getTimeWindowBounds(
 }
 
 // Константы для группировки
-const PROXIMITY_MINUTES = 30;            // v5.151: Increased to 30m for stabilization sync
-const MAX_DELIVERY_SPAN_MINUTES = 60;   // Максимальный разброс доставки в одной группе
+const PROXIMITY_MINUTES = 45;           // v8.1: Sliding window per-step — synced with backend turboGroupingHelpers.js
+const MAX_DELIVERY_SPAN_MINUTES = 90;   // v8.1: Max delivery span in one route group — synced with backend
 
 /**
  * Форматирует диапазон времени в читаемый формат
@@ -324,13 +324,14 @@ export function groupOrdersByTimeWindow(
             currentGroup = createNewGroup(courierId, courierName, order, planned, arrival, groups.length, '');
             if (kitchen) (currentGroup as any).lastKitchen = kitchen;
             (currentGroup as any).firstAnchor = anchorTime;
+            (currentGroup as any).lastAnchor = anchorTime; // v8.1: sliding window
         } else {
-            // Проверяем 5 условий для добавления заказа в текущую группу
-            const firstAnchor = (currentGroup as any).firstAnchor;
+            // v8.1: 5 conditions, sliding window from lastAnchor (mirrors backend v8.1)
+            const lastAnchor = (currentGroup as any).lastAnchor || (currentGroup as any).firstAnchor;
             const firstOrder = currentGroup.orders[0];
             
-            // Условие 1: Time proximity - anchor time within PROXIMITY_MINUTES AFTER first anchor
-            const anchorDiff = anchorTime - firstAnchor;
+            // Условие 1: Time proximity — SLIDING from last added order (not first)
+            const anchorDiff = anchorTime - lastAnchor;
             const timeWithinProximity = anchorDiff >= 0 && anchorDiff <= WINDOW_MS;
             
             // Условие 2: SLA / delivery span <= MAX_DELIVERY_SPAN_MINUTES
@@ -339,7 +340,7 @@ export function groupOrdersByTimeWindow(
             const deliverySpan = maxDelivery - minDelivery;
             const deliveryFits = deliverySpan <= deliverySpanMs;
             
-            // Условие 3: Geography - distance <= 15km from first order
+            // Условие 3: Geography - distance <= 20km from first order
             let distanceOk = true;
             let distanceToFirst = 0;
             if (order.coords && firstOrder.coords) {
@@ -347,24 +348,24 @@ export function groupOrdersByTimeWindow(
                     order.coords.lat, order.coords.lng,
                     firstOrder.coords.lat, firstOrder.coords.lng
                 );
-                distanceOk = distanceToFirst <= 15;
+                distanceOk = distanceToFirst <= 20;
             }
             
-            // Условие 4: Zone - delivery zone must match first order
+            // Условие 4: Zone — SOFT for assigned couriers (they cover multiple zones)
             let districtOk = true;
             const orderZone = order.deliveryZone || '';
             const groupZone = firstOrder.deliveryZone || '';
-            if (orderZone && groupZone && orderZone !== groupZone) {
+            if (!isAssignedCourier && orderZone && groupZone && orderZone !== groupZone) {
                 districtOk = false;
             }
             
-            // Условие 5: Kitchen readiness gap (<= 30 min for unassigned)
+            // Условие 5: Kitchen readiness gap (<= 45 min for unassigned)
             let kitchenGapOk = true;
             if (!isAssignedCourier && kitchen) {
                 const prevKitchen = (currentGroup as any).lastKitchen;
                 if (prevKitchen) {
                     const kitchenDiff = Math.abs(kitchen - prevKitchen);
-                    kitchenGapOk = kitchenDiff <= (30 * 60 * 1000);
+                    kitchenGapOk = kitchenDiff <= (45 * 60 * 1000);
                 }
             }
             
@@ -372,9 +373,9 @@ export function groupOrdersByTimeWindow(
             let newSplitReason = '';
             if (!timeWithinProximity) newSplitReason = `Время (${Math.round(anchorDiff / 60000)} мин > ${PROXIMITY_MINUTES})`;
             else if (!deliveryFits) newSplitReason = `SLA (${Math.round(deliverySpan / 60000)} мин > ${MAX_DELIVERY_SPAN_MINUTES})`;
-            else if (!distanceOk) newSplitReason = `Гео (>${Math.round(distanceToFirst)}км > 15км)`;
+            else if (!distanceOk) newSplitReason = `Гео (>${Math.round(distanceToFirst)}км > 20км)`;
             else if (!districtOk) newSplitReason = `Район (${orderZone} ≠ ${groupZone})`;
-            else if (!isAssignedCourier && !kitchenGapOk) newSplitReason = 'Готовность (>30м)';
+            else if (!isAssignedCourier && !kitchenGapOk) newSplitReason = 'Готовность (>45м)';
 
             if (newSplitReason === '') {
                 // Заказ подходит
@@ -384,6 +385,7 @@ export function groupOrdersByTimeWindow(
                 currentGroup.windowLabel = formatTimeRange(currentGroup.windowStart, currentGroup.windowEnd);
                 
                 currentGroup.arrivalEnd = Math.max(currentGroup.arrivalEnd || 0, arrival);
+                (currentGroup as any).lastAnchor = anchorTime; // v8.1: advance sliding window
                 if (kitchen) (currentGroup as any).lastKitchen = kitchen;
                 updatePredictedDeparture(currentGroup);
             } else {

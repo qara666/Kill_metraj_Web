@@ -3,8 +3,8 @@ const logger = require('../src/utils/logger');
 // ============================================================
 // CONSTANTS — Synced with frontend routeCalculationHelpers.ts
 // ============================================================
-const PROXIMITY_MINUTES = 30;           // Must match frontend PROXIMITY_MINUTES
-const MAX_DELIVERY_SPAN_MINUTES = 60;   // Must match frontend MAX_DELIVERY_SPAN_MINUTES
+const PROXIMITY_MINUTES = 45;           // Sliding window per-step (NOT from first order). Synced with frontend.
+const MAX_DELIVERY_SPAN_MINUTES = 90;   // Max span between earliest and latest delivery in one route group
 
 function hashString(str) {
     let hash = 0;
@@ -481,24 +481,26 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate) {
             };
             if (kitchen) currentGroup.lastKitchen = kitchen;
             currentGroup.firstAnchor = anchorTime;
+            currentGroup.lastAnchor = anchorTime;  // v8.1: sliding window anchor
             currentGroup.firstCoords = order.coords || null;
             currentGroup.firstZone = order.deliveryZone || '';
         } else {
-            // Проверяем 5 условий для добавления заказа в текущую группу
-            const firstAnchor = currentGroup.firstAnchor;
+            // v8.1: 5 conditions for merging into current group
+            const lastAnchor = currentGroup.lastAnchor || currentGroup.firstAnchor;
             const firstOrder = currentGroup.orders[0];
             
-            // Условие 1: Time proximity (anchor time within 30 min of first anchor)
-            const timeDiff = anchorTime - firstAnchor;
+            // Условие 1: Time proximity — SLIDING WINDOW from last added order (not first)
+            // This allows chaining: 12:00 + 12:40 + 13:20 all fit within 45-min steps
+            const timeDiff = anchorTime - lastAnchor;
             const timeWithinProximity = timeDiff >= 0 && timeDiff <= WINDOW_MS;
             
-            // Условие 2: SLA / delivery span (total planned time span <= 60 min)
+            // Условие 2: SLA / delivery span (total planned time span <= MAX_DELIVERY_SPAN_MINUTES)
             const minPlannedInGroup = currentGroup.windowStart;
             const maxPlannedInGroup = currentGroup.windowEnd;
             const deliverySpan = Math.max(maxPlannedInGroup, planned) - Math.min(minPlannedInGroup, planned);
             const deliverySpanFits = deliverySpan <= DELIVERY_SPAN_MS;
             
-            // Условие 3: Geography (distance <= 15km from first order in group)
+            // Условие 3: Geography (distance <= 20km from first order in group)
             let distanceOk = true;
             let distanceToFirst = 0;
             if (order.coords && currentGroup.firstCoords) {
@@ -506,36 +508,41 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate) {
                     order.coords.lat, order.coords.lng,
                     currentGroup.firstCoords.lat, currentGroup.firstCoords.lng
                 );
-                distanceOk = distanceToFirst <= 15;
+                distanceOk = distanceToFirst <= 20;
             }
             
-            // Условие 4: Zone (delivery zone must match first order)
+            // Условие 4: Zone — SOFT for assigned couriers (they physically cover multiple zones)
+            // Only block unassigned grouping by zone
             let zoneOk = true;
             const orderZone = order.deliveryZone || '';
             const groupZone = currentGroup.firstZone || '';
-            if (orderZone && groupZone && orderZone !== groupZone) {
-                zoneOk = false;
+            if (!isAssignedCourier && orderZone && groupZone && orderZone !== groupZone) {
+                zoneOk = false; // strict for unassigned auto-grouping
+            }
+            // For assigned couriers: log zone mix but don't split
+            if (isAssignedCourier && orderZone && groupZone && orderZone !== groupZone) {
+                logger.debug(`[TurboGrouping] ℹ️ Zone mix allowed for ${courierName}: ${groupZone} + ${orderZone}`);
             }
             
-            // Условие 5: Kitchen readiness gap (<= 30 min for unassigned couriers)
+            // Условие 5: Kitchen readiness gap (<= 45 min for unassigned couriers)
             let kitchenGapOk = true;
             if (!isAssignedCourier && kitchen && currentGroup.lastKitchen) {
                 const kitchenDiff = Math.abs(kitchen - currentGroup.lastKitchen);
-                kitchenGapOk = kitchenDiff <= (30 * 60 * 1000);
+                kitchenGapOk = kitchenDiff <= (45 * 60 * 1000);
             }
             
-            // Определяем причину разбиения (приоритет: время, SLA, гео, район, готовность)
+            // Определяем причину разбиения
             let newSplitReason = '';
             if (!timeWithinProximity) {
                 newSplitReason = `Время (${Math.round(timeDiff / 60000)} мин > ${PROXIMITY_MINUTES})`;
             } else if (!deliverySpanFits) {
                 newSplitReason = `SLA (${Math.round(deliverySpan / 60000)} мин > ${MAX_DELIVERY_SPAN_MINUTES})`;
             } else if (!distanceOk) {
-                newSplitReason = `Гео (>${Math.round(distanceToFirst)}км > 15км)`;
+                newSplitReason = `Гео (>${Math.round(distanceToFirst)}км > 20км)`;
             } else if (!zoneOk) {
                 newSplitReason = `Район (${orderZone} ≠ ${groupZone})`;
             } else if (!isAssignedCourier && !kitchenGapOk) {
-                newSplitReason = `Готовность (>30м)`;
+                newSplitReason = `Готовность (>45м)`;
             }
             
             if (newSplitReason === '') {
@@ -545,6 +552,7 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate) {
                 currentGroup.windowEnd = Math.max(currentGroup.windowEnd, planned);
                 currentGroup.windowLabel = formatTimeRange(currentGroup.windowStart, currentGroup.windowEnd);
                 currentGroup.arrivalEnd = Math.max(currentGroup.arrivalEnd || 0, arrival);
+                currentGroup.lastAnchor = anchorTime; // v8.1: advance sliding window
                 if (kitchen) currentGroup.lastKitchen = kitchen;
             } else {
                 // Условие не выполнено - закрываем текущую группу и начинаем новую
@@ -577,6 +585,7 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate) {
                 };
                 if (kitchen) currentGroup.lastKitchen = kitchen;
                 currentGroup.firstAnchor = anchorTime;
+                currentGroup.lastAnchor = anchorTime;  // v8.1: reset sliding window
                 currentGroup.firstCoords = order.coords || null;
                 currentGroup.firstZone = order.deliveryZone || '';
             }
