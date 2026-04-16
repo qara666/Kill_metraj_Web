@@ -18,59 +18,45 @@ export const GlobalDashboardFetcher: React.FC = () => {
     const { setExcelData, excelData } = useExcelData();
     const apiDateShift = useDashboardStore(s => s.apiDateShift);
     
-    // v5.205: Aggressively clear stale data if date changes
+    // v5.212: Only check date shift when apiDateShift actually changes (not on every excelData update)
+    const prevDateRef = React.useRef(apiDateShift);
     React.useEffect(() => {
+        // Only act when date actually changed
+        if (apiDateShift === prevDateRef.current && prevDateRef.current !== undefined) return;
+        prevDateRef.current = apiDateShift;
+
         const targetDate = normalizeDateToIso(apiDateShift);
 
-        // Local presence for target date
+        // v5.212: Check BOTH localStorage keys (v3 is the primary one)
         let localHasTargetDate = false;
-        const localRawTmp = localStorage.getItem('km_dashboard_processed_data');
-        if (localRawTmp) {
-          try {
-            const localDataTmp = JSON.parse(localRawTmp);
-            const localDateRaw = localDataTmp.creationDate || localDataTmp.orders?.[0]?.creationDate;
-            const localDateNormalized = normalizeDateToIso(localDateRaw);
-            if (localDateNormalized && localDateNormalized === targetDate) localHasTargetDate = true;
-          } catch {
-            // ignore parse errors
-          }
+        for (const key of ['km_dashboard_processed_data_v3', 'km_dashboard_processed_data']) {
+            const raw = localStorage.getItem(key);
+            if (raw) {
+                try {
+                    const parsed = JSON.parse(raw);
+                    const dateRaw = parsed.creationDate || parsed.orders?.[0]?.creationDate;
+                    const dateNorm = normalizeDateToIso(dateRaw);
+                    if (dateNorm && dateNorm === targetDate) { localHasTargetDate = true; break; }
+                } catch {}
+            }
         }
 
-        // Check in-memory data
+        // Only wipe if date changed AND no local data for target date
         if (excelData && excelData.orders && excelData.orders.length > 0) {
             const currentDataDate = normalizeDateToIso(excelData.creationDate || excelData.orders?.[0]?.creationDate);
             if (currentDataDate && targetDate && currentDataDate !== targetDate) {
                 if (!localHasTargetDate) {
-                    console.warn(`[GlobalDashboardFetcher] Date shift detected (${currentDataDate} -> ${targetDate}). Wiping EVERYTHING.`);
+                    console.warn(`[GlobalDashboardFetcher] Date shift (${currentDataDate} -> ${targetDate}). Wiping stale data.`);
                     setExcelData(null);
                     localStorage.removeItem('km_dashboard_processed_data');
+                    localStorage.removeItem('km_dashboard_processed_data_v3');
                     localStorage.removeItem('km_routes');
-                    localStorage.removeItem('km_manual_overrides');
                 } else {
-                    console.info('[GlobalDashboardFetcher] Local data exists for target date; skipping wipe to preserve data.');
+                    console.info('[GlobalDashboardFetcher] Local data exists for target date; preserving.');
                 }
             }
         }
-
-        // Also check localStorage directly on date shift to be safe
-        const localRaw = localStorage.getItem('km_dashboard_processed_data');
-        if (localRaw) {
-            try {
-                const localData = JSON.parse(localRaw);
-                const localDateRaw = localData.creationDate || localData.orders?.[0]?.creationDate;
-                const localDateNormalized = normalizeDateToIso(localDateRaw);
-                if (localDateNormalized && targetDate && localDateNormalized !== targetDate) {
-                    if (!localHasTargetDate) {
-                        console.warn(`[GlobalDashboardFetcher] Local storage date mismatch detected during shift. Clearing.`);
-                        localStorage.removeItem('km_dashboard_processed_data');
-                        localStorage.removeItem('km_routes');
-                    } else {
-                        console.info('[GlobalDashboardFetcher] Local data exists for target date; skipping wipe to preserve data.');
-                    }
-                }
-            } catch (e) {}
-        }
-    }, [apiDateShift, setExcelData, excelData]);
+    }, [apiDateShift]);
     
     // v5.180: Validate and normalize backend data before setting
     const validateBackendData = React.useCallback((data: any) => {
@@ -209,7 +195,8 @@ export const GlobalDashboardFetcher: React.FC = () => {
                 const targetDate = normalizeDateToIso(apiDateShift);
                 const incomingDate = normalizeDateToIso(validatedData.creationDate || validatedData.orders?.[0]?.creationDate);
                 const todayISO = new Date().toISOString().split('T')[0];
-                const isToday = apiDateShift === todayISO;
+                const normalizedApiDate = normalizeDateToIso(apiDateShift);
+                const isToday = normalizedApiDate === todayISO;
                 
                 // v5.206: Only block stale data for ARCHIVE dates, not for today
                 if (!isToday && targetDate && incomingDate && targetDate !== incomingDate) {

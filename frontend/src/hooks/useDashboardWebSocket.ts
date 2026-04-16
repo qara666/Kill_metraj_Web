@@ -43,7 +43,6 @@ export const useDashboardWebSocket = ({
     const divisionId = useDashboardStore(s => s.divisionId);
     const apiKey = useDashboardStore(s => s.apiKey);
     const setAutoRoutingStatus = useDashboardStore(s => s.setAutoRoutingStatus);
-    const autoRoutingStatus = useDashboardStore(s => s.autoRoutingStatus);
 
     // Refs for stable logic
     const isConnectedRef = useRef(false);
@@ -187,8 +186,8 @@ export const useDashboardWebSocket = ({
                 // v5.206: For TODAY - always set full stats including processedCount
                 // For historical dates - mark as complete
                 const prevStatus = useDashboardStore.getState().autoRoutingStatus;
+                const currentIsActive = useDashboardStore.getState().autoRoutingStatus.isActive;
                 if (isToday) {
-                    // Today: Show real stats - total routes and orders already in routes
                     const nextTotal = Math.max(prevStatus.totalCount || 0, routableOrders.length);
                     const nextProcessed = Math.min(
                         nextTotal,
@@ -196,14 +195,13 @@ export const useDashboardWebSocket = ({
                     );
                     setAutoRoutingStatus({
                         totalCount: nextTotal,
-                        processedCount: nextProcessed, // keep monotonic while robot is active
+                        processedCount: nextProcessed,
                         skippedInRoutes: ordersInRoutes,
                         skippedGeocoding: response.data.statistics?.geoErrors?.length || 0,
-                        isActive: autoRoutingStatus.isActive, // Keep active for robot to continue
+                        isActive: currentIsActive,
                         lastUpdate: Date.now()
                     });
-                } else if (isHistorical || !autoRoutingStatus.isActive) {
-                    // Historical/archive: Mark as complete
+                } else if (isHistorical || !currentIsActive) {
                     setAutoRoutingStatus({
                         totalCount: routableOrders.length,
                         processedCount: routableOrders.length,
@@ -212,8 +210,7 @@ export const useDashboardWebSocket = ({
                         isActive: false,
                         lastUpdate: Date.now()
                     });
-                } else if (autoRoutingStatus.isActive) {
-                    // Fallback for active robot
+                } else if (currentIsActive) {
                     const nextTotal = Math.max(prevStatus.totalCount || 0, routableOrders.length);
                     const nextProcessed = Math.min(
                         nextTotal,
@@ -291,7 +288,8 @@ export const useDashboardWebSocket = ({
         setApiNextSyncTime(Date.now() + REFRESH_INTERVAL_MS);
         
         // v36.9: Synchronize Robot status timestamp with the WebSocket push
-        if (autoRoutingStatus.isActive) {
+        const currentIsActive = useDashboardStore.getState().autoRoutingStatus.isActive;
+        if (currentIsActive) {
             setAutoRoutingStatus({ lastUpdate: Date.now() });
         }
 

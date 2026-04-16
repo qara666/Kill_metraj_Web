@@ -56,10 +56,8 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   // Helper to fetch routes with current date
   const fetchRoutesWithDate = useCallback(async (token: string) => {
     const apiDateShift = useDashboardStore.getState().apiDateShift;
+    const divisionId = useDashboardStore.getState().divisionId;
     
-    // Fetching routes from API
-    
-    // v5.143: Normalize date to YYYY-MM-DD and pass to backend
     let normalizedDate = '';
     if (apiDateShift) {
       if (/^\d{2}\.\d{2}\.\d{4}$/.test(apiDateShift)) {
@@ -70,11 +68,11 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       }
     }
     
-    // Build URL with date parameter and cache buster
-    const cacheBuster = `t=${Date.now()}`;
-    const url = normalizedDate 
-      ? `${API_URL}/api/routes/calculated?date=${encodeURIComponent(normalizedDate)}&${cacheBuster}`
-      : `${API_URL}/api/routes/calculated?${cacheBuster}`;
+    const params = new URLSearchParams();
+    if (normalizedDate) params.set('date', normalizedDate);
+    if (divisionId) params.set('divisionId', String(divisionId));
+    params.set('t', String(Date.now()));
+    const url = `${API_URL}/api/routes/calculated?${params.toString()}`;
     
     const routesRes = await fetch(url, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -92,9 +90,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     } else {
       console.warn('[fetchRoutes] API returned status:', routesRes.status);
     }
-    
-    // Routes loaded
-    
     
     return allRoutes;
   }, []);
@@ -691,9 +686,8 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     if (!excelData || !excelData.orders || excelData.orders.length === 0) return;
     
     // v5.180: Create lightweight hash to detect real changes
-    const currentHash = `${excelData.orders.length}-${excelData.couriers?.length || 0}-${excelData.summary?.totalOrders || 0}`;
-    if (currentHash === lastSavedRef.current && excelData.routes) {
-      // Only routes changed, no need to save orders
+    const currentHash = `${excelData.orders.length}-${excelData.couriers?.length || 0}-${excelData.routes?.length || 0}-${excelData.summary?.totalOrders || 0}`;
+    if (currentHash === lastSavedRef.current) {
       return;
     }
     lastSavedRef.current = currentHash;
