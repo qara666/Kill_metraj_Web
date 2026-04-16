@@ -314,6 +314,15 @@ class SocketService {
                 try {
                     localStorage.setItem('km_routes', JSON.stringify(data.routes));
                     localStorage.setItem('km_routes_last_updated', new Date().toISOString());
+                    // v36.9: Broadcast to other tabs so they update without their own WS
+                    localStorage.setItem('km_routes_broadcast', JSON.stringify({
+                        routes: data.routes,
+                        date: data.date,
+                        divisionId: data.divisionId,
+                        couriers: data.couriers || [],
+                        _timestamp: Date.now(),
+                        _tabId: (window as any)._tabId
+                    }));
                 } catch (e) {}
             }
             

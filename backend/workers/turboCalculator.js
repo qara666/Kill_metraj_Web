@@ -1469,21 +1469,23 @@ class OrderCalculator {
             }
 
             // v5.197: Standardize stats for real-time UI tracking
+            // v36.9: Use cacheTotalCount (routable orders only) for consistent progress —
+            // matches frontend getCourierStats which also filters only routable orders
             const totalCount = data.orders.length;
             const ordersWithRealCourier = ordersToGroup.length;
             const alreadyRouted = existingRoutedOrderNumbers.size;
 
             // v7.2: Start with orders already in routes to prevent "jump back to 0"
-            // If geocoding just finished, we might already have high progress in the UI.
-            // We should pick the LARGEST of (alreadyRouted, current processedCount).
             const initialProcessed = Math.max(alreadyRouted, Math.round(cacheTotalCount * 0.35));
 
             const stats = {
                 isActive: true,
                 lastUpdate: Date.now(),
-                totalCount: totalCount,
+                // v36.9: Track against routable-only count for accurate progress bar
+                totalCount: cacheTotalCount,
                 unassignedCount: Math.max(0, totalCount - ordersWithRealCourier),
-                processedCount: initialProcessed, 
+                totalOrdersAll: totalCount, // Keep original total for display
+                processedCount: initialProcessed,
                 totalCouriers: 0, // Will be set after grouping
                 processedCouriers: 0,
                 skippedGeocoding: 0,
@@ -2283,11 +2285,9 @@ class OrderCalculator {
                 }
             } // End of courier loop
 
-            // Finalize progress from actual routed + explicitly skipped orders (not forced to 100% blindly).
-            const finalProcessed = Math.min(
-                stats.totalCount,
-                (stats.skippedInRoutes || 0) + (stats.skippedNoCourier || 0) + (stats.skippedGeocoding || 0) + (stats.skippedOther || 0)
-            );
+            // v36.9: At completion, processedCount MUST reach cacheTotalCount (routable orders)
+            // This ensures the progress bar reliably reaches 100% when done
+            const finalProcessed = cacheTotalCount;
             stats.processedCount = Math.max(stats.processedCount || 0, finalProcessed);
             stats.currentPhase = 'complete';
             stats.message = 'Calculation complete!';
@@ -2465,7 +2465,8 @@ class OrderCalculator {
 
             // Final status push - routing complete!
             stats.currentPhase = 'complete';
-            stats.processedCount = Math.min(stats.totalCount, Math.max(stats.processedCount || 0, stats.skippedInRoutes || 0));
+            // v36.9: Force 100% — processedCount must equal cacheTotalCount (routable orders)
+            stats.processedCount = cacheTotalCount;
             const totalResultCount = inMemoryFrontendRoutes.length;
             const existingCount = matchedExistingRouteIds.size;
             const newlyCreated = totalRoutesCreated;

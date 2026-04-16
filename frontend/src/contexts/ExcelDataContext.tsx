@@ -52,6 +52,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   const hasInit = useRef(false)
   const excelDataRef = useRef<ExcelData | null>(null)
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const isInitialLoadRef = useRef(true) // v36.9: Bypass socket guard on first load
 
   // Helper to fetch routes with current date
   const fetchRoutesWithDate = useCallback(async (token: string) => {
@@ -423,6 +424,25 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
         } catch (err) {
           console.warn('[ExcelSync] Failed to parse full data from storage event:', err);
         }
+      } else if (e.key === 'km_routes_broadcast' && e.newValue) {
+        // v36.9: Cross-tab routes broadcast from socketService
+        try {
+          const broadcast = JSON.parse(e.newValue);
+          // Skip if this is our own broadcast
+          if (broadcast._tabId !== (window as any)._tabId && broadcast.routes?.length > 0) {
+            // Re-dispatch as a local DOM event so handleTurboRoutes processes it
+            window.dispatchEvent(new CustomEvent('km:turbo:routes_update', {
+              detail: {
+                routes: broadcast.routes,
+                date: broadcast.date,
+                divisionId: broadcast.divisionId,
+                couriers: broadcast.couriers || null
+              }
+            }));
+          }
+        } catch (err) {
+          console.warn('[ExcelSync] Failed to process routes broadcast:', err);
+        }
       }
     };
     
@@ -720,9 +740,16 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
           deliveryZone: o.deliveryZone, kmlZone: o.kmlZone,
           settledDate: o.settledDate, totalAmount: o.totalAmount
         }));
-        const routesNoGeo = (excelData.routes || []).map((r: any) => ({ 
-          ...r, geometry: undefined, 
-          orders: r.orders?.map((o: any) => ({ id: o.id, orderNumber: o.orderNumber })) 
+        // v5.152: Strip geometry from routes but preserve key metrics for offline KM display
+        const routesNoGeo = (excelData.routes || []).map((r: any) => ({
+          ...r,
+          geometry: undefined,
+          // v36.9: Explicitly preserve metrics so KM works after reload without DB refresh
+          ordersCount: r.ordersCount || r.orders_count || (Array.isArray(r.orders) ? r.orders.length : 0),
+          totalDistance: r.totalDistance || r.total_distance || 0,
+          courier: r.courier || r.courier_id || '',
+          courier_id: r.courier_id || r.courier || '',
+          orders: r.orders?.map((o: any) => ({ id: o.id, orderNumber: o.orderNumber }))
         }));
         const dataToSave = { 
           ...excelData, 
@@ -849,8 +876,12 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       if (!token) return;
       
       // v5.180: Skip if socket routes were updated in the last 5 seconds (prevent stale DB overwrite)
+      // v36.9: But NEVER skip on the initial page load
       const timeSinceSocketUpdate = Date.now() - lastSocketRouteUpdateRef.current;
-      if (timeSinceSocketUpdate < 5000 && lastSocketRouteUpdateRef.current > 0) {
+      const isInitialLoad = isInitialLoadRef.current;
+      if (isInitialLoad) {
+        isInitialLoadRef.current = false; // Mark initial load as done
+      } else if (timeSinceSocketUpdate < 5000 && lastSocketRouteUpdateRef.current > 0) {
         console.log(`[ExcelSync] Skipping DB refresh - socket routes updated ${timeSinceSocketUpdate}ms ago`);
         return;
       }

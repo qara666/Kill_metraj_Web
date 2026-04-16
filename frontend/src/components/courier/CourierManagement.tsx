@@ -127,33 +127,95 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
   }, [excelData])
 
 
+  // Build courier list: primary from orders, fallback from routes when orders are missing
   useEffect(() => {
-    if (!excelData?.orders) return
-    const names = new Set(
-      (excelData.orders || [])
-        .map((o: any) => normalizeCourierName(getCourierName(o.courier)))
-        .filter((n: string) => n && n !== 'Не назначено')
-    )
-    const list = Array.from(names).map(name => {
-      const ex = (excelData.couriers || []).find((c: any) => normalizeCourierName(c.name) === name)
-      const st = getCourierStats(name as string);
-      return {
-        id: name as string,
-        name: name as string,
-        phone: ex?.phone || '',
-        vehicleType: (ex?.vehicleType || 'car') as any,
-        location: ex?.location || 'Base',
-        isActive: true,
-        orders: st.totalOrders,
-        ordersInRoutes: st.ordersInRoutes,
-        totalDistance: st.totalDistance,
-        geoErrorCount: (excelData.orders || []).filter((o: any) =>
-          normalizeCourierName(getCourierName(o.courier)) === name &&
-          (o.geoError || o.locationType === 'FAILED' || o.locationType === 'APPROXIMATE')
-        ).length
+    const routes = excelData?.routes || [];
+    const orders = excelData?.orders || [];
+
+    // If we have orders, build from them (normal mode)
+    if (orders.length > 0) {
+      const names = new Set(
+        orders
+          .map((o: any) => normalizeCourierName(getCourierName(o.courier)))
+          .filter((n: string) => n && n !== 'Не назначено')
+      )
+      const list = Array.from(names).map(name => {
+        const ex = (excelData?.couriers || []).find((c: any) => normalizeCourierName(c.name) === name)
+        const st = getCourierStats(name as string);
+        return {
+          id: name as string,
+          name: name as string,
+          phone: ex?.phone || '',
+          vehicleType: (ex?.vehicleType || 'car') as any,
+          location: ex?.location || 'Base',
+          isActive: true,
+          orders: st.totalOrders,
+          ordersInRoutes: st.ordersInRoutes,
+          totalDistance: st.totalDistance,
+          geoErrorCount: orders.filter((o: any) =>
+            normalizeCourierName(getCourierName(o.courier)) === name &&
+            (o.geoError || o.locationType === 'FAILED' || o.locationType === 'APPROXIMATE')
+          ).length
+        }
+      })
+      setCouriers(list)
+      return;
+    }
+
+    // FALLBACK: If orders are missing but routes exist, build couriers from routes
+    // This happens after page reload when only DB routes are loaded
+    if (routes.length > 0) {
+      const routeMetrics = new Map<string, { km: number; orders: number; vehicleType: string }>();
+      routes.forEach((r: any) => {
+        const name = normalizeCourierName(r.courier || r.courier_id || '');
+        if (!name || name === 'Не назначено') return;
+        const m = routeMetrics.get(name) || { km: 0, orders: 0, vehicleType: 'car' };
+        m.km += Number(r.totalDistance || r.total_distance || 0);
+        m.orders += Number(r.ordersCount || r.orders_count || (Array.isArray(r.orders) ? r.orders.length : 0));
+        routeMetrics.set(name, m);
+      });
+
+      const fallbackList: Courier[] = [];
+      routeMetrics.forEach((metrics, name) => {
+        const ex = (excelData?.couriers || []).find((c: any) => normalizeCourierName(c.name) === name);
+        fallbackList.push({
+          id: name,
+          name,
+          phone: ex?.phone || '',
+          vehicleType: (ex?.vehicleType || 'car') as any,
+          location: ex?.location || 'Base',
+          isActive: true,
+          orders: metrics.orders,
+          ordersInRoutes: metrics.orders,
+          totalDistance: Number(metrics.km.toFixed(2)),
+          geoErrorCount: 0
+        });
+      });
+
+      // Also add couriers from excelData.couriers not yet in routes
+      (excelData?.couriers || []).forEach((c: any) => {
+        const name = normalizeCourierName(c.name || c.courierName || '');
+        if (!name || name === 'Не назначено') return;
+        if (!fallbackList.some(fc => fc.name === name)) {
+          fallbackList.push({
+            id: name, name,
+            phone: c.phone || '',
+            vehicleType: (c.vehicleType || 'car') as any,
+            location: c.location || 'Base',
+            isActive: true,
+            orders: c.calculatedOrders || 0,
+            ordersInRoutes: c.calculatedOrders || 0,
+            totalDistance: Number((c.distanceKm || 0).toFixed(2)),
+            geoErrorCount: 0
+          });
+        }
+      });
+
+      if (fallbackList.length > 0) {
+        setCouriers(fallbackList);
+        return;
       }
-    })
-    setCouriers(list)
+    }
   }, [excelData, getCourierStats])
 
   const filtered = useMemo(() => {
