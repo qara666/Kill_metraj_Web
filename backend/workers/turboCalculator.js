@@ -1689,9 +1689,16 @@ class OrderCalculator {
             // v5.145: Routes are now deleted ONCE in processDay, not here
 
             // v31.2: Instant UI updates! Extract route emit logic into a helper
-            const emitCurrentRoutes = async () => {
-                if (this.io) {
-                    const allWindowLabels = Array.from(new Set(
+            // v36.9: Added throttle for partial route emissions
+            let lastRouteEmitTime = 0;
+            const emitCurrentRoutes = async (force = false) => {
+                if (!this.io) return;
+                
+                const now = Date.now();
+                if (!force && now - lastRouteEmitTime < 2000) return; // 2s throttle for partials
+                lastRouteEmitTime = now;
+
+                const allWindowLabels = Array.from(new Set(
                         Array.from(deliveryWindows.values()).flat().map(w => w.windowLabel)
                     ));
 
@@ -2270,6 +2277,9 @@ class OrderCalculator {
                     stats.processedCount = Math.min(stats.totalCount, stats.processedCount + courierOrders);
                     
                     emitStatus(true);
+                    
+                    // v36.9: Partial route emit for immediate feedback
+                    await emitCurrentRoutes();
                 }
             } // End of courier loop
 
@@ -2322,7 +2332,8 @@ class OrderCalculator {
 
             // v5.171: Fetch ALL routes (existing + newly created) for frontend
             // v7.5: Emit once at the final end to avoid fetch flood
-            // await emitCurrentRoutes(); 
+            // v36.9: Reactive partial updates are now enabled — this final emit ensures consistency
+            await emitCurrentRoutes(true); 
 
 
             // v29.0: Cache Enrichment - write calculated distances back to api_dashboard_cache

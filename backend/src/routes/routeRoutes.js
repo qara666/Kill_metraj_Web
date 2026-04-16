@@ -80,6 +80,7 @@ router.get('/calculated', async (req, res) => {
             const routeOrders = (r.route_data?.orders || []).map(o => ({
                 id: o.id,
                 orderNumber: o.orderNumber,
+                ttlEnd: o.ttlEnd,
                 address: o.address,
                 lat: o.lat,
                 lng: o.lng,

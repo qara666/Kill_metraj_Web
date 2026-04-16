@@ -7,14 +7,19 @@
     "dev": "nodemon backend/server.js",
     "analyze:functions": "node scripts/analyze_functions.js",
     "generate:func-report": "node scripts/generate_function_report.js",
-    "test:today-sync": "node backend/scripts/test_today_full_sync.js"
+    "test:today-sync": "node backend/scripts/test_today_full_sync.js",
+    "test:backend": "node tests/runner.js",
+    "test:e2e": "npx playwright test",
+    "test": "npm run test:backend"
   },
   "dependencies": {
     "express": "^4.17.1",
     "telegram": "^1.4.1"
   },
   "devDependencies": {
-    "nodemon": "^2.0.4"
+    "@playwright/test": "^1.59.1",
+    "nodemon": "^2.0.4",
+    "playwright": "^1.59.1"
   },
   "author": "Your Name",
   "license": "ISC"

@@ -239,3 +239,12 @@ export const useDashboardStore = create<DashboardStoreState>()(
         }
     )
 );
+
+// v36.9: Cross-tab synchronization
+if (typeof window !== 'undefined') {
+    window.addEventListener('storage', (event) => {
+        if (event.key === 'dashboard-sync-storage-v2') {
+            useDashboardStore.persist.rehydrate();
+        }
+    });
+}

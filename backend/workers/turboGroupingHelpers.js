@@ -3,8 +3,30 @@ const logger = require('../src/utils/logger');
 // ============================================================
 // CONSTANTS — Synced with frontend routeCalculationHelpers.ts
 // ============================================================
-const PROXIMITY_MINUTES = 45;           // Sliding window per-step (NOT from first order). Synced with frontend.
+// PROXIMITY_MINUTES removed; use PROXIMITY_MINUTES_PATCH if needed
+//  Patch 9: TTL audit logger
+const fs = require('fs');
+const ttlLogPath = require('path').resolve(__dirname, '../../logs/ttl.log');
+function logTTLEvent(msg){
+  try { fs.appendFileSync(ttlLogPath, `[${new Date().toISOString()}] ${msg}\n`); } catch(e){ /* ignore */ }
+}
 const MAX_DELIVERY_SPAN_MINUTES = 90;   // Max span between earliest and latest delivery in one route group
+
+// Adaptive grouping and TTL per order (in minutes, configurable via env)
+const GROUP_WINDOW_MINUTES_PATCH = parseInt(process.env.GROUP_WINDOW_MINUTES) || 15
+const TTL_MINUTES_PATCH = parseInt(process.env.TTL_MINUTES) || 15
+const WINDOW_MS_PATCH = GROUP_WINDOW_MINUTES_PATCH * 60_000
+const TTL_MS_PATCH = TTL_MINUTES_PATCH * 60_000
+const PROXIMITY_MINUTES_PATCH = GROUP_WINDOW_MINUTES_PATCH
+
+// Adaptive grouping window and TTL configuration
+// By default: 15 minutes window and 15 minutes TTL per order
+const GROUP_WINDOW_MINUTES = parseInt(process.env.GROUP_WINDOW_MINUTES) || 15
+const TTL_MINUTES = parseInt(process.env.TTL_MINUTES) || 15
+const WINDOW_MS = GROUP_WINDOW_MINUTES * 60_000
+const TTL_MS = TTL_MINUTES * 60_000
+// Backwards compatibility alias for existing logic that uses proximity window
+// PROXIMITY_MINUTES alias kept for backward compatibility is removed; use PROXIMITY_MINUTES_PATCH if needed
 
 function hashString(str) {
     let hash = 0;
@@ -408,7 +430,8 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate) {
 
     const ordersWithAnchor = ordersWithData.map(item => ({
         ...item,
-        anchorTime: item.execution || item.planned
+        anchorTime: item.execution || item.planned,
+        ttlEnd: (item.execution || item.planned) ? (item.execution || item.planned) + TTL_MS_PATCH : null
     }));
 
     ordersWithAnchor.sort((a, b) => {
@@ -462,8 +485,17 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate) {
     const WINDOW_MS = PROXIMITY_MINUTES * 60 * 1000; 
     const DELIVERY_SPAN_MS = MAX_DELIVERY_SPAN_MINUTES * 60 * 1000;
 
-    ordersForAuto.forEach(({ order, planned, arrival, kitchen, anchorTime }) => {
+    ordersForAuto.forEach(({ order, planned, arrival, kitchen, anchorTime, ttlEnd }) => {
         
+        // If TTL expired in current group, split and start a new group
+        if (currentGroup) {
+            const expiredAny = currentGroup.orders && currentGroup.orders.some(o => o.ttlEnd && Date.now() > o.ttlEnd);
+            if (expiredAny) {
+                groups.push(currentGroup);
+                currentGroup = null;
+            }
+        }
+
         if (!currentGroup) {
             // Начинаем новую группу с первым заказом
             currentGroup = {
@@ -534,7 +566,7 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate) {
             // Определяем причину разбиения
             let newSplitReason = '';
             if (!timeWithinProximity) {
-                newSplitReason = `Время (${Math.round(timeDiff / 60000)} мин > ${PROXIMITY_MINUTES})`;
+                newSplitReason = `Время (${Math.round(timeDiff / 60000)} мин > ${GROUP_WINDOW_MINUTES_PATCH})`;
             } else if (!deliverySpanFits) {
                 newSplitReason = `SLA (${Math.round(deliverySpan / 60000)} мин > ${MAX_DELIVERY_SPAN_MINUTES})`;
             } else if (!distanceOk) {
@@ -545,8 +577,10 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate) {
                 newSplitReason = `Готовность (>45м)`;
             }
             
-            if (newSplitReason === '') {
+            if (newSplitReason === '' && (!currentGroup || currentGroup.orders.length > 0)) {
                 // Все условия выполнены - добавляем заказ в текущую группу
+                // Push into current group and update TTL for the group
+                order.ttlEnd = (order.anchorTime || planned) + TTL_MS_PATCH;
                 currentGroup.orders.push(order);
                 currentGroup.windowStart = Math.min(currentGroup.windowStart, planned);
                 currentGroup.windowEnd = Math.max(currentGroup.windowEnd, planned);
@@ -565,14 +599,14 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate) {
                    const s = String(o.status || '').toLowerCase();
                    return ['завершен', 'добавлен в завершенные', 'завершено', 'доставлен', 'выполнен', 'виконано', 'completed'].includes(s);
                 });
-                if (isAllCompleted && isAssignedCourier) oldGroup.splitReason = 'Завершён';
+            if (isAllCompleted && isAssignedCourier) oldGroup.splitReason = 'Завершён';
 
                 groups.push(oldGroup);
                 
                 // Начинаем новую группу
                 currentGroup = {
                     id: `group-${courierId}-${order.id}-${planned}`,
-                    courierId,
+                    courierId, 
                     courierName,
                     windowStart: planned,
                     windowEnd: planned,
@@ -671,5 +705,11 @@ module.exports = {
     getAllOrderIds,
     getOrderHash,
     getStableOrderId,
-    haversineDistance
+    haversineDistance,
+    _TTL_CONFIG: (typeof process.env.NODE_ENV === 'undefined' || process.env.NODE_ENV === 'test') ? {
+      WINDOW_MS_PATCH,
+      TTL_MS_PATCH,
+      GROUP_WINDOW_MINUTES_PATCH,
+      TTL_MINUTES_PATCH
+    } : undefined
 };

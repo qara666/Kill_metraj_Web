@@ -181,6 +181,15 @@ class SocketService {
 
                 // Dispatch event for specialized UI components
                 window.dispatchEvent(new CustomEvent('km:robot:status', { detail: data }));
+                
+                // v36.9: Broadcast status to other tabs via localStorage
+                try {
+                    localStorage.setItem('km_robot_status_broadcast', JSON.stringify({
+                        ...data,
+                        _timestamp: now,
+                        _tabId: (window as any)._tabId || Math.random().toString(36).substring(7)
+                    }));
+                } catch (e) {}
             } catch (e) {
                 console.warn('[SocketService] robot_status handling error:', e);
             }
@@ -219,6 +228,24 @@ class SocketService {
                 }
             } else {
                 console.log('[SocketService] Tab became hidden');
+            }
+        });
+
+        // v36.9: Tab identification for cross-tab deduplication
+        if (!(window as any)._tabId) {
+            (window as any)._tabId = Math.random().toString(36).substring(7);
+        }
+
+        // v36.9: Listen for status broadcasts from other tabs
+        window.addEventListener('storage', (event) => {
+            if (event.key === 'km_robot_status_broadcast' && event.newValue) {
+                try {
+                    const data = JSON.parse(event.newValue);
+                    if (data._tabId !== (window as any)._tabId) {
+                        // Re-dispatch locally to update UI components in this tab
+                        window.dispatchEvent(new CustomEvent('km:robot:status', { detail: data }));
+                    }
+                } catch (e) {}
             }
         });
     }

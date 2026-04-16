@@ -3,6 +3,7 @@ import { ClockIcon, ChevronDownIcon, CheckBadgeIcon, ArrowPathIcon, RocketLaunch
 import { getStatusBadgeProps } from '../../utils/data/statusBadgeHelper';
 import { memo, useState, useMemo } from 'react';
 import { formatTimeLabel, type TimeWindowGroup } from '../../utils/route/routeCalculationHelpers';
+import TTLBadge from '../shared/TTLBadge';
 import { getPlannedTime } from '../../utils/data/timeUtils';
 
 interface TimeWindowGroupCardProps {
@@ -113,6 +114,20 @@ export const TimeWindowGroupCard = memo(({
                         <ClockIcon className="w-3.5 h-3.5" />
                         <span>{group.windowLabel}</span>
                     </div>
+
+                    {(() => {
+                        // TTL remaining for the group header
+                        if (!group?.orders || group.orders.length === 0) return null;
+                        let minEnd = Infinity;
+                        for (const o of group.orders) {
+                            const end = o?.ttlEnd;
+                            if (end != null && end < minEnd) minEnd = end;
+                        }
+                        if (!isFinite(minEnd)) return null;
+                        const rem = minEnd - Date.now();
+                        if (rem <= 0) return <TTLBadge remainingMs={0} />
+                        return <TTLBadge remainingMs={rem} />
+                    })()}
 
                     <div className={clsx(
                         'w-7 h-7 rounded-full flex items-center justify-center transition-all duration-300', // v5.48: smaller icon
@@ -246,6 +261,3 @@ export const TimeWindowGroupCard = memo(({
         </div>
     );
 });
-
-
-

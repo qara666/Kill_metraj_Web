@@ -32,3 +32,21 @@
 *   **Backend**: Node.js, Express, Sequelize (ORM).
 *   **Database**: PostgreSQL.
 *   **API**: Google Maps, Telegram (Telegraf).
+
+## Конфигурация окружения
+- GROUP_WINDOW_MINUTES: адаптивное окно группировки. Значение по умолчанию 15 минут. Можно переопределить через env: GROUP_WINDOW_MINUTES=20
+- TTL_MINUTES: TTL к заказам внутри группы. Значение по умолчанию 15 минут. Можно переопределить через env: TTL_MINUTES=15
+
+Примеры запуска:
+- GROUP_WINDOW_MINUTES=20 TTL_MINUTES=15 npm run start
+- GROUP_WINDOW_MINUTES=15 TTL_MINUTES=10 npm run start
+
+Документация по TTL и адаптивному окну:
+- TTL применяется к каждому заказу внутри группы: ttlEnd = anchorTime + TTL_MS
+- Группы создаются с адаптивной длительностью окна (по умолчанию 15 минут) и TTL 15 минут, которые можно перенастроить через ENV.
+- GROUP_WINDOW_MINUTES: адаптивное окно группировки. Значение по умолчанию 15 минут. Можно переопределить через env: GROUP_WINDOW_MINUTES=20
+- TTL_MINUTES: TTL к заказам внутри группы. Значение по умолчанию 15 минут. Можно переопределить через env: TTL_MINUTES=15
+
+Примеры запуска:
+- GROUP_WINDOW_MINUTES=20 TTL_MINUTES=15 npm run start
+- GROUP_WINDOW_MINUTES=15 TTL_MINUTES=10 npm run start

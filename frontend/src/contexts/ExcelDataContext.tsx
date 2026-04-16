@@ -409,6 +409,20 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
         } catch (e) {
           console.warn('[ExcelSync] Failed to parse routes from storage event:', e);
         }
+      } else if (e.key === 'km_dashboard_processed_data_v3' && e.newValue) {
+        // v36.9: Sync full state across tabs
+        try {
+          const newData = JSON.parse(e.newValue);
+          if (newData && newData.orders) {
+            setExcelDataState(prev => {
+              // Only update if newer or if current is empty
+              const nextVal = protectData(newData, prev);
+              return nextVal;
+            });
+          }
+        } catch (err) {
+          console.warn('[ExcelSync] Failed to parse full data from storage event:', err);
+        }
       }
     };
     
