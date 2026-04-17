@@ -67,7 +67,7 @@ services:
     # v5.182: REMOVED plan: free. 
     # For web services with env: static (Static Sites), Render Blueprints do not allow the 'plan' field.
     # They are implicitly free.
-    buildCommand: cd frontend && pnpm install && pnpm build
+    buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: frontend/dist
     routes:
       - type: rewrite
