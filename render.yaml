@@ -4,7 +4,7 @@ services:
     name: yapiko-auto-km-backend
     env: node
     plan: free
-    buildCommand: cd backend && npm ci --production=false
+    buildCommand: cd backend && pnpm install
     startCommand: cd backend && node simple_server.js
     healthCheckPath: /api/health
     envVars:
@@ -67,7 +67,7 @@ services:
     # v5.182: REMOVED plan: free. 
     # For web services with env: static (Static Sites), Render Blueprints do not allow the 'plan' field.
     # They are implicitly free.
-    buildCommand: cd frontend && npm install && npx vite build
+    buildCommand: cd frontend && pnpm install && pnpm build
     staticPublishPath: frontend/dist
     routes:
       - type: rewrite
