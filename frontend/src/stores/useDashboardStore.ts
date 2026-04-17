@@ -36,6 +36,7 @@ interface DashboardStoreState {
         lastUpdate: number | null;
         processedCount: number;
         totalCount: number;
+        totalOrdersAll: number; // v7.x: Total orders from FO (before filtering)
         processedCouriers: number;
         totalCouriers: number;
         // v5.133: Detailed stats for transparency
@@ -47,6 +48,8 @@ interface DashboardStoreState {
         isBulkImport: boolean; // v5.160: For logic reporting
         userStopped: boolean; // v5.202: Track if user explicitly stopped
         currentCourier?: string | null; // v36.3: Track specific courier being processed
+        // v37.0: Stable KPIs Source of Truth for Frontend
+        couriersSummary?: Record<string, { distanceKm: number; ordersCount: number }>;
     };
 
     // v6.19: Aggregate status for Admin multi-division view
@@ -55,6 +58,7 @@ interface DashboardStoreState {
         lastUpdate: number | null;
         processedCount: number;
         totalCount: number;
+        totalOrdersAll: number;
         processedCouriers: number;
         totalCouriers: number;
         skippedGeocoding: number;
@@ -65,6 +69,7 @@ interface DashboardStoreState {
         isBulkImport: boolean;
         userStopped: boolean;
         currentCourier?: string | null;
+        couriersSummary?: Record<string, { distanceKm: number; ordersCount: number }>;
     };
     setAggregateRoutingStatus: (status: Partial<DashboardStoreState['autoRoutingStatus']>) => void;
 
@@ -127,6 +132,7 @@ export const useDashboardStore = create<DashboardStoreState>()(
                 lastUpdate: null,
                 processedCount: 0,
                 totalCount: 0,
+                totalOrdersAll: 0,
                 processedCouriers: 0,
                 totalCouriers: 0,
                 skippedGeocoding: 0,
@@ -137,6 +143,7 @@ export const useDashboardStore = create<DashboardStoreState>()(
                 isBulkImport: false,
                 userStopped: false, // v5.202: Track if user explicitly stopped
                 currentCourier: null, // v36.3: Track specific courier being processed
+                couriersSummary: {}, // v37.0
             },
 
             setApiKey: (key) => set({ apiKey: key }),
@@ -164,6 +171,7 @@ export const useDashboardStore = create<DashboardStoreState>()(
                 lastUpdate: null,
                 processedCount: 0,
                 totalCount: 0,
+                totalOrdersAll: 0,
                 processedCouriers: 0,
                 totalCouriers: 0,
                 skippedGeocoding: 0,
@@ -174,6 +182,7 @@ export const useDashboardStore = create<DashboardStoreState>()(
                 isBulkImport: false,
                 userStopped: false,
                 currentCourier: null,
+                couriersSummary: {}, // v37.0
             },
             setAggregateRoutingStatus: (status: Partial<DashboardStoreState['autoRoutingStatus']>) => set((state) => {
                 const newStatus = { ...state.aggregateRoutingStatus, ...status };
@@ -233,6 +242,9 @@ export const useDashboardStore = create<DashboardStoreState>()(
                         currentCourier: persistentState.autoRoutingStatus.isActive
                             ? persistentState.autoRoutingStatus.currentCourier
                             : null,
+                        couriersSummary: persistentState.autoRoutingStatus.isActive
+                            ? (persistentState.autoRoutingStatus.couriersSummary || {})
+                            : {},
                     }
                 };
             }

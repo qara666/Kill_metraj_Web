@@ -61,13 +61,18 @@ router.get('/calculated', async (req, res) => {
         }
 
         // v5.171: Filter by division in JS (after fetch)
-        const isAdminView = divisionId === 'all' || divisionId === 'all' || !divisionId;
+        // v7.x: STRICT filtering - only show routes from user's division
         const targetDivision = String(divisionId || '').trim();
         
         const filteredByDivision = routes.filter(r => {
-            if (isAdminView) return true;
+            // If no divisionId specified, return only routes without division (legacy behavior)
+            if (!targetDivision) {
+                const routeDiv = String(r.division_id || '').trim();
+                return !routeDiv || routeDiv === 'null' || routeDiv === 'undefined';
+            }
+            // Match exact division
             const routeDiv = String(r.division_id || '').trim();
-            return routeDiv === targetDivision || routeDiv === '' || routeDiv === 'null' || routeDiv === 'undefined' || !routeDiv;
+            return routeDiv === targetDivision;
         });
 
         logger.info(`[RouteAPI] Found ${routes.length} routes, filtered to ${filteredByDivision.length} by division (${targetDivision})`);

@@ -36,11 +36,18 @@ const { cleanAddress, generateVariants } = require('../src/utils/addressUtils');
 // ============================================================
 const GEO_FAIL_THRESHOLD = 3;
 const GEO_BLOCK_MS = 30 * 1000;       // 30s short cooldown on hard network errors
-const GEO_BLOCK_MS_429 = 90 * 1000;   // 90s on rate-limit
+const GEO_BLOCK_MS_429 = 300 * 1000;   // v7.2: 5 minutes on rate-limit
 const geoProviderFailures = new Map();     // provider -> { failures, blockedUntil, lastError }
 const providerNextAllowedAt = new Map();   // provider -> next epoch ms
 const providerQueue = new Map();           // provider -> promise chain
-const PROVIDER_MIN_INTERVAL_MS = 1000;     // hard rule: max 1 request/sec/provider
+
+// v7.2: Adaptive intervals (ms) per provider
+const PROVIDER_INTERVALS = {
+    'nominatim': 2500,        // Very strict public API
+    'nominatim-mirror': 2000,
+    'default': 1200
+};
+
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -85,13 +92,19 @@ async function scheduleProviderCall(provider, fn) {
             const nextAllowed = providerNextAllowedAt.get(provider) || 0;
             const waitMs = Math.max(0, nextAllowed - now);
             if (waitMs > 0) await sleep(waitMs);
+            
             const startedAt = Date.now();
-            providerNextAllowedAt.set(provider, startedAt + PROVIDER_MIN_INTERVAL_MS);
+            // v7.2: Use adaptive interval + jitter (±15%)
+            const baseInterval = PROVIDER_INTERVALS[provider] || PROVIDER_INTERVALS.default;
+            const jitter = baseInterval * 0.15 * (Math.random() * 2 - 1);
+            providerNextAllowedAt.set(provider, startedAt + baseInterval + jitter);
+            
             return fn();
         });
     providerQueue.set(provider, next);
     return next;
 }
+
 
 // ============================================================
 // CITY BOUNDING BOXES — guard against wild geocode results

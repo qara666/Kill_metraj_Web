@@ -125,6 +125,7 @@ const KITCHEN_TIME_FIELDS = [
 ];
 
 const PLANNED_TIME_FIELDS = [
+    'deliveryTime', 'delivery_time', 'DeliveryTime', 'DELIVERY_TIME', // v7.x: CRITICAL - main time field from FO
     'плановое время', 'плановое_время', 'Плановое время', 'Плановое_время', 'ПЛАНОВОЕ ВРЕМЯ',
     'plannedTime', 'planned_time', 'PlannedTime', 'PLANNED_TIME',
     'Дедлайн', 'дедлайн', 'ДЕДЛАЙН', 'deadline', 'Deadline', 'DEADLINE',

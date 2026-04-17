@@ -14,6 +14,7 @@ import { toast } from 'react-hot-toast'
 import { normalizeCourierName, getCourierName } from '../../utils/data/courierName'
 import { getStableOrderId } from '../../utils/data/orderId'
 import { localStorageUtils } from '../../utils/ui/localStorage'
+import { useDashboardStore } from '../../stores/useDashboardStore'
 import { DashboardHeader } from '../shared/DashboardHeader'
 import { KpiAnalysisModal } from './KpiAnalysisModal'
 import { AddressEditModal } from '../modals/AddressEditModal'
@@ -59,34 +60,45 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
 
   const deferredSearchTerm = useDeferredValue(searchTerm)
 
+  const { autoRoutingStatus } = useDashboardStore();
+
   const getCourierStats = useCallback((name: string) => {
     const norm = normalizeCourierName(name);
+
+    // v37.0: PRIORITY 1 — Server-Anchored Summary (The most stable source)
+    const serverSummary = autoRoutingStatus?.couriersSummary?.[name] || autoRoutingStatus?.couriersSummary?.[norm];
+
+    // v37.0: PRIORITY 2 — Calculated Routes (For real-time partial updates)
+    const routes = (excelData?.routes || []).filter((r: any) => {
+      const rc = normalizeCourierName(r.courier || r.courier_id);
+      return rc === norm && rc !== 'Не назначено' && rc !== '';
+    });
+    
+    // v9.8: ACCURATE UNIQUE ORDER COUNTING 
+    const uniqueRouteOrderIds = new Set<string>();
+    routes.forEach((r: any) => {
+      // Use pre-calculated ordersCount from route if available to save CPU
+      (r.orders || []).forEach((o: any) => {
+         const sid = getStableOrderId(o);
+         if (sid) uniqueRouteOrderIds.add(sid);
+      });
+    });
+
+    const ordersInRoutes = serverSummary?.ordersCount ?? uniqueRouteOrderIds.size;
+    const robotPhysicalKm = serverSummary?.distanceKm ?? routes.reduce((sum: number, r: any) => 
+      sum + ((Number(r.totalDistance || r.total_distance) > 0) ? Number(r.totalDistance || r.total_distance) : 0), 0);
+
+    // Dynamic data from currently calculated routes
     const isRoutableOrder = (o: any) => {
       const status = String(o?.status || o?.deliveryStatus || '').toLowerCase().trim();
       if (status.includes('отказ') || status.includes('отменен') || status.includes('відмова')) return false;
       if (status.includes('самовывоз') || status.includes('на месте')) return false;
       return true;
     };
-    // Base data from uploaded excel/db (for historic mileage or static settings)
+
+    // Base data from uploaded excel/db
     const base = (excelData?.couriers || []).find((cur: any) => normalizeCourierName(cur.name) === norm);
     
-    // Dynamic data from currently calculated routes (real-time sync)
-    const routes = (excelData?.routes || []).filter((r: any) => {
-      const rc = normalizeCourierName(r.courier || r.courier_id);
-      return rc === norm && rc !== 'Не назначено' && rc !== '';
-    });
-    
-    // v9.8: ACCURATE UNIQUE ORDER COUNTING (Sync with RouteManagement)
-    // Counts unique orders found in calculated routes
-    const uniqueRouteOrderIds = new Set<string>();
-    routes.forEach((r: any) => {
-      (r.orders || []).forEach((o: any) => {
-         const sid = getStableOrderId(o);
-         if (sid) uniqueRouteOrderIds.add(sid);
-      });
-    });
-    const ordersInRoutes = uniqueRouteOrderIds.size;
-
     // Counts unique routable orders assigned to this courier in FO data
     const uniqueTotalOrderIds = new Set<string>();
     (excelData?.orders || []).forEach((o: any) => {
@@ -94,32 +106,27 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
          const sid = getStableOrderId(o);
          if (sid) uniqueTotalOrderIds.add(sid);
        }
-    });
-    const totalOrdersCount = uniqueTotalOrderIds.size;
+     });
+
+    // FALLBACK for total orders count: if excelData.orders is empty (reload case), 
+    // trust the server's processed count or the routes.
+    const ordersAssignedRaw = uniqueTotalOrderIds.size;
+    const totalOrdersCount = ordersAssignedRaw > 0 ? ordersAssignedRaw : Math.max(ordersAssignedRaw, ordersInRoutes);
 
     const baseKm = base?.distanceKm || 0;
-
-    // v9.9: Use OSRM physical distance as-is (no artificial bonus)
-    // bonusKm was adding 0.5km per order, inflating distances
-    const robotPhysicalKm = routes.reduce((sum: number, r: any) => 
-      sum + ((Number(r.totalDistance) > 0) ? Number(r.totalDistance) : 0), 0);
-
-    // Final Physical is Robot if available, else File Base
-    const effectivePhysicalKm = robotPhysicalKm > 0 ? robotPhysicalKm : baseKm;
-    const totalDist = effectivePhysicalKm;
+    const totalDist = robotPhysicalKm > 0 ? robotPhysicalKm : baseKm;
 
     return {
       totalDistance: totalDist,
       history: base?.distanceHistory || [],
-      // v9.8: Always calculate from active orders to preserve sync with Routes tab
       totalOrders: totalOrdersCount,
       ordersInRoutes: ordersInRoutes,
       baseDistance: baseKm,
       robotDistance: robotPhysicalKm,
       bonusDistance: 0,
-      effectivePhysicalKm: effectivePhysicalKm
+      effectivePhysicalKm: totalDist
     }
-  }, [excelData])
+  }, [excelData, autoRoutingStatus?.couriersSummary])
 
   const getCourierRoutes = useCallback((name: string) => {
     const n = normalizeCourierName(name);
@@ -127,96 +134,59 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
   }, [excelData])
 
 
-  // Build courier list: primary from orders, fallback from routes when orders are missing
+  // v37.0: ULTIMATE ROBUST COURIER LIST BUILDING
+  // Combines name lists from FO orders, DB Routes, and Real-time Robot Status
   useEffect(() => {
-    const routes = excelData?.routes || [];
     const orders = excelData?.orders || [];
+    const routes = excelData?.routes || [];
+    const summaryNames = Object.keys(autoRoutingStatus?.couriersSummary || {});
 
-    // If we have orders, build from them (normal mode)
-    if (orders.length > 0) {
-      const names = new Set(
-        orders
-          .map((o: any) => normalizeCourierName(getCourierName(o.courier)))
-          .filter((n: string) => n && n !== 'Не назначено')
-      )
-      const list = Array.from(names).map(name => {
-        const ex = (excelData?.couriers || []).find((c: any) => normalizeCourierName(c.name) === name)
-        const st = getCourierStats(name as string);
-        return {
-          id: name as string,
-          name: name as string,
-          phone: ex?.phone || '',
-          vehicleType: (ex?.vehicleType || 'car') as any,
-          location: ex?.location || 'Base',
-          isActive: true,
-          orders: st.totalOrders,
-          ordersInRoutes: st.ordersInRoutes,
-          totalDistance: st.totalDistance,
-          geoErrorCount: orders.filter((o: any) =>
-            normalizeCourierName(getCourierName(o.courier)) === name &&
-            (o.geoError || o.locationType === 'FAILED' || o.locationType === 'APPROXIMATE')
-          ).length
-        }
-      })
-      setCouriers(list)
-      return;
+    const names = new Set<string>();
+    
+    // 1. Names from orders (Primary FO Source)
+    orders.forEach((o: any) => {
+      const n = normalizeCourierName(getCourierName(o.courier));
+      if (n && n !== 'Не назначено') names.add(n);
+    });
+
+    // 2. Names from routes (Database Fallback)
+    routes.forEach((r: any) => {
+      const n = normalizeCourierName(r.courier || r.courier_id);
+      if (n && n !== 'Не назначено') names.add(n);
+    });
+
+    // 3. Names from robot status (Real-time Fallback)
+    summaryNames.forEach(n => {
+      if (n && n !== 'Не назначено') names.add(n);
+    });
+
+    const list = Array.from(names).map(name => {
+      const ex = (excelData?.couriers || []).find((c: any) => normalizeCourierName(c.name) === name);
+      const st = getCourierStats(name);
+      
+      return {
+        id: name,
+        name: name,
+        phone: ex?.phone || '',
+        vehicleType: (ex?.vehicleType || 'car') as any,
+        location: ex?.location || 'Base',
+        isActive: true,
+        orders: st.totalOrders,
+        ordersInRoutes: st.ordersInRoutes,
+        totalDistance: st.totalDistance,
+        geoErrorCount: orders.filter((o: any) => 
+          normalizeCourierName(getCourierName(o.courier)) === name && 
+          (o.geoError || o.locationType === 'FAILED' || o.locationType === 'APPROXIMATE')
+        ).length
+      };
+    });
+
+    // Handle initial loading states better
+    if (list.length > 0 || !excelData?.loading) {
+      setCouriers(list);
     }
+  }, [excelData?.orders, excelData?.routes, excelData?.couriers, autoRoutingStatus?.couriersSummary, getCourierStats]);
 
-    // FALLBACK: If orders are missing but routes exist, build couriers from routes
-    // This happens after page reload when only DB routes are loaded
-    if (routes.length > 0) {
-      const routeMetrics = new Map<string, { km: number; orders: number; vehicleType: string }>();
-      routes.forEach((r: any) => {
-        const name = normalizeCourierName(r.courier || r.courier_id || '');
-        if (!name || name === 'Не назначено') return;
-        const m = routeMetrics.get(name) || { km: 0, orders: 0, vehicleType: 'car' };
-        m.km += Number(r.totalDistance || r.total_distance || 0);
-        m.orders += Number(r.ordersCount || r.orders_count || (Array.isArray(r.orders) ? r.orders.length : 0));
-        routeMetrics.set(name, m);
-      });
-
-      const fallbackList: Courier[] = [];
-      routeMetrics.forEach((metrics, name) => {
-        const ex = (excelData?.couriers || []).find((c: any) => normalizeCourierName(c.name) === name);
-        fallbackList.push({
-          id: name,
-          name,
-          phone: ex?.phone || '',
-          vehicleType: (ex?.vehicleType || 'car') as any,
-          location: ex?.location || 'Base',
-          isActive: true,
-          orders: metrics.orders,
-          ordersInRoutes: metrics.orders,
-          totalDistance: Number(metrics.km.toFixed(2)),
-          geoErrorCount: 0
-        });
-      });
-
-      // Also add couriers from excelData.couriers not yet in routes
-      (excelData?.couriers || []).forEach((c: any) => {
-        const name = normalizeCourierName(c.name || c.courierName || '');
-        if (!name || name === 'Не назначено') return;
-        if (!fallbackList.some(fc => fc.name === name)) {
-          fallbackList.push({
-            id: name, name,
-            phone: c.phone || '',
-            vehicleType: (c.vehicleType || 'car') as any,
-            location: c.location || 'Base',
-            isActive: true,
-            orders: c.calculatedOrders || 0,
-            ordersInRoutes: c.calculatedOrders || 0,
-            totalDistance: Number((c.distanceKm || 0).toFixed(2)),
-            geoErrorCount: 0
-          });
-        }
-      });
-
-      if (fallbackList.length > 0) {
-        setCouriers(fallbackList);
-        return;
-      }
-    }
-  }, [excelData, getCourierStats])
 
   const filtered = useMemo(() => {
     const s = deferredSearchTerm.toLowerCase();

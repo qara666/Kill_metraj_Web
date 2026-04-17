@@ -585,6 +585,30 @@ class OrderCalculator {
 
         logger.info(`[TurboCalculator] 🚀 v7.0 SERVER-FIRST — Initialized. Auto-starting tick loop.`);
 
+        /* v8.9: AUTO-REPAIR SCHEMA (Fix missing timestamps) */
+        try {
+            const { QueryTypes } = require('sequelize');
+            const models = require('../src/models/index');
+            const sequelize = models.sequelize;
+            
+            logger.info('[TurboCalculator] 🛠 Running schema self-repair...');
+            
+            await sequelize.query(`
+                ALTER TABLE api_dashboard_status_history 
+                ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            `);
+            
+            await sequelize.query(`
+                ALTER TABLE api_dashboard_cache 
+                ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            `);
+            
+            logger.info('[TurboCalculator] ✅ Schema self-repair complete.');
+        } catch (migErr) {
+            logger.warn('[TurboCalculator] ⚠️ Schema self-repair warning (non-fatal):', migErr.message);
+        }
+
         // v7.0: SERVER-FIRST — always auto-start the tick loop.
         // Calculations run automatically when FO data arrives.
         this.scheduleNextTick(true);
@@ -1074,21 +1098,11 @@ class OrderCalculator {
         try {
             const data = cache.payload;
             const targetDateNorm = normalizeDateISO(cache.target_date);
-
-            // v37.9.1: Proactively RE-LOAD KML zones if they are missing.
-            // NOTE: divState is resolved below (line ~1234). Check forceFull after that point.
-            // v7.8 FIX: divState was referenced here before declaration — caused ReferenceError.
-            if (!this.kmlZones || this.kmlZones.length === 0) {
-                await this.preloadKmlZones();
-            }
-            let totalRoutesCreated = 0;
-
-            // v30.0 CRITICAL FIX: Route must be declared inside processCache.
-            // Previously it was ONLY declared in processDay (different scope),
-            // causing every Route.create() call to throw "Route is not defined".
-            // Op and sequelize are fine — they're declared at module scope (lines 4-5).
             const Route = this.getModel('Route');
-            // v5.196: Get real totalCount immediately as possible to avoid 'zeros' in UI
+            const divIdStr = String(cache.division_id);
+            const dateStr = String(targetDateNorm || cache.target_date || '');
+            const statusKey = `${divIdStr}_${dateStr}`;
+
             // v7.2: Use ONLY routeable orders for the status count to perfectly match the Frontend Results table
             let cacheTotalCount = 0;
             if (data?.orders) {
@@ -1101,57 +1115,89 @@ class OrderCalculator {
                     return true;
                 }).length;
             }
-            if (this.io && cacheTotalCount > 0) {
-                // v6.12: Don't jump to 0 if we already have progress in the global store
-                const divStatusKey = `${cache.division_id}_${targetDateNorm}`;
-                const existingStatus = global.divisionStatusStore ? global.divisionStatusStore[divStatusKey] : null;
-                const currentProcessed = existingStatus ? (existingStatus.processedCount || 0) : 0;
 
-                this.io.emit('robot_status', {
-                    divisionId: cache.division_id,
-                    date: targetDateNorm || cache.target_date,
-                    isActive: true,
-                    totalCount: cacheTotalCount,
-                    processedCount: currentProcessed, // Keep current progress
-                    currentPhase: 'initializing',
-                    message: `Analyzing data (${currentProcessed}/${cacheTotalCount})...`
+            // v36.9: Init global stats immediately at top of function
+            const stats = {
+                isActive: true,
+                lastUpdate: Date.now(),
+                totalCount: cacheTotalCount,
+                totalOrdersAll: data?.orders?.length || 0,
+                processedCount: 0,
+                totalCouriers: 0,
+                processedCouriers: 0,
+                skippedGeocoding: 0,
+                geoErrors: [], 
+                skippedInRoutes: 0,
+                skippedNoCourier: 0,
+                message: 'Initializing...',
+                currentPhase: 'initializing',
+                courierStats: {},
+                couriersSummary: {}, // v37.0: Stable KPIs Source of Truth for Frontend
+                totalRoutesCreated: 0, // v7.x: Track new routes created
+                diagnostics: {
+                    geocoding: { providers: Object.create(null) },
+                }
+            };
+
+            // v37.0: Define robust emitStatus at top scope for immediate usage
+            const emitStatus = (force = false) => {
+                if (!this.io) return;
+                const now = Date.now();
+                const lastEmit = this.lastEmitTimeByKey?.get(statusKey) || 0;
+                if (!force && lastEmit && (now - lastEmit < 1000)) return;
+                if (this.lastEmitTimeByKey) this.lastEmitTimeByKey.set(statusKey, now);
+
+                // Build couriersSummary (Source of Truth for EliteCourierCard)
+                const summary = {};
+                Object.values(stats.courierStats || {}).forEach(cs => {
+                    summary[cs.name] = {
+                        distanceKm: Number((cs.distanceKm || 0).toFixed(2)),
+                        ordersCount: cs.ordersInRoutes || cs.orders || 0,
+                    };
                 });
-            }
+                stats.couriersSummary = summary;
 
-            // Fast path: no orders for this division/date yet -> emit 0 state to UI and skip processing
-            if (!data || !Array.isArray(data.orders) || data.orders.length === 0) {
-                const stats = {
-                    isActive: true,
-                    lastUpdate: Date.now(),
-                    totalCount: 0,
-                    processedCount: 0,
-                    totalCouriers: 0,
-                    processedCouriers: 0,
-                    currentPhase: 'routing',
-                    message: 'No orders for this division/date'
+                const payload = {
+                    divisionId: divIdStr,
+                    date: dateStr,
+                    ...stats,
+                    lastUpdate: now
                 };
-                const emitStatus = () => {
-                    if (this.io) {
-                        this.io.emit('robot_status', {
-                            divisionId: cache.division_id,
-                            date: targetDateNorm || cache.target_date,
-                            ...stats,
-                            couriers: []
-                        });
-                        this.io.emit('division_status_update', {
-                            divisionId: cache.division_id,
-                            date: targetDateNorm || cache.target_date,
-                            totalCount: 0,
-                            totalCouriers: 0,
-                            couriers: []
-                        });
+
+                // Diagnostics and Health
+                try {
+                    if (this.routingHealth) {
+                        payload.diagnostics.routing = {
+                            engines: Object.fromEntries(Array.from(this.routingHealth.entries())),
+                            selfHost: selfHostRoutingHealth.getState()
+                        };
                     }
-                };
-                emitStatus();
-                logger.info('[TurboCalculator] 🔔 No orders for division/date, skipping processing for this cache');
+                } catch (e) {}
+
+                if (this.divisionStatus) this.divisionStatus.set(statusKey, payload);
+                if (global.divisionStatusStore) global.divisionStatusStore[statusKey] = payload;
+
+                this.io.emit('robot_status', payload);
+                this.io.emit('division_status_update', payload);
+            };
+
+            // v37.0: IMMEDIATE EMIT to waken the UI
+            emitStatus(true);
+
+            // Fast path: no orders for this division/date
+            if (!data || !Array.isArray(data.orders) || data.orders.length === 0) {
+                stats.isActive = false;
+                stats.message = 'No orders for this division/date';
+                stats.currentPhase = 'complete';
+                emitStatus(true);
                 return;
             }
-            if (!data || !data.orders) return;
+
+            // v7.5: Ensure KML zones are available for spatial validation
+            if (!this.kmlZones || this.kmlZones.length === 0) {
+                await this.preloadKmlZones();
+            }
+            const allKmlZones = this.kmlZones || [];
 
             // v5.144: RADICAL De-duplication using BOTH IDs AND content hash
             // This catches: same order with different IDs, orders from multiple sources
@@ -1242,32 +1288,13 @@ class OrderCalculator {
             const existingHash = this.processedHashes.get(cacheKey);
 
             // If hash unchanged — put division to SLEEP, wake only on new FO data
-            // v7.2: If forceFull=true (manual trigger), SKIP the hash check and always recalculate
             const divState = this.divisionStates.get(String(cache.division_id));
             if (existingHash === dataHash && !divState?.forceFull) {
-                // v7.1: Deactivate division — tick will skip it until notifyNewFOData() reactivates
-                if (divState) {
-                    divState.isActive = false;
-                    logger.info(`[TurboCalculator] 💤 ${cache.division_id}: Data unchanged — DEACTIVATED. Will reactivate on new FO data.`);
-                }
-
-                // Fetch last known status for accurate UI display
-                const divStatusKey = `${cache.division_id}_${targetDateNorm}`;
-                const lastStatus = global.divisionStatusStore?.[divStatusKey] || {};
-
-                if (this.io) {
-                    this.io.emit('robot_status', {
-                        divisionId: cache.division_id,
-                        date: targetDateNorm || cache.target_date,
-                        isActive: false,
-                        currentPhase: 'complete',
-                        message: `Расчёт завершён. Ожидание новых данных...`,
-                        totalCount: cacheTotalCount,
-                        processedCount: lastStatus.processedCount || cacheTotalCount,
-                        skippedInRoutes: lastStatus.skippedInRoutes || 0,
-                        skippedGeocoding: lastStatus.skippedGeocoding || 0
-                    });
-                }
+                if (divState) divState.isActive = false;
+                stats.isActive = false;
+                stats.currentPhase = 'complete';
+                stats.message = 'Расчёт завершён. Ожидание новых данных...';
+                emitStatus(true);
                 return;
             }
 
@@ -1331,6 +1358,7 @@ class OrderCalculator {
 
             if (Route) {
                 try {
+                    logger.info(`[TurboCalculator] 🔍 Fetching existing routes for ${cache.division_id} on ${targetDateNorm || cache.target_date}...`);
                     existingRoutes = await Route.findAll({
                         where: {
                             division_id: cache.division_id,
@@ -1341,6 +1369,8 @@ class OrderCalculator {
                         },
                         order: [['calculated_at', 'ASC']]
                     });
+                    logger.info(`[TurboCalculator] 📦 Found ${existingRoutes.length} existing routes`);
+
 
                     existingRoutes.forEach(r => {
                         const orders = r.route_data?.orders || [];
@@ -1364,14 +1394,8 @@ class OrderCalculator {
                 }
             }
 
-            // v31.1: Fetch all KML zones once per cache processing
-            let allKmlZones = [];
-            try {
-                const KmlZone = this.getModel('KmlZone');
-                if (KmlZone) allKmlZones = await KmlZone.findAll();
-            } catch (e) {
-                logger.warn(`[TurboCalculator] ⚠️ Failed to fetch KmlZones: ${e.message}`);
-            }
+            // v7.5: allKmlZones already pre-loaded and defined at the top of processCache
+
 
             // v33: In-Memory cache for partial renders to skip DB O(N^2) hits!
             let inMemoryFrontendRoutes = [];
@@ -1419,9 +1443,11 @@ class OrderCalculator {
                     
                     if (addressesToLookup.length > 0) {
                         const uniqueKeys = Array.from(new Set(addressesToLookup));
+                        logger.info(`[TurboCalculator] 🧠 Looking up ${uniqueKeys.length} addresses in GeoCache...`);
                         const cachedCoords = await GeoCache.findAll({
                             where: { address_key: { [Op.in]: uniqueKeys }, is_success: true }
                         });
+
                         
                         const coordMap = new Map();
                         cachedCoords.forEach(c => coordMap.set(c.address_key, c));
@@ -1469,36 +1495,19 @@ class OrderCalculator {
             }
 
             // v5.197: Standardize stats for real-time UI tracking
-            // v36.9: Use cacheTotalCount (routable orders only) for consistent progress —
-            // matches frontend getCourierStats which also filters only routable orders
             const totalCount = data.orders.length;
             const ordersWithRealCourier = ordersToGroup.length;
             const alreadyRouted = existingRoutedOrderNumbers.size;
 
             // v7.2: Start with orders already in routes to prevent "jump back to 0"
-            const initialProcessed = Math.max(alreadyRouted, Math.round(cacheTotalCount * 0.35));
+            stats.skippedInRoutes = alreadyRouted;
+            stats.processedCount = Math.max(alreadyRouted, Math.round(cacheTotalCount * 0.35));
+            stats.unassignedCount = Math.max(0, totalCount - ordersWithRealCourier);
+            stats.totalOrdersAll = totalCount;
+            stats.currentPhase = 'processing';
+            stats.message = 'Analyzing delivery queues...';
+            emitStatus(true);
 
-            const stats = {
-                isActive: true,
-                lastUpdate: Date.now(),
-                // v36.9: Track against routable-only count for accurate progress bar
-                totalCount: cacheTotalCount,
-                unassignedCount: Math.max(0, totalCount - ordersWithRealCourier),
-                totalOrdersAll: totalCount, // Keep original total for display
-                processedCount: initialProcessed,
-                totalCouriers: 0, // Will be set after grouping
-                processedCouriers: 0,
-                skippedGeocoding: 0,
-                geoErrors: [], // v6.9: Track failed addresses with order numbers
-                skippedInRoutes: alreadyRouted,
-                skippedNoCourier: Math.max(0, totalCount - ordersWithRealCourier),
-                message: `Analyzing delivery queues...`,
-                currentPhase: 'processing',
-                courierStats: {},
-                diagnostics: {
-                    geocoding: { providers: Object.create(null) },
-                }
-            };
             const routedOrderIds = new Set();
             const markOrdersAsRouted = (ordersArr = []) => {
                 for (const ro of (ordersArr || [])) {
@@ -1532,15 +1541,9 @@ class OrderCalculator {
                 logger.info(`[TurboCalculator] 🌍 Enhanced geocoding: ${totalToGeo} addresses (6-level SOTA engine)...`);
 
                 if (this.io) {
-                    this.io.emit('robot_status', {
-                        divisionId: cache.division_id,
-                        date: targetDateNorm || cache.target_date,
-                        isActive: true,
-                        totalCount: totalCount,
-                        processedCount: Math.round(totalCount * 0.05),
-                        currentPhase: 'geocoding',
-                        message: `Геокодирование: ${totalToGeo} адресов...`
-                    });
+                    stats.currentPhase = 'geocoding';
+                    stats.message = `Геокодирование: ${totalToGeo} адресов...`;
+                    emitStatus(true);
                 }
 
                 await batchEnhancedGeocode(allOrdersNeedsGeo, cityBias, allKmlZones, {
@@ -1564,15 +1567,11 @@ class OrderCalculator {
                         const eta = done > 0 ? Math.ceil((elapsed / done) * (total - done)) : 0;
 
                         if (this.io) {
-                            this.io.emit('robot_status', {
-                                divisionId: cache.division_id,
-                                date: targetDateNorm || cache.target_date,
-                                isActive: true,
-                                totalCount: totalCount,
-                                processedCount: Math.round((done / total) * totalCount * 0.40),
-                                currentPhase: 'geocoding',
-                                message: `Геокодирование ${pass === 'pass2' ? '(точный поиск) ' : ''}${pct}% (${done}/${total})${eta > 0 ? ` ~${eta}с` : ''}`
-                            });
+                            stats.currentPhase = 'geocoding';
+                            // v8.9 Estimate processedCount for visual progress card
+                            stats.processedCount = Math.round((done / total) * stats.totalCount * 0.40); 
+                            stats.message = `Геокодирование ${pass === 'pass2' ? '(точный поиск) ' : ''}${pct}% (${done}/${total})${eta > 0 ? ` ~${eta}с` : ''}`;
+                            emitStatus(true);
                         }
                     }
                 });
@@ -1595,11 +1594,13 @@ class OrderCalculator {
 
 
             // v28.8: Grouping happens AFTER geocoding so geographic splitting works!
+            // v7.x: Pass calculation time for TTL check
             let deliveryWindows = new Map();
             let totalBlocksCount = 0;
             try {
                 const bDate = targetDateNorm || cache.target_date;
-                deliveryWindows = groupAllOrdersByTimeWindow(ordersToGroup, bDate);
+                const calcTime = Date.now(); // v7.x: Use current time for TTL (archives use date, not time-based TTL)
+                deliveryWindows = groupAllOrdersByTimeWindow(ordersToGroup, bDate, calcTime);
                 deliveryWindows.forEach((windows, courierName) => { 
                     totalBlocksCount += windows.length; 
                     // v7.6: Initialize courier stats so distances/counts are recorded
@@ -1608,7 +1609,8 @@ class OrderCalculator {
                             name: courierName,
                             orders: windows.reduce((sum, w) => sum + (w.orders?.length || 0), 0),
                             distanceKm: 0,
-                            ordersInRoutes: 0, // v38.5: Rename from calculatedOrders
+                            ordersInRoutes: 0, 
+                            geoErrors: 0, // v7.2: Track geocoding failures per courier
                             type: windows[0]?.orders?.[0]?.courierType || 'Car'
                         };
                     }
@@ -1618,75 +1620,17 @@ class OrderCalculator {
                 
                 // v6.0: Emit status immediately after grouping completes
                 if (this.io) {
-                    this.io.emit('robot_status', {
-                        divisionId: cache.division_id,
-                        date: targetDateNorm || cache.target_date,
-                        isActive: true,
-                        totalCount: totalCount,
-                        processedCount: Math.max(stats.processedCount, Math.round(totalCount * 0.35)),
-                        currentPhase: 'grouping',
-                        message: `Grouped ${ordersToGroup.length} orders into ${totalBlocksCount} blocks...`
-                    });
+                    stats.currentPhase = 'grouping';
+                    stats.processedCount = Math.max(stats.processedCount, Math.round(stats.totalCount * 0.35));
+                    stats.message = `Grouped ${ordersToGroup.length} orders into ${totalBlocksCount} blocks...`;
+                    emitStatus(true);
                 }
             } catch (err) {
                 logger.error('[TurboCalculator] Backend grouping failed', err);
                 deliveryWindows = new Map();
             }
 
-            const emitStatus = (force = false) => {
-                if (!this.io) return;
-                
-                const now = Date.now();
-                // v7.5 Throttle: don't emit more than once per 1000ms unless forced
-                const divIdStr = String(cache.division_id);
-                const dateStr = String(targetDateNorm || cache.target_date || '');
-                const statusKey = `${divIdStr}_${dateStr}`;
-                const lastEmit = this.lastEmitTimeByKey?.get(statusKey) || 0;
-                if (!force && lastEmit && (now - lastEmit < 1000)) return;
-                if (this.lastEmitTimeByKey) this.lastEmitTimeByKey.set(statusKey, now);
 
-                const couriersList = Object.values(stats.courierStats || {});
-                const payload = {
-                    divisionId: divIdStr,
-                    date: dateStr,
-                    totalCount: stats.totalCount,
-                    totalCouriers: stats.totalCouriers,
-                    processedCount: stats.processedCount,
-                    processedCouriers: stats.processedCouriers,
-                    currentPhase: stats.currentPhase,
-                    message: stats.message,
-                    isActive: stats.isActive,
-                    couriers: couriersList,
-                    currentCourier: stats.currentCourier || null,
-                    skippedGeocoding: stats.skippedGeocoding || 0,
-                    geoErrors: stats.geoErrors || [], 
-                    skippedInRoutes: stats.skippedInRoutes || 0,
-                    skippedNoCourier: stats.skippedNoCourier || stats.unassignedCount || 0,
-                    diagnostics: stats.diagnostics || null,
-                    lastUpdate: now
-                };
-
-                // Attach routing engine health snapshot (global for this worker instance)
-                try {
-                    if (!payload.diagnostics) payload.diagnostics = {};
-                    if (this.routingHealth && typeof this.routingHealth.entries === 'function') {
-                        payload.diagnostics.routing = {
-                            ...(payload.diagnostics.routing || {}),
-                            engines: Object.fromEntries(Array.from(this.routingHealth.entries())),
-                            selfHost: selfHostRoutingHealth.getState()
-                        };
-                    }
-                } catch (e) {}
-                
-                // Never overwrite control-state with status payload
-                if (this.divisionStatus) this.divisionStatus.set(statusKey, payload);
-                this.io.emit('robot_status', payload);
-                this.io.emit('division_status_update', payload);
-
-                if (global.divisionStatusStore) {
-                    global.divisionStatusStore[statusKey] = payload;
-                }
-            };
 
             // v5.145: Routes are now deleted ONCE in processDay, not here
 
@@ -1700,7 +1644,8 @@ class OrderCalculator {
                 if (!force && now - lastRouteEmitTime < 2000) return; // 2s throttle for partials
                 lastRouteEmitTime = now;
 
-                const allWindowLabels = Array.from(new Set(
+                try {
+                    const allWindowLabels = Array.from(new Set(
                         Array.from(deliveryWindows.values()).flat().map(w => w.windowLabel)
                     ));
 
@@ -1711,7 +1656,8 @@ class OrderCalculator {
                             name: normName,
                             courierName: normName,
                             distanceKm: Number((cs.distanceKm || 0).toFixed(2)),
-                            ordersInRoutes: cs.ordersInRoutes || 0, // Synced with EliteCourierCard
+                            ordersInRoutes: cs.ordersInRoutes || 0,
+                            geoErrors: cs.geoErrors || 0, // v7.2: Push to frontend
                         };
                     }).filter(c => {
                         const norm = (c.name || '').toUpperCase().trim();
@@ -1726,6 +1672,8 @@ class OrderCalculator {
                         timeBlocks: allWindowLabels,
                         routes: inMemoryFrontendRoutes
                     });
+                } catch (e) {
+                    logger.error('[TurboCalculator] ⚠️ Failed emitting routes:', e);
                 }
             };
             
@@ -1851,6 +1799,7 @@ class OrderCalculator {
                                 manualGroupId: o.manualGroupId,
                                 handoverAt: o.handoverAt,
                                 executionTime: o.executionTime,
+                                ttlEnd: o.ttlEnd || null,
                             }))
                         });
                         
@@ -1877,8 +1826,9 @@ class OrderCalculator {
                                 (o.lat && o.lng) ||
                                 (o.latitude && o.longitude);
                             const isValid = hasCoords;
-                            // skippedGeocoding is tracked during batch geocoding.
-                            // Do not increment again here to avoid inflated geo error counters.
+                            if (!isValid) {
+                                if (stats.courierStats[normName]) stats.courierStats[normName].geoErrors++;
+                            }
                             return isValid;
                         });
 
@@ -2112,6 +2062,7 @@ class OrderCalculator {
                                     manualGroupId: o.manualGroupId,
                                     readyAtPreview: o.readyAtPreview || o.kitchen || o.readyAtSource,
                                     statusTimings: o.statusTimings || null,
+                                    ttlEnd: o.ttlEnd || null,
                                 });
                             });
 
@@ -2190,9 +2141,9 @@ class OrderCalculator {
                             if (!Array.isArray(upsertResult) || upsertResult.length === 0) {
                                 upsertResult = await sequelize.query(`
                                     INSERT INTO calculated_routes 
-                                    (courier_id, division_id, total_distance, total_duration, engine_used, orders_count, calculated_at, route_data, created_at, updated_at)
+                                    (courier_id, division_id, total_distance, total_duration, engine_used, orders_count, calculated_at, route_data)
                                     VALUES 
-                                    (:courier_id, :division_id, :total_distance, :total_duration, :engine_used, :orders_count, :calculated_at, :route_data, NOW(), NOW())
+                                    (:courier_id, :division_id, :total_distance, :total_duration, :engine_used, :orders_count, :calculated_at, :route_data)
                                     RETURNING *
                                 `, {
                                     replacements: routeRepl,
@@ -2244,12 +2195,13 @@ class OrderCalculator {
                                     manualGroupId: o.manualGroupId,
                                     handoverAt: o.handoverAt,
                                     executionTime: o.executionTime,
+                                    ttlEnd: o.ttlEnd || null,
                                 })),
                                 isCalculated: true 
                             });
 
                             courierRoutesCreated++;
-                            totalRoutesCreated++;
+                            stats.totalRoutesCreated++;
                             markOrdersAsRouted(uniqueRouteOrders);
                             logger.info(`[TurboCalculator] ✅ Created route for ${normName}: ${uniqueRouteOrders.length} orders, ${(routeResult.distance / 1000).toFixed(2)}km`);
 
@@ -2447,17 +2399,17 @@ class OrderCalculator {
                     }
 
                     this.processedHashes.set(cacheKey, dataHash);
-                    logger.info(`[TurboCalculator] 💾 Cache enriched: ${cacheKey}, ${stats.processedCouriers} couriers, ${totalRoutesCreated} routes`);
+                    logger.info(`[TurboCalculator] 💾 Cache enriched: ${cacheKey}, ${stats.processedCouriers} couriers, ${stats.totalRoutesCreated} routes`);
+
+                    // v37.0: Definitive completion signal
+                    stats.isActive = false;
+                    stats.currentPhase = 'complete';
+                    stats.message = 'Calculation complete';
+                    stats.processedCount = stats.totalCount;
+                    emitStatus(true);
 
                     // v7.5: FINAL EMIT after everything is saved and stable
                     await emitCurrentRoutes();
-
-                    if (this.io) {
-                        // v7.5: STOP emitting dashboard:update directly from worker.
-                        // The server's pgListen will handle this consistently when data hits the DB.
-                        // This prevents client-side "jitter" and double-loading.
-                        logger.debug(`[TurboCalculator] 🔔 Persistent storage updated for ${cacheKey} — deferring WS emit to pgListen`);
-                    }
                 } catch (saveErr) {
                     logger.error(`[TurboCalculator] ❌ Failed to enrich cache: ${saveErr.message}`);
                 }
@@ -2469,7 +2421,7 @@ class OrderCalculator {
             stats.processedCount = cacheTotalCount;
             const totalResultCount = inMemoryFrontendRoutes.length;
             const existingCount = matchedExistingRouteIds.size;
-            const newlyCreated = totalRoutesCreated;
+            const newlyCreated = stats.totalRoutesCreated;
             stats.message = `Complete! ${totalResultCount} routes (${newlyCreated > 0 ? `${newlyCreated} new, ` : ''}${existingCount} cached)`;
             stats.isActive = false;
             emitStatus(true);
@@ -2826,17 +2778,28 @@ class OrderCalculator {
         if (!startPoint && endPoint) effectiveStart = endPoint;
 
         if (!hasDepot && orders.length >= 1) {
-            const firstWithCoords = orders.find(o =>
-                (o.coords?.lat && o.coords?.lng) || (o.lat && o.lng)
-            );
-            if (firstWithCoords) {
-                const implLat = Number(firstWithCoords.coords?.lat || firstWithCoords.lat);
-                const implLng = Number(firstWithCoords.coords?.lng || firstWithCoords.lng);
-                effectiveStart = { lat: implLat, lng: implLng, isImplicit: true };
-                effectiveEnd   = { lat: implLat, lng: implLng, isImplicit: true };
-                logger.info(`[TurboCalculator] 🔄 No depot — circular route via first stop (${implLat.toFixed(5)}, ${implLng.toFixed(5)})`);
+            // v7.2: Try to find a virtual hub (city center) if no depot is set
+            const cityName = orders[0]?.city || orders[0]?.divisionName || 'Київ';
+            const cityCentroid = this.getCityCentroid(cityName);
+            
+            if (cityCentroid) {
+                effectiveStart = { lat: cityCentroid.lat, lng: cityCentroid.lng, isVirtual: true };
+                effectiveEnd   = { lat: cityCentroid.lat, lng: cityCentroid.lng, isVirtual: true };
+                logger.info(`[TurboCalculator] 🏙️ No depot — using virtual city hub for ${cityName} (${cityCentroid.lat.toFixed(5)}, ${cityCentroid.lng.toFixed(5)})`);
+            } else {
+                const firstWithCoords = orders.find(o =>
+                    (o.coords?.lat && o.coords?.lng) || (o.lat && o.lng)
+                );
+                if (firstWithCoords) {
+                    const implLat = Number(firstWithCoords.coords?.lat || firstWithCoords.lat);
+                    const implLng = Number(firstWithCoords.coords?.lng || firstWithCoords.lng);
+                    effectiveStart = { lat: implLat, lng: implLng, isImplicit: true };
+                    effectiveEnd   = { lat: implLat, lng: implLng, isImplicit: true };
+                    logger.info(`[TurboCalculator] 🔄 No depot — circular route via first stop (${implLat.toFixed(5)}, ${implLng.toFixed(5)})`);
+                }
             }
         }
+
 
         // Add start point if provided (real depot OR implicit)
         if (effectiveStart) {
@@ -3193,6 +3156,31 @@ class OrderCalculator {
             engine: 'smart-fallback'
         };
     }
+    
+    /**
+     * v7.2: Utility to get the center of a city if no depot is configured.
+     * Prevents 0.0 km routes for single-order windows.
+     */
+    getCityCentroid(cityName) {
+        if (!cityName) return null;
+        const norm = cityName.toLowerCase().trim();
+        
+        const CITY_BOUNDS = {
+            'харків': { lat: 49.98, lng: 36.27 },
+            'київ': { lat: 50.45, lng: 30.52 },
+            'дніпро': { lat: 48.46, lng: 35.04 },
+            'одеса': { lat: 46.48, lng: 30.72 },
+            'львів': { lat: 49.84, lng: 24.02 },
+            'полтава': { lat: 49.58, lng: 34.55 }
+        };
+        
+        // Try exact match or partial (for division names like "Київ - Правий")
+        for (const [key, center] of Object.entries(CITY_BOUNDS)) {
+            if (norm.includes(key)) return center;
+        }
+        return null;
+    }
+
 
     /**
      * Fetch presets for a specific division to get custom engine URLs

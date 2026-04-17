@@ -133,25 +133,47 @@ export const DashboardApiSection: React.FC = () => {
     React.useEffect(() => {
         const handleStatus = (e: any) => {
             const data = e.detail;
-            if (data && typeof setAutoRoutingStatus === 'function') {
-                // Keep progress stable: never regress active counters from duplicate event paths
-                const current = useDashboardStore.getState().autoRoutingStatus;
-                const nextTotal = data.isActive
-                    ? Math.max(current.totalCount || 0, data.totalCount || 0)
-                    : (data.totalCount ?? current.totalCount ?? 0);
-                const nextProcessed = data.isActive
-                    ? Math.min(nextTotal, Math.max(current.processedCount || 0, data.processedCount || 0))
-                    : Math.min((data.processedCount ?? current.processedCount ?? 0), nextTotal);
-                setAutoRoutingStatus({
-                    ...data,
-                    totalCount: nextTotal,
-                    processedCount: nextProcessed
-                });
+            if (!data) return;
+
+            const store = useDashboardStore.getState();
+            const current = store.autoRoutingStatus;
+            const aggregate = store.aggregateRoutingStatus;
+
+            // Compute stable progress metrics
+            const nextTotal = data.isActive
+                ? Math.max(current.totalCount || 0, data.totalCount || 0)
+                : (data.totalCount ?? current.totalCount ?? 0);
+            const nextProcessed = data.isActive
+                ? Math.min(nextTotal, Math.max(current.processedCount || 0, data.processedCount || 0))
+                : Math.min((data.processedCount ?? current.processedCount ?? 0), nextTotal);
+
+            const updatedStatus = {
+                ...data,
+                totalCount: nextTotal,
+                processedCount: nextProcessed
+            };
+
+            // Update primary status
+            if (typeof setAutoRoutingStatus === 'function') {
+                setAutoRoutingStatus(updatedStatus);
+            }
+
+            // v37.0: Force update aggregate status too if we are in global view 
+            // to prevent 'stuck' progress bars for Admins.
+            if (isGlobalView && typeof store.setAggregateRoutingStatus === 'function') {
+                store.setAggregateRoutingStatus(updatedStatus);
+            }
+
+            // v7.x: Refresh routes from DB when robot completes calculation
+            if (data.currentPhase === 'complete' || data.isActive === false) {
+                if (typeof window !== 'undefined' && (window as any).__refreshTurboRoutes) {
+                    setTimeout(() => (window as any).__refreshTurboRoutes(), 1000);
+                }
             }
         };
         window.addEventListener('km:robot:status', handleStatus);
         return () => window.removeEventListener('km:robot:status', handleStatus);
-    }, [setAutoRoutingStatus]);
+    }, [setAutoRoutingStatus, isGlobalView]);
 
     // Periodically refresh today's status for UI indicator
     React.useEffect(() => {

@@ -13,16 +13,16 @@ function logTTLEvent(msg){
 const MAX_DELIVERY_SPAN_MINUTES = 90;   // Max span between earliest and latest delivery in one route group
 
 // Adaptive grouping and TTL per order (in minutes, configurable via env)
-const GROUP_WINDOW_MINUTES_PATCH = parseInt(process.env.GROUP_WINDOW_MINUTES) || 15
-const TTL_MINUTES_PATCH = parseInt(process.env.TTL_MINUTES) || 15
+const GROUP_WINDOW_MINUTES_PATCH = parseInt(process.env.GROUP_WINDOW_MINUTES) || 20 // v7.x: Increased from 15 to 20
+const TTL_MINUTES_PATCH = parseInt(process.env.TTL_MINUTES) || 20 // v7.x: TTL should match window
 const WINDOW_MS_PATCH = GROUP_WINDOW_MINUTES_PATCH * 60_000
 const TTL_MS_PATCH = TTL_MINUTES_PATCH * 60_000
 const PROXIMITY_MINUTES_PATCH = GROUP_WINDOW_MINUTES_PATCH
 
 // Adaptive grouping window and TTL configuration
-// By default: 15 minutes window and 15 minutes TTL per order
-const GROUP_WINDOW_MINUTES = parseInt(process.env.GROUP_WINDOW_MINUTES) || 15
-const TTL_MINUTES = parseInt(process.env.TTL_MINUTES) || 15
+// v7.x: By default 20 minutes window and 20 minutes TTL per order
+const GROUP_WINDOW_MINUTES = parseInt(process.env.GROUP_WINDOW_MINUTES) || 20
+const TTL_MINUTES = parseInt(process.env.TTL_MINUTES) || 20
 const WINDOW_MS = GROUP_WINDOW_MINUTES * 60_000
 const TTL_MS = TTL_MINUTES * 60_000
 // Backwards compatibility alias for existing logic that uses proximity window
@@ -155,6 +155,7 @@ const KITCHEN_TIME_FIELDS = [
 ];
 
 const PLANNED_TIME_FIELDS = [
+    'deliveryTime', 'delivery_time', 'DeliveryTime', 'DELIVERY_TIME', // v7.x: CRITICAL - main time field from FO
     'плановое время', 'плановое_время', 'Плановое время', 'Плановое_время', 'ПЛАНОВОЕ ВРЕМЯ',
     'plannedTime', 'planned_time', 'PlannedTime', 'PLANNED_TIME',
     'Дедлайн', 'дедлайн', 'ДЕДЛАЙН', 'deadline', 'Deadline', 'DEADLINE',
@@ -326,6 +327,50 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
     return R * c;
 }
 
+// v7.x: Calculate center point of orders
+function calculateGroupCenter(orders) {
+    if (!orders || orders.length === 0) return null;
+    const ordersWithCoords = orders.filter(o => o.coords && o.coords.lat && o.coords.lng);
+    if (ordersWithCoords.length === 0) return null;
+    
+    const sumLat = ordersWithCoords.reduce((sum, o) => sum + o.coords.lat, 0);
+    const sumLng = ordersWithCoords.reduce((sum, o) => sum + o.coords.lng, 0);
+    
+    return {
+        lat: sumLat / ordersWithCoords.length,
+        lng: sumLng / ordersWithCoords.length
+    };
+}
+
+// v7.x: Calculate max distance from center to any order
+function calculateMaxDistanceFromCenter(orders, center) {
+    if (!orders || orders.length === 0 || !center) return 0;
+    let maxDist = 0;
+    orders.forEach(o => {
+        if (o.coords && o.coords.lat && o.coords.lng) {
+            const dist = haversineDistance(center.lat, center.lng, o.coords.lat, o.coords.lng);
+            if (dist > maxDist) maxDist = dist;
+        }
+    });
+    return maxDist;
+}
+
+// v7.x: Calculate max distance from first order (original logic)
+function calculateMaxDistanceFromFirst(orders) {
+    if (!orders || orders.length < 2) return 0;
+    const first = orders[0];
+    if (!first.coords || !first.coords.lat || !first.coords.lng) return 0;
+    
+    let maxDist = 0;
+    orders.slice(1).forEach(o => {
+        if (o.coords && o.coords.lat && o.coords.lng) {
+            const dist = haversineDistance(first.coords.lat, first.coords.lng, o.coords.lat, o.coords.lng);
+            if (dist > maxDist) maxDist = dist;
+        }
+    });
+    return maxDist;
+}
+
 function formatTimeRange(start, end) {
     if (!start) return '00:00 - 00:00';
     const s = new Date(start);
@@ -368,8 +413,13 @@ function getStableOrderId(order) {
     return idVal || fallback;
 }
 
-function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate) {
+// v7.x: Added calculationTime parameter for TTL check
+function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate, calculationTime) {
     if (!orders || orders.length === 0) return [];
+    
+    // v7.x: Use calculation time for TTL (not current time)
+    // This ensures archive date calculations don't fail TTL check
+    const now = calculationTime || Date.now();
 
     // STEP 0: Deduplicate orders by stable ID BEFORE processing
     const seenIds = new Set();
@@ -482,22 +532,43 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate) {
         courierId !== 'ПО';
     let currentGroup = null;
 
-    const WINDOW_MS = PROXIMITY_MINUTES * 60 * 1000; 
+    const WINDOW_MS = PROXIMITY_MINUTES_PATCH * 60 * 1000; 
     const DELIVERY_SPAN_MS = MAX_DELIVERY_SPAN_MINUTES * 60 * 1000;
 
     ordersForAuto.forEach(({ order, planned, arrival, kitchen, anchorTime, ttlEnd }) => {
         
         // If TTL expired in current group, split and start a new group
+        // v7.x: TTL check - only for current/future data (not archive)
+        // For archive: TTL is relative to anchorTime, we only check if orders are being processed too late
         if (currentGroup) {
-            const expiredAny = currentGroup.orders && currentGroup.orders.some(o => o.ttlEnd && Date.now() > o.ttlEnd);
-            if (expiredAny) {
-                groups.push(currentGroup);
-                currentGroup = null;
+            // Check if any order's TTL has passed (relative to anchorTime, not wall-clock)
+            // TTL expires if: order's planned time + TTL_WINDOW < earliest order's planned time in group
+            const firstAnchorInGroup = currentGroup.firstAnchor || currentGroup.orders[0]?.ttlEnd - TTL_MS_PATCH;
+            const TTL_FUTURE_WINDOW = 24 * 60 * 60 * 1000; // 24 hours
+            
+            // Only check TTL if the orders are recent (within 24 hours of now)
+            const isRecentData = !anchorTime || (anchorTime > now - TTL_FUTURE_WINDOW);
+            
+            if (isRecentData) {
+                // Check if any order's planned time has passed relative to group start
+                const expiredAny = currentGroup.orders && currentGroup.orders.some(o => {
+                    if (!o.ttlEnd) return false;
+                    // TTL expired if: current order's planned time > (first order's planned + TTL_WINDOW)
+                    return anchorTime > (o.ttlEnd);
+                });
+                
+                if (expiredAny) {
+                    groups.push(currentGroup);
+                    currentGroup = null;
+                    if (logger.debug) logger.debug(`[TurboGrouping] TTL expired for group (${courierName}), starting new group`);
+                }
             }
+            // For archive data: skip TTL check, rely only on time window and other conditions
         }
 
         if (!currentGroup) {
             // Начинаем новую группу с первым заказом
+            if (anchorTime) order.ttlEnd = anchorTime + TTL_MS_PATCH;
             currentGroup = {
                 id: `group-${courierId}-${order.id}-${planned}`,
                 courierId, 
@@ -532,15 +603,52 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate) {
             const deliverySpan = Math.max(maxPlannedInGroup, planned) - Math.min(minPlannedInGroup, planned);
             const deliverySpanFits = deliverySpan <= DELIVERY_SPAN_MS;
             
-            // Условие 3: Geography (distance <= 20km from first order in group)
+            // Условие 3: Geography — v7.x: Use center-based distance calculation
+            // Strategy: Calculate center of group + max distance from center (allows more flexible grouping)
             let distanceOk = true;
             let distanceToFirst = 0;
+            let distanceFromCenter = 0;
+            
             if (order.coords && currentGroup.firstCoords) {
+                // Original: distance from first order
                 distanceToFirst = haversineDistance(
                     order.coords.lat, order.coords.lng,
                     currentGroup.firstCoords.lat, currentGroup.firstCoords.lng
                 );
-                distanceOk = distanceToFirst <= 20;
+                
+                // v7.x: Calculate center of current group + orders in it
+                const allOrdersForCenter = [...currentGroup.orders, order];
+                const center = calculateGroupCenter(allOrdersForCenter);
+                
+                if (center) {
+                    // Distance from center (more flexible)
+                    distanceFromCenter = haversineDistance(
+                        center.lat, center.lng,
+                        order.coords.lat, order.coords.lng
+                    );
+                    
+                    // Calculate max distance from center for ALL orders in group (including new one)
+                    const maxDistFromCenter = calculateMaxDistanceFromCenter(allOrdersForCenter, center);
+                    
+                    // v7.x: Use the MORE PERMISSIVE of the two strategies:
+                    // - Old: distance from first order to new order <= 20km
+                    // - New: max distance from center <= 30km (allows more spread)
+                    const MAX_CENTER_DISTANCE = 30; // km
+                    const MAX_FIRST_DISTANCE = 25; // km (slightly increased from 20)
+                    
+                    const centerBasedOk = maxDistFromCenter <= MAX_CENTER_DISTANCE;
+                    const firstBasedOk = distanceToFirst <= MAX_FIRST_DISTANCE;
+                    
+                    // Accept if EITHER strategy passes (more flexible)
+                    distanceOk = centerBasedOk || firstBasedOk;
+                    
+                    if (logger.debug) {
+                        logger.debug(`[TurboGrouping] Geo check for ${courierName}: center=${center.lat.toFixed(4)},${center.lng.toFixed(4)}, maxCenterDist=${maxDistFromCenter.toFixed(1)}km, toFirst=${distanceToFirst.toFixed(1)}km, ok=${distanceOk}`);
+                    }
+                } else {
+                    // No center calculable, use original logic
+                    distanceOk = distanceToFirst <= 25;
+                }
             }
             
             // Условие 4: Zone — SOFT for assigned couriers (they physically cover multiple zones)
@@ -570,7 +678,8 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate) {
             } else if (!deliverySpanFits) {
                 newSplitReason = `SLA (${Math.round(deliverySpan / 60000)} мин > ${MAX_DELIVERY_SPAN_MINUTES})`;
             } else if (!distanceOk) {
-                newSplitReason = `Гео (>${Math.round(distanceToFirst)}км > 20км)`;
+                // v7.x: Updated geo split reason with new center-based logic
+                newSplitReason = `Гео (от центра >30км или от первого >25км)`;
             } else if (!zoneOk) {
                 newSplitReason = `Район (${orderZone} ≠ ${groupZone})`;
             } else if (!isAssignedCourier && !kitchenGapOk) {
@@ -603,7 +712,8 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate) {
 
                 groups.push(oldGroup);
                 
-                // Начинаем новую группу
+                // Начинаем новую группу — set TTL for first order
+                if (anchorTime) order.ttlEnd = anchorTime + TTL_MS_PATCH;
                 currentGroup = {
                     id: `group-${courierId}-${order.id}-${planned}`,
                     courierId, 
@@ -664,9 +774,13 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate) {
 
 /**
  * Groups ALL orders for ALL couriers.
+ * v7.x: Added calculationTime parameter for TTL check
  */
-function groupAllOrdersByTimeWindow(orders, baseDate) {
+function groupAllOrdersByTimeWindow(orders, baseDate, calculationTime) {
     if (!orders || !Array.isArray(orders)) return new Map();
+    
+    // v7.x: Use current time as default calculation time
+    const calcTime = calculationTime || Date.now();
 
     const courierGroups = new Map();
     orders.forEach(order => {
@@ -687,7 +801,8 @@ function groupAllOrdersByTimeWindow(orders, baseDate) {
 
     const result = new Map();
     courierGroups.forEach((info, normName) => {
-        const groups = groupOrdersByTimeWindow(info.orders, normName, info.rawName, baseDate);
+        // v7.x: Pass calculationTime to groupOrdersByTimeWindow
+        const groups = groupOrdersByTimeWindow(info.orders, normName, info.rawName, baseDate, calcTime);
         result.set(normName, groups);
     });
 
@@ -706,6 +821,9 @@ module.exports = {
     getOrderHash,
     getStableOrderId,
     haversineDistance,
+    calculateGroupCenter,
+    calculateMaxDistanceFromCenter,
+    calculateMaxDistanceFromFirst,
     _TTL_CONFIG: (typeof process.env.NODE_ENV === 'undefined' || process.env.NODE_ENV === 'test') ? {
       WINDOW_MS_PATCH,
       TTL_MS_PATCH,

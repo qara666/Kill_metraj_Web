@@ -70,7 +70,8 @@ async function syncDatabase() {
         const forceAlter = process.env.DB_ALTER_SYNC === 'true';
 
         // Run sync in production for initial setup or if explicitly requested
-        const syncOptions = { alter: isDev || forceAlter };
+        // v38.0: DISABLED alter: true because it hangs on RLS policy conflicts
+        const syncOptions = { alter: false };
 
         logger.info(`Синхронизация базы данных (alter: ${syncOptions.alter})...`);
         await sequelize.sync(syncOptions);

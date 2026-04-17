@@ -85,23 +85,56 @@ async function probeAll() {
         };
         return state;
     }
+
     try {
-        const [o, v, n] = await Promise.all([
-            probeOsrm(selfOsrmUrl()).catch(() => false),
-            probeValhalla(selfValhallaUrl()).catch(() => false),
-            probeNominatim(nominatimLocalUrl()).catch(() => false)
+        const osrmBase = selfOsrmUrl();
+        const vhBase = selfValhallaUrl();
+        const nomBase = nominatimLocalUrl();
+
+        // v7.2: If default (localhost/127.0.0.1) fails, try common Docker aliases
+        const solveUrl = async (primaryUrl, probeFn, aliases = []) => {
+            const isLocal = isLocalHostUrl(primaryUrl);
+            let ok = await probeFn(primaryUrl).catch(() => false);
+            if (ok) return primaryUrl;
+
+            if (isLocal) {
+                for (const alias of aliases) {
+                    const altUrl = primaryUrl.replace(/localhost|127\.0\.0\.1/, alias);
+                    logger.debug(`[SelfHostHealth] 🕵️ Trying alias: ${altUrl}`);
+                    ok = await probeFn(altUrl).catch(() => false);
+                    if (ok) {
+                        logger.info(`[SelfHostHealth] ✅ Auto-detected Docker host: ${alias}`);
+                        return altUrl;
+                    }
+                }
+            }
+            return null;
+        };
+
+        const [oUrl, vUrl, nUrl] = await Promise.all([
+            solveUrl(osrmBase, probeOsrm, ['osrm', 'host.docker.internal']),
+            solveUrl(vhBase, probeValhalla, ['valhalla', 'vh', 'host.docker.internal']),
+            solveUrl(nomBase, probeNominatim, ['nominatim', 'host.docker.internal'])
         ]);
-        state.osrmLocal = !!o;
-        state.valhallaLocal = !!v;
-        state.nominatimLocal = !!n;
+
+        state.osrmLocal = !!oUrl;
+        state.valhallaLocal = !!vUrl;
+        state.nominatimLocal = !!nUrl;
+
+        // v7.2: If auto-detected an alias, we COULD update the environment, 
+        // but for now we just track success in state to allow the worker to use it.
+        state._detectedUrls = { osrm: oUrl, valhalla: vUrl, nominatim: nUrl };
+        
         state.lastProbeAt = Date.now();
         state.lastError = null;
-        logger.info(`[SelfHostHealth] osrm=${state.osrmLocal} valhalla=${state.valhallaLocal} nominatim=${state.nominatimLocal}`);
+        logger.info(`[SelfHostHealth] 🏥 Status: osrm=${state.osrmLocal}, valhalla=${state.valhallaLocal}, nominatim=${state.nominatimLocal}`);
     } catch (e) {
         state.lastError = e.message;
+        logger.warn(`[SelfHostHealth] ⚠️ Probe failed: ${e.message}`);
     }
     return getState();
 }
+
 
 function getState() {
     return {

@@ -5,6 +5,33 @@ import { haversineDistance } from '../routes/routeOptimizationHelpers';
 import { normalizeCourierName } from '../data/courierName';
 import { getStableOrderId } from '../data/orderId';
 
+// v7.x: Geo helper functions for center-based distance calculation
+function calculateGroupCenter(orders: Order[]): { lat: number; lng: number } | null {
+    if (!orders || orders.length === 0) return null;
+    const ordersWithCoords = orders.filter(o => o.coords && o.coords.lat && o.coords.lng);
+    if (ordersWithCoords.length === 0) return null;
+    
+    const sumLat = ordersWithCoords.reduce((sum, o) => sum + o.coords.lat, 0);
+    const sumLng = ordersWithCoords.reduce((sum, o) => sum + o.coords.lng, 0);
+    
+    return {
+        lat: sumLat / ordersWithCoords.length,
+        lng: sumLng / ordersWithCoords.length
+    };
+}
+
+function calculateMaxDistanceFromCenter(orders: Order[], center: { lat: number; lng: number }): number {
+    if (!orders || orders.length === 0 || !center) return 0;
+    let maxDist = 0;
+    orders.forEach(o => {
+        if (o.coords && o.coords.lat && o.coords.lng) {
+            const dist = haversineDistance(center.lat, center.lng, o.coords.lat, o.coords.lng);
+            if (dist > maxDist) maxDist = dist;
+        }
+    });
+    return maxDist;
+}
+
 // ============================================
 // ТИПЫ ДЛЯ ГРУППИРОВКИ ПО ВРЕМЕННЫМ ОКНАМ
 // ============================================
@@ -30,6 +57,10 @@ export interface TimeWindowGroup {
 // ============================================
 
 const DEFAULT_WINDOW_MINUTES = 30; // display label only, grouping uses PROXIMITY_MINUTES below
+
+// v7.x: Updated to match backend - 20 minutes window
+const PROXIMITY_MINUTES = 20;           // v7.x: Sliding window per-step — synced with backend turboGroupingHelpers.js
+const MAX_DELIVERY_SPAN_MINUTES = 90;   // v8.1: Max delivery span in one route group — synced with backend
 
 /**
  * Получает ключ временного окна для timestamp
@@ -74,9 +105,7 @@ export function getTimeWindowBounds(
     };
 }
 
-// Константы для группировки
-const PROXIMITY_MINUTES = 45;           // v8.1: Sliding window per-step — synced with backend turboGroupingHelpers.js
-const MAX_DELIVERY_SPAN_MINUTES = 90;   // v8.1: Max delivery span in one route group — synced with backend
+// Constants removed - now at top of file
 
 /**
  * Форматирует диапазон времени в читаемый формат
@@ -340,15 +369,42 @@ export function groupOrdersByTimeWindow(
             const deliverySpan = maxDelivery - minDelivery;
             const deliveryFits = deliverySpan <= deliverySpanMs;
             
-            // Условие 3: Geography - distance <= 20km from first order
+            // Условие 3: Geography - v7.x: Center-based distance calculation
             let distanceOk = true;
             let distanceToFirst = 0;
+            let distanceFromCenter = 0;
             if (order.coords && firstOrder.coords) {
+                // Distance from first order (original logic)
                 distanceToFirst = haversineDistance(
                     order.coords.lat, order.coords.lng,
                     firstOrder.coords.lat, firstOrder.coords.lng
                 );
-                distanceOk = distanceToFirst <= 20;
+                
+                // v7.x: Calculate center of group + max distance from center (more flexible)
+                const allOrdersForCenter = [...currentGroup.orders, order];
+                const center = calculateGroupCenter(allOrdersForCenter);
+                
+                if (center) {
+                    distanceFromCenter = haversineDistance(
+                        center.lat, center.lng,
+                        order.coords.lat, order.coords.lng
+                    );
+                    
+                    // Calculate max distance from center for ALL orders in group
+                    const maxDistFromCenter = calculateMaxDistanceFromCenter(allOrdersForCenter, center);
+                    
+                    // v7.x: Use the MORE PERMISSIVE of the two strategies
+                    const MAX_CENTER_DISTANCE = 30; // km
+                    const MAX_FIRST_DISTANCE = 25; // km (slightly increased from 20)
+                    
+                    const centerBasedOk = maxDistFromCenter <= MAX_CENTER_DISTANCE;
+                    const firstBasedOk = distanceToFirst <= MAX_FIRST_DISTANCE;
+                    
+                    distanceOk = centerBasedOk || firstBasedOk;
+                } else {
+                    // No center calculable, use original logic
+                    distanceOk = distanceToFirst <= 25;
+                }
             }
             
             // Условие 4: Zone — SOFT for assigned couriers (they cover multiple zones)
@@ -370,10 +426,11 @@ export function groupOrdersByTimeWindow(
             }
             
             // Определяем причину разбиения (приоритет: время, SLA, гео, район, готовность)
+            // v7.x: Updated geo split reason with new center-based logic
             let newSplitReason = '';
             if (!timeWithinProximity) newSplitReason = `Время (${Math.round(anchorDiff / 60000)} мин > ${PROXIMITY_MINUTES})`;
             else if (!deliveryFits) newSplitReason = `SLA (${Math.round(deliverySpan / 60000)} мин > ${MAX_DELIVERY_SPAN_MINUTES})`;
-            else if (!distanceOk) newSplitReason = `Гео (>${Math.round(distanceToFirst)}км > 20км)`;
+            else if (!distanceOk) newSplitReason = `Гео (от центра >30км или от первого >25км)`;
             else if (!districtOk) newSplitReason = `Район (${orderZone} ≠ ${groupZone})`;
             else if (!isAssignedCourier && !kitchenGapOk) newSplitReason = 'Готовность (>45м)';
 
