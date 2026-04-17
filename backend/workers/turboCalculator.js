@@ -1401,7 +1401,7 @@ class OrderCalculator {
             // v33: Pre-fetch Presets ONCE for entire cache processing
             const presets = await this.getDivisionPresets(cache.division_id);
             const processedCourierNames = new Set();
-            const cityBias = presets?.cityBias || 'Київ';
+            const cityBias = presets?.cityBias || 'Харків';
             const parsePresetParam = (val) => {
                 if (!val) return null;
                 const parsed = parseFloat(String(val).replace(',', '.'));
@@ -1521,7 +1521,7 @@ class OrderCalculator {
             let addressGeoExtracted = 0;
             for (const o of data.orders) {
                 if (o.coords?.lat) continue; // already has coords
-                const rawGeo = o.addressGeo || o.raw?.addressGeo || o.raw?.AddressGeo || '';
+                const rawGeo = o.addressGeo || o.AddressGeo || o.raw?.addressGeo || o.raw?.AddressGeo || '';
                 if (!rawGeo) continue;
                 const parsed = this.parseAddressGeo(rawGeo);
                 if (parsed) {
@@ -2804,7 +2804,7 @@ class OrderCalculator {
                 effectiveEnd   = { lat: implLat, lng: implLng, isImplicit: true };
                 logger.info(`[TurboCalculator] 🔄 No depot — circular route via first stop (${implLat.toFixed(5)}, ${implLng.toFixed(5)})`);
             } else {
-                const cityName = presets?.cityBias || orders[0]?.city || orders[0]?.divisionName || 'Київ';
+                const cityName = presets?.cityBias || orders[0]?.city || orders[0]?.divisionName || 'Харків';
                 const cityCentroid = this.getCityCentroid(cityName);
                 
                 if (cityCentroid) {
