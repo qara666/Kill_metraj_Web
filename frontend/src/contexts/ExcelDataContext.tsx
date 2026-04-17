@@ -19,6 +19,8 @@ interface ExcelData {
   summary: any
   lastModified?: number
   creationDate?: string
+  loading?: boolean
+  divisionId?: string | number
 }
 
 interface ExcelDataContextType {

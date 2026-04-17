@@ -11,8 +11,8 @@ function calculateGroupCenter(orders: Order[]): { lat: number; lng: number } | n
     const ordersWithCoords = orders.filter(o => o.coords && o.coords.lat && o.coords.lng);
     if (ordersWithCoords.length === 0) return null;
     
-    const sumLat = ordersWithCoords.reduce((sum, o) => sum + o.coords.lat, 0);
-    const sumLng = ordersWithCoords.reduce((sum, o) => sum + o.coords.lng, 0);
+    const sumLat = ordersWithCoords.reduce((sum, o) => sum + (o.coords?.lat || 0), 0);
+    const sumLng = ordersWithCoords.reduce((sum, o) => sum + (o.coords?.lng || 0), 0);
     
     return {
         lat: sumLat / ordersWithCoords.length,
@@ -372,7 +372,6 @@ export function groupOrdersByTimeWindow(
             // Условие 3: Geography - v7.x: Center-based distance calculation
             let distanceOk = true;
             let distanceToFirst = 0;
-            let distanceFromCenter = 0;
             if (order.coords && firstOrder.coords) {
                 // Distance from first order (original logic)
                 distanceToFirst = haversineDistance(
@@ -385,11 +384,6 @@ export function groupOrdersByTimeWindow(
                 const center = calculateGroupCenter(allOrdersForCenter);
                 
                 if (center) {
-                    distanceFromCenter = haversineDistance(
-                        center.lat, center.lng,
-                        order.coords.lat, order.coords.lng
-                    );
-                    
                     // Calculate max distance from center for ALL orders in group
                     const maxDistFromCenter = calculateMaxDistanceFromCenter(allOrdersForCenter, center);
                     

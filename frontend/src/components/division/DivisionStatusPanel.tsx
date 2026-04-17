@@ -159,8 +159,8 @@ const DivisionStatusPanel: React.FC = () => {
 
       {isExpanded && (
         <div style={{ marginTop: '20px', animation: 'fadeIn 0.3s ease' }}>
-          {data.length === 0 ? (
-             <div style={{ textAlign: 'center', py: '20px', color: '#6b7280', fontSize: '14px' }}>
+           {data.length === 0 ? (
+             <div style={{ textAlign: 'center', paddingTop: '20px', paddingBottom: '20px', color: '#6b7280', fontSize: '14px' }}>
                 Ожидание данных...
              </div>
           ) : (
