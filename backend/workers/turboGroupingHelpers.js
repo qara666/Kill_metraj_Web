@@ -535,35 +535,28 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate, calcu
     const WINDOW_MS = PROXIMITY_MINUTES_PATCH * 60 * 1000; 
     const DELIVERY_SPAN_MS = MAX_DELIVERY_SPAN_MINUTES * 60 * 1000;
 
+    // v7.x: TTL Logic using "Group Age" approach
+    // TTL_MS_PATCH defines MAX age of group from first order
+    // If current order's anchorTime - groupStartAnchor > TTL_MS_PATCH → split
+    
     ordersForAuto.forEach(({ order, planned, arrival, kitchen, anchorTime, ttlEnd }) => {
         
-        // If TTL expired in current group, split and start a new group
-        // v7.x: TTL check - only for current/future data (not archive)
-        // For archive: TTL is relative to anchorTime, we only check if orders are being processed too late
+        // v7.x: Check if TTL expired (group age exceeded)
+        // This replaces the old complex logic with simple, consistent check
         if (currentGroup) {
-            // Check if any order's TTL has passed (relative to anchorTime, not wall-clock)
-            // TTL expires if: order's planned time + TTL_WINDOW < earliest order's planned time in group
-            const firstAnchorInGroup = currentGroup.firstAnchor || currentGroup.orders[0]?.ttlEnd - TTL_MS_PATCH;
-            const TTL_FUTURE_WINDOW = 24 * 60 * 60 * 1000; // 24 hours
+            const groupStartAnchor = currentGroup.groupStartAnchor || currentGroup.firstAnchor;
             
-            // Only check TTL if the orders are recent (within 24 hours of now)
-            const isRecentData = !anchorTime || (anchorTime > now - TTL_FUTURE_WINDOW);
-            
-            if (isRecentData) {
-                // Check if any order's planned time has passed relative to group start
-                const expiredAny = currentGroup.orders && currentGroup.orders.some(o => {
-                    if (!o.ttlEnd) return false;
-                    // TTL expired if: current order's planned time > (first order's planned + TTL_WINDOW)
-                    return anchorTime > (o.ttlEnd);
-                });
+            if (groupStartAnchor && anchorTime) {
+                const groupAge = anchorTime - groupStartAnchor;
+                const ttlExpired = groupAge > TTL_MS_PATCH;
                 
-                if (expiredAny) {
+                if (ttlExpired) {
+                    // TTL expired: close current group and start new one
+                    logger.debug(`[TurboGrouping] TTL expired for ${courierName}: age=${(groupAge/60000).toFixed(1)}min > TTL=${GROUP_WINDOW_MINUTES_PATCH}min`);
                     groups.push(currentGroup);
                     currentGroup = null;
-                    if (logger.debug) logger.debug(`[TurboGrouping] TTL expired for group (${courierName}), starting new group`);
                 }
             }
-            // For archive data: skip TTL check, rely only on time window and other conditions
         }
 
         if (!currentGroup) {
@@ -580,7 +573,8 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate, calcu
                 isReadyForCalculation: true,
                 arrivalStart: arrival,
                 arrivalEnd: arrival,
-                splitReason: ''
+                splitReason: '',
+                groupStartAnchor: anchorTime  // v7.x: Track group age from this order
             };
             if (kitchen) currentGroup.lastKitchen = kitchen;
             currentGroup.firstAnchor = anchorTime;
@@ -688,8 +682,7 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate, calcu
             
             if (newSplitReason === '' && (!currentGroup || currentGroup.orders.length > 0)) {
                 // Все условия выполнены - добавляем заказ в текущую группу
-                // Push into current group and update TTL for the group
-                order.ttlEnd = (order.anchorTime || planned) + TTL_MS_PATCH;
+                // v7.x: TTL based on groupStartAnchor, no need to update order.ttlEnd
                 currentGroup.orders.push(order);
                 currentGroup.windowStart = Math.min(currentGroup.windowStart, planned);
                 currentGroup.windowEnd = Math.max(currentGroup.windowEnd, planned);
@@ -725,7 +718,8 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate, calcu
                     isReadyForCalculation: true,
                     arrivalStart: arrival,
                     arrivalEnd: arrival,
-                    splitReason: newSplitReason
+                    splitReason: newSplitReason,
+                    groupStartAnchor: anchorTime  // v7.x: Track group age from new first order
                 };
                 if (kitchen) currentGroup.lastKitchen = kitchen;
                 currentGroup.firstAnchor = anchorTime;

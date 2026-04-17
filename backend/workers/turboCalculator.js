@@ -829,7 +829,6 @@ class OrderCalculator {
         this.needsReRun = false;
 
         try {
-            const tasks = [];
             for (const [divId, state] of this.divisionStates.entries()) {
                 const hasPendingFOData = this.newFODataPending.get(divId) === true;
 
@@ -871,9 +870,8 @@ class OrderCalculator {
                     state.date = today;
                 }
                 logger.info(`[TurboCalculator] ⚙️ Starting calculation for ${divId} on ${targetDate}`);
-                tasks.push(this.processDay(targetDate, divId));
+                await this.processDay(targetDate, divId);
             }
-            await Promise.all(tasks);
         } catch (err) {
             logger.error('[TurboCalculator] ❌ Robot Tick critical failure:', err);
             if (this.io) {
@@ -2778,24 +2776,24 @@ class OrderCalculator {
         if (!startPoint && endPoint) effectiveStart = endPoint;
 
         if (!hasDepot && orders.length >= 1) {
-            // v7.2: Try to find a virtual hub (city center) if no depot is set
-            const cityName = orders[0]?.city || orders[0]?.divisionName || 'Київ';
-            const cityCentroid = this.getCityCentroid(cityName);
-            
-            if (cityCentroid) {
-                effectiveStart = { lat: cityCentroid.lat, lng: cityCentroid.lng, isVirtual: true };
-                effectiveEnd   = { lat: cityCentroid.lat, lng: cityCentroid.lng, isVirtual: true };
-                logger.info(`[TurboCalculator] 🏙️ No depot — using virtual city hub for ${cityName} (${cityCentroid.lat.toFixed(5)}, ${cityCentroid.lng.toFixed(5)})`);
+            // v7.2: Use first order as implicit start/end to form a realistic circular route
+            const firstWithCoords = orders.find(o =>
+                (o.coords?.lat && o.coords?.lng) || (o.lat && o.lng)
+            );
+            if (firstWithCoords) {
+                const implLat = Number(firstWithCoords.coords?.lat || firstWithCoords.lat);
+                const implLng = Number(firstWithCoords.coords?.lng || firstWithCoords.lng);
+                effectiveStart = { lat: implLat, lng: implLng, isImplicit: true };
+                effectiveEnd   = { lat: implLat, lng: implLng, isImplicit: true };
+                logger.info(`[TurboCalculator] 🔄 No depot — circular route via first stop (${implLat.toFixed(5)}, ${implLng.toFixed(5)})`);
             } else {
-                const firstWithCoords = orders.find(o =>
-                    (o.coords?.lat && o.coords?.lng) || (o.lat && o.lng)
-                );
-                if (firstWithCoords) {
-                    const implLat = Number(firstWithCoords.coords?.lat || firstWithCoords.lat);
-                    const implLng = Number(firstWithCoords.coords?.lng || firstWithCoords.lng);
-                    effectiveStart = { lat: implLat, lng: implLng, isImplicit: true };
-                    effectiveEnd   = { lat: implLat, lng: implLng, isImplicit: true };
-                    logger.info(`[TurboCalculator] 🔄 No depot — circular route via first stop (${implLat.toFixed(5)}, ${implLng.toFixed(5)})`);
+                const cityName = presets?.cityBias || orders[0]?.city || orders[0]?.divisionName || 'Київ';
+                const cityCentroid = this.getCityCentroid(cityName);
+                
+                if (cityCentroid) {
+                    effectiveStart = { lat: cityCentroid.lat, lng: cityCentroid.lng, isVirtual: true };
+                    effectiveEnd   = { lat: cityCentroid.lat, lng: cityCentroid.lng, isVirtual: true };
+                    logger.info(`[TurboCalculator] 🏙️ No depot — using virtual city hub for ${cityName} (${cityCentroid.lat.toFixed(5)}, ${cityCentroid.lng.toFixed(5)})`);
                 }
             }
         }
@@ -3167,9 +3165,13 @@ class OrderCalculator {
         
         const CITY_BOUNDS = {
             'харків': { lat: 49.98, lng: 36.27 },
+            'харьков': { lat: 49.98, lng: 36.27 },
             'київ': { lat: 50.45, lng: 30.52 },
+            'киев': { lat: 50.45, lng: 30.52 },
             'дніпро': { lat: 48.46, lng: 35.04 },
+            'днепр': { lat: 48.46, lng: 35.04 },
             'одеса': { lat: 46.48, lng: 30.72 },
+            'одесса': { lat: 46.48, lng: 30.72 },
             'львів': { lat: 49.84, lng: 24.02 },
             'полтава': { lat: 49.58, lng: 34.55 }
         };
