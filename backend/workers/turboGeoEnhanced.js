@@ -36,7 +36,7 @@ const { cleanAddress, generateVariants } = require('../src/utils/addressUtils');
 // ============================================================
 const GEO_FAIL_THRESHOLD = 3;
 const GEO_BLOCK_MS = 30 * 1000;       // 30s short cooldown on hard network errors
-const GEO_BLOCK_MS_429 = 300 * 1000;   // v7.2: 5 minutes on rate-limit
+const GEO_BLOCK_MS_429 = 60 * 1000;   // v7.9: 1 minute on rate-limit (was 5min — too long)
 const geoProviderFailures = new Map();     // provider -> { failures, blockedUntil, lastError }
 const providerNextAllowedAt = new Map();   // provider -> next epoch ms
 const providerQueue = new Map();           // provider -> promise chain
@@ -81,6 +81,13 @@ function markProviderFailure(provider, err) {
     }
 
     geoProviderFailures.set(provider, { failures, blockedUntil, lastError: status ? `HTTP_${status}` : String(code) });
+}
+
+// v7.9: Emergency unblock — clears all circuit breakers so geocoding can retry immediately
+function resetAllGeoProviders() {
+    geoProviderFailures.clear();
+    providerNextAllowedAt.clear();
+    logger.info('[GeoEnhanced] 🔄 All geo provider circuit breakers reset');
 }
 
 async function scheduleProviderCall(provider, fn) {
@@ -1492,4 +1499,5 @@ module.exports = {
     isInBounds,
     getCityBounds,
     ALL_CITY_RENAMES,
+    resetAllGeoProviders,
 };

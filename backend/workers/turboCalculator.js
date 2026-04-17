@@ -16,7 +16,7 @@ const {
     getStableOrderId,
     haversineDistance
 } = require('./turboGroupingHelpers');
-const { batchEnhancedGeocode, checkAnomalyDistance, deepCleanAddress } = require('./turboGeoEnhanced');
+const { batchEnhancedGeocode, checkAnomalyDistance, deepCleanAddress, resetAllGeoProviders } = require('./turboGeoEnhanced');
 const { enhanceAllOrderCoords, buildZoneCentroids, calculateTotalRouteDistance, haversineKm } = require('./turboCoordValidator');
 const selfHostRoutingHealth = require('../src/services/selfHostRoutingHealth');
 
@@ -136,7 +136,7 @@ class OrderCalculator {
         const osrmEnv = process.env.OSRM_URL || '';
         const valEnv = process.env.VALHALLA_URL || '';
 
-        this.yapikoOsrmUrl = yapikoEnv ? yapikoEnv.replace(/\/+$/, '') : (process.env.OSRM_URL || 'http://osrm.yapiko.kh.ua').replace(/\/+$/, '');
+        this.yapikoOsrmUrl = yapikoEnv ? yapikoEnv.replace(/\/+$/, '') : (process.env.OSRM_URL || 'http://116.204.153.171:5050').replace(/\/+$/, '');
         this.useDualOsrm = process.env.DISABLE_SELF_HOST_ROUTING !== '1' && process.env.DISABLE_SELF_HOST_ROUTING !== 'true';
         this.osrmSingleUrl = null;
 
@@ -147,7 +147,7 @@ class OrderCalculator {
         this.valhallaSingleUrl = null;
 
         this.selfValhallaUrl = (process.env.SELF_HOST_VALHALLA_URL || 'http://127.0.0.1:8002').replace(/\/+$/, '');
-        this.remoteValhallaUrl = (process.env.REMOTE_VALHALLA_URL || valEnv || 'http://valhalla.yapiko.kh.ua').replace(/\/+$/, '');
+        this.remoteValhallaUrl = (process.env.REMOTE_VALHALLA_URL || valEnv || 'http://116.204.153.171:8002').replace(/\/+$/, '');
 
         this.osrmUrl = this.osrmSingleUrl || this.remoteOsrmUrl;
 
@@ -183,7 +183,7 @@ class OrderCalculator {
         this.enginePresets = {
             yapikoOSRM: {
                 label: 'Yapiko OSRM',
-                url: process.env.YAPIKO_OSRM_URL || 'http://osrm.yapiko.kh.ua'
+                url: process.env.YAPIKO_OSRM_URL || 'http://116.204.153.171:5050'
             },
             photon: {
                 label: 'Photon',
@@ -1515,11 +1515,26 @@ class OrderCalculator {
                 stats.skippedInRoutes = routedOrderIds.size;
             };
 
-            // v7.1 SOTA: ENHANCED GEOCODING — 6-level cascaded engine with Ukrainian specialization
-            // NOTE: GeoCache already declared above at line ~1314 — reuse it here
-            
+            // v7.9 CRITICAL FIX: Pre-extract embedded GPS coordinates from FO "addressGeo" field
+            // Format: Lat="49.983530000000000" Long="36.363398000000000" AddressStr="..."
+            // This MUST run before the geocoding filter so we skip API calls for already-located orders.
+            let addressGeoExtracted = 0;
+            for (const o of data.orders) {
+                if (o.coords?.lat) continue; // already has coords
+                const rawGeo = o.addressGeo || o.raw?.addressGeo || o.raw?.AddressGeo || '';
+                if (!rawGeo) continue;
+                const parsed = this.parseAddressGeo(rawGeo);
+                if (parsed) {
+                    o.coords = { lat: parsed.lat, lng: parsed.lng, provider: 'FO_GPS', locationType: 'GPS' };
+                    addressGeoExtracted++;
+                }
+            }
+            if (addressGeoExtracted > 0) {
+                logger.info(`[TurboCalculator] 📡 Pre-extracted ${addressGeoExtracted} GPS coordinates from FO addressGeo field — skipping API geocoding for these`);
+            }
+
             // v7.5: Geocode ALL orders (assigned and unassigned) so they have coordinates immediately
-            let allOrdersNeedsGeo = data.orders.filter(o => {
+            let allOrdersNeedsGeo = data.orders.filter(o =>{
                 const s = String(o.status || o.deliveryStatus || '').toLowerCase().trim();
                 if (s.includes('отказ') || s.includes('отменен') || s.includes('відмова')) return false;
                 if (s.includes('самовывоз') || s.includes('на месте')) return false;
@@ -1544,6 +1559,8 @@ class OrderCalculator {
                     emitStatus(true);
                 }
 
+                // v7.9: Reset any stale provider blocks before starting a new geocoding batch
+                resetAllGeoProviders();
                 await batchEnhancedGeocode(allOrdersNeedsGeo, cityBias, allKmlZones, {
                     photonUrl: process.env.PHOTON_URL || 'https://photon.komoot.io',
                     geoCacheDb: GeoCache,

@@ -58,7 +58,11 @@ services:
       - key: GOOGLE_ROUTES_API_KEY
         sync: false
       - key: PHOTON_URL
-        value: "http://localhost:2322"
+        value: "https://photon.komoot.io"
+      - key: YAPIKO_OSRM_URL
+        value: "http://116.204.153.171:5050"
+      - key: OSRM_URL
+        value: "http://116.204.153.171:5050"
 
   # Frontend Service (Static Site)
   - type: web
