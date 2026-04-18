@@ -1961,20 +1961,22 @@ class OrderCalculator {
                             const distanceKm = Math.round((routeResult.distance / 1000) * 100) / 100;
 
                             // v6.12: RELAXED SANITY CHECK for urban delivery
-                            // We now allow routes up to 3000km to prevent silent deletion of routes. 
-                            // This allows the user to see the route in the UI and manually correct the geocoding if it's 1000km+.
-                            const maxAllowedKm = 3000;
-                            if (distanceKm > maxAllowedKm) {
-                                logger.error(`[TurboCalculator] ❌ REJECTED ROUTE: ${normName} [${timeBlockLabel}] ${distanceKm}km for ${validOrders.length} order(s) (limit: ${maxAllowedKm}km). Likely geocoding error — invalidating cache.`);
+                            // If a route is extremely long (>100km), it's likely a geocoding error (e.g. Kharkiv to Kyiv).
+                            // We EVICT the bad cache, but we DO NOT discard the route! We want the user to see the 1100km 
+                            // in the UI so they can visually see the error and manually fix the coordinates.
+                            const suspiciousKm = 100;
+                            if (distanceKm > suspiciousKm) {
+                                logger.error(`[TurboCalculator] ⚠️ SUSPICIOUS ROUTE: ${normName} [${timeBlockLabel}] ${distanceKm}km for ${validOrders.length} order(s). Evicting cache to force re-geocode next run.`);
                                 // Invalidate geocache entries for orders in this block so they get re-geocoded next run
                                 validOrders.forEach(o => {
                                     const addrKey = (o.address || o.addressGeo || '').toLowerCase().trim();
                                     if (addrKey) {
                                         this.geocache.delete(addrKey);
-                                        logger.warn(`[TurboCalculator] 🗑️ Evicted bad geocache entry: "${addrKey}"`);
+                                        const GeoCache2 = this.getModel('GeoCache');
+                                        if (GeoCache2) GeoCache2.destroy({ where: { address_key: addrKey } }).catch(() => {});
                                     }
                                 });
-                                continue;
+                                // We NO LONGER `continue` here! We let the huge route be added to divisionRoutes so the user sees it!
                             }
 
                             // v6.11+: EXTRA GUARD — Check distance to Start Point for ALL orders in the block
