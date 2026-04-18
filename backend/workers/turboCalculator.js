@@ -2925,7 +2925,7 @@ class OrderCalculator {
                 );
                 if (response.data?.routes?.[0]) {
                     const r = response.data.routes[0];
-                    if (r.distance > 500000) return null;
+                    if (r.distance > 5000000) return null;
                     return {
                         distance: r.distance,
                         duration: r.duration,
@@ -2959,7 +2959,7 @@ class OrderCalculator {
                     const trip = response.data.trip;
                     const totalDistanceMeters = trip.summary.length * 1000;
                     const totalDurationSeconds = trip.summary.time;
-                    if (totalDistanceMeters > 500000) return null;
+                    if (totalDistanceMeters > 5000000) return null;
                     logger.info(`[TurboCalculator] 🏁 Valhalla result: ${trip.summary.length.toFixed(2)} km, ${totalDurationSeconds} sec`);
                     return {
                         distance: totalDistanceMeters,
@@ -3011,7 +3011,7 @@ class OrderCalculator {
                     );
                     if (response.data?.routes?.[0]) {
                         const r = response.data.routes[0];
-                        if (r.distance > 500000) return null;
+                        if (r.distance > 5000000) return null;
                         return {
                             distance: r.distance,
                             duration: r.duration,
@@ -3033,7 +3033,7 @@ class OrderCalculator {
                     );
                     if (response.data?.routes?.[0]) {
                         const r = response.data.routes[0];
-                        if (r.distance > 500000) return null;
+                        if (r.distance > 5000000) return null;
                         return {
                             distance: r.distance,
                             duration: r.duration,
@@ -3055,7 +3055,7 @@ class OrderCalculator {
                     );
                     if (response.data?.routes?.[0]) {
                         const r = response.data.routes[0];
-                        if (r.distance > 500000) return null;
+                        if (r.distance > 5000000) return null;
                         return {
                             distance: r.distance,
                             duration: r.duration,
@@ -3077,7 +3077,7 @@ class OrderCalculator {
                     );
                     if (response.data?.routes?.[0]) {
                         const r = response.data.routes[0];
-                        if (r.distance > 500000) return null;
+                        if (r.distance > 5000000) return null; // Increased to 5000km to allow visibility of bad routes
                         return {
                             distance: r.distance,
                             duration: r.duration,
