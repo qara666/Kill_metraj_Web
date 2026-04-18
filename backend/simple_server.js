@@ -746,6 +746,14 @@ httpServer.listen(PORT, '0.0.0.0', () => {
       await ensureTable('KmlHubs', ensureKmlHubsTable);
       await ensureTable('KmlZones', ensureKmlZonesTable);
       await ensureTable('DashboardCacheV2', ensureDashboardCacheV2);
+      
+      // Clear geo cache to get rid of bad coordinates
+      try {
+          logger.info('🧹 [INIT] Wiping GeoCache to remove bad coordinate data (Kyiv bugs)');
+          await sequelize.query('DELETE FROM api_geo_cache');
+      } catch (e) {
+          logger.warn('⚠️ [INIT] Failed to wipe GeoCache', e);
+      }
 
       // Workers
       try {
