@@ -60,7 +60,8 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
 
   const deferredSearchTerm = useDeferredValue(searchTerm)
 
-  const { autoRoutingStatus } = useDashboardStore();
+  const { autoRoutingStatus, divisionId } = useDashboardStore();
+  const currentDivisionId = String(divisionId || '');
 
   const getCourierStats = useCallback((name: string) => {
     const norm = normalizeCourierName(name);
@@ -71,7 +72,9 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     // v37.0: PRIORITY 2 — Calculated Routes (For real-time partial updates)
     const routes = (excelData?.routes || []).filter((r: any) => {
       const rc = normalizeCourierName(r.courier || r.courier_id);
-      return rc === norm && rc !== 'Не назначено' && rc !== '';
+      const dId = String(r.divisionId || r.division_id || '');
+      const isCorrectDiv = !currentDivisionId || currentDivisionId === 'all' || dId === currentDivisionId;
+      return rc === norm && rc !== 'Не назначено' && rc !== '' && isCorrectDiv;
     });
     
     // v9.8: ACCURATE UNIQUE ORDER COUNTING 
@@ -102,7 +105,10 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     // Counts unique routable orders assigned to this courier in FO data
     const uniqueTotalOrderIds = new Set<string>();
     (excelData?.orders || []).forEach((o: any) => {
-       if (normalizeCourierName(getCourierName(o.courier)) === norm && isRoutableOrder(o)) {
+       const dId = String(o.divisionId || o.departmentId || o.division_id || '');
+       const isCorrectDiv = !currentDivisionId || currentDivisionId === 'all' || dId === currentDivisionId;
+       
+       if (normalizeCourierName(getCourierName(o.courier)) === norm && isRoutableOrder(o) && isCorrectDiv) {
          const sid = getStableOrderId(o);
          if (sid) uniqueTotalOrderIds.add(sid);
        }
@@ -130,8 +136,12 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
 
   const getCourierRoutes = useCallback((name: string) => {
     const n = normalizeCourierName(name);
-    return (excelData?.routes || []).filter((r: any) => normalizeCourierName(getCourierName(r.courier || r.courier_id)) === n)
-  }, [excelData])
+    return (excelData?.routes || []).filter((r: any) => {
+      const dId = String(r.divisionId || r.division_id || '');
+      const isCorrectDiv = !currentDivisionId || currentDivisionId === 'all' || dId === currentDivisionId;
+      return normalizeCourierName(getCourierName(r.courier || r.courier_id)) === n && isCorrectDiv;
+    })
+  }, [excelData, currentDivisionId])
 
 
   // v37.0: ULTIMATE ROBUST COURIER LIST BUILDING
@@ -141,16 +151,28 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     const routes = excelData?.routes || [];
     const summaryNames = Object.keys(autoRoutingStatus?.couriersSummary || {});
 
+    // v9.9: STRICT DIVISION FILTERING
+    // Filter orders and routes by the current active division before collecting names
+    const filteredOrders = orders.filter((o: any) => {
+        const dId = String(o.divisionId || o.departmentId || o.division_id || '');
+        return !currentDivisionId || currentDivisionId === 'all' || dId === currentDivisionId;
+    });
+
+    const filteredRoutes = routes.filter((r: any) => {
+        const dId = String(r.divisionId || r.division_id || '');
+        return !currentDivisionId || currentDivisionId === 'all' || dId === currentDivisionId;
+    });
+
     const names = new Set<string>();
     
     // 1. Names from orders (Primary FO Source)
-    orders.forEach((o: any) => {
+    filteredOrders.forEach((o: any) => {
       const n = normalizeCourierName(getCourierName(o.courier));
       if (n && n !== 'Не назначено') names.add(n);
     });
 
     // 2. Names from routes (Database Fallback)
-    routes.forEach((r: any) => {
+    filteredRoutes.forEach((r: any) => {
       const n = normalizeCourierName(r.courier || r.courier_id);
       if (n && n !== 'Не назначено') names.add(n);
     });
@@ -174,7 +196,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
         orders: st.totalOrders,
         ordersInRoutes: st.ordersInRoutes,
         totalDistance: st.totalDistance,
-        geoErrorCount: orders.filter((o: any) => 
+        geoErrorCount: filteredOrders.filter((o: any) => 
           normalizeCourierName(getCourierName(o.courier)) === name && 
           (o.geoError || o.locationType === 'FAILED' || o.locationType === 'APPROXIMATE')
         ).length
@@ -185,7 +207,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     if (list.length > 0 || !excelData?.loading) {
       setCouriers(list);
     }
-  }, [excelData?.orders, excelData?.routes, excelData?.couriers, autoRoutingStatus?.couriersSummary, getCourierStats]);
+  }, [excelData?.orders, excelData?.routes, excelData?.couriers, autoRoutingStatus?.couriersSummary, getCourierStats, currentDivisionId]);
 
 
   const filtered = useMemo(() => {

@@ -29,6 +29,7 @@
 const axios = require('axios');
 const logger = require('../src/utils/logger');
 const selfHostRoutingHealth = require('../src/services/selfHostRoutingHealth');
+const KmlService = require('../src/services/KmlService');
 const { cleanAddress, generateVariants } = require('../src/utils/addressUtils');
 
 // ============================================================
@@ -973,7 +974,36 @@ function scoreCandidate(candidate, { city, expectedZoneName, kmlZones, anomalyRa
         }
     }
 
-    // Penalty: anomalous position vs zone centroid
+    // v7.7: STRICT POINT-IN-POLYGON VALIDATION (CRITICAL PRIORITY)
+    // If we have specific active KML zones, the point MUST be inside one of them
+    if (kmlZones && kmlZones.length > 0) {
+        let isInsideAnyActiveZone = false;
+        let bestZoneMatch = null;
+
+        for (const zone of kmlZones) {
+            // Support both DB model (boundary) and Preset format (path/coordinates)
+            const polygon = zone.boundary?.coordinates?.[0] || zone.coordinates;
+            if (polygon) {
+                if (KmlService._isPointInPolygon(candidate.lat, candidate.lng, polygon)) {
+                    isInsideAnyActiveZone = true;
+                    bestZoneMatch = zone;
+                    break; 
+                }
+            }
+        }
+
+        if (isInsideAnyActiveZone) {
+            score += 5.0; // MASSIVE bonus for being inside an active sector
+            candidate.kmlZone = bestZoneMatch.name;
+        } else {
+            // v7.7: If we have active zones but point is outside ALL of them, apply extreme penalty
+            // This prevents "wrong street" issues when same name exists in different zones/cities
+            score -= 15.0; 
+            logger.debug(`[GeoEnhanced] Candidate (${candidate.lat}, ${candidate.lng}) rejected: outside all ${kmlZones.length} active zones`);
+        }
+    }
+
+    // Penalty: anomalous position vs zone centroid (fallback logic)
     if (expectedZoneName && kmlZones?.length) {
         const zoneMatch = kmlZones.find(z =>
             z.name && z.name.toLowerCase().includes(expectedZoneName.toLowerCase())

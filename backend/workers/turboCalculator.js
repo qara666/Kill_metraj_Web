@@ -1159,7 +1159,13 @@ class OrderCalculator {
                     divisionId: divIdStr,
                     date: dateStr,
                     ...stats,
-                    lastUpdate: now
+                    lastUpdate: now,
+                    // v37.1: Legacy compatibility for DivisionStatusPanel (Real-time tab)
+                    couriers: Object.values(stats.courierStats || {}).map(cs => ({
+                        name: cs.name,
+                        orders: cs.ordersInRoutes || cs.orders || 0,
+                        distanceKm: Number((cs.distanceKm || 0).toFixed(1))
+                    }))
                 };
 
                 // Diagnostics and Health
@@ -1401,7 +1407,17 @@ class OrderCalculator {
             // v33: Pre-fetch Presets ONCE for entire cache processing
             const presets = await this.getDivisionPresets(cache.division_id);
             const processedCourierNames = new Set();
-            const dynamicCity = data.orders?.[0]?.city || data.orders?.[0]?.CityName || data.orders?.[0]?.cityName || data.orders?.[0]?.divisionName || 'Харків';
+            // Dynamically extract city from the batch's top-level fields or addressGeo
+            let dynamicCity = null;
+            for (const o of (data.orders || [])) {
+                dynamicCity = o.city || o.CityName || o.cityName || o.divisionName;
+                if (!dynamicCity && o.addressGeo) {
+                    const cityMatch = o.addressGeo.match(/CityName\s*=\s*"([^"]+)"/);
+                    if (cityMatch) dynamicCity = cityMatch[1];
+                }
+                if (dynamicCity) break;
+            }
+            dynamicCity = dynamicCity || 'Харків';
             const cityBias = presets?.cityBias || dynamicCity;
             const parsePresetParam = (val) => {
                 if (!val) return null;
@@ -1527,6 +1543,9 @@ class OrderCalculator {
                 const parsed = this.parseAddressGeo(rawGeo);
                 if (parsed) {
                     o.coords = { lat: parsed.lat, lng: parsed.lng, provider: 'FO_GPS', locationType: 'GPS' };
+                    if (parsed.city) {
+                        o.CityName = parsed.city; // Set city dynamically
+                    }
                     addressGeoExtracted++;
                 }
             }
@@ -1560,9 +1579,45 @@ class OrderCalculator {
                     emitStatus(true);
                 }
 
+                // v7.5: Pass the user's active KML zones for intersection priority
+                const divisionActiveZones = presets?.selectedZones || [];
+                let activeKmlFeatures = [];
+
+                // v7.9: Merge zones from DB (centralized) and Presets (user-uploaded)
+                // Priority 1: DB zones
+                if (allKmlZones && allKmlZones.length > 0) {
+                    activeKmlFeatures = allKmlZones.filter(z => {
+                        const zoneKey = `${(z.properties?.folderName || '').trim()}:${(z.properties?.name || '').trim()}`;
+                        return divisionActiveZones.includes(zoneKey);
+                    });
+                }
+
+                // Priority 2: Presets (if DB is empty or for specific user-level zones)
+                if (activeKmlFeatures.length === 0 && presets?.kmlData?.polygons) {
+                    presets.kmlData.polygons.forEach(p => {
+                        const zoneKey = `${(p.folderName || '').trim()}:${(p.name || '').trim()}`;
+                        if (divisionActiveZones.includes(zoneKey)) {
+                            // Convert path [{lat,lng}] to coordinates [[lng,lat]]
+                            const coords = (p.path || []).map(pt => [pt.lng, pt.lat]);
+                            if (coords.length > 0) {
+                                activeKmlFeatures.push({
+                                    id: `preset_${p.name}`,
+                                    name: p.name,
+                                    coordinates: coords, // GeoJSON format for KmlService
+                                    properties: { folderName: p.folderName, name: p.name }
+                                });
+                            }
+                        }
+                    });
+                }
+
+                if (activeKmlFeatures.length > 0) {
+                    logger.info(`[TurboCalculator] 🎯 Restricting geocoding boundaries to ${activeKmlFeatures.length} active KML zones (critical priority)`);
+                }
+
                 // v7.9: Reset any stale provider blocks before starting a new geocoding batch
                 resetAllGeoProviders();
-                await batchEnhancedGeocode(allOrdersNeedsGeo, cityBias, allKmlZones, {
+                await batchEnhancedGeocode(allOrdersNeedsGeo, cityBias, activeKmlFeatures, {
                     photonUrl: process.env.PHOTON_URL || 'https://photon.komoot.io',
                     geoCacheDb: GeoCache,
                     gcacheLRU: this.geocache,
@@ -1847,6 +1902,8 @@ class OrderCalculator {
                             }
                             return isValid;
                         });
+                        
+                        logger.info(`[TurboCalculator-DIAGNOSTICS] 📋 Block ${windowKey} for ${normName}: deduped=${dedupedOrders.length}, validOrders=${validOrders.length}`);
 
                         // v31.0: Sort orders by ACTUAL execution time (Исполнен) first, then planned delivery time.
                         // This makes the calculated km reflect the real courier route (order they were completed).
@@ -1958,6 +2015,7 @@ class OrderCalculator {
                         }
 
                         if (routeResult) {
+                            logger.info(`[TurboCalculator-DIAGNOSTICS] 🧩 routeResult exists for ${normName}. distance=${routeResult.distance}, validOrders=${validOrders.length}`);
                             const timeBlockLabel = timeGroup.windowLabel;
                             const distanceKm = Math.round((routeResult.distance / 1000) * 100) / 100;
 
@@ -2007,9 +2065,12 @@ class OrderCalculator {
                                 }
                                 // If any point is garbage, we skip routing this block so it falls into errors
                                 if (hasAbsurdPoint) {
+                                    logger.info(`[TurboCalculator-DIAGNOSTICS] 🚫 Skipping block ${normName} due to hasAbsurdPoint`);
                                     continue;
                                 }
                             }
+                            
+                            logger.info(`[TurboCalculator-DIAGNOSTICS] ✅ Passed hasAbsurdPoint for ${normName}. Proceeding to deduplicate nonCancelledOrders`);
 
 
                             // v5.149+: Stable deduplication by ID (to support split orders)
@@ -2181,6 +2242,7 @@ class OrderCalculator {
 
                             // v33: Push into memory cache immediately!
                             matchedExistingRouteIds.add(createdRoute.id);
+                            logger.info(`[TurboCalculator-DIAGNOSTICS] 📝 Pushing route ID ${createdRoute.id} into inMemoryFrontendRoutes`);
                             inMemoryFrontendRoutes.push({
                                 id: createdRoute.id,
                                 courier: createdRoute.courier_id,
@@ -2721,11 +2783,14 @@ class OrderCalculator {
         try {
             const latMatch = addressGeo.match(/Lat\s*=\s*"?([^"\s]+)"?/);
             const lngMatch = addressGeo.match(/Long\s*=\s*"?([^"\s]+)"?/);
+            const cityMatch = addressGeo.match(/CityName\s*=\s*"([^"]+)"/);
             if (latMatch && lngMatch) {
                 const lat = parseFloat(latMatch[1]);
                 const lng = parseFloat(lngMatch[1]);
                 if (!isNaN(lat) && !isNaN(lng) && lat > 0 && lng > 0) {
-                    return { lat, lng };
+                    const result = { lat, lng };
+                    if (cityMatch) result.city = cityMatch[1];
+                    return result;
                 }
             }
         } catch (e) {
@@ -2804,7 +2869,16 @@ class OrderCalculator {
                 effectiveEnd   = { lat: implLat, lng: implLng, isImplicit: true };
                 logger.info(`[TurboCalculator] 🔄 No depot — circular route via first stop (${implLat.toFixed(5)}, ${implLng.toFixed(5)})`);
             } else {
-                const cityName = presets?.cityBias || orders[0]?.city || orders[0]?.divisionName || 'Харків';
+                let batchCityName = null;
+                for (const o of orders) {
+                    batchCityName = o.city || o.CityName || o.cityName || o.divisionName;
+                    if (!batchCityName && o.addressGeo) {
+                        const match = o.addressGeo.match(/CityName\s*=\s*"([^"]+)"/);
+                        if (match) batchCityName = match[1];
+                    }
+                    if (batchCityName) break;
+                }
+                const cityName = presets?.cityBias || batchCityName || 'Харків';
                 const cityCentroid = this.getCityCentroid(cityName);
                 
                 if (cityCentroid) {
