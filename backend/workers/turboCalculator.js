@@ -1401,7 +1401,8 @@ class OrderCalculator {
             // v33: Pre-fetch Presets ONCE for entire cache processing
             const presets = await this.getDivisionPresets(cache.division_id);
             const processedCourierNames = new Set();
-            const cityBias = presets?.cityBias || 'Харків';
+            const dynamicCity = data.orders?.[0]?.city || data.orders?.[0]?.CityName || data.orders?.[0]?.cityName || data.orders?.[0]?.divisionName || 'Харків';
+            const cityBias = presets?.cityBias || dynamicCity;
             const parsePresetParam = (val) => {
                 if (!val) return null;
                 const parsed = parseFloat(String(val).replace(',', '.'));
