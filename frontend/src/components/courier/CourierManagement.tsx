@@ -73,7 +73,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     const routes = (excelData?.routes || []).filter((r: any) => {
       const rc = normalizeCourierName(r.courier || r.courier_id);
       const dId = String(r.divisionId || r.division_id || '');
-      const isCorrectDiv = !currentDivisionId || currentDivisionId === 'all' || dId === currentDivisionId;
+      const isCorrectDiv = !currentDivisionId || currentDivisionId === 'all' || !dId || dId === currentDivisionId;
       return rc === norm && rc !== 'Не назначено' && rc !== '' && isCorrectDiv;
     });
     
@@ -106,7 +106,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     const uniqueTotalOrderIds = new Set<string>();
     (excelData?.orders || []).forEach((o: any) => {
        const dId = String(o.divisionId || o.departmentId || o.division_id || '');
-       const isCorrectDiv = !currentDivisionId || currentDivisionId === 'all' || dId === currentDivisionId;
+       const isCorrectDiv = !currentDivisionId || currentDivisionId === 'all' || !dId || dId === currentDivisionId;
        
        if (normalizeCourierName(getCourierName(o.courier)) === norm && isRoutableOrder(o) && isCorrectDiv) {
          const sid = getStableOrderId(o);
@@ -138,7 +138,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     const n = normalizeCourierName(name);
     return (excelData?.routes || []).filter((r: any) => {
       const dId = String(r.divisionId || r.division_id || '');
-      const isCorrectDiv = !currentDivisionId || currentDivisionId === 'all' || dId === currentDivisionId;
+      const isCorrectDiv = !currentDivisionId || currentDivisionId === 'all' || !dId || dId === currentDivisionId;
       return normalizeCourierName(getCourierName(r.courier || r.courier_id)) === n && isCorrectDiv;
     })
   }, [excelData, currentDivisionId])
@@ -151,17 +151,18 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     const routes = excelData?.routes || [];
     const summaryNames = Object.keys(autoRoutingStatus?.couriersSummary || {});
 
-    // v9.9: STRICT DIVISION FILTERING
-    // Filter orders and routes by the current active division before collecting names
-    const filteredOrders = orders.filter((o: any) => {
-        const dId = String(o.divisionId || o.departmentId || o.division_id || '');
-        return !currentDivisionId || currentDivisionId === 'all' || dId === currentDivisionId;
-    });
+    // v9.9: ROBUST DIVISION FILTERING
+    // Filter orders and routes by the current active division before collecting names.
+    // We allow empty division IDs to prevent data loss if the field is missing in the payload.
+    const isMatchingDiv = (dId: string) => {
+        if (!currentDivisionId || currentDivisionId === 'all') return true;
+        if (!dId) return true; // Allow if no division specified (legacy/excel fallback)
+        return dId === currentDivisionId;
+    };
 
-    const filteredRoutes = routes.filter((r: any) => {
-        const dId = String(r.divisionId || r.division_id || '');
-        return !currentDivisionId || currentDivisionId === 'all' || dId === currentDivisionId;
-    });
+    const filteredOrders = orders.filter((o: any) => isMatchingDiv(String(o.divisionId || o.departmentId || o.division_id || '')));
+    const filteredRoutes = routes.filter((r: any) => isMatchingDiv(String(r.divisionId || r.division_id || '')));
+    const filteredBaseCouriers = (excelData?.couriers || []).filter((c: any) => isMatchingDiv(String(c.divisionId || c.division_id || '')));
 
     const names = new Set<string>();
     
@@ -179,6 +180,12 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
 
     // 3. Names from robot status (Real-time Fallback)
     summaryNames.forEach(n => {
+      if (n && n !== 'Не назначено') names.add(n);
+    });
+
+    // 4. Names from base couriers list
+    filteredBaseCouriers.forEach((c: any) => {
+      const n = normalizeCourierName(c.name);
       if (n && n !== 'Не назначено') names.add(n);
     });
 
