@@ -75,6 +75,22 @@ async function syncDatabase() {
 
         logger.info(`Синхронизация базы данных (alter: ${syncOptions.alter})...`);
         await sequelize.sync(syncOptions);
+        
+        // v39.0: Manual Migration Guard for centroid column
+        try {
+            const [results] = await sequelize.query(`
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'api_kml_zones' AND column_name = 'centroid';
+            `);
+            if (results.length === 0) {
+                logger.info('Migration: Adding missing "centroid" column to api_kml_zones...');
+                await sequelize.query('ALTER TABLE api_kml_zones ADD COLUMN centroid JSONB DEFAULT NULL;');
+            }
+        } catch (migErr) {
+            logger.warn('Migration Guard failed (ignoring):', { error: migErr.message });
+        }
+
         logger.info('Синхронизация базы данных выполнена успешно');
     } catch (error) {
         logger.error('Ошибка синхронизации базы данных', { error: error.message });

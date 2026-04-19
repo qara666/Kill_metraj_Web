@@ -786,9 +786,13 @@ httpServer.listen(PORT, '0.0.0.0', () => {
       if (process.env.NODE_ENV === 'production') {
         try {
           await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "allowedTabs" JSON DEFAULT '["dashboard","routes","couriers","financials","analytics","telegram-parsing","settings"]'`);
+          
+          // v39.3: Add centroid column to KML zones
+          await sequelize.query(`ALTER TABLE api_kml_zones ADD COLUMN IF NOT EXISTS centroid JSONB DEFAULT NULL`);
+          
           logger.info(`✅ [INIT] Migrations applied`);
         } catch (err) {
-          logger.warn('⚠️ [INIT] Migration skipped or failed');
+          logger.warn('⚠️ [INIT] Migration skipped or failed', { error: err.message });
         }
       }
 
