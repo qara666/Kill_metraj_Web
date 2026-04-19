@@ -630,13 +630,6 @@ class OrderCalculator {
         this.tick();
     }
 
-
-
-        // v7.0: SERVER-FIRST — always auto-start the tick loop.
-        // Calculations run automatically when FO data arrives.
-        this.scheduleNextTick(true);
-    }
-
     scheduleNextTick(forceInitial = false) {
         if (this.timer) clearTimeout(this.timer);
 
