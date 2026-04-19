@@ -36,13 +36,13 @@ export const AdminRouteReset: React.FC = () => {
         setLoadingStats(true);
         try {
             // Fetch all routes grouped by date
-            const res = await fetch(`/api/routes/calculated?date=${selectedDate}&limit=2000`, {
+            const res = await fetch(`${API_URL}/api/routes/calculated?date=${selectedDate}&limit=2000`, {
                 headers: { Authorization: `Bearer ${token()}` }
             });
             const data = await res.json();
 
             // Also fetch stale routes (old label format)
-            const staleRes = await fetch(`/api/routes/calculated?date=&limit=5000`, {
+            const staleRes = await fetch(`${API_URL}/api/routes/calculated?date=&limit=5000`, {
                 headers: { Authorization: `Bearer ${token()}` }
             });
             const staleData = await staleRes.json();
