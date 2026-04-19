@@ -1581,38 +1581,6 @@ async function batchEnhancedGeocode(orders, city, kmlZones = [], options = {}) {
                 logger.info(`[GeoEnhanced] PASS 2 recovered: ${addr} → (${result.latitude.toFixed(5)},${result.longitude.toFixed(5)})`);
             } else {
                 logger.warn(`[GeoEnhanced] PASS 2 failed: ${addr}`);
-                
-                // v39.3: PASS 3 AUTO-FALLBACK TO ZONE CENTROID (FULL AUTOMATION)
-                // If geocoder completely fails but we know the expected KML zone from FO,
-                // we forcefully place the order at the centroid of that zone.
-                // This minimizes "Clarifications" and ensures realistic KM routing.
-                if (expectedZone && kmlZones && kmlZones.length > 0) {
-                    const exp = expectedZone.toLowerCase().replace(/\s+/g, ' ').trim();
-                    const zoneMatch = kmlZones.find(z => {
-                        const folderName = String(z.hub?.name || z.properties?.folderName || '').toLowerCase().trim();
-                        const name = String(z.name || z.properties?.name || '').toLowerCase().trim();
-                        if (!name || !exp) return false;
-                        const exactKey = `${folderName}:${name}`;
-                        return exactKey === exp || name === exp || exp.includes(name) || (folderName && exp.includes(folderName) && exp.includes(name));
-                    });
-
-                    if (zoneMatch) {
-                        const polygon = zoneMatch.boundary?.coordinates?.[0] || zoneMatch.coordinates;
-                        if (polygon && polygon.length > 0) {
-                            const sumLat = polygon.reduce((s, c) => s + c[1], 0);
-                            const sumLng = polygon.reduce((s, c) => s + c[0], 0);
-                            const centroid = { lat: sumLat / polygon.length, lng: sumLng / polygon.length };
-                            
-                            order.coords = { lat: centroid.lat, lng: centroid.lng };
-                            order._geoProvider = 'ZONE_CENTROID_FALLBACK';
-                            order._geoFailed = false;
-                            order._isCentroidFallback = true;
-                            divisionCoords.push({ lat: centroid.lat, lng: centroid.lng });
-                            results.set(addr, { latitude: centroid.lat, longitude: centroid.lng, provider: 'ZONE_CENTROID_FALLBACK' });
-                            logger.info(`[GeoEnhanced] 🎯 PASS 3 AUTO-FALLBACK: ${addr} → Forced to centroid of KML zone "${zoneMatch.name}" (${centroid.lat.toFixed(5)},${centroid.lng.toFixed(5)})`);
-                        }
-                    }
-                }
             }
         } catch (e) { /* ignore */ }
 
