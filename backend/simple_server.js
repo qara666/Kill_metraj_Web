@@ -1423,7 +1423,9 @@ app.post('/api/turbo/priority', authenticateToken, async (req, res) => {
     let divisionId = req.body?.divisionId || req.query?.divisionId || user?.divisionId;
     const date = req.body?.date || req.query?.date || req.body?.targetDate || req.query?.targetDate;
     const userId = user?.id || req.body?.userId || req.query?.userId;
-    const courierName = req.body?.courierName || req.query?.courierName; // v37.1: Optional target courier
+    const courierName = req.body?.courierName || req.query?.courierName;
+
+    logger.info(`[API] /api/turbo/priority called: divisionId=${divisionId}, date=${date}, userId=${userId}, courierName=${courierName}, turboCalculatorReady=${turboCalculatorReady}, turboCalculator=${!!turboCalculator}, global.turboCalculator=${!!global.turboCalculator}`);
 
     // v7.2: If divisionId is missing or empty from JWT, look it up from the DB
     if (!divisionId && userId) {

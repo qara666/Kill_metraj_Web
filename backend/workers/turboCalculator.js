@@ -574,9 +574,19 @@ class OrderCalculator {
         if (this.isRunning) return;
         this.isRunning = true;
 
-        // Restore saved division states on restart
-        await this.loadSavedState();
-        await this.loadAllDivisionStatesFromDB();
+        logger.info('[TurboCalculator] 🔄 Starting initialization...');
+
+        try {
+            await this.loadSavedState();
+        } catch (e) {
+            logger.warn('[TurboCalculator] ⚠️ loadSavedState failed:', e.message);
+        }
+
+        try {
+            await this.loadAllDivisionStatesFromDB();
+        } catch (e) {
+            logger.warn('[TurboCalculator] ⚠️ loadAllDivisionStatesFromDB failed:', e.message);
+        }
 
         try {
             await selfHostRoutingHealth.probeAll();
@@ -740,8 +750,10 @@ class OrderCalculator {
 
         // v6.10: START IMMEDIATELY - don't wait for next tick cycle
         logger.info(`[TurboCalculator] 🚀 Starting immediate processing for ${divisionId} on ${targetDate}`);
+        
+        // Ensure tick runs immediately
         if (!this.isProcessing) {
-            this.tick();
+            setImmediate(() => this.tick());
         } else {
             this.needsReRun = true;
         }
