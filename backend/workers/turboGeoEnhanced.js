@@ -1178,11 +1178,11 @@ async function enhancedGeocode(address, city = 'Харків', expectedZone = nu
             return null;
         }
 
-        // v39.1: Anomaly check threshold reduced 30km→8km for tighter validation
+        // v39.1: Anomaly check threshold reverted back to 30km as requested
         if (divisionCoords.length >= 3) {
-            const { anomaly, distKm } = checkAnomalyDistance(best.lat, best.lng, divisionCoords, 8);
+            const { anomaly, distKm } = checkAnomalyDistance(best.lat, best.lng, divisionCoords, 30);
             if (anomaly) {
-                logger.warn(`[GeoEnhanced] ${label}: Anomalous distance ${distKm?.toFixed(1)}km from division centroid (threshold: 8km) — rejected (addr: ${address})`);
+                logger.warn(`[GeoEnhanced] ${label}: Anomalous distance ${distKm?.toFixed(1)}km from division centroid (threshold: 30km) — rejected (addr: ${address})`);
                 return null;
             }
         }

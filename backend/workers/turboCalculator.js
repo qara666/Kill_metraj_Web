@@ -217,9 +217,12 @@ class OrderCalculator {
                 return;
             }
 
+            const KmlHub = this.getModel('KmlHub');
+
             // Load all active zones
             this.kmlZones = await KmlZone.findAll({
-                where: { is_active: true }
+                where: { is_active: true },
+                include: [{ model: KmlHub, as: 'hub' }]
             });
 
             // Build spatial grid index
@@ -1628,11 +1631,14 @@ class OrderCalculator {
                 const divisionActiveZones = presets?.selectedZones || [];
                 let activeKmlFeatures = [];
 
-                // v7.9: Merge zones from DB (centralized) and Presets (user-uploaded)
+                // v39.1: Merge zones from DB (centralized) and Presets (user-uploaded)
                 // Priority 1: DB zones
                 if (allKmlZones && allKmlZones.length > 0) {
                     activeKmlFeatures = allKmlZones.filter(z => {
-                        const zoneKey = `${(z.properties?.folderName || '').trim()}:${(z.properties?.name || '').trim()}`;
+                        // Support both Sequelize model (z.hub.name) and raw JSON (z.properties.folderName)
+                        const folderName = z.hub?.name || z.properties?.folderName || '';
+                        const name = z.name || z.properties?.name || '';
+                        const zoneKey = `${folderName.trim()}:${name.trim()}`;
                         return divisionActiveZones.includes(zoneKey);
                     });
                 }
