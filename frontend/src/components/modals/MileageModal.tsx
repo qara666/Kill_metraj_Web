@@ -21,6 +21,7 @@ import { needsAddressClarification } from '../../utils/data/addressUtils';
 import { toast } from 'react-hot-toast';
 import { localStorageUtils } from '../../utils/ui/localStorage';
 import { YapikoOSRMService } from '../../services/YapikoOSRMService';
+import { useDashboardStore } from '../../stores/useDashboardStore';
 
 // v8.0: MileageModal with Deduplication + Drag-and-Drop between routes
 
@@ -240,7 +241,7 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
       return needsAddressClarification({
         locationType: meta?.locationType || order.locationType,
         streetNumberMatched: meta?.streetNumberMatched ?? order.streetNumberMatched,
-        hasCoords: !!(order.coords?.lat || meta?.location?.lat)
+        hasCoords: !!(order.lat || order.coords?.lat || meta?.location?.lat)
       });
     });
   }, [uniqueOrders, route]);
@@ -619,6 +620,11 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
     dragDataRef.current = null;
   }, []);
 
+  const autoRoutingStatus = useDashboardStore(s => s.autoRoutingStatus);
+  const isCalculating = autoRoutingStatus.isActive && 
+    (autoRoutingStatus.currentCourier === courier.name || autoRoutingStatus.currentCourier === 'СБОР ДАННЫХ...') &&
+    (Date.now() - (autoRoutingStatus.lastUpdate || 0) < 120000);
+
   // Recalculated totals
   const recalcStats = useMemo(() => {
     let totalPhysical = 0;
@@ -719,15 +725,20 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
                   </div>
                   <div className="flex flex-col">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-4xl font-black tabular-nums text-blue-500">{recalcStats.totalOrders || 0}</span>
-                      <span className="text-xs font-black opacity-30 uppercase">Заказов</span>
+                      <span className="text-4xl font-black tabular-nums text-blue-500">{recalcStats.ordersInRoutes || 0}</span>
+                      <span className="text-xl font-black opacity-30 text-blue-500">/ {recalcStats.totalOrders || 0}</span>
                     </div>
                     <div className="mt-2 flex items-center gap-3">
                        <div className={clsx("flex-1 h-1.5 rounded-full overflow-hidden", isDark ? "bg-white/5" : "bg-gray-100")}>
-                         <div className={clsx("h-full transition-all duration-1000", (recalcStats.ordersInRoutes || 0) === (recalcStats.totalOrders || 0) ? "bg-emerald-500" : "bg-blue-500")} style={{ width: `${((recalcStats.ordersInRoutes || 0) / Math.max(1, recalcStats.totalOrders || 0)) * 100}%` }} />
+                         <div className={clsx("h-full transition-all duration-1000", (recalcStats.ordersInRoutes || 0) >= (recalcStats.totalOrders || 0) ? "bg-emerald-500" : "bg-blue-500")} style={{ width: `${((recalcStats.ordersInRoutes || 0) / Math.max(1, recalcStats.totalOrders || 0)) * 100}%` }} />
                        </div>
                        <span className="text-[10px] font-black opacity-40">{Math.round(((recalcStats.ordersInRoutes || 0) / Math.max(1, recalcStats.totalOrders || 0)) * 100)}%</span>
                     </div>
+                    {(recalcStats.ordersInRoutes || 0) < (recalcStats.totalOrders || 0) && (
+                      <p className={clsx("mt-3 text-[9px] font-bold uppercase tracking-widest", isCalculating ? "text-blue-500/60 animate-pulse" : "text-red-500/60")}>
+                        {isCalculating ? "РАСЧЕТ В ПРОЦЕССЕ..." : "ОШИБКА: НУЖНО УТОЧНЕНИЕ!"}
+                      </p>
+                    )}
                   </div>
                 </div>
 

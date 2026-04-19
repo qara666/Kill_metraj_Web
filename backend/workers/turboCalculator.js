@@ -1357,7 +1357,16 @@ class OrderCalculator {
                     logger.warn(`[TurboCalculator] ⚠️ getBlockSignature called with non-array: ${typeof orders}`, orders);
                     return '';
                 }
-                return orders.map(o => String(o.orderNumber || o.id)).sort().join('_');
+                const ids = orders.map(o => {
+                    const id = o.orderNumber || o.id;
+                    return id && String(id) !== 'undefined' && String(id) !== 'null' ? String(id) : '';
+                }).filter(Boolean);
+                
+                if (ids.length === 0 && orders.length > 0) {
+                    // Fallback to address/geo hashing if no valid IDs exist to prevent collisions
+                    return 'hash_' + getHash(orders.map(o => o.address || o.addressGeo || o.lat || '').join('|'));
+                }
+                return ids.sort().join('_');
             };
 
             if (Route) {
@@ -2307,10 +2316,9 @@ class OrderCalculator {
                 }
             } // End of courier loop
 
-            // v36.9: At completion, processedCount MUST reach cacheTotalCount (routable orders)
+            // v36.9: At completion, processedCount MUST reach totalCount
             // This ensures the progress bar reliably reaches 100% when done
-            const finalProcessed = cacheTotalCount;
-            stats.processedCount = Math.max(stats.processedCount || 0, finalProcessed);
+            stats.processedCount = stats.totalCount;
             stats.currentPhase = 'complete';
             stats.message = 'Calculation complete!';
             emitStatus(true); // v36.5: FORCE final status to clear throttles
@@ -2487,8 +2495,8 @@ class OrderCalculator {
 
             // Final status push - routing complete!
             stats.currentPhase = 'complete';
-            // v36.9: Force 100% — processedCount must equal cacheTotalCount (routable orders)
-            stats.processedCount = cacheTotalCount;
+            // v36.9: Force 100% — processedCount must equal totalCount
+            stats.processedCount = stats.totalCount;
             const totalResultCount = inMemoryFrontendRoutes.length;
             const existingCount = matchedExistingRouteIds.size;
             const newlyCreated = stats.totalRoutesCreated;

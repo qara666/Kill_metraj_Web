@@ -517,8 +517,12 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
           
           (prev.orders || []).forEach((o: any) => {
              const id = o.id || o._id;
-             if (id) masterOrdersMap.set(String(id), o);
-             if (o.orderNumber) masterOrdersByNumber.set(String(o.orderNumber), o);
+             if (id && String(id) !== 'undefined' && String(id) !== 'null') {
+                 masterOrdersMap.set(String(id), o);
+             }
+             if (o.orderNumber && String(o.orderNumber) !== 'undefined') {
+                 masterOrdersByNumber.set(String(o.orderNumber), o);
+             }
           });
 
           const enrichedRoutes = validatedRoutes.map((route: any) => {
@@ -530,9 +534,13 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             // v5.160: Enrich each order with master data (address, courier, etc.)
             const enrichedOrders = dedupedOrders.map((order: any) => {
               const id = order.id || order._id;
-              const masterById = id ? masterOrdersMap.get(String(id)) : null;
+              const safeId = id && String(id) !== 'undefined' ? String(id) : null;
+              const masterById = safeId ? masterOrdersMap.get(safeId) : null;
+              
               const num = order.orderNumber;
-              const masterByNumber = num ? masterOrdersByNumber.get(String(num)) : null;
+              const safeNum = num && String(num) !== 'undefined' ? String(num) : null;
+              const masterByNumber = safeNum ? masterOrdersByNumber.get(safeNum) : null;
+              
               const master = masterById || masterByNumber;
 
               if (master) {

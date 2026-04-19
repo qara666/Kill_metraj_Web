@@ -593,9 +593,9 @@ export const DashboardApiSection: React.FC = () => {
                     isDark ? 'border-white/5' : 'border-slate-100'
                 )}>
                     {[
-                        { label: 'Всего заказов', value: autoRoutingStatus.totalOrdersAll || autoRoutingStatus.totalCount || 0, color: isDark ? 'text-white' : 'text-gray-900' },
-                        { label: 'Обработано', value: autoRoutingStatus.processedCount || 0, color: isDark ? 'text-emerald-400' : 'text-emerald-600' },
-                        { label: 'В маршрутах', value: autoRoutingStatus.skippedInRoutes || 0, color: isDark ? 'text-blue-400' : 'text-blue-600' },
+                        { label: 'Получено из системы', value: autoRoutingStatus.totalOrdersAll || autoRoutingStatus.totalCount || 0, color: isDark ? 'text-white' : 'text-gray-900' },
+                        { label: 'Доступно (без отмен)', value: autoRoutingStatus.processedCount || 0, color: isDark ? 'text-emerald-400' : 'text-emerald-600' },
+                        { label: 'Успешно распределено', value: autoRoutingStatus.skippedInRoutes || 0, color: isDark ? 'text-blue-400' : 'text-blue-600' },
                         { label: 'Ошибки гео', value: autoRoutingStatus.skippedGeocoding || 0, color: (autoRoutingStatus.skippedGeocoding || 0) > 0 ? (isDark ? 'text-red-400' : 'text-red-500') : (isDark ? 'text-gray-500' : 'text-gray-400') },
                     ].map(({ label, value, color }) => (
                         <div key={label} className={clsx("p-4 rounded-2xl flex flex-col justify-center", isDark ? "bg-white/[0.02]" : "bg-slate-50")}>

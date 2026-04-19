@@ -98,20 +98,54 @@ export const EliteCourierCard: React.FC<EliteCourierCardProps> = memo(({
   }, [courier.id, onGeoErrorClick])
 
   return (
-    <div className={clsx('group relative flex flex-col h-full rounded-[2.5rem] border-2 transition-all duration-300 transform-gpu', isDark ? 'bg-[#05070a] border-white/[0.05] shadow-22xl hover:border-blue-500/30' : 'bg-white border-slate-100 shadow-xl shadow-slate-200/50 hover:border-blue-300')} style={{ contain: 'layout paint' }}>
-      <div className={clsx("absolute -bottom-8 -right-8 w-48 h-48 opacity-[0.03] transition-all duration-700 pointer-events-none group-hover:scale-110 group-hover:opacity-[0.05]", isDark ? "text-white" : "text-slate-900")}>{courier.vehicleType === 'car' ? <AutoIcon className="w-full h-full" /> : <MotoIcon className="w-full h-full" />}</div>
-      <div className="px-7 py-6 flex items-start justify-between relative z-10">
+    <div className={clsx(
+      'group relative flex flex-col h-full rounded-[2.5rem] border-2 transition-all duration-500 transform-gpu overflow-hidden',
+      isDark 
+        ? 'bg-[#0a0c10] border-white/[0.05] shadow-[0_20px_50px_rgba(0,0,0,0.5)] hover:border-blue-500/40 hover:shadow-[0_20px_60px_rgba(59,130,246,0.1)]' 
+        : 'bg-white border-slate-100 shadow-[0_15px_35px_rgba(0,0,0,0.03)] hover:border-blue-200 hover:shadow-[0_20px_45px_rgba(0,0,0,0.06)]'
+    )} style={{ contain: 'layout paint' }}>
+      
+      {/* Premium Background Glows */}
+      <div className={clsx(
+        "absolute -top-24 -left-24 w-64 h-64 rounded-full blur-[80px] opacity-0 group-hover:opacity-10 transition-opacity duration-1000 pointer-events-none",
+        isDark ? "bg-blue-500" : "bg-blue-400"
+      )} />
+      
+      {/* Background Vehicle Watermark */}
+      <div className={clsx(
+        "absolute -bottom-6 -right-6 w-40 h-40 opacity-[0.02] group-hover:opacity-[0.05] group-hover:scale-110 transition-all duration-1000 pointer-events-none",
+        isDark ? "text-white" : "text-slate-900"
+      )}>
+        {courier.vehicleType === 'car' ? <AutoIcon className="w-full h-full" /> : <MotoIcon className="w-full h-full" />}
+      </div>
+
+      <div className="px-8 py-7 flex items-start justify-between relative z-10">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <div className={clsx("w-2.5 h-2.5 rounded-full", eff >= 100 ? "bg-emerald-500 shadow-[0_0_10px_#10b981]" : "bg-blue-500 shadow-[0_0_10px_#3b82f6]")} />
-            <h3 className={clsx("text-xl font-black uppercase tracking-tighter truncate leading-none", isDark ? "text-white" : "text-slate-900")}>{courier.name}</h3>
+          <div className="flex items-center gap-3 mb-1.5">
+            <div className={clsx(
+              "w-2.5 h-2.5 rounded-full relative", 
+              eff >= 100 ? "bg-emerald-500" : "bg-blue-500"
+            )}>
+              <div className={clsx(
+                "absolute inset-0 rounded-full animate-ping opacity-40",
+                eff >= 100 ? "bg-emerald-500" : "bg-blue-500"
+              )} />
+              <div className={clsx(
+                "absolute -inset-1 blur-sm rounded-full opacity-50",
+                eff >= 100 ? "bg-emerald-500" : "bg-blue-500"
+              )} />
+            </div>
+            <h3 className={clsx(
+              "text-xl font-black uppercase tracking-tight truncate leading-none", 
+              isDark ? "text-white" : "text-slate-900"
+            )}>{courier.name}</h3>
           </div>
-          <div className="flex items-center gap-2 text-[9px] font-black tracking-widest opacity-30 uppercase">
-            <span>SYS // {courier.id.slice(-6).toUpperCase()}</span>
+          <div className="flex items-center gap-2.5 text-[9px] font-black tracking-[0.15em] opacity-40 uppercase">
+            <span>ID // {courier.id.slice(-6).toUpperCase()}</span>
             {(courier.geoErrorCount || 0) > 0 && (
               <button 
                 onClick={handleGeoClick}
-                className="text-red-500 flex items-center gap-1 hover:scale-110 transition-transform active:scale-95 bg-red-500/10 px-2 py-0.5 rounded-lg border border-red-500/20"
+                className="text-red-500 flex items-center gap-1.5 hover:scale-105 transition-transform active:scale-95 bg-red-500/10 px-2 py-0.5 rounded-lg border border-red-500/20"
               >
                 <ExclamationTriangleIcon className="w-3 h-3" /> 
                 {courier.geoErrorCount} ALERT
@@ -119,47 +153,122 @@ export const EliteCourierCard: React.FC<EliteCourierCardProps> = memo(({
             )}
           </div>
         </div>
-        <button onClick={handleToggleVehicle} title="Сменить тип транспорта" className={clsx("w-12 h-12 rounded-2xl flex items-center justify-center border transition-all duration-500 active:scale-90 hover:scale-110", isDark ? "bg-white/[0.03] border-white/5 text-white/40 hover:text-white" : "bg-slate-50 border-slate-100 text-slate-400 hover:text-blue-600")}>{courier.vehicleType === 'car' ? <AutoIcon className="w-7 h-7" /> : <MotoIcon className="w-7 h-7" />}</button>
-      </div>
-
-      <div className="px-7 pb-4 space-y-5 flex-1 relative z-10">
-        <div className="grid grid-cols-2 gap-4">
-           <button onClick={handleDistClick} className={clsx("p-5 rounded-[2rem] border text-left transition-all duration-300 relative overflow-hidden group/dist", isDark ? "bg-white/[0.02] border-white/5 hover:bg-white/[0.04]" : "bg-slate-50 border-slate-100 hover:bg-blue-50/50")}>
-              <div className="text-[10px] font-black uppercase tracking-widest opacity-30 mb-2">Дистанция</div>
-              <div className={clsx("text-3xl font-black tracking-tighter leading-none mb-1", isDark ? "text-white" : "text-slate-900")}>{Math.floor(dist)}<span className="text-sm opacity-30">.{Math.round((dist % 1) * 10)}</span></div>
-              <div className="text-[9px] font-black text-blue-500 uppercase tracking-widest">км // Анализ КПД</div>
-           </button>
-           <div className={clsx("p-5 rounded-[2rem] border text-left transition-all duration-300", isDark ? "bg-white/[0.02] border-white/5" : "bg-slate-50 border-slate-100")}>
-              <div className="text-[10px] font-black uppercase tracking-widest opacity-30 mb-2">Загрузка</div>
-              <div className={clsx("text-3xl font-black tracking-tighter leading-none mb-1", isDark ? "text-white" : "text-slate-900")}>{calc}<span className="text-sm opacity-30">/{totalCount}</span></div>
-              <div className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">{progress}% готово</div>
-           </div>
-        </div>
-        <button onClick={handleKpiClick} className={clsx("w-full p-6 rounded-[2rem] border transition-all duration-500 overflow-hidden relative text-left group/kpi", isDark ? "bg-white/[0.01] border-white/5 hover:bg-blue-500/[0.03] hover:border-blue-500/20" : "bg-slate-50/50 border-slate-100 hover:bg-blue-50 hover:border-blue-200")}>
-           <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                 <div className="w-8 h-8 rounded-xl bg-blue-500/10 flex items-center justify-center"><ChartBarIcon className="w-4 h-4 text-blue-500" /></div>
-                 <div><div className="text-[10px] font-black uppercase tracking-widest opacity-40">Индекс КПД</div><div className={clsx("text-[9px] font-black uppercase", eff >= 100 ? "text-emerald-500" : "text-blue-500")}>{eff >= 100 ? 'Пиковая норма' : 'Номинал'}</div></div>
-              </div>
-              <div className="text-right"><div className={clsx("text-2xl font-black tracking-tighter", isDark ? "text-white" : "text-slate-900")}>{eff}%</div></div>
-           </div>
-           {(distanceDetails?.history?.length ?? 0) > 1 && <div className="my-5 flex justify-center h-10 w-full overflow-hidden"><Sparkline data={distanceDetails!.history!} color={eff >= 100 ? '#10b981' : '#3b82f6'} /></div>}
-           <div className="mt-4 pt-4 border-t border-white/5">
-              <div className="flex justify-between items-center text-[8px] font-black uppercase tracking-widest mb-1.5 opacity-40"><span>Стабильность маршрута</span><span>{100 - tensionScore}%</span></div>
-              <div className={clsx("h-1.5 rounded-full overflow-hidden flex gap-1", isDark ? "bg-white/5" : "bg-slate-200")}><div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${100 - tensionScore}%` }} /><div className="h-full bg-red-400 opacity-20" style={{ width: `${tensionScore}%` }} /></div>
-           </div>
-           <div className="absolute top-2 right-4 text-[7px] font-black uppercase opacity-0 group-hover/kpi:opacity-100 transition-opacity text-blue-500 animate-pulse">Аналитика КПД ➔</div>
+        <button 
+          onClick={handleToggleVehicle} 
+          className={clsx(
+            "w-12 h-12 rounded-2xl flex items-center justify-center border transition-all duration-500 active:scale-90 hover:scale-110 group/veh", 
+            isDark 
+              ? "bg-white/[0.03] border-white/5 text-white/40 hover:text-blue-400 hover:border-blue-500/30" 
+              : "bg-slate-50 border-slate-100 text-slate-400 hover:text-blue-600 hover:border-blue-200"
+          )}
+        >
+          {courier.vehicleType === 'car' ? <AutoIcon className="w-7 h-7" /> : <MotoIcon className="w-7 h-7" />}
         </button>
       </div>
 
-      <div className="px-7 pb-7 pt-2 flex items-center gap-3 relative z-10">
-        <button onClick={handleRecalculate} className={clsx("flex-1 h-14 rounded-2xl flex items-center justify-center gap-3 text-[10px] font-black uppercase tracking-[0.2em] transition-all duration-300 group/btn active:scale-95 shadow-xl", isDark ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/40" : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/20")}><BoltIcon className="w-5 h-5 group-hover/btn:scale-125 transition-transform" /><span>Рассчитать</span></button>
-        <div className="flex items-center gap-2">
-           <button onClick={handleEdit} className={clsx("w-12 h-14 rounded-2xl flex items-center justify-center border transition-all hover:scale-105 active:scale-90", isDark ? "bg-white/5 border-white/5 text-white/40 hover:text-blue-400" : "bg-slate-50 border-slate-100 text-slate-400 hover:text-blue-600")} title="Правка параметров"><PencilIcon className="w-5 h-5" /></button>
-           <button onClick={handleDelete} className={clsx("w-12 h-14 rounded-2xl flex items-center justify-center border transition-all hover:scale-105 active:scale-90", isDark ? "bg-white/5 border-white/5 text-white/40 hover:text-red-400" : "bg-slate-50 border-slate-100 text-slate-400 hover:text-red-600")} title="Удалить курьера"><TrashIcon className="w-5 h-5" /></button>
+      <div className="px-8 pb-4 flex flex-col gap-4 flex-1 relative z-10">
+        <div className="grid grid-cols-2 gap-4 flex-1">
+           <button 
+              onClick={handleDistClick} 
+              className={clsx(
+                "p-6 rounded-[2.5rem] border text-left transition-all duration-500 relative overflow-hidden group/dist h-full flex flex-col justify-center backdrop-blur-md", 
+                isDark 
+                  ? "bg-white/[0.02] border-white/5 hover:bg-white/[0.05] hover:border-blue-500/20" 
+                  : "bg-slate-50/50 border-slate-100 hover:bg-blue-50/50 hover:border-blue-200"
+              )}
+           >
+              <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-30 mb-2.5">Дистанция</div>
+              <div className={clsx(
+                "text-4xl font-black tracking-tighter leading-none mb-1.5 transition-transform group-hover/dist:scale-110 origin-left duration-500", 
+                isDark ? "text-white" : "text-slate-900"
+              )}>
+                {Math.floor(dist + (Number(settings.additionalKm) || 0))}
+                <span className="text-sm opacity-30">.{Math.round(((dist + (Number(settings.additionalKm) || 0)) % 1) * 10)}</span>
+              </div>
+              <div className="flex items-center gap-1.5 mt-1 text-[9px] font-black uppercase tracking-widest">
+                <span className="text-blue-500">км</span>
+                {Number(settings.additionalKm) > 0 && (
+                   <span className={clsx(
+                     "px-2 py-0.5 rounded-lg font-bold", 
+                     isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-100 text-blue-700"
+                   )}>
+                     +{settings.additionalKm} ДОП
+                   </span>
+                )}
+              </div>
+              <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 blur-2xl opacity-0 group-hover/dist:opacity-100 transition-opacity" />
+           </button>
+           
+           <div className={clsx(
+             "p-6 rounded-[2.5rem] border text-left transition-all duration-500 h-full flex flex-col justify-center backdrop-blur-md", 
+             isDark 
+               ? "bg-white/[0.02] border-white/5" 
+               : "bg-slate-50/50 border-slate-100"
+           )}>
+              <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-30 mb-2.5">Загрузка</div>
+              <div className={clsx(
+                "text-4xl font-black tracking-tighter leading-none mb-1.5", 
+                isDark ? "text-white" : "text-slate-900"
+              )}>
+                {calc}<span className="text-sm opacity-30">/{totalCount}</span>
+              </div>
+              <div className={clsx(
+                "text-[9px] font-black uppercase tracking-widest flex items-center gap-2",
+                progress === 100 ? "text-emerald-500" : "text-blue-500"
+              )}>
+                <div className={clsx("w-1.5 h-1.5 rounded-full", progress === 100 ? "bg-emerald-500" : "bg-blue-500")} />
+                {progress}% готово
+              </div>
+           </div>
         </div>
       </div>
-      <div className="absolute -top-1.5 -left-1.5 w-10 h-10 border-2 border-transparent border-t-blue-500/40 border-l-blue-500/20 rounded-full animate-[spin_6s_linear_infinite]" />
+
+      <div className="px-8 pb-8 pt-2 flex items-center gap-4 relative z-10">
+        <button 
+          onClick={handleRecalculate} 
+          className={clsx(
+            "flex-1 h-16 rounded-[1.5rem] flex items-center justify-center gap-3 text-[10px] font-black uppercase tracking-[0.25em] transition-all duration-500 group/btn active:scale-95 shadow-lg", 
+            isDark 
+              ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/20 hover:shadow-emerald-500/40" 
+              : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/20 hover:shadow-emerald-500/40"
+          )}
+        >
+          <BoltIcon className="w-5 h-5 group-hover/btn:scale-125 transition-transform duration-500" />
+          <span>Рассчитать</span>
+        </button>
+        <div className="flex items-center gap-3">
+           <button 
+             onClick={handleEdit} 
+             className={clsx(
+               "w-12 h-16 rounded-[1.5rem] flex items-center justify-center border transition-all duration-500 hover:scale-105 active:scale-90 hover:shadow-lg", 
+               isDark 
+                 ? "bg-white/5 border-white/5 text-white/40 hover:text-blue-400 hover:border-blue-500/30" 
+                 : "bg-slate-50 border-slate-100 text-slate-400 hover:text-blue-600 hover:border-blue-200"
+             )}
+           >
+             <PencilIcon className="w-5 h-5" />
+           </button>
+           <button 
+             onClick={handleDelete} 
+             className={clsx(
+               "w-12 h-16 rounded-[1.5rem] flex items-center justify-center border transition-all duration-500 hover:scale-105 active:scale-90 hover:shadow-lg", 
+               isDark 
+                 ? "bg-white/5 border-white/5 text-white/40 hover:text-red-400 hover:border-red-500/30" 
+                 : "bg-slate-50 border-slate-100 text-slate-400 hover:text-red-600 hover:border-red-200"
+             )}
+           >
+             <TrashIcon className="w-5 h-5" />
+           </button>
+        </div>
+      </div>
+      
+      {/* Decorative Corner Element */}
+      <div className="absolute top-0 right-0 w-24 h-24 pointer-events-none">
+        <div className={clsx(
+          "absolute top-0 right-0 w-[2px] h-12 transition-all duration-700 group-hover:h-24",
+          isDark ? "bg-gradient-to-b from-blue-500/0 via-blue-500/40 to-blue-500/0" : "bg-gradient-to-b from-blue-400/0 via-blue-400/40 to-blue-400/0"
+        )} />
+      </div>
     </div>
   )
 })

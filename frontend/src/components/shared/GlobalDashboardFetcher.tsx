@@ -228,10 +228,10 @@ export const GlobalDashboardFetcher: React.FC = () => {
                         validatedData.orders.forEach((o: any) => {
                             const idKey = o.id || o._id;
                             const numKey = o.orderNumber;
-                            if (idKey && !masterOrdersMap.has(String(idKey))) {
+                            if (idKey && String(idKey) !== 'undefined' && String(idKey) !== 'null' && !masterOrdersMap.has(String(idKey))) {
                                 masterOrdersMap.set(String(idKey), o);
                             }
-                            if (numKey && !masterOrdersByNumber.has(String(numKey))) {
+                            if (numKey && String(numKey) !== 'undefined' && String(numKey) !== 'null' && !masterOrdersByNumber.has(String(numKey))) {
                                 masterOrdersByNumber.set(String(numKey), o);
                             }
                         });
@@ -243,9 +243,11 @@ export const GlobalDashboardFetcher: React.FC = () => {
                             ...route,
                             orders: route.orders.map((routeOrder: any) => {
                                 const id = routeOrder.id || routeOrder._id;
-                                const masterById = id ? masterOrdersMap.get(String(id)) : null;
+                                const safeId = id && String(id) !== 'undefined' && String(id) !== 'null' ? String(id) : null;
+                                const masterById = safeId ? masterOrdersMap.get(safeId) : null;
                                 const num = routeOrder.orderNumber;
-                                const masterByNumber = num ? masterOrdersByNumber.get(String(num)) : null;
+                                const safeNum = num && String(num) !== 'undefined' && String(num) !== 'null' ? String(num) : null;
+                                const masterByNumber = safeNum ? masterOrdersByNumber.get(safeNum) : null;
                                 const master = masterById || masterByNumber;
                                 if (master) {
                                     return { ...routeOrder, ...master };

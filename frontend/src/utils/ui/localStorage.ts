@@ -55,7 +55,7 @@ export const localStorageUtils = {
   },
 
   // Courier performance settings (Target KM per order, etc.)
-  getCourierSettings: (): Record<string, { targetKmPerOrder?: number, kpiHudEnabled?: boolean, comparisonEnabled?: boolean }> => {
+  getCourierSettings: (): Record<string, { targetKmPerOrder?: number, additionalKm?: number, kpiHudEnabled?: boolean, comparisonEnabled?: boolean }> => {
     if (typeof window === 'undefined') return {}
     try {
       const existing = localStorage.getItem('km_courier_settings')
@@ -65,7 +65,7 @@ export const localStorageUtils = {
     }
   },
 
-  setCourierSettings: (settings: Record<string, { targetKmPerOrder?: number, kpiHudEnabled?: boolean, comparisonEnabled?: boolean }>): void => {
+  setCourierSettings: (settings: Record<string, { targetKmPerOrder?: number, additionalKm?: number, kpiHudEnabled?: boolean, comparisonEnabled?: boolean }>): void => {
     if (typeof window === 'undefined') return
     try {
       localStorage.setItem('km_courier_settings', JSON.stringify(settings))
