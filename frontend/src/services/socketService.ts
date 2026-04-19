@@ -151,14 +151,25 @@ class SocketService {
                 
                 const finalActive = forceActive || shouldBeActive || data.isActive;
 
-                // Keep counters monotonic while active to prevent UI regressions/flicker
+                // Keep counters monotonic ONLY during active calculation with same total
+                // If processedCount dramatically drops, it's a fresh calculation — allow the reset.
                 const incomingTotal = Number(data.totalCount || 0);
                 const incomingProcessed = Number(data.processedCount || 0);
-                const nextTotal = finalActive
-                    ? Math.max(Number(currentState.totalCount || 0), incomingTotal)
+                
+                const prevTotal = Number(currentState.totalCount || 0);
+                const prevProcessed = Number(currentState.processedCount || 0);
+                
+                // Detect a fresh calculation start: totalCount is the same but processedCount
+                // dropped significantly (back to near 0), or totalCount changed
+                const isReset = incomingProcessed <= Math.min(5, prevProcessed * 0.2) && finalActive && prevProcessed > 10;
+                const totalChanged = prevTotal > 0 && Math.abs(incomingTotal - prevTotal) > prevTotal * 0.3;
+                
+                const nextTotal = finalActive && !totalChanged
+                    ? Math.max(prevTotal, incomingTotal)
                     : incomingTotal;
-                const nextProcessed = finalActive
-                    ? Math.min(nextTotal, Math.max(Number(currentState.processedCount || 0), incomingProcessed))
+                    
+                const nextProcessed = (finalActive && !isReset && !totalChanged)
+                    ? Math.min(nextTotal, Math.max(prevProcessed, incomingProcessed))
                     : Math.min(incomingProcessed, nextTotal);
 
                 // Update current UI status

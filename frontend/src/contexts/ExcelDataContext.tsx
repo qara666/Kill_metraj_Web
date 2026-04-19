@@ -512,8 +512,14 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
           }
 
           // v5.160: Enrich route orders with master order data (address, courier, etc.)
-          const masterOrdersMap = new Map((prev.orders || []).map((o: any) => [String(o.id), o]));
-          const masterOrdersByNumber = new Map((prev.orders || []).map((o: any) => [String(o.orderNumber), o]));
+          const masterOrdersMap = new Map();
+          const masterOrdersByNumber = new Map();
+          
+          (prev.orders || []).forEach((o: any) => {
+             const id = o.id || o._id;
+             if (id) masterOrdersMap.set(String(id), o);
+             if (o.orderNumber) masterOrdersByNumber.set(String(o.orderNumber), o);
+          });
 
           const enrichedRoutes = validatedRoutes.map((route: any) => {
             if (!route.orders) return route;
@@ -523,31 +529,36 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
 
             // v5.160: Enrich each order with master data (address, courier, etc.)
             const enrichedOrders = dedupedOrders.map((order: any) => {
-              const masterById = masterOrdersMap.get(String(order.id || order._id));
-              const masterByNumber = masterOrdersByNumber.get(String(order.orderNumber));
+              const id = order.id || order._id;
+              const masterById = id ? masterOrdersMap.get(String(id)) : null;
+              const num = order.orderNumber;
+              const masterByNumber = num ? masterOrdersByNumber.get(String(num)) : null;
               const master = masterById || masterByNumber;
 
               if (master) {
                 return {
-                  ...order,
+                  // Base: master FO data (status, totalAmount, etc.)
                   ...master,
-                  // v5.170: Ensure coords and lat/lng are properly set
+                  // Override with route-specific data (geocoded address, coords, kmlZone)
+                  ...order,
+                  // Preserve route's geocoded address — it's more accurate than raw FO address
+                  address: order.address || master.address || (master as any).raw?.address || 'Адрес не указан',
+                  orderNumber: order.orderNumber || master.orderNumber || (master as any).id || 'N/A',
+                  plannedTime: order.plannedTime || master.plannedTime || (master as any).deliverBy,
+                  // Ensure coords from route (geocoded) take priority
                   coords: order.coords || master.coords,
-                  lat: order.lat || master.lat || order.coords?.lat || master.coords?.lat,
-                  lng: order.lng || master.lng || order.coords?.lng || master.coords?.lng,
+                  lat: order.lat || order.coords?.lat || master.lat || master.coords?.lat,
+                  lng: order.lng || order.coords?.lng || master.lng || master.coords?.lng,
                   kmlZone: order.kmlZone || master.kmlZone || master.deliveryZone,
                   kmlHub: order.kmlHub || master.kmlHub,
-                  address: order.address || master.address || (master as any).raw?.address || (master as any).raw?.full_address || 'Адрес не указан',
-                  orderNumber: order.orderNumber || master.orderNumber || (master as any).id || (master as any)._id || 'N/A',
-                  plannedTime: order.plannedTime || master.plannedTime || (master as any).deliverBy,
                 };
               }
 
               // No master found - ensure minimum fields
               return {
                 ...order,
-                address: order.address || (order as any).raw?.address || (order as any).raw?.full_address || 'Адрес не указан',
-                orderNumber: order.orderNumber || (order as any).id || (order as any)._id || 'N/A',
+                address: order.address || (order as any).raw?.address || 'Адрес не указан',
+                orderNumber: order.orderNumber || (order as any).id || 'N/A',
               };
             });
 
@@ -877,13 +888,13 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       const token = localStorage.getItem('km_access_token');
       if (!token) return;
       
-      // v5.180: Skip if socket routes were updated in the last 5 seconds (prevent stale DB overwrite)
+      // v5.180: Skip if socket routes were updated in the last 30 seconds (prevent stale DB overwrite during calculation)
       // v36.9: But NEVER skip on the initial page load
       const timeSinceSocketUpdate = Date.now() - lastSocketRouteUpdateRef.current;
       const isInitialLoad = isInitialLoadRef.current;
       if (isInitialLoad) {
         isInitialLoadRef.current = false; // Mark initial load as done
-      } else if (timeSinceSocketUpdate < 5000 && lastSocketRouteUpdateRef.current > 0) {
+      } else if (timeSinceSocketUpdate < 30000 && lastSocketRouteUpdateRef.current > 0) {
         console.log(`[ExcelSync] Skipping DB refresh - socket routes updated ${timeSinceSocketUpdate}ms ago`);
         return;
       }
@@ -1036,11 +1047,11 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     refreshRoutesFromDB();
   }, [refreshRoutesFromDB]);
   
-  // Also refresh when orders change (debounced to avoid UI flickering on rapid state updates)
+  // Also refresh when orders change (debounced — long enough to let robot finish a batch)
   useEffect(() => {
     if (excelData && excelData.orders?.length > 0) {
-      // Orders changed — debounce to avoid rapid repeated refreshes
-      const t = setTimeout(() => refreshRoutesFromDB(), 2000);
+      // Debounce long enough that we don't refresh mid-calculation every 2s
+      const t = setTimeout(() => refreshRoutesFromDB(), 10000);
       return () => clearTimeout(t);
     }
   }, [excelData?.orders?.length, refreshRoutesFromDB]);

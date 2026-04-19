@@ -214,23 +214,25 @@ export const GlobalDashboardFetcher: React.FC = () => {
                         console.log(`[GlobalDashboardFetcher] Order count changed: ${currentOrderCount} -> ${newOrderCount}. Updating.`);
                     }
                     // Enrich route orders with full order data from existing orders
-                    const masterOrdersMap = new Map(
-                        (currentExcelData?.orders || []).map((o: any) => [String(o.id), o])
-                    );
-                    const masterOrdersByNumber = new Map(
-                        (currentExcelData?.orders || []).map((o: any) => [String(o.orderNumber), o])
-                    );
+                    const masterOrdersMap = new Map();
+                    const masterOrdersByNumber = new Map();
+                    
+                    (currentExcelData?.orders || []).forEach((o: any) => {
+                       const id = o.id || o._id;
+                       if (id) masterOrdersMap.set(String(id), o);
+                       if (o.orderNumber) masterOrdersByNumber.set(String(o.orderNumber), o);
+                    });
                     
                     // Also use new orders from server if they exist (but prefer local)
                     if (hasNewOrders) {
                         validatedData.orders.forEach((o: any) => {
-                            const idKey = String(o.id);
-                            const numKey = String(o.orderNumber);
-                            if (!masterOrdersMap.has(idKey)) {
-                                masterOrdersMap.set(idKey, o);
+                            const idKey = o.id || o._id;
+                            const numKey = o.orderNumber;
+                            if (idKey && !masterOrdersMap.has(String(idKey))) {
+                                masterOrdersMap.set(String(idKey), o);
                             }
-                            if (!masterOrdersByNumber.has(numKey)) {
-                                masterOrdersByNumber.set(numKey, o);
+                            if (numKey && !masterOrdersByNumber.has(String(numKey))) {
+                                masterOrdersByNumber.set(String(numKey), o);
                             }
                         });
                     }
@@ -240,8 +242,10 @@ export const GlobalDashboardFetcher: React.FC = () => {
                         return {
                             ...route,
                             orders: route.orders.map((routeOrder: any) => {
-                                const masterById = masterOrdersMap.get(String(routeOrder.id));
-                                const masterByNumber = masterOrdersByNumber.get(String(routeOrder.orderNumber));
+                                const id = routeOrder.id || routeOrder._id;
+                                const masterById = id ? masterOrdersMap.get(String(id)) : null;
+                                const num = routeOrder.orderNumber;
+                                const masterByNumber = num ? masterOrdersByNumber.get(String(num)) : null;
                                 const master = masterById || masterByNumber;
                                 if (master) {
                                     return { ...routeOrder, ...master };

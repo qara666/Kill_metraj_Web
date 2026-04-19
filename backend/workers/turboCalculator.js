@@ -1499,24 +1499,17 @@ class OrderCalculator {
             const { enhanced, fromGPS, fromGeocoder, lowConfidence } = enhanceAllOrderCoords(data.orders, kmlIndex, this.zoneCentroids);
             logger.info(`[TurboCalculator] 📍 Coord resolver: validated ${enhanced} orders (${fromGPS} GPS, ${fromGeocoder} DB, ${lowConfidence} low-conf)`);
 
-            // v7.8: Immediate emission after geocoding to update map and initial counters
-            if (this.io && enhanced > 0) {
-                this.io.emit('dashboard:update', {
-                    divisionId: cache.division_id,
-                    date: targetDateNorm || cache.target_date,
-                    source: 'turbo_calculator_geocoding',
-                    data: { ...data, orders: data.orders }
-                });
-            }
+            // v7.8 NOTE: dashboard:update mid-geocoding removed — it caused address flickering in the UI.
+            // The final routes_update emission at the end of processCache is the single source of truth.
 
             // v5.197: Standardize stats for real-time UI tracking
             const totalCount = data.orders.length;
             const ordersWithRealCourier = ordersToGroup.length;
             const alreadyRouted = existingRoutedOrderNumbers.size;
 
-            // v7.2: Start with orders already in routes to prevent "jump back to 0"
+            // v7.2: Start with orders already in routes
             stats.skippedInRoutes = alreadyRouted;
-            stats.processedCount = Math.max(alreadyRouted, Math.round(cacheTotalCount * 0.35));
+            stats.processedCount = alreadyRouted; // Real count: only already-completed orders
             stats.unassignedCount = Math.max(0, totalCount - ordersWithRealCourier);
             stats.totalOrdersAll = totalCount;
             stats.currentPhase = 'processing';

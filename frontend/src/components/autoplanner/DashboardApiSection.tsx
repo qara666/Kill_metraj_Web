@@ -139,13 +139,21 @@ export const DashboardApiSection: React.FC = () => {
             const current = store.autoRoutingStatus;
             const aggregate = store.aggregateRoutingStatus;
 
-            // Compute stable progress metrics
-            const nextTotal = data.isActive
-                ? Math.max(current.totalCount || 0, data.totalCount || 0)
-                : (data.totalCount ?? current.totalCount ?? 0);
-            const nextProcessed = data.isActive
-                ? Math.min(nextTotal, Math.max(current.processedCount || 0, data.processedCount || 0))
-                : Math.min((data.processedCount ?? current.processedCount ?? 0), nextTotal);
+            // Compute stable progress metrics — allow reset when new calculation starts
+            const prevTotal = current.totalCount || 0;
+            const prevProcessed = current.processedCount || 0;
+            const incomingTotal = data.totalCount || 0;
+            const incomingProcessed = data.processedCount || 0;
+            
+            const isReset = incomingProcessed <= Math.min(5, prevProcessed * 0.2) && data.isActive && prevProcessed > 10;
+            const totalChanged = prevTotal > 0 && Math.abs(incomingTotal - prevTotal) > prevTotal * 0.3;
+            
+            const nextTotal = data.isActive && !totalChanged
+                ? Math.max(prevTotal, incomingTotal)
+                : incomingTotal;
+            const nextProcessed = (data.isActive && !isReset && !totalChanged)
+                ? Math.min(nextTotal, Math.max(prevProcessed, incomingProcessed))
+                : Math.min(incomingProcessed, nextTotal);
 
             const updatedStatus = {
                 ...data,

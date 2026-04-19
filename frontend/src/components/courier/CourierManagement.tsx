@@ -132,7 +132,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
       bonusDistance: 0,
       effectivePhysicalKm: totalDist
     }
-  }, [excelData, autoRoutingStatus?.couriersSummary])
+  }, [excelData, autoRoutingStatus?.couriersSummary, currentDivisionId])
 
   const getCourierRoutes = useCallback((name: string) => {
     const n = normalizeCourierName(name);
@@ -214,7 +214,8 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     if (list.length > 0 || !excelData?.loading) {
       setCouriers(list);
     }
-  }, [excelData?.orders, excelData?.routes, excelData?.couriers, autoRoutingStatus?.couriersSummary, getCourierStats, currentDivisionId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [excelData?.orders, excelData?.routes, excelData?.couriers, autoRoutingStatus?.couriersSummary, currentDivisionId]);
 
 
   const filtered = useMemo(() => {
