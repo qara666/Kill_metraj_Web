@@ -592,7 +592,16 @@ class OrderCalculator {
             await selfHostRoutingHealth.probeAll();
         } catch (e) { /* non-fatal */ }
 
-        logger.info(`[TurboCalculator] 🚀 v38.2 SERVER-READY — Auto-starting tick loop.`);
+        // v39.1: Reload KML zones NOW — models are fully ready at this point.
+        // The constructor call preloadKmlZones() races against DB init on Render and usually gets 0 zones.
+        try {
+            await this.preloadKmlZones();
+            logger.info(`[TurboCalculator] 🗺️ KML zones loaded in start(): ${this.kmlZones?.length || 0} zones`);
+        } catch (e) {
+            logger.warn('[TurboCalculator] ⚠️ KML preload in start() failed:', e.message);
+        }
+
+        logger.info(`[TurboCalculator] 🚀 v39.1 SERVER-READY — Auto-starting tick loop.`);
         this.tick();
     }
 
@@ -1656,6 +1665,8 @@ class OrderCalculator {
                 await batchEnhancedGeocode(allOrdersNeedsGeo, cityBias, activeKmlFeatures, {
                     photonUrl: process.env.PHOTON_URL || 'https://photon.komoot.io',
                     geoCacheDb: GeoCache,
+                    // v39.1: Pass hub anchor for distance validation when KML zones are unavailable
+                    hubAnchor: globalStartPoint || null,
                     gcacheLRU: this.geocache,
                     onProviderEvent: (evt) => {
                         try {

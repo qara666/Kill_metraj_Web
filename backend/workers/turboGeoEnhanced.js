@@ -1088,10 +1088,24 @@ function checkAnomalyDistance(candidateLat, candidateLng, existingCoords, maxAno
 async function enhancedGeocode(address, city = 'Харків', expectedZone = null, kmlZones = [], divisionCoords = [], options = {}) {
     if (!address || !address.trim()) return null;
 
-    const { photonUrl = 'http://localhost:2322', geoCacheDb = null, gcacheLRU = null, onProviderEvent } = options;
+    const { photonUrl = 'http://localhost:2322', geoCacheDb = null, gcacheLRU = null, onProviderEvent, hubAnchor = null } = options;
     const safeQueryTracked = mkSafeQueryTracked(onProviderEvent);
 
     const CITY_BOUNDS_OBJ = getCityBounds(city);
+
+    // v39.1: Hub-anchor max distance — when KML zones absent, reject points too far from hub.
+    // 15km straight-line covers all typical urban delivery zones (Obolon, Podil, Osokorky, etc.)
+    const HUB_MAX_KM = 15;
+    const hasHub = hubAnchor && hubAnchor.lat && hubAnchor.lng;
+    const hasKml = kmlZones && kmlZones.length > 0;
+
+    // v39.1: Hub-anchor guard — rejects a coordinate if it is farther than HUB_MAX_KM from hub
+    // ONLY applied when no KML zones are configured (if KML exists, zones handle spatial validation)
+    const isOutsideHubRadius = (lat, lng) => {
+        if (!hasHub || hasKml) return false; // Not applicable
+        const d = haversine(lat, lng, hubAnchor.lat, hubAnchor.lng);
+        return d > HUB_MAX_KM;
+    };
 
     // -------------------------------
     // L1: LRU memory cache
@@ -1100,8 +1114,15 @@ async function enhancedGeocode(address, city = 'Харків', expectedZone = nu
     if (gcacheLRU) {
         const lruHit = gcacheLRU.get(cacheKey);
         if (lruHit && lruHit.latitude) {
-            logger.debug(`[GeoEnhanced] L1 LRU hit: ${address}`);
-            return lruHit;
+            // v39.1: Even LRU cached results must pass hub-anchor check
+            if (isOutsideHubRadius(lruHit.latitude, lruHit.longitude)) {
+                logger.warn(`[GeoEnhanced] L1 LRU EVICTED: ${address} — cached coord (${lruHit.latitude.toFixed(4)},${lruHit.longitude.toFixed(4)}) is >${HUB_MAX_KM}km from hub`);
+                gcacheLRU.delete(cacheKey);
+                // Fall through to re-geocode
+            } else {
+                logger.debug(`[GeoEnhanced] L1 LRU hit: ${address}`);
+                return lruHit;
+            }
         }
     }
 
@@ -1112,10 +1133,18 @@ async function enhancedGeocode(address, city = 'Харків', expectedZone = nu
         try {
             const cached = await geoCacheDb.findOne({ where: { address_key: cacheKey, is_success: true } });
             if (cached && cached.lat && cached.lng) {
-                const result = { latitude: cached.lat, longitude: cached.lng, locationType: 'CACHED_DB', provider: cached.provider || 'cache' };
-                if (gcacheLRU) gcacheLRU.set(cacheKey, result);
-                logger.debug(`[GeoEnhanced] L2 DB cache hit: ${address}`);
-                return result;
+                // v39.1: Validate DB-cached coord against hub anchor — evict stale bad geocodes
+                if (isOutsideHubRadius(cached.lat, cached.lng)) {
+                    logger.warn(`[GeoEnhanced] L2 DB cache EVICTED: ${address} — cached coord (${cached.lat.toFixed(4)},${cached.lng.toFixed(4)}) is >${HUB_MAX_KM}km from hub. Will re-geocode.`);
+                    try { await geoCacheDb.destroy({ where: { address_key: cacheKey } }); } catch (_) {}
+                    if (gcacheLRU) gcacheLRU.delete(cacheKey);
+                    // Fall through to fresh geocoding
+                } else {
+                    const result = { latitude: cached.lat, longitude: cached.lng, locationType: 'CACHED_DB', provider: cached.provider || 'cache' };
+                    if (gcacheLRU) gcacheLRU.set(cacheKey, result);
+                    logger.debug(`[GeoEnhanced] L2 DB cache hit: ${address}`);
+                    return result;
+                }
             }
         } catch (e) { /* ignore */ }
     }
@@ -1142,12 +1171,41 @@ async function enhancedGeocode(address, city = 'Харків', expectedZone = nu
             return null;
         }
 
-        // Anomaly distance check vs division centroid
+        // v39.1: Hub-anchor check — reject if too far from hub (only when no KML zones configured)
+        if (isOutsideHubRadius(best.lat, best.lng)) {
+            const dHub = haversine(best.lat, best.lng, hubAnchor.lat, hubAnchor.lng);
+            logger.warn(`[GeoEnhanced] ${label}: Candidate (${best.lat.toFixed(4)},${best.lng.toFixed(4)}) is ${dHub.toFixed(1)}km from hub — exceeds ${HUB_MAX_KM}km limit. REJECTED. (addr: ${address})`);
+            return null;
+        }
+
+        // v39.1: Anomaly check threshold reduced 30km→8km for tighter validation
         if (divisionCoords.length >= 3) {
-            const { anomaly, distKm } = checkAnomalyDistance(best.lat, best.lng, divisionCoords);
+            const { anomaly, distKm } = checkAnomalyDistance(best.lat, best.lng, divisionCoords, 8);
             if (anomaly) {
-                logger.warn(`[GeoEnhanced] ${label}: Anomalous distance ${distKm?.toFixed(1)}km from division centroid — rejected (addr: ${address})`);
+                logger.warn(`[GeoEnhanced] ${label}: Anomalous distance ${distKm?.toFixed(1)}km from division centroid (threshold: 8km) — rejected (addr: ${address})`);
                 return null;
+            }
+        }
+
+        // v39.1: Multi-provider consensus check when NO KML zones.
+        // If only 1 provider returned a result and it's the best, require it agrees with others within 5km.
+        // This prevents accepting a single outlier geocoder result as ground truth.
+        if (!hasKml && candidates.length > 1) {
+            const otherCandidates = candidates.filter(c => c !== best && c._score > -3);
+            if (otherCandidates.length >= 2) {
+                // Compute consensus centroid of other providers
+                const consensusLat = otherCandidates.reduce((s, c) => s + c.lat, 0) / otherCandidates.length;
+                const consensusLng = otherCandidates.reduce((s, c) => s + c.lng, 0) / otherCandidates.length;
+                const distFromConsensus = haversine(best.lat, best.lng, consensusLat, consensusLng);
+                if (distFromConsensus > 5) {
+                    logger.warn(`[GeoEnhanced] ${label}: Best candidate disagrees with ${otherCandidates.length} other providers by ${distFromConsensus.toFixed(1)}km — flagged as unreliable (addr: ${address})`);
+                    // Try the consensus centroid candidate instead
+                    const consensusCandidate = pickBest(otherCandidates);
+                    if (consensusCandidate) {
+                        logger.info(`[GeoEnhanced] ${label}: Using consensus candidate instead: (${consensusCandidate.lat.toFixed(5)},${consensusCandidate.lng.toFixed(5)}) via ${consensusCandidate.provider}`);
+                        return { latitude: consensusCandidate.lat, longitude: consensusCandidate.lng, locationType: consensusCandidate.type || 'CONSENSUS', provider: consensusCandidate.provider, _score: consensusCandidate._score };
+                    }
+                }
             }
         }
 
@@ -1434,8 +1492,14 @@ function buildDeepStrategies(cleaned, city) {
  * @param {object}   options          - { photonUrl, geoCacheDb, gcacheLRU, onProgress }
  */
 async function batchEnhancedGeocode(orders, city, kmlZones = [], options = {}) {
-    const { onProgress, ...geoOptions } = options;
+    const { onProgress, hubAnchor = null, ...geoOptions } = options;
+    // v39.1: Pass hubAnchor to per-order geocoding
+    const geoOptionsWithHub = { ...geoOptions, hubAnchor };
     const CHUNK_SIZE = 15;
+
+    if (hubAnchor?.lat && hubAnchor?.lng && (!kmlZones || kmlZones.length === 0)) {
+        logger.info(`[GeoEnhanced] 🏠 Hub-anchor guard ACTIVE: All geocoded points must be within 15km of hub (${hubAnchor.lat.toFixed(4)},${hubAnchor.lng.toFixed(4)})`);
+    }
 
     // Track all division coords for anomaly detection (starts empty, fills dynamically)
     const divisionCoords = orders
@@ -1457,7 +1521,7 @@ async function batchEnhancedGeocode(orders, city, kmlZones = [], options = {}) {
             const expectedZone = String(order.deliveryZone || order.kmlZone || order.sector || '').trim();
 
             try {
-                const result = await enhancedGeocode(addr, city, expectedZone || null, kmlZones, divisionCoords, geoOptions);
+                const result = await enhancedGeocode(addr, city, expectedZone || null, kmlZones, divisionCoords, geoOptionsWithHub);
                 if (result) {
                     order.coords = { lat: result.latitude, lng: result.longitude };
                     order._geoProvider = result.provider;
@@ -1492,7 +1556,7 @@ async function batchEnhancedGeocode(orders, city, kmlZones = [], options = {}) {
             // Pass 2: strict polite mode for free providers
             await new Promise(r => setTimeout(r, 1000));
             const result = await enhancedGeocode(addr, city, expectedZone || null, kmlZones, divisionCoords, {
-                ...geoOptions,
+                ...geoOptionsWithHub,
                 _pass: 2
             });
 
