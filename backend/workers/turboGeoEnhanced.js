@@ -1107,6 +1107,18 @@ async function enhancedGeocode(address, city = 'Харків', expectedZone = nu
         return d > HUB_MAX_KM;
     };
 
+    // v39.2: KML spatial guard — if KML zones exist, MUST be inside one of them
+    const isOutsideActiveZones = (lat, lng) => {
+        if (!hasKml) return false;
+        for (const zone of kmlZones) {
+            const polygon = zone.boundary?.coordinates?.[0] || zone.coordinates;
+            if (polygon && KmlService._isPointInPolygon(lat, lng, polygon)) {
+                return false; // Inside an active zone
+            }
+        }
+        return true; // Outside all active zones
+    };
+
     // -------------------------------
     // L1: LRU memory cache
     // -------------------------------
@@ -1114,9 +1126,9 @@ async function enhancedGeocode(address, city = 'Харків', expectedZone = nu
     if (gcacheLRU) {
         const lruHit = gcacheLRU.get(cacheKey);
         if (lruHit && lruHit.latitude) {
-            // v39.1: Even LRU cached results must pass hub-anchor check
-            if (isOutsideHubRadius(lruHit.latitude, lruHit.longitude)) {
-                logger.warn(`[GeoEnhanced] L1 LRU EVICTED: ${address} — cached coord (${lruHit.latitude.toFixed(4)},${lruHit.longitude.toFixed(4)}) is >${HUB_MAX_KM}km from hub`);
+            // v39.1: Even LRU cached results must pass hub-anchor and KML checks
+            if (isOutsideHubRadius(lruHit.latitude, lruHit.longitude) || isOutsideActiveZones(lruHit.latitude, lruHit.longitude)) {
+                logger.warn(`[GeoEnhanced] L1 LRU EVICTED: ${address} — cached coord is outside allowed zones/hub radius`);
                 gcacheLRU.delete(cacheKey);
                 // Fall through to re-geocode
             } else {
@@ -1133,9 +1145,9 @@ async function enhancedGeocode(address, city = 'Харків', expectedZone = nu
         try {
             const cached = await geoCacheDb.findOne({ where: { address_key: cacheKey, is_success: true } });
             if (cached && cached.lat && cached.lng) {
-                // v39.1: Validate DB-cached coord against hub anchor — evict stale bad geocodes
-                if (isOutsideHubRadius(cached.lat, cached.lng)) {
-                    logger.warn(`[GeoEnhanced] L2 DB cache EVICTED: ${address} — cached coord (${cached.lat.toFixed(4)},${cached.lng.toFixed(4)}) is >${HUB_MAX_KM}km from hub. Will re-geocode.`);
+                // v39.1: Validate DB-cached coord against hub anchor and KML zones
+                if (isOutsideHubRadius(cached.lat, cached.lng) || isOutsideActiveZones(cached.lat, cached.lng)) {
+                    logger.warn(`[GeoEnhanced] L2 DB cache EVICTED: ${address} — cached coord (${cached.lat.toFixed(4)},${cached.lng.toFixed(4)}) is outside allowed zones/hub radius. Will re-geocode.`);
                     try { await geoCacheDb.destroy({ where: { address_key: cacheKey } }); } catch (_) {}
                     if (gcacheLRU) gcacheLRU.delete(cacheKey);
                     // Fall through to fresh geocoding

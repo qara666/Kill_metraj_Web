@@ -19,6 +19,7 @@ const {
 const { batchEnhancedGeocode, checkAnomalyDistance, deepCleanAddress, resetAllGeoProviders } = require('./turboGeoEnhanced');
 const { enhanceAllOrderCoords, buildZoneCentroids, calculateTotalRouteDistance, haversineKm } = require('./turboCoordValidator');
 const selfHostRoutingHealth = require('../src/services/selfHostRoutingHealth');
+const KmlService = require('../src/services/KmlService');
 
 // v36.9: CommonJS-safe local implementations of essential utilities (zero-dependency)
 const pLimit = (concurrency) => {
@@ -1484,6 +1485,66 @@ class OrderCalculator {
             const globalEndPoint = presets?.defaultEndLat && presets?.defaultEndLng ?
                 { lat: parsePresetParam(presets.defaultEndLat), lng: parsePresetParam(presets.defaultEndLng) } : null;
 
+            // v39.2: Build activeKmlFeatures UPFRONT to validate incoming Poster GPS coords
+            const divisionActiveZones = presets?.selectedZones || [];
+            let activeKmlFeatures = [];
+            
+            if (allKmlZones && allKmlZones.length > 0) {
+                activeKmlFeatures = allKmlZones.filter(z => {
+                    const folderName = z.hub?.name || z.properties?.folderName || '';
+                    const name = z.name || z.properties?.name || '';
+                    const zoneKey = `${folderName.trim()}:${name.trim()}`;
+                    return divisionActiveZones.includes(zoneKey);
+                });
+            } else if (presets?.kmlData?.polygons) {
+                presets.kmlData.polygons.forEach(p => {
+                    const zoneKey = `${(p.folderName || '').trim()}:${(p.name || '').trim()}`;
+                    if (divisionActiveZones.includes(zoneKey)) {
+                        const coords = (p.path || []).map(pt => [pt.lng, pt.lat]);
+                        if (coords.length > 0) {
+                            activeKmlFeatures.push({
+                                id: `preset_${p.name}`,
+                                name: p.name,
+                                coordinates: coords,
+                                properties: { folderName: p.folderName, name: p.name }
+                            });
+                        }
+                    }
+                });
+            }
+
+            // v39.2: STRICT KML VALIDATION FOR PRE-EXISTING POSTER GPS COORDS
+            if (activeKmlFeatures.length > 0) {
+                let strippedCount = 0;
+                for (const o of (data.orders || [])) {
+                    // Also check raw lat/lng properties that might exist
+                    const lat = o.coords?.lat || o.lat || o.latitude;
+                    const lng = o.coords?.lng || o.lng || o.longitude;
+                    if (lat && lng) {
+                        let isInside = false;
+                        for (const zone of activeKmlFeatures) {
+                            const polygon = zone.boundary?.coordinates?.[0] || zone.coordinates;
+                            if (polygon && KmlService._isPointInPolygon(lat, lng, polygon)) {
+                                isInside = true;
+                                break;
+                            }
+                        }
+                        if (!isInside) {
+                            strippedCount++;
+                            delete o.coords;
+                            delete o.lat;
+                            delete o.lng;
+                            delete o.latitude;
+                            delete o.longitude;
+                            o._geoFailed = true; // Mark so it goes to clarification if re-geocoding also fails
+                        }
+                    }
+                }
+                if (strippedCount > 0) {
+                    logger.warn(`[TurboCalculator] 🚨 Stripped coords from ${strippedCount} incoming orders because they fell OUTSIDE active KML zones!`);
+                }
+            }
+
             // Ensure ordersToGroup contains ALL valid orders
 
             // v5.190: Group ALL valid orders instead of just newOrders, to preserve proper time windows
@@ -1625,41 +1686,6 @@ class OrderCalculator {
                     stats.currentPhase = 'geocoding';
                     stats.message = `Геокодирование: ${totalToGeo} адресов...`;
                     emitStatus(true);
-                }
-
-                // v7.5: Pass the user's active KML zones for intersection priority
-                const divisionActiveZones = presets?.selectedZones || [];
-                let activeKmlFeatures = [];
-
-                // v39.1: Merge zones from DB (centralized) and Presets (user-uploaded)
-                // Priority 1: DB zones
-                if (allKmlZones && allKmlZones.length > 0) {
-                    activeKmlFeatures = allKmlZones.filter(z => {
-                        // Support both Sequelize model (z.hub.name) and raw JSON (z.properties.folderName)
-                        const folderName = z.hub?.name || z.properties?.folderName || '';
-                        const name = z.name || z.properties?.name || '';
-                        const zoneKey = `${folderName.trim()}:${name.trim()}`;
-                        return divisionActiveZones.includes(zoneKey);
-                    });
-                }
-
-                // Priority 2: Presets (if DB is empty or for specific user-level zones)
-                if (activeKmlFeatures.length === 0 && presets?.kmlData?.polygons) {
-                    presets.kmlData.polygons.forEach(p => {
-                        const zoneKey = `${(p.folderName || '').trim()}:${(p.name || '').trim()}`;
-                        if (divisionActiveZones.includes(zoneKey)) {
-                            // Convert path [{lat,lng}] to coordinates [[lng,lat]]
-                            const coords = (p.path || []).map(pt => [pt.lng, pt.lat]);
-                            if (coords.length > 0) {
-                                activeKmlFeatures.push({
-                                    id: `preset_${p.name}`,
-                                    name: p.name,
-                                    coordinates: coords, // GeoJSON format for KmlService
-                                    properties: { folderName: p.folderName, name: p.name }
-                                });
-                            }
-                        }
-                    });
                 }
 
                 if (activeKmlFeatures.length > 0) {
