@@ -1,5 +1,6 @@
 import { useMemo, memo, useEffect, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { 
   XMarkIcon, 
@@ -488,6 +489,7 @@ interface MileageModalProps {
 }
 
 export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCourierRoutes, onEditAddress, onDeleteRoute }: MileageModalProps) => {
+  const navigate = useNavigate();
   const presets = localStorageUtils.getAllSettings();
   const distanceStats = useMemo(() => getCourierStats(courier.name), [courier.name, getCourierStats]);
   const baseRoutes = useMemo(() => getCourierRoutes(courier.name), [courier.name, getCourierRoutes]);
@@ -657,6 +659,32 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
     };
   }, [localRoutes, distanceStats?.totalOrders]);
 
+  const handleExport = useCallback(() => {
+    const rows: string[][] = [['Metric', 'Value']];
+    rows.push(['Courier', courier.name]);
+    rows.push(['Total Distance (km)', (recalcStats.totalDistance || 0).toFixed(2)]);
+    rows.push(['Total Orders', String(recalcStats.totalOrders || 0)]);
+    rows.push(['Orders In Routes', String(recalcStats.ordersInRoutes || 0)]);
+    
+    localRoutes.forEach((r, idx) => {
+      rows.push([`Route #${idx + 1} ID`, r.id || 'N/A']);
+      rows.push([`Route #${idx + 1} Distance`, String(r.totalDistance || 0)]);
+      rows.push([`Route #${idx + 1} Orders`, (r.orders || []).map((o: any) => o.orderNumber).join(';')]);
+    });
+
+    const csv = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `DistanceDetail_${courier.name}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success('Экспорт завершен');
+  }, [courier.name, recalcStats, localRoutes]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', handleKeyDown);
@@ -794,8 +822,34 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
           </div>
         </div>
 
-        <div className={clsx("p-8 border-t flex justify-end shrink-0", isDark ? "border-white/5 bg-[#1e1e1e]" : "border-slate-100 bg-white")}>
-          <button onClick={onClose} className="px-8 py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] bg-blue-600 text-white hover:bg-blue-700 active:scale-95 shadow-lg shadow-blue-500/10">Закрыть</button>
+        <div className={clsx("p-8 border-t flex items-center justify-between shrink-0 gap-4", isDark ? "border-white/5 bg-[#1e1e1e]" : "border-slate-100 bg-white")}>
+          <button 
+            onClick={onClose} 
+            className={clsx(
+              "px-8 py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] transition-all active:scale-95",
+              isDark ? "bg-white/5 text-white/40 hover:text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+            )}
+          >
+            Вернуться
+          </button>
+          
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={handleExport}
+              className={clsx(
+                "px-8 py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] transition-all active:scale-95 shadow-lg",
+                isDark ? "bg-teal-500/10 text-teal-400 hover:bg-teal-500/20 shadow-teal-900/10" : "bg-teal-50 text-teal-700 hover:bg-teal-100 shadow-teal-500/10"
+              )}
+            >
+              Экспорт CSV
+            </button>
+            <button 
+              onClick={() => { onClose(); navigate('/routes'); }} 
+              className="px-10 py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] bg-blue-600 text-white hover:bg-blue-700 active:scale-95 shadow-xl shadow-blue-500/20"
+            >
+              Перейти к маршрутам
+            </button>
+          </div>
         </div>
       </div>
     </div>,

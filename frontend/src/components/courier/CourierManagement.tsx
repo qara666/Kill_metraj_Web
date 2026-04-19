@@ -7,7 +7,7 @@ import {
   ChevronRightIcon
 } from '@heroicons/react/24/outline';
 import { clsx } from 'clsx'
-import { EliteCourierCard } from './EliteCourierCard'
+import { CourierCarousel } from './CourierCarousel'
 import { useExcelData } from '../../contexts/ExcelDataContext'
 import { useTheme } from '../../contexts/ThemeContext'
 import { toast } from 'react-hot-toast'
@@ -18,12 +18,14 @@ import { useDashboardStore } from '../../stores/useDashboardStore'
 import { DashboardHeader } from '../shared/DashboardHeader'
 import { KpiAnalysisModal } from './KpiAnalysisModal'
 import { AddressEditModal } from '../modals/AddressEditModal'
+import { EliteCourierCard } from './EliteCourierCard'
+import DistanceDetailModal from './DistanceDetailModal'
 
 // v9.3: GEO-ERROR REPAIR HUD (STABLE)
 // Added AddressEditModal, additive distance logic and clickable alerts
 // RESTORED IMPORTS INTEGRITY
 
-const MileageModal = lazy(() => import('../modals/MileageModal').then(m => ({ default: m.MileageModal })))
+// MileageModal migrated to DistanceDetailModal; removed old mileage modal usage
 
 interface Courier {
   id: string
@@ -120,17 +122,20 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     const totalOrdersCount = ordersAssignedRaw > 0 ? ordersAssignedRaw : Math.max(ordersAssignedRaw, ordersInRoutes);
 
     const baseKm = base?.distanceKm || 0;
-    const totalDist = robotPhysicalKm > 0 ? robotPhysicalKm : baseKm;
+    const physicalDist = robotPhysicalKm > 0 ? robotPhysicalKm : baseKm;
+    const bonusDist = ordersInRoutes * 0.5;
+    const finalTotal = physicalDist + bonusDist;
 
     return {
-      totalDistance: totalDist,
+      totalDistance: finalTotal,
       history: base?.distanceHistory || [],
       totalOrders: totalOrdersCount,
       ordersInRoutes: ordersInRoutes,
       baseDistance: baseKm,
       robotDistance: robotPhysicalKm,
-      bonusDistance: 0,
-      effectivePhysicalKm: totalDist
+      bonusDistance: bonusDist,
+      effectivePhysicalKm: physicalDist,
+      routes: getCourierRoutes(name)
     }
   }, [excelData, autoRoutingStatus?.couriersSummary, currentDivisionId])
 
@@ -376,15 +381,26 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
         </div>
       </div>
 
-      <div className="px-6 pb-6 pt-2 flex-1">
+      <div className="px-10 pb-20 pt-10">
         {paginatedCouriers.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
             {paginatedCouriers.map(c => (
-              <EliteCourierCard key={c.id} courier={c} isDark={isDark} onEdit={handleEditClick} onDelete={handleDeleteCourier} onToggleVehicle={toggleCourierVehicleType} onRecalculate={handleRecalculateUnit} onDistanceClick={handleDistanceClick} onKpiClick={handleKpiModalOpen} onGeoErrorClick={handleGeoErrorClick} distanceDetails={getCourierStats(c.name)} />
+              <EliteCourierCard 
+                key={c.id}
+                courier={c}
+                isDark={isDark}
+                distanceDetails={getCourierStats(c.name)}
+                onEdit={handleEditClick}
+                onDelete={handleDeleteCourier}
+                onToggleVehicle={toggleCourierVehicleType}
+                onRecalculate={handleRecalculateUnit}
+                onDistanceClick={handleDistanceClick}
+                onKpiClick={handleKpiModalOpen}
+              />
             ))}
           </div>
         ) : (
-          <div className="py-24 text-center opacity-30 uppercase tracking-tighter text-2xl font-black">Ничего не найдено</div>
+          <div className="py-24 text-center opacity-30 uppercase tracking-tighter text-4xl font-black">Ничего не найдено</div>
         )}
       </div>
 
@@ -400,12 +416,18 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
         </div>
       )}
 
-      {showKpiModal && selectedCourier && (
+  {showKpiModal && selectedCourier && (
         <Suspense fallback={null}><KpiAnalysisModal courier={selectedCourier} allCouriers={couriers} isDark={isDark} onClose={() => setShowKpiModal(false)} /></Suspense>
       )}
 
       {showDistanceModal && selectedCourier && (
-        <Suspense fallback={null}><MileageModal courier={selectedCourier} isDark={isDark} onClose={() => setShowDistanceModal(false)} getCourierStats={getCourierStats} getCourierRoutes={getCourierRoutes} onEditAddress={handleEditAddress} onDeleteRoute={() => {}} /></Suspense>
+        <DistanceDetailModal 
+          isOpen={showDistanceModal}
+          onClose={() => setShowDistanceModal(false)}
+          courierName={selectedCourier.name}
+          distanceDetails={getCourierStats(selectedCourier.name)}
+          onEditAddress={handleEditAddress}
+        />
       )}
 
       {showAddressModal && editingOrder && (

@@ -16,6 +16,7 @@ export interface OSRMRouteResult {
   legs?: OSRMLeg[]
   totalDuration?: number
   totalDistance?: number
+  geometry?: string
 }
 
 import { API_URL } from '../config/apiConfig';
@@ -105,7 +106,8 @@ export class YapikoOSRMService {
             feasible: true,
             legs,
             totalDistance: route.distance,
-            totalDuration: route.duration
+            totalDuration: route.duration,
+            geometry: route.geometry
           };
         } catch (error: any) {
           console.error(`[YapikoOSRM] Ошибка (${p}):`, error);
