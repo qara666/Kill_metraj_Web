@@ -58,8 +58,9 @@ const BoundsUpdater = memo(({ routes, focusTrigger }: { routes: any[], focusTrig
         if (allPoints.length > 0) {
             const bounds = L.latLngBounds(allPoints);
             const timer = setTimeout(() => {
-                map.fitBounds(bounds, { padding: [100, 100], animate: true, duration: 1 });
-            }, 300);
+                map.fitBounds(bounds, { padding: [50, 50], animate: true, duration: 0.5 });
+            }, 100);
+
             return () => clearTimeout(timer);
         }
     }, [routes, map, focusTrigger]);
@@ -112,15 +113,18 @@ const RouteLayer = memo(({ route, color, index, isAnimating, showLabels }: { rou
         }
         let step = 0;
         const totalSteps = points.length;
-        const intervalTime = Math.max(80, 8000 / totalSteps); 
+        // v38.3: Cinematic slow-motion replay (80ms min per step, total duration approx 12-15s for long routes)
+        const intervalTime = Math.max(120, 15000 / totalSteps); 
         const interval = setInterval(() => {
             step += 1;
-            if (step > totalSteps) clearInterval(interval);
-            else {
+            if (step > totalSteps) {
+                clearInterval(interval);
+            } else {
                 setVisiblePoints(points.slice(0, step));
                 setAnimationProgress((step / totalSteps) * 100);
             }
         }, intervalTime);
+
         return () => clearInterval(interval);
     }, [isAnimating, points]);
 
@@ -180,15 +184,16 @@ const ZoneLayer = memo(({ routes }: { routes: any[] }) => {
                     <React.Fragment key={name}>
                         <Circle 
                             center={center as [number, number]} 
-                            radius={2000} 
+                            radius={2500} 
                             pathOptions={{ 
-                                fillColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'][idx % 4], 
-                                fillOpacity: 0.15, 
-                                color: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'][idx % 4], 
-                                weight: 2,
-                                dashArray: '10, 10'
+                                fillColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'][idx % 5], 
+                                fillOpacity: 0.25, 
+                                color: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'][idx % 5], 
+                                weight: 3,
+                                dashArray: '15, 15'
                             }} 
                         />
+
                         <Marker position={center as [number, number]} icon={new L.DivIcon({
                             html: `<div class="bg-white/90 backdrop-blur px-3 py-1 rounded-full border border-slate-200 text-[9px] font-black uppercase text-slate-700 shadow-xl whitespace-nowrap">${name}</div>`,
                             className: '',

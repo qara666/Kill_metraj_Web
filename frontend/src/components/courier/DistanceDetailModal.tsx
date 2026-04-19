@@ -449,7 +449,7 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
                                  mapFilter === i ? "bg-white border-blue-600 text-blue-600 shadow-lg" : "bg-slate-50 border-transparent text-slate-400"
                               )}
                             >
-                               <span>МАРШРУТ {i + 1}</span>
+                               <span className="truncate w-full px-1">МАРШРУТ ({(r.orders || []).map((o: any) => o.orderNumber).join(',')})</span>
                                <span className="text-[7px] opacity-60">({r.orders?.length} зак)</span>
                             </button>
                          ))}
@@ -505,7 +505,7 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
              />
           </div>
 
-          <div className="w-[280px] bg-white border-l border-slate-100 flex flex-col shadow-2xl relative z-10">
+          <div className="w-[200px] bg-white border-l border-slate-100 flex flex-col shadow-2xl relative z-10">
              <div className="p-6 border-b border-slate-50 flex items-center justify-between">
                 <div className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-600 flex items-center gap-3">
                    <ListBulletIcon className="w-4 h-4" /> <span>ЭКСПЛОРЕР</span>

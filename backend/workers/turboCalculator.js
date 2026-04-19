@@ -513,13 +513,12 @@ class OrderCalculator {
                             date: date || new Date().toISOString().split('T')[0], 
                             priorityQueue: [], 
                             currentPriority: null, 
-                            // v6.10: DO NOT auto-resume from DB - only start when user clicks "Запустить расчёт"
-                            isActive: false 
+                            // v38.2: AUTO-RESUME enabled for stability
+                            isActive: !!isActive 
                         };
                         this.divisionStates.set(divId, state);
                     }
                     
-                    // v5.185: Re-initialize users if missing (Sequelize JSON hydration safety)
                     if (!state.users || typeof state.users.add !== 'function') {
                         state.users = new Set();
                     }
@@ -528,14 +527,17 @@ class OrderCalculator {
                         state.users.add(userId);
                     }
                     if (date) state.date = date;
-                    // v6.10: Keep isActive as false when loading from DB - wait for user trigger
-                    // state.isActive = !!isActive; // REMOVED - don't auto-resume
+                    
+                    // v38.2: If it was active in DB, it should be active in worker
+                    if (!!isActive) state.isActive = true;
 
                     if (state.isActive) {
-                        logger.info(`[TurboCalculator] 🔄 Auto-resuming division: ${divId} for date ${state.date}`);
+                        logger.info(`[TurboCalculator] 🔄 Auto-resumed division: ${divId} for date ${state.date}`);
+                        this.newFODataPending.set(divId, true);
                     } else {
-                        logger.info(`[TurboCalculator] 📥 Loaded division ${divId} (inactive - waiting for user trigger)`);
+                        logger.info(`[TurboCalculator] 📥 Loaded division ${divId} (inactive)`);
                     }
+
                 }
             }
             logger.info('[TurboCalculator] ✅ Loaded division states from DB into memory');
@@ -570,12 +572,9 @@ class OrderCalculator {
     async start(io = null) {
         this.io = io || this.io;
         if (this.isRunning) return;
-        // v5.185: INTITIALIZING
         this.isRunning = true;
-        this.io = io || this.io;
 
-        // v5.185: Restore saved division states on restart
-        // This MUST happen after isRunning=true so that tick() can be triggered
+        // Restore saved division states on restart
         await this.loadSavedState();
         await this.loadAllDivisionStatesFromDB();
 
@@ -583,31 +582,55 @@ class OrderCalculator {
             await selfHostRoutingHealth.probeAll();
         } catch (e) { /* non-fatal */ }
 
-        logger.info(`[TurboCalculator] 🚀 v7.0 SERVER-FIRST — Initialized. Auto-starting tick loop.`);
+        logger.info(`[TurboCalculator] 🚀 v38.2 SERVER-READY — Auto-starting tick loop.`);
+        this.tick();
+    }
 
-        /* v8.9: AUTO-REPAIR SCHEMA (Fix missing timestamps) */
+    /**
+     * v38.2: Discover divisions that have data in the cache for today
+     * This ensures the robot starts working immediately on restart even if state was not saved.
+     */
+    async discoverDivisions() {
         try {
-            const { QueryTypes } = require('sequelize');
-            const models = require('../src/models/index');
-            const sequelize = models.sequelize;
+            const DashboardCache = this.getModel('DashboardCache');
+            const today = new Date().toISOString().split('T')[0];
             
-            logger.info('[TurboCalculator] 🛠 Running schema self-repair...');
-            
-            await sequelize.query(`
-                ALTER TABLE api_dashboard_status_history 
-                ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            `);
-            
-            await sequelize.query(`
-                ALTER TABLE api_dashboard_cache 
-                ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            `);
-            
-            logger.info('[TurboCalculator] ✅ Schema self-repair complete.');
-        } catch (migErr) {
-            logger.warn('[TurboCalculator] ⚠️ Schema self-repair warning (non-fatal):', migErr.message);
+            const activeCaches = await DashboardCache.findAll({
+                where: { target_date: today },
+                attributes: ['division_id']
+            });
+
+            activeCaches.forEach(c => {
+                const id = String(c.division_id);
+                if (!this.divisionStates.has(id)) {
+                    this.divisionStates.set(id, { 
+                        isActive: true, 
+                        date: today,
+                        lastNotify: Date.now() 
+                    });
+                    logger.info(`[TurboCalculator] 🔍 Discovered active division ${id} for today`);
+                    this.newFODataPending.set(id, true);
+                }
+            });
+        } catch (e) {
+            logger.warn('[TurboCalculator] 🔍 Division discovery failed:', e.message);
         }
+    }
+
+    /**
+     * v38.2: Wake up all discovered divisions
+     */
+    async triggerAll() {
+        logger.info('[TurboCalculator] 🔔 Global wake up triggered');
+        await this.discoverDivisions();
+        for (const [id, state] of this.divisionStates.entries()) {
+            state.isActive = true;
+            this.newFODataPending.set(id, true);
+        }
+        this.tick();
+    }
+
+
 
         // v7.0: SERVER-FIRST — always auto-start the tick loop.
         // Calculations run automatically when FO data arrives.
@@ -820,10 +843,16 @@ class OrderCalculator {
         logger.info(`[TurboCalculator] 🔄 tick() — active: [${activeDivs.join(', ')}], pending: [${pendingDivs.join(', ')}]`);
 
         if (activeDivs.length === 0) {
-            logger.info('[TurboCalculator] 💤 All divisions idle, no pending FO data — tick skipped, timer rescheduled');
-            this.scheduleNextTick();
-            return;
+            // v38.2 Fallback: try to discover divisions once more before giving up
+            await this.discoverDivisions();
+            const recheck = Array.from(this.divisionStates.keys());
+            if (recheck.length === 0) {
+                logger.info('[TurboCalculator] 💤 All divisions idle, no pending FO data — tick skipped, timer rescheduled');
+                this.scheduleNextTick();
+                return;
+            }
         }
+
 
         this.isProcessing = true;
         this.needsReRun = false;

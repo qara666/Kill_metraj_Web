@@ -95,6 +95,85 @@ io.use((socket, next) => {
 
 // Клиент PostgreSQL LISTEN (отдельно от Sequelize)
 let pgListenClient = null;
+let isPgListenConnecting = false;
+
+/**
+ * v38.2: Robust PostgreSQL LISTEN with auto-reconnect
+ * Essential for Render/Production where connections may drop due to idle timeouts.
+ */
+async function setupPgNotify() {
+  if (isPgListenConnecting) return;
+  isPgListenConnecting = true;
+
+  try {
+    if (pgListenClient) {
+      try { await pgListenClient.end(); } catch (e) {}
+    }
+
+    const dbName = process.env.DB_NAME || 'kill_metraj';
+    const connectionConfig = process.env.DATABASE_URL
+      ? {
+        connectionString: process.env.DATABASE_URL,
+        ssl: { require: true, rejectUnauthorized: false }
+      }
+      : {
+        host: process.env.DB_HOST || 'localhost',
+        port: parseInt(process.env.DB_PORT || '5432'),
+        database: dbName,
+        user: process.env.DB_USER || 'postgres',
+        password: process.env.DB_PASSWORD
+      };
+
+    pgListenClient = new Client(connectionConfig);
+    
+    pgListenClient.on('error', (err) => {
+      logger.error('❌ [PG-LISTEN] Connection error:', err.message);
+      isPgListenConnecting = false;
+      setTimeout(setupPgNotify, 5000); // Reconnect in 5s
+    });
+
+    await pgListenClient.connect();
+    await pgListenClient.query('LISTEN dashboard_update');
+    
+    logger.info(`🚀 [PG-LISTEN] Subscribed to "dashboard_update" in ${dbName}`);
+
+    pgListenClient.on('notification', async (msg) => {
+      if (msg.channel === 'dashboard_update') {
+        try {
+          const notification = JSON.parse(msg.payload);
+          const notifyDivId = String(notification.divisionId || '');
+          const notifyDate = notification.targetDate || null;
+
+          logger.info(`🔔 [PG-NOTIFY] Received update for division ${notifyDivId}`);
+
+          if (global.turboCalculator && typeof global.turboCalculator.notifyNewFOData === 'function') {
+            global.turboCalculator.notifyNewFOData(notifyDivId, notifyDate);
+          }
+
+          await cacheService.invalidateAll();
+          
+          // Broadcast to WebSocket clients
+          const sockets = await io.fetchSockets();
+          for (const socketInstance of sockets) {
+            const socket = io.sockets.sockets.get(socketInstance.id);
+            if (socket?.user) {
+              socket.emit('dashboard_data_updated', { divisionId: notifyDivId });
+            }
+          }
+        } catch (e) {
+          logger.error('❌ [PG-NOTIFY] Parse error:', e.message);
+        }
+      }
+    });
+
+    isPgListenConnecting = false;
+  } catch (err) {
+    logger.error('❌ [PG-LISTEN] Failed to setup:', err.message);
+    isPgListenConnecting = false;
+    setTimeout(setupPgNotify, 10000); // Retry in 10s
+  }
+}
+
 const dashboardConsumer = new DashboardConsumer(io);
 let grpcServer = null;
 
@@ -730,7 +809,8 @@ httpServer.listen(PORT, '0.0.0.0', () => {
         logger.error('❌ [INIT] Admin check failed', adminErr);
       }
 
-      await setupDashboardListener();
+      // v38.2: setupPgNotify is now called inside the init block above
+
       
       // Sequence of table checks
       const ensureTable = async (name, fn) => {
@@ -755,6 +835,9 @@ httpServer.listen(PORT, '0.0.0.0', () => {
           logger.warn('⚠️ [INIT] Failed to wipe GeoCache', e);
       }
 
+      // Initialize PG LISTEN with auto-reconnect
+      setupPgNotify().catch(e => logger.error('Failed initial PG-LISTEN setup:', e));
+
       // Workers
       try {
         turboCalculator = require('./workers/turboCalculator');
@@ -762,13 +845,19 @@ httpServer.listen(PORT, '0.0.0.0', () => {
           turboCalculator.io = io;
           await turboCalculator.start(io);
           global.turboCalculator = turboCalculator;
-          turboCalculatorReady = true; // v7.3: Mark as ready
+          turboCalculatorReady = true; 
           logger.info('🚀 [INIT] TurboCalculator worker started');
+          
+          // v38.2: Initial wake up call for all divisions that have data today
+          setTimeout(() => {
+            if (global.turboCalculator) global.turboCalculator.triggerAll().catch(() => {});
+          }, 10000);
         }
       } catch (te) { 
         turboCalculatorReady = false;
         logger.error('❌ [INIT] TurboCalculator failed', te); 
       }
+
 
       try {
         const DashboardFetcher = require('./workers/dashboardFetcher');
@@ -1163,110 +1252,41 @@ async function ensureRoutesTable() {
   }
 }
 
-async function setupDashboardListener() {
-  try {
-    const dbName = process.env.DB_NAME || 'kill_metraj';
-    logger.info(`Настройка PostgreSQL LISTEN для базы данных: ${dbName} `);
-
-    const connectionConfig = process.env.DATABASE_URL
-      ? {
-        connectionString: process.env.DATABASE_URL,
-        ssl: {
-          require: true,
-          rejectUnauthorized: false
-        }
-      }
-      : {
-        host: process.env.DB_HOST || 'localhost',
-        port: parseInt(process.env.DB_PORT || '5432'),
-        database: dbName,
-        user: process.env.DB_USER || 'postgres',
-        password: process.env.DB_PASSWORD
-      };
-
-    pgListenClient = new Client(connectionConfig);
-
-    await pgListenClient.connect();
-    logger.info('Клиент PostgreSQL LISTEN успешно подключен');
-    await pgListenClient.query('LISTEN dashboard_update');
-
-    logger.info('Настройка PostgreSQL LISTEN завершена, ожидание событий "dashboard_update"');
-    logger.info(`Ожидание обновлений дашборда в базе ${dbName} через PostgreSQL NOTIFY`);
-
-    // Handle notifications
-    pgListenClient.on('notification', async (msg) => {
-      if (msg.channel === 'dashboard_update') {
-        try {
-          const notification = JSON.parse(msg.payload);
-          const divisionId = notification.divisionId;
-          logger.info('Получено уведомление об обновлении дашборда', { id: notification.id, divisionId });
-
-          // v24.0: REMOVED automatic turboCalculator trigger from notifications
-          // TurboCalculator now runs on its own schedule and via priority endpoint only
-          // This prevents constant re-triggering and performance issues
-
-          // v6.11: Notify TurboCalculator that fresh FO data arrived —
-          // but ONLY activate divisions that user explicitly started (isActive=true)
-          if (global.turboCalculator && typeof global.turboCalculator.notifyNewFOData === 'function') {
-            const notifyDivId = String(notification.divisionId || '');
-            const notifyDate = notification.targetDate || null;
-            if (notifyDivId && notifyDivId !== 'all') {
-              global.turboCalculator.notifyNewFOData(notifyDivId, notifyDate);
-            }
-          }
-
-          // Сброс кэша при обновлении данных
-          await cacheService.invalidateAll();
-          logger.debug('Кэш сброшен из-за обновления данных');
-
-          // Broadcast to all connected WebSocket clients with filtering
-          const sockets = await io.fetchSockets();
-
-          for (const socketInstance of sockets) {
-            const socket = io.sockets.sockets.get(socketInstance.id);
-            if (!socket || !socket.user) continue;
-
-            const user = socket.user;
-
-            // Optimization: Skip broadcast if it's for a different division and user is not admin
-            if (user.role !== 'admin' && user.divisionId && String(user.divisionId) !== String(divisionId)) {
-              continue;
-            }
-
-            // Fetch correctly filtered/merged data for this specific user
-            const result = await GetDashboardDataQuery.execute({
-              divisionId: user.role === 'admin' ? 'all' : user.divisionId,
-              user
-            });
-
-            if (result) {
-              socket.emit('dashboard:update', {
-                data: result.payload,
-                timestamp: result.created_at,
-                status: result.status_code,
-                source: 'server_initial',
-                divisionId: divisionId
-              });
-            }
-          }
-
-          logger.info(`Обновление дашборда обработано для ${sockets.length} клиентов`);
-        } catch (error) {
-          logger.error('Error handling dashboard notification:', error);
-        }
-      }
-    });
-
-    // Обработка ошибок подключения
-    pgListenClient.on('error', (err) => {
-      logger.error('Ошибка клиента PostgreSQL LISTEN:', err);
-    });
-
-  } catch (error) {
-    logger.error('Ошибка при настройке PostgreSQL LISTEN', { error: error.message });
-    logger.warn('Обновления дашборда в реальном времени отключены');
+/**
+ * v38.2: TurboCalculator Diagnostics Endpoint
+ * Allows verifying the internal state of the background worker in production.
+ */
+app.get('/api/robot/diagnostics', authenticateToken, (req, res) => {
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin only' });
   }
-}
+
+  if (!global.turboCalculator) {
+    return res.status(503).json({ error: 'TurboCalculator not initialized' });
+  }
+
+  const tc = global.turboCalculator;
+  const stats = tc.getStats ? tc.getStats() : { message: 'Stats not available' };
+  
+  res.json({
+    status: 'online',
+    isProcessing: tc.isProcessing,
+    isTickRunning: tc.isTickRunning,
+    activeDivisions: Array.from(tc.divisionStates.entries()).map(([id, s]) => ({ id, ...s })),
+    pendingDivisions: Array.from(tc.newFODataPending.keys()),
+    lastCalculated: Array.from(tc.lastCalculatedAt.entries()),
+    routingHealth: Array.from(tc.routingHealth?.entries() || []),
+    engineFailures: Array.from(tc.engineFailures?.entries() || []),
+    currentStats: stats,
+    serverTime: new Date().toISOString(),
+    env: {
+      OSRM_URL: process.env.OSRM_URL ? 'SET' : 'MISSING',
+      PHOTON_URL: process.env.PHOTON_URL || 'DEFAULT',
+      VALHALLA_URL: process.env.VALHALLA_URL ? 'SET' : 'MISSING'
+    }
+  });
+});
+
 
 /**
  * Middleware авторизации Socket.io
