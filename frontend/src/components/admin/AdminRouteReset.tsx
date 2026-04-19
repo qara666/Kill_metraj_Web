@@ -3,6 +3,7 @@ import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';
 import { useTheme } from '../../contexts/ThemeContext';
 import { clsx } from 'clsx';
+import { API_URL } from '../../config/apiConfig';
 import {
     TrashIcon,
     CalendarIcon,
@@ -102,7 +103,7 @@ export const AdminRouteReset: React.FC = () => {
         if (!window.confirm('Удалить устаревшие маршруты со старым форматом ключа (вида "11:20 - 11:49")?\nЭто устранит дублирование маршрутов.')) return;
         setClearing('stale');
         try {
-            const res = await fetch('/api/turbo/reset-stale-routes', {
+            const res = await fetch(`${API_URL}/api/turbo/reset-stale-routes`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
                 body: JSON.stringify({})

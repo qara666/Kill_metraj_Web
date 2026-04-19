@@ -7,6 +7,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useDashboardStore } from '../../stores/useDashboardStore';
 import { useExcelData } from '../../contexts/ExcelDataContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { API_URL } from '../../config/apiConfig';
 
 // v7.0: SERVER-FIRST design.
 // No more user-controlled start/stop.
@@ -64,7 +65,7 @@ export const DashboardApiSection: React.FC = () => {
       try {
         const token = localStorage.getItem('km_access_token');
         if (!token) return;
-        const res = await fetch('/api/turbo/status_today', {
+        const res = await fetch(`${API_URL}/api/turbo/status_today`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
         });
@@ -93,7 +94,7 @@ export const DashboardApiSection: React.FC = () => {
         setIsResetting(true);
         try {
             const token = localStorage.getItem('km_access_token');
-            const res = await fetch('/api/turbo/reset-stale-routes', {
+            const res = await fetch(`${API_URL}/api/turbo/reset-stale-routes`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ divisionId })
@@ -237,7 +238,7 @@ export const DashboardApiSection: React.FC = () => {
             };
             console.log('[DashboardApiSection] 📤 Sending turbo/priority request:', body);
             
-            const res = await fetch('/api/turbo/priority', {
+            const res = await fetch(`${API_URL}/api/turbo/priority`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(body)
@@ -259,7 +260,7 @@ export const DashboardApiSection: React.FC = () => {
                     let ready = false;
                     try {
                         for (let i = 0; i < 30; i++) {
-                            const readyRes = await fetch('/api/turbo/ready', {
+                            const readyRes = await fetch(`${API_URL}/api/turbo/ready`, {
                                 method: 'GET',
                                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
                             });
@@ -276,7 +277,7 @@ export const DashboardApiSection: React.FC = () => {
 
                     if (ready) {
                         try {
-                            const retryRes = await fetch('/api/turbo/priority', {
+                            const retryRes = await fetch(`${API_URL}/api/turbo/priority`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                                 body: JSON.stringify(body)

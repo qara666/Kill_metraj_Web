@@ -20,6 +20,7 @@ import { KpiAnalysisModal } from './KpiAnalysisModal'
 import { AddressEditModal } from '../modals/AddressEditModal'
 import { EliteCourierCard } from './EliteCourierCard'
 import DistanceDetailModal from './DistanceDetailModal'
+import { API_URL } from '../../config/apiConfig'
 
 // v9.3: GEO-ERROR REPAIR HUD (STABLE)
 // Added AddressEditModal, additive distance logic and clickable alerts
@@ -323,7 +324,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     if (coords) {
         try {
             const token = localStorage.getItem('km_access_token');
-            await fetch('/api/geocache/manual-correct', {
+            await fetch(`${API_URL}/api/geocache/manual-correct`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',

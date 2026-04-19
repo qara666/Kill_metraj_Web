@@ -38,6 +38,7 @@ import { calculateDistance } from '../../utils/geoUtils'
 import { isOrderCompleted, isOrderCancelled } from '../../utils/data/orderStatus'
 import { DashboardHeader } from '../shared/DashboardHeader'
 import { useDashboardStore } from '../../stores/useDashboardStore'
+import { API_URL } from '../../config/apiConfig'
 
 // --- Hooks ---
 
@@ -1425,7 +1426,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     if (coords) {
       try {
         const token = localStorage.getItem('km_access_token');
-        await fetch('/api/geocache/manual-correct', {
+        await fetch(`${API_URL}/api/geocache/manual-correct`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
