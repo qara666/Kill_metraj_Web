@@ -2253,9 +2253,9 @@ class OrderCalculator {
                             if (!Array.isArray(upsertResult) || upsertResult.length === 0) {
                                 upsertResult = await sequelize.query(`
                                     INSERT INTO calculated_routes 
-                                    (courier_id, division_id, total_distance, total_duration, engine_used, orders_count, calculated_at, route_data)
+                                    (courier_id, division_id, total_distance, total_duration, engine_used, orders_count, calculated_at, created_at, route_data)
                                     VALUES 
-                                    (:courier_id, :division_id, :total_distance, :total_duration, :engine_used, :orders_count, :calculated_at, :route_data)
+                                    (:courier_id, :division_id, :total_distance, :total_duration, :engine_used, :orders_count, :calculated_at, :calculated_at, :route_data)
                                     RETURNING *
                                 `, {
                                     replacements: routeRepl,

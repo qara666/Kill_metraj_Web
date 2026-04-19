@@ -1222,6 +1222,20 @@ async function ensureRoutesTable() {
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
     `);
+    // v39.0: Ensure created_at / updated_at have DEFAULT NOW() even if table was created without defaults
+    // This fixes production DBs (Render) where the column existed as NOT NULL without a default
+    try {
+      await sequelize.query(`
+        ALTER TABLE calculated_routes
+          ALTER COLUMN created_at SET DEFAULT NOW(),
+          ALTER COLUMN updated_at SET DEFAULT NOW();
+      `);
+      logger.info('DB Check: Ensured DEFAULT NOW() on created_at/updated_at in calculated_routes');
+    } catch (alterErr) {
+      // Non-fatal — may already have defaults
+      logger.warn('DB Check: ALTER DEFAULT on calculated_routes skipped:', alterErr.message);
+    }
+
     // Add indexes for common queries
     await sequelize.query('CREATE INDEX IF NOT EXISTS idx_routes_division ON calculated_routes(division_id)');
     await sequelize.query('CREATE INDEX IF NOT EXISTS idx_routes_date ON calculated_routes((route_data->>\'target_date\'))');
