@@ -1408,7 +1408,8 @@ async function enhancedGeocode(address, city = 'Харків', expectedZone = nu
             const folderName = z.hub?.name || z.properties?.folderName || '';
             const name = z.name || z.properties?.name || '';
             const zoneKey = `${folderName.trim()}:${name.trim()}`;
-            return zoneKey === expectedZone.trim() || name.trim() === expectedZone.trim();
+            const targetZone = String(expectedZone || '').trim();
+            return zoneKey === targetZone || name.trim() === targetZone;
         });
 
         if (zone && (zone.centroid || zone.properties?.centroid)) {

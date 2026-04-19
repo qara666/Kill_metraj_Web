@@ -493,7 +493,8 @@ export const useRouteGeocoding = ({
                          addrCache.set(key, fallbackRes);
                      } else {
                          // Last resort: Skip this order with warning instead of blocking entire route
-                         toast(`Адрес пропущен: ${order.address.substring(0, 50)}...`, { icon: '⚠️', duration: 3000 });
+                         const displayAddr = (order.address || 'Неизвестный адрес').substring(0, 50);
+                         toast(`Адрес пропущен: ${displayAddr}...`, { icon: '⚠️', duration: 3000 });
                          continue; // Skip this order, continue with others
                      }
                  }

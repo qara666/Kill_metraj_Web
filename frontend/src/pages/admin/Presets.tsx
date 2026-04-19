@@ -681,7 +681,7 @@ export const AdminPresets: React.FC = () => {
                                                         {Array.from(new Set(settings.kmlData.polygons.map((p: any) => p.folderName)))
                                                             .sort()
                                                             .map((hub: any) => {
-                                                                const isSelected = settings.selectedHubs?.includes((hub as string).trim());
+                                                                const isSelected = settings.selectedHubs?.includes(String(hub || '').trim());
                                                                 return (
                                                                     <label key={hub} className={clsx(
                                                                         "flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all",
@@ -702,7 +702,7 @@ export const AdminPresets: React.FC = () => {
                                                                                 // Auto-select/deselect zones of this hub
                                                                                 const currentZones = settings.selectedZones || [];
                                                                                 const hubZoneKeys = settings.kmlData.polygons
-                                                                                    .filter((p: any) => (p.folderName || '').trim() === (hub as string).trim())
+                                                                                    .filter((p: any) => (p.folderName || '').trim() === String(hub || '').trim())
                                                                                     .map((p: any) => `${(p.folderName || '').trim()}:${(p.name || '').trim()}`);
 
                                                                                 let newZones = currentZones;

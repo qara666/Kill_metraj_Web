@@ -450,14 +450,16 @@ export class RobustGeocodingService {
     
     const uniqueReqs = new Map<string, { address: string; options?: RobustGeocodeOptions }>();
     requests.forEach(req => {
-        const key = req.address.trim().toLowerCase();
+        const addr = req.address || '';
+        const key = addr.trim().toLowerCase();
         if (!uniqueReqs.has(key)) uniqueReqs.set(key, req);
     });
 
     const reqArray = Array.from(uniqueReqs.values());
     
     await Promise.all(reqArray.map(async (req) => {
-        const key = req.address.trim().toLowerCase();
+        const addr = req.address || '';
+        const key = addr.trim().toLowerCase();
         const combinedOptions = { ...globalOptions, ...(req.options || {}), turbo: turbo || req.options?.turbo };
         const result = await this.geocode(req.address, combinedOptions);
         results.set(key, result);
@@ -465,7 +467,8 @@ export class RobustGeocodingService {
     
     const finalMap = new Map<string, RobustGeocodeResult>();
     requests.forEach(req => {
-        const key = req.address.trim().toLowerCase();
+        const addr = req.address || '';
+        const key = addr.trim().toLowerCase();
         const res = results.get(key);
         if (res) finalMap.set(key, res);
     });

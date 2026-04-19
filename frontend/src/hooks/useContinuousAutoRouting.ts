@@ -176,7 +176,8 @@ export function useContinuousAutoRouting() {
                     }));
                     const batchResults = await robustGeocodingService.batchGeocode(batchRequests, { turbo: true });
                     allOrdersToGeocode.forEach((o: any) => {
-                        const res = batchResults.get(o.address.trim().toLowerCase());
+                        const addr = o.address || '';
+                        const res = batchResults.get(addr.trim().toLowerCase());
                         applyGeoResult(o, res);
                     });
 
@@ -201,7 +202,8 @@ export function useContinuousAutoRouting() {
                                 { turbo: false }
                             );
                             retryChunk.forEach((o: any) => {
-                                const res = retryResults.get(o.address.trim().toLowerCase());
+                                const addr = o.address || '';
+                                const res = retryResults.get(addr.trim().toLowerCase());
                                 applyGeoResult(o, res);
                                 if (o.coords?.lat) {
                                 } else {
@@ -519,7 +521,8 @@ export function useContinuousAutoRouting() {
                         for (const o of batch) {
                             const sid = getStableOrderId(o);
                             processedRefinements.current.add(`${sid}_${o.address}`);
-                            const r = results.get(o.address.trim().toLowerCase());
+                            const addr = o.address || '';
+                            const r = results.get(addr.trim().toLowerCase());
                             if (r?.best?.raw?.geometry?.location) {
                                 const loc = r.best.raw.geometry.location;
                                 updates.set(sid, {
