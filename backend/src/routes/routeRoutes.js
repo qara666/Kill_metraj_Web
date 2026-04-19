@@ -162,20 +162,41 @@ router.post('/save', auditLog('save_calculated_route'), async (req, res) => {
             updated_at: new Date()
         };
 
-        // Try to find existing route for this courier and date (and division)
-        // v5.200: Match by courier/date
+        // Try to find existing route by ID first
+        let dbRoute = null;
+        if (route.id && route.id !== 'route_new') {
+            dbRoute = await Route.findByPk(route.id);
+        }
+
         const { Op } = require('sequelize');
-        let dbRoute = await Route.findOne({
-            where: {
-                courier_id: dbData.courier_id,
-                [Op.and]: [
+
+        // If no ID or not found by ID, try matching courier + date + time_block
+        if (!dbRoute) {
+            const timeBlock = route.time_block || route.route_data?.time_block;
+            
+            const whereConditions = [
+                sequelize.where(
+                    sequelize.literal("route_data->>'target_date'"),
+                    targetDate
+                )
+            ];
+
+            if (timeBlock) {
+                whereConditions.push(
                     sequelize.where(
-                        sequelize.literal("route_data->>'target_date'"),
-                        targetDate
+                        sequelize.literal("route_data->>'time_block'"),
+                        timeBlock
                     )
-                ]
+                );
             }
-        });
+
+            dbRoute = await Route.findOne({
+                where: {
+                    courier_id: dbData.courier_id,
+                    [Op.and]: whereConditions
+                }
+            });
+        }
 
         if (dbRoute) {
             await dbRoute.update(dbData);

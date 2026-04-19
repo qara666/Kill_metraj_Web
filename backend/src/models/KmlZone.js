@@ -33,6 +33,10 @@ const KmlZone = sequelize.define('KmlZone', {
         type: DataTypes.JSONB,
         allowNull: true
     },
+    centroid: {
+        type: DataTypes.JSONB,
+        allowNull: true
+    },
     is_technical: {
         type: DataTypes.BOOLEAN,
         defaultValue: false

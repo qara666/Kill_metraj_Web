@@ -137,18 +137,18 @@ class OrderCalculator {
         const osrmEnv = process.env.OSRM_URL || '';
         const valEnv = process.env.VALHALLA_URL || '';
 
-        this.yapikoOsrmUrl = yapikoEnv ? yapikoEnv.replace(/\/+$/, '') : (process.env.OSRM_URL || 'http://116.204.153.171:5050').replace(/\/+$/, '');
+        this.yapikoOsrmUrl = yapikoEnv ? yapikoEnv.replace(/\/+$/, '') : (process.env.OSRM_URL || 'http://osrm.yapiko.kh.ua:5050').replace(/\/+$/, '');
         this.useDualOsrm = process.env.DISABLE_SELF_HOST_ROUTING !== '1' && process.env.DISABLE_SELF_HOST_ROUTING !== 'true';
         this.osrmSingleUrl = null;
 
         this.selfOsrmUrl = (process.env.SELF_HOST_OSRM_URL || 'http://127.0.0.1:5050').replace(/\/+$/, '');
-        this.remoteOsrmUrl = (process.env.REMOTE_OSRM_URL || osrmEnv || 'http://116.204.153.171:5050').replace(/\/+$/, '');
+        this.remoteOsrmUrl = (process.env.REMOTE_OSRM_URL || osrmEnv || 'http://osrm.yapiko.kh.ua:5050').replace(/\/+$/, '');
 
         this.useDualValhalla = process.env.DISABLE_SELF_HOST_ROUTING !== '1' && process.env.DISABLE_SELF_HOST_ROUTING !== 'true';
         this.valhallaSingleUrl = null;
 
         this.selfValhallaUrl = (process.env.SELF_HOST_VALHALLA_URL || 'http://127.0.0.1:8002').replace(/\/+$/, '');
-        this.remoteValhallaUrl = (process.env.REMOTE_VALHALLA_URL || valEnv || 'http://116.204.153.171:8002').replace(/\/+$/, '');
+        this.remoteValhallaUrl = (process.env.REMOTE_VALHALLA_URL || valEnv || 'http://osrm.yapiko.kh.ua:8002').replace(/\/+$/, '');
 
         this.osrmUrl = this.osrmSingleUrl || this.remoteOsrmUrl;
 
@@ -184,7 +184,7 @@ class OrderCalculator {
         this.enginePresets = {
             yapikoOSRM: {
                 label: 'Yapiko OSRM',
-                url: process.env.YAPIKO_OSRM_URL || 'http://116.204.153.171:5050'
+                url: process.env.YAPIKO_OSRM_URL || 'http://osrm.yapiko.kh.ua:5050'
             },
             photon: {
                 label: 'Photon',
@@ -1399,21 +1399,25 @@ class OrderCalculator {
             
             // Map to store existing route signatures for PERFECT incremental routing without breaking groups
             const existingRouteMap = new Map();
+            const getHash = (str) => crypto.createHash('sha256').update(str).digest('hex').substring(0, 16);
+
             const getBlockSignature = (orders) => {
                 if (!Array.isArray(orders)) {
                     logger.warn(`[TurboCalculator] ⚠️ getBlockSignature called with non-array: ${typeof orders}`, orders);
                     return '';
                 }
-                const ids = orders.map(o => {
-                    const id = o.orderNumber || o.id;
-                    return id && String(id) !== 'undefined' && String(id) !== 'null' ? String(id) : '';
-                }).filter(Boolean);
+
+                // v39.2: Stable signature based on sorted (ID + 4-decimal coordinates)
+                // This preserves manual reorders (because of sort) but detects address clarification.
+                const sigParts = orders.map(o => {
+                    const id = o.orderNumber || o.id || '';
+                    const lat = o.coords?.lat || o.lat || 0;
+                    const lng = o.coords?.lng || o.lng || 0;
+                    // Precision to 4 decimals (~11m) to catch real moves but ignore floating point noise
+                    return `${id}:${Number(lat).toFixed(4)},${Number(lng).toFixed(4)}`;
+                }).sort();
                 
-                if (ids.length === 0 && orders.length > 0) {
-                    // Fallback to address/geo hashing if no valid IDs exist to prevent collisions
-                    return 'hash_' + getHash(orders.map(o => o.address || o.addressGeo || o.lat || '').join('|'));
-                }
-                return ids.sort().join('_');
+                return sigParts.join('|');
             };
 
             if (Route) {
@@ -3363,8 +3367,13 @@ class OrderCalculator {
             const UserPreset = this.getModel('UserPreset');
             if (!User || !UserPreset) return null;
 
-            const user = await User.findOne({ where: { divisionId: String(divisionId), role: 'admin' } })
+            let user = await User.findOne({ where: { divisionId: String(divisionId), role: 'admin' } })
                 || await User.findOne({ where: { divisionId: String(divisionId) } });
+
+            if (!user) {
+                // Fallback to global admin user
+                user = await User.findOne({ where: { role: 'admin' }, order: [['id', 'ASC']] });
+            }
 
             if (!user) return null;
 

@@ -1221,6 +1221,12 @@ async function enhancedGeocode(address, city = 'Харків', expectedZone = nu
             }
         }
 
+        // v39.2: FINAL KML GUARD — If KML zones exist, MUST be inside one of them
+        if (hasKml && isOutsideActiveZones(best.lat, best.lng)) {
+             logger.warn(`[GeoEnhanced] ${label}: Best candidate (${best.lat.toFixed(4)},${best.lng.toFixed(4)}) is OUTSIDE all active KML zones — REJECTED. (addr: ${address})`);
+             return null;
+        }
+
         logger.info(`[GeoEnhanced] ✅ ${label}: Accepted (${best.lat.toFixed(5)},${best.lng.toFixed(5)}) score=${best._score.toFixed(2)} via ${best.provider}`);
         return { latitude: best.lat, longitude: best.lng, locationType: best.type || best.provider?.toUpperCase() || 'GEOCODED', provider: best.provider, _score: best._score };
     };
@@ -1393,11 +1399,27 @@ async function enhancedGeocode(address, city = 'Харків', expectedZone = nu
     }
 
     // ============================================================
-    // L7: TOTAL FAILURE — return null to mark as geo error
+    // L8: ZONE CENTROID FALLBACK — Last resort before total error
     // ============================================================
-    // Instead of using a centroid fallback (which creates "бредовые km"),
-    // return null so the caller can exclude this order from routing.
-    // This is better than creating a route with 31km for 1 order at wrong coords.
+    // If we have an expectedZone and it's in our activeKmlFeatures,
+    // use its centroid to at least put the order in the right sector.
+    if (expectedZone && hasKml) {
+        const zone = kmlZones.find(z => {
+            const folderName = z.hub?.name || z.properties?.folderName || '';
+            const name = z.name || z.properties?.name || '';
+            const zoneKey = `${folderName.trim()}:${name.trim()}`;
+            return zoneKey === expectedZone.trim() || name.trim() === expectedZone.trim();
+        });
+
+        if (zone && (zone.centroid || zone.properties?.centroid)) {
+            const cent = zone.centroid || zone.properties.centroid;
+            logger.info(`[GeoEnhanced] L8 Fallback to zone centroid (${cent.lat.toFixed(5)},${cent.lng.toFixed(5)}) for: ${address} (Zone: ${expectedZone})`);
+            const result = { latitude: cent.lat, longitude: cent.lng, locationType: 'ZONE_CENTROID', provider: 'KML_SECTOR', _score: -5 };
+            // DO NOT save to DB cache as it's a very low-quality fallback
+            return result;
+        }
+    }
+
     logger.warn(`[GeoEnhanced] ❌ ALL LEVELS FAILED for: ${address}. Marking as geo error (no fallback coords).`);
     return null;
 }

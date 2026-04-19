@@ -57,6 +57,7 @@ class KmlService {
                         name: name,
                         boundary: { type: 'Polygon', coordinates: [coordinates] },
                         bounds: this._calculateBounds(coordinates),
+                        centroid: this._calculateCentroid(coordinates),
                         is_technical: isTechnical,
                         is_active: true
                     });
@@ -156,6 +157,18 @@ class KmlService {
             if (lng > maxLng) maxLng = lng;
         }
         return { north: maxLat, south: minLat, east: maxLng, west: minLng };
+    }
+
+    _calculateCentroid(coords) {
+        if (!coords || coords.length === 0) return null;
+        let sumLat = 0, sumLng = 0;
+        let count = 0;
+        for (const [lng, lat] of coords) {
+            sumLat += lat;
+            sumLng += lng;
+            count++;
+        }
+        return { lat: sumLat / count, lng: sumLng / count };
     }
 
     _isPointInPolygon(lat, lng, polygon, tolerance = 0.01) {

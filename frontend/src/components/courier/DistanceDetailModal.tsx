@@ -53,6 +53,7 @@ import { LeafletCourierMap } from './LeafletCourierMap'
 import { YapikoOSRMService } from '../../services/YapikoOSRMService'
 import { localStorageUtils } from '../../utils/ui/localStorage'
 import { toast } from 'react-hot-toast'
+import { API_URL } from '../../config/apiConfig'
 
 interface DistanceDetailModalProps {
   isOpen: boolean
@@ -281,7 +282,27 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
           };
           const [nF, nT] = await Promise.all([calc(fR), calc(tR)]);
           setLocalRoutes(curr => curr.map(r => String(r.id) === fromRouteId ? nF : (String(r.id) === toRouteId ? nT : r)));
-        } catch (e) { console.warn('OSRM recalc failed:', e); }
+
+          // Save manually modified routes directly to DB
+          const saveRoute = async (r: any) => {
+             if (!r.id) return;
+             await fetch(`${API_URL}/api/routes/save`, {
+                 method: 'POST',
+                 headers: {
+                   'Content-Type': 'application/json',
+                   'Authorization': `Bearer ${localStorage.getItem('km_access_token') || localStorage.getItem('token')}`
+                 },
+                 body: JSON.stringify(r)
+             });
+          };
+
+          await Promise.all([saveRoute(nF), saveRoute(nT)]);
+
+          toast.success('Маршруты пересчитаны и сохранены');
+        } catch (e) { 
+          console.warn('OSRM recalc/save failed:', e); 
+          toast.error('Ошибка пересчета маршрутов');
+        }
       }, 0);
       return next;
     });

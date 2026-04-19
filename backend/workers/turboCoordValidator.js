@@ -113,7 +113,9 @@ function resolveOrderCoords(order, kmlIndex, zoneCentroids) {
         return { lat, lng, confidence, source: 'GEOCODED', kmlZone: kmlZone?.name || foZone || null };
     }
 
-    // P4: Zone centroid as last resort hint (not usable for distance calculation, only for grouping)
+    // P4: Zone centroid hint removed from pre-validation — let batchEnhancedGeocode handle it as a fallback
+    // so we don't skip API lookups for orders that have a zone but no address geocoded yet.
+    /*
     const foZone = String(order.deliveryZone || '').trim();
     if (foZone && zoneCentroids.size > 0) {
         const centroid = zoneCentroids.get(normalizeZoneName(foZone));
@@ -128,6 +130,7 @@ function resolveOrderCoords(order, kmlIndex, zoneCentroids) {
             };
         }
     }
+    */
 
     return null;
 }
@@ -188,8 +191,13 @@ function buildZoneCentroids(kmlZones) {
 
         let lat = null, lng = null;
 
-        // Method 1: Polygon centroid
-        if (zone.boundary?.coordinates?.[0]) {
+        // Method 0: Pre-calculated centroid from DB (KML sync)
+        if (zone.centroid && typeof zone.centroid.lat === 'number') {
+            lat = zone.centroid.lat;
+            lng = zone.centroid.lng;
+        }
+        // Method 1: Polygon centroid (calculation)
+        else if (zone.boundary?.coordinates?.[0]) {
             const coords = zone.boundary.coordinates[0];
             if (coords.length > 0) {
                 const sumLat = coords.reduce((s, c) => s + c[1], 0);
