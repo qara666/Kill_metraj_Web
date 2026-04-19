@@ -145,9 +145,10 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     return (excelData?.routes || []).filter((r: any) => {
       const dId = String(r.divisionId || r.division_id || '');
       const isCorrectDiv = !currentDivisionId || currentDivisionId === 'all' || !dId || dId === currentDivisionId;
-      return normalizeCourierName(getCourierName(r.courier || r.courier_id)) === n && isCorrectDiv;
+      const rc = normalizeCourierName(r.courier || r.courier_id || '');
+      return rc === n && isCorrectDiv;
     })
-  }, [excelData, currentDivisionId])
+  }, [excelData?.routes, currentDivisionId])
 
 
   // v37.0: ULTIMATE ROBUST COURIER LIST BUILDING
@@ -342,15 +343,62 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
         }
     }
 
+    const { updateRouteData } = (useExcelData() as any) || {};
+
     updateExcelData?.((prev: any) => {
         const newData = { ...prev };
-        newData.orders = (prev.orders || []).map((o: any) => o.id === editingOrder.id ? { ...o, address: newAddr, coords, geocoded: !!coords, geoError: false, locationType: coords ? 'ROOFTOP' : 'FAILED' } : o);
-        newData.routes = (prev.routes || []).map((r: any) => ({
-            ...r,
-            orders: (r.orders || []).map((o: any) => o.id === editingOrder.id ? { ...o, address: newAddr, coords, geocoded: !!coords, geoError: false, locationType: coords ? 'ROOFTOP' : 'FAILED' } : o)
-        }));
+        const updatedOrders = (prev.orders || []).map((o: any) => o.id === editingOrder.id ? { ...o, address: newAddr, coords, geocoded: !!coords, geoError: false, locationType: coords ? 'ROOFTOP' : 'FAILED', manualGeocoding: true } : o);
+        
+        const updatedRoutes = (prev.routes || []).map((r: any) => {
+            if (String(r.id) === editingOrderRouteId || (r.orders || []).some((o: any) => o.id === editingOrder.id)) {
+                const newOrders = (r.orders || []).map((o: any) => o.id === editingOrder.id ? { ...o, address: newAddr, coords, geocoded: !!coords, geoError: false, locationType: coords ? 'ROOFTOP' : 'FAILED', manualGeocoding: true } : o);
+                return { ...r, orders: newOrders };
+            }
+            return r;
+        });
+
+        // v9.9.5: MOMENTARY RECALCULATION for the affected route
+        if (coords && editingOrderRouteId) {
+            const route = updatedRoutes.find((r: any) => String(r.id) === editingOrderRouteId);
+            if (route) {
+                setTimeout(async () => {
+                    try {
+                        const presets = localStorageUtils.getAllSettings();
+                        const osrmUrl = presets.osrmUrl || 'http://osrm.yapiko.kh.ua:5050';
+                        const start = route.startCoords || { lat: 50.4501, lng: 30.5234 };
+                        const locs = [start, ...route.orders.map((o: any) => o.coords || { lat: o.lat, lng: o.lng }), start];
+                        const res = await YapikoOSRMService.calculateRoute(locs, osrmUrl);
+                        
+                        if (res.feasible && res.totalDistance !== undefined) {
+                            const newKm = res.totalDistance / 1000;
+                            const finalRoute = { ...route, totalDistance: newKm, geometry: res.geometry };
+                            
+                            // Update global state with calculated distance
+                            updateRouteData?.(updatedRoutes.map((r: any) => String(r.id) === editingOrderRouteId ? finalRoute : r));
+                            
+                            // Persist to DB
+                            await fetch(`${API_URL}/api/routes/save`, {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  'Authorization': `Bearer ${localStorage.getItem('km_access_token') || localStorage.getItem('token')}`
+                                },
+                                body: JSON.stringify(finalRoute)
+                            });
+                            toast.success(`Маршрут пересчитан: ${newKm.toFixed(1)} км`);
+                        }
+                    } catch (err) {
+                        console.warn('[CourierManagement] Momentary recalc failed:', err);
+                    }
+                }, 100);
+            }
+        }
+
+        newData.orders = updatedOrders;
+        newData.routes = updatedRoutes;
         return newData;
     });
+
     toast.success('Адрес обновлен');
     if (editingOrderRouteId) window.dispatchEvent(new CustomEvent('km-force-auto-routing', { detail: { routeId: editingOrderRouteId, reason: 'manual_fix' } }));
     setShowAddressModal(false);
@@ -428,6 +476,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
           courierName={selectedCourier.name}
           distanceDetails={getCourierStats(selectedCourier.name)}
           onEditAddress={handleEditAddress}
+          onUpdateRoutes={(useExcelData() as any)?.updateRouteData}
         />
       )}
 

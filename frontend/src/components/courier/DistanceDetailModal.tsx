@@ -61,6 +61,7 @@ interface DistanceDetailModalProps {
   courierName: string
   distanceDetails: any
   onEditAddress?: (order: any, routeId: string) => void
+  onUpdateRoutes?: (routes: any[]) => void
 }
 
 type TabType = 'management' | 'map' | 'history' | 'analytics' | 'diagnostics';
@@ -222,14 +223,19 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
   const [isSatellite, setIsSatellite] = useState(false);
   const [isMgmtExpanded, setIsMgmtExpanded] = useState(false);
   const [focusTrigger, setFocusTrigger] = useState(0);
+  const [hasManualChanges, setHasManualChanges] = useState(false);
+  const manualRoutesRef = useRef<any[]>([]);
   
   useEffect(() => {
     localStorage.setItem('courier_modal_tab', activeTab);
   }, [activeTab]);
 
   useEffect(() => {
-    if (distanceDetails?.routes) setLocalRoutes(distanceDetails.routes);
-  }, [distanceDetails?.routes]);
+    if (distanceDetails?.routes && !hasManualChanges) {
+        setLocalRoutes(distanceDetails.routes);
+        manualRoutesRef.current = distanceDetails.routes;
+    }
+  }, [distanceDetails?.routes, hasManualChanges]);
 
   // Drag and Drop Logic
   const [draggingOrderId, setDraggingOrderId] = useState<string | null>(null);
@@ -254,6 +260,8 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
     const { orderId, fromRouteId } = dragDataRef.current;
     if (fromRouteId === toRouteId) return;
 
+    setHasManualChanges(true);
+
     setLocalRoutes(prev => {
       const next = [...prev];
       const fIdx = next.findIndex(r => String(r.id) === fromRouteId);
@@ -269,6 +277,9 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
       tR.orders.push(order);
       next[fIdx] = fR; next[tIdx] = tR;
 
+      // Sync to global state immediately for visual consistency
+      onUpdateRoutes?.(next);
+
       setTimeout(async () => {
         try {
           const presets = localStorageUtils.getAllSettings();
@@ -281,11 +292,17 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
             return { ...route, totalDistance: (res.feasible && res.totalDistance !== undefined) ? res.totalDistance / 1000 : route.totalDistance, geometry: res.geometry };
           };
           const [nF, nT] = await Promise.all([calc(fR), calc(tR)]);
-          setLocalRoutes(curr => curr.map(r => String(r.id) === fromRouteId ? nF : (String(r.id) === toRouteId ? nT : r)));
+          
+          setLocalRoutes(curr => {
+             const final = curr.map(r => String(r.id) === fromRouteId ? nF : (String(r.id) === toRouteId ? nT : r));
+             onUpdateRoutes?.(final);
+             manualRoutesRef.current = final;
+             return final;
+          });
 
           // Save manually modified routes directly to DB
           const saveRoute = async (r: any) => {
-             if (!r.id) return;
+             if (!r.id || String(r.id).startsWith('route_')) return; // Only save routes that have a DB ID
              await fetch(`${API_URL}/api/routes/save`, {
                  method: 'POST',
                  headers: {
@@ -297,8 +314,7 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
           };
 
           await Promise.all([saveRoute(nF), saveRoute(nT)]);
-
-          toast.success('Маршруты пересчитаны и сохранены');
+          toast.success('Маршруты пересчитаны и синхронизированы');
         } catch (e) { 
           console.warn('OSRM recalc/save failed:', e); 
           toast.error('Ошибка пересчета маршрутов');
@@ -306,7 +322,30 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
       }, 0);
       return next;
     });
-  }, []);
+  }, [onUpdateRoutes]);
+
+  const handleManualSave = useCallback(async () => {
+     try {
+         toast.loading('Сохранение изменений...', { id: 'manual-save' });
+         const routesToSave = localRoutes.filter(r => !String(r.id).startsWith('route_'));
+         
+         await Promise.all(routesToSave.map(r => 
+             fetch(`${API_URL}/api/routes/save`, {
+                 method: 'POST',
+                 headers: {
+                   'Content-Type': 'application/json',
+                   'Authorization': `Bearer ${localStorage.getItem('km_access_token') || localStorage.getItem('token')}`
+                 },
+                 body: JSON.stringify(r)
+             })
+         ));
+         
+         setHasManualChanges(false);
+         toast.success('Все изменения сохранены в БД', { id: 'manual-save' });
+     } catch (err) {
+         toast.error('Ошибка при сохранении', { id: 'manual-save' });
+     }
+  }, [localRoutes]);
 
   const allOrders = useMemo(() => {
     const orders: any[] = [];
@@ -405,7 +444,7 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
                  route={r} 
                  index={idx} 
                  onEditAddress={onEditAddress} 
-                 onDeleteRoute={(id: any) => setLocalRoutes(p => p.filter(x => x.id !== id))} 
+                 onDeleteRoute={(id: any) => { setLocalRoutes(p => p.filter(x => x.id !== id)); setHasManualChanges(true); }} 
                  onDragStart={handleDragStart} 
                  onDragEnd={handleDragEnd} 
                  onDrop={handleDrop} 
@@ -414,6 +453,18 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
                />
              ))}
           </div>
+          
+          {hasManualChanges && (
+             <div className="pt-10 flex justify-center animate-in zoom-in duration-300">
+                <button 
+                  onClick={handleManualSave}
+                  className="px-12 py-6 rounded-[2rem] bg-emerald-600 text-white font-black text-xs uppercase tracking-[0.3em] shadow-2xl shadow-emerald-500/40 hover:scale-105 active:scale-95 transition-all flex items-center gap-4"
+                >
+                   <ShieldCheckIcon className="w-6 h-6" />
+                   Подтвердить и Сохранить изменения
+                </button>
+             </div>
+          )}
        </div>
     </div>
   );
