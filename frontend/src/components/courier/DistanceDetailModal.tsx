@@ -212,7 +212,7 @@ const RouteSummaryCard = memo(({
   )
 })
 
-export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen, onClose, courierName, distanceDetails, onEditAddress }) => {
+export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen, onClose, courierName, distanceDetails, onEditAddress, onUpdateRoutes }) => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabType>(() => (localStorage.getItem('courier_modal_tab') as TabType) || 'management');
   const [localRoutes, setLocalRoutes] = useState<any[]>([]);
@@ -262,24 +262,34 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
 
     setHasManualChanges(true);
 
+    // 1. Calculate next state
+    let next: any[] = [];
+    let fromR: any = null;
+    let toR: any = null;
+    
     setLocalRoutes(prev => {
-      const next = [...prev];
-      const fIdx = next.findIndex(r => String(r.id) === fromRouteId);
-      const tIdx = next.findIndex(r => String(r.id) === toRouteId);
+      const updated = [...prev];
+      const fIdx = updated.findIndex(r => String(r.id) === fromRouteId);
+      const tIdx = updated.findIndex(r => String(r.id) === toRouteId);
       if (fIdx === -1 || tIdx === -1) return prev;
 
-      const fR = { ...next[fIdx], orders: [...next[fIdx].orders] };
-      const tR = { ...next[tIdx], orders: [...next[tIdx].orders] };
-      const oIdx = fR.orders.findIndex((o: any) => o.id === orderId);
+      fromR = { ...updated[fIdx], orders: [...updated[fIdx].orders] };
+      toR = { ...updated[tIdx], orders: [...updated[tIdx].orders] };
+      const oIdx = fromR.orders.findIndex((o: any) => o.id === orderId);
       if (oIdx === -1) return prev;
 
-      const [order] = fR.orders.splice(oIdx, 1);
-      tR.orders.push(order);
-      next[fIdx] = fR; next[tIdx] = tR;
+      const [order] = fromR.orders.splice(oIdx, 1);
+      toR.orders.push(order);
+      updated[fIdx] = fromR; 
+      updated[tIdx] = toR;
+      next = updated;
+      return updated;
+    });
 
-      // Sync to global state immediately for visual consistency
-      onUpdateRoutes?.(next);
-
+    // 2. Perform side effects outside the state transition
+    if (next.length > 0 && fromR && toR) {
+      if (onUpdateRoutes) onUpdateRoutes(next);
+      
       setTimeout(async () => {
         try {
           const presets = localStorageUtils.getAllSettings();
@@ -291,18 +301,18 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
             const res = await YapikoOSRMService.calculateRoute(locs, osrmUrl);
             return { ...route, totalDistance: (res.feasible && res.totalDistance !== undefined) ? res.totalDistance / 1000 : route.totalDistance, geometry: res.geometry };
           };
-          const [nF, nT] = await Promise.all([calc(fR), calc(tR)]);
+          const [nF, nT] = await Promise.all([calc(fromR), calc(toR)]);
           
           setLocalRoutes(curr => {
              const final = curr.map(r => String(r.id) === fromRouteId ? nF : (String(r.id) === toRouteId ? nT : r));
-             onUpdateRoutes?.(final);
+             if (onUpdateRoutes) onUpdateRoutes(final);
              manualRoutesRef.current = final;
              return final;
           });
 
           // Save manually modified routes directly to DB
           const saveRoute = async (r: any) => {
-             if (!r.id || String(r.id).startsWith('route_')) return; // Only save routes that have a DB ID
+             if (!r.id || String(r.id).startsWith('route_')) return; 
              await fetch(`${API_URL}/api/routes/save`, {
                  method: 'POST',
                  headers: {
@@ -320,8 +330,7 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
           toast.error('Ошибка пересчета маршрутов');
         }
       }, 0);
-      return next;
-    });
+    }
   }, [onUpdateRoutes]);
 
   const handleManualSave = useCallback(async () => {

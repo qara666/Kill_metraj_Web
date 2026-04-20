@@ -44,7 +44,7 @@ interface Courier {
 const ITEMS_PER_PAGE = 8;
 
 export const CourierManagement: React.FC<{ excelData?: any }> = () => {
-  const { excelData, updateExcelData } = useExcelData() || {};
+  const { excelData, updateExcelData, updateRouteData } = (useExcelData() as any) || {};
   const { isDark } = useTheme()
   const [couriers, setCouriers] = useState<Courier[]>([])
   const [editingCourier, setEditingCourier] = useState<Courier | null>(null)
@@ -476,7 +476,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
           courierName={selectedCourier.name}
           distanceDetails={getCourierStats(selectedCourier.name)}
           onEditAddress={handleEditAddress}
-          onUpdateRoutes={(useExcelData() as any)?.updateRouteData}
+          onUpdateRoutes={updateRouteData}
         />
       )}
 
