@@ -47,7 +47,7 @@ export const RouteCard: React.FC<RouteCardProps> = memo(({
   const [isExpanded, setIsExpanded] = useState(true); // v6.12: expanded by default so orders/addresses/badges are immediately visible
   return (
     <div className={clsx(
-      'group rounded-[2rem] border-2 p-6 transition-all duration-300 relative overflow-hidden',
+      'group rounded-[2rem] border-2 p-6 relative overflow-hidden',
       route.isVirtual ? 'animate-pulse-slow shadow-blue-500/10' : '',
       isDark
         ? clsx('bg-gray-800/20 border-white/5 hover:border-blue-500/30 hover:bg-gray-800/40 shadow-black/20', route.isVirtual && 'border-blue-500/40 bg-blue-500/5')

@@ -21,6 +21,7 @@ interface ExcelData {
   creationDate?: string
   loading?: boolean
   divisionId?: string | number
+  _lastManualRouteUpdate?: number
 }
 
 interface ExcelDataContextType {
@@ -849,8 +850,8 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
 
   const updateRouteData = useCallback((newRoutes: any[]) => {
     setExcelDataState(prev => {
-      const next = prev ? { ...prev, routes: newRoutes } : {
-        orders: [], couriers: [], paymentMethods: [], routes: newRoutes, errors: [], summary: undefined
+      const next = prev ? { ...prev, routes: newRoutes, _lastManualRouteUpdate: Date.now() } : {
+        orders: [], couriers: [], paymentMethods: [], routes: newRoutes, errors: [], summary: undefined, _lastManualRouteUpdate: Date.now()
       } as any;
       return next;
     })
@@ -896,17 +897,7 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
       const token = localStorage.getItem('km_access_token');
       if (!token) return;
       
-      // v5.180: Skip if socket routes were updated in the last 30 seconds (prevent stale DB overwrite during calculation)
-      // v36.9: But NEVER skip on the initial page load
-      const timeSinceSocketUpdate = Date.now() - lastSocketRouteUpdateRef.current;
-      const isInitialLoad = isInitialLoadRef.current;
-      if (isInitialLoad) {
-        isInitialLoadRef.current = false; // Mark initial load as done
-      } else if (timeSinceSocketUpdate < 30000 && lastSocketRouteUpdateRef.current > 0) {
-        console.log(`[ExcelSync] Skipping DB refresh - socket routes updated ${timeSinceSocketUpdate}ms ago`);
-        return;
-      }
-      
+      // Always refresh immediately - no skip logic
       const dbRoutes = await fetchRoutesWithDate(token);
       // Refreshed routes from DB
       
@@ -1036,10 +1027,14 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
             });
         }
 
+        const lastManualUpdate = prevSafe._lastManualRouteUpdate;
+        const timeSinceManual = lastManualUpdate ? Date.now() - lastManualUpdate : Infinity;
+        
         return {
           ...prevSafe,
           routes: finalRoutes,
-          couriers: updatedCouriers
+          couriers: updatedCouriers,
+          _lastManualRouteUpdate: timeSinceManual < 60000 ? lastManualUpdate : undefined
         };
 
       });
@@ -1055,12 +1050,10 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     refreshRoutesFromDB();
   }, [refreshRoutesFromDB]);
   
-  // Also refresh when orders change (debounced — long enough to let robot finish a batch)
+  // Also refresh when orders change (immediate - no debounce)
   useEffect(() => {
     if (excelData && excelData.orders?.length > 0) {
-      // Debounce long enough that we don't refresh mid-calculation every 2s
-      const t = setTimeout(() => refreshRoutesFromDB(), 10000);
-      return () => clearTimeout(t);
+      refreshRoutesFromDB();
     }
   }, [excelData?.orders?.length, refreshRoutesFromDB]);
 

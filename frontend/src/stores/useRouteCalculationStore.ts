@@ -1,21 +1,27 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { RouteCalculationMode, CourierRouteStatus } from '../types';
+import type { RouteCalculationMode, CourierRouteStatus, GroupingConfig } from '../types';
+import { DEFAULT_GROUPING_CONFIG } from '../types';
 
 interface RouteCalculationStore {
     calculationMode: RouteCalculationMode;
     courierStatuses: Map<string, CourierRouteStatus>;
     isCalculating: boolean;
     calculatingCourierId: string | null;
+    groupingConfig: GroupingConfig;
+    manualModified: Map<string, number>;
 
-    // Actions
     setCalculationMode: (mode: Partial<RouteCalculationMode>) => void;
+    setGroupingConfig: (config: Partial<GroupingConfig>) => void;
     updateCourierStatus: (status: CourierRouteStatus) => void;
     getCourierStatus: (courierId: string) => CourierRouteStatus | undefined;
     setCalculating: (isCalculating: boolean, courierId?: string) => void;
     shouldAutoCalculate: (courierId: string) => boolean;
     resetCourierStatus: (courierId: string) => void;
     clearAllStatuses: () => void;
+    markModified: (courierName: string) => void;
+    getModified: (courierName: string) => number | undefined;
+    clearModified: (courierName?: string) => void;
 }
 
 const defaultCalculationMode: RouteCalculationMode = {
@@ -33,10 +39,17 @@ export const useRouteCalculationStore = create<RouteCalculationStore>()(
             courierStatuses: new Map(),
             isCalculating: false,
             calculatingCourierId: null,
+            groupingConfig: { ...DEFAULT_GROUPING_CONFIG },
+            manualModified: new Map(),
 
             setCalculationMode: (mode) =>
                 set((state) => ({
                     calculationMode: { ...state.calculationMode, ...mode },
+                })),
+
+            setGroupingConfig: (config) =>
+                set((state) => ({
+                    groupingConfig: { ...state.groupingConfig, ...config },
                 })),
 
             updateCourierStatus: (status) =>
@@ -81,20 +94,45 @@ export const useRouteCalculationStore = create<RouteCalculationStore>()(
                     courierStatuses: new Map(),
                     isCalculating: false,
                     calculatingCourierId: null,
+                    groupingConfig: { ...DEFAULT_GROUPING_CONFIG },
+                    manualModified: new Map(),
+                }),
+
+            markModified: (courierName) =>
+                set((state) => {
+                    const next = new Map(state.manualModified);
+                    next.set(courierName, Date.now());
+                    return { manualModified: next };
+                }),
+
+            getModified: (courierName) => {
+                return get().manualModified.get(courierName);
+            },
+
+            clearModified: (courierName) =>
+                set((state) => {
+                    if (!courierName) {
+                        return { manualModified: new Map() };
+                    }
+                    const next = new Map(state.manualModified);
+                    next.delete(courierName);
+                    return { manualModified: next };
                 }),
         }),
         {
             name: 'route-calculation-storage',
-            // Custom serialization for Map
             partialize: (state) => ({
                 calculationMode: state.calculationMode,
                 courierStatuses: Array.from(state.courierStatuses.entries()),
+                groupingConfig: state.groupingConfig,
+                manualModified: Array.from(state.manualModified.entries()),
             }),
-            // Custom deserialization for Map
             merge: (persistedState: any, currentState) => ({
                 ...currentState,
                 ...persistedState,
-                courierStatuses: new Map(persistedState.courierStatuses || []),
+                courierStatuses: new Map(persistedState?.courierStatuses || []),
+                groupingConfig: persistedState?.groupingConfig || DEFAULT_GROUPING_CONFIG,
+                manualModified: new Map(persistedState?.manualModified || []),
             }),
         }
     )

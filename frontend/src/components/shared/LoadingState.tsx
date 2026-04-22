@@ -68,7 +68,7 @@ export const LoadingState: React.FC<LoadingStateProps> = ({
 
   if (fullScreen) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
         {content}
       </div>
     )

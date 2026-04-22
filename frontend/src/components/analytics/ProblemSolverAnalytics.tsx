@@ -114,7 +114,7 @@ export const ProblemSolverAnalytics: React.FC = () => {
                 <div className="xl:col-span-8 space-y-6">
                     <div className="flex items-center justify-between px-10 mb-4">
                         <h3 className="text-xl font-black uppercase tracking-widest italic opacity-40">Детектор отклонений</h3>
-                        <button onClick={analyzeSystem} className="p-3 bg-blue-500/10 text-blue-500 rounded-2xl hover:bg-blue-500/20 transition-all">
+                        <button onClick={analyzeSystem} className="p-3 bg-blue-500/10 text-blue-500 rounded-2xl hover:bg-blue-500/20">
                             <ArrowPathIcon className={clsx("w-6 h-6", loading && "animate-spin")} />
                         </button>
                     </div>

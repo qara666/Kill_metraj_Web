@@ -420,7 +420,7 @@ export const HelpTour: React.FC<HelpTourProps> = ({
         <>
             {/* Overlay с затемнением всего экрана */}
             <div
-                className="fixed inset-0 z-[9998] bg-black/70 backdrop-blur-sm transition-opacity"
+                className="fixed inset-0 z-[9998] bg-black/70"
                 onClick={handleSkip}
             />
 

@@ -10,7 +10,42 @@ const ttlLogPath = require('path').resolve(__dirname, '../../logs/ttl.log');
 function logTTLEvent(msg){
   try { fs.appendFileSync(ttlLogPath, `[${new Date().toISOString()}] ${msg}\n`); } catch(e){ /* ignore */ }
 }
-const MAX_DELIVERY_SPAN_MINUTES = 90;   // Max span between earliest and latest delivery in one route group
+
+// ============================================================
+// DEFAULTS — overridden by presets.groupingConfig if present
+// ============================================================
+const DEFAULTS = {
+  maxDeliverySpanMinutes: 90,
+  groupWindowMinutes: 20,
+  ttlMinutes: 20,
+  proximityMinutes: 20,
+  maxCenterDistanceKm: 30,
+  maxFirstDistanceKm: 25,
+  maxLegDistanceKm: 15,
+  maxKitchenGapMinutes: 45,
+  activeCourierWindowMinutes: 40,
+  activeCourierTtlMinutes: 90,
+  activeCourierDeliverySpanMinutes: 120,
+  minOrdersForMerge: 1,
+};
+
+function resolveConfig(presets) {
+  const gc = presets?.groupingConfig || {};
+  return {
+    maxDeliverySpanMinutes: gc.maxDeliverySpanMinutes ?? DEFAULTS.maxDeliverySpanMinutes,
+    groupWindowMinutes: gc.groupWindowMinutes ?? DEFAULTS.groupWindowMinutes,
+    ttlMinutes: gc.ttlMinutes ?? DEFAULTS.ttlMinutes,
+    proximityMinutes: gc.proximityMinutes ?? DEFAULTS.proximityMinutes,
+    maxCenterDistanceKm: gc.maxCenterDistanceKm ?? DEFAULTS.maxCenterDistanceKm,
+    maxFirstDistanceKm: gc.maxFirstDistanceKm ?? DEFAULTS.maxFirstDistanceKm,
+    maxLegDistanceKm: gc.maxLegDistanceKm ?? DEFAULTS.maxLegDistanceKm,
+    maxKitchenGapMinutes: gc.maxKitchenGapMinutes ?? DEFAULTS.maxKitchenGapMinutes,
+    activeCourierWindowMinutes: gc.activeCourierWindowMinutes ?? DEFAULTS.activeCourierWindowMinutes,
+    activeCourierTtlMinutes: gc.activeCourierTtlMinutes ?? DEFAULTS.activeCourierTtlMinutes,
+    activeCourierDeliverySpanMinutes: gc.activeCourierDeliverySpanMinutes ?? DEFAULTS.activeCourierDeliverySpanMinutes,
+    minOrdersForMerge: gc.minOrdersForMerge ?? DEFAULTS.minOrdersForMerge,
+  };
+}
 
 // Adaptive grouping and TTL per order (in minutes, configurable via env)
 const GROUP_WINDOW_MINUTES_PATCH = parseInt(process.env.GROUP_WINDOW_MINUTES) || 20 // v7.x: Increased from 15 to 20
@@ -41,7 +76,7 @@ function hashString(str) {
 function normalizeCourierName(name) {
     if (!name) return 'НЕ НАЗНАЧЕНО';
     if (typeof name !== 'string') return 'НЕ НАЗНАЧЕНО';
-    const n = name.trim().toUpperCase();
+    const n = name.trim().replace(/\s+/g, ' ').toUpperCase();
     if (n === '' || n === 'НЕ НАЗНАЧЕНО' || n === 'UNDEFINED' || n === 'NULL' || n === 'UNASSIGNED') return 'НЕ НАЗНАЧЕНО';
     return n;
 }
@@ -414,9 +449,14 @@ function getStableOrderId(order) {
 }
 
 // v7.x: Added calculationTime parameter for TTL check
-function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate, calculationTime) {
+function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate, calculationTime, presets) {
     if (!orders || orders.length === 0) return [];
     
+    const cfg = resolveConfig(presets);
+    const effectiveWindowMinutes = cfg.groupWindowMinutes;
+    const effectiveTtlMinutes = cfg.ttlMinutes;
+    const effectiveProximityMinutes = cfg.proximityMinutes;
+
     // v7.x: Use calculation time for TTL (not current time)
     // This ensures archive date calculations don't fail TTL check
     const now = calculationTime || Date.now();
@@ -481,7 +521,7 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate, calcu
     const ordersWithAnchor = ordersWithData.map(item => ({
         ...item,
         anchorTime: item.execution || item.planned,
-        ttlEnd: (item.execution || item.planned) ? (item.execution || item.planned) + TTL_MS_PATCH : null
+        ttlEnd: (item.execution || item.planned) ? (item.execution || item.planned) + (effectiveTtlMinutes * 60_000) : null
     }));
 
     ordersWithAnchor.sort((a, b) => {
@@ -532,15 +572,26 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate, calcu
         courierId !== 'ПО';
     let currentGroup = null;
 
-    const WINDOW_MS = PROXIMITY_MINUTES_PATCH * 60 * 1000; 
-    const DELIVERY_SPAN_MS = MAX_DELIVERY_SPAN_MINUTES * 60 * 1000;
+    const isOrderActiveOrCompleted = (o) => {
+        const s = String(o?.status || o?.deliveryStatus || '').toLowerCase();
+        return s.includes('доставляется') || s.includes('в пути') || 
+               s.includes('завершен') || s.includes('виконано') || 
+               s.includes('доставлен') || s.includes('completed') ||
+               s.includes('доставляється');
+    };
 
-    // v7.x: TTL Logic using "Group Age" approach
-    // TTL_MS_PATCH defines MAX age of group from first order
-    // If current order's anchorTime - groupStartAnchor > TTL_MS_PATCH → split
+    // v7.x/v40: TTL Logic using "Group Age" approach
+    // effectiveTtlMs defines MAX age of group from first order
+    // If current order's anchorTime - groupStartAnchor > effectiveTtlMs → split
     
     ordersForAuto.forEach(({ order, planned, arrival, kitchen, anchorTime, ttlEnd }) => {
         
+        // v40: Only relax grouping for orders that are ALREADY in delivery or completed
+        const isActiveOrCompleted = isAssignedCourier && isOrderActiveOrCompleted(order);
+        const effectiveWindowMs = isActiveOrCompleted ? (cfg.activeCourierWindowMinutes * 60 * 1000) : (effectiveProximityMinutes * 60 * 1000);
+        const effectiveTtlMs = isActiveOrCompleted ? (cfg.activeCourierTtlMinutes * 60 * 1000) : (effectiveTtlMinutes * 60 * 1000);
+        const DELIVERY_SPAN_MS = isActiveOrCompleted ? (cfg.activeCourierDeliverySpanMinutes * 60 * 1000) : (cfg.maxDeliverySpanMinutes * 60 * 1000);
+
         // v7.x: Check if TTL expired (group age exceeded)
         // This replaces the old complex logic with simple, consistent check
         if (currentGroup) {
@@ -548,11 +599,11 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate, calcu
             
             if (groupStartAnchor && anchorTime) {
                 const groupAge = anchorTime - groupStartAnchor;
-                const ttlExpired = groupAge > TTL_MS_PATCH;
+                const ttlExpired = groupAge > effectiveTtlMs;
                 
                 if (ttlExpired) {
                     // TTL expired: close current group and start new one
-                    logger.debug(`[TurboGrouping] TTL expired for ${courierName}: age=${(groupAge/60000).toFixed(1)}min > TTL=${GROUP_WINDOW_MINUTES_PATCH}min`);
+                    logger.debug(`[TurboGrouping] TTL expired for ${courierName}: age=${(groupAge/60000).toFixed(1)}min > TTL=${(effectiveTtlMs/60000).toFixed(0)}min`);
                     groups.push(currentGroup);
                     currentGroup = null;
                 }
@@ -561,7 +612,7 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate, calcu
 
         if (!currentGroup) {
             // Начинаем новую группу с первым заказом
-            if (anchorTime) order.ttlEnd = anchorTime + TTL_MS_PATCH;
+            if (anchorTime) order.ttlEnd = anchorTime + effectiveTtlMs;
             currentGroup = {
                 id: `group-${courierId}-${order.id}-${planned}`,
                 courierId, 
@@ -587,9 +638,9 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate, calcu
             const firstOrder = currentGroup.orders[0];
             
             // Условие 1: Time proximity — SLIDING WINDOW from last added order (not first)
-            // This allows chaining: 12:00 + 12:40 + 13:20 all fit within 45-min steps
+            // This allows chaining: 12:00 + 12:40 + 13:20 all fit within steps
             const timeDiff = anchorTime - lastAnchor;
-            const timeWithinProximity = timeDiff >= 0 && timeDiff <= WINDOW_MS;
+            const timeWithinProximity = timeDiff >= 0 && timeDiff <= effectiveWindowMs;
             
             // Условие 2: SLA / delivery span (total planned time span <= MAX_DELIVERY_SPAN_MINUTES)
             const minPlannedInGroup = currentGroup.windowStart;
@@ -625,13 +676,10 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate, calcu
                     const maxDistFromCenter = calculateMaxDistanceFromCenter(allOrdersForCenter, center);
                     
                     // v7.x: Use the MORE PERMISSIVE of the two strategies:
-                    // - Old: distance from first order to new order <= 20km
-                    // - New: max distance from center <= 30km (allows more spread)
-                    const MAX_CENTER_DISTANCE = 30; // km
-                    const MAX_FIRST_DISTANCE = 25; // km (slightly increased from 20)
-                    
-                    const centerBasedOk = maxDistFromCenter <= MAX_CENTER_DISTANCE;
-                    const firstBasedOk = distanceToFirst <= MAX_FIRST_DISTANCE;
+                    // - Old: distance from first order to new order
+                    // - New: max distance from center (allows more spread)
+                    const centerBasedOk = maxDistFromCenter <= cfg.maxCenterDistanceKm;
+                    const firstBasedOk = distanceToFirst <= cfg.maxFirstDistanceKm;
                     
                     // Accept if EITHER strategy passes (more flexible)
                     distanceOk = centerBasedOk || firstBasedOk;
@@ -641,7 +689,7 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate, calcu
                     }
                 } else {
                     // No center calculable, use original logic
-                    distanceOk = distanceToFirst <= 25;
+                    distanceOk = distanceToFirst <= cfg.maxFirstDistanceKm;
                 }
             }
             
@@ -658,26 +706,43 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate, calcu
                 logger.debug(`[TurboGrouping] ℹ️ Zone mix allowed for ${courierName}: ${groupZone} + ${orderZone}`);
             }
             
-            // Условие 5: Kitchen readiness gap (<= 45 min for unassigned couriers)
+            // Условие 5: Kitchen readiness gap (configurable, for unassigned couriers)
             let kitchenGapOk = true;
             if (!isAssignedCourier && kitchen && currentGroup.lastKitchen) {
                 const kitchenDiff = Math.abs(kitchen - currentGroup.lastKitchen);
-                kitchenGapOk = kitchenDiff <= (45 * 60 * 1000);
+                kitchenGapOk = kitchenDiff <= (cfg.maxKitchenGapMinutes * 60 * 1000);
+            }
+
+            // Условие 6: Max leg distance — point-to-point distance from last order to new order
+            let legDistanceOk = true;
+            if (order.coords && currentGroup.orders.length > 0) {
+                const lastOrderInGroup = currentGroup.orders[currentGroup.orders.length - 1];
+                if (lastOrderInGroup?.coords?.lat && lastOrderInGroup?.coords?.lng) {
+                    const legDist = haversineDistance(
+                        lastOrderInGroup.coords.lat, lastOrderInGroup.coords.lng,
+                        order.coords.lat, order.coords.lng
+                    );
+                    if (legDist > cfg.maxLegDistanceKm) {
+                        legDistanceOk = false;
+                    }
+                }
             }
             
             // Определяем причину разбиения
             let newSplitReason = '';
             if (!timeWithinProximity) {
-                newSplitReason = `Время (${Math.round(timeDiff / 60000)} мин > ${GROUP_WINDOW_MINUTES_PATCH})`;
+                newSplitReason = `Время (${Math.round(timeDiff / 60000)} мин > ${(effectiveWindowMs/60000).toFixed(0)})`;
             } else if (!deliverySpanFits) {
                 newSplitReason = `SLA (${Math.round(deliverySpan / 60000)} мин > ${MAX_DELIVERY_SPAN_MINUTES})`;
             } else if (!distanceOk) {
                 // v7.x: Updated geo split reason with new center-based logic
-                newSplitReason = `Гео (от центра >30км или от первого >25км)`;
+                newSplitReason = `Гео (от центра >${cfg.maxCenterDistanceKm}км или от первого >${cfg.maxFirstDistanceKm}км)`;
             } else if (!zoneOk) {
                 newSplitReason = `Район (${orderZone} ≠ ${groupZone})`;
             } else if (!isAssignedCourier && !kitchenGapOk) {
-                newSplitReason = `Готовность (>45м)`;
+                newSplitReason = `Готовность >${cfg.maxKitchenGapMinutes}м`;
+            } else if (!legDistanceOk) {
+                newSplitReason = `Шаг >${cfg.maxLegDistanceKm}км`;
             }
             
             if (newSplitReason === '' && (!currentGroup || currentGroup.orders.length > 0)) {
@@ -706,7 +771,7 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate, calcu
                 groups.push(oldGroup);
                 
                 // Начинаем новую группу — set TTL for first order
-                if (anchorTime) order.ttlEnd = anchorTime + TTL_MS_PATCH;
+                if (anchorTime) order.ttlEnd = anchorTime + effectiveTtlMs;
                 currentGroup = {
                     id: `group-${courierId}-${order.id}-${planned}`,
                     courierId, 
@@ -769,8 +834,9 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate, calcu
 /**
  * Groups ALL orders for ALL couriers.
  * v7.x: Added calculationTime parameter for TTL check
+ * v9.x: Added presets parameter for dynamic grouping config
  */
-function groupAllOrdersByTimeWindow(orders, baseDate, calculationTime) {
+function groupAllOrdersByTimeWindow(orders, baseDate, calculationTime, presets) {
     if (!orders || !Array.isArray(orders)) return new Map();
     
     // v7.x: Use current time as default calculation time
@@ -795,8 +861,8 @@ function groupAllOrdersByTimeWindow(orders, baseDate, calculationTime) {
 
     const result = new Map();
     courierGroups.forEach((info, normName) => {
-        // v7.x: Pass calculationTime to groupOrdersByTimeWindow
-        const groups = groupOrdersByTimeWindow(info.orders, normName, info.rawName, baseDate, calcTime);
+        // v7.x: Pass calculationTime and presets to groupOrdersByTimeWindow
+        const groups = groupOrdersByTimeWindow(info.orders, normName, info.rawName, baseDate, calcTime, presets);
         result.set(normName, groups);
     });
 
@@ -818,6 +884,8 @@ module.exports = {
     calculateGroupCenter,
     calculateMaxDistanceFromCenter,
     calculateMaxDistanceFromFirst,
+    resolveConfig,
+    DEFAULTS,
     _TTL_CONFIG: (typeof process.env.NODE_ENV === 'undefined' || process.env.NODE_ENV === 'test') ? {
       WINDOW_MS_PATCH,
       TTL_MS_PATCH,

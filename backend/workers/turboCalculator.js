@@ -137,18 +137,18 @@ class OrderCalculator {
         const osrmEnv = process.env.OSRM_URL || '';
         const valEnv = process.env.VALHALLA_URL || '';
 
-        this.yapikoOsrmUrl = yapikoEnv ? yapikoEnv.replace(/\/+$/, '') : (process.env.OSRM_URL || 'http://osrm.yapiko.kh.ua:5050').replace(/\/+$/, '');
+        this.yapikoOsrmUrl = yapikoEnv ? yapikoEnv.replace(/\/+$/, '') : (process.env.OSRM_URL || 'http://116.204.153.171:5050').replace(/\/+$/, '');
         this.useDualOsrm = process.env.DISABLE_SELF_HOST_ROUTING !== '1' && process.env.DISABLE_SELF_HOST_ROUTING !== 'true';
         this.osrmSingleUrl = null;
 
         this.selfOsrmUrl = (process.env.SELF_HOST_OSRM_URL || 'http://127.0.0.1:5050').replace(/\/+$/, '');
-        this.remoteOsrmUrl = (process.env.REMOTE_OSRM_URL || osrmEnv || 'http://osrm.yapiko.kh.ua:5050').replace(/\/+$/, '');
+        this.remoteOsrmUrl = (process.env.REMOTE_OSRM_URL || osrmEnv || 'http://116.204.153.171:5050').replace(/\/+$/, '');
 
         this.useDualValhalla = process.env.DISABLE_SELF_HOST_ROUTING !== '1' && process.env.DISABLE_SELF_HOST_ROUTING !== 'true';
         this.valhallaSingleUrl = null;
 
         this.selfValhallaUrl = (process.env.SELF_HOST_VALHALLA_URL || 'http://127.0.0.1:8002').replace(/\/+$/, '');
-        this.remoteValhallaUrl = (process.env.REMOTE_VALHALLA_URL || valEnv || 'http://osrm.yapiko.kh.ua:8002').replace(/\/+$/, '');
+        this.remoteValhallaUrl = (process.env.REMOTE_VALHALLA_URL || valEnv || 'http://116.204.153.171:8002').replace(/\/+$/, '');
 
         this.osrmUrl = this.osrmSingleUrl || this.remoteOsrmUrl;
 
@@ -184,7 +184,7 @@ class OrderCalculator {
         this.enginePresets = {
             yapikoOSRM: {
                 label: 'Yapiko OSRM',
-                url: process.env.YAPIKO_OSRM_URL || 'http://osrm.yapiko.kh.ua:5050'
+                url: process.env.YAPIKO_OSRM_URL || 'http://116.204.153.171:5050'
             },
             photon: {
                 label: 'Photon',
@@ -467,26 +467,27 @@ class OrderCalculator {
     async loadSavedState() {
         try {
             const { sequelize } = require('../src/config/database');
-            const result = await sequelize.query(
-                "SELECT data FROM dashboard_states WHERE data->>'activeDivisionId' IS NOT NULL LIMIT 1",
+            const results = await sequelize.query(
+                "SELECT data FROM dashboard_states WHERE data->>'activeDivisionId' IS NOT NULL",
                 { type: sequelize.QueryTypes.SELECT }
             );
-            if (result && result[0]?.data) {
-                this.activeDivisionId = result[0].data.activeDivisionId;
-                this.activeDivisionDate = result[0].data.activeDivisionDate || new Date().toISOString().split('T')[0];
-                logger.info(`[TurboCalculator] 💾 Restored active division: ${this.activeDivisionId}, date: ${this.activeDivisionDate}`);
-                
-                // v5.197: Ensure legacy active division is also in divisionStates map so it ticks
-                if (this.activeDivisionId) {
-                    const divId = String(this.activeDivisionId);
-                    if (!this.divisionStates.has(divId)) {
-                        this.divisionStates.set(divId, {
-                            users: new Set(),
-                            date: this.activeDivisionDate,
-                            priorityQueue: [],
-                            currentPriority: null,
-                            isActive: false, // v6.11 FIX: Do NOT auto-resume legacy divisions, they cause infinite high-load loops for old dates
-                        });
+            if (results && results.length > 0) {
+                logger.info(`[TurboCalculator] 💾 Found ${results.length} saved user states to restore`);
+                for (const row of results) {
+                    if (row.data) {
+                        const divId = String(row.data.activeDivisionId);
+                        const date = row.data.activeDivisionDate || new Date().toISOString().split('T')[0];
+                        
+                        if (!this.divisionStates.has(divId)) {
+                            this.divisionStates.set(divId, {
+                                users: new Set(),
+                                date: date,
+                                priorityQueue: [],
+                                currentPriority: null,
+                                isActive: false, // Keep false until discovery or notify wakes it up
+                            });
+                            logger.info(`[TurboCalculator] 💾 Restored division ${divId} from user state (${date})`);
+                        }
                     }
                 }
             }
@@ -616,22 +617,45 @@ class OrderCalculator {
     async discoverDivisions() {
         try {
             const DashboardCache = this.getModel('DashboardCache');
+            const DivisionState = this.getModel('DashboardDivisionState');
             const today = new Date().toISOString().split('T')[0];
+            const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+            const dayBefore = new Date(Date.now() - 172800000).toISOString().split('T')[0];
             
+            // v39.2: Look for data in the last 3 days to catch nighttime users
             const activeCaches = await DashboardCache.findAll({
-                where: { target_date: today },
-                attributes: ['division_id']
+                where: { target_date: [today, yesterday, dayBefore] },
+                attributes: ['division_id', 'target_date'],
+                order: [['updated_at', 'DESC']]
             });
 
-            activeCaches.forEach(c => {
-                const id = String(c.division_id);
+            // Also check for divisions marked active in our persistent state table
+            let persistedActive = [];
+            if (DivisionState) {
+                persistedActive = await DivisionState.findAll({ where: { is_active: true } });
+            }
+
+            const discovered = new Set();
+            
+            // Priority 1: Persistent state (active divisions)
+            persistedActive.forEach(p => discovered.add({ id: String(p.division_id), date: p.date || today }));
+            
+            // Priority 2: Recent cache data
+            activeCaches.forEach(c => discovered.add({ id: String(c.division_id), date: c.target_date }));
+
+            discovered.forEach(item => {
+                const id = item.id;
                 if (!this.divisionStates.has(id)) {
                     this.divisionStates.set(id, { 
                         isActive: true, 
-                        date: today,
+                        date: item.date,
                         lastNotify: Date.now() 
                     });
-                    logger.info(`[TurboCalculator] 🔍 Discovered active division ${id} for today`);
+                    logger.info(`[TurboCalculator] 🔍 Discovered/Resumed active division ${id} for ${item.date}`);
+                    this.newFODataPending.set(id, true);
+                } else if (!this.divisionStates.get(id).isActive) {
+                    // Wake up if it was idle but has recent data
+                    this.divisionStates.get(id).isActive = true;
                     this.newFODataPending.set(id, true);
                 }
             });
@@ -694,7 +718,7 @@ class OrderCalculator {
             
             // v7.5: Try to get totalCount from current cache to avoid "flashing 0" in UI
             const DashboardCache = this.getModel('DashboardCache');
-            const emitInitial = (count = 0) => {
+            const emitInitial = (count = 0, totalAll = 0) => {
                 const initStatus = {
                     divisionId: divIdStr,
                     date: targetDate,
@@ -702,6 +726,7 @@ class OrderCalculator {
                     currentPhase: 'initializing',
                     message: 'Preparing data for analysis...',
                     totalCount: count,
+                    totalOrdersAll: totalAll,
                     processedCount: 0
                 };
                 if (this.io) this.io.emit('robot_status', initStatus);
@@ -713,11 +738,23 @@ class OrderCalculator {
             if (DashboardCache) {
                  DashboardCache.findOne({ where: { division_id: divIdStr, target_date: targetDate } })
                     .then(c => {
-                        const count = (c && c.payload && Array.isArray(c.payload.orders)) ? c.payload.orders.length : 0;
-                        emitInitial(count);
-                    }).catch(() => emitInitial(0));
+                        let count = 0;
+                        let totalAll = 0;
+                        if (c && c.payload && Array.isArray(c.payload.orders)) {
+                            totalAll = c.payload.orders.length;
+                            count = c.payload.orders.filter(o => {
+                                const courier = String(o.courier || o.courierName || o.courierId || '').toUpperCase().trim();
+                                const status = String(o.status || o.deliveryStatus || '').toLowerCase().trim();
+                                if (!courier || courier === 'НЕ НАЗНАЧЕНО' || courier === 'UNASSIGNED' || courier === 'ПО' || courier === 'ID:0') return false;
+                                if (status.includes('отказ') || status.includes('отменен') || status.includes('відмова')) return false;
+                                if (status.includes('самовывоз') || status.includes('на месте')) return false;
+                                return true;
+                            }).length;
+                        }
+                        emitInitial(count, totalAll);
+                    }).catch(() => emitInitial(0, 0));
             } else {
-                emitInitial(0);
+                emitInitial(0, 0);
             }
             
             logger.info(`[TurboCalculator] 📡 Emitted initial status for division ${divIdStr}${targetCourier ? ` (Target: ${targetCourier})` : ''}`);
@@ -872,7 +909,19 @@ class OrderCalculator {
         }
 
 
+        // v7.9: Watchdog - if a run takes > 15 minutes, assume it's stuck and force-reset
+        if (this.isProcessing) {
+            const runDuration = Date.now() - (this.lastRunStartedAt || 0);
+            if (runDuration > 900000) { // 15 minutes
+                logger.warn(`[TurboCalculator] ⚠️ Run has been active for ${Math.round(runDuration/1000)}s. Force-clearing isProcessing flag.`);
+                this.isProcessing = false;
+            } else {
+                return;
+            }
+        }
+
         this.isProcessing = true;
+        this.lastRunStartedAt = Date.now();
         this.needsReRun = false;
 
         try {
@@ -977,6 +1026,16 @@ class OrderCalculator {
         }
 
         // v7.0: ALWAYS activate this division — no isActive check anymore
+        // v7.9: Debounce notifications to prevent jitter during bulk syncs
+        const now = Date.now();
+        const lastNotify = this.lastNotificationTime?.get(divIdStr) || 0;
+        if (now - lastNotify < 3000 && !this.newFODataPending.get(divIdStr)) {
+            // Already notified recently and still pending processing, skip redundant hash clearing
+            return;
+        }
+        if (!this.lastNotificationTime) this.lastNotificationTime = new Map();
+        this.lastNotificationTime.set(divIdStr, now);
+
         let state = this.divisionStates.get(divIdStr);
         if (!state) {
             state = { users: new Set(), date: targetDate, priorityQueue: [], currentPriority: null, isActive: true, forceFull: false };
@@ -990,9 +1049,10 @@ class OrderCalculator {
         this.newFODataPending.set(divIdStr, true);
         
         // Clear the stale hash so processCache detects the change
+        // v7.9: Only clear if NOT currently processing this exact division to avoid "jitter"
         this.processedHashes.delete(`${divIdStr}_${targetDate}`);
 
-        logger.info(`[TurboCalculator] 🔔 New FO data for division ${divIdStr} (${targetDate}) — AUTO-ACTIVATING calculation`);
+        logger.info(`[TurboCalculator] 🔔 New FO data for division ${divIdStr} (${targetDate}) — TRIGGERED recalculation`);
 
         // v7.3: Reduce delay for instant-feel (500ms)
         if (this.isProcessing) {
@@ -1089,29 +1149,51 @@ class OrderCalculator {
                 const globalStatus = global.divisionStatusStore ? global.divisionStatusStore['all_global'] : null;
                 const currentGlobalProcessed = globalStatus ? (globalStatus.processedCount || 0) : 0;
 
+                // v7.9: Filter global count too for consistency
+                const totalRouteableGlobal = caches.reduce((sum, c) => {
+                    return sum + (c.payload?.orders || []).filter(o => {
+                        const s = String(o.status || o.deliveryStatus || '').toLowerCase();
+                        if (s.includes('отказ') || s.includes('отменен') || s.includes('відмова')) return false;
+                        if (s.includes('самовывоз') || s.includes('на месте')) return false;
+                        return true;
+                    }).length;
+                }, 0);
+
                 this.globalStats = {
                     divisionId: 'all',
                     date: dateISO,
                     isActive: true,
-                    totalCount: totalOrdersGlobal,
+                    totalCount: totalRouteableGlobal,
                     processedCount: currentGlobalProcessed,
                     skippedInRoutes: globalStatus ? (globalStatus.skippedInRoutes || 0) : 0,
                     skippedGeocoding: globalStatus ? (globalStatus.skippedGeocoding || 0) : 0,
-                    message: `Processing all divisions (${totalOrdersGlobal} orders)...`
+                    message: `Расчет по всем филиалам (${totalRouteableGlobal} заказов)...`
                 };
 
                 if (this.io) {
                     this.io.emit('robot_status', this.globalStats);
                 }
-            } else {
+            }
+
+            // v7.9: Use ONLY routeable orders for the initial status count to prevent 368 -> 265 jump in UI
+            const initialOrders = caches[0]?.payload?.orders || [];
+            const initialRouteableCount = initialOrders.filter(o => {
+                const c = String(o.courier || o.courierName || o.courierId || '').toUpperCase().trim();
+                const s = String(o.status || o.deliveryStatus || '').toLowerCase().trim();
+                if (!c || c === 'НЕ НАЗНАЧЕНО' || c === 'UNASSIGNED' || c === 'ПО' || c === 'ID:0') return false;
+                if (s.includes('отказ') || s.includes('отменен') || s.includes('відмова')) return false;
+                if (s.includes('самовывоз') || s.includes('на месте')) return false;
+                return true;
+            }).length;
+
+            if (priorityDivisionId !== 'all') {
                 this.globalStats = null;
-                // v7.7: Emit immediate 'starting' status for specific division to wake up UI
                 if (this.io && priorityDivisionId) {
                     this.io.emit('robot_status', {
                         divisionId: priorityDivisionId,
                         date: dateISO,
                         isActive: true,
-                        totalCount: caches[0]?.payload?.orders?.length || 0,
+                        totalCount: initialRouteableCount,
                         processedCount: 0,
                         currentPhase: 'initializing',
                         message: 'Подготовка к расчету...'
@@ -1754,7 +1836,7 @@ class OrderCalculator {
             try {
                 const bDate = targetDateNorm || cache.target_date;
                 const calcTime = Date.now(); // v7.x: Use current time for TTL (archives use date, not time-based TTL)
-                deliveryWindows = groupAllOrdersByTimeWindow(ordersToGroup, bDate, calcTime);
+                deliveryWindows = groupAllOrdersByTimeWindow(ordersToGroup, bDate, calcTime, presets);
                 deliveryWindows.forEach((windows, courierName) => { 
                     totalBlocksCount += windows.length; 
                     // v7.6: Initialize courier stats so distances/counts are recorded
@@ -1840,6 +1922,11 @@ class OrderCalculator {
                 const normName = courierName;
                 if (!windows || windows.length === 0) continue;
 
+                // v38: Skip non-target couriers when a specific courier is requested
+                if (targetCourier && normalizeCourierName(normName) !== normalizeCourierName(targetCourier)) {
+                    continue;
+                }
+
                 // v36.5: Refresh current courier and progress
                 stats.currentCourier = normName;
                 stats.message = `Processing: ${normName}...`;
@@ -1896,20 +1983,23 @@ class OrderCalculator {
 
                     // v5.195: INCREMENTAL ROUTING LOGIC - Keep block if existing calculation exists
                     // v37.1: Bypass cache if forceFull is true OR this is the target courier
+                    // vXX.X: Skip routes with _manualModified=true to preserve manual changes
                     const blockSignature = getBlockSignature(dedupedOrders);
                     const isTarget = targetCourier && (normalizeCourierName(normName) === normalizeCourierName(targetCourier));
-                    
+
                     if (existingRouteMap.has(blockSignature) && !forceFull && !isTarget) {
                         const existingR = existingRouteMap.get(blockSignature);
                         const existingKm = parseFloat(existingR?.total_distance || 0);
                         const existingHasGeometry = !!(existingR?.route_data?.geometry);
                         const existingOrdersCount = Number(existingR?.orders_count || 0);
+                        const wasManuallyModified = existingR?.route_data?._manualModified === true;
 
                         // If a previously cached route has 0 km / missing geometry, it's likely a legacy bad calc.
                         // Recalculate instead of endlessly skipping.
+                        // vXX.X: Also recalculate if route was NOT manually modified - keep preserving manual changes
                         const shouldRecalcLegacyZero = !existingR || existingKm <= 0.01 || !existingHasGeometry || existingOrdersCount <= 0;
-                        if (shouldRecalcLegacyZero) {
-                            logger.warn(`[TurboCalculator] ♻️ Recalculating legacy/invalid cached route for ${normName} (${windowKey}): km=${existingKm}, geom=${existingHasGeometry}, orders=${existingOrdersCount}`);
+                        if (shouldRecalcLegacyZero || wasManuallyModified) {
+                            logger.warn(`[TurboCalculator] ♻️ Recalculating route for ${normName} (${windowKey}): legacyZero=${shouldRecalcLegacyZero}, manualModified=${wasManuallyModified}`);
                         } else {
                         matchedExistingRouteIds.add(existingR.id);
                         
@@ -2386,9 +2476,11 @@ class OrderCalculator {
                     stats.processedCouriers = processedCourierNames.size;
                     stats.message = `Courier ${normName} completed`;
                     
-                    // v7.6: Smooth progress tracking — increment processedCount as we finish couriers
-                    const courierOrders = stats.courierStats[normName]?.orders || 1;
-                    stats.processedCount = Math.min(stats.totalCount, stats.processedCount + courierOrders);
+                    // v7.9: REMOVED redundant double increment of processedCount here.
+                    // processedCount is already incremented per-window at lines 1959/2004.
+                    // This prevents '22/17' issues and progress bar jumps.
+                    // const courierOrders = stats.courierStats[normName]?.orders || 1;
+                    // stats.processedCount = Math.min(stats.totalCount, stats.processedCount + courierOrders);
                     
                     emitStatus(true);
                     
@@ -2400,17 +2492,35 @@ class OrderCalculator {
             // v36.9: At completion, processedCount MUST reach totalCount
             // This ensures the progress bar reliably reaches 100% when done
             stats.processedCount = stats.totalCount;
+            stats.isActive = false;
             stats.currentPhase = 'complete';
             stats.message = 'Calculation complete!';
             emitStatus(true); // v36.5: FORCE final status to clear throttles
 
-            // v38.2: ALWAYS clean up obsolete routes after every recalculation
-            // Delete ALL routes for this date+division that were NOT created/matched in this run
-            // This prevents route accumulation when time_block label changes between runs
+            // v38.2: Clean up obsolete routes after every recalculation
+            // v38.3: When targetCourier is set, only clean up THAT courier's routes (not all)
             if (Route && cache.division_id) {
                 try {
+                    const cleanWhere = {
+                        [Op.and]: sequelize.where(
+                            sequelize.literal("route_data->>'target_date'"),
+                            targetDateNorm || cache.target_date
+                        )
+                    };
+
+                    if (targetCourier) {
+                        const normTarget = normalizeCourierName(targetCourier);
+                        cleanWhere['division_id'] = cache.division_id;
+                        cleanWhere[Op.or] = [
+                            { courier_id: normTarget },
+                            { courier_id: { [Op.iLike]: `%${normTarget}%` } }
+                        ];
+                    } else {
+                        cleanWhere['division_id'] = cache.division_id;
+                    }
+
                     let deletedCount = 0;
-                    if (matchedExistingRouteIds.size > 0) {
+                    if (matchedExistingRouteIds.size > 0 && !targetCourier) {
                         deletedCount = await Route.destroy({
                             where: {
                                 division_id: cache.division_id,
@@ -2422,16 +2532,7 @@ class OrderCalculator {
                             }
                         });
                     } else {
-                        // No routes matched at all — wipe the slate clean for this date+division
-                        deletedCount = await Route.destroy({
-                            where: {
-                                division_id: cache.division_id,
-                                [Op.and]: sequelize.where(
-                                    sequelize.literal("route_data->>'target_date'"),
-                                    targetDateNorm || cache.target_date
-                                )
-                            }
-                        });
+                        deletedCount = await Route.destroy({ where: cleanWhere });
                     }
                     if (deletedCount > 0) {
                         logger.info(`[TurboCalculator] 🗑️ Cleaned up ${deletedCount} stale routes for ${cache.division_id} on ${targetDateNorm}`);
@@ -2592,6 +2693,12 @@ class OrderCalculator {
 
         } catch (err) {
             logger.error(`[OrderCalculator] ❌ processCache fatal: ${err.message}`);
+            // v7.9: Ensure UI stops waiting even on fatal crash
+            if (typeof stats !== 'undefined') {
+                stats.isActive = false;
+                stats.message = `Fatal error: ${err.message}`;
+                if (typeof emitStatus === 'function') emitStatus(true);
+            }
         }
     }
 

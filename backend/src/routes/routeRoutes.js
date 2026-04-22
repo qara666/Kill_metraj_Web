@@ -115,6 +115,7 @@ router.get('/calculated', async (req, res) => {
                 endCoords: r.route_data?.endCoords || null,
                 geoMeta: r.route_data?.geoMeta || null,
                 orders: routeOrders,
+                _manualModified: r.route_data?._manualModified === true,
                 isOptimized: true,
                 isTurboRoute: true,
                 createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now()
@@ -139,33 +140,46 @@ router.get('/:id', (req, res) => {
 router.post('/save', auditLog('save_calculated_route'), async (req, res) => {
     try {
         const route = req.body;
-        if (!route || !route.courier) {
-            return res.status(400).json({ success: false, error: 'Route data and courier are required' });
+        if (!route || (!route.courier && !route.courier_id)) {
+            logger.warn('[RouteAPI] Save rejected: Missing courier info', { body: route });
+            return res.status(400).json({ success: false, error: 'Route data and courier_id are required' });
         }
 
         const divisionId = route.division_id || req.user?.divisionId || 'all';
         const targetDate = route.targetDate || (route.route_data?.target_date) || new Date().toISOString().split('T')[0];
 
         // Format for DB
+        const dist = parseFloat(route.totalDistance || 0);
+        let courierId = route.courier_id || route.courier;
+        if (typeof courierId === 'object' && courierId !== null) {
+            courierId = courierId.name || courierId.id || String(courierId);
+        }
+
+        const manualMod = route._manualModified || route.route_data?._manualModified;
         const dbData = {
-            courier_id: route.courier || route.courier_id,
+            courier_id: String(courierId),
             division_id: String(divisionId),
-            total_distance: parseFloat(route.totalDistance || 0),
-            total_duration: parseInt(route.totalDuration || 0) * 60, // convert back to seconds
+            total_distance: isNaN(dist) ? 0 : dist,
+            total_duration: parseInt(route.totalDuration || 0) * 60,
             engine_used: route.engine_used || 'manual_frontend',
             orders_count: route.orders?.length || route.ordersCount || 0,
             route_data: {
                 ...route,
                 target_date: targetDate,
-                last_saved_by: req.user?.id
+                last_saved_by: req.user?.id,
+                _manualModified: manualMod
             },
             updated_at: new Date()
         };
 
         // Try to find existing route by ID first
         let dbRoute = null;
-        if (route.id && route.id !== 'route_new') {
-            dbRoute = await Route.findByPk(route.id);
+        if (route.id && !isNaN(parseInt(route.id)) && String(route.id).match(/^\d+$/)) {
+            try {
+                dbRoute = await Route.findByPk(route.id);
+            } catch (err) {
+                logger.warn(`[RouteAPI] findByPk failed for ID ${route.id}: ${err.message}`);
+            }
         }
 
         const { Op } = require('sequelize');

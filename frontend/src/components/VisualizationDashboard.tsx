@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react'
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { 
   ChartBarIcon, 
   MapIcon, 
@@ -219,25 +219,29 @@ export const VisualizationDashboard: React.FC = () => {
     }
   }, [excelData])
 
-  // Запуск анимации
+  const animIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const startAnimation = useCallback(() => {
     setAnimationConfig(prev => ({ ...prev, isPlaying: true }))
-    
-    const interval = setInterval(() => {
+    if (animIntervalRef.current) clearInterval(animIntervalRef.current);
+    animIntervalRef.current = setInterval(() => {
       setAnimationConfig(prev => {
         if (prev.currentFrame >= prev.totalFrames) {
+          if (animIntervalRef.current) { clearInterval(animIntervalRef.current); animIntervalRef.current = null; }
           return { ...prev, isPlaying: false, currentFrame: 0 }
         }
         return { ...prev, currentFrame: prev.currentFrame + 1 }
       })
     }, 1000 / animationConfig.speed)
-    
-    return () => clearInterval(interval)
   }, [animationConfig.speed])
 
-  // Остановка анимации
   const stopAnimation = useCallback(() => {
     setAnimationConfig(prev => ({ ...prev, isPlaying: false }))
+    if (animIntervalRef.current) { clearInterval(animIntervalRef.current); animIntervalRef.current = null; }
+  }, [])
+
+  useEffect(() => {
+    return () => { if (animIntervalRef.current) clearInterval(animIntervalRef.current); }
   }, [])
 
   // Сброс анимации

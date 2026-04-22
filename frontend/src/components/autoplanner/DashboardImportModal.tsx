@@ -123,7 +123,7 @@ export const DashboardImportModal: React.FC<DashboardImportModalProps> = ({
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
             <div className={clsx(
                 'relative w-full max-w-lg mx-4 rounded-2xl shadow-2xl border-2 overflow-hidden',
                 isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'

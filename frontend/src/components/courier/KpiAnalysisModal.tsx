@@ -69,10 +69,10 @@ export const KpiAnalysisModal: React.FC<KpiAnalysisModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/80" onClick={onClose} />
       
       <div className={clsx(
-        "relative w-full max-w-3xl overflow-hidden rounded-[3rem] border-2 shadow-2xl flex flex-col max-h-[90vh] transition-all transform-gpu",
+        "relative w-full max-w-3xl overflow-hidden rounded-[3rem] border-2 shadow-2xl flex flex-col max-h-[90vh]",
         isDark ? "bg-[#0a0d14] border-white/5 text-white" : "bg-white border-blue-100 text-gray-900"
       )}>
         <div className={clsx("p-10 border-b flex items-center justify-between relative", isDark ? "border-white/5" : "border-slate-100")}>
@@ -91,7 +91,7 @@ export const KpiAnalysisModal: React.FC<KpiAnalysisModalProps> = ({
               </div>
             </div>
           </div>
-          <button onClick={onClose} className={clsx("p-4 rounded-3xl transition-all hover:scale-110", isDark ? "bg-white/5 text-gray-400 hover:text-white" : "bg-gray-100 text-gray-500")}>
+          <button onClick={onClose} className={clsx("p-4 rounded-3xl", isDark ? "bg-white/5 text-gray-400 hover:text-white" : "bg-gray-100 text-gray-500")}>
             <XMarkIcon className="w-6 h-6" />
           </button>
         </div>

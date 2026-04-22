@@ -232,21 +232,18 @@ export interface NominatimResult {
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
-import { getCityBounds } from './robust-geocoding/cityBounds'
+import { getCityBounds, getActiveZoneBounds } from './robust-geocoding/cityBounds'
 
 export class NominatimService {
     private static readonly BASE_URL = 'https://nominatim.openstreetmap.org/search'
     private static readonly REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse'
 
-    /**
-     * Geocode an address with fallback strategies.
-     * Returns results in a format compatible with RawGeoCandidate.
-     */
-    static async geocode(address: string, cityBias?: string): Promise<any[]> {
+    static async geocode(address: string, cityBias?: string, activePolygons?: any[]): Promise<any[]> {
         const expanded = expandUkrAbbrev(address, cityBias)
         const city = cityBias || 'Київ'
         
-        const bounds = getCityBounds(city)
+        const zoneBounds = activePolygons?.length ? getActiveZoneBounds(activePolygons) : null;
+        const bounds = zoneBounds || getCityBounds(city)
         // Nominatim expects left,top,right,bottom (west, north, east, south)
         let viewbox: string | undefined
         let bounded = false

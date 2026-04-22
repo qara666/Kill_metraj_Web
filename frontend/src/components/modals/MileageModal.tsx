@@ -23,6 +23,7 @@ import { toast } from 'react-hot-toast';
 import { localStorageUtils } from '../../utils/ui/localStorage';
 import { YapikoOSRMService } from '../../services/YapikoOSRMService';
 import { useDashboardStore } from '../../stores/useDashboardStore';
+import { API_URL } from '../../config/apiConfig';
 
 // v8.0: MileageModal with Deduplication + Drag-and-Drop between routes
 
@@ -574,26 +575,33 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
              const calcTrueDistance = async (route: any) => {
                  if (!route || route.orders.length === 0) return { ...route, totalDistance: 0 };
                  
-                 const startPt = route.startCoords || route.route_data?.startCoords || { lat: Number(presets.defaultStartLat) || 50.4501, lng: Number(presets.defaultStartLng) || 30.5234 };
+                 const startPt = route.startCoords || route.route_data?.startCoords || { lat: hubLat, lng: hubLng };
                  const endPt = route.endCoords || route.route_data?.endCoords || startPt;
+                 const waypointCoords = route.orders.map((o: any) => ({
+                     lat: Number(o.coords?.lat || o.lat || 0),
+                     lng: Number(o.coords?.lng || o.lng || 0)
+                 })).filter((l: any) => l.lat > 0 && l.lng > 0);
                  const locs = [
                      { lat: Number(startPt.lat), lng: Number(startPt.lng) },
-                     ...route.orders.map((o: any) => ({
-                         lat: Number(o.coords?.lat || o.lat || 0),
-                         lng: Number(o.coords?.lng || o.lng || 0)
-                     })).filter((l: any) => l.lat > 0 && l.lng > 0),
+                     ...waypointCoords,
                      { lat: Number(endPt.lat), lng: Number(endPt.lng) }
                  ];
                  
-                 if (locs.length <= 2) return route; // No valid coords
+                 if (locs.length <= 2) return route;
                  
                  const res = await YapikoOSRMService.calculateRoute(locs, osrmUrl);
                  if (res.feasible && res.totalDistance !== undefined) {
+                     const geoMeta = {
+                         origin: { lat: locs[0].lat, lng: locs[0].lng },
+                         destination: { lat: locs[locs.length - 1].lat, lng: locs[locs.length - 1].lng },
+                         waypoints: waypointCoords
+                     };
                      return {
                          ...route,
                          totalDistance: Number((res.totalDistance / 1000).toFixed(2)),
                          totalDuration: Math.round(res.totalDuration! / 60),
-                         isOptimized: true
+                         isOptimized: true,
+                         geoMeta
                      };
                  }
                  return route;
@@ -610,6 +618,22 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
                  if (String(r.id) === toRouteId) return trueTo;
                  return r;
              }));
+
+             // Save recalculated routes to DB
+             const saveRoute = async (r: any) => {
+                if (!r.id || String(r.id).startsWith('route_')) return;
+                const token = localStorage.getItem('km_access_token') || localStorage.getItem('token');
+                if (!token) return;
+                await fetch(`${API_URL}/api/routes/save`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(r)
+                });
+             };
+             await Promise.all([saveRoute(trueFrom), saveRoute(trueTo)]);
          } catch (err) {
              console.warn('Real-time OSRM Drag-and-Drop update failed:', err);
          }

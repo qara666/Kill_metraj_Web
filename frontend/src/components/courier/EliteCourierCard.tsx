@@ -6,8 +6,10 @@ import {
   BoltIcon,
   ChartBarIcon,
   MapIcon,
-  TruckIcon
+  TruckIcon,
+  PencilSquareIcon
 } from '@heroicons/react/24/outline'
+import { useRouteCalculationStore } from '../../stores/useRouteCalculationStore'
 
 interface Courier {
   id: string
@@ -50,6 +52,10 @@ interface EliteCourierCardProps {
 export const EliteCourierCard: React.FC<EliteCourierCardProps> = memo(({
   courier, isDark, onEdit, onDelete, onToggleVehicle, onRecalculate, onDistanceClick, onKpiClick, distanceDetails
 }) => {
+  const getModified = useRouteCalculationStore((s) => s.getModified);
+  const modifiedAt = getModified(courier.name);
+  const isManuallyModified = modifiedAt && (Date.now() - modifiedAt < 15 * 60 * 1000);
+
   const dist = distanceDetails?.totalDistance || 0
   const bonus = distanceDetails?.bonusDistance || 0
   const physical = distanceDetails?.effectivePhysicalKm || dist - bonus
@@ -63,7 +69,7 @@ export const EliteCourierCard: React.FC<EliteCourierCardProps> = memo(({
   return (
     <div 
       className={clsx(
-        'group relative w-full h-[440px] rounded-[2.5rem] p-7 transition-all duration-300 border overflow-hidden cursor-pointer flex flex-col font-sans',
+        'group relative w-full h-[440px] rounded-[2.5rem] p-7 border overflow-hidden cursor-pointer flex flex-col font-sans',
         isDark 
           ? 'bg-[#0c0f16] border-white/[0.05] hover:border-blue-500/30' 
           : 'bg-white border-slate-200 hover:border-blue-200 hover:shadow-xl hover:shadow-blue-500/5'
@@ -79,19 +85,27 @@ export const EliteCourierCard: React.FC<EliteCourierCardProps> = memo(({
             <div className="flex items-center gap-2">
               <div className={clsx("w-3 h-3 rounded-full shadow-sm", isComplete ? "bg-emerald-500" : (courier.isActive ? "bg-blue-500" : "bg-slate-300"))} />
             </div>
-         </div>
-         <button 
-            onClick={(e) => { e.stopPropagation(); onToggleVehicle(courier.id); }}
-            className={clsx(
-              "px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-widest border transition-all active:scale-95 shadow-sm whitespace-nowrap",
-              isCar 
-                ? (isDark ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-emerald-50 border-emerald-100 text-emerald-600 hover:bg-emerald-100")
-                : (isDark ? "bg-orange-500/10 border-orange-500/20 text-orange-400" : "bg-orange-50 border-orange-100 text-orange-600 hover:bg-orange-100")
+</div>
+          <div className="flex flex-col items-end gap-2">
+            <button 
+               onClick={(e) => { e.stopPropagation(); onToggleVehicle(courier.id); }}
+               className={clsx(
+                 "px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-widest border transition-all active:scale-95 shadow-sm whitespace-nowrap",
+                 isCar 
+                   ? (isDark ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-emerald-50 border-emerald-100 text-emerald-600 hover:bg-emerald-100")
+                   : (isDark ? "bg-orange-500/10 border-orange-500/20 text-orange-400" : "bg-orange-50 border-orange-100 text-orange-600 hover:bg-orange-100")
+               )}
+            >
+               {isCar ? 'Автомобиль' : 'Мотоцикл'}
+            </button>
+            {isManuallyModified && (
+              <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 shadow-sm">
+                <PencilSquareIcon className="w-3 h-3 text-amber-500" />
+                <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest whitespace-nowrap">Ручное изменение</span>
+              </div>
             )}
-         >
-            {isCar ? 'Автомобиль' : 'Мотоцикл'}
-         </button>
-      </div>
+          </div>
+       </div>
 
       {/* Main Stats Panel */}
       <div className="flex-1 flex flex-col justify-center gap-6 overflow-hidden">

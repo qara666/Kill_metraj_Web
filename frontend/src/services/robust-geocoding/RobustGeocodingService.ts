@@ -224,8 +224,9 @@ export class RobustGeocodingService {
     if (disabledUntil && Date.now() < disabledUntil) return { scored: [] };
 
     try {
+      const activePolygons = this.ctx?.activePolygons?.length ? this.ctx.activePolygons : undefined;
       const raw = await Promise.race([
-        this._withSemaphore(() => service.geocode(query, city || undefined), name),
+        this._withSemaphore(() => service.geocode(query, city || undefined, activePolygons), name),
         new Promise<any[]>((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs))
       ]);
 

@@ -147,12 +147,15 @@ export const DashboardApiSection: React.FC = () => {
             const incomingProcessed = data.processedCount || 0;
             
             const isReset = incomingProcessed <= Math.min(5, prevProcessed * 0.2) && data.isActive && prevProcessed > 10;
-            const totalChanged = prevTotal > 0 && Math.abs(incomingTotal - prevTotal) > prevTotal * 0.3;
+            const totalChanged = prevTotal > 0 && Math.abs(incomingTotal - prevTotal) > prevTotal * 0.1; // v7.9: More sensitive (10% instead of 20%)
+            const isDoneOnServer = !data.isActive || (incomingProcessed >= incomingTotal && incomingTotal > 0);
             
-            const nextTotal = data.isActive && !totalChanged
-                ? Math.max(prevTotal, incomingTotal)
+            // v7.9: Allow totalCount to update immediately if server is done or if it's a significant refinement.
+            const nextTotal = (data.isActive && !isReset && !totalChanged && !isDoneOnServer && incomingTotal >= prevTotal)
+                ? prevTotal
                 : incomingTotal;
-            const nextProcessed = (data.isActive && !isReset && !totalChanged)
+
+            const nextProcessed = (data.isActive && !isReset && !totalChanged && !isDoneOnServer)
                 ? Math.min(nextTotal, Math.max(prevProcessed, incomingProcessed))
                 : Math.min(incomingProcessed, nextTotal);
 
@@ -323,15 +326,11 @@ export const DashboardApiSection: React.FC = () => {
 
     // v7.0: Main sync action — pull data, then trigger server calculation
     const schedulePostCalcRefresh = React.useCallback((dateISO: string) => {
-        // First pull: get freshest FO snapshot immediately
+        // v7.9: Reduce sync flood. One immediate pull is enough.
+        // The second pull after 5s captures first robot results.
         triggerApiManualSync();
-        // Second pull: grab first robot-built routes quickly after start
-        setTimeout(() => triggerApiManualSync(), 2600);
-        // For "today" keep one extra pull to reflect live progress in UI
-        if (dateISO === todayISO) {
-            setTimeout(() => triggerApiManualSync(), 6200);
-        }
-    }, [todayISO, triggerApiManualSync]);
+        setTimeout(() => triggerApiManualSync(), 5200);
+    }, [triggerApiManualSync]);
 
     const handleSync = async () => {
         setIsSyncing(true);

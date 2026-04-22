@@ -560,7 +560,7 @@ export function CourierFinancials({
     const courierInitial = courierName.charAt(0).toUpperCase();
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-700 max-w-6xl mx-auto">
+        <div className="space-y-6 max-w-6xl mx-auto">
             {/* Courier Header Card */}
             <div className={clsx(
                 'p-6 rounded-[32px] flex items-center justify-between',

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { useExcelData } from '../contexts/ExcelDataContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { CourierLocation } from '../types'
@@ -34,10 +34,12 @@ export const MonitoringSystem: React.FC = () => {
     activeRoutes: excelData?.routes?.filter((route: any) => route.isActive).length || 0,
   }), [courierLocations, excelData?.routes])
 
-  // Запуск мониторинга
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const startMonitoring = () => {
     setIsMonitoring(true)
-    const interval = setInterval(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
       setCourierLocations(prev => prev.map(courier => ({
         ...courier,
         currentLocation: {
@@ -49,11 +51,16 @@ export const MonitoringSystem: React.FC = () => {
         heading: Math.random() * 360
       })))
     }, 5000)
-    return () => clearInterval(interval)
   }
 
-  // Остановка мониторинга
-  const stopMonitoring = () => setIsMonitoring(false)
+  const stopMonitoring = () => {
+    setIsMonitoring(false)
+    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+  }
+
+  useEffect(() => {
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); }
+  }, []);
 
   return (
     <div className="space-y-6">

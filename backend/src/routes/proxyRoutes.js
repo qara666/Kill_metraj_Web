@@ -59,22 +59,28 @@ router.get('/osrm', async (req, res) => {
         logger.info('OSRM Proxy: Запрос к', { url });
 
         const response = await axios.get(url, {
-            timeout: 15000 // OSRM can take time for large matrices
+            timeout: 30000 // Increased to 30s for large routes
         });
 
         // Forward successful response
         res.json(response.data);
     } catch (error) {
         const status = error.response?.status || 500;
+        const errDetail = error.response?.data || error.message;
+        
         logger.error('OSRM Proxy Error', {
             url: url,
             status,
-            message: error.message
+            message: error.message,
+            code: error.code,
+            details: errDetail
         });
+        
         res.status(status).json({
             success: false,
             error: 'Ошибка OSRM прокси',
-            details: error.message
+            details: error.message,
+            code: error.code
         });
     }
 });

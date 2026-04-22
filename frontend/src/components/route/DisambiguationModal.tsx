@@ -187,7 +187,7 @@ export const DisambiguationModal: React.FC<DisambiguationModalProps> = React.mem
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70">
       <div className={clsx(
-        "w-full max-w-xl rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 duration-300",
+        "w-full max-w-xl rounded-2xl shadow-2xl border overflow-hidden",
         isDark ? "bg-gray-900 border-white/10" : "bg-white border-gray-200"
       )}
       style={{ willChange: 'transform' }}

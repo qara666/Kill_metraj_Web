@@ -54,6 +54,7 @@ import { YapikoOSRMService } from '../../services/YapikoOSRMService'
 import { localStorageUtils } from '../../utils/ui/localStorage'
 import { toast } from 'react-hot-toast'
 import { API_URL } from '../../config/apiConfig'
+import { useRouteCalculationStore } from '../../stores/useRouteCalculationStore'
 
 interface DistanceDetailModalProps {
   isOpen: boolean
@@ -79,32 +80,33 @@ const MiniSparkline = ({ color = 'blue' }: { color?: string }) => (
 );
 
 const RouteOrderRow = memo(({ order, idx, routeId, onEditAddress, isDragging }: any) => {
-  const isGeoError = !order.coords || (order.coords.lat === 0 && order.coords.lng === 0);
+  const c = order.coords || (order.lat ? { lat: order.lat, lng: order.lng } : null);
+  const isGeoError = !c || !c.lat || !c.lng || c.lat === 0 || c.lng === 0 || c.lat < -90 || c.lat > 90;
   
   return (
     <div 
       className={clsx(
-        "p-4 rounded-2xl border flex items-center justify-between transition-all group/order cursor-grab active:cursor-grabbing font-sans",
+        "p-4 rounded-2xl border flex items-center justify-between transition-all group/order cursor-grab active:cursor-grabbing font-sans gap-3",
         isDragging ? "opacity-30 scale-95 border-blue-400 bg-blue-50" : "bg-white border-slate-100 hover:border-blue-200 hover:shadow-md",
         isGeoError && "border-rose-200 bg-rose-50/10"
       )}
     >
-      <div className="flex items-center gap-4">
-        <div className={clsx("w-8 h-8 rounded-xl flex items-center justify-center text-[10px] font-bold shadow-sm border", isGeoError ? "bg-rose-500 text-white border-rose-400" : "bg-slate-50 border-slate-100 text-slate-400")}>
-          {isGeoError ? <ExclamationTriangleIcon className="w-4 h-4" /> : idx + 1}
+      <div className="flex items-center gap-3 min-w-0">
+        <div className={clsx("w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold shadow-sm border shrink-0", isGeoError ? "bg-rose-500 text-white border-rose-400" : "bg-slate-50 border-slate-100 text-slate-400")}>
+          {isGeoError ? <ExclamationTriangleIcon className="w-3.5 h-3.5" /> : idx + 1}
         </div>
-        <div>
+        <div className="min-w-0">
           <div className="text-[11px] font-bold text-slate-800 uppercase flex items-center gap-2 leading-none">
             #{order.orderNumber}
             {isGeoError && <span className="text-[8px] font-black bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded uppercase">Ошибка</span>}
           </div>
-          <div className="text-[10px] font-medium text-slate-400 uppercase truncate max-w-[240px] mt-1">{order.address}</div>
+          <div className="text-[11px] font-normal text-slate-500 capitalize truncate mt-0.5">{order.address}</div>
         </div>
       </div>
-      <div className="flex items-center gap-3 opacity-0 group-hover/order:opacity-100 transition-opacity">
+      <div className="flex items-center gap-3 shrink-0 opacity-0 group-hover/order:opacity-100 transition-opacity">
         <button 
           onClick={(e) => { e.stopPropagation(); onEditAddress?.(order, routeId); }} 
-          className={clsx("text-[9px] font-bold uppercase px-3 py-1.5 rounded-lg transition-colors", isGeoError ? "bg-rose-600 text-white hover:bg-rose-700" : "bg-blue-50 text-blue-600 hover:bg-blue-100")}
+          className={clsx("text-[9px] font-bold uppercase px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap", isGeoError ? "bg-rose-600 text-white hover:bg-rose-700" : "bg-blue-50 text-blue-600 hover:bg-blue-100")}
         >
           {isGeoError ? 'Исправить' : 'Править'}
         </button>
@@ -142,16 +144,34 @@ const RouteSummaryCard = memo(({
 
   const handleGoogleMapsOpen = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const start = route.startCoords || { lat: 50.4501, lng: 30.5234 };
+    const presets = localStorageUtils.getAllSettings();
+    const defaultStart = (presets.defaultStartLat && presets.defaultStartLng)
+        ? { lat: presets.defaultStartLat, lng: presets.defaultStartLng }
+        : (presets.selectedHubs?.[0]?.lat ? { lat: Number(presets.selectedHubs[0].lat), lng: Number(presets.selectedHubs[0].lng) } : null)
+        || { lat: 49.9935, lng: 36.2304 };
+    const defaultEnd = (presets.defaultEndLat && presets.defaultEndLng)
+        ? { lat: presets.defaultEndLat, lng: presets.defaultEndLng }
+        : null;
+    const start = route.startCoords || route.route_data?.startCoords || defaultStart;
+    const end = route.endCoords || route.route_data?.endCoords || route.geoMeta?.destination || defaultEnd || start;
     const waypoints = uniqueOrders.map((o: any) => `${(o.coords || { lat: o.lat, lng: o.lng }).lat},${(o.coords || { lat: o.lat, lng: o.lng }).lng}`).join('|');
-    const url = `https://www.google.com/maps/dir/?api=1&origin=${start.lat},${start.lng}&destination=${start.lat},${start.lng}&waypoints=${waypoints}&travelmode=driving`;
+    const url = `https://www.google.com/maps/dir/?api=1&origin=${start.lat},${start.lng}&destination=${end.lat},${end.lng}&waypoints=${waypoints}&travelmode=driving`;
     window.open(url, '_blank');
   };
 
   const handleGraphHopperOpen = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const start = route.startCoords || { lat: 50.4501, lng: 30.5234 };
-    const points = [start, ...uniqueOrders.map((o: any) => o.coords || { lat: o.lat, lng: o.lng }), start];
+    const presets = localStorageUtils.getAllSettings();
+    const defaultStart = (presets.defaultStartLat && presets.defaultStartLng)
+        ? { lat: presets.defaultStartLat, lng: presets.defaultStartLng }
+        : (presets.selectedHubs?.[0]?.lat ? { lat: Number(presets.selectedHubs[0].lat), lng: Number(presets.selectedHubs[0].lng) } : null)
+        || { lat: 49.9935, lng: 36.2304 };
+    const defaultEnd = (presets.defaultEndLat && presets.defaultEndLng)
+        ? { lat: presets.defaultEndLat, lng: presets.defaultEndLng }
+        : null;
+    const start = route.startCoords || route.route_data?.startCoords || defaultStart;
+    const end = route.endCoords || route.route_data?.endCoords || route.geoMeta?.destination || defaultEnd || start;
+    const points = [start, ...uniqueOrders.map((o: any) => o.coords || { lat: o.lat, lng: o.lng }), end];
     const pointString = points.map(p => `point=${p.lat},${p.lng}`).join('&');
     const url = `https://graphhopper.com/maps/?${pointString}&vehicle=car&locale=ru&elevation=true`;
     window.open(url, '_blank');
@@ -172,12 +192,10 @@ const RouteSummaryCard = memo(({
             {index + 1}
           </div>
           <div>
-            <div className="flex items-center gap-3">
-              <h4 className="font-bold text-[15px] text-slate-800 uppercase tracking-tight">
-                Маршрут ({orderNumbersString})
-              </h4>
-              <ChevronDownIcon className={clsx("w-4 h-4 text-slate-300 transition-transform duration-500", isExpanded ? "rotate-180" : "")} />
-            </div>
+<div className="flex items-center gap-3 min-w-0">
+                <h4 className="font-bold text-[13px] text-slate-800 uppercase tracking-tight truncate">{orderNumbersString}</h4>
+                <ChevronDownIcon className={clsx("w-4 h-4 text-slate-300 transition-transform duration-500 shrink-0", isExpanded ? "rotate-180" : "")} />
+             </div>
             <div className="flex items-center gap-4 mt-2">
                <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest bg-blue-50 px-3 py-1 rounded-lg">{(route.totalDistance || 0).toFixed(1)} км</span>
                <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest bg-emerald-50 px-3 py-1 rounded-lg">{Math.round((route.totalDistance || 0) * 1.8)} мин</span>
@@ -201,8 +219,8 @@ const RouteSummaryCard = memo(({
         <div className="px-7 pb-7 space-y-3 animate-in fade-in slide-in-from-top-4 duration-500">
           <div className="grid grid-cols-1 gap-2">
             {uniqueOrders.map((order: any, idx: number) => (
-              <div key={order.id || idx} draggable onDragStart={(e) => onDragStart(e, order.id, String(route.id))} onDragEnd={onDragEnd}>
-                <RouteOrderRow order={order} idx={idx} routeId={route.id} onEditAddress={onEditAddress} isDragging={draggingOrderId === order.id} />
+              <div key={order.id || order.orderNumber || idx} draggable onDragStart={(e) => onDragStart(e, order.id || order.orderNumber, String(route.id))} onDragEnd={onDragEnd}>
+                <RouteOrderRow order={order} idx={idx} routeId={route.id} onEditAddress={onEditAddress} isDragging={draggingOrderId === (order.id || order.orderNumber)} />
               </div>
             ))}
           </div>
@@ -214,6 +232,7 @@ const RouteSummaryCard = memo(({
 
 export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen, onClose, courierName, distanceDetails, onEditAddress, onUpdateRoutes }) => {
   const navigate = useNavigate();
+  const { markModified } = useRouteCalculationStore();
   const [activeTab, setActiveTab] = useState<TabType>(() => (localStorage.getItem('courier_modal_tab') as TabType) || 'management');
   const [localRoutes, setLocalRoutes] = useState<any[]>([]);
   const [mapFilter, setMapFilter] = useState<'all' | number>('all');
@@ -230,14 +249,18 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
     localStorage.setItem('courier_modal_tab', activeTab);
   }, [activeTab]);
 
+  const initializedRef = useRef(false);
   useEffect(() => {
-    if (distanceDetails?.routes && !hasManualChanges) {
-        setLocalRoutes(distanceDetails.routes);
-        manualRoutesRef.current = distanceDetails.routes;
+    if (isOpen && distanceDetails?.routes && !initializedRef.current) {
+        setLocalRoutes(JSON.parse(JSON.stringify(distanceDetails.routes)));
+        manualRoutesRef.current = JSON.parse(JSON.stringify(distanceDetails.routes));
+        initializedRef.current = true;
     }
-  }, [distanceDetails?.routes, hasManualChanges]);
+    if (!isOpen) {
+        initializedRef.current = false;
+    }
+  }, [isOpen, distanceDetails?.routes]);
 
-  // Drag and Drop Logic
   const [draggingOrderId, setDraggingOrderId] = useState<string | null>(null);
   const [draggingFromRouteId, setDraggingFromRouteId] = useState<string | null>(null);
   const dragDataRef = useRef<{ orderId: string; fromRouteId: string } | null>(null);
@@ -254,7 +277,7 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
     setDraggingFromRouteId(null);
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent, toRouteId: string) => {
+const handleDrop = useCallback((e: React.DragEvent, toRouteId: string) => {
     e.preventDefault();
     if (!dragDataRef.current) return;
     const { orderId, fromRouteId } = dragDataRef.current;
@@ -262,92 +285,143 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
 
     setHasManualChanges(true);
 
-    // 1. Calculate next state
-    let next: any[] = [];
-    let fromR: any = null;
-    let toR: any = null;
-    
-    setLocalRoutes(prev => {
-      const updated = [...prev];
-      const fIdx = updated.findIndex(r => String(r.id) === fromRouteId);
-      const tIdx = updated.findIndex(r => String(r.id) === toRouteId);
-      if (fIdx === -1 || tIdx === -1) return prev;
+    const snapshot = JSON.parse(JSON.stringify(manualRoutesRef.current));
+    const fIdx = snapshot.findIndex((r: any) => String(r.id) === fromRouteId);
+    const tIdx = snapshot.findIndex((r: any) => String(r.id) === toRouteId);
+    if (fIdx === -1 || tIdx === -1) return;
 
-      fromR = { ...updated[fIdx], orders: [...updated[fIdx].orders] };
-      toR = { ...updated[tIdx], orders: [...updated[tIdx].orders] };
-      const oIdx = fromR.orders.findIndex((o: any) => o.id === orderId);
-      if (oIdx === -1) return prev;
+    const oIdx = (snapshot[fIdx].orders || []).findIndex((o: any) => String(o.id || o.orderNumber) === String(orderId));
+    if (oIdx === -1) return;
 
-      const [order] = fromR.orders.splice(oIdx, 1);
-      toR.orders.push(order);
-      updated[fIdx] = fromR; 
-      updated[tIdx] = toR;
-      next = updated;
-      return updated;
-    });
+    const [movedOrder] = snapshot[fIdx].orders.splice(oIdx, 1);
+    snapshot[tIdx].orders.push(movedOrder);
 
-    // 2. Perform side effects outside the state transition
-    if (next.length > 0 && fromR && toR) {
-      if (onUpdateRoutes) onUpdateRoutes(next);
-      
-      setTimeout(async () => {
-        try {
-          const presets = localStorageUtils.getAllSettings();
-          const osrmUrl = presets.osrmUrl || 'http://osrm.yapiko.kh.ua:5050';
-          const calc = async (route: any) => {
-            if (!route.orders.length) return { ...route, totalDistance: 0 };
-            const start = route.startCoords || { lat: 50.4501, lng: 30.5234 };
-            const locs = [start, ...route.orders.map((o: any) => o.coords || { lat: o.lat, lng: o.lng }), start];
-            const res = await YapikoOSRMService.calculateRoute(locs, osrmUrl);
-            return { ...route, totalDistance: (res.feasible && res.totalDistance !== undefined) ? res.totalDistance / 1000 : route.totalDistance, geometry: res.geometry };
-          };
-          const [nF, nT] = await Promise.all([calc(fromR), calc(toR)]);
-          
-          setLocalRoutes(curr => {
-             const final = curr.map(r => String(r.id) === fromRouteId ? nF : (String(r.id) === toRouteId ? nT : r));
-             if (onUpdateRoutes) onUpdateRoutes(final);
-             manualRoutesRef.current = final;
-             return final;
+    setLocalRoutes(snapshot);
+    manualRoutesRef.current = snapshot;
+    toast.loading('Пересчет...', { id: 'dnd-recalc' });
+
+    (async () => {
+      try {
+        const presets = localStorageUtils.getAllSettings();
+        const osrmUrl = presets.osrmUrl || 'http://116.204.153.171:5050';
+
+        const calc = async (r: any) => {
+          if (!r.orders?.length) return { ...r, totalDistance: 0, geometry: undefined };
+          const start = r.startCoords || r.route_data?.startCoords
+            || (presets.defaultStartLat ? { lat: presets.defaultStartLat, lng: presets.defaultStartLng } : null)
+            || { lat: 49.9935, lng: 36.2304 };
+          const end = r.endCoords || r.route_data?.endCoords || r.geoMeta?.destination
+            || (presets.defaultEndLat ? { lat: presets.defaultEndLat, lng: presets.defaultEndLng } : null)
+            || start;
+          const validOrders = (r.orders || []).filter((o: any) => {
+            const c = o.coords || { lat: o.lat, lng: o.lng };
+            return c?.lat && c?.lng && c.lat !== 0;
           });
+          if (!validOrders.length) return { ...r, totalDistance: 0, geometry: undefined };
+          const waypoints = validOrders.map((o: any) => o.coords || { lat: o.lat, lng: o.lng });
+          const locs = [start, ...waypoints, end];
+          const res = await YapikoOSRMService.calculateRoute(locs, osrmUrl);
+          const geoMeta = { origin: { lat: start.lat, lng: start.lng }, destination: { lat: end.lat, lng: end.lng }, waypoints };
+          return { ...r, totalDistance: (res.feasible && res.totalDistance != null) ? res.totalDistance / 1000 : 0, geometry: res.geometry, geoMeta };
+        };
 
-          // Save manually modified routes directly to DB
-          const saveRoute = async (r: any) => {
-             if (!r.id || String(r.id).startsWith('route_')) return; 
-             await fetch(`${API_URL}/api/routes/save`, {
-                 method: 'POST',
-                 headers: {
-                   'Content-Type': 'application/json',
-                   'Authorization': `Bearer ${localStorage.getItem('km_access_token') || localStorage.getItem('token')}`
-                 },
-                 body: JSON.stringify(r)
-             });
-          };
+        const [nF, nT] = await Promise.all([calc(snapshot[fIdx]), calc(snapshot[tIdx])]);
+        snapshot[fIdx] = nF;
+        snapshot[tIdx] = nT;
 
-          await Promise.all([saveRoute(nF), saveRoute(nT)]);
-          toast.success('Маршруты пересчитаны и синхронизированы');
-        } catch (e) { 
-          console.warn('OSRM recalc/save failed:', e); 
-          toast.error('Ошибка пересчета маршрутов');
-        }
-      }, 0);
-    }
-  }, [onUpdateRoutes]);
+        const token = localStorage.getItem('km_access_token') || localStorage.getItem('token');
+        await Promise.all(
+          [nF, nT].filter((r: any) => r.id && !String(r.id).startsWith('route_')).map(async (r: any) => {
+            const res = await fetch(`${API_URL}/api/routes/save`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({ ...r, courier_id: r.courier_id || r.courier || courierName, _manualModified: true })
+            });
+            if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+          })
+        );
+        setLocalRoutes(snapshot);
+        manualRoutesRef.current = snapshot;
+        markModified(courierName);
+        if (onUpdateRoutes) onUpdateRoutes(snapshot);
+        toast.success('Пересчитано', { id: 'dnd-recalc' });
+      } catch (err) {
+        console.warn('[DnD]', err);
+        toast.error('Ошибка пересчета', { id: 'dnd-recalc' });
+      }
+    })();
+  }, [courierName, onUpdateRoutes]);
+
+const handleManualRecalcAll = useCallback(async () => {
+     try {
+        const snapshot = JSON.parse(JSON.stringify(manualRoutesRef.current));
+        if (!snapshot?.length) { toast.error('Нет маршрутов'); return; }
+
+        toast.loading('Пересчет...', { id: 'recalc-all' });
+        const presets = localStorageUtils.getAllSettings();
+        const osrmUrl = presets.osrmUrl || 'http://116.204.153.171:5050';
+
+        const calc = async (r: any) => {
+          if (!r.orders?.length) return { ...r, totalDistance: 0, geometry: undefined };
+          const start = r.startCoords || r.route_data?.startCoords
+            || (presets.defaultStartLat ? { lat: presets.defaultStartLat, lng: presets.defaultStartLng } : null)
+            || { lat: 49.9935, lng: 36.2304 };
+          const end = r.endCoords || r.route_data?.endCoords || r.geoMeta?.destination
+            || (presets.defaultEndLat ? { lat: presets.defaultEndLat, lng: presets.defaultEndLng } : null)
+            || start;
+          const validOrders = (r.orders || []).filter((o: any) => {
+            const c = o.coords || { lat: o.lat, lng: o.lng };
+            return c?.lat && c?.lng && c.lat !== 0;
+          });
+          if (!validOrders.length) return { ...r, totalDistance: 0, geometry: undefined };
+          const waypoints = validOrders.map((o: any) => o.coords || { lat: o.lat, lng: o.lng });
+          const locs = [start, ...waypoints, end];
+          const res = await YapikoOSRMService.calculateRoute(locs, osrmUrl);
+          const geoMeta = { origin: { lat: start.lat, lng: start.lng }, destination: { lat: end.lat, lng: end.lng }, waypoints };
+          return { ...r, totalDistance: (res.feasible && res.totalDistance != null) ? res.totalDistance / 1000 : 0, geometry: res.geometry, geoMeta };
+        };
+
+        const final = await Promise.all(snapshot.map((r: any) => calc(r)));
+
+        const token = localStorage.getItem('km_access_token') || localStorage.getItem('token');
+        const toSave = final.filter((r: any) => r.id && !String(r.id).startsWith('route_'));
+        await Promise.all(toSave.map(async (r: any) => {
+          const body = { ...r, courier_id: r.courier_id || r.courier || courierName, _manualModified: true };
+          const res = await fetch(`${API_URL}/api/routes/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(body)
+          });
+          if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+        }));
+        setLocalRoutes(final);
+        manualRoutesRef.current = final;
+        markModified(courierName);
+        if (onUpdateRoutes) onUpdateRoutes(final);
+        setHasManualChanges(false);
+        toast.success(`Пересчитано: ${final.reduce((s, r) => s + (r.totalDistance || 0), 0).toFixed(1)} км`, { id: 'recalc-all' });
+     } catch (err) {
+        console.warn('[RecalcAll]', err);
+        toast.error('Ошибка пересчета', { id: 'recalc-all' });
+     }
+    }, [courierName, onUpdateRoutes]);
 
   const handleManualSave = useCallback(async () => {
      try {
          toast.loading('Сохранение изменений...', { id: 'manual-save' });
          const routesToSave = localRoutes.filter(r => !String(r.id).startsWith('route_'));
          
-         await Promise.all(routesToSave.map(r => 
-             fetch(`${API_URL}/api/routes/save`, {
-                 method: 'POST',
-                 headers: {
-                   'Content-Type': 'application/json',
-                   'Authorization': `Bearer ${localStorage.getItem('km_access_token') || localStorage.getItem('token')}`
-                 },
-                 body: JSON.stringify(r)
-             })
-         ));
+          await Promise.all(routesToSave.map(async r => {
+              const res = await fetch(`${API_URL}/api/routes/save`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('km_access_token') || localStorage.getItem('token')}`
+                  },
+                  body: JSON.stringify(r)
+              });
+              if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+          }));
          
          setHasManualChanges(false);
          toast.success('Все изменения сохранены в БД', { id: 'manual-save' });
@@ -362,7 +436,10 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
     return orders;
   }, [localRoutes]);
 
-  const geoErrors = useMemo(() => allOrders.filter(o => !o.coords || (o.coords.lat === 0 && o.coords.lng === 0)), [allOrders]);
+  const geoErrors = useMemo(() => allOrders.filter(o => {
+    const c = o.coords || (o.lat ? { lat: o.lat, lng: o.lng } : null);
+    return !c || !c.lat || !c.lng || c.lat === 0 || c.lng === 0;
+  }), [allOrders]);
 
   const filteredRoutesForMap = useMemo(() => {
     if (mapFilter === 'all') return localRoutes;
@@ -440,12 +517,16 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
           </div>
        </div>
 
-       <div className="space-y-8">
-          <div className="flex items-center justify-between ml-6">
-             <div className="text-[12px] font-black uppercase tracking-[0.5em] text-slate-300 flex items-center gap-4">
-                <div className="w-8 h-px bg-slate-200" /> Маршрутные листы (DRAG-N-DROP)
-             </div>
-          </div>
+<div className="space-y-8">
+<div className="flex items-center justify-between ml-6">
+               <div className="text-[12px] font-black uppercase tracking-[0.5em] text-slate-300 flex items-center gap-4">
+                  <div className="w-8 h-px bg-slate-200" /> Маршрутные листы (DRAG-N-DROP)
+               </div>
+               <button onClick={handleManualRecalcAll} className="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all flex items-center gap-2">
+                  <ArrowPathIcon className="w-4 h-4" />
+                  СИНХРОНИЗИРОВАТЬ И ПЕРЕСЧИТАТЬ ВСЁ
+               </button>
+            </div>
           <div className="space-y-6">
              {localRoutes.map((r, idx) => (
                <RouteSummaryCard 
@@ -522,17 +603,17 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
                             ВЕСЬ ГОРОД
                          </button>
                          {localRoutes.map((r, i) => (
-                            <button 
-                              key={i}
-                              onClick={() => setMapFilter(i)}
-                              className={clsx(
-                                 "py-3 rounded-xl text-[9px] font-black transition-all border flex flex-col items-center",
-                                 mapFilter === i ? "bg-white border-blue-600 text-blue-600 shadow-lg" : "bg-slate-50 border-transparent text-slate-400"
-                              )}
-                            >
-                               <span className="truncate w-full px-1">МАРШРУТ ({(r.orders || []).map((o: any) => o.orderNumber).join(',')})</span>
-                               <span className="text-[7px] opacity-60">({r.orders?.length} зак)</span>
-                            </button>
+                             <button 
+                               key={i}
+                               onClick={() => setMapFilter(i)}
+                               className={clsx(
+                                  "py-2.5 rounded-xl text-[9px] font-bold transition-all border flex flex-col items-center gap-0.5",
+                                  mapFilter === i ? "bg-white border-blue-600 text-blue-600 shadow-lg" : "bg-slate-50 border-transparent text-slate-400"
+                               )}
+                             >
+                                <span className="truncate w-full px-1 text-[8px]">{(r.orders || []).map((o: any) => '#' + o.orderNumber).join(', ')}</span>
+                                <span className="text-[7px] opacity-60">{r.orders?.length} зак · {(r.totalDistance || 0).toFixed(1)} км</span>
+                             </button>
                          ))}
                       </div>
                    </div>
@@ -592,21 +673,19 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
                    <ListBulletIcon className="w-4 h-4" /> <span>ЭКСПЛОРЕР</span>
                 </div>
              </div>
-             <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-2 bg-[#f8fafc]">
-                {allOrders.map((o, i) => (
-                   <div 
-                     key={i} 
-                     className="p-4 rounded-2xl bg-white border border-slate-100 hover:border-blue-200 transition-all cursor-pointer group"
-                   >
-                      <div className="flex items-center justify-between mb-2">
-                         <div className="flex items-center gap-2">
-                            <div className="w-5 h-5 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 text-[8px] font-black">#{o.orderNumber}</div>
-                         </div>
-                      </div>
-                      <div className="text-[10px] font-bold text-slate-700 leading-relaxed group-hover:text-blue-600 transition-colors line-clamp-1">{o.address}</div>
-                   </div>
-                ))}
-             </div>
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1.5 bg-[#f8fafc]">
+                 {allOrders.map((o, i) => (
+                    <div 
+                      key={i} 
+                      className="p-3 rounded-xl bg-white border border-slate-100 hover:border-blue-200 transition-all cursor-pointer group"
+                    >
+                       <div className="flex items-center gap-2">
+                         <div className="w-5 h-5 rounded-md bg-blue-50 flex items-center justify-center text-blue-600 text-[8px] font-black shrink-0">#{o.orderNumber}</div>
+                         <div className="text-[10px] text-slate-600 leading-snug group-hover:text-blue-600 transition-colors truncate">{o.address}</div>
+                       </div>
+                    </div>
+                 ))}
+              </div>
           </div>
        </div>
     </div>
@@ -724,7 +803,6 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#0a0c16]/90 backdrop-blur-3xl p-4 md:p-8 animate-in fade-in duration-300 font-sans" onClick={onClose}>
       <div className="bg-white rounded-[4.5rem] shadow-[0_100px_250px_rgba(0,0,0,0.6)] overflow-hidden border border-slate-100 w-full max-w-7xl h-full max-h-[96vh] flex flex-col scale-in-center relative" onClick={(e) => e.stopPropagation()}>
         
-        {/* Jump-menubar */}
         <div className="flex items-center justify-between px-12 py-8 border-b border-slate-50 shrink-0 bg-white/95 backdrop-blur-2xl sticky top-0 z-30">
           <div className="flex items-center gap-8">
             <div className="w-5 h-5 rounded-full bg-blue-600 shadow-[0_0_30px_rgba(37,99,235,0.7)] animate-pulse" />
@@ -752,7 +830,6 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
           </button>
         </div>
 
-        {/* Content Area */}
         <div className={clsx("flex-1 overflow-y-auto custom-scrollbar flex flex-col bg-[#f8fafc]/20", activeTab === 'map' ? "p-0 overflow-hidden" : "p-12")}>
           {activeTab !== 'map' && (
              <div className="mb-12">
@@ -768,7 +845,6 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
           {activeTab === 'diagnostics' && renderDiagnostics()}
         </div>
 
-        {/* Action Footer */}
         <div className="px-12 py-10 border-t border-slate-100 bg-white flex justify-between items-center shrink-0 relative z-20 shadow-2xl">
           <button onClick={onClose} className="px-14 py-6 rounded-[2.5rem] bg-white border border-slate-200 text-slate-400 font-bold uppercase tracking-[0.3em] text-[12px] hover:text-slate-900 transition-all">Закрыть</button>
           <div className="flex gap-4">

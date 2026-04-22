@@ -91,6 +91,7 @@ interface DashboardStoreState {
     setDivisionId: (id: string | null) => void;
     triggerApiManualSync: () => void;
     setAutoRoutingStatus: (status: Partial<DashboardStoreState['autoRoutingStatus']>) => void;
+    clearCourierDistanceKm: (courierName: string) => void;
 }
 
 export const useDashboardStore = create<DashboardStoreState>()(
@@ -165,6 +166,21 @@ export const useDashboardStore = create<DashboardStoreState>()(
             setAutoRoutingStatus: (status: Partial<DashboardStoreState['autoRoutingStatus']>) => set((state) => {
                 const newStatus = { ...state.autoRoutingStatus, ...status };
                 return { autoRoutingStatus: newStatus };
+            }),
+            clearCourierDistanceKm: (courierName: string) => set((state) => {
+                const summary = { ...(state.autoRoutingStatus?.couriersSummary || {}) };
+                const norm = courierName.toLowerCase().trim();
+                for (const key of Object.keys(summary)) {
+                    if (key.toLowerCase().trim() === norm) {
+                        delete summary[key];
+                    }
+                }
+                return {
+                    autoRoutingStatus: {
+                        ...state.autoRoutingStatus,
+                        couriersSummary: summary,
+                    }
+                };
             }),
             aggregateRoutingStatus: {
                 isActive: false,

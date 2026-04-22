@@ -24,7 +24,7 @@ const ZoneRow = memo(({ z, i, data, onSelect }: any) => {
     return (
         <tr 
             onClick={() => onSelect(z)}
-            className="hover:bg-blue-500/5 transition-all group cursor-pointer border-b border-gray-500/5"
+            className="hover:bg-blue-500/5 group cursor-pointer border-b border-gray-500/5"
         >
             <td className="py-6">
                 <div className="flex items-center gap-4">

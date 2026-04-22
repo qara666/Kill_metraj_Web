@@ -492,11 +492,41 @@ export interface MonitoringStats {
 
 export interface RouteCalculationMode {
   mode: 'automatic' | 'manual';
-  autoTriggerThreshold: number; // Количество заказов для автотриггера
-  recalculateOnAdd: boolean; // Пересчитывать при добавлении
-  recalculateOnRemove: boolean; // Пересчитывать при удалении
-  notifyOnCalculation: boolean; // Показывать уведомления
+  autoTriggerThreshold: number;
+  recalculateOnAdd: boolean;
+  recalculateOnRemove: boolean;
+  notifyOnCalculation: boolean;
 }
+
+export interface GroupingConfig {
+  groupWindowMinutes: number;
+  ttlMinutes: number;
+  maxDeliverySpanMinutes: number;
+  maxCenterDistanceKm: number;
+  maxFirstDistanceKm: number;
+  maxLegDistanceKm: number;
+  maxKitchenGapMinutes: number;
+  activeCourierWindowMinutes: number;
+  activeCourierTtlMinutes: number;
+  activeCourierDeliverySpanMinutes: number;
+  enableRouteMerging: boolean;
+  mergeMaxTimeGapMinutes: number;
+}
+
+export const DEFAULT_GROUPING_CONFIG: GroupingConfig = {
+  groupWindowMinutes: 20,
+  ttlMinutes: 20,
+  maxDeliverySpanMinutes: 90,
+  maxCenterDistanceKm: 30,
+  maxFirstDistanceKm: 25,
+  maxLegDistanceKm: 15,
+  maxKitchenGapMinutes: 45,
+  activeCourierWindowMinutes: 40,
+  activeCourierTtlMinutes: 90,
+  activeCourierDeliverySpanMinutes: 120,
+  enableRouteMerging: true,
+  mergeMaxTimeGapMinutes: 10,
+};
 
 export interface CourierRouteStatus {
   courierId: string;

@@ -6,13 +6,15 @@ import { AdminRouteReset } from '../../components/admin/AdminRouteReset'
 import { FetcherMetrics } from '../../components/admin/FetcherMetrics'
 import { CollapsibleSection } from '../../components/shared/CollapsibleSection'
 import ZoneInspector from '../../components/zone/ZoneInspector'
+import { RouteCalculationSettings } from '../../components/route/RouteCalculationSettings'
 import {
     ShieldCheckIcon,
     TrashIcon,
     ChartBarIcon,
     ServerIcon,
     MagnifyingGlassIcon,
-    MapIcon
+    MapIcon,
+    CogIcon
 } from '@heroicons/react/24/outline'
 
 export const Administration: React.FC = () => {
@@ -56,6 +58,27 @@ export const Administration: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 gap-8">
+                {/* 🗂 Группировка маршрутов */}
+                <div className={clsx(
+                    'rounded-3xl border overflow-hidden transition-all duration-500',
+                    isDark
+                        ? 'bg-gray-800/50 border-gray-700/50 shadow-2xl shadow-black/20'
+                        : 'bg-white border-gray-200 shadow-2xl shadow-blue-100/50'
+                )}>
+                    <div className="p-6">
+                        <CollapsibleSection
+                            isDark={isDark}
+                            icon={<CogIcon className="h-5 w-5" />}
+                            title="Группировка маршрутов (Настройки)"
+                            defaultOpen={true}
+                        >
+                            <div className="mt-4">
+                                <RouteCalculationSettings isDark={isDark} />
+                            </div>
+                        </CollapsibleSection>
+                    </div>
+                </div>
+
                 {/* 🗂 Управление маршрутами (новый раздел) */}
                 <div className={clsx(
                     'rounded-3xl border overflow-hidden transition-all duration-500',

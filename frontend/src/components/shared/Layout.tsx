@@ -85,7 +85,7 @@ export function Layout({ children }: LayoutProps) {
         'fixed inset-0 z-50 lg:hidden transition-opacity duration-300',
         sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
       )}>
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
+        <div className="fixed inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
         <div className={clsx(
           'fixed inset-y-0 left-0 flex w-72 flex-col shadow-2xl transition-transform duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] transform-gpu will-change-transform',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full',

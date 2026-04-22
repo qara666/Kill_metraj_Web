@@ -2642,9 +2642,9 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
         {/* Модальные окна */}
         {
           showDeleteModal && routeToDelete && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 animate-in fade-in duration-300">
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60">
               <div className={clsx(
-                'w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl transform animate-in zoom-in-95 duration-300',
+                'w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl',
                 isDark ? 'bg-gray-800 border border-gray-700' : 'bg-white'
               )}>
                 <div className="text-center">

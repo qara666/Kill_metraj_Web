@@ -125,3 +125,39 @@ export function isInCityBounds(
     lng <= east + bufferDeg
   )
 }
+
+export function getActiveZoneBounds(polygons: Array<{ path?: Array<{ lat: number; lng: number }>; bounds?: any }>): CityBBox | null {
+  const active = polygons.filter(p => p.path && p.path.length >= 3);
+  if (active.length === 0) return null;
+
+  let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+  let sumLat = 0, sumLng = 0, pointCount = 0;
+
+  for (const poly of active) {
+    for (const pt of poly.path!) {
+      if (pt.lat < minLat) minLat = pt.lat;
+      if (pt.lat > maxLat) maxLat = pt.lat;
+      if (pt.lng < minLng) minLng = pt.lng;
+      if (pt.lng > maxLng) maxLng = pt.lng;
+      sumLat += pt.lat;
+      sumLng += pt.lng;
+      pointCount++;
+    }
+  }
+
+  if (pointCount === 0) return null;
+  const pad = 0.008;
+  const s = Math.max(minLat - pad, -90);
+  const w = Math.max(minLng - pad, -180);
+  const n = Math.min(maxLat + pad, 90);
+  const e = Math.min(maxLng + pad, 180);
+
+  return {
+    bbox: [s, w, n, e],
+    viewbox: `${w},${s},${e},${n}`,
+    bounded: true,
+    names: [],
+    center: [sumLng / pointCount, sumLat / pointCount],
+    radiusKm: 5,
+  };
+}

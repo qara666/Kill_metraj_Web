@@ -1392,33 +1392,24 @@ async function enhancedGeocode(address, city = 'Харків', expectedZone = nu
         if (emergencyBest) break;
     }
     if (emergencyBest) {
-        logger.info(`[GeoEnhanced] L6 Emergency accepted (${emergencyBest.lat.toFixed(5)},${emergencyBest.lng.toFixed(5)}) for: ${address}`);
-        const result = { latitude: emergencyBest.lat, longitude: emergencyBest.lng, locationType: 'EMERGENCY', provider: emergencyBest.provider, _score: emergencyBest._score };
-        await saveToCache(result, result.provider);
-        return result;
+        // v40: Strict KML guard for L6 - DO NOT bypass KML zones if they exist.
+        if (hasKml && isOutsideActiveZones(emergencyBest.lat, emergencyBest.lng)) {
+             logger.warn(`[GeoEnhanced] L6 Emergency candidate (${emergencyBest.lat.toFixed(4)},${emergencyBest.lng.toFixed(4)}) is OUTSIDE all active KML zones — REJECTED to force manual fix. (addr: ${address})`);
+        } else {
+            logger.info(`[GeoEnhanced] L6 Emergency accepted (${emergencyBest.lat.toFixed(5)},${emergencyBest.lng.toFixed(5)}) for: ${address}`);
+            const result = { latitude: emergencyBest.lat, longitude: emergencyBest.lng, locationType: 'EMERGENCY', provider: emergencyBest.provider, _score: emergencyBest._score };
+            await saveToCache(result, result.provider);
+            return result;
+        }
     }
 
     // ============================================================
-    // L8: ZONE CENTROID FALLBACK — Last resort before total error
+    // L8: ZONE CENTROID FALLBACK — DISABLED BY USER REQUEST
     // ============================================================
-    // If we have an expectedZone and it's in our activeKmlFeatures,
-    // use its centroid to at least put the order in the right sector.
+    // By explicit request, if an address cannot be found inside a KML zone, 
+    // it MUST fail and be flagged for manual correction. Do not snap to centroid.
     if (expectedZone && hasKml) {
-        const zone = kmlZones.find(z => {
-            const folderName = z.hub?.name || z.properties?.folderName || '';
-            const name = z.name || z.properties?.name || '';
-            const zoneKey = `${folderName.trim()}:${name.trim()}`;
-            const targetZone = String(expectedZone || '').trim();
-            return zoneKey === targetZone || name.trim() === targetZone;
-        });
-
-        if (zone && (zone.centroid || zone.properties?.centroid)) {
-            const cent = zone.centroid || zone.properties.centroid;
-            logger.info(`[GeoEnhanced] L8 Fallback to zone centroid (${cent.lat.toFixed(5)},${cent.lng.toFixed(5)}) for: ${address} (Zone: ${expectedZone})`);
-            const result = { latitude: cent.lat, longitude: cent.lng, locationType: 'ZONE_CENTROID', provider: 'KML_SECTOR', _score: -5 };
-            // DO NOT save to DB cache as it's a very low-quality fallback
-            return result;
-        }
+        logger.info(`[GeoEnhanced] L8 Centroid Fallback bypassed. Forcing manual fix for: ${address}`);
     }
 
     logger.warn(`[GeoEnhanced] ❌ ALL LEVELS FAILED for: ${address}. Marking as geo error (no fallback coords).`);
@@ -1582,14 +1573,14 @@ async function batchEnhancedGeocode(orders, city, kmlZones = [], options = {}) {
 
     // PASS 2: Enhanced retry for each failure individually (sequentially to avoid rate limits)
     logger.info(`[GeoEnhanced] PASS 2: Enhanced retry for ${failed.length} failures...`);
-    for (let i = 0; i < failed.length; i++) {
-        const order = failed[i];
-        const addr = order.address || order.addressGeo || '';
-        const expectedZone = String(order.deliveryZone || order.kmlZone || '').trim();
+    for (let i = 0; i < failed.length; i += 3) {
+        const chunk = failed.slice(i, i + 3);
+        await Promise.all(chunk.map(async (order) => {
+            const addr = order.address || order.addressGeo || '';
+            const expectedZone = String(order.deliveryZone || order.kmlZone || '').trim();
 
         try {
-            // Pass 2: strict polite mode for free providers
-            await new Promise(r => setTimeout(r, 1000));
+            if (i > 0) await new Promise(r => setTimeout(r, 500)); 
             const result = await enhancedGeocode(addr, city, expectedZone || null, kmlZones, divisionCoords, {
                 ...geoOptionsWithHub,
                 _pass: 2
@@ -1602,12 +1593,11 @@ async function batchEnhancedGeocode(orders, city, kmlZones = [], options = {}) {
                 divisionCoords.push({ lat: result.latitude, lng: result.longitude });
                 results.set(addr, result);
                 logger.info(`[GeoEnhanced] PASS 2 recovered: ${addr} → (${result.latitude.toFixed(5)},${result.longitude.toFixed(5)})`);
-            } else {
-                logger.warn(`[GeoEnhanced] PASS 2 failed: ${addr}`);
-            }
-        } catch (e) { /* ignore */ }
-
-        if (onProgress) onProgress(processed + i + 1, totalToGeo + failed.length, 'pass2');
+                } else {
+                    logger.warn(`[GeoEnhanced] PASS 2 failed: ${addr}`);
+                }
+            } catch (e) { /* ignore */ }
+        }));
     }
 
     const finalFailed = orders.filter(o => !o.coords?.lat && (o.address || o.addressGeo));

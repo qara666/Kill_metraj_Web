@@ -195,7 +195,7 @@ const ZoneLayer = memo(({ routes }: { routes: any[] }) => {
                         />
 
                         <Marker position={center as [number, number]} icon={new L.DivIcon({
-                            html: `<div class="bg-white/90 backdrop-blur px-3 py-1 rounded-full border border-slate-200 text-[9px] font-black uppercase text-slate-700 shadow-xl whitespace-nowrap">${name}</div>`,
+                            html: `<div class="bg-white px-3 py-1 rounded-full border border-slate-200 text-[9px] font-black uppercase text-slate-700 shadow whitespace-nowrap">${name}</div>`,
                             className: '',
                             iconSize: [100, 24],
                             iconAnchor: [50, 12]

@@ -30,7 +30,7 @@ export const TransitCouriersModal = memo(({
     return (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60">
             <div className={clsx(
-                "w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden border-2 transform scale-100 animate-in fade-in zoom-in duration-300",
+                "w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden border-2",
                 isDark ? "bg-slate-900 border-white/5 shadow-black/50" : "bg-white border-blue-100 shadow-blue-500/20"
             )}>
                 <div className="px-8 py-6 border-b border-gray-100 dark:border-white/5 relative bg-gradient-to-r from-blue-500/10 to-transparent">

@@ -294,7 +294,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
         <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
             {/* Overlay */}
             <div
-                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                className="absolute inset-0 bg-black/60"
                 onClick={onClose}
             />
 

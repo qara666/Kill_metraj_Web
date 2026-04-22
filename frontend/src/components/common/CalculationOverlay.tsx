@@ -34,7 +34,7 @@ export const CalculationOverlay = React.memo(({ isDark }: { isDark: boolean }) =
   return (
     <div className="fixed inset-0 z-[10000] flex flex-col items-center justify-center pointer-events-auto overflow-hidden">
       {/* Backdrop: Use blur only if hardware allows, otherwise solid. Optimized for weak PCs. */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-lg" />
+      <div className="absolute inset-0 bg-black/60" />
       
       {/* Premium Glass Container */}
       <div className={clsx(

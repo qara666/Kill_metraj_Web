@@ -79,7 +79,7 @@ export const CourierCard = memo(({
   return (
     <div 
       className={clsx(
-        'relative flex flex-col h-full min-h-[320px] rounded-xl border transition-all duration-200',
+        'relative flex flex-col h-full min-h-[320px] rounded-xl border',
         isDark
           ? 'bg-[#0c0f14] border-white/[0.08] hover:border-white/[0.12]'
           : 'bg-white border-slate-200 hover:border-slate-300'

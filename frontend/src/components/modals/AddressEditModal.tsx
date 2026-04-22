@@ -144,7 +144,7 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
   if (!isOpen) return null
 
   return createPortal(
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999]">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999]">
       <div className={clsx('rounded-3xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col border', isDark ? 'bg-gray-800 border-white/10' : 'bg-white border-gray-200')}>
         <div className={clsx('px-7 py-5 border-b shrink-0', isDark ? 'border-gray-700 bg-gray-800/50' : 'border-gray-100 bg-gray-50')}>
           <div className="flex items-center justify-between">

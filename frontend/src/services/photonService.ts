@@ -196,16 +196,17 @@ function toRawCandidate(r: any): any {
     }
 }
 
-import { getCityBounds } from './robust-geocoding/cityBounds'
+import { getCityBounds, getActiveZoneBounds } from './robust-geocoding/cityBounds'
 
 export class PhotonService {
     private static readonly BASE_URL = 'https://photon.komoot.io/api/'
 
-    static async geocode(address: string, cityBias?: string): Promise<any[]> {
+    static async geocode(address: string, cityBias?: string, activePolygons?: any[]): Promise<any[]> {
         const expanded = expandUkrAbbrev(address, cityBias)
         const city = cityBias || 'Київ'
         
-        const bounds = getCityBounds(city)
+        const zoneBounds = activePolygons?.length ? getActiveZoneBounds(activePolygons) : null;
+        const bounds = zoneBounds || getCityBounds(city)
         const bboxParams = bounds 
             ? `${bounds.bbox[1]},${bounds.bbox[0]},${bounds.bbox[3]},${bounds.bbox[2]}` 
             : '22.13,44.38,40.22,52.37'; // Fallback to Ukraine (roughly)

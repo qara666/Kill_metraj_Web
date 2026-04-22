@@ -265,6 +265,11 @@ router.post('/dashboard/fetch', async (req, res) => {
                                     timeBlocks: timeBlock || 'Без часу',
                                     timeBlock: timeBlock || 'Без часу',
                                     targetDate: r.route_data?.target_date || targetDateISO,
+                                    startAddress: r.route_data?.startAddress,
+                                    endAddress: r.route_data?.endAddress,
+                                    startCoords: r.route_data?.startCoords || null,
+                                    endCoords: r.route_data?.endCoords || null,
+                                    geoMeta: r.route_data?.geoMeta || null,
                                     orders: slimOrders,
                                     isOptimized: true,
                                     isTurboRoute: true,
@@ -460,7 +465,9 @@ router.post('/dashboard/fetch', async (req, res) => {
                 } catch (tcErr) {}
             }
 
-            return payload;
+            const finalResult = { ...payload };
+            finalResult._dataActuallyChanged = dataActuallyChanged;
+            return finalResult;
         };
 
         if (isGlobal) {
@@ -485,8 +492,16 @@ router.post('/dashboard/fetch', async (req, res) => {
             let globalRoutes = [];
             let globalDistance = 0;
             
+            let anyDataChanged = false;
             for (const dId of Object.keys(deptGroups)) {
+                // v7.9: Capture if any division actually had changes
+                let divisionDataChanged = true;
                 const resultPayload = await processAndCache(dId, deptGroups[dId]);
+                if (resultPayload && resultPayload._dataActuallyChanged === false) {
+                    divisionDataChanged = false;
+                }
+                if (divisionDataChanged) anyDataChanged = true;
+
                 if (resultPayload.routes && resultPayload.routes.length > 0) {
                     globalRoutes = globalRoutes.concat(resultPayload.routes);
                 }
@@ -505,9 +520,11 @@ router.post('/dashboard/fetch', async (req, res) => {
             };
             responseData.routes = globalRoutes;
 
-            if (global.turboCalculator && typeof global.turboCalculator.notifyNewFOData === 'function') {
+            if (anyDataChanged && global.turboCalculator && typeof global.turboCalculator.notifyNewFOData === 'function') {
                 global.turboCalculator.notifyNewFOData('all', targetDateISO);
-                logger.info(`⚡ [FETCH] Global robot trigger (all, ${targetDateISO})`);
+                logger.info(`⚡ [FETCH] Global robot trigger (all, ${targetDateISO}) because data changed in at least one dept`);
+            } else if (global.turboCalculator) {
+                logger.info(`[FETCH] Global fetch done for ${targetDateISO}, no data changes detected, robot trigger skipped`);
             }
 
             return res.json({

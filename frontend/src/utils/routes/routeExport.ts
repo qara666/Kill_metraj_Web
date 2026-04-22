@@ -42,14 +42,15 @@ export const exportToGoogleMaps = (data: RouteExportData): string => {
   }
 
   // v35.9.27: Using Google Maps Directions API URL format for better stability
-  if (route.geoMeta) {
-    const origin = getCoordStr(route.geoMeta.origin) || (startCoords ? `${startCoords.lat},${startCoords.lng}` : null)
-    const destination = getCoordStr(route.geoMeta.destination) || (endCoords ? `${endCoords.lat},${endCoords.lng}` : null)
+  const geoMeta = route.geoMeta || route.route_data?.geoMeta;
+  if (geoMeta) {
+    const origin = getCoordStr(geoMeta.origin) || (startCoords ? `${startCoords.lat},${startCoords.lng}` : null)
+    const destination = getCoordStr(geoMeta.destination) || (endCoords ? `${endCoords.lat},${endCoords.lng}` : null)
     
     if (!origin || !destination) {
       // Fallback to non-geoMeta path
     } else {
-      const wpList = (route.geoMeta.waypoints || [])
+      const wpList = (geoMeta.waypoints || [])
         .map((wp: any) => getCoordStr(wp))
         .filter(Boolean)
         
@@ -63,8 +64,10 @@ export const exportToGoogleMaps = (data: RouteExportData): string => {
   }
 
   // Fallback to addresses/coords if geoMeta is missing or invalid
-  const origin = startCoords ? `${startCoords.lat},${startCoords.lng}` : getPoint(null, startAddress)
-  const destination = endCoords ? `${endCoords.lat},${endCoords.lng}` : getPoint(null, endAddress)
+  const rdStartCoords = route.route_data?.startCoords;
+  const rdEndCoords = route.route_data?.endCoords;
+  const origin = startCoords || rdStartCoords ? `${(startCoords || rdStartCoords).lat},${(startCoords || rdStartCoords).lng}` : getPoint(null, startAddress)
+  const destination = endCoords || rdEndCoords ? `${(endCoords || rdEndCoords).lat},${(endCoords || rdEndCoords).lng}` : getPoint(null, endAddress)
   const waypoints = orders
     .map((order, idx) => getPoint(order, route.routeChain?.[idx]))
     .filter(Boolean)

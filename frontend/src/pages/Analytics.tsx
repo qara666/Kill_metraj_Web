@@ -25,7 +25,7 @@ export const Analytics: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'couriers' | 'session' | 'problems' | 'financial'>('overview')
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-700">
+    <div className="space-y-6">
       <DashboardHeader
         icon={PresentationChartBarIcon}
         title="АНАЛІТИЧНИЙ ХАБ"
@@ -55,7 +55,7 @@ export const Analytics: React.FC = () => {
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
             className={clsx(
-              "px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 border",
+              "px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 border",
               activeTab === tab.id 
                 ? "bg-blue-600 text-white border-blue-500 shadow-lg shadow-blue-600/20"
                 : isDark 

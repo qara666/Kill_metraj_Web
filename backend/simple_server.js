@@ -1537,9 +1537,9 @@ app.post('/api/turbo/priority', authenticateToken, async (req, res) => {
     
     if (calculator && typeof calculator.trigger === 'function') {
       try {
-        // v5.172: Manual trigger = FULL recalculation (forceFull=true)
-        // v37.1: Pass courierName to trigger
-        calculator.trigger(divisionId, date, userId, true, courierName);
+        // v38: When targeting a specific courier, use forceFull=false to skip already-calculated couriers
+        const forceFull = !!req.body?.force || !courierName;
+        calculator.trigger(divisionId, date, userId, forceFull, courierName);
         logger.info(`[API] turboCalculator.trigger() called with forceFull=true, courier=${courierName || 'ALL'}`);
         res.json({ 
             success: true, 

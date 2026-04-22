@@ -342,11 +342,20 @@ export function groupOrdersByTimeWindow(
     const isAssignedCourier = courierId && courierId !== 'unassigned' && courierId !== 'unassigned_auto' && courierId !== 'Неизвестный курьер' && courierId !== 'НЕ НАЗНАЧЕНО' && courierId !== 'ПО';
     let currentGroup: TimeWindowGroup | null = null;
 
-    // 2. Группируем автоматические заказы
-    const WINDOW_MS = arrivalProximityMinutes * 60 * 1000; // жесткое окно от первого заказа
+    const isOrderActiveOrCompleted = (o: Order) => {
+        const s = String(o?.status || o?.deliveryStatus || '').toLowerCase();
+        return s.includes('доставляется') || s.includes('в пути') || 
+               s.includes('завершен') || s.includes('виконано') || 
+               s.includes('доставлен') || s.includes('completed') ||
+               s.includes('доставляється');
+    };
 
+    // 2. Группируем автоматические заказы
     ordersForAuto.forEach(({ order, planned, arrival, kitchen, anchorTime }) => {
-        const deliverySpanMs = maxDeliverySpanMinutes * 60 * 1000;
+        const isActiveOrCompleted = isAssignedCourier && isOrderActiveOrCompleted(order);
+        const effectiveWindowMs = isActiveOrCompleted ? (40 * 60 * 1000) : (arrivalProximityMinutes * 60 * 1000); // 40 min window for active/completed
+        const deliverySpanMs = isActiveOrCompleted ? (120 * 60 * 1000) : (maxDeliverySpanMinutes * 60 * 1000); // 2 hours span for active/completed
+
         
         if (!currentGroup) {
             // Создаем новую группу для первого заказа
@@ -361,7 +370,7 @@ export function groupOrdersByTimeWindow(
             
             // Условие 1: Time proximity — SLIDING from last added order (not first)
             const anchorDiff = anchorTime - lastAnchor;
-            const timeWithinProximity = anchorDiff >= 0 && anchorDiff <= WINDOW_MS;
+            const timeWithinProximity = anchorDiff >= 0 && anchorDiff <= effectiveWindowMs;
             
             // Условие 2: SLA / delivery span <= MAX_DELIVERY_SPAN_MINUTES
             const minDelivery = Math.min(currentGroup.windowStart, planned);
@@ -422,8 +431,8 @@ export function groupOrdersByTimeWindow(
             // Определяем причину разбиения (приоритет: время, SLA, гео, район, готовность)
             // v7.x: Updated geo split reason with new center-based logic
             let newSplitReason = '';
-            if (!timeWithinProximity) newSplitReason = `Время (${Math.round(anchorDiff / 60000)} мин > ${PROXIMITY_MINUTES})`;
-            else if (!deliveryFits) newSplitReason = `SLA (${Math.round(deliverySpan / 60000)} мин > ${MAX_DELIVERY_SPAN_MINUTES})`;
+            if (!timeWithinProximity) newSplitReason = `Время (${Math.round(anchorDiff / 60000)} мин > ${(effectiveWindowMs/60000).toFixed(0)})`;
+            else if (!deliveryFits) newSplitReason = `SLA (${Math.round(deliverySpan / 60000)} мин > ${(deliverySpanMs/60000).toFixed(0)})`;
             else if (!distanceOk) newSplitReason = `Гео (от центра >30км или от первого >25км)`;
             else if (!districtOk) newSplitReason = `Район (${orderZone} ≠ ${groupZone})`;
             else if (!isAssignedCourier && !kitchenGapOk) newSplitReason = 'Готовность (>45м)';

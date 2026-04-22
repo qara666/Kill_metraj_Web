@@ -21,6 +21,7 @@ import { AddressEditModal } from '../modals/AddressEditModal'
 import { EliteCourierCard } from './EliteCourierCard'
 import DistanceDetailModal from './DistanceDetailModal'
 import { API_URL } from '../../config/apiConfig'
+import { YapikoOSRMService } from '../../services/YapikoOSRMService'
 
 // v9.3: GEO-ERROR REPAIR HUD (STABLE)
 // Added AddressEditModal, additive distance logic and clickable alerts
@@ -66,35 +67,14 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
   const { autoRoutingStatus, divisionId } = useDashboardStore();
   const currentDivisionId = String(divisionId || '');
 
-  const getCourierStats = useCallback((name: string) => {
-    const norm = normalizeCourierName(name);
+  // Memoize ALL courier stats at once to avoid creating new objects on each render
+  const allCourierStatsMap = useMemo(() => {
+    const map: Record<string, any> = {};
+    const routes = excelData?.routes || [];
+    const orders = excelData?.orders || [];
+    const couriers = excelData?.couriers || [];
+    const summary = autoRoutingStatus?.couriersSummary || {};
 
-    // v37.0: PRIORITY 1 — Server-Anchored Summary (The most stable source)
-    const serverSummary = autoRoutingStatus?.couriersSummary?.[name] || autoRoutingStatus?.couriersSummary?.[norm];
-
-    // v37.0: PRIORITY 2 — Calculated Routes (For real-time partial updates)
-    const routes = (excelData?.routes || []).filter((r: any) => {
-      const rc = normalizeCourierName(r.courier || r.courier_id);
-      const dId = String(r.divisionId || r.division_id || '');
-      const isCorrectDiv = !currentDivisionId || currentDivisionId === 'all' || !dId || dId === currentDivisionId;
-      return rc === norm && rc !== 'Не назначено' && rc !== '' && isCorrectDiv;
-    });
-    
-    // v9.8: ACCURATE UNIQUE ORDER COUNTING 
-    const uniqueRouteOrderIds = new Set<string>();
-    routes.forEach((r: any) => {
-      // Use pre-calculated ordersCount from route if available to save CPU
-      (r.orders || []).forEach((o: any) => {
-         const sid = getStableOrderId(o);
-         if (sid) uniqueRouteOrderIds.add(sid);
-      });
-    });
-
-    const ordersInRoutes = serverSummary?.ordersCount ?? uniqueRouteOrderIds.size;
-    const robotPhysicalKm = serverSummary?.distanceKm ?? routes.reduce((sum: number, r: any) => 
-      sum + ((Number(r.totalDistance || r.total_distance) > 0) ? Number(r.totalDistance || r.total_distance) : 0), 0);
-
-    // Dynamic data from currently calculated routes
     const isRoutableOrder = (o: any) => {
       const status = String(o?.status || o?.deliveryStatus || '').toLowerCase().trim();
       if (status.includes('отказ') || status.includes('отменен') || status.includes('відмова')) return false;
@@ -102,54 +82,96 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
       return true;
     };
 
-    // Base data from uploaded excel/db
-    const base = (excelData?.couriers || []).find((cur: any) => normalizeCourierName(cur.name) === norm);
-    
-    // Counts unique routable orders assigned to this courier in FO data
-    const uniqueTotalOrderIds = new Set<string>();
-    (excelData?.orders || []).forEach((o: any) => {
-       const dId = String(o.divisionId || o.departmentId || o.division_id || '');
-       const isCorrectDiv = !currentDivisionId || currentDivisionId === 'all' || !dId || dId === currentDivisionId;
-       
-       if (normalizeCourierName(getCourierName(o.courier)) === norm && isRoutableOrder(o) && isCorrectDiv) {
-         const sid = getStableOrderId(o);
-         if (sid) uniqueTotalOrderIds.add(sid);
-       }
-     });
+    const isMatchingDiv = (dId: string) => {
+      if (!currentDivisionId || currentDivisionId === 'all') return true;
+      if (!dId) return true;
+      return dId === currentDivisionId;
+    };
 
-    // FALLBACK for total orders count: if excelData.orders is empty (reload case), 
-    // trust the server's processed count or the routes.
-    const ordersAssignedRaw = uniqueTotalOrderIds.size;
-    const totalOrdersCount = ordersAssignedRaw > 0 ? ordersAssignedRaw : Math.max(ordersAssignedRaw, ordersInRoutes);
+    // First pass: collect all unique courier names
+    const allNames = new Set<string>();
+    orders.forEach((o: any) => {
+      const n = normalizeCourierName(getCourierName(o.courier));
+      if (n && n !== 'Не назначено') allNames.add(n);
+    });
+    routes.forEach((r: any) => {
+      const n = normalizeCourierName(r.courier || r.courier_id);
+      if (n && n !== 'Не назначено') allNames.add(n);
+    });
+    Object.keys(summary).forEach(n => {
+      if (n && n !== 'Не назначено') allNames.add(n);
+    });
+    couriers.forEach((c: any) => {
+      const n = normalizeCourierName(c.name);
+      if (n && n !== 'Не назначено') allNames.add(n);
+    });
 
-    const baseKm = base?.distanceKm || 0;
-    const physicalDist = robotPhysicalKm > 0 ? robotPhysicalKm : baseKm;
-    const bonusDist = ordersInRoutes * 0.5;
-    const finalTotal = physicalDist + bonusDist;
+    // Second pass: calculate stats for each courier
+    allNames.forEach(norm => {
+      const serverSummary = summary[norm];
+      
+      // Filter routes for this courier
+      const courierRoutes = routes.filter((r: any) => {
+        const rc = normalizeCourierName(r.courier || r.courier_id);
+        const dId = String(r.divisionId || r.division_id || '');
+        return rc === norm && rc !== 'Не назначено' && rc !== '' && isMatchingDiv(dId);
+      });
 
-    return {
-      totalDistance: finalTotal,
-      history: base?.distanceHistory || [],
-      totalOrders: totalOrdersCount,
-      ordersInRoutes: ordersInRoutes,
-      baseDistance: baseKm,
-      robotDistance: robotPhysicalKm,
-      bonusDistance: bonusDist,
-      effectivePhysicalKm: physicalDist,
-      routes: getCourierRoutes(name)
-    }
-  }, [excelData, autoRoutingStatus?.couriersSummary, currentDivisionId])
+      // Count unique orders in routes
+      const uniqueRouteOrderIds = new Set<string>();
+      courierRoutes.forEach((r: any) => {
+        (r.orders || []).forEach((o: any) => {
+          const sid = getStableOrderId(o);
+          if (sid) uniqueRouteOrderIds.add(sid);
+        });
+      });
 
-  const getCourierRoutes = useCallback((name: string) => {
-    const n = normalizeCourierName(name);
-    return (excelData?.routes || []).filter((r: any) => {
-      const dId = String(r.divisionId || r.division_id || '');
-      const isCorrectDiv = !currentDivisionId || currentDivisionId === 'all' || !dId || dId === currentDivisionId;
-      const rc = normalizeCourierName(r.courier || r.courier_id || '');
-      return rc === n && isCorrectDiv;
-    })
-  }, [excelData?.routes, currentDivisionId])
+      const ordersInRoutes = serverSummary?.ordersCount ?? uniqueRouteOrderIds.size;
+      
+      const routeKm = courierRoutes.reduce((sum: number, r: any) => 
+        sum + ((Number(r.totalDistance || r.total_distance) > 0) ? Number(r.totalDistance || r.total_distance) : 0), 0);
+      const robotPhysicalKm = routeKm > 0 ? routeKm : (serverSummary?.distanceKm ?? 0);
 
+      // Base data
+      const base = couriers.find((cur: any) => normalizeCourierName(cur.name) === norm);
+      
+      // Count total FO orders
+      const uniqueTotalOrderIds = new Set<string>();
+      orders.forEach((o: any) => {
+        const dId = String(o.divisionId || o.departmentId || o.division_id || '');
+        if (normalizeCourierName(getCourierName(o.courier)) === norm && isRoutableOrder(o) && isMatchingDiv(dId)) {
+          const sid = getStableOrderId(o);
+          if (sid) uniqueTotalOrderIds.add(sid);
+        }
+      });
+
+      const ordersAssignedRaw = uniqueTotalOrderIds.size;
+      const totalOrdersCount = ordersAssignedRaw > 0 ? ordersAssignedRaw : Math.max(ordersAssignedRaw, ordersInRoutes);
+
+      const baseKm = base?.distanceKm || 0;
+      const physicalDist = robotPhysicalKm > 0 ? robotPhysicalKm : baseKm;
+      const bonusDist = ordersInRoutes * 0.5;
+      const finalTotal = physicalDist + bonusDist;
+
+      map[norm] = {
+        totalDistance: finalTotal,
+        history: base?.distanceHistory || [],
+        totalOrders: totalOrdersCount,
+        ordersInRoutes,
+        baseDistance: baseKm,
+        robotDistance: robotPhysicalKm,
+        bonusDistance: bonusDist,
+        effectivePhysicalKm: physicalDist,
+        routes: courierRoutes
+      };
+    });
+
+    return map;
+  }, [excelData?.orders, excelData?.routes, excelData?.couriers, autoRoutingStatus?.couriersSummary, currentDivisionId, excelData?._lastManualRouteUpdate]);
+
+const getCourierStats = useCallback((name: string) => {
+    return allCourierStatsMap[name] || allCourierStatsMap[normalizeCourierName(name)] || { totalDistance: 0, totalOrders: 0, ordersInRoutes: 0 };
+  }, [allCourierStatsMap]);
 
   // v37.0: ULTIMATE ROBUST COURIER LIST BUILDING
   // Combines name lists from FO orders, DB Routes, and Real-time Robot Status
@@ -212,7 +234,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
         totalDistance: st.totalDistance,
         geoErrorCount: filteredOrders.filter((o: any) => 
           normalizeCourierName(getCourierName(o.courier)) === name && 
-          (o.geoError || o.locationType === 'FAILED' || o.locationType === 'APPROXIMATE')
+          (o.geoError === true || o.locationType === 'FAILED')
         ).length
       };
     });
@@ -240,8 +262,18 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     return filtered.filter(c => activeVehicleTab === 'car' ? c.vehicleType === 'car' : c.vehicleType === 'motorcycle');
   }, [activeVehicleTab, filtered])
 
-  const paginatedCouriers = useMemo(() => visible.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE), [visible, currentPage])
+  const paginatedCouriers = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return visible.length > ITEMS_PER_PAGE ? visible.slice(start, start + ITEMS_PER_PAGE) : visible;
+  }, [visible, currentPage])
+  
   const totalPages = Math.ceil(visible.length / ITEMS_PER_PAGE);
+
+  const pageNumbers = useMemo(() => {
+    const arr: number[] = [];
+    for (let i = 0; i < totalPages; i++) arr.push(i + 1);
+    return arr;
+  }, [totalPages]);
 
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages);
@@ -279,12 +311,12 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({
-            divisionId: divId,
-            date: todayIso,
-            force: true,
-            courierName: c.name // v9.9: Match backend param name
-        })
+      body: JSON.stringify({
+        divisionId: divId,
+        date: todayIso,
+        force: false,
+        courierName: c.name
+      })
       });
 
       const data = await res.json();
@@ -321,88 +353,83 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
   const handleSaveAddress = useCallback(async (newAddr: string, coords?: { lat: number; lng: number }) => {
     if (!editingOrder) return;
 
-    // v9.9: Persist manual fix to backend GeoCache ALWAYS
     if (coords) {
         try {
             const token = localStorage.getItem('km_access_token');
             await fetch(`${API_URL}/api/geocache/manual-correct`, {
                 method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    address: newAddr,
-                    lat: coords.lat,
-                    lng: coords.lng
-                })
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ address: newAddr, lat: coords.lat, lng: coords.lng })
             });
-            console.log('[CourierManagement] Manual geocode persisted to backend');
-        } catch (e) {
-            console.warn('[CourierManagement] Failed to persist manual geocode:', e);
-        }
+        } catch (e) { console.warn('[handleSaveAddress] Geocache persist failed:', e); }
     }
 
-    const { updateRouteData } = (useExcelData() as any) || {};
+    updateExcelData?.((prev: any) => ({
+        ...prev,
+        orders: (prev.orders || []).map((o: any) =>
+            o.id === editingOrder.id ? { ...o, address: newAddr, coords, geocoded: !!coords, geoError: false, locationType: coords ? 'ROOFTOP' : 'FAILED', manualGeocoding: true } : o
+        )
+    }));
 
-    updateExcelData?.((prev: any) => {
-        const newData = { ...prev };
-        const updatedOrders = (prev.orders || []).map((o: any) => o.id === editingOrder.id ? { ...o, address: newAddr, coords, geocoded: !!coords, geoError: false, locationType: coords ? 'ROOFTOP' : 'FAILED', manualGeocoding: true } : o);
-        
-        const updatedRoutes = (prev.routes || []).map((r: any) => {
-            if (String(r.id) === editingOrderRouteId || (r.orders || []).some((o: any) => o.id === editingOrder.id)) {
-                const newOrders = (r.orders || []).map((o: any) => o.id === editingOrder.id ? { ...o, address: newAddr, coords, geocoded: !!coords, geoError: false, locationType: coords ? 'ROOFTOP' : 'FAILED', manualGeocoding: true } : o);
-                return { ...r, orders: newOrders };
-            }
-            return r;
+    if (!editingOrderRouteId) { toast.success('Адрес сохранен'); setShowAddressModal(false); return; }
+
+    const routes = excelData?.routes || [];
+    const route = routes.find((r: any) => String(r.id) === String(editingOrderRouteId));
+    if (!route) { toast.success('Адрес сохранен'); setShowAddressModal(false); return; }
+
+    try {
+        const presets = localStorageUtils.getAllSettings();
+        const osrmUrl = presets.osrmUrl || 'http://116.204.153.171:5050';
+        const start = route.startCoords || route.route_data?.startCoords
+            || (presets.defaultStartLat ? { lat: Number(presets.defaultStartLat), lng: Number(presets.defaultStartLng) } : null)
+            || { lat: 49.9935, lng: 36.2304 };
+        const end = route.endCoords || route.route_data?.endCoords || route.geoMeta?.destination
+            || (presets.defaultEndLat ? { lat: Number(presets.defaultEndLat), lng: Number(presets.defaultEndLng) } : null)
+            || start;
+
+        const updatedOrders = (route.orders || []).map((o: any) =>
+            o.id === editingOrder.id ? { ...o, address: newAddr, coords, geocoded: !!coords, geoError: false, locationType: coords ? 'ROOFTOP' : 'FAILED', manualGeocoding: true } : o
+        );
+
+        const validOrders = updatedOrders.filter((o: any) => {
+            const c = o.coords || { lat: o.lat, lng: o.lng };
+            return c?.lat && c?.lng && c.lat !== 0;
         });
 
-        // v9.9.5: MOMENTARY RECALCULATION for the affected route
-        if (coords && editingOrderRouteId) {
-            const route = updatedRoutes.find((r: any) => String(r.id) === editingOrderRouteId);
-            if (route) {
-                setTimeout(async () => {
-                    try {
-                        const presets = localStorageUtils.getAllSettings();
-                        const osrmUrl = presets.osrmUrl || 'http://osrm.yapiko.kh.ua:5050';
-                        const start = route.startCoords || { lat: 50.4501, lng: 30.5234 };
-                        const locs = [start, ...route.orders.map((o: any) => o.coords || { lat: o.lat, lng: o.lng }), start];
-                        const res = await YapikoOSRMService.calculateRoute(locs, osrmUrl);
-                        
-                        if (res.feasible && res.totalDistance !== undefined) {
-                            const newKm = res.totalDistance / 1000;
-                            const finalRoute = { ...route, totalDistance: newKm, geometry: res.geometry };
-                            
-                            // Update global state with calculated distance
-                            updateRouteData?.(updatedRoutes.map((r: any) => String(r.id) === editingOrderRouteId ? finalRoute : r));
-                            
-                            // Persist to DB
-                            await fetch(`${API_URL}/api/routes/save`, {
-                                method: 'POST',
-                                headers: {
-                                  'Content-Type': 'application/json',
-                                  'Authorization': `Bearer ${localStorage.getItem('km_access_token') || localStorage.getItem('token')}`
-                                },
-                                body: JSON.stringify(finalRoute)
-                            });
-                            toast.success(`Маршрут пересчитан: ${newKm.toFixed(1)} км`);
-                        }
-                    } catch (err) {
-                        console.warn('[CourierManagement] Momentary recalc failed:', err);
-                    }
-                }, 100);
+        let newKm = 0, newDuration = 0, geometry: any = undefined, geoMeta: any = undefined;
+
+        if (validOrders.length > 0) {
+            const waypoints = validOrders.map((o: any) => o.coords || { lat: o.lat, lng: o.lng });
+            const res = await YapikoOSRMService.calculateRoute([start, ...waypoints, end], osrmUrl);
+            if (res.feasible && res.totalDistance != null) {
+                newKm = res.totalDistance / 1000;
+                newDuration = Math.round((res.totalDuration || 0) / 60);
+                geometry = res.geometry;
+                geoMeta = { origin: { lat: start.lat, lng: start.lng }, destination: { lat: end.lat, lng: end.lng }, waypoints };
             }
         }
 
-        newData.orders = updatedOrders;
-        newData.routes = updatedRoutes;
-        return newData;
-    });
+        const finalRoute = { ...route, orders: updatedOrders, totalDistance: newKm, totalDuration: newDuration, geometry, geoMeta };
+        const token = localStorage.getItem('km_access_token') || localStorage.getItem('token');
+        const saveRes = await fetch(`${API_URL}/api/routes/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(finalRoute)
+        });
+        if (!saveRes.ok) throw new Error(`Save failed: ${saveRes.status}`);
 
-    toast.success('Адрес обновлен');
-    if (editingOrderRouteId) window.dispatchEvent(new CustomEvent('km-force-auto-routing', { detail: { routeId: editingOrderRouteId, reason: 'manual_fix' } }));
-    setShowAddressModal(false);
-  }, [editingOrder, editingOrderRouteId, updateExcelData])
+        const updatedRoutes = (excelData?.routes || []).map((r: any) =>
+            String(r.id) === String(editingOrderRouteId) ? finalRoute : r
+        );
+        updateRouteData?.(updatedRoutes);
+
+        toast.success(`Сохранено: ${newKm > 0 ? newKm.toFixed(1) + ' км' : 'без км'}`, { id: 'addr-save' });
+        setShowAddressModal(false);
+    } catch (err) {
+        console.warn('[handleSaveAddress]', err);
+        toast.error('Ошибка', { id: 'addr-save' });
+    }
+  }, [editingOrder, editingOrderRouteId, excelData?.routes, updateExcelData, updateRouteData, selectedCourier])
 
   const handleEditClick = useCallback((c: Courier) => {
     setEditingCourier(c); setShowAddModal(true);
@@ -457,8 +484,8 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
         <div className="px-6 py-10 flex items-center justify-center gap-6 shrink-0">
           <button disabled={currentPage === 1} onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} className={clsx("w-12 h-12 rounded-2xl border flex items-center justify-center", currentPage === 1 ? "opacity-20" : "bg-blue-600 text-white")}><ChevronLeftIcon className="w-5 h-5" /></button>
           <div className="flex items-center gap-2">
-            {[...Array(totalPages)].map((_, i) => (
-              <button key={i+1} onClick={() => setCurrentPage(i+1)} className={clsx("w-10 h-10 rounded-xl text-[10px] font-black", currentPage === i+1 ? "bg-blue-600 text-white" : "opacity-40")}>{i+1}</button>
+            {pageNumbers.map(i => (
+              <button key={i} onClick={() => setCurrentPage(i)} className={clsx("w-10 h-10 rounded-xl text-[10px] font-black", currentPage === i ? "bg-blue-600 text-white" : "opacity-40")}>{i}</button>
             ))}
           </div>
           <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} className={clsx("w-12 h-12 rounded-2xl border flex items-center justify-center", currentPage === totalPages ? "opacity-20" : "bg-blue-600 text-white")}><ChevronRightIcon className="w-5 h-5" /></button>
@@ -486,7 +513,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
 
       {showAddModal && (
         <div className="fixed inset-0 z-[150] flex justify-end overflow-hidden">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => { setShowAddModal(false); setEditingCourier(null); }} />
+          <div className="absolute inset-0 bg-black/70" onClick={() => { setShowAddModal(false); setEditingCourier(null); }} />
           <div className={clsx("relative w-full max-w-lg h-full shadow-2xl border-l flex flex-col", isDark ? "bg-[#080a0f] border-white/5" : "bg-white border-slate-100")}>
             <div className="p-10 border-b flex items-center justify-between shrink-0">
                <h3 className="text-2xl font-black uppercase">{editingCourier ? 'Правка курьера' : 'Новый курьер'}</h3>

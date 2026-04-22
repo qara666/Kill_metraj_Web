@@ -77,7 +77,7 @@ export const GridOrderCard = memo(({ order, isDark, isSelected, onSelect, isUnas
             )}
         >
             {isSelected && !isRouted && (
-                <div className="absolute top-0 right-0 p-3 pt-4 pr-4 z-10 animate-in zoom-in-50 duration-200">
+                <div className="absolute top-0 right-0 p-3 pt-4 pr-4 z-10">
                     <CheckBadgeIconSolid className="w-6 h-6 text-blue-500 drop-shadow-sm" />
                 </div>
             )}
