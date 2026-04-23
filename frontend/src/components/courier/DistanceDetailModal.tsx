@@ -361,8 +361,6 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
     if (oIdx === -1) return;
 
     const [movedOrder] = snapshot[fIdx].orders.splice(oIdx, 1);
-    console.log('[handleDropToNew] movedOrder:', movedOrder);
-    console.log('[handleDropToNew] movedOrder.coords:', movedOrder.coords, 'lat:', movedOrder.lat, 'lng:', movedOrder.lng);
     
     const newId = `manual-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const newRoute = {
@@ -377,8 +375,6 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
     };
     
     snapshot.push(newRoute);
-    console.log('[handleDropToNew] newRoute created:', newRoute.id, 'startCoords:', newRoute.startCoords);
-    console.log('[handleDropToNew] snapshot has', snapshot.length, 'routes');
     setLocalRoutes(snapshot);
     manualRoutesRef.current = snapshot;
     setHasManualChanges(true);
@@ -388,7 +384,6 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
     const osrmUrl = presets.osrmUrl || 'http://116.204.153.171:5050';
 
     const calc = async (r: any) => {
-      console.log('[calc] r.id:', r.id, 'orders:', r.orders?.length, 'startCoords:', r.startCoords, 'endCoords:', r.endCoords);
       if (!r.orders?.length) return { ...r, totalDistance: 0, geometry: undefined };
       const start = r.startCoords || r.route_data?.startCoords
         || (presets.defaultStartLat ? { lat: presets.defaultStartLat, lng: presets.defaultStartLng } : null)
@@ -400,14 +395,10 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
         const c = o.coords || { lat: o.lat, lng: o.lng };
         return c?.lat && c?.lng && c.lat !== 0;
       });
-      console.log('[calc] validOrders:', validOrders.length);
       if (!validOrders.length) return { ...r, totalDistance: 0, geometry: undefined };
       const waypoints = validOrders.map((o: any) => o.coords || { lat: o.lat, lng: o.lng });
-      console.log('[calc] locs (start, waypoints, end):', start, waypoints, end);
       const locs = [start, ...waypoints, end];
-      console.log('[calc] full locs:', locs);
       const res = await YapikoOSRMService.calculateRoute(locs, osrmUrl);
-      console.log('[calc] OSRM res:', res);
       const geoMeta = { origin: { lat: start.lat, lng: start.lng }, destination: { lat: end.lat, lng: end.lng }, waypoints };
       return { ...r, totalDistance: (res.feasible && res.totalDistance != null) ? res.totalDistance / 1000 : 0, geometry: res.geometry, geoMeta };
     };
@@ -418,18 +409,9 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
         const fIdxNew = currentSnapshot.findIndex((r: any) => String(r.id) === fromRouteId);
         const tIdxNew = currentSnapshot.findIndex((r: any) => String(r.id) === newId);
         
-        console.log('[handleDropToNew] fIdxNew:', fIdxNew, 'tIdxNew:', tIdxNew, 'fromRouteId:', fromRouteId, 'newId:', newId);
-        
-        if (fIdxNew === -1 || tIdxNew === -1) {
-          console.error('[handleDropToNew] route not found');
-          return;
-        }
-        
-        console.log('[handleDropToNew] before calc, tIdxNew route:', currentSnapshot[tIdxNew]);
+        if (fIdxNew === -1 || tIdxNew === -1) return;
         
         const [nF, nT] = await Promise.all([calc(currentSnapshot[fIdxNew]), calc(currentSnapshot[tIdxNew])]);
-        console.log('[handleDropToNew] after calc, nT:', nT);
-        
         currentSnapshot[fIdxNew] = nF;
         currentSnapshot[tIdxNew] = nT;
 

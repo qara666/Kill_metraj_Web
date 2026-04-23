@@ -1452,10 +1452,47 @@ class OrderCalculator {
             }
 
             // v37.9.2: IMPROVED CLEANUP — use Op.iLike and trim to ensure targetCourier's old routes are GONE.
+            // vXX.X: BUT preserve routes with _manualModified=true!
             if (targetCourier && Route) {
                 try {
                     const normTarget = normalizeCourierName(targetCourier);
-                    // v37.9.3: Delete by both exact match and trimmed iLike to catch DB encoding/space weirdness
+                    // First find manual routes to preserve
+                    const manualRoutes = await Route.findAll({
+                        where: {
+                            division_id: cache.division_id,
+                            [Op.or]: [
+                                { courier_id: normTarget },
+                                { courier_id: { [Op.iLike]: `%${normTarget}%` } }
+                            ],
+                            [Op.and]: sequelize.where(
+                                sequelize.literal("route_data->>'_manualModified'"),
+                                'true'
+                            ),
+                            [Op.and]: sequelize.where(
+                                sequelize.literal("route_data->>'target_date'"),
+                                targetDateNorm || cache.target_date
+                            )
+                        }
+                    });
+                    const manualRouteIds = manualRoutes.map(r => r.id);
+                    
+                    // Delete only NON-manual routes
+                    const delWhere = {
+                        division_id: cache.division_id,
+                        [Op.and]: sequelize.where(
+                            sequelize.literal("route_data->>'target_date'"),
+                            targetDateNorm || cache.target_date
+                        )
+                    };
+                    if (manualRouteIds.length > 0) {
+                        delWhere[Op.and] = {
+                            [Op.and]: sequelize.where(
+                                sequelize.literal("route_data->>'target_date'"),
+                                targetDateNorm || cache.target_date
+                            ),
+                            id: { [Op.notIn]: manualRouteIds }
+                        };
+                    }
                     const delCount = await Route.destroy({
                         where: {
                             division_id: cache.division_id,
@@ -1463,6 +1500,7 @@ class OrderCalculator {
                                 { courier_id: normTarget },
                                 { courier_id: { [Op.iLike]: `%${normTarget}%` } }
                             ],
+                            id: manualRouteIds.length > 0 ? { [Op.notIn]: manualRouteIds } : undefined,
                             [Op.and]: sequelize.where(
                                 sequelize.literal("route_data->>'target_date'"),
                                 targetDateNorm || cache.target_date
@@ -1520,6 +1558,21 @@ class OrderCalculator {
 
                     existingRoutes.forEach(r => {
                         const orders = r.route_data?.orders || [];
+                        const isManual = r.route_data?._manualModified === true;
+                        
+                        if (isManual && orders.length > 0) {
+                            // vXX.X: Preserve manual routes - add orders to routed sets AND push route directly
+                            orders.forEach(o => {
+                                if (o.orderNumber) existingRoutedOrderNumbers.add(String(o.orderNumber));
+                                if (o.id) existingRoutedOrderIds.add(String(o.id));
+                            });
+                            // Track manual routes for later push to frontend
+                            if (!this._preservedManualRoutes) this._preservedManualRoutes = [];
+                            this._preservedManualRoutes.push(r);
+                            logger.info(`[TurboCalculator] 🛡️ Preserving manual route ${r.id} for ${r.courier_id} (${orders.length} orders)`);
+                            return;
+                        }
+                        
                         orders.forEach(o => {
                             if (o.orderNumber) existingRoutedOrderNumbers.add(String(o.orderNumber));
                             if (o.id) existingRoutedOrderIds.add(String(o.id));
@@ -2636,7 +2689,39 @@ class OrderCalculator {
                     }
 
                     // v7.6 CRITICAL: Sync routes and statistics back to dashboard payload BEFORE saving
-                    // This ensures "В маршрутах" is not 0 and courier cards show distances
+                    // vXX.X: Inject preserved manual routes
+                    if (this._preservedManualRoutes && this._preservedManualRoutes.length > 0) {
+                        for (const mr of this._preservedManualRoutes) {
+                            const existingIdx = inMemoryFrontendRoutes.findIndex(r => String(r.id) === String(mr.id));
+                            if (existingIdx === -1) {
+                                inMemoryFrontendRoutes.push({
+                                    id: mr.id,
+                                    courier: mr.courier_id,
+                                    courier_id: mr.courier_id,
+                                    totalDistance: parseFloat(mr.total_distance || 0),
+                                    totalDuration: mr.total_duration,
+                                    ordersCount: mr.orders_count,
+                                    orders: (mr.route_data?.orders || []).map(o => ({
+                                        id: o.id,
+                                        orderNumber: o.orderNumber,
+                                        address: o.address || 'Адрес не указан',
+                                        courier: o.courier || mr.courier_id,
+                                        coords: o.coords || (o.lat && o.lng ? { lat: o.lat, lng: o.lng } : null),
+                                        lat: o.lat || o.coords?.lat,
+                                        lng: o.lng || o.coords?.lng
+                                    })),
+                                    route_data: mr.route_data,
+                                    geometry: mr.route_data?.geometry,
+                                    isOptimized: true,
+                                    isTurboRoute: true,
+                                    isManuallyAdjusted: true,
+                                    _manualModified: true
+                                });
+                                logger.info(`[TurboCalculator] 🛡️ Injected preserved manual route ${mr.id} for ${mr.courier_id}`);
+                            }
+                        }
+                        this._preservedManualRoutes = [];
+                    }
                     data.routes = inMemoryFrontendRoutes || [];
                     
                     if (!data.statistics) data.statistics = {};
