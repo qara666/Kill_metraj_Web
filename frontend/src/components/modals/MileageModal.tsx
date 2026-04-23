@@ -15,7 +15,8 @@ import {
   HomeIcon,
   ExclamationCircleIcon,
   ChevronDownIcon,
-  ArrowsUpDownIcon
+  ArrowsUpDownIcon,
+  PlusIcon
 } from '@heroicons/react/24/outline';
 import { exportToGoogleMaps, exportToValhalla } from '../../utils/routes/routeExport';
 import { needsAddressClarification } from '../../utils/data/addressUtils';
@@ -56,11 +57,11 @@ const OrderRecord = memo(({ order, orderIndex, route, isDark, onEditAddress, dra
   return (
     <div
       className={clsx(
-        "flex items-center justify-between p-3 rounded-2xl transition-all border",
-        isDragging ? "opacity-40 scale-95" : "",
+        "flex items-center justify-between p-4 rounded-2xl transition-all border group",
+        isDragging ? "opacity-40 scale-[0.98] ring-2 ring-blue-500/30" : "",
         draggable ? "cursor-grab active:cursor-grabbing" : "",
         isDark
-          ? `bg-white/[0.03] hover:bg-white/10 ${isDragging ? 'border-blue-500/50' : 'border-transparent'}`
+          ? `bg-white/[0.03] hover:bg-white/[0.06] ${isDragging ? 'border-blue-500/50' : 'border-transparent'}`
           : `bg-slate-50 hover:bg-slate-100 ${isDragging ? 'border-blue-300' : 'border-transparent'}`
       )}
       draggable={draggable}
@@ -69,63 +70,63 @@ const OrderRecord = memo(({ order, orderIndex, route, isDark, onEditAddress, dra
     >
       <div className="flex items-center gap-4 flex-1 min-w-0">
         {draggable && (
-          <div className="shrink-0 opacity-30 hover:opacity-70 transition-opacity">
-            <ArrowsUpDownIcon className="w-4 h-4" />
+          <div className="shrink-0 opacity-30 group-hover:opacity-70 transition-opacity">
+            <ArrowsUpDownIcon className="w-5 h-5" />
           </div>
         )}
         <div className={clsx(
-          "w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0",
-          isDark ? "bg-white/5 text-gray-400" : "bg-white text-gray-500 border border-slate-100"
+          "w-10 h-10 rounded-xl flex items-center justify-center text-xs font-black shrink-0",
+          isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-50 text-blue-600 border border-blue-100"
         )}>
           {orderIndex + 1}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2 mb-0.5">
+          <div className="flex items-center justify-between gap-3 mb-2">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="font-black text-sm">#{order.orderNumber}</span>
-              <span className="text-[12px] opacity-40 truncate">{order.address}</span>
+              <span className="font-black text-base text-blue-500">#{order.orderNumber}</span>
+              <span className="text-[13px] opacity-40 truncate font-medium">{order.address}</span>
             </div>
             <button
               onClick={() => onEditAddress(order, route.id)}
               className={clsx(
-                "p-1.5 rounded-lg active:scale-95 shrink-0",
-                isDark ? "hover:bg-white/5 text-blue-400" : "hover:bg-blue-50 text-blue-600"
+                "p-2 rounded-xl active:scale-95 shrink-0 transition-all hover:rotate-12",
+                isDark ? "hover:bg-white/10 text-blue-400" : "hover:bg-blue-100 text-blue-600"
               )}
               title="Редактировать адрес"
             >
-              <PencilIcon className="w-3.5 h-3.5" />
+              <PencilIcon className="w-4 h-4" />
             </button>
           </div>
           
-          <div className="mt-2 flex items-center flex-wrap gap-1.5">
+          <div className="mt-3 flex items-center flex-wrap gap-2">
             {locType === 'ROOFTOP' && (
               <div className={clsx(
-                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6",
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black tracking-widest leading-none",
                 isDark ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-700"
               )}>
-                <CheckBadgeIcon className="w-3.5 h-3.5" />
-                ТОЧНЫЙ АДРЕС
+                <CheckBadgeIcon className="w-4 h-4" />
+                ТОЧНЫЙ
               </div>
             )}
 
             {order.isLocked && (
               <div className={clsx(
-                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6",
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black tracking-widest leading-none",
                 isDark ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-green-50 border-green-200 text-green-700"
               )}>
-                <CheckBadgeIcon className="w-3.5 h-3.5" />
+                <CheckBadgeIcon className="w-4 h-4" />
                 ПРОВЕРЕНО
               </div>
             )}
 
             {hasZones && (
               <div className={clsx(
-                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6",
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black tracking-widest leading-none",
                 ((String(opZone || '').includes('ID:0') || String(kmlZone || '').includes('ID:0')))
-                  ? (isDark ? "bg-red-500/20 border-red-500/40 text-red-400" : "bg-red-50 border-red-200 text-red-600 shadow-red-500/10")
+                  ? (isDark ? "bg-red-500/20 border-red-500/40 text-red-400" : "bg-red-50 border-red-200 text-red-600")
                   : (isDark ? "bg-indigo-500/10 border-indigo-500/30 text-indigo-300" : "bg-indigo-50 border-indigo-100 text-indigo-700")
               )}>
-                <MapIcon className="w-3.5 h-3.5 opacity-70" />
+                <MapIcon className="w-4 h-4 opacity-70" />
                 <span className="opacity-60 mr-0.5">СЕКТОР:</span>
                 {(() => {
                   const kmlFull = kmlZone ? `${hub ? hub + ' - ' : ''}${kmlZone}` : null;
@@ -142,12 +143,12 @@ const OrderRecord = memo(({ order, orderIndex, route, isDark, onEditAddress, dra
 
             {locType && (
               <div className={clsx(
-                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6",
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black tracking-widest leading-none",
                 locType !== 'APPROXIMATE'
                   ? (isDark ? "bg-teal-500/10 border-teal-500/30 text-teal-400" : "bg-teal-50 border-teal-100 text-teal-700")
                   : (isDark ? "bg-rose-500/10 border-rose-500/30 text-rose-400" : "bg-rose-50 border-rose-200 text-rose-700")
               )}>
-                <MapIcon className="w-3.5 h-3.5 opacity-70" />
+                <MapIcon className="w-4 h-4 opacity-70" />
                 <span className="opacity-60 mr-0.5">УЛИЦА:</span>
                 {locType !== 'APPROXIMATE' ? 'ДА' : 'НЕТ'}
               </div>
@@ -155,12 +156,12 @@ const OrderRecord = memo(({ order, orderIndex, route, isDark, onEditAddress, dra
 
             {streetMatched !== undefined && (
               <div className={clsx(
-                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6",
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black tracking-widest leading-none",
                 streetMatched && locType !== 'APPROXIMATE'
                   ? (isDark ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400" : "bg-cyan-50 border-cyan-100 text-cyan-700")
                   : (isDark ? "bg-orange-500/10 border-orange-500/30 text-orange-400" : "bg-orange-50 border-orange-200 text-orange-700")
               )}>
-                <HomeIcon className="w-3.5 h-3.5 opacity-70" />
+                <HomeIcon className="w-4 h-4 opacity-70" />
                 <span className="opacity-60 mr-0.5">ДОМ:</span>
                 {streetMatched && locType !== 'APPROXIMATE' ? 'ДА' : 'НЕТ'}
               </div>
@@ -170,12 +171,12 @@ const OrderRecord = memo(({ order, orderIndex, route, isDark, onEditAddress, dra
               <button 
                 onClick={(e) => { e.stopPropagation(); onEditAddress(order, route.id); }}
                 className={clsx(
-                  "flex items-center gap-1.5 px-3 py-1 rounded-xl border text-[9px] font-black tracking-widest leading-none h-7 shadow-sm transition-all hover:scale-105 active:scale-95 group/btn",
-                  isDark ? "bg-red-500/10 border-red-500/30 text-red-500 hover:bg-red-500/20" : "bg-red-50 border-red-200 text-red-700 shadow-red-500/10"
+                  "flex items-center gap-1.5 px-4 py-2 rounded-xl border text-[10px] font-black tracking-widest leading-none shadow-md transition-all hover:scale-105 active:scale-95 group/btn",
+                  isDark ? "bg-red-500/20 border-red-500/40 text-red-400 hover:bg-red-500/30" : "bg-red-50 border-red-200 text-red-600 hover:bg-red-100 shadow-red-500/10"
                 )}
               >
                  <ExclamationCircleIcon className="w-4 h-4 animate-pulse group-hover/btn:animate-none" />
-                 УТОЧНИТЬ АДРЕС
+                 УТОЧНИТЬ
               </button>
             )}
           </div>
@@ -517,6 +518,99 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
     setDraggingFromRouteId(null);
   }, []);
 
+  const createNewRoute = useCallback((order: any) => {
+    const newId = `manual-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newRoute = {
+      id: newId,
+      courierName: courier.name,
+      courier: courier.name,
+      orders: [order],
+      totalDistance: 0,
+      ordersCount: 1,
+      orders_count: 1,
+      isManuallyAdjusted: true,
+      startCoords: order.coords || order,
+      endCoords: order.coords || order,
+    };
+    setLocalRoutes(prev => [...prev, newRoute]);
+    toast.success('Создан новый маршрут с заказом ' + (order.orderNumber || order.id));
+    return newRoute;
+  }, [courier.name]);
+
+  const handleDropToNew = useCallback((orderId: string, fromRouteId: string) => {
+    setLocalRoutes(prev => {
+      const next = prev.map(r => ({ ...r, orders: [...(r.orders || [])] }));
+      const fromRoute = next.find(r => String(r.id) === fromRouteId);
+      if (!fromRoute) return prev;
+
+      const orderIdx = fromRoute.orders.findIndex((o: any) => String(o.orderNumber || o.id) === orderId);
+      if (orderIdx === -1) return prev;
+
+      const [movedOrder] = fromRoute.orders.splice(orderIdx, 1);
+      
+      const newId = `manual-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const newRoute = {
+        id: newId,
+        courierName: courier.name,
+        courier: courier.name,
+        orders: [movedOrder],
+        totalDistance: 0,
+        ordersCount: 1,
+        orders_count: 1,
+        isManuallyAdjusted: true,
+        startCoords: movedOrder.coords || movedOrder,
+        endCoords: movedOrder.coords || movedOrder,
+      };
+
+      const finalNext = [...next, newRoute];
+      
+      setTimeout(async () => {
+        try {
+          const hubLat = Number(presets.defaultStartLat) || 50.4501;
+          const hubLng = Number(presets.defaultStartLng) || 30.5234;
+          const osrmUrl = presets.osrmUrl || 'http://osrm.yapiko.kh.ua:5050';
+          
+          const calcNewRoute = async (route: any) => {
+            if (!route || route.orders.length === 0) return;
+            const startPt = route.startCoords || { lat: hubLat, lng: hubLng };
+            const endPt = route.endCoords || startPt;
+            const waypointCoords = route.orders.map((o: any) => ({
+              lat: Number(o.coords?.lat || o.lat || 0),
+              lng: Number(o.coords?.lng || o.lng || 0)
+            })).filter((l: any) => l.lat > 0 && l.lng > 0);
+            const locs = [
+              { lat: Number(startPt.lat), lng: Number(startPt.lng) },
+              ...waypointCoords,
+              { lat: Number(endPt.lat), lng: Number(endPt.lng) }
+            ];
+            if (locs.length <= 2) return;
+            const res = await YapikoOSRMService.calculateRoute(locs, osrmUrl);
+            if (res.feasible && res.totalDistance !== undefined) {
+              setLocalRoutes(routes => routes.map(r => {
+                if (r.id === route.id) {
+                  return {
+                    ...r,
+                    totalDistance: Number((res.totalDistance || 0).toFixed(2)),
+                    totalDuration: (res as any).duration || 0,
+                    isManuallyAdjusted: true,
+                    route_data: { ...res, startCoords: startPt, endCoords: endPt }
+                  };
+                }
+                return r;
+              }));
+            }
+          };
+          
+          await calcNewRoute(newRoute);
+        } catch (err) {
+          console.error('[MileageModal] Failed to recalc new route:', err);
+        }
+      }, 100);
+
+      return finalNext;
+    });
+  }, [courier.name, presets]);
+
   const handleDrop = useCallback((e: React.DragEvent, toRouteId: string) => {
     e.preventDefault();
     const { orderId, fromRouteId } = dragDataRef.current || {};
@@ -719,15 +813,52 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 transition-opacity" onClick={onClose} />
       
-      <div className={clsx(
-        "relative w-full max-w-4xl overflow-hidden rounded-[2.5rem] border-2 shadow-2xl flex flex-col max-h-[90vh]",
-        isDark ? "bg-[#1e1e1e] border-white/10 text-white" : "bg-white border-blue-100 text-gray-900"
+<div className={clsx(
+        "relative w-full max-w-5xl overflow-hidden rounded-[2rem] shadow-2xl flex flex-col max-h-[92vh]",
+        isDark ? "bg-[#1e1e1e] border border-white/10 text-white" : "bg-white border border-blue-100 text-gray-900"
       )}>
-        <div className={clsx("flex items-center justify-between p-8 border-b", isDark ? "border-white/5" : "border-slate-100")}>
-          <div className="flex items-center gap-4">
-            <div className={clsx("p-3 rounded-2xl", courier.vehicleType === 'car' ? "bg-blue-500/10 text-blue-400" : "bg-orange-500/10 text-orange-400")}>
+        <div className={clsx("flex items-center justify-between p-6 md:p-8", isDark ? "border-white/5" : "border-slate-100")}>
+          <div className="flex items-center gap-5">
+            <div className={clsx("p-4 rounded-2xl", courier.vehicleType === 'car' ? "bg-blue-500/20 text-blue-400" : "bg-orange-500/20 text-orange-400")}>
               <TruckIcon className="w-8 h-8" />
             </div>
+            <div>
+              <h2 className="text-2xl font-black tracking-tight leading-tight shrink-0">{courier.name}</h2>
+              <p className="text-xs font-bold uppercase tracking-widest opacity-50">Подробности пробега курьера</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+             <button
+              onClick={() => {
+                const newId = `manual-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                const newRoute = {
+                  id: newId,
+                  courierName: courier.name,
+                  courier: courier.name,
+                  orders: [],
+                  totalDistance: 0,
+                  ordersCount: 0,
+                  orders_count: 0,
+                  isManuallyAdjusted: true,
+                };
+                setLocalRoutes(prev => [...prev, newRoute]);
+                toast.success('Создан новый пустой маршрут');
+              }}
+              className={clsx(
+                "px-5 py-3 rounded-2xl font-black uppercase tracking-[0.15em] text-[11px] transition-all active:scale-95",
+                isDark ? "bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/30" : "bg-green-50 text-green-600 hover:bg-green-100 border border-green-200"
+              )}
+            >
+              <span className="flex items-center gap-2">
+                <PlusIcon className="w-4 h-4" />
+                Новый маршрут
+              </span>
+            </button>
+            <button onClick={onClose} className={clsx("p-4 rounded-2xl transition-transform hover:scale-110 active:scale-95", isDark ? "bg-white/10 text-white/60 hover:text-white hover:bg-white/20" : "bg-gray-100 text-gray-500 hover:text-gray-900 hover:bg-gray-200")}>
+              <XMarkIcon className="w-6 h-6" />
+            </button>
+          </div>
+        </div>
             <div>
               <h2 className="text-2xl font-black tracking-tight leading-tight shrink-0">{courier.name}</h2>
               <p className="text-xs font-bold uppercase tracking-widest opacity-50">Подробная информация о пробеге</p>
@@ -738,77 +869,76 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 overscroll-contain">
-          <div className="space-y-10">
-            <div className={clsx("rounded-[2.5rem] border overflow-hidden", isDark ? "bg-[#1a1c24] border-white/5" : "bg-white border-slate-200 shadow-sm")}>
-              <div className={clsx("p-8 border-b grid grid-cols-1 md:grid-cols-3 gap-8", isDark ? "border-white/5 bg-white/[0.02]" : "border-slate-100 bg-slate-50/50")}>
+<div className="flex-1 overflow-y-auto p-4 md:p-6 overscroll-contain">
+          <div className="space-y-8">
+            <div className={clsx("rounded-[2rem] border overflow-hidden shadow-lg", isDark ? "bg-[#1a1c24] border-white/5" : "bg-white border-slate-200 shadow-sm")}>
+              <div className={clsx("p-6 md:p-8 grid grid-cols-1 md:grid-cols-3 gap-6", isDark ? "bg-gradient-to-br from-white/[0.02] to-transparent" : "bg-gradient-to-br from-slate-50 to-white")}>
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2 opacity-40">
-                    <MapIcon className="w-4 h-4" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Пробег (км)</span>
+                  <div className="flex items-center gap-2 opacity-50">
+                    <MapIcon className="w-5 h-5" />
+                    <span className="text-[11px] font-black uppercase tracking-widest">Пробег (км)</span>
                   </div>
                   <div className="flex flex-col">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-4xl font-black tabular-nums">{(recalcStats.totalDistance || 0).toFixed(1)}</span>
-                      <span className="text-[10px] font-black opacity-30 uppercase tracking-[0.2em]">ИТОГО</span>
+                    <div className="flex items-baseline gap-3">
+                      <span className="text-5xl font-black tabular-nums tracking-tight">{(recalcStats.totalDistance || 0).toFixed(1)}</span>
+                      <span className="text-[12px] font-black opacity-30 uppercase tracking-[0.2em]">ИТОГО</span>
                     </div>
-                    <div className="mt-4 grid grid-cols-2 gap-4">
-                      <div className="flex flex-col">
-                        <span className="text-[9px] font-black opacity-40 uppercase tracking-widest leading-none mb-1 text-nowrap">Основной пробег</span>
+                    <div className="mt-5 grid grid-cols-2 gap-4">
+                      <div className="flex flex-col p-3 rounded-xl bg-white/5">
+                        <span className="text-[10px] font-black opacity-40 uppercase tracking-widest leading-none mb-1 text-nowrap">Основной</span>
                         <div className="flex items-center gap-2">
-                          <span className="text-lg font-black tabular-nums">{(recalcStats.effectivePhysicalKm || 0).toFixed(1)}</span>
+                          <span className="text-xl font-black tabular-nums">{(recalcStats.effectivePhysicalKm || 0).toFixed(1)}</span>
                           {(recalcStats.robotDistance || 0) > 0 && (
-                            <div className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-[7px] font-black text-emerald-500 border border-emerald-500/20">ROBOT OK</div>
+                            <div className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-[8px] font-black text-emerald-500 border border-emerald-500/20">ROBOT</div>
                           )}
                         </div>
                       </div>
-                      <div className="flex flex-col border-l border-white/5 pl-4">
-                        <span className="text-[9px] font-black opacity-40 uppercase tracking-widest leading-none mb-1 text-nowrap text-blue-500">Доп (заказы)</span>
-                        <span className="text-lg font-black tabular-nums text-blue-500">+{(recalcStats.bonusDistance || 0).toFixed(1)}</span>
+                      <div className="flex flex-col p-3 rounded-xl bg-blue-500/5 border border-blue-500/10">
+                        <span className="text-[10px] font-black opacity-40 uppercase tracking-widest leading-none mb-1 text-nowrap text-blue-500">Бонус</span>
+                        <span className="text-xl font-black tabular-nums text-blue-500">+{(recalcStats.bonusDistance || 0).toFixed(1)}</span>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-4 md:border-l md:pl-8 border-white/5">
-                  <div className="flex items-center gap-2 opacity-40">
-                    <BoltIcon className="w-4 h-4" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Обработка</span>
+                <div className="space-y-4 md:border-l md:pl-6 border-white/5">
+                  <div className="flex items-center gap-2 opacity-50">
+                    <BoltIcon className="w-5 h-5" />
+                    <span className="text-[11px] font-black uppercase tracking-widest">Заказы</span>
                   </div>
                   <div className="flex flex-col">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-4xl font-black tabular-nums text-blue-500">{recalcStats.ordersInRoutes || 0}</span>
-                      <span className="text-xl font-black opacity-30 text-blue-500">/ {recalcStats.totalOrders || 0}</span>
+                      <span className="text-5xl font-black tabular-nums text-blue-500">{recalcStats.ordersInRoutes || 0}</span>
+                      <span className="text-2xl font-black opacity-30 text-blue-500">/ {recalcStats.totalOrders || 0}</span>
                     </div>
-                    <div className="mt-2 flex items-center gap-3">
-                       <div className={clsx("flex-1 h-1.5 rounded-full overflow-hidden", isDark ? "bg-white/5" : "bg-gray-100")}>
-                         <div className={clsx("h-full transition-all duration-1000", (recalcStats.ordersInRoutes || 0) >= (recalcStats.totalOrders || 0) ? "bg-emerald-500" : "bg-blue-500")} style={{ width: `${((recalcStats.ordersInRoutes || 0) / Math.max(1, recalcStats.totalOrders || 0)) * 100}%` }} />
+                    <div className="mt-3 flex items-center gap-3">
+                       <div className={clsx("flex-1 h-2 rounded-full overflow-hidden", isDark ? "bg-white/10" : "bg-gray-100")}>
+                         <div className={clsx("h-full transition-all duration-1000 rounded-full", (recalcStats.ordersInRoutes || 0) >= (recalcStats.totalOrders || 0) ? "bg-emerald-500" : "bg-blue-500")} style={{ width: `${((recalcStats.ordersInRoutes || 0) / Math.max(1, recalcStats.totalOrders || 0)) * 100}%` }} />
                        </div>
-                       <span className="text-[10px] font-black opacity-40">{Math.round(((recalcStats.ordersInRoutes || 0) / Math.max(1, recalcStats.totalOrders || 0)) * 100)}%</span>
+                       <span className="text-[11px] font-black opacity-50">{Math.round(((recalcStats.ordersInRoutes || 0) / Math.max(1, recalcStats.totalOrders || 0)) * 100)}%</span>
                     </div>
                     {(recalcStats.ordersInRoutes || 0) < (recalcStats.totalOrders || 0) && (
-                      <p className={clsx("mt-3 text-[9px] font-bold uppercase tracking-widest", isCalculating ? "text-blue-500/60 animate-pulse" : "text-red-500/60")}>
-                        {isCalculating ? "РАСЧЕТ В ПРОЦЕССЕ..." : "ОШИБКА: НУЖНО УТОЧНЕНИЕ!"}
+                      <p className={clsx("mt-3 text-[10px] font-bold uppercase tracking-widest", isCalculating ? "text-blue-500/60 animate-pulse" : "text-red-500/60")}>
+                        {isCalculating ? "⏳ РАСЧЕТ В ПРОЦЕССЕ..." : "⚠️ ТРЕБУЕТ УТОЧНЕНИЯ"}
                       </p>
                     )}
                   </div>
                 </div>
 
-                <div className="space-y-4 md:border-l md:pl-8 border-white/5">
-                   <div className="flex items-center gap-2 opacity-40">
-                    <ExclamationTriangleIcon className="w-4 h-4" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Ошибки гео</span>
-                  </div>
-                  <div className="flex flex-col">
-                    <div className="flex items-baseline gap-2">
-                       <span className={clsx("text-4xl font-black tabular-nums", courier.geoErrorCount > 0 ? "text-red-500" : "opacity-20")}>{courier.geoErrorCount || 0}</span>
-                       <span className="text-xs font-black opacity-30 uppercase">Alerts</span>
-                    </div>
-                    {courier.geoErrorCount > 0 && (
-                      <p className="mt-2 text-[9px] font-bold text-red-500/60 uppercase tracking-widest animate-pulse">Требуется уточнение адресов</p>
-                    )}
-                  </div>
-                </div>
+                <div className="space-y-4 md:border-l md:pl-6 border-white/5">
+                   <div className="flex items-center gap-2 opacity-50">
+                   <ExclamationTriangleIcon className="w-5 h-5" />
+                   <span className="text-[11px] font-black uppercase tracking-widest">Ошибки</span>
+                 </div>
+                 <div className="flex flex-col">
+                   <div className="flex items-baseline gap-2">
+                      <span className={clsx("text-5xl font-black tabular-nums", courier.geoErrorCount > 0 ? "text-red-500" : "opacity-20")}>{courier.geoErrorCount || 0}</span>
+                      <span className="text-sm font-black opacity-30 uppercase">errors</span>
+                   </div>
+                   {courier.geoErrorCount > 0 && (
+                     <p className="mt-3 text-[10px] font-bold text-red-500/60 uppercase tracking-widest animate-pulse">Требуется уточнение адресов</p>
+                   )}
+                 </div>
               </div>
             </div>
 
@@ -817,6 +947,52 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
                 <h3 className="text-sm font-black uppercase tracking-[0.2em] opacity-50 shrink-0">История маршрутов ({localRoutes.length})</h3>
                 <div className="flex-1 h-px bg-white/5" />
               </div>
+
+              {/* Create new route drop zone - always visible when there's at least one route */}
+              <div 
+                className={clsx(
+                  "relative pl-8 py-6 border-2 border-dashed rounded-2xl transition-all",
+                  draggingOrderId 
+                    ? (isDark ? "border-green-500 bg-green-500/20" : "border-green-400 bg-green-50")
+                    : (isDark ? "border-white/5 border-white/10 hover:border-white/30" : "border-slate-200 hover:border-blue-300")
+                )}
+                onDragOver={(e) => { 
+                  if (draggingOrderId) e.preventDefault(); 
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const { orderId, fromRouteId } = dragDataRef.current || {};
+                  if (orderId && fromRouteId) {
+                    handleDropToNew(orderId, fromRouteId);
+                  }
+                  setDraggingOrderId(null);
+                  setDraggingFromRouteId(null);
+                  dragDataRef.current = null;
+                }}
+              >
+                <div className={clsx("absolute left-[1.125rem] top-1/2 -translate-y-1/2 w-6 h-6 rounded-full border-2 flex items-center justify-center",
+                  draggingOrderId 
+                    ? (isDark ? "border-green-500 text-green-400 bg-green-500/20" : "border-green-400 text-green-600 bg-green-50")
+                    : (isDark ? "border-white/20 text-white/40" : "border-slate-300 text-slate-400")
+                )}>
+                  <PlusIcon className="w-4 h-4" />
+                </div>
+                <div className="flex flex-col items-center">
+                  <p className={clsx("font-bold uppercase tracking-[0.1em] text-xs",
+                    draggingOrderId 
+                      ? (isDark ? "text-green-400" : "text-green-600")
+                      : (isDark ? "text-white/40" : "text-slate-400")
+                  )}>
+                    {draggingOrderId ? 'Отпустите здесь → новый маршрут' : 'Перетащите заказ сюда для нового маршрута'}
+                  </p>
+                  <p className={clsx("text-[9px] mt-1 opacity-40",
+                    isDark ? "text-white/40" : "text-slate-400"
+                  )}>
+                    или нажмите кнопку "Новый маршрут" ниже
+                  </p>
+                </div>
+              </div>
+
               {localRoutes.length > 0 ? (
                 <div className="space-y-12 relative pl-8">
                   <div className={clsx("absolute left-[1.125rem] top-2 bottom-2 w-0.5", isDark ? "bg-white/5" : "bg-slate-200")} />
@@ -846,32 +1022,34 @@ export const MileageModal = ({ courier, isDark, onClose, getCourierStats, getCou
           </div>
         </div>
 
-        <div className={clsx("p-8 border-t flex items-center justify-between shrink-0 gap-4", isDark ? "border-white/5 bg-[#1e1e1e]" : "border-slate-100 bg-white")}>
+        <div className={clsx("p-6 md:p-8 border-t flex items-center justify-between shrink-0 gap-4 flex-wrap", isDark ? "border-white/5 bg-[#1e1e1e]" : "border-slate-100 bg-white")}>
           <button 
             onClick={onClose} 
             className={clsx(
-              "px-8 py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] transition-all active:scale-95",
-              isDark ? "bg-white/5 text-white/40 hover:text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+              "px-8 py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-[11px] transition-all active:scale-95",
+              isDark ? "bg-white/[0.05] text-white/40 hover:text-white hover:bg-white/10" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
             )}
           >
-            Вернуться
+            ← Назад
           </button>
           
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 flex-wrap">
             <button 
               onClick={handleExport}
               className={clsx(
-                "px-8 py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] transition-all active:scale-95 shadow-lg",
+                "px-6 py-3 rounded-2xl font-black uppercase tracking-[0.15em] text-[11px] transition-all active:scale-95 shadow-md",
                 isDark ? "bg-teal-500/10 text-teal-400 hover:bg-teal-500/20 shadow-teal-900/10" : "bg-teal-50 text-teal-700 hover:bg-teal-100 shadow-teal-500/10"
               )}
             >
-              Экспорт CSV
+              <span className="flex items-center gap-2">
+                Экспорт CSV
+              </span>
             </button>
             <button 
               onClick={() => { onClose(); navigate('/routes'); }} 
-              className="px-10 py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] bg-blue-600 text-white hover:bg-blue-700 active:scale-95 shadow-xl shadow-blue-500/20"
+              className="px-8 py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-[11px] bg-blue-600 text-white hover:bg-blue-700 active:scale-95 shadow-xl shadow-blue-500/20"
             >
-              Перейти к маршрутам
+              Маршруты →
             </button>
           </div>
         </div>

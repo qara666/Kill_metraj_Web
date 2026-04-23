@@ -1996,11 +1996,16 @@ class OrderCalculator {
 
                         // If a previously cached route has 0 km / missing geometry, it's likely a legacy bad calc.
                         // Recalculate instead of endlessly skipping.
-                        // vXX.X: Also recalculate if route was NOT manually modified - keep preserving manual changes
                         const shouldRecalcLegacyZero = !existingR || existingKm <= 0.01 || !existingHasGeometry || existingOrdersCount <= 0;
-                        if (shouldRecalcLegacyZero || wasManuallyModified) {
-                            logger.warn(`[TurboCalculator] ♻️ Recalculating route for ${normName} (${windowKey}): legacyZero=${shouldRecalcLegacyZero}, manualModified=${wasManuallyModified}`);
+                        if (shouldRecalcLegacyZero) {
+                            // Legacy zero km - recalculate
+                            logger.warn(`[TurboCalculator] ♻️ Recalculating route for ${normName} (${windowKey}): legacy zero km`);
                         } else {
+                            // vXX.X: If manually modified, PRESERVE it (just log, don't recalc)
+                            if (wasManuallyModified) {
+                                logger.info(`[TurboCalculator] 🛡️ PRESERVING manual route for ${normName} (${windowKey})`);
+                            }
+                            // Fall through to normal "skip recalculation" path below
                         matchedExistingRouteIds.add(existingR.id);
                         
                         // v36.5: Aggressive addition to stats for immediate feedback

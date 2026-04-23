@@ -18,6 +18,7 @@ import {
   CircleStackIcon,
   VariableIcon,
   FireIcon,
+  PlusIcon,
   SparklesIcon,
   ScaleIcon,
   CpuChipIcon,
@@ -289,22 +290,34 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
   useEffect(() => {
     if (!showKmlSectors) {
       setKmlPolygons([]);
+      setKmlLoadingError(null);
       return;
     }
+    setKmlLoadingError(null);
     const fetchKml = async () => {
       try {
         const { API_URL } = await import('../../config/apiConfig');
         const baseUrl = API_URL.replace(/\/api$/, '');
         const hResponse = await fetch(`${baseUrl}/api/geocache/hubs`);
         const hData = await hResponse.json();
-        console.log('[KML] hubs response:', hData);
-        if (!hData.success) return;
-        const activeHubs = hData.hubs.filter((h: any) => h.isActive);
-        console.log('[KML] active hubs:', activeHubs.length);
-        const zonesPromises = activeHubs.map(async (hub: any) => {
+        console.log('[KML] ALL hubs response:', hData);
+        if (!hData.success) {
+          setKmlLoadingError('Failed to load hubs');
+          return;
+        }
+        const activeHubs = hData.hubs.filter((h: any) => h.isActive === true || h.isActive === 1 || h.isActive === 'true');
+        const allHubs = hData.hubs;
+        console.log('[KML] all hubs:', allHubs.length, 'with isActive:', activeHubs.length);
+        console.log('[KML] first hub isActive:', allHubs[0]?.isActive, 'type:', typeof allHubs[0]?.isActive);
+        const hubsToUse = activeHubs.length > 0 ? activeHubs : allHubs;
+        if (hubsToUse.length === 0) {
+          setKmlLoadingError('No hubs found');
+          return;
+        }
+        const zonesPromises = hubsToUse.map(async (hub: any) => {
           const zRes = await fetch(`${baseUrl}/api/geocache/hubs/${hub.id}/zones`);
           const zData = await zRes.json();
-          console.log(`[KML] zones for ${hub.name}:`, zData.zones?.length);
+          console.log(`[KML] zones for ${hub.name}:`, zData);
           return zData.success ? zData.zones.map((z: any) => ({
             ...z,
             hubName: hub.name,
@@ -314,13 +327,17 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
         const allZones = (await Promise.all(zonesPromises)).flat();
         console.log('[KML] total zones:', allZones.length, 'polygons:', allZones.filter((z: any) => z.path?.length > 0).length);
         setKmlPolygons(allZones.filter((z: any) => z.path?.length > 0));
-      } catch (e) { console.warn('[KML]', e); }
+      } catch (e) { 
+        console.warn('[KML]', e); 
+        setKmlLoadingError(String(e));
+      }
     };
     fetchKml();
   }, [showKmlSectors]);
 
   const [draggingOrderId, setDraggingOrderId] = useState<string | null>(null);
   const [draggingFromRouteId, setDraggingFromRouteId] = useState<string | null>(null);
+  const [kmlLoadingError, setKmlLoadingError] = useState<string | null>(null);
   const dragDataRef = useRef<{ orderId: string; fromRouteId: string } | null>(null);
 
   const handleDragStart = useCallback((e: React.DragEvent, orderId: string, fromRouteId: string) => {
@@ -334,6 +351,111 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
     setDraggingOrderId(null);
     setDraggingFromRouteId(null);
   }, []);
+
+  const handleDropToNew = useCallback((orderId: string, fromRouteId: string) => {
+    const snapshot = JSON.parse(JSON.stringify(manualRoutesRef.current));
+    const fIdx = snapshot.findIndex((r: any) => String(r.id) === fromRouteId);
+    if (fIdx === -1) return;
+
+    const oIdx = (snapshot[fIdx].orders || []).findIndex((o: any) => String(o.id || o.orderNumber) === String(orderId));
+    if (oIdx === -1) return;
+
+    const [movedOrder] = snapshot[fIdx].orders.splice(oIdx, 1);
+    console.log('[handleDropToNew] movedOrder:', movedOrder);
+    console.log('[handleDropToNew] movedOrder.coords:', movedOrder.coords, 'lat:', movedOrder.lat, 'lng:', movedOrder.lng);
+    
+    const newId = `manual-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newRoute = {
+      id: newId,
+      courierName: courierName,
+      courier: courierName,
+      orders: [movedOrder],
+      totalDistance: 0,
+      ordersCount: 1,
+      orders_count: 1,
+      isManuallyAdjusted: true,
+    };
+    
+    snapshot.push(newRoute);
+    console.log('[handleDropToNew] newRoute created:', newRoute.id, 'startCoords:', newRoute.startCoords);
+    console.log('[handleDropToNew] snapshot has', snapshot.length, 'routes');
+    setLocalRoutes(snapshot);
+    manualRoutesRef.current = snapshot;
+    setHasManualChanges(true);
+    toast.loading('Пересчет...', { id: 'dnd-recalc' });
+
+    const presets = localStorageUtils.getAllSettings();
+    const osrmUrl = presets.osrmUrl || 'http://116.204.153.171:5050';
+
+    const calc = async (r: any) => {
+      console.log('[calc] r.id:', r.id, 'orders:', r.orders?.length, 'startCoords:', r.startCoords, 'endCoords:', r.endCoords);
+      if (!r.orders?.length) return { ...r, totalDistance: 0, geometry: undefined };
+      const start = r.startCoords || r.route_data?.startCoords
+        || (presets.defaultStartLat ? { lat: presets.defaultStartLat, lng: presets.defaultStartLng } : null)
+        || { lat: 49.9935, lng: 36.2304 };
+      const end = r.endCoords || r.route_data?.endCoords || r.geoMeta?.destination
+        || (presets.defaultEndLat ? { lat: presets.defaultEndLat, lng: presets.defaultEndLng } : null)
+        || start;
+      const validOrders = (r.orders || []).filter((o: any) => {
+        const c = o.coords || { lat: o.lat, lng: o.lng };
+        return c?.lat && c?.lng && c.lat !== 0;
+      });
+      console.log('[calc] validOrders:', validOrders.length);
+      if (!validOrders.length) return { ...r, totalDistance: 0, geometry: undefined };
+      const waypoints = validOrders.map((o: any) => o.coords || { lat: o.lat, lng: o.lng });
+      console.log('[calc] locs (start, waypoints, end):', start, waypoints, end);
+      const locs = [start, ...waypoints, end];
+      console.log('[calc] full locs:', locs);
+      const res = await YapikoOSRMService.calculateRoute(locs, osrmUrl);
+      console.log('[calc] OSRM res:', res);
+      const geoMeta = { origin: { lat: start.lat, lng: start.lng }, destination: { lat: end.lat, lng: end.lng }, waypoints };
+      return { ...r, totalDistance: (res.feasible && res.totalDistance != null) ? res.totalDistance / 1000 : 0, geometry: res.geometry, geoMeta };
+    };
+
+    (async () => {
+      try {
+        const currentSnapshot = [...snapshot];
+        const fIdxNew = currentSnapshot.findIndex((r: any) => String(r.id) === fromRouteId);
+        const tIdxNew = currentSnapshot.findIndex((r: any) => String(r.id) === newId);
+        
+        console.log('[handleDropToNew] fIdxNew:', fIdxNew, 'tIdxNew:', tIdxNew, 'fromRouteId:', fromRouteId, 'newId:', newId);
+        
+        if (fIdxNew === -1 || tIdxNew === -1) {
+          console.error('[handleDropToNew] route not found');
+          return;
+        }
+        
+        console.log('[handleDropToNew] before calc, tIdxNew route:', currentSnapshot[tIdxNew]);
+        
+        const [nF, nT] = await Promise.all([calc(currentSnapshot[fIdxNew]), calc(currentSnapshot[tIdxNew])]);
+        console.log('[handleDropToNew] after calc, nT:', nT);
+        
+        currentSnapshot[fIdxNew] = nF;
+        currentSnapshot[tIdxNew] = nT;
+
+        const token = localStorage.getItem('km_access_token') || localStorage.getItem('token');
+        await Promise.all(
+          [nF, nT].filter((r: any) => r.id && !String(r.id).startsWith('route_')).map(async (r: any) => {
+            const res = await fetch(`${API_URL}/api/routes/save`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({ ...r, courier_id: r.courier_id || r.courier || courierName, _manualModified: true })
+            });
+            if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+          })
+        );
+        setLocalRoutes(currentSnapshot);
+        manualRoutesRef.current = currentSnapshot;
+        if (onUpdateRoutes) onUpdateRoutes(currentSnapshot);
+        toast.success('Создан новый маршрут с заказом ' + (movedOrder.orderNumber || movedOrder.id), { icon: '➕' });
+      } catch (err) {
+        console.error('[handleDropToNew] Recalc failed:', err);
+        toast.error('Ошибка пересчета');
+      } finally {
+        toast.remove('dnd-recalc');
+      }
+    })();
+  }, [courierName, onUpdateRoutes]);
 
 const handleDrop = useCallback((e: React.DragEvent, toRouteId: string) => {
     e.preventDefault();
@@ -577,15 +699,54 @@ const handleManualRecalcAll = useCallback(async () => {
 
 <div className="space-y-8">
 <div className="flex items-center justify-between ml-6">
-               <div className="text-[12px] font-black uppercase tracking-[0.5em] text-slate-300 flex items-center gap-4">
-                  <div className="w-8 h-px bg-slate-200" /> Маршруты кура
-               </div>
-               <button onClick={handleManualRecalcAll} className="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all flex items-center gap-2">
-                  <ArrowPathIcon className="w-4 h-4" />
-                  СИНХРОНИЗИРОВАТЬ И ПЕРЕСЧИТАТЬ ВСЁ
-               </button>
-            </div>
-          <div className="space-y-6">
+                <div className="text-[12px] font-black uppercase tracking-[0.5em] text-slate-300 flex items-center gap-4">
+                   <div className="w-8 h-px bg-slate-200" /> Маршруты кура
+                </div>
+                <button onClick={handleManualRecalcAll} className="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all flex items-center gap-2">
+                   <ArrowPathIcon className="w-4 h-4" />
+                   СИНХРОНИЗИРОВАТЬ И ПЕРЕСЧИТАТЬ ВСЁ
+                </button>
+             </div>
+
+             {/* Create new route drop zone */}
+             <div 
+               className={clsx(
+                 "ml-6 mr-6 py-4 px-4 border-2 border-dashed rounded-2xl transition-all cursor-pointer",
+                 draggingOrderId 
+                   ? "border-green-500 bg-green-500/20"
+                   : "border-slate-200/50 hover:border-blue-300"
+               )}
+               onDragOver={(e) => { if (draggingOrderId) e.preventDefault(); }}
+               onDrop={(e) => {
+                 e.preventDefault();
+                 const { orderId, fromRouteId } = dragDataRef.current || {};
+                 if (orderId && fromRouteId) {
+                   handleDropToNew(orderId, fromRouteId);
+                 }
+                 setDraggingOrderId(null);
+                 setDraggingFromRouteId(null);
+                 dragDataRef.current = null;
+               }}
+             >
+               <div className="flex items-center justify-center gap-3">
+                 <div className={clsx("w-8 h-8 rounded-full border-2 flex items-center justify-center",
+                   draggingOrderId 
+                     ? "border-green-500 bg-green-500/20 text-green-500"
+                      : "border-slate-300 text-slate-400"
+                  )}>
+                    <PlusIcon className="w-5 h-5" />
+                  </div>
+                  <div className="text-center">
+                    <p className={clsx("text-[11px] font-bold uppercase tracking-[0.1em]",
+                      draggingOrderId ? "text-green-600" : "text-slate-400"
+                    )}>
+                      {draggingOrderId ? 'Отпустите здесь → новый маршрут' : 'Перетащите заказ сюда для нового маршрута'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+            <div className="space-y-6">
              {localRoutes.map((r, idx) => (
                <RouteSummaryCard 
                  key={r.id || idx} 
