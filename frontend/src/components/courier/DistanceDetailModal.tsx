@@ -869,31 +869,10 @@ routes={filteredRoutesForMap}
                 isSatellite={isSatellite}
                 focusTrigger={focusTrigger}
                 lowPerfMode={LOW_PERF_MODE}
-                kmlPolygons={showKmlSectors ? kmlPolygons : []}
+kmlPolygons={showKmlSectors ? kmlPolygons : []}
               />
-          </div>
-
-          <div className="w-[200px] bg-white border-l border-slate-100 flex flex-col shadow-2xl relative z-10">
-             <div className="p-6 border-b border-slate-50 flex items-center justify-between">
-                <div className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-600 flex items-center gap-3">
-                   <ListBulletIcon className="w-4 h-4" /> <span>ЭКСПЛОРЕР</span>
-                </div>
-             </div>
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1.5 bg-[#f8fafc]">
-                 {allOrders.map((o, i) => (
-                    <div 
-                      key={i} 
-                      className="p-3 rounded-xl bg-white border border-slate-100 hover:border-blue-200 transition-all cursor-pointer group"
-                    >
-                       <div className="flex items-center gap-2">
-                         <div className="w-5 h-5 rounded-md bg-blue-50 flex items-center justify-center text-blue-600 text-[8px] font-black shrink-0">#{o.orderNumber}</div>
-                         <div className="text-[10px] text-slate-600 leading-snug group-hover:text-blue-600 transition-colors truncate">{o.address}</div>
-                       </div>
-                    </div>
-                 ))}
-              </div>
-          </div>
-       </div>
+           </div>
+        </div>
     </div>
   );
 
