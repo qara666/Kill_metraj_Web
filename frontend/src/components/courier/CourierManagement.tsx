@@ -68,12 +68,20 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
   const currentDivisionId = String(divisionId || '');
 
   // Memoize ALL courier stats at once to avoid creating new objects on each render
+  // vXX.X: Use refs for volatile dependencies to prevent unnecessary recalculations
+  const routesRef = useRef<any[]>([]);
+  const ordersRef = useRef<any[]>([]);
+  const couriersRef = useRef<any[]>([]);
+  
+  if (excelData?.routes) routesRef.current = excelData.routes;
+  if (excelData?.orders) ordersRef.current = excelData.orders;
+  if (excelData?.couriers) couriersRef.current = excelData.couriers;
+  
   const allCourierStatsMap = useMemo(() => {
     const map: Record<string, any> = {};
-    const routes = excelData?.routes || [];
-    const orders = excelData?.orders || [];
-    const couriers = excelData?.couriers || [];
-    const summary = autoRoutingStatus?.couriersSummary || {};
+    const routes = routesRef.current;
+    const orders = ordersRef.current;
+    const couriers = couriersRef.current;
 
     const isRoutableOrder = (o: any) => {
       const status = String(o?.status || o?.deliveryStatus || '').toLowerCase().trim();
@@ -88,7 +96,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
       return dId === currentDivisionId;
     };
 
-    // First pass: collect all unique courier names
+    // First pass: collect all unique courier names from orders + routes + couriers
     const allNames = new Set<string>();
     orders.forEach((o: any) => {
       const n = normalizeCourierName(getCourierName(o.courier));
@@ -98,18 +106,13 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
       const n = normalizeCourierName(r.courier || r.courier_id);
       if (n && n !== 'Не назначено') allNames.add(n);
     });
-    Object.keys(summary).forEach(n => {
-      if (n && n !== 'Не назначено') allNames.add(n);
-    });
     couriers.forEach((c: any) => {
       const n = normalizeCourierName(c.name);
       if (n && n !== 'Не назначено') allNames.add(n);
     });
 
-    // Second pass: calculate stats for each courier
+    // Second pass: calculate stats for each courier using route-based data (authoritative from DB)
     allNames.forEach(norm => {
-      const serverSummary = summary[norm];
-      
       // Filter routes for this courier
       const courierRoutes = routes.filter((r: any) => {
         const rc = normalizeCourierName(r.courier || r.courier_id);
@@ -117,7 +120,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
         return rc === norm && rc !== 'Не назначено' && rc !== '' && isMatchingDiv(dId);
       });
 
-      // Count unique orders in routes
+      // Count unique orders in routes (stable: based on actual route orders from DB)
       const uniqueRouteOrderIds = new Set<string>();
       courierRoutes.forEach((r: any) => {
         (r.orders || []).forEach((o: any) => {
@@ -126,16 +129,17 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
         });
       });
 
-      const ordersInRoutes = serverSummary?.ordersCount ?? uniqueRouteOrderIds.size;
+      // Always use route-based counting (DB is authoritative)
+      const ordersInRoutes = uniqueRouteOrderIds.size;
       
+      // Always use route-based km (DB is authoritative)
       const routeKm = courierRoutes.reduce((sum: number, r: any) => 
         sum + ((Number(r.totalDistance || r.total_distance) > 0) ? Number(r.totalDistance || r.total_distance) : 0), 0);
-      const robotPhysicalKm = routeKm > 0 ? routeKm : (serverSummary?.distanceKm ?? 0);
 
       // Base data
       const base = couriers.find((cur: any) => normalizeCourierName(cur.name) === norm);
       
-      // Count total FO orders
+      // Count total FO orders assigned to this courier
       const uniqueTotalOrderIds = new Set<string>();
       orders.forEach((o: any) => {
         const dId = String(o.divisionId || o.departmentId || o.division_id || '');
@@ -146,10 +150,10 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
       });
 
       const ordersAssignedRaw = uniqueTotalOrderIds.size;
-      const totalOrdersCount = ordersAssignedRaw > 0 ? ordersAssignedRaw : Math.max(ordersAssignedRaw, ordersInRoutes);
+      const totalOrdersCount = ordersAssignedRaw > 0 ? ordersAssignedRaw : ordersInRoutes;
 
       const baseKm = base?.distanceKm || 0;
-      const physicalDist = robotPhysicalKm > 0 ? robotPhysicalKm : baseKm;
+      const physicalDist = routeKm > 0 ? routeKm : baseKm;
       const bonusDist = ordersInRoutes * 0.5;
       const finalTotal = physicalDist + bonusDist;
 
@@ -159,7 +163,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
         totalOrders: totalOrdersCount,
         ordersInRoutes,
         baseDistance: baseKm,
-        robotDistance: robotPhysicalKm,
+        robotDistance: routeKm,
         bonusDistance: bonusDist,
         effectivePhysicalKm: physicalDist,
         routes: courierRoutes
@@ -167,7 +171,7 @@ export const CourierManagement: React.FC<{ excelData?: any }> = () => {
     });
 
     return map;
-  }, [excelData?.orders, excelData?.routes, excelData?.couriers, autoRoutingStatus?.couriersSummary, currentDivisionId, excelData?._lastManualRouteUpdate]);
+  }, [routesRef.current, ordersRef.current, couriersRef.current, currentDivisionId]);
 
 const getCourierStats = useCallback((name: string) => {
     return allCourierStatsMap[name] || allCourierStatsMap[normalizeCourierName(name)] || { totalDistance: 0, totalOrders: 0, ordersInRoutes: 0 };
@@ -178,7 +182,6 @@ const getCourierStats = useCallback((name: string) => {
   useEffect(() => {
     const orders = excelData?.orders || [];
     const routes = excelData?.routes || [];
-    const summaryNames = Object.keys(autoRoutingStatus?.couriersSummary || {});
 
     // v9.9: ROBUST DIVISION FILTERING
     // Filter orders and routes by the current active division before collecting names.
@@ -207,12 +210,7 @@ const getCourierStats = useCallback((name: string) => {
       if (n && n !== 'Не назначено') names.add(n);
     });
 
-    // 3. Names from robot status (Real-time Fallback)
-    summaryNames.forEach(n => {
-      if (n && n !== 'Не назначено') names.add(n);
-    });
-
-    // 4. Names from base couriers list
+    // 3. Names from base couriers list
     filteredBaseCouriers.forEach((c: any) => {
       const n = normalizeCourierName(c.name);
       if (n && n !== 'Не назначено') names.add(n);
@@ -244,7 +242,7 @@ const getCourierStats = useCallback((name: string) => {
       setCouriers(list);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [excelData?.orders, excelData?.routes, excelData?.couriers, autoRoutingStatus?.couriersSummary, currentDivisionId]);
+  }, [excelData?.orders, excelData?.routes, excelData?.couriers, currentDivisionId]);
 
 
   const filtered = useMemo(() => {
