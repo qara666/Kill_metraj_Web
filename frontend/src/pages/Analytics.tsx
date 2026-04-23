@@ -4,13 +4,15 @@ import { CourierDeepAnalytics } from '../components/analytics/CourierDeepAnalyti
 import { AnalyticsDashboard } from '../components/analytics/AnalyticsDashboard'
 import { ProblemSolverAnalytics } from '../components/analytics/ProblemSolverAnalytics'
 import { FinancialDensityAnalytics } from '../components/analytics/FinancialDensityAnalytics'
+import CourierEfficiency from './CourierEfficiency'
 import { 
     ChartBarIcon, 
     UserGroupIcon, 
     ClockIcon, 
     CpuChipIcon,
     CurrencyDollarIcon,
-    PresentationChartBarIcon
+    PresentationChartBarIcon,
+    BoltIcon
 } from '@heroicons/react/24/outline'
 import { LoadingSpinner } from '../components/shared/LoadingSpinner'
 import { useExcelData } from '../contexts/ExcelDataContext'
@@ -22,7 +24,7 @@ import { DashboardHeader } from '../components/shared/DashboardHeader'
 export const Analytics: React.FC = () => {
   const { excelData } = useExcelData()
   const { isDark } = useTheme()
-  const [activeTab, setActiveTab] = useState<'overview' | 'couriers' | 'session' | 'problems' | 'financial'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'couriers' | 'session' | 'problems' | 'financial' | 'efficiency'>('overview')
 
   return (
     <div className="space-y-6">
@@ -49,7 +51,8 @@ export const Analytics: React.FC = () => {
           { id: 'problems', label: 'РОБОТ', icon: CpuChipIcon },
           { id: 'financial', label: 'ФІНАНСИ', icon: CurrencyDollarIcon },
           { id: 'couriers', label: 'ПЕРСОНАЛ', icon: UserGroupIcon },
-          { id: 'session', label: 'СЕСІЯ', icon: ClockIcon }
+          { id: 'session', label: 'СЕСІЯ', icon: ClockIcon },
+          { id: 'efficiency', label: 'ЕФЕКТИВНІСТЬ', icon: BoltIcon }
         ].map(tab => (
           <button
             key={tab.id}
@@ -75,6 +78,7 @@ export const Analytics: React.FC = () => {
         {activeTab === 'problems' && <ProblemSolverAnalytics />}
         {activeTab === 'financial' && <FinancialDensityAnalytics />}
         {activeTab === 'couriers' && <CourierDeepAnalytics />}
+        {activeTab === 'efficiency' && <CourierEfficiency />}
         {activeTab === 'session' && (
           !excelData?.orders?.length ? (
             <div className={clsx(

@@ -8,6 +8,8 @@ import {
     ClockIcon,
     MapPinIcon,
     TruckIcon,
+    AdjustmentsHorizontalIcon,
+    CheckCircleIcon,
 } from '@heroicons/react/24/outline';
 import clsx from 'clsx';
 import { useRouteCalculationStore } from '../../stores/useRouteCalculationStore';
@@ -319,6 +321,154 @@ export function RouteCalculationSettings({ isDark = false }: RouteCalculationSet
                         hint="Если следующая точка дальше — маршрут разделится"
                         isDark={isDark}
                     />
+
+                    <div className={clsx(
+                        'rounded-md border p-3 space-y-1',
+                        isDark ? 'border-purple-600 bg-purple-900/20' : 'border-purple-200 bg-purple-50'
+                    )}>
+                        <p className={clsx('text-[10px] uppercase tracking-widest font-black', isDark ? 'text-purple-400' : 'text-purple-600')}>
+                            Pickup-Time Clustering (для активных/завершённых)
+                        </p>
+                    </div>
+
+                    <SliderSetting
+                        icon={<TruckIcon className="w-4 h-4 text-gray-500" />}
+                        label="Близость забора (мин)"
+                        value={groupingConfig.pickupProximityMinutes}
+                        min={5}
+                        max={60}
+                        step={5}
+                        onChange={(v) => setGroupingConfig({ pickupProximityMinutes: v })}
+                        hint="Макс. разрыв между pickup times для объединения"
+                        isDark={isDark}
+                    />
+
+                    <SliderSetting
+                        icon={<TruckIcon className="w-4 h-4 text-gray-500" />}
+                        label="Размах забора (мин)"
+                        value={groupingConfig.pickupMaxSpanMinutes}
+                        min={30}
+                        max={180}
+                        step={15}
+                        onChange={(v) => setGroupingConfig({ pickupMaxSpanMinutes: v })}
+                        hint="Общий макс. span pickup times в одном кластере"
+                        isDark={isDark}
+                    />
+
+                    <SliderSetting
+                        icon={<MapPinIcon className="w-4 h-4 text-gray-500" />}
+                        label="Пост-merge макс. расстояние (км)"
+                        value={groupingConfig.mergeDistanceKm}
+                        min={10}
+                        max={60}
+                        step={5}
+                        onChange={(v) => setGroupingConfig({ mergeDistanceKm: v })}
+                        hint="При пост-объединении — макс. расстояние"
+                        isDark={isDark}
+                    />
+
+                    <SliderSetting
+                        icon={<ClockIcon className="w-4 h-4 text-gray-500" />}
+                        label="Пост-merge макс. span (мин)"
+                        value={groupingConfig.postMergeMaxSpanMinutes}
+                        min={30}
+                        max={240}
+                        step={15}
+                        onChange={(v) => setGroupingConfig({ postMergeMaxSpanMinutes: v })}
+                        hint="Второй проход: как близко по времени должны быть маршруты для объединения"
+                        isDark={isDark}
+                    />
+
+                    {/* Post-Merge Strategies */}
+                    <div className={clsx(
+                        'rounded-lg border p-4 space-y-3',
+                        isDark ? 'border-green-600 bg-green-900/20' : 'border-green-300 bg-green-50'
+                    )}>
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-2">
+                                <AdjustmentsHorizontalIcon className={clsx('w-5 h-5', isDark ? 'text-green-400' : 'text-green-600')} />
+                                <p className={clsx('text-sm font-semibold', isDark ? 'text-green-400' : 'text-green-700')}>
+                                    Дополнительное объединение маршрутов
+                                </p>
+                            </div>
+                            <Switch
+                                checked={groupingConfig.postMergeEnabled ?? true}
+                                onChange={(checked) => setGroupingConfig({ postMergeEnabled: checked })}
+                                className={clsx(
+                                    'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+                                    groupingConfig.postMergeEnabled ? 'bg-green-600' : isDark ? 'bg-gray-600' : 'bg-gray-300'
+                                )}
+                            >
+                                <span className={clsx(
+                                    'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+                                    groupingConfig.postMergeEnabled ? 'translate-x-6' : 'translate-x-1'
+                                )} />
+                            </Switch>
+                        </div>
+
+                        <p className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                            Включите — чтобы алгоритм пытался соединить близлежащие маршруты в один. 
+                            Выключите — чтобы оставить как есть после первичной группировки.
+                        </p>
+
+                        {groupingConfig.postMergeEnabled !== false && (
+                            <div className="space-y-2 pt-2 border-t border-green-500/20">
+                                <p className={clsx('text-[10px] uppercase tracking-widest font-black', isDark ? 'text-green-400' : 'text-green-600')}>
+                                    Стратегии объединения
+                                </p>
+
+                                <StrategyToggle
+                                    label="То same pickup"
+                                    description="Если заказы забраны в одно время (разница ≤3 мин) — объединять в один маршрут."
+                                    enabled={groupingConfig.postMergeStrategy?.samePickup ?? true}
+                                    onChange={(v) => setGroupingConfig({
+                                        postMergeStrategy: { ...groupingConfig.postMergeStrategy, samePickup: v }
+                                    })}
+                                    isDark={isDark}
+                                />
+
+                                <StrategyToggle
+                                    label="Рядом pickup"
+                                    description="Если заказы забраны почти одновременно (разница ≤10 мин) — объединять."
+                                    enabled={groupingConfig.postMergeStrategy?.pickupNear ?? true}
+                                    onChange={(v) => setGroupingConfig({
+                                        postMergeStrategy: { ...groupingConfig.postMergeStrategy, pickupNear: v }
+                                    })}
+                                    isDark={isDark}
+                                />
+
+                                <StrategyToggle
+                                    label="Спасти одиночку"
+                                    description="Одинокий заказ (группа из 1 заказа) прилипает к соседней группе если близко по времени."
+                                    enabled={groupingConfig.postMergeStrategy?.singletonRescue ?? true}
+                                    onChange={(v) => setGroupingConfig({
+                                        postMergeStrategy: { ...groupingConfig.postMergeStrategy, singletonRescue: v }
+                                    })}
+                                    isDark={isDark}
+                                />
+
+                                <StrategyToggle
+                                    label="Близкие delivery times + pickup"
+                                    description="Если время доставки близкие И pickup times близкие — объединить."
+                                    enabled={groupingConfig.postMergeStrategy?.deliverySpanPlus ?? true}
+                                    onChange={(v) => setGroupingConfig({
+                                        postMergeStrategy: { ...groupingConfig.postMergeStrategy, deliverySpanPlus: v }
+                                    })}
+                                    isDark={isDark}
+                                />
+
+                                <StrategyToggle
+                                    label="Спасти одиночку (aggрессивно)"
+                                    description="Одинокий заказ присоединяется к соседу если суммарный размах ≤2 часов."
+                                    enabled={groupingConfig.postMergeStrategy?.singletonHighSpan ?? true}
+                                    onChange={(v) => setGroupingConfig({
+                                        postMergeStrategy: { ...groupingConfig.postMergeStrategy, singletonHighSpan: v }
+                                    })}
+                                    isDark={isDark}
+                                />
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 <div
@@ -338,6 +488,9 @@ export function RouteCalculationSettings({ isDark = false }: RouteCalculationSet
                     </p>
                     <p className={clsx('text-[11px]', isDark ? 'text-gray-400' : 'text-gray-500')}>
                         <b>Шаг между точками</b> — макс. расстояние от предыдущей до следующей точки. Если превышено — маршрут разделится.
+                    </p>
+                    <p className={clsx('text-[11px]', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                        <b>Pickup-Time Clustering</b> использует фактическое время забора (deliveringAt) для группировки активных/завершённых заказов.
                     </p>
                     <p className={clsx('text-[11px]', isDark ? 'text-gray-400' : 'text-gray-500')}>
                         Нажмите <b>Сохранить</b> чтобы применить на сервере (потребуется пересчёт).
@@ -395,6 +548,46 @@ function SliderSetting({
             <p className={clsx('text-[10px]', isDark ? 'text-gray-500' : 'text-gray-400')}>
                 {hint}
             </p>
+        </div>
+    );
+}
+
+function StrategyToggle({
+    label,
+    description,
+    enabled,
+    onChange,
+    isDark,
+}: {
+    label: string;
+    description: string;
+    enabled: boolean;
+    onChange: (v: boolean) => void;
+    isDark: boolean;
+}) {
+    return (
+        <div className="flex items-center justify-between gap-2">
+            <div className="flex-1">
+                <p className={clsx('text-sm font-medium', isDark ? 'text-gray-300' : 'text-gray-700')}>
+                    {label}
+                </p>
+                <p className={clsx('text-[10px]', isDark ? 'text-gray-500' : 'text-gray-500')}>
+                    {description}
+                </p>
+            </div>
+            <Switch
+                checked={enabled}
+                onChange={onChange}
+                className={clsx(
+                    'relative inline-flex h-5 w-9 items-center rounded-full transition-colors',
+                    enabled ? 'bg-green-500' : isDark ? 'bg-gray-600' : 'bg-gray-300'
+                )}
+            >
+                <span className={clsx(
+                    'inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform',
+                    enabled ? 'translate-x-4.5' : 'translate-x-1'
+                )} />
+            </Switch>
         </div>
     );
 }

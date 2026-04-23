@@ -12,9 +12,11 @@ import { normalizeDateToIso } from '../utils/data/dateUtils';
 import { YapikoOSRMService } from '../services/YapikoOSRMService';
 import { ValhallaService } from '../services/valhallaService';
 import { calculateDistance } from '../utils/geoUtils';
+import { useRouteCalculationStore } from '../stores/useRouteCalculationStore';
 
 export function useContinuousAutoRouting() {
     const { excelData, updateExcelData } = useExcelData();
+    const { groupingConfig } = useRouteCalculationStore();
     const isProcessingRef = useRef(false);
     const processedGroupSignatures = useRef<Set<string>>(new Set());
     const processedRefinements = useRef<Set<string>>(new Set()); 
@@ -127,7 +129,7 @@ export function useContinuousAutoRouting() {
                 });
 
                 // Grouping
-                const groupsMap = groupAllOrdersByTimeWindow(eligibleOrders, currentData.couriers);
+                const groupsMap = groupAllOrdersByTimeWindow(eligibleOrders, currentData.couriers, groupingConfig);
                 const eligibleGroups: any[] = [];
                 for (const [courierId, timeGroups] of Array.from(groupsMap.entries())) {
                     for (const group of timeGroups) {

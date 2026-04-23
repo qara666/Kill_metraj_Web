@@ -249,3 +249,30 @@ export const getExecutionTime = (o: any, baseDate?: Date): number | null => {
 
     return null;
 };
+
+export const getPickupTime = (o: any, baseDate?: Date): number | null => {
+    if (!o) return null;
+    const status = (o.status || o.deliveryStatus || '').toString().trim().toLowerCase();
+    const isActive = status.includes('доставля') || status.includes('в пути') ||
+                     status.includes('маршру') || status.includes('исполнен') ||
+                     status.includes('виконан') || status.includes('завер') ||
+                     status.includes('доставлен') || status.includes('выполнен') ||
+                     status.includes('completed');
+    if (!isActive) return null;
+
+    if (o.statusTimings?.deliveringAt) {
+        const t = typeof o.statusTimings.deliveringAt === 'number'
+            ? o.statusTimings.deliveringAt
+            : parseTime(o.statusTimings.deliveringAt, { baseDate });
+        if (t) return t;
+    }
+    if (o.handoverAt && typeof o.handoverAt === 'number') return o.handoverAt;
+    if (o.statusTimings?.assembledAt) {
+        const t = typeof o.statusTimings.assembledAt === 'number'
+            ? o.statusTimings.assembledAt
+            : parseTime(o.statusTimings.assembledAt, { baseDate });
+        if (t) return t;
+    }
+
+    return null;
+};

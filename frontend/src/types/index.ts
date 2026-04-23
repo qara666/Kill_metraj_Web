@@ -511,6 +511,18 @@ export interface GroupingConfig {
   activeCourierDeliverySpanMinutes: number;
   enableRouteMerging: boolean;
   mergeMaxTimeGapMinutes: number;
+  pickupProximityMinutes: number;
+  pickupMaxSpanMinutes: number;
+  mergeDistanceKm: number;
+  postMergeMaxSpanMinutes: number;
+  postMergeEnabled: boolean;
+  postMergeStrategy: {
+    singletonRescue: boolean;
+    samePickup: boolean;
+    pickupNear: boolean;
+    deliverySpanPlus: boolean;
+    singletonHighSpan: boolean;
+  };
 }
 
 export const DEFAULT_GROUPING_CONFIG: GroupingConfig = {
@@ -526,6 +538,18 @@ export const DEFAULT_GROUPING_CONFIG: GroupingConfig = {
   activeCourierDeliverySpanMinutes: 120,
   enableRouteMerging: true,
   mergeMaxTimeGapMinutes: 10,
+  pickupProximityMinutes: 15,
+  pickupMaxSpanMinutes: 90,
+  mergeDistanceKm: 30,
+  postMergeMaxSpanMinutes: 120,
+  postMergeEnabled: true,
+  postMergeStrategy: {
+    singletonRescue: true,
+    samePickup: true,
+    pickupNear: true,
+    deliverySpanPlus: true,
+    singletonHighSpan: true,
+  },
 };
 
 export interface CourierRouteStatus {

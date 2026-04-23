@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef, memo } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, Popup, ZoomControl, useMap, Circle } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, Popup, ZoomControl, useMap, Circle, Polygon, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { clsx } from 'clsx';
@@ -37,6 +37,8 @@ interface LeafletCourierMapProps {
     showLabels?: boolean;
     isSatellite?: boolean;
     focusTrigger?: number;
+    lowPerfMode?: boolean;
+    kmlPolygons?: any[];
 }
 
 const BoundsUpdater = memo(({ routes, focusTrigger }: { routes: any[], focusTrigger?: number }) => {
@@ -207,9 +209,11 @@ const ZoneLayer = memo(({ routes }: { routes: any[] }) => {
     );
 });
 
-export const LeafletCourierMap: React.FC<LeafletCourierMapProps> = memo(({ routes, isDark, isAnimating, showZones, showLabels, isSatellite, focusTrigger }) => {
+export const LeafletCourierMap: React.FC<LeafletCourierMapProps> = memo(({ routes, isDark, isAnimating, showZones, showLabels, isSatellite, focusTrigger, lowPerfMode = false, kmlPolygons = [] }) => {
     const colors = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
     const center = useMemo<[number, number]>(() => [50.4501, 30.5234], []);
+
+    const shouldAnimate = !lowPerfMode && isAnimating;
 
     return (
         <div className="w-full h-full relative z-0 bg-[#f8fafc]">
@@ -228,6 +232,30 @@ export const LeafletCourierMap: React.FC<LeafletCourierMapProps> = memo(({ route
                     <TileLayer url={isDark ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"} />
                 )}
                 <ZoomControl position="bottomright" />
+
+                {kmlPolygons.length > 0 && kmlPolygons.map((zone, idx) => {
+                    const path = zone.path || [];
+                    if (path.length < 3) return null;
+                    const color = colors[idx % colors.length];
+                    const name = zone.name || `Zone ${idx + 1}`;
+                    return (
+                        <Polygon 
+                            key={zone.name || idx}
+                            positions={path as [number, number][]}
+                            pathOptions={{ 
+                                color, 
+                                weight: 2, 
+                                fillColor: color, 
+                                fillOpacity: 0.15,
+                                dashArray: '5, 5'
+                            }}
+                        >
+                            <Tooltip sticky permanent direction="center" className="bg-white/90 px-2 py-1 rounded text-[8px] font-black uppercase border shadow">
+                                {name}
+                            </Tooltip>
+                        </Polygon>
+                    );
+                })}
                 {routes.map((route, idx) => <RouteLayer key={route.id || idx} route={route} index={idx} color={colors[idx % colors.length]} isAnimating={isAnimating} showLabels={showLabels} />)}
                 {showZones && <ZoneLayer routes={routes} />}
                 <BoundsUpdater routes={routes} focusTrigger={focusTrigger} />

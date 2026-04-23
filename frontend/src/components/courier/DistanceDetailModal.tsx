@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect, memo } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { 
-  XMarkIcon, 
-  MapIcon, 
-  ChartBarIcon, 
-  ChevronDownIcon, 
+import {
+  XMarkIcon,
+  MapIcon,
+  ChartBarIcon,
+  ChevronDownIcon,
   ArrowRightIcon,
   CloudArrowDownIcon,
   BoltIcon,
@@ -56,6 +56,25 @@ import { toast } from 'react-hot-toast'
 import { API_URL } from '../../config/apiConfig'
 import { useRouteCalculationStore } from '../../stores/useRouteCalculationStore'
 
+const LOW_PERF_MODE = (() => {
+  const stored = localStorage.getItem('low_perf_mode');
+  if (stored !== null) return stored === 'true';
+  if (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) {
+    return navigator.hardwareConcurrency <= 2;
+  }
+  return false;
+})();
+
+const PREFERS_REDUCED_MOTION = (() => {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+})();
+
+const shouldAnimate = LOW_PERF_MODE || PREFERS_REDUCED_MOTION;
+
+const animClass = (classes: string) => shouldAnimate ? '' : classes;
+const animStyle = (duration = 500) => ({ animationDuration: shouldAnimate ? '0ms' : `${duration}ms` });
+
 interface DistanceDetailModalProps {
   isOpen: boolean
   onClose: () => void
@@ -69,13 +88,17 @@ type TabType = 'management' | 'map' | 'history' | 'analytics' | 'diagnostics';
 
 const MiniSparkline = ({ color = 'blue' }: { color?: string }) => (
   <div className="flex items-end gap-0.5 h-6 w-16">
-    {[30, 70, 45, 90, 60, 85, 40].map((h, i) => (
-      <div 
-        key={i} 
-        className={clsx("w-full rounded-t-sm animate-in slide-in-from-bottom duration-500", `bg-${color}-500/40`)} 
-        style={{ height: `${h}%`, animationDelay: `${i * 50}ms` }} 
-      />
-    ))}
+    {LOW_PERF_MODE ? (
+      <div className={clsx("w-full rounded-t-sm bg-slate-300")} style={{ height: '60%' }} />
+    ) : (
+      [30, 70, 45, 90, 60, 85, 40].map((h, i) => (
+        <div 
+          key={i} 
+          className={clsx("w-full rounded-t-sm animate-in slide-in-from-bottom duration-500", `bg-${color}-500/40`)} 
+          style={{ height: `${h}%`, animationDelay: `${i * 50}ms` }} 
+        />
+      ))
+    )}
   </div>
 );
 
@@ -216,7 +239,7 @@ const RouteSummaryCard = memo(({
       </div>
 
       {isExpanded && (
-        <div className="px-7 pb-7 space-y-3 animate-in fade-in slide-in-from-top-4 duration-500">
+        <div className={clsx("px-7 pb-7 space-y-3", shouldAnimate ? "animate-in fade-in slide-in-from-top-4 duration-500" : "")}>
           <div className="grid grid-cols-1 gap-2">
             {uniqueOrders.map((order: any, idx: number) => (
               <div key={order.id || order.orderNumber || idx} draggable onDragStart={(e) => onDragStart(e, order.id || order.orderNumber, String(route.id))} onDragEnd={onDragEnd}>
@@ -237,6 +260,8 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
   const [localRoutes, setLocalRoutes] = useState<any[]>([]);
   const [mapFilter, setMapFilter] = useState<'all' | number>('all');
   const [showZones, setShowZones] = useState(false);
+  const [showKmlSectors, setShowKmlSectors] = useState(false);
+  const [kmlPolygons, setKmlPolygons] = useState<any[]>([]);
   const [isAnimating, setIsAnimating] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
   const [isSatellite, setIsSatellite] = useState(false);
@@ -260,6 +285,39 @@ export const DistanceDetailModal: React.FC<DistanceDetailModalProps> = ({ isOpen
         initializedRef.current = false;
     }
   }, [isOpen, distanceDetails?.routes]);
+
+  useEffect(() => {
+    if (!showKmlSectors) {
+      setKmlPolygons([]);
+      return;
+    }
+    const fetchKml = async () => {
+      try {
+        const { API_URL } = await import('../../config/apiConfig');
+        const baseUrl = API_URL.replace(/\/api$/, '');
+        const hResponse = await fetch(`${baseUrl}/api/geocache/hubs`);
+        const hData = await hResponse.json();
+        console.log('[KML] hubs response:', hData);
+        if (!hData.success) return;
+        const activeHubs = hData.hubs.filter((h: any) => h.isActive);
+        console.log('[KML] active hubs:', activeHubs.length);
+        const zonesPromises = activeHubs.map(async (hub: any) => {
+          const zRes = await fetch(`${baseUrl}/api/geocache/hubs/${hub.id}/zones`);
+          const zData = await zRes.json();
+          console.log(`[KML] zones for ${hub.name}:`, zData.zones?.length);
+          return zData.success ? zData.zones.map((z: any) => ({
+            ...z,
+            hubName: hub.name,
+            path: z.boundary?.coordinates?.[0]?.map((c: any) => ({ lat: c[1], lng: c[0] })) || []
+          })) : [];
+        });
+        const allZones = (await Promise.all(zonesPromises)).flat();
+        console.log('[KML] total zones:', allZones.length, 'polygons:', allZones.filter((z: any) => z.path?.length > 0).length);
+        setKmlPolygons(allZones.filter((z: any) => z.path?.length > 0));
+      } catch (e) { console.warn('[KML]', e); }
+    };
+    fetchKml();
+  }, [showKmlSectors]);
 
   const [draggingOrderId, setDraggingOrderId] = useState<string | null>(null);
   const [draggingFromRouteId, setDraggingFromRouteId] = useState<string | null>(null);
@@ -474,7 +532,7 @@ const handleManualRecalcAll = useCallback(async () => {
   if (!isOpen) return null
 
   const renderManagement = () => (
-    <div className="space-y-12 animate-in fade-in duration-500">
+    <div className={clsx("space-y-12", shouldAnimate ? "animate-in fade-in duration-500" : "")}>
        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <div className="col-span-2 p-10 rounded-[4rem] bg-[#0c0f16] text-white relative overflow-hidden shadow-2xl">
              <div className="relative z-10">
@@ -520,7 +578,7 @@ const handleManualRecalcAll = useCallback(async () => {
 <div className="space-y-8">
 <div className="flex items-center justify-between ml-6">
                <div className="text-[12px] font-black uppercase tracking-[0.5em] text-slate-300 flex items-center gap-4">
-                  <div className="w-8 h-px bg-slate-200" /> Маршрутные листы (DRAG-N-DROP)
+                  <div className="w-8 h-px bg-slate-200" /> Маршруты кура
                </div>
                <button onClick={handleManualRecalcAll} className="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all flex items-center gap-2">
                   <ArrowPathIcon className="w-4 h-4" />
@@ -544,23 +602,23 @@ const handleManualRecalcAll = useCallback(async () => {
              ))}
           </div>
           
-          {hasManualChanges && (
-             <div className="pt-10 flex justify-center animate-in zoom-in duration-300">
+          {hasManualChanges && shouldAnimate && (
+              <div className="pt-10 flex justify-center animate-in zoom-in duration-300">
                 <button 
                   onClick={handleManualSave}
                   className="px-12 py-6 rounded-[2rem] bg-emerald-600 text-white font-black text-xs uppercase tracking-[0.3em] shadow-2xl shadow-emerald-500/40 hover:scale-105 active:scale-95 transition-all flex items-center gap-4"
                 >
-                   <ShieldCheckIcon className="w-6 h-6" />
-                   Подтвердить и Сохранить изменения
+                  <ShieldCheckIcon className="w-6 h-6" />
+                  Подтвердить и Сохранить изменения
                 </button>
-             </div>
-          )}
-       </div>
+              </div>
+)}
+        </div>
     </div>
   );
 
   const renderMapTab = () => (
-    <div className="h-full flex flex-col gap-0 animate-in slide-in-from-bottom-10 duration-700 overflow-hidden relative">
+    <div className={clsx("h-full flex flex-col gap-0 overflow-hidden relative", shouldAnimate ? "animate-in slide-in-from-bottom-10 duration-700" : "")}>
        
        <div className="w-full shrink-0 z-[1000] sticky top-0">
           <div className="bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-xl overflow-hidden transition-all duration-500">
@@ -587,7 +645,7 @@ const handleManualRecalcAll = useCallback(async () => {
              </div>
 
              {isMgmtExpanded && (
-                <div className="p-8 grid grid-cols-1 md:grid-cols-4 gap-8 border-t border-slate-50 animate-in fade-in slide-in-from-top-4 duration-500">
+                <div className={clsx("p-8 grid grid-cols-1 md:grid-cols-4 gap-8 border-t border-slate-50", shouldAnimate ? "animate-in fade-in slide-in-from-top-4 duration-500" : "")}>
                    <div className="col-span-2 space-y-4">
                       <div className="text-[10px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-3">
                          <FunnelIcon className="w-4 h-4 text-blue-600" /> Маршруты
@@ -629,6 +687,9 @@ const handleManualRecalcAll = useCallback(async () => {
                          <button onClick={() => setShowZones(!showZones)} className={clsx("p-3 rounded-xl border transition-all flex items-center gap-2", showZones ? "bg-blue-600 text-white" : "bg-slate-50 text-slate-400")}>
                             <Square2StackIcon className="w-4 h-4" /> <span className="text-[8px] font-black uppercase">Зоны</span>
                          </button>
+                         <button onClick={() => setShowKmlSectors(!showKmlSectors)} className={clsx("p-3 rounded-xl border transition-all flex items-center gap-2", showKmlSectors ? "bg-violet-600 text-white" : "bg-slate-50 text-slate-400")}>
+                            <MapIconSolid className="w-4 h-4" /> <span className="text-[8px] font-black uppercase">KML</span>
+                         </button>
                          <button onClick={() => setIsSatellite(!isSatellite)} className={clsx("p-3 rounded-xl border transition-all flex items-center gap-2", isSatellite ? "bg-slate-900 text-white" : "bg-slate-50 text-slate-400")}>
                             <PhotoIcon className="w-4 h-4" /> <span className="text-[8px] font-black uppercase">Спутник</span>
                          </button>
@@ -657,14 +718,16 @@ const handleManualRecalcAll = useCallback(async () => {
        <div className="flex-1 relative overflow-hidden flex min-h-0 bg-slate-50">
           <div className="flex-1 h-full relative z-0">
              <LeafletCourierMap 
-               routes={filteredRoutesForMap} 
-               isDark={false} 
-               isAnimating={isAnimating} 
-               showZones={showZones} 
-               showLabels={showLabels}
-               isSatellite={isSatellite}
-               focusTrigger={focusTrigger} 
-             />
+routes={filteredRoutesForMap} 
+                isDark={false} 
+                isAnimating={isAnimating} 
+                showZones={showZones} 
+                showLabels={showLabels}
+                isSatellite={isSatellite}
+                focusTrigger={focusTrigger}
+                lowPerfMode={LOW_PERF_MODE}
+                kmlPolygons={showKmlSectors ? kmlPolygons : []}
+              />
           </div>
 
           <div className="w-[200px] bg-white border-l border-slate-100 flex flex-col shadow-2xl relative z-10">
@@ -692,7 +755,7 @@ const handleManualRecalcAll = useCallback(async () => {
   );
 
   const renderAnalytics = () => (
-    <div className="space-y-10 animate-in fade-in duration-500">
+    <div className={clsx("space-y-10", shouldAnimate ? "animate-in fade-in duration-500" : "")}>
        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div className="space-y-8">
              <div className="text-[12px] font-black uppercase tracking-[0.5em] text-slate-300 ml-6 flex items-center gap-4">
@@ -731,7 +794,7 @@ const handleManualRecalcAll = useCallback(async () => {
   );
 
   const renderDiagnostics = () => (
-    <div className="space-y-10 animate-in slide-in-from-right-10 duration-500">
+    <div className={clsx("space-y-10", shouldAnimate ? "animate-in slide-in-from-right-10 duration-500" : "")}>
        <div className="text-[12px] font-black uppercase tracking-[0.5em] text-slate-300 ml-6 flex items-center gap-4">
           <div className="w-8 h-px bg-slate-200" /> Верификация координат
        </div>
@@ -777,7 +840,7 @@ const handleManualRecalcAll = useCallback(async () => {
   );
 
   const renderTimeline = () => (
-    <div className="space-y-10 animate-in slide-in-from-bottom-10 duration-500">
+    <div className={clsx("space-y-10", shouldAnimate ? "animate-in slide-in-from-bottom-10 duration-500" : "")}>
        <div className="bg-white p-12 rounded-[4rem] border border-slate-100 shadow-2xl relative overflow-hidden">
           <div className="text-sm font-black text-slate-800 uppercase tracking-[0.3em] mb-12 flex items-center gap-4">
              <ClockIcon className="w-7 h-7 text-blue-600" /> Операционная хронология
@@ -800,7 +863,7 @@ const handleManualRecalcAll = useCallback(async () => {
   );
 
   const modalContent = (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#0a0c16]/90 backdrop-blur-3xl p-4 md:p-8 animate-in fade-in duration-300 font-sans" onClick={onClose}>
+    <div className={clsx("fixed inset-0 z-[9999] flex items-center justify-center bg-[#0a0c16]/90 backdrop-blur-3xl p-4 md:p-8 font-sans", shouldAnimate ? "animate-in fade-in duration-300" : "")} onClick={onClose}>
       <div className="bg-white rounded-[4.5rem] shadow-[0_100px_250px_rgba(0,0,0,0.6)] overflow-hidden border border-slate-100 w-full max-w-7xl h-full max-h-[96vh] flex flex-col scale-in-center relative" onClick={(e) => e.stopPropagation()}>
         
         <div className="flex items-center justify-between px-12 py-8 border-b border-slate-50 shrink-0 bg-white/95 backdrop-blur-2xl sticky top-0 z-30">
@@ -834,7 +897,7 @@ const handleManualRecalcAll = useCallback(async () => {
           {activeTab !== 'map' && (
              <div className="mb-12">
                 <h3 className="text-4xl font-black tracking-tighter text-slate-900 uppercase leading-none">{courierName}</h3>
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.4em] mt-5">Панель операционного контроля</p>
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.4em] mt-5">Подробности курьера</p>
              </div>
           )}
 

@@ -27,10 +27,23 @@ const DEFAULTS = {
   activeCourierTtlMinutes: 90,
   activeCourierDeliverySpanMinutes: 120,
   minOrdersForMerge: 1,
+  pickupProximityMinutes: 15,
+  pickupMaxSpanMinutes: 90,
+  mergeDistanceKm: 30,
+  postMergeMaxSpanMinutes: 120,
+  postMergeEnabled: true,
+  postMergeStrategy: {
+    singletonRescue: true,
+    samePickup: true,
+    pickupNear: true,
+    deliverySpanPlus: true,
+    singletonHighSpan: true,
+  },
 };
 
 function resolveConfig(presets) {
   const gc = presets?.groupingConfig || {};
+  const strategy = gc.postMergeStrategy || {};
   return {
     maxDeliverySpanMinutes: gc.maxDeliverySpanMinutes ?? DEFAULTS.maxDeliverySpanMinutes,
     groupWindowMinutes: gc.groupWindowMinutes ?? DEFAULTS.groupWindowMinutes,
@@ -44,6 +57,18 @@ function resolveConfig(presets) {
     activeCourierTtlMinutes: gc.activeCourierTtlMinutes ?? DEFAULTS.activeCourierTtlMinutes,
     activeCourierDeliverySpanMinutes: gc.activeCourierDeliverySpanMinutes ?? DEFAULTS.activeCourierDeliverySpanMinutes,
     minOrdersForMerge: gc.minOrdersForMerge ?? DEFAULTS.minOrdersForMerge,
+    pickupProximityMinutes: gc.pickupProximityMinutes ?? DEFAULTS.pickupProximityMinutes,
+    pickupMaxSpanMinutes: gc.pickupMaxSpanMinutes ?? DEFAULTS.pickupMaxSpanMinutes,
+    mergeDistanceKm: gc.mergeDistanceKm ?? DEFAULTS.mergeDistanceKm,
+    postMergeMaxSpanMinutes: gc.postMergeMaxSpanMinutes ?? DEFAULTS.postMergeMaxSpanMinutes,
+    postMergeEnabled: gc.postMergeEnabled ?? DEFAULTS.postMergeEnabled,
+    postMergeStrategy: {
+      singletonRescue: strategy.singletonRescue ?? DEFAULTS.postMergeStrategy.singletonRescue,
+      samePickup: strategy.samePickup ?? DEFAULTS.postMergeStrategy.samePickup,
+      pickupNear: strategy.pickupNear ?? DEFAULTS.postMergeStrategy.pickupNear,
+      deliverySpanPlus: strategy.deliverySpanPlus ?? DEFAULTS.postMergeStrategy.deliverySpanPlus,
+      singletonHighSpan: strategy.singletonHighSpan ?? DEFAULTS.postMergeStrategy.singletonHighSpan,
+    },
   };
 }
 
@@ -315,10 +340,32 @@ const getExecutionTime = (o) => {
     return null;
 };
 
+const getPickupTime = (o, baseDate) => {
+    if (!o) return null;
+    const status = String(o.status || o.deliveryStatus || '').trim().toLowerCase();
+    const isActive = status.includes('доставля') || status.includes('в пути') ||
+                     status.includes('маршру') || status.includes('исполнен') ||
+                     status.includes('виконан') || status.includes('завер') ||
+                     status.includes('доставлен') || status.includes('выполнен') ||
+                     status.includes('completed');
+    if (!isActive) return null;
 
+    if (o.statusTimings?.deliveringAt) {
+        const t = typeof o.statusTimings.deliveringAt === 'number'
+            ? o.statusTimings.deliveringAt
+            : parseTimeRobust(o.statusTimings.deliveringAt, baseDate);
+        if (t) return t;
+    }
+    if (o.handoverAt && typeof o.handoverAt === 'number') return o.handoverAt;
+    if (o.statusTimings?.assembledAt) {
+        const t = typeof o.statusTimings.assembledAt === 'number'
+            ? o.statusTimings.assembledAt
+            : parseTimeRobust(o.statusTimings.assembledAt, baseDate);
+        if (t) return t;
+    }
 
-
-
+    return null;
+};
 /**
  * Returns all possible IDs for an order to prevent duplicates.
  */
@@ -831,6 +878,235 @@ function groupOrdersByTimeWindow(orders, courierId, courierName, baseDate, calcu
     return groups.sort((a, b) => a.windowStart - b.windowStart);
 }
 
+function clusterByPickupTime(orders, courierId, courierName, baseDate, presets) {
+    if (!orders || orders.length === 0) return [];
+    const cfg = resolveConfig(presets);
+    const bDate = baseDate ? new Date(baseDate) : null;
+
+    const withPickup = [];
+    const withoutPickup = [];
+    orders.forEach(order => {
+        const pickup = getPickupTime(order, bDate);
+        if (pickup) {
+            withPickup.push({ order, pickup });
+        } else {
+            withoutPickup.push(order);
+        }
+    });
+
+    withPickup.sort((a, b) => a.pickup - b.pickup);
+
+    const pickupProximityMs = cfg.pickupProximityMinutes * 60 * 1000;
+    const pickupMaxSpanMs = cfg.pickupMaxSpanMinutes * 60 * 1000;
+
+    const clusters = [];
+    let currentCluster = null;
+
+    withPickup.forEach(({ order, pickup }) => {
+        if (!currentCluster) {
+            currentCluster = {
+                orders: [order],
+                pickupStart: pickup,
+                pickupEnd: pickup,
+                coords: order.coords ? [order.coords] : []
+            };
+        } else {
+            const spanFromStart = pickup - currentCluster.pickupStart;
+            const gapFromLast = pickup - currentCluster.pickupEnd;
+            const withinGap = gapFromLast <= pickupProximityMs;
+            const withinSpan = spanFromStart <= pickupMaxSpanMs;
+
+            let geoOk = true;
+            if (order.coords && currentCluster.coords.length > 0) {
+                const allForCenter = [...currentCluster.orders, order];
+                const center = calculateGroupCenter(allForCenter);
+                if (center) {
+                    const maxDist = calculateMaxDistanceFromCenter(allForCenter, center);
+                    geoOk = maxDist <= cfg.maxCenterDistanceKm;
+                }
+            }
+
+            if (withinGap && withinSpan && geoOk) {
+                currentCluster.orders.push(order);
+                currentCluster.pickupEnd = pickup;
+                if (order.coords) currentCluster.coords.push(order.coords);
+            } else {
+                clusters.push(currentCluster);
+                currentCluster = {
+                    orders: [order],
+                    pickupStart: pickup,
+                    pickupEnd: pickup,
+                    coords: order.coords ? [order.coords] : []
+                };
+            }
+        }
+    });
+    if (currentCluster) clusters.push(currentCluster);
+
+    const groups = clusters.map((cluster, idx) => {
+        const plannedTimes = cluster.orders
+            .map(o => getPlannedTime(o, bDate))
+            .filter(t => t !== null);
+        const minPlanned = plannedTimes.length > 0 ? Math.min(...plannedTimes) : cluster.pickupStart;
+        const maxPlanned = plannedTimes.length > 0 ? Math.max(...plannedTimes) : cluster.pickupEnd;
+
+        return {
+            id: `pickup-${courierId}-${idx}-${cluster.pickupStart}`,
+            courierId,
+            courierName,
+            windowStart: minPlanned,
+            windowEnd: maxPlanned,
+            windowLabel: formatTimeRange(minPlanned, maxPlanned),
+            orders: cluster.orders,
+            isReadyForCalculation: true,
+            arrivalStart: cluster.pickupStart,
+            arrivalEnd: cluster.pickupEnd,
+            splitReason: '',
+            _pickupClustered: true,
+            _pickupRange: `${new Date(cluster.pickupStart).getHours()}:${String(new Date(cluster.pickupStart).getMinutes()).padStart(2, '0')} - ${new Date(cluster.pickupEnd).getHours()}:${String(new Date(cluster.pickupEnd).getMinutes()).padStart(2, '0')}`
+        };
+    });
+
+    if (withoutPickup.length > 0) {
+        const fallbackGroups = groupOrdersByTimeWindow(withoutPickup, courierId, courierName, bDate, Date.now(), presets);
+        groups.push(...fallbackGroups.filter(g => !g.windowLabel?.includes('Без времени')));
+    }
+
+    return groups.sort((a, b) => a.windowStart - b.windowStart);
+}
+
+function postMergeGroups(groups, courierId, courierName, baseDate, presets) {
+    if (!groups || groups.length <= 1) return groups;
+    const cfg = resolveConfig(presets);
+    
+    if (cfg.postMergeEnabled === false) return groups;
+    
+    const strategy = cfg.postMergeStrategy || {};
+    const mergeSpanMs = cfg.postMergeMaxSpanMinutes * 60 * 1000;
+    const mergeDistKm = cfg.mergeDistanceKm;
+    const bDate = baseDate ? new Date(baseDate) : null;
+
+    const SAFE_MERGE_MAX_SPAN_MS = cfg.activeCourierDeliverySpanMinutes * 60 * 1000;
+    const SAME_PICKUP_THRESHOLD_MS = 3 * 60 * 1000;
+
+    function extractGroupPickups(group) {
+        return group.orders
+            .map(o => getPickupTime(o, bDate))
+            .filter(t => t !== null);
+    }
+
+    function checkGeo(allOrders) {
+        const withCoords = allOrders.filter(o => o.coords?.lat && o.coords?.lng);
+        if (withCoords.length < 2) return true;
+        const center = calculateGroupCenter(allOrders);
+        if (!center) return true;
+        return calculateMaxDistanceFromCenter(allOrders, center) <= mergeDistKm;
+    }
+
+    function mergeInto(target, source) {
+        target.orders = [...target.orders, ...source.orders];
+        target.windowStart = Math.min(target.windowStart, source.windowStart);
+        target.windowEnd = Math.max(target.windowEnd, source.windowEnd);
+        target.windowLabel = formatTimeRange(target.windowStart, target.windowEnd);
+        target.arrivalStart = Math.min(target.arrivalStart || Infinity, source.arrivalStart || Infinity) || target.arrivalStart;
+        target.arrivalEnd = Math.max(target.arrivalEnd || 0, source.arrivalEnd || 0);
+        if (!target._mergedFrom) target._mergedFrom = [];
+        target._mergedFrom.push(source.id);
+        target._postMerged = true;
+    }
+
+    function pickupOverlapScore(groupA, groupB) {
+        const pA = extractGroupPickups(groupA);
+        const pB = extractGroupPickups(groupB);
+        if (pA.length === 0 && pB.length === 0) return 0;
+        if (pA.length === 0 || pB.length === 0) return 0.1;
+
+        const minA = Math.min(...pA), maxA = Math.max(...pA);
+        const minB = Math.min(...pB), maxB = Math.max(...pB);
+        const overlapStart = Math.max(minA, minB);
+        const overlapEnd = Math.min(maxA, maxB);
+        const overlap = overlapEnd - overlapStart;
+
+        if (overlap > 0) return 1.0;
+        const gap = overlapStart - overlapEnd;
+        if (gap <= SAME_PICKUP_THRESHOLD_MS) return 0.95;
+        if (gap <= 10 * 60 * 1000) return 0.7;
+        if (gap <= 20 * 60 * 1000) return 0.4;
+        return 0;
+    }
+
+    function deliverySpanScore(groupA, groupB) {
+        const span = Math.max(groupA.windowEnd, groupB.windowEnd) - Math.min(groupA.windowStart, groupB.windowStart);
+        if (span > mergeSpanMs) return 0;
+        const ratio = 1 - (span / mergeSpanMs);
+        return Math.max(0, ratio);
+    }
+
+    let result = groups.map(g => ({ ...g, orders: [...g.orders] }));
+
+    let changed = true;
+    let pass = 0;
+    while (changed && pass < 3) {
+        changed = false;
+        pass++;
+        const next = [];
+        let i = 0;
+        while (i < result.length) {
+            if (i === result.length - 1) {
+                next.push(result[i]);
+                break;
+            }
+
+            const a = result[i];
+            const b = result[i + 1];
+
+            const isSingleton = a.orders.length === 1 || b.orders.length === 1;
+            const pScore = pickupOverlapScore(a, b);
+            const dScore = deliverySpanScore(a, b);
+            const allOrders = [...a.orders, ...b.orders];
+            const geo = checkGeo(allOrders);
+            const mergedSpan = Math.max(a.windowEnd, b.windowEnd) - Math.min(a.windowStart, b.windowStart);
+            const withinSafeSpan = mergedSpan <= SAFE_MERGE_MAX_SPAN_MS;
+
+            let doMerge = false;
+            let reason = '';
+
+            if (!geo) {
+                doMerge = false;
+            } else if (pScore >= 0.95 && strategy.samePickup) {
+                doMerge = true;
+                reason = 'same-pickup';
+            } else if (pScore >= 0.7 && withinSafeSpan && strategy.pickupNear) {
+                doMerge = true;
+                reason = 'pickup-near';
+            } else if (isSingleton && pScore >= 0.4 && withinSafeSpan && strategy.singletonRescue) {
+                doMerge = true;
+                reason = 'singleton-rescue';
+            } else if (dScore > 0.6 && pScore >= 0.4 && withinSafeSpan && strategy.deliverySpanPlus) {
+                doMerge = true;
+                reason = 'delivery-span+pickup';
+            } else if (isSingleton && dScore > 0.8 && geo && strategy.singletonHighSpan) {
+                doMerge = true;
+                reason = 'singleton-high-span';
+            }
+
+            if (doMerge) {
+                mergeInto(a, b);
+                logger.info(`[TurboGrouping] 🔗 Post-merge[${pass}] ${courierName}: ${reason} | ${a._mergedFrom?.[a._mergedFrom.length-1] || '?'} → span=${Math.round(mergedSpan/60000)}min`);
+                changed = true;
+                i += 2;
+                next.push(a);
+            } else {
+                next.push(a);
+                i++;
+            }
+        }
+        result = next;
+    }
+
+return result;
+}
+
 /**
  * Groups ALL orders for ALL couriers.
  * v7.x: Added calculationTime parameter for TTL check
@@ -861,8 +1137,23 @@ function groupAllOrdersByTimeWindow(orders, baseDate, calculationTime, presets) 
 
     const result = new Map();
     courierGroups.forEach((info, normName) => {
-        // v7.x: Pass calculationTime and presets to groupOrdersByTimeWindow
-        const groups = groupOrdersByTimeWindow(info.orders, normName, info.rawName, baseDate, calcTime, presets);
+        const hasActiveOrCompleted = info.orders.some(o => {
+            const s = String(o.status || o.deliveryStatus || '').toLowerCase();
+            return s.includes('доставля') || s.includes('в пути') || s.includes('исполнен') ||
+                   s.includes('виконан') || s.includes('завер') || s.includes('доставлен') ||
+                   s.includes('выполнен') || s.includes('completed');
+        });
+        const hasPickupData = info.orders.some(o => getPickupTime(o, baseDate ? new Date(baseDate) : null) !== null);
+
+        let groups;
+        if (hasActiveOrCompleted && hasPickupData) {
+            groups = clusterByPickupTime(info.orders, normName, info.rawName, baseDate, presets);
+            groups = postMergeGroups(groups, normName, info.rawName, baseDate, presets);
+            logger.info(`[TurboGrouping] Pickup-based grouping for ${normName}: ${groups.length} groups (was ${info.orders.length} orders)`);
+        } else {
+            groups = groupOrdersByTimeWindow(info.orders, normName, info.rawName, baseDate, calcTime, presets);
+            groups = postMergeGroups(groups, normName, info.rawName, baseDate, presets);
+        }
         result.set(normName, groups);
     });
 
@@ -872,11 +1163,14 @@ function groupAllOrdersByTimeWindow(orders, baseDate, calculationTime, presets) 
 module.exports = {
     groupAllOrdersByTimeWindow,
     groupOrdersByTimeWindow,
+    clusterByPickupTime,
+    postMergeGroups,
     normalizeCourierName,
     getExecutionTime,
     getPlannedTime,
     getArrivalTime,
     getKitchenTime,
+    getPickupTime,
     getAllOrderIds,
     getOrderHash,
     getStableOrderId,

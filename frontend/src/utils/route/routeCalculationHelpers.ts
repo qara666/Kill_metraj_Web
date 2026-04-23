@@ -1,6 +1,7 @@
-import type { Order, CourierRouteStatus, RouteCalculationMode } from '../../types';
+import type { Order, CourierRouteStatus, RouteCalculationMode, GroupingConfig } from '../../types';
+import { DEFAULT_GROUPING_CONFIG } from '../../types';
 import { isOrderCompleted } from '../data/orderStatus';
-import { getPlannedTime, getArrivalTime, getKitchenTime, getExecutionTime } from '../data/timeUtils';
+import { getPlannedTime, getArrivalTime, getKitchenTime, getExecutionTime, getPickupTime } from '../data/timeUtils';
 import { haversineDistance } from '../routes/routeOptimizationHelpers';
 import { normalizeCourierName } from '../data/courierName';
 import { getStableOrderId } from '../data/orderId';
@@ -505,15 +506,258 @@ export function groupOrdersByTimeWindow(
     return groups.sort((a, b) => a.windowStart - b.windowStart);
 }
 
+function clusterByPickupTime(
+    orders: Order[],
+    courierId: string,
+    courierName: string,
+    config?: Partial<{
+        pickupProximityMinutes: number;
+        pickupMaxSpanMinutes: number;
+        maxCenterDistanceKm: number;
+    }>
+): TimeWindowGroup[] {
+    const proximityMinutes = config?.pickupProximityMinutes ?? 15;
+    const maxSpanMinutes = config?.pickupMaxSpanMinutes ?? 90;
+    const maxCenterKm = config?.maxCenterDistanceKm ?? 30;
+
+    if (!orders || orders.length === 0) return [];
+
+    const withPickup: Array<{ order: Order; pickup: number }> = [];
+    const withoutPickup: Order[] = [];
+    orders.forEach(order => {
+        const pickup = getPickupTime(order);
+        if (pickup) {
+            withPickup.push({ order, pickup });
+        } else {
+            withoutPickup.push(order);
+        }
+    });
+
+    withPickup.sort((a, b) => a.pickup - b.pickup);
+
+    const proximityMs = proximityMinutes * 60 * 1000;
+    const maxSpanMs = maxSpanMinutes * 60 * 1000;
+
+    const clusters: Array<{ orders: Order[]; pickupStart: number; pickupEnd: number }> = [];
+    let currentCluster: { orders: Order[]; pickupStart: number; pickupEnd: number } | null = null;
+
+    withPickup.forEach(({ order, pickup }) => {
+        if (!currentCluster) {
+            currentCluster = { orders: [order], pickupStart: pickup, pickupEnd: pickup };
+        } else {
+            const gapFromLast = pickup - currentCluster.pickupEnd;
+            const spanFromStart = pickup - currentCluster.pickupStart;
+
+            let geoOk = true;
+            if (order.coords && currentCluster.orders.length > 0) {
+                const allForCenter = [...currentCluster.orders, order];
+                const center = calculateGroupCenter(allForCenter);
+                if (center) {
+                    const maxDist = calculateMaxDistanceFromCenter(allForCenter, center);
+                    geoOk = maxDist <= 30;
+                }
+            }
+
+            if (gapFromLast <= proximityMs && spanFromStart <= maxSpanMs && geoOk) {
+                currentCluster.orders.push(order);
+                currentCluster.pickupEnd = pickup;
+            } else {
+                clusters.push(currentCluster);
+                currentCluster = { orders: [order], pickupStart: pickup, pickupEnd: pickup };
+            }
+        }
+    });
+    if (currentCluster) clusters.push(currentCluster);
+
+    const groups: TimeWindowGroup[] = clusters.map((cluster, idx) => {
+        const plannedTimes = cluster.orders.map(o => getPlannedTime(o)).filter((t): t is number => t !== null);
+        const minPlanned = plannedTimes.length > 0 ? Math.min(...plannedTimes) : cluster.pickupStart;
+        const maxPlanned = plannedTimes.length > 0 ? Math.max(...plannedTimes) : cluster.pickupEnd;
+
+        return {
+            id: `pickup-${courierId}-${idx}-${cluster.pickupStart}`,
+            courierId,
+            courierName,
+            windowStart: minPlanned,
+            windowEnd: maxPlanned,
+            windowLabel: formatTimeRange(minPlanned, maxPlanned),
+            orders: cluster.orders,
+            isReadyForCalculation: true,
+            arrivalStart: cluster.pickupStart,
+            arrivalEnd: cluster.pickupEnd,
+            _pickupClustered: true,
+        } as TimeWindowGroup;
+    });
+
+    if (withoutPickup.length > 0) {
+        const fallbackGroups = groupOrdersByTimeWindow(withoutPickup, courierId, courierName);
+        groups.push(...fallbackGroups.filter(g => !g.windowLabel?.includes('Без времени')));
+    }
+
+    return groups.sort((a, b) => a.windowStart - b.windowStart);
+}
+
+function postMergeGroups(
+    groups: TimeWindowGroup[],
+    courierName: string,
+    config?: Partial<{
+        postMergeMaxSpanMinutes: number;
+        mergeDistanceKm: number;
+        activeCourierDeliverySpanMinutes: number;
+        postMergeEnabled: boolean;
+        postMergeStrategy: {
+            singletonRescue: boolean;
+            samePickup: boolean;
+            pickupNear: boolean;
+            deliverySpanPlus: boolean;
+            singletonHighSpan: boolean;
+        };
+    }>
+): TimeWindowGroup[] {
+    if (!groups || groups.length <= 1) return groups;
+
+    const enabled = config?.postMergeEnabled ?? true;
+    if (enabled === false) return groups;
+
+    const strategy = config?.postMergeStrategy || {
+        singletonRescue: true,
+        samePickup: true,
+        pickupNear: true,
+        deliverySpanPlus: true,
+        singletonHighSpan: true,
+    };
+    const postMergeMaxSpanMs = (config?.postMergeMaxSpanMinutes ?? 120) * 60 * 1000;
+    const mergeDistKm = config?.mergeDistanceKm ?? 30;
+    const safeMergeMaxSpanMs = (config?.activeCourierDeliverySpanMinutes ?? 120) * 60 * 1000;
+    const samePickupThresholdMs = 3 * 60 * 1000;
+
+    function extractGroupPickups(group: TimeWindowGroup): number[] {
+        return group.orders
+            .map(o => getPickupTime(o))
+            .filter((t): t is number => t !== null);
+    }
+
+    function checkGeo(allOrders: Order[]): boolean {
+        const withCoords = allOrders.filter(o => o.coords?.lat && o.coords?.lng);
+        if (withCoords.length < 2) return true;
+        const center = calculateGroupCenter(allOrders);
+        if (!center) return true;
+        return calculateMaxDistanceFromCenter(allOrders, center) <= mergeDistKm;
+    }
+
+    function mergeInto(target: TimeWindowGroup, source: TimeWindowGroup): void {
+        target.orders = [...target.orders, ...source.orders];
+        target.windowStart = Math.min(target.windowStart, source.windowStart);
+        target.windowEnd = Math.max(target.windowEnd, source.windowEnd);
+        target.windowLabel = formatTimeRange(target.windowStart, target.windowEnd);
+        target.arrivalStart = Math.min(target.arrivalStart ?? Infinity, source.arrivalStart ?? Infinity) || target.arrivalStart;
+        target.arrivalEnd = Math.max(target.arrivalEnd ?? 0, source.arrivalEnd ?? 0);
+        if (!(target as any)._mergedFrom) (target as any)._mergedFrom = [];
+        (target as any)._mergedFrom.push(source.id);
+        (target as any)._postMerged = true;
+    }
+
+    function pickupOverlapScore(groupA: TimeWindowGroup, groupB: TimeWindowGroup): number {
+        const pA = extractGroupPickups(groupA);
+        const pB = extractGroupPickups(groupB);
+        if (pA.length === 0 && pB.length === 0) return 0;
+        if (pA.length === 0 || pB.length === 0) return 0.1;
+
+        const minA = Math.min(...pA), maxA = Math.max(...pA);
+        const minB = Math.min(...pB), maxB = Math.max(...pB);
+        const overlapStart = Math.max(minA, minB);
+        const overlapEnd = Math.min(maxA, maxB);
+        const overlap = overlapEnd - overlapStart;
+
+        if (overlap > 0) return 1.0;
+        const gap = overlapStart - overlapEnd;
+        if (gap <= samePickupThresholdMs) return 0.95;
+        if (gap <= 10 * 60 * 1000) return 0.7;
+        if (gap <= 20 * 60 * 1000) return 0.4;
+        return 0;
+    }
+
+    function deliverySpanScore(groupA: TimeWindowGroup, groupB: TimeWindowGroup): number {
+        const span = Math.max(groupA.windowEnd, groupB.windowEnd) - Math.min(groupA.windowStart, groupB.windowStart);
+        if (span > postMergeMaxSpanMs) return 0;
+        return Math.max(0, 1 - (span / postMergeMaxSpanMs));
+    }
+
+    let result = groups.map(g => ({ ...g, orders: [...g.orders] }));
+
+    let changed = true;
+    let pass = 0;
+    while (changed && pass < 3) {
+        changed = false;
+        pass++;
+        const next: TimeWindowGroup[] = [];
+        let i = 0;
+        while (i < result.length) {
+            if (i === result.length - 1) {
+                next.push(result[i]);
+                break;
+            }
+
+            const a = result[i];
+            const b = result[i + 1];
+
+            const isSingleton = a.orders.length === 1 || b.orders.length === 1;
+            const pScore = pickupOverlapScore(a, b);
+            const dScore = deliverySpanScore(a, b);
+            const allOrders = [...a.orders, ...b.orders];
+            const geo = checkGeo(allOrders);
+            const mergedSpan = Math.max(a.windowEnd, b.windowEnd) - Math.min(a.windowStart, b.windowStart);
+            const withinSafeSpan = mergedSpan <= safeMergeMaxSpanMs;
+
+            let doMerge = false;
+            let _reason = '';
+
+            if (!geo) {
+                doMerge = false;
+            } else if (pScore >= 0.95 && strategy.samePickup) {
+                doMerge = true;
+                _reason = 'same-pickup';
+            } else if (pScore >= 0.7 && withinSafeSpan && strategy.pickupNear) {
+                doMerge = true;
+                _reason = 'pickup-near';
+            } else if (isSingleton && pScore >= 0.4 && withinSafeSpan && strategy.singletonRescue) {
+                doMerge = true;
+                _reason = 'singleton-rescue';
+            } else if (dScore > 0.6 && pScore >= 0.4 && withinSafeSpan && strategy.deliverySpanPlus) {
+                doMerge = true;
+                _reason = 'delivery-span+pickup';
+            } else if (isSingleton && dScore > 0.8 && geo && strategy.singletonHighSpan) {
+                doMerge = true;
+                _reason = 'singleton-high-span';
+            }
+
+            if (doMerge) {
+                mergeInto(a, b);
+                changed = true;
+                i += 2;
+                next.push(a);
+            } else {
+                next.push(a);
+                i++;
+            }
+        }
+        result = next;
+    }
+
+    return result;
+}
+
 /**
  * Группирует заказы всех курьеров по временным окнам
  */
 export function groupAllOrdersByTimeWindow(
     orders: Order[],
     couriers: any[],
+    groupingConfig: Partial<GroupingConfig> = DEFAULT_GROUPING_CONFIG,
     proximityMinutes: number = PROXIMITY_MINUTES,
     maxDeliverySpan: number = MAX_DELIVERY_SPAN_MINUTES
 ): Map<string, TimeWindowGroup[]> {
+    const config = { ...DEFAULT_GROUPING_CONFIG, ...groupingConfig };
     const result = new Map<string, TimeWindowGroup[]>();
 
     // 1. Сначала группируем по сырым курьерам (как в Excel)
@@ -541,15 +785,37 @@ export function groupAllOrdersByTimeWindow(
 
     // 3. Для каждого консолидированного курьера группируем по времени
     consolidatedMap.forEach((info) => {
-        const timeGroups = groupOrdersByTimeWindow(
-            info.orders,
-            info.id,
-            info.name,
-            proximityMinutes,
-            maxDeliverySpan
-        );
-        // v5.133: Use normalized name as key instead of numeric/object ID 
-        // to ensure the UI (which uses names) can find the orders.
+        const hasActiveOrCompleted = info.orders.some(o => {
+            const s = String(o?.status || o?.deliveryStatus || '').toLowerCase();
+            return s.includes('доставля') || s.includes('в пути') || s.includes('исполнен') ||
+                   s.includes('виконан') || s.includes('завер') || s.includes('доставлен') ||
+                   s.includes('выполнен') || s.includes('completed');
+        });
+        const hasPickupData = info.orders.some(o => getPickupTime(o) !== null);
+
+        let timeGroups: TimeWindowGroup[];
+        if (hasActiveOrCompleted && hasPickupData) {
+            timeGroups = clusterByPickupTime(info.orders, info.id, info.name, {
+                pickupProximityMinutes: config.pickupProximityMinutes,
+                pickupMaxSpanMinutes: config.pickupMaxSpanMinutes,
+                maxCenterDistanceKm: config.maxCenterDistanceKm,
+            });
+        } else {
+            timeGroups = groupOrdersByTimeWindow(
+                info.orders,
+                info.id,
+                info.name,
+                proximityMinutes,
+                maxDeliverySpan
+            );
+        }
+        timeGroups = postMergeGroups(timeGroups, info.name, {
+            postMergeMaxSpanMinutes: config.postMergeMaxSpanMinutes,
+            mergeDistanceKm: config.mergeDistanceKm,
+            activeCourierDeliverySpanMinutes: config.activeCourierDeliverySpanMinutes,
+            postMergeEnabled: config.postMergeEnabled,
+            postMergeStrategy: config.postMergeStrategy,
+        });
         result.set(normalizeCourierName(info.name), timeGroups);
     });
 

@@ -88,7 +88,7 @@ export const SmartRouteOptimizer: React.FC = () => {
       // Обновляем данные в контексте
       if (excelData) {
         // Здесь можно добавить логику обновления данных
-        console.log('Маршруты оптимизированы:', results)
+        console.warn('Маршруты оптимизированы:', results)
       }
       
     } catch (error) {

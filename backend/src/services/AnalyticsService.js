@@ -82,8 +82,6 @@ class AnalyticsService {
                         const client = o.clientName || o.phone || 'Anonymous';
                         metrics.clients[client] = (metrics.clients[client] || 0) + 1;
 
-                        // 🔍 UPDATED ZONE EXTRACTION (Prioritizing 'deliveryZone' as requested)
-                        // v8.1: Cleaned up the fallback to prioritize specific FO sector/zone fields over general addresses/areas
                         let zoneRaw = (o.deliveryZone || o.deliveryZoneName || o.zoneName || o.sector || o.zone || o.area || 'БЕЗ ЗОНЫ').toString().trim();
                         
                         if (zoneRaw === '0' || o.deliveryZoneId === 0 || o.deliveryZoneId === '0' || o.orderType === 'Самовывоз') {
@@ -216,7 +214,7 @@ class AnalyticsService {
                     totalDistance: c.distance.toFixed(1),
                     efficiency: c.distance > 0 ? (c.orders / c.distance).toFixed(2) : 0,
                     successRate: c.orders > 0 ? ((c.success / c.orders) * 100).toFixed(1) : 0,
-                    revenue: parseInt(c.amount).toFixed(0), // Fix for long numbers
+                    revenue: parseInt(c.amount).toFixed(0),
                     revPerKm: c.distance > 0 ? (c.amount / c.distance).toFixed(1) : 0
                 })).sort((a,b) => b.totalOrders - a.totalOrders),
                 hourly: current.hourly.map((count, hour) => ({ hour: String(hour).padStart(2, '0'), count })),
@@ -257,6 +255,311 @@ class AnalyticsService {
             { replacements: { start, end, divId: String(divId) }, type: sequelize.QueryTypes.SELECT }
         );
     }
+
+    // ============================================
+    // COURIER EFFICIENCY METHODS
+    // ============================================
+    
+    async _parseHour(dateTimeStr, baseDateStr) {
+        if (!dateTimeStr) return null;
+        const match = String(dateTimeStr).match(/(\d{1,2}):(\d{2})/);
+        if (match) return parseInt(match[1]);
+        const d = new Date(dateTimeStr);
+        if (!isNaN(d.getTime()) && d.getFullYear() > 2000) return d.getHours();
+        return null;
+    }
+
+    async getCourierEfficiency(date, courierId = null) {
+        const cache = await this._getCacheForRange(date, date, 'all');
+        const couriersMap = {};
+
+        for (const entry of cache) {
+            const payload = typeof entry.payload === 'string' ? JSON.parse(entry.payload) : entry.payload;
+            if (!payload) continue;
+
+            const orders = payload.orders || [];
+            const couriers = payload.couriers || [];
+
+            for (const o of orders) {
+                const cName = (o.courier || '').toString().trim();
+                if (!cName || cName === '0' || cName === 'ID:0') continue;
+                if (courierId && cName !== courierId) continue;
+
+                if (!couriersMap[cName]) {
+                    couriersMap[cName] = { name: cName, orders: 0, hours: new Set() };
+                }
+                couriersMap[cName].orders++;
+
+                const hour = await this._parseHour(o.creationDate || o.orderTime, date);
+                if (hour !== null) couriersMap[cName].hours.add(hour);
+            }
+
+            for (const c of couriers) {
+                const cName = (c.name || c.courierName || '').toString().trim();
+                if (!cName || !couriersMap[cName]) continue;
+
+                const startHour = await this._parseHour(c.shiftStart || c.startTime, date);
+                const endHour = await this._parseHour(c.shiftEnd || c.endTime, date);
+                if (startHour !== null && endHour !== null) {
+                    for (let h = startHour; h <= endHour; h++) {
+                        if (h < 24) couriersMap[cName].hours.add(h);
+                    }
+                }
+            }
+        }
+
+        return Object.values(couriersMap).map(c => ({
+            name: c.name,
+            totalOrders: c.orders,
+            hoursWorked: c.hours.size || 1,
+            efficiency: (c.orders / (c.hours.size || 1)).toFixed(2)
+        }));
+    }
+
+    async getHourlyEfficiency(date) {
+        const cache = await this._getCacheForRange(date, date, 'all');
+        const couriersData = {};
+
+        for (const entry of cache) {
+            const payload = typeof entry.payload === 'string' ? JSON.parse(entry.payload) : entry.payload;
+            if (!payload) continue;
+
+            const orders = payload.orders || [];
+
+            for (const o of orders) {
+                const courierName = (o.courier || '').toString().trim();
+                if (!courierName || courierName === '0' || courierName === 'ID:0') continue;
+
+                const hour = await this._parseHour(o.creationDate || o.orderTime || o.order_time || o.createdAt, date);
+                if (hour === null) continue;
+
+                if (!couriersData[courierName]) {
+                    couriersData[courierName] = {
+                        name: courierName,
+                        hourlyOrders: Array(24).fill(0),
+                        totalOrders: 0,
+                        hoursWorked: new Set()
+                    };
+                }
+
+                couriersData[courierName].hourlyOrders[hour]++;
+                couriersData[courierName].totalOrders++;
+                couriersData[courierName].hoursWorked.add(hour);
+            }
+        }
+
+        const result = Object.values(couriersData).map(c => {
+            const hoursWorked = c.hourlyOrders.filter(o => o > 0).length || c.hoursWorked.size || 1;
+            const ordersPerHour = (c.totalOrders / hoursWorked).toFixed(2);
+            
+            return {
+                name: c.name,
+                totalOrders: c.totalOrders,
+                hoursWorked,
+                avgOrdersPerHour: parseFloat(ordersPerHour),
+                efficiency: parseFloat(ordersPerHour),
+                hourlyBreakdown: c.hourlyOrders.map((count, hour) => ({ 
+                    hour: String(hour).padStart(2, '0'), 
+                    orders: count 
+                }))
+            };
+        });
+
+        return {
+            date,
+            couriers: result.sort((a, b) => b.totalOrders - a.totalOrders),
+            totalOrders: result.reduce((sum, c) => sum + c.totalOrders, 0),
+            avgEfficiency: result.length > 0 
+                ? (result.reduce((sum, c) => sum + c.efficiency, 0) / result.length).toFixed(2)
+                : '0'
+        };
+    }
+
+    async getOrderDynamics(startDate, endDate) {
+        const cache = await this._getCacheForRange(startDate, endDate, 'all');
+        
+        const dailyStats = {};
+        const hourlyTotals = Array(24).fill(0);
+
+        for (const entry of cache) {
+            const payload = typeof entry.payload === 'string' ? JSON.parse(entry.payload) : entry.payload;
+            const date = entry.target_date;
+            
+            if (!dailyStats[date]) {
+                dailyStats[date] = {
+                    date,
+                    totalOrders: 0,
+                    hourlyOrders: Array(24).fill(0),
+                    completedOrders: 0,
+                    failedOrders: 0
+                };
+            }
+
+            if (!payload || !payload.orders) continue;
+
+            for (const o of payload.orders) {
+                const hour = await this._parseHour(o.creationDate || o.orderTime || o.order_time, date);
+                if (hour !== null) {
+                    dailyStats[date].hourlyOrders[hour]++;
+                    hourlyTotals[hour]++;
+                    dailyStats[date].totalOrders++;
+                }
+
+                const status = o.status || '';
+                if (status === 'Исполнен' || status === 'Выполнен' || status === 'Доставлен') {
+                    dailyStats[date].completedOrders++;
+                } else if (status === 'Отменен' || status === 'Удален') {
+                    dailyStats[date].failedOrders++;
+                }
+            }
+        }
+
+        const sortedDays = Object.values(dailyStats).sort((a, b) => a.date.localeCompare(b.date));
+
+        const trend = this._calcTrend(sortedDays.map(d => d.totalOrders));
+
+        return {
+            period: { startDate, endDate },
+            days: sortedDays.map(d => ({
+                date: d.date,
+                totalOrders: d.totalOrders,
+                completedOrders: d.completedOrders,
+                failedOrders: d.failedOrders,
+                hourlyOrders: d.hourlyOrders.map((count, hour) => ({
+                    hour: String(hour).padStart(2, '0'),
+                    orders: count
+                }))
+            })),
+            hourlyAverages: hourlyTotals.map((count, hour) => ({
+                hour: String(hour).padStart(2, '0'),
+                avgOrders: count / Math.max(sortedDays.length, 1)
+            })),
+            trend,
+            summary: {
+                totalDays: sortedDays.length,
+                totalOrders: sortedDays.reduce((sum, d) => sum + d.totalOrders, 0),
+                avgOrdersPerDay: sortedDays.length > 0 
+                    ? (sortedDays.reduce((sum, d) => sum + d.totalOrders, 0) / sortedDays.length).toFixed(1)
+                    : '0',
+                peakHour: this._findPeakHour(hourlyTotals),
+                lowestHour: this._findLowestHour(hourlyTotals)
+            }
+        };
+    }
+
+    async getSmartMonitoring(date, options = {}) {
+        const {
+            minEfficiencyThreshold = 1.5,
+            earlyReleaseThreshold = 0.8
+        } = options;
+
+        const hourlyEfficiency = await this.getHourlyEfficiency(date);
+        const orderDynamics = await this.getOrderDynamics(date, date);
+
+        const lowPerformers = [];
+        const optimalSendingHome = [];
+
+        for (const courier of hourlyEfficiency.couriers) {
+            const efficiency = courier.efficiency;
+            
+            if (efficiency < minEfficiencyThreshold) {
+                lowPerformers.push({
+                    name: courier.name,
+                    efficiency,
+                    totalOrders: courier.totalOrders,
+                    hoursWorked: courier.hoursWorked,
+                    recommendation: efficiency < earlyReleaseThreshold 
+                        ? 'Отправить домой раньше'
+                        : 'Наблюдать'
+                });
+
+                if (efficiency < earlyReleaseThreshold && courier.hoursWorked >= 3) {
+                    optimalSendingHome.push({
+                        name: courier.name,
+                        currentHour: new Date().getHours(),
+                        suggestedReleaseHour: Math.min(new Date().getHours() + 1, 23),
+                        reason: `Эффективность ${efficiency} заказов/час ниже порога ${earlyReleaseThreshold}`,
+                        savedHours: Math.max(0, 8 - courier.hoursWorked)
+                    });
+                }
+            }
+        }
+
+        const currentHour = new Date().getHours();
+        const currentHourData = orderDynamics.days[0]?.hourlyOrders || [];
+        const currentHourOrders = currentHourData[currentHour]?.orders || 0;
+
+        // Use hourlyAverages from orderDynamics (not from hourlyEfficiency)
+        const remainingHours = Array(24).fill(0).map((_, i) => i > currentHour ? orderDynamics.hourlyAverages[i]?.avgOrders || 0 : 0);
+        const predictedRemaining = remainingHours.reduce((a, b) => a + b, 0);
+
+        return {
+            timestamp: new Date().toISOString(),
+            date,
+            currentHour,
+            currentHourOrders,
+            averageEfficiency: hourlyEfficiency.avgEfficiency,
+            couriersCount: hourlyEfficiency.couriers.length,
+            lowPerformers,
+            recommendations: [],
+            optimalSendingHome,
+            forecast: {
+                predictedOrdersRemaining: predictedRemaining.toFixed(1),
+                currentTrend: currentHourOrders > (orderDynamics.hourlyAverages[currentHour]?.avgOrders || 0) ? 'GROWING' : 'DECLINING',
+                shouldSendHome: optimalSendingHome.length > 0,
+                action: optimalSendingHome.length > 0 
+                    ? `${optimalSendingHome.length} курьеров можно отправить домой раньше`
+                    : 'Все курьеры работают нормально'
+            },
+            thresholds: {
+                minEfficiency: minEfficiencyThreshold,
+                earlyRelease: earlyReleaseThreshold
+            }
+        };
+    }
+
+    _calcTrend(values) {
+        if (values.length < 2) return 'STABLE';
+        
+        const recent = values.slice(-3);
+        const older = values.slice(0, -3);
+        
+        if (recent.length === 0 || older.length === 0) return 'STABLE';
+        
+        const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
+        const olderAvg = older.reduce((a, b) => a + b, 0) / older.length;
+        
+        const diff = ((recentAvg - olderAvg) / olderAvg) * 100;
+        
+        if (diff > 10) return 'GROWING';
+        if (diff < -10) return 'DECLINING';
+        return 'STABLE';
+    }
+
+    _findPeakHour(hourlyTotals) {
+        let max = -1;
+        let peakHour = 0;
+        hourlyTotals.forEach((count, hour) => {
+            if (count > max) {
+                max = count;
+                peakHour = hour;
+            }
+        });
+        return String(peakHour).padStart(2, '0');
+    }
+
+    _findLowestHour(hourlyTotals) {
+        let min = Infinity;
+        let lowestHour = 0;
+        hourlyTotals.forEach((count, hour) => {
+            if (count < min && count > 0) {
+                min = count;
+                lowestHour = hour;
+            }
+        });
+        return String(lowestHour).padStart(2, '0');
+    }
 }
 
 module.exports = new AnalyticsService();
+module.exports.AnalyticsService = AnalyticsService;

@@ -16,13 +16,15 @@ const roles = {
         'users:read',
         'logs:read',
         'presets:read',
-        'presets:write'
+        'presets:write',
+        'analytics:read'
     ],
     user: [
         'dashboard:read',
         'presets:read',
         'presets:write',
-        'profile:update'
+        'profile:update',
+        'analytics:read'
     ],
     courier: [
         'dashboard:read', // Фильтрация по подразделению обрабатывается в запросах

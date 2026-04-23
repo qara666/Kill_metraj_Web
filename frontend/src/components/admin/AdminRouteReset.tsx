@@ -9,8 +9,6 @@ import {
     CalendarIcon,
     ArrowPathIcon,
     ExclamationTriangleIcon,
-    CheckCircleIcon,
-    ChartBarIcon,
 } from '@heroicons/react/24/outline';
 
 interface RouteStats {
@@ -27,7 +25,6 @@ export const AdminRouteReset: React.FC = () => {
     const [stats, setStats] = useState<RouteStats | null>(null);
     const [loadingStats, setLoadingStats] = useState(false);
     const [clearing, setClearing] = useState<'day' | 'stale' | 'all' | null>(null);
-    const [lastCleared, setLastCleared] = useState<string | null>(null);
 
     const token = () => localStorage.getItem('km_access_token') || '';
 
@@ -58,7 +55,7 @@ export const AdminRouteReset: React.FC = () => {
                 byDate,
                 stale: staleCount
             });
-            console.log('[AdminRouteReset] Loaded', allRoutes.length, 'routes');
+            console.warn('[AdminRouteReset] Loaded', allRoutes.length, 'routes');
         } catch (e) {
             console.error('[AdminRouteReset] loadStats error:', e);
             setStats({ total: 0, byDate: {}, stale: 0 });
@@ -139,12 +136,7 @@ export const AdminRouteReset: React.FC = () => {
                 ))}
             </div>
 
-            {lastCleared && (
-                <div className={clsx('flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium', isDark ? 'bg-emerald-900/20 border-emerald-700/30 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-700')}>
-                    <CheckCircleIcon className="w-4 h-4 shrink-0" />
-                    {lastCleared}
-                </div>
-            )}
+            
 
             <div className={clsx('rounded-2xl border p-5 space-y-4', isDark ? 'bg-white/[0.02] border-white/5' : 'bg-slate-50 border-slate-200')}>
                 <h3 className={clsx('text-sm font-black uppercase tracking-widest', isDark ? 'text-gray-300' : 'text-gray-700')}>
