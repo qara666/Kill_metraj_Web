@@ -174,20 +174,13 @@ export function expandVariants(raw: string, cityBias: string | null, forceCity: 
     all.push(stripped)
   }
 
-<<<<<<< Updated upstream
   //  Phase 4: Street Only Variant (Fallback if OSM lacks the house number) 
-=======
-  // ─── Phase 4: Street Only & House Variations Variant (OSM Survival) ───
->>>>>>> Stashed changes
   const houseNum = extractHouseNumber(cleaned)
   if (houseNum) {
     const escapedHouse = houseNum.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')
     const streetRegex = new RegExp(`(?:,|\\s)*${escapedHouse}.*$`, 'i')
     
-<<<<<<< Updated upstream
     // Создание street only variants for ALL current variants to support renames
-=======
->>>>>>> Stashed changes
     const existingVariants = [...all]
     for (const v of existingVariants) {
       // a) Street only fallback
@@ -199,7 +192,7 @@ export function expandVariants(raw: string, cityBias: string | null, forceCity: 
       // b) v17.28: House number sub-variations (13/14 -> 13, 15а -> 15)
       // Helps find buildings that OSM has partial data for.
       if (houseNum.includes('/') || houseNum.includes('-') || /[а-яієґa-z]/.test(houseNum)) {
-          const baseNum = houseNum.split(/[\/\-]/)[0].replace(/[^0-9]/g, '');
+          const baseNum: string = houseNum.split(/[\/\-]/)[0].replace(/[^0-9]/g, '');
           if (baseNum && baseNum !== houseNum) {
               const baseVariant = v.replace(houseNum, baseNum);
               if (!all.includes(baseVariant)) {

@@ -464,7 +464,6 @@ export const useRouteGeocoding = ({
                 let loc: any = null;
 
                 if (!best || !toLoc(best.raw)) {
-<<<<<<< Updated upstream
                      // v5.153: Enhanced fallback strategies for failed geocoding
                      
                      // Strategy 1: Try without house number (just street)
@@ -546,40 +545,6 @@ export const useRouteGeocoding = ({
                   orderUpdates.push(update);
              }
             } // End of else (NORMAL-PATH)
-=======
-                    // v39: Smart Fallback — try order's own coords (from memory/enrichment) BEFORE showing any modal
-                    // This handles the case where Photon/Nominatim is down (500 errors) but coords were saved previously
-                    if (order.coords?.lat && order.coords?.lng) {
-                        const memLoc = { lat: Number(order.coords.lat), lng: Number(order.coords.lng) };
-                        console.log(`[Расчет] Фолбэк к координатам из памяти для: ${order.address} → ${memLoc.lat},${memLoc.lng}`);
-                        
-                        let kz = order.kmlZone;
-                        let kh = order.kmlHub;
-                        if (!kz) {
-                            const zoneRes = robustGeocodingService.findZoneForCoords(memLoc.lat, memLoc.lng);
-                            if (zoneRes) { kz = zoneRes.zoneName; kh = zoneRes.hubName; }
-                        }
-                        
-                        const update: any = {
-                            id: order.id,
-                            lat: memLoc.lat,
-                            lng: memLoc.lng,
-                            kmlZone: kz,
-                            kmlHub: kh,
-                            streetNumberMatched: order.streetNumberMatched ?? true,
-                            locationType: order.locationType || 'ROOFTOP',
-                        };
-                        waypointLocs.push(memLoc);
-                        orderUpdates.push(update);
-                        continue;
-                    }
-
-                    // v39: Only show modal as absolute last resort (address truly not found anywhere)
-                    console.warn(`[Расчет] Адрес не найден нигде: ${order.address} — пропускаем.`);
-                    // Skip the address instead of blocking (will affect distance accuracy but won't interrupt user)
-                    continue;
-                }
->>>>>>> Stashed changes
 
              // 2.5 Save GEODATA IMMEDIATELY (v35.9.6: Persistence Priority)
             // This ensures KML zones and coordinates are visible even if the routing engine fails.
@@ -612,7 +577,6 @@ export const useRouteGeocoding = ({
             }
 
 
-<<<<<<< Updated upstream
             // 2.6 Защита от аномалий на перегонах с уточнением
             // Uses straight-line distances to detect geocoding errors BEFORE calling routing.
             // If a leg is suspiciously long, we surface ALL candidates for that address
@@ -763,9 +727,6 @@ export const useRouteGeocoding = ({
                     }
                 }
             }
-=======
-            // 2.6 Per-Leg Anomaly Guard with Disambiguation removed per user request to stop blocking calculation.
->>>>>>> Stashed changes
 
             // 3. Конечная точка
             let destinLoc: any = null

@@ -770,10 +770,7 @@ export function groupAllOrdersByTimeWindow(
     
     ordersByRawCourier.forEach((courierOrders, rawId) => {
         const normalizedName = normalizeCourierName(rawId);
-<<<<<<< Updated upstream
         // Надёжное сопоставление: поиск по ID или нормализованному имени
-=======
->>>>>>> Stashed changes
         const courier = couriers.find(c => 
             String(c._id || c.id) === String(rawId) ||
             normalizeCourierName(c.name || c.id) === normalizedName
@@ -801,25 +798,25 @@ export function groupAllOrdersByTimeWindow(
 
     // 3. Для каждого консолидированного курьера группируем по времени
     consolidatedMap.forEach((info) => {
-<<<<<<< Updated upstream
-        const hasActiveOrCompleted = info.orders.some(o => {
+        const orderValues = Array.from(info.orders.values());
+        const hasActiveOrCompleted = orderValues.some(o => {
             const s = String(o?.status || o?.deliveryStatus || '').toLowerCase();
             return s.includes('доставля') || s.includes('в пути') || s.includes('исполнен') ||
                    s.includes('виконан') || s.includes('завер') || s.includes('доставлен') ||
                    s.includes('выполнен') || s.includes('completed');
         });
-        const hasPickupData = info.orders.some(o => getPickupTime(o) !== null);
+        const hasPickupData = orderValues.some(o => getPickupTime(o) !== null);
 
         let timeGroups: TimeWindowGroup[];
         if (hasActiveOrCompleted && hasPickupData) {
-            timeGroups = clusterByPickupTime(info.orders, info.id, info.name, {
+            timeGroups = clusterByPickupTime(orderValues, info.id, info.name, {
                 pickupProximityMinutes: config.pickupProximityMinutes,
                 pickupMaxSpanMinutes: config.pickupMaxSpanMinutes,
                 maxCenterDistanceKm: config.maxCenterDistanceKm,
             });
         } else {
             timeGroups = groupOrdersByTimeWindow(
-                info.orders,
+                orderValues,
                 info.id,
                 info.name,
                 proximityMinutes,
@@ -833,16 +830,6 @@ export function groupAllOrdersByTimeWindow(
             postMergeEnabled: config.postMergeEnabled,
             postMergeStrategy: config.postMergeStrategy,
         });
-=======
-        const uniqueOrders = Array.from(info.orders.values());
-        const timeGroups = groupOrdersByTimeWindow(
-            uniqueOrders,
-            info.id,
-            info.name,
-            proximityMinutes,
-            maxDeliverySpan
-        );
->>>>>>> Stashed changes
         result.set(normalizeCourierName(info.name), timeGroups);
     });
 

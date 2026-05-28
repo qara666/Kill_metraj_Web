@@ -21,8 +21,7 @@ __tests__/
 *.md
 .dockerignore
 Dockerfile
-pnpm-lock.yaml
-package-lock.json
 ecosystem.config.js
 nodemon.json
 .debezium-connector-config.json
+geocoding_db.json

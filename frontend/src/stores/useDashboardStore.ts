@@ -48,15 +48,11 @@ interface DashboardStoreState {
         skippedInRoutes: number;
         skippedNoCourier: number;
         skippedOther: number;
-<<<<<<< Updated upstream
         isBulkImport: boolean; // v5.160: Для логики отчётов
         userStopped: boolean; // v5.202: Пользователь явно остановил
         currentCourier?: string | null; // v36.3: Текущий обрабатываемый курьер
         // v37.0: Стабильные КПЭ — единый источник истины
         couriersSummary?: Record<string, { distanceKm: number; ordersCount: number }>;
-=======
-        statusMessage?: string;
->>>>>>> Stashed changes
     };
 
     // v6.19: Агрегированный статус для админки (мультиподразделения)
@@ -148,14 +144,10 @@ export const useDashboardStore = create<DashboardStoreState>()(
                 skippedInRoutes: 0,
                 skippedNoCourier: 0,
                 skippedOther: 0,
-<<<<<<< Updated upstream
                 isBulkImport: false,
                 userStopped: false, // v5.202: Пользователь явно остановил
                 currentCourier: null, // v36.3: Текущий обрабатываемый курьер
                 couriersSummary: {}, // v37.0
-=======
-                statusMessage: '',
->>>>>>> Stashed changes
             },
 
             setApiKey: (key) => set({ apiKey: key }),
@@ -263,7 +255,6 @@ export const useDashboardStore = create<DashboardStoreState>()(
                 return {
                     ...persistentState,
                     autoRoutingStatus: {
-<<<<<<< Updated upstream
                         isActive: status.isActive,
                         lastUpdate: status.lastUpdate,
                         userStopped: status.userStopped || false,
@@ -279,19 +270,6 @@ export const useDashboardStore = create<DashboardStoreState>()(
                         isBulkImport: keepCounters ? status.isBulkImport : false,
                         currentCourier: keepCounters ? status.currentCourier : null,
                         couriersSummary: keepCounters ? (status.couriersSummary || {}) : {},
-=======
-                        isActive: persistentState.autoRoutingStatus.isActive,
-                        lastUpdate: persistentState.autoRoutingStatus.lastUpdate,
-                        processedCount: 0,
-                        totalCount: 0,
-                        processedCouriers: 0,
-                        totalCouriers: 0,
-                        skippedGeocoding: 0,
-                        skippedInRoutes: 0,
-                        skippedNoCourier: 0,
-                        skippedOther: 0,
-                        statusMessage: '',
->>>>>>> Stashed changes
                     }
                 };
             }

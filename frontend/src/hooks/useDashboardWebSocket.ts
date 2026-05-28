@@ -127,16 +127,9 @@ export const useDashboardWebSocket = ({
             logger.info(` Fetching dashboard for ${apiDate} (isManual=${isManual})`);
             const response = await dashboardApiService.fetchDataForDate({
                 date: apiDate,
-<<<<<<< Updated upstream
                 divisionId: effectiveDivisionId,
                 force: isManual, // v38.2: Use cache for initial loads, force only for manual syncs
                 apiKey: key // Pass the user-specific API key
-=======
-                divisionId: deptId ? String(deptId) : 'all',
-                force: true,
-                apiKey: key,
-                signal: controller.signal // Added signal for abort support
->>>>>>> Stashed changes
             });
             clearTimeout(timeoutId);
 

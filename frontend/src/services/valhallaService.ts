@@ -146,15 +146,11 @@ export class ValhallaService {
     const finalUrl = this.getMaybeProxiedUrl(targetUrl);
 
     try {
-<<<<<<< Updated upstream
       const { API_URL } = await import('../config/apiConfig')
       const targetUrl = `${VALHALLA_BASE_URL}/route`
       const proxyUrl = `${API_URL}/api/proxy/valhalla?url=${encodeURIComponent(targetUrl)}`
 
       const response = await fetch(proxyUrl, {
-=======
-      const response = await fetch(finalUrl, {
->>>>>>> Stashed changes
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -175,14 +171,10 @@ export class ValhallaService {
         return { feasible: false }
       }
 
-<<<<<<< Updated upstream
       //  Map legs 
       // Each leg is between two consecutive "break" locations.
       // trip.legs[i].summary.length is in KM (we requested units: 'km')
       // trip.legs[i].summary.time is in seconds.
-=======
-      // ── Map legs ────────────────────────────────────────────────────────────
->>>>>>> Stashed changes
       const legs: ValhallaLeg[] = (trip.legs || []).map((leg: any, idx: number) => {
         const distanceKm: number = leg.summary?.length ?? 0
         const distanceM = Math.round(distanceKm * 1000)   // → Meters

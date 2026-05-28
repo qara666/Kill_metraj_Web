@@ -37,7 +37,6 @@ export const dashboardApiService = {
                 };
             }
 
-<<<<<<< Updated upstream
             const executeFetch = async () => {
                 return await axios.post<FetchDashboardDataResponse>(
                     `${API_BASE_URL}/dashboard/fetch`,
@@ -63,18 +62,6 @@ export const dashboardApiService = {
                     response = await executeFetch();
                 } else {
                     throw err;
-=======
-            const response = await axios.post<FetchDashboardDataResponse>(
-                `${API_BASE_URL}/dashboard/fetch`,
-                request,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: 60000, // 60 секунд тайм-аут для тяжелых запросов
-                    signal: request.signal // Pass the abort signal to axios
->>>>>>> Stashed changes
                 }
             }
 

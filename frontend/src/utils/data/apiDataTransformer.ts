@@ -38,6 +38,7 @@ export const transformDashboardData = (
 
     const couriers: any[] = [];
     const errors: any[] = [];
+    const orders: any[] = [];
 
     // 1. Создаем карту курьеров для быстрого поиска типа транспорта
     const courierVehicleMap = new Map<string, 'car' | 'foot'>();
@@ -66,32 +67,11 @@ export const transformDashboardData = (
 
 
 
-<<<<<<< Updated upstream
     // 2. Преобразование заказов с учетом типа транспорта курьера
     (apiData.orders || []).forEach((apiOrder, index) => {
         try {
             const order = transformDashboardOrder(apiOrder, effectiveDate, index, courierVehicleMap);
             orders.push(order);
-=======
-    // v12.0: Grouping orders by OrderNumber to prevent duplicates on dashboard refresh
-    const orderMap = new Map<string, Order>();
-
-    apiData.orders.forEach((apiOrder, index) => {
-        try {
-            const order = transformDashboardOrder(apiOrder, effectiveDate, index);
-            const key = `${order.orderNumber}_${order.address.trim().toLowerCase()}`;
-            
-            if (orderMap.has(key)) {
-                // Merge amounts/comments if duplicated
-                const existing = orderMap.get(key)!;
-                existing.amount = (existing.amount || 0) + (order.amount || 0);
-                if (order.orderComment && !existing.orderComment?.includes(order.orderComment)) {
-                    existing.orderComment = `${existing.orderComment}; ${order.orderComment}`;
-                }
-            } else {
-                orderMap.set(key, order);
-            }
->>>>>>> Stashed changes
         } catch (error) {
             errors.push({
                 row: index + 1,
@@ -101,16 +81,8 @@ export const transformDashboardData = (
         }
     });
 
-<<<<<<< Updated upstream
 
     // Синхронизация курьеров с заказами: все курьеры из заказов должны быть в списке
-=======
-    // Convert map back to array
-    const orders: Order[] = Array.from(orderMap.values());
-
-    // Sync couriers with orders: Ensure all couriers mentioned in orders exist in the couriers list
-    // Sync couriers with orders: Ensure all couriers mentioned in orders exist in the couriers list
->>>>>>> Stashed changes
     const existingCourierNames = new Set(couriers.map(c => c.name));
     orders.forEach(order => {
         if (order.courier &&

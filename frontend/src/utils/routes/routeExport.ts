@@ -73,20 +73,11 @@ export const exportToGoogleMaps = (data: RouteExportData): string => {
     }
   }
 
-<<<<<<< Updated upstream
   // Запасной вариант: адреса/координаты, если geoMeta отсутствует или некорректен
   const rdStartCoords = route.route_data?.startCoords;
   const rdEndCoords = route.route_data?.endCoords;
   const origin = startCoords || rdStartCoords ? `${(startCoords || rdStartCoords).lat},${(startCoords || rdStartCoords).lng}` : getPoint(null, startAddress)
   const destination = endCoords || rdEndCoords ? `${(endCoords || rdEndCoords).lat},${(endCoords || rdEndCoords).lng}` : getPoint(null, endAddress)
-=======
-  // Fallback to addresses/coords if geoMeta is missing
-  const sCoords = startCoords || parseCoordsFromAddress(startAddress);
-  const eCoords = endCoords || parseCoordsFromAddress(endAddress);
-  
-  const origin = sCoords ? `${sCoords.lat},${sCoords.lng}` : getPoint(null, startAddress)
-  const destination = eCoords ? `${eCoords.lat},${eCoords.lng}` : getPoint(null, endAddress)
->>>>>>> Stashed changes
   const waypoints = orders
     .map((order, idx) => getPoint(order, route.routeChain?.[idx]))
     .filter(Boolean)
@@ -101,7 +92,6 @@ export const exportToValhalla = (data: RouteExportData): string => {
   
   const locs: {lat: number, lon: number}[] = []
   
-<<<<<<< Updated upstream
   // Вспомогательная функция для получения валидных координат из разных источников
   const getValidCoord = (obj: any): { lat: number, lon: number } | null => {
     if (!obj) return null
@@ -142,33 +132,6 @@ export const exportToValhalla = (data: RouteExportData): string => {
   const endCoord = getValidCoord(geoMeta?.destination) || getValidCoord(endCoords) || getValidCoord(rdEndCoords)
   if (endCoord) {
     locs.push(endCoord)
-=======
-  if (route.geoMeta) {
-    if (route.geoMeta.origin) {
-      locs.push({ lat: route.geoMeta.origin.lat, lon: route.geoMeta.origin.lng || route.geoMeta.origin.lon })
-    }
-    route.geoMeta.waypoints.forEach((wp: any) => locs.push({ lat: wp.lat, lon: wp.lng || wp.lon }))
-    if (route.geoMeta.destination) {
-      locs.push({ lat: route.geoMeta.destination.lat, lon: route.geoMeta.destination.lng || route.geoMeta.destination.lon })
-    }
-  } else {
-    // v16.7: PROACTIVE HUB EXTRACTION
-    const sCoords = data.startCoords || (data.startAddress ? parseCoordsFromAddress(data.startAddress) : null);
-    const eCoords = data.endCoords || (data.endAddress ? parseCoordsFromAddress(data.endAddress) : null);
-
-    if (sCoords) locs.push({ lat: sCoords.lat, lon: sCoords.lng });
-
-    orders.forEach(o => {
-      const c = o.coords || (o.address ? parseCoordsFromAddress(o.address) : null);
-      if (c?.lat && c?.lng) {
-        locs.push({ lat: Number(c.lat), lon: Number(c.lng) })
-      } else if (o.lat && o.lng) {
-        locs.push({ lat: Number(o.lat), lon: Number(o.lng) })
-      }
-    });
-
-    if (eCoords) locs.push({ lat: eCoords.lat, lon: eCoords.lng });
->>>>>>> Stashed changes
   }
 
   if (locs.length > 0) {

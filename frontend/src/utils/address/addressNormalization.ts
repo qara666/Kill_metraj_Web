@@ -172,18 +172,12 @@ export function cleanAddressForSearch(address: string): string {
     // Step 1: Remove leading city prefix (extended with просп., наб., вул. variants)
     cleaned = cleaned.replace(/^(?:місто\s+|город\s+|м\.?\s*|г\.?\s*)?(?:київ|киев|kyiv|kiev|харків|харьков|дніпро|ужгород|одеса|одесса|львів|львов|бровари|бровары|бориспіль|борисполь|ірпінь|ирпень|буча|вишневе|вишневое|полтава|суми|суми|хмельницький|миколаїв|просп|наб)\s*,\s*/i, '');
 
-<<<<<<< Updated upstream
     // Шаг 2: Умное удаление скобок:
     // - Удаляем ТЕХНИЧЕСКИЕ скобки (квартира, подъезд и т.д.)
     // - ЗАМЕНЯЕМ ВСТРОЕННЫЕ скобки с названием улицы (старое название) на пробел,
     //   чтобы основное имя использовалось для основного запроса. Альтернативное имя извлекается
     //   отдельно через extractParentheticalStreetName() для генерации вариантов.
     cleaned = cleaned.replace(/\s*\([^)]*\)/g, '').trim();
-=======
-    // Step 2: Remove ALL parentheticals completely (old names, notes, etc.)
-    // For geocoding, simplicity is king. Photon returns 400 if parentheses are unencoded.
-    cleaned = cleaned.replace(/\([^)]*\)/g, ' ').replace(/\s{2,}/g, ' ').trim();
->>>>>>> Stashed changes
 
     // Step 3: Identify the house number and cut EVERYTHING after it.
     // House number can be like "15", "15а", "15/3", "15-Б", "15 Б"
@@ -204,7 +198,6 @@ export function cleanAddressForSearch(address: string): string {
         }
     }
 
-<<<<<<< Updated upstream
     // Шаг 4: Рекурсивное удаление суффиксов (Финальная очистка)
     const TechnicalLabels = 'корп|корпус|під|под|підʼїзд|подъезд|эт|этаж|кв|квартира|оф|офіс|офис|вход|вхід|секція|секция|літера|літ|литера|д[\\s.\\/\\-]*ф|дф|моб|подзвони|звони|дзвони|call';
     
@@ -225,14 +218,4 @@ export function cleanAddressForSearch(address: string): string {
 
     // Финальная очистка: удаляем хвостовые запятые/пробелы, тире и т.д.
     return cleaned.replace(/[, \-]+$/, '').replace(/\s{2,}/g, ' ').trim();
-=======
-    if (!result) result = cleaned;
-
-    // Step 4: Final cleanup of technical labels that might have leaked (more aggressive)
-    const TechnicalLabels = /\b(корп|под|эт|кв|квартира|оф|вход|д\/ф|моб|підʼїзд|подъезд|этаж|офіс|вхід|секция|секція|літера|літ|литера|домофон)\b.*$/iu;
-    result = result.replace(TechnicalLabels, '');
-
-    // Final cleanup: remove trailing commas/spaces, dashes, etc.
-    return result.replace(/[, \-\/]+$/, '').replace(/\s{2,}/g, ' ').trim();
->>>>>>> Stashed changes
 }

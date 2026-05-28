@@ -221,15 +221,27 @@ export class PhotonService {
         return false;
     }
 
-    static async geocode(address: string, cityBias?: string, silent?: boolean): Promise<any[]> {
-        if (!this.isAvailable()) return []; // Fast-exit if circuit is open
+    // v38: Direct mode — when backend proxy is down, call Photon directly from browser
+    private static _proxyAvailable: boolean | null = null;
+    private static _proxyCheckPromise: Promise<boolean> | null = null;
 
-<<<<<<< Updated upstream
+    static async checkProxyAvailable(): Promise<boolean> {
+        if (this._proxyAvailable !== null) return this._proxyAvailable;
+        if (this._proxyCheckPromise) return this._proxyCheckPromise;
+        this._proxyCheckPromise = fetch(`${API_URL}/api/health`, { signal: AbortSignal.timeout(2000) })
+            .then(r => r.ok)
+            .catch(() => false)
+            .then(ok => {
+                this._proxyAvailable = ok;
+                // Re-check every 30s
+                setTimeout(() => { this._proxyAvailable = null; this._proxyCheckPromise = null; }, 30000);
+                return ok;
+            });
+        return this._proxyCheckPromise;
+    }
+
     static async geocode(address: string, cityBias?: string, activePolygons?: any[]): Promise<any[]> {
         const expanded = expandUkrAbbrev(address, cityBias)
-=======
-        const expanded = expandUkrAbbrev(address)
->>>>>>> Stashed changes
         const city = cityBias || 'Київ'
         
         const zoneBounds = activePolygons?.length ? getActiveZoneBounds(activePolygons) : null;
@@ -258,7 +270,7 @@ export class PhotonService {
             query = `${query}, Україна`
         }
 
-        const results = await this._query(query, bboxParams, bounds?.center, silent)
+        const results = await this._query(query, bboxParams, bounds?.center, false)
         return results
     }
 
@@ -296,12 +308,23 @@ export class PhotonService {
             }
             url.searchParams.append('lang', 'uk')
 
-            const proxyUrl = `${API_URL}/api/proxy/geocoding?url=${encodeURIComponent(url.toString())}&_cb=${Date.now()}`;
-            
-            const response = await fetch(proxyUrl, {
-                headers: { 'Accept-Language': 'uk,ru,en' },
-                signal: AbortSignal.timeout(30000)
-            })
+            // v38: Direct mode when proxy (backend) is unavailable
+            const proxyOk = await PhotonService.checkProxyAvailable();
+            let response: Response;
+            if (proxyOk) {
+                const proxyUrl = `${API_URL}/api/proxy/geocoding?url=${encodeURIComponent(url.toString())}&_cb=${Date.now()}`;
+                response = await fetch(proxyUrl, {
+                    headers: { 'Accept-Language': 'uk,ru,en' },
+                    signal: AbortSignal.timeout(30000)
+                });
+            } else {
+                // Direct fetch — no proxy, browser goes to photon.komoot.io directly
+                console.debug('[Photon] Direct mode (proxy unavailable)');
+                response = await fetch(url.toString(), {
+                    headers: { 'Accept-Language': 'uk,ru,en' },
+                    signal: AbortSignal.timeout(15000)
+                });
+            }
             
             if (response.status === 429) return [];
             if (!response.ok) {

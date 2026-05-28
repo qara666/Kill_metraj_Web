@@ -61,11 +61,7 @@ export class OSRMService {
     const finalUrl = this.getMaybeProxiedUrl(targetUrl);
 
     try {
-<<<<<<< Updated upstream
-      const response = await fetch(url, { signal: AbortSignal.timeout(5000) })
-=======
-      const response = await fetch(finalUrl, { signal: AbortSignal.timeout(10000) })
->>>>>>> Stashed changes
+      const response = await fetch(finalUrl, { signal: AbortSignal.timeout(5000) })
       if (!response.ok) return { feasible: false }
 
       const data = await response.json()

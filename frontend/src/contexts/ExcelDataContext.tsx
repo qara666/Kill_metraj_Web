@@ -2,13 +2,8 @@ import * as React from 'react'
 import { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback, useMemo } from 'react'
 import { localStorageUtils } from '../utils/ui/localStorage'
 import { toast } from 'react-hot-toast'
-<<<<<<< Updated upstream
-import { normalizeCourierName, isId0CourierName, getCourierName } from '../utils/data/courierName'
-
-=======
 import { normalizeCourierName, isId0CourierName } from '../utils/data/courierName'
-import { enrichOrderGeodata } from '../utils/data/excelProcessor'
->>>>>>> Stashed changes
+import { normalizeDateToIso } from '../utils/data/dateUtils'
 import { getStableOrderId } from '../utils/data/orderId'
 import { CourierIdResolver } from '../utils/data/courierIdMap'
 import { useDashboardStore } from '../stores/useDashboardStore'
@@ -344,137 +339,11 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
                 headers: { 'Authorization': `Bearer ${token}` }
               });
               
-<<<<<<< Updated upstream
-              const contentType = response.headers.get('content-type');
-              if (!contentType || !contentType.includes('application/json')) {
-                  console.warn('[ExcelSync] Server returned non-JSON response, skipping server data');
-                  throw new Error('Server returned non-JSON');
-              }
-
-              if (response.ok) {
-                let json: any = null;
-                try {
-                  const text = await response.text();
-                  json = JSON.parse(text);
-                } catch (parseErr) {
-                  console.warn('[ExcelSync] /api/v1/state JSON parse error:', parseErr);
-                }
-
-                if (json && json.success && json.data && json.data.orders && json.data.orders.length > 0) {
-                  const serverData = json.data;
-                  
-                  // v5.204: ПРОВЕРКА ДАТЫ серверного восстановленного состояния
-                  const currentShift = useDashboardStore.getState().apiDateShift;
-                  const normalize = (d: any): string => {
-                      if (!d || typeof d !== 'string') return '';
-                      try {
-                          const part = d.split(' ')[0].split('T')[0];
-                          if (part.includes('-')) {
-                              const [y, m, d_] = part.split('-');
-                              return `${d_}.${m}.${y}`;
-                          }
-                          return part;
-                      } catch (e) {
-                          return '';
-                      }
-                  };
-                  
-                  const targetDate = normalize(String(currentShift || ''));
-                  const dataDate = normalize(String(serverData.creationDate || (serverData.orders?.[0]?.creationDate || '')));
-                  
-                  if (targetDate && dataDate && targetDate !== dataDate) {
-                      console.warn(`[ExcelSync] Server state date mismatch (${dataDate} vs ${targetDate}). Ignoring.`);
-                      // Будет продолжено к откату
-                  } else {
-                      const localOverrides = localStorage.getItem('km_manual_overrides');
-                      if (localOverrides && serverData.orders) {
-                        try {
-                          const overrides = JSON.parse(localOverrides);
-                          const SETTLEMENT_FIELDS = ['settledDate','settlementSessionId','sessionTotalReceived','sessionTotalDifference','sessionTotalExpected','untakenChange','originalChangeAmount','settledAmount','settlementNote','changeAmount','amount','effectiveAmount'];
-                          serverData.orders = serverData.orders.map((o: any) => {
-                            const sid = getStableOrderId(o);
-                            const num = o.orderNumber ? String(o.orderNumber) : null;
-                            let override = sid ? overrides[sid] : null;
-                            if (!override && num) override = overrides[num];
-                            if (!override && o.id) override = overrides[Number(o.id)];
-
-                            if (override) {
-                                // Always apply ALL override fields on top of server data
-                                // so settled amounts, dates, etc. are never lost
-                                const merged = { ...o };
-                                SETTLEMENT_FIELDS.forEach(f => { if (override[f] !== undefined) merged[f] = override[f]; });
-                                merged.status = override.settledDate ? (override.status || 'Исполнен') : (o.status || override.status);
-                                if (override.paymentMethodOverridden) merged.paymentMethod = override.paymentMethod;
-                                if (override.manualGeocoding) { merged.coords = override.coords; merged.isAddressLocked = true; }
-                                return merged;
-                            }
-                            return o;
-                          });
-                        } catch (e) {}
-                      }
-                      
-                      enrichRouteOrders(serverData);
-                      
-                      try {
-                        const dbRoutes = await fetchRoutesWithDate(token);
-                        const existingRoutes = Array.isArray(serverData.routes) ? serverData.routes : [];
-                        const allRouteIds = new Set<string>();
-                        const mergedRoutes: any[] = [];
-                        
-                        existingRoutes.forEach((r: any) => {
-                          const rid = String(r.id || '');
-                          if (rid && !allRouteIds.has(rid)) { allRouteIds.add(rid); mergedRoutes.push(r); }
-                        });
-                        
-                        dbRoutes.forEach((r: any) => {
-                          const rid = String(r.id || '');
-                          if (rid && !allRouteIds.has(rid)) { allRouteIds.add(rid); mergedRoutes.push(r); }
-                        });
-                        
-                        serverData.routes = mergedRoutes;
-                        let existingCourierNames = new Set<string>();
-                        if (serverData.couriers && Array.isArray(serverData.couriers)) {
-                          serverData.couriers.forEach((c: any) => {
-                              existingCourierNames.add(normalizeCourierName(c.name || c.courierName || '').toUpperCase());
-                              if (c.calculatedOrders === undefined) c.calculatedOrders = 0;
-                          });
-                        }
-                        
-                        mergedRoutes.forEach((r: any) => {
-                          const routeCourier = normalizeCourierName(r.courier || r.courier_id || '');
-                          if (routeCourier && routeCourier !== 'Не назначено') {
-                            const upperName = routeCourier.toUpperCase();
-                            if (!existingCourierNames.has(upperName)) {
-                              existingCourierNames.add(upperName);
-                              serverData.couriers = serverData.couriers || [];
-                              serverData.couriers.push({
-                                name: routeCourier,
-                                distanceKm: Number((r.totalDistance || 0).toFixed(2)),
-                                calculatedOrders: Number(r.ordersCount || r.orders?.length || 0),
-                                isActive: true, vehicleType: 'car'
-                              });
-                            }
-                          }
-                        });
-                      } catch (e) {
-                         console.warn('[ExcelSync] DB route fetch failed:', e);
-                      }
-
-                      const timeSinceLastSet2 = Date.now() - lastSetTimeRef.current;
-                      if (timeSinceLastSet2 > 2000 || lastSetTimeRef.current === 0) {
-                        setExcelDataState(serverData);
-                      } else {
-                        console.info('[ExcelSync] Skipping server load — fresh data already set externally');
-                      }
-                      return;
-                  }
-=======
               if (response.ok) {
                 const json = await response.json();
                 if (json.success && json.data) {
                   setExcelDataState(json.data);
                   return;
->>>>>>> Stashed changes
                 }
               }
             } catch (e) {
@@ -505,7 +374,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     }
   }, [])
 
-<<<<<<< Updated upstream
   // Cross-tab sync via BroadcastChannel (replaces localStorage storage events)
   useEffect(() => {
     const handleTurboRoutes = (e: Event) => {
@@ -700,130 +568,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
           
           return { ...prev, routes: mergedRoutes, couriers: updatedCouriers, uncalculatedOrders: eventUncalc || [] };
         });
-=======
-  // v17.12: Simplified Protection — No more fine-grained order merging.
-  // Only protects routes if server response is unexpectedly empty.
-  // v17.20: ENHANCED PROTECTION — Merges local geocoding & routes into incoming data.
-  // This prevents losing background geocoding work on page refresh.
-  // v17.22: ROBUST ATOMIC PROTECTION — Never loses local work even if server is fast.
-  const protectData = useCallback((next: ExcelData, current?: ExcelData | null): ExcelData => {
-    let source = current;
-    if (!source && typeof window !== 'undefined') {
-        try {
-            const raw = localStorage.getItem('km_dashboard_processed_data');
-            source = raw ? JSON.parse(raw) : null;
-        } catch {}
-    }
-    if (!source || !next) return next;
-
-    // 1. Merge Coordinates & Zones for matching orders
-    const currentOrdersMap = new Map<string, any>();
-    (source.orders || []).forEach(o => {
-        const sid = getStableOrderId(o);
-        if (sid && o.coords?.lat) currentOrdersMap.set(sid, o);
-    });
-
-    const nextOrders = (next.orders || []).map(o => {
-        const sid = getStableOrderId(o);
-        const prev = sid ? currentOrdersMap.get(sid) : null;
-        
-        // If local has coords and server doesn't → TRUST LOCAL
-        if (prev && !o.coords?.lat && prev.coords?.lat) {
-            return {
-                ...o,
-                coords: prev.coords,
-                latitude: prev.latitude,
-                longitude: prev.longitude,
-                kmlZone: prev.kmlZone,
-                kmlHub: prev.kmlHub,
-                isAddressLocked: prev.isAddressLocked,
-                geocodeScore: prev.geocodeScore,
-                _recoveredLocal: true
-            };
-        }
-        return o;
-    });
-
-    // 2. Protect Routes (keep current routes if server returns 0)
-    const localRouteCount = (source.routes || []).length;
-    const serverRouteCount = (next.routes || []).length;
-
-    let finalRoutes = next.routes;
-    if (serverRouteCount === 0 && localRouteCount > 0) {
-        finalRoutes = source.routes;
-    }
-
-    return {
-        ...next,
-        orders: nextOrders,
-        routes: finalRoutes,
-        lastModified: Math.max(next.lastModified || 0, source.lastModified || 0)
-    };
-  }, []);
-
-  const performManualOverridesSave = useCallback((orders: any[]) => {
-    try {
-      const existing = localStorage.getItem('km_manual_overrides');
-      const overrides = existing ? JSON.parse(existing) : {};
-      
-      orders.forEach(o => {
-        const sid = getStableOrderId(o);
-        const id = o.id ? String(o.id) : null;
-        const num = o.orderNumber ? String(o.orderNumber) : null;
-        
-        let hasChanges = false;
-        const ovr: any = {};
-        
-        if (o.settledDate) { hasChanges = true; ovr.settledDate = o.settledDate; ovr.status = o.status; }
-        if (o.courier && !isId0CourierName(o.courier)) { hasChanges = true; ovr.courier = o.courier; ovr.courierId = o.courierId; }
-        if (o.paymentMethodOverridden) { hasChanges = true; ovr.paymentMethod = o.paymentMethod; ovr.paymentMethodOverridden = true; }
-        
-        // v17.24: PERSIST ALL FOUND COORDS - Background geocoding results must survive refresh.
-        // We save coords whenever they are present, keeping them locked.
-        if (o.coords?.lat && o.coords?.lng) {
-          hasChanges = true; 
-          ovr.coords = { lat: o.coords.lat, lng: o.coords.lng };
-          ovr.latitude = o.latitude;
-          ovr.longitude = o.longitude;
-          ovr.kmlZone = o.kmlZone;
-          ovr.kmlHub = o.kmlHub;
-          ovr.isAddressLocked = true; 
-          ovr.geocodeScore = o.geocodeScore;
-        }
-        
-        if (hasChanges) {
-          if (sid) overrides[sid] = { ...(overrides[sid] || {}), ...ovr };
-          if (num) overrides[num] = { ...(overrides[num] || {}), ...ovr };
-          if (id)  overrides[id]  = { ...(overrides[id]  || {}), ...ovr };
-        }
-      });
-
-      const keys = Object.keys(overrides);
-      if (keys.length > 500) {
-        const toDelete = keys.slice(0, keys.length - 500);
-        toDelete.forEach(k => delete overrides[k]);
-      }
-
-      localStorage.setItem('km_manual_overrides', JSON.stringify(overrides));
-      
-      if (excelDataRef.current && excelDataRef.current.orders) {
-        const slimOrders = (excelDataRef.current.orders || []).map((o: any) => ({
-            id: o.id, num: o.num, sid: o.sid, address: o.address,
-            coords: o.coords ? { lat: o.coords.lat, lng: o.coords.lng } : undefined,
-            status: o.status, courier: o.courier, courierId: o.courierId,
-            plannedTime: o.plannedTime, kmlZone: o.kmlZone, kmlHub: o.kmlHub,
-            isAddressLocked: o.isAddressLocked
-        }));
-
-        const fullData = { 
-            ...excelDataRef.current, 
-            orders: slimOrders, 
-            routes: excelDataRef.current.routes || [],
-            couriers: excelDataRef.current.couriers || [],
-            lastModified: Date.now() 
-        };
-        localStorage.setItem('km_dashboard_processed_data', JSON.stringify(fullData));
->>>>>>> Stashed changes
       }
     };
 
@@ -1038,7 +782,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     performManualOverridesSave(excelData.orders);
   }, [excelData?.orders, performManualOverridesSave]);
 
-<<<<<<< Updated upstream
    // v5.151: Автосохранение данных дашборда в localStorage при изменении
 
    // v5.180: Оптимизировано - увеличен debounce до 1000мс, пропускать если изменились только маршруты
@@ -1058,7 +801,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     }
     lastSavedRef.current = currentHash;
     
-    // Дебаунс сохранения чтобы избежать чрезмерных записей при частых обновлениях
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
@@ -1144,22 +886,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
         const val = force ? incomingData : protectData(incomingData, prev);
         return val;
       });
-=======
-  const setExcelData = useCallback((incomingData: ExcelData | null) => {
-    if (incomingData) {
-      // v17.25: PANIC GUARD - If incoming is empty (Unauthorized/Error) 
-      // but we have valid local orders → ABORT OVERWRITE.
-      // This prevents "Token Expiry" (401) from wiping a calculation in progress.
-      const hasLocalWork = (excelDataRef.current?.orders || []).length > 2;
-      const incomingIsEmpty = (incomingData.orders || []).length === 0;
-      
-      if (hasLocalWork && incomingIsEmpty) {
-          console.warn('[ExcelSync] Rejecting empty data (Possible Session Expiry). Keeping local work.');
-          return;
-      }
-
-      setExcelDataState(prev => protectData(incomingData, prev));
->>>>>>> Stashed changes
     } else {
       setExcelDataState(null);
       localStorage.removeItem('km_dashboard_processed_data_v4');
@@ -1185,13 +911,8 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
 
   const clearExcelData = useCallback((options?: { skipServerWipe?: boolean }) => {
     setExcelDataState(null)
-<<<<<<< Updated upstream
     localStorage.removeItem('km_dashboard_processed_data_v4')
     crossTabSync.broadcast('dashboard_data', { orders: [], couriers: [], routes: [] });
-
-=======
-    localStorage.removeItem('km_dashboard_processed_data')
->>>>>>> Stashed changes
     if (!options?.skipServerWipe) {
       const token = localStorage.getItem('km_access_token');
       if (token) {
@@ -1206,16 +927,12 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
   }, [])
 
   const updateRouteData = useCallback((newRoutes: any[]) => {
-<<<<<<< Updated upstream
     setExcelDataState(prev => {
       const next = prev ? { ...prev, routes: newRoutes, _lastManualRouteUpdate: Date.now() } : {
         orders: [], couriers: [], paymentMethods: [], routes: newRoutes, errors: [], summary: undefined, _lastManualRouteUpdate: Date.now()
       } as any;
       return next;
     })
-=======
-    setExcelDataState(prev => prev ? { ...prev, routes: newRoutes } : null)
->>>>>>> Stashed changes
   }, [])
 
   const updateOrderPaymentMethod = useCallback((orderNumber: string, newPaymentMethod: string) => {
@@ -1236,7 +953,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     saveManualOverrides: performManualOverridesSave
   }), [excelData, setExcelData, updateExcelData, clearExcelData, updateRouteData, updateOrderPaymentMethod, performManualOverridesSave]);
 
-<<<<<<< Updated upstream
   useEffect(() => {
     const handleBeforeUnload = () => {};
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -1438,8 +1154,6 @@ export const ExcelDataProvider: React.FC<ExcelDataProviderProps> = ({ children }
     };
   }, [refreshRoutesFromDB, excelData]);
 
-=======
->>>>>>> Stashed changes
   return (
     <ExcelDataContext.Provider value={contextValue}>
       {children}
@@ -1465,13 +1179,9 @@ function applyCourierVehicleMap(data: any, current?: any): any {
       bruteNormalizedMap[normalizeCourierName(name).toLowerCase()] = rawMap[name];
     });
 
-<<<<<<< Updated upstream
     const currentOrdersMap = new Map<string, any>((effectiveCurrent?.orders || []).map((o: any) => [getStableOrderId(o), o]));
 
-    let persistedOverrides: Record<string, any> = {};
-=======
     const overrideMap = new Map<string, any>();
->>>>>>> Stashed changes
     try {
       const raw = localStorage.getItem('km_manual_overrides');
       if (raw) {
@@ -1490,7 +1200,6 @@ function applyCourierVehicleMap(data: any, current?: any): any {
         const num = o.orderNumber ? String(o.orderNumber) : null;
         const ovr = (id && overrideMap.get(id)) || (num && overrideMap.get(num)) || null;
 
-<<<<<<< Updated upstream
         let isSafeToApplyOverride = !!ovr;
         if (ovr && (ovr.creationDate || ovr.dateShift) && (o.creationDate || data.creationDate)) {
              const ovrNorm = normalizeDateToIso(ovr.creationDate || ovr.dateShift);
@@ -1500,21 +1209,15 @@ function applyCourierVehicleMap(data: any, current?: any): any {
              }
         }
 
-
         if (isSafeToApplyOverride) {
             return {
-=======
-        let result = base;
-        if (ovr) {
-            result = {
->>>>>>> Stashed changes
                 ...base,
                 ...ovr,
                 status: ovr.settledDate ? (ovr.status || 'исполнен') : (base.status || ovr.status)
             };
         }
-        if (sid) freshOrdersMap.set(sid, result);
-        return result;
+        if (sid) freshOrdersMap.set(sid, base);
+        return base;
     }) : [];
     
     const couriers = rawCouriers.map((c: any) => ({
@@ -1542,7 +1245,6 @@ function applyCourierVehicleMap(data: any, current?: any): any {
       return mappedType ? { ...c, vehicleType: mappedType } : { ...c, vehicleType: c.vehicleType || 'car' };
     });
 
-<<<<<<< Updated upstream
     let paymentMethods = Array.isArray(data.paymentMethods) ? data.paymentMethods : []
     if (paymentMethods.length === 0 && orders.length > 0) {
       const uniqueMethods = new Set<string>();
@@ -1604,28 +1306,6 @@ function applyCourierVehicleMap(data: any, current?: any): any {
       paymentMethods,
       errors: Array.isArray(data.errors) ? data.errors : []
     }
-=======
-    const incomingRoutes = Array.isArray(data.routes) ? data.routes : [];
-    const localRoutes = Array.isArray(current?.routes) ? current.routes : [];
-    const routesToProcess = (incomingRoutes.length === 0 && localRoutes.length > 0) ? localRoutes : incomingRoutes;
-
-    return {
-      ...data,
-      creationDate: data.creationDate || current?.creationDate,
-      routes: routesToProcess.map((r: any) => ({
-        ...r,
-        orders: Array.isArray(r.orders) ? r.orders.map((ro: any) => {
-             const sid = getStableOrderId(ro);
-             const fresh = sid ? freshOrdersMap.get(sid) : null;
-             return (fresh && fresh.coords?.lat) ? fresh : ((ro.coords?.lat) ? ro : enrichOrderGeodata(ro));
-        }) : []
-      })),
-      orders,
-      couriers: processedCouriers,
-      paymentMethods: data.paymentMethods || [],
-      errors: data.errors || []
-    };
->>>>>>> Stashed changes
   } catch (e) {
     console.error('CRITICAL ERROR in applyCourierVehicleMap:', e);
     return data;

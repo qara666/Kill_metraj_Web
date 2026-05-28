@@ -81,12 +81,8 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
 
     const initMap = async () => {
       await new Promise(r => setTimeout(r, 100));
-<<<<<<< Updated upstream
       const container = document.getElementById('edit-address-map');
       if (!container || (container as any)._leafletMap) return;
-=======
-      if (!container) return;
->>>>>>> Stashed changes
 
       try {
         const L = await loadLeaflet();
@@ -120,21 +116,7 @@ export const AddressEditModal: React.FC<AddressEditModalProps> = ({
       } catch (err) { console.error('Failed to init edit address map:', err); }
     };
     initMap();
-<<<<<<< Updated upstream
     return () => { if (map) { map.remove(); map = null; } };
-=======
-
-    return () => {
-      if (map) {
-        map.off();
-        map.remove();
-        map = null;
-      }
-      if (container) {
-        delete (container as any)._leafletMap;
-      }
-    };
->>>>>>> Stashed changes
   }, [isOpen, isDark]);
 
   useEffect(() => {

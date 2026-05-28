@@ -81,7 +81,6 @@ export const CourierCard = memo(({
       className={clsx(
         'relative flex flex-col h-full min-h-[320px] rounded-xl border',
         isDark
-<<<<<<< Updated upstream
           ? 'bg-[#0c0f14] border-white/[0.08] hover:border-white/[0.12]'
           : 'bg-white border-slate-200 hover:border-slate-300'
       )}
@@ -103,118 +102,6 @@ export const CourierCard = memo(({
           )}>
             {statusActive ? 'Активний' : 'Неактивний'}
           </span>
-=======
-          ? 'bg-gradient-to-br from-blue-500/5 via-transparent to-purple-500/5'
-          : 'bg-gradient-to-br from-blue-50 via-transparent to-indigo-50'
-      )} />
-
-      <div className="relative z-10">
-        {/* Error Badge v17.37 - Suppressed if fully calculated */}
-        {courier.hasErrors && !isFullyCalculated && (
-          <div className="absolute -top-2 -right-2 z-20 group" title="Потребує уточнення адреси для замовлень">
-            <div className={clsx(
-              "relative p-2.5 rounded-tr-[32px] rounded-bl-[24px] border-l border-b backdrop-blur-xl transition-all duration-500 ease-out overflow-hidden shadow-2xl",
-              isDark
-                ? "bg-amber-500/15 border-amber-500/30 group-hover:bg-amber-500/25"
-                : "bg-amber-50/90 border-amber-200 group-hover:bg-amber-100/95"
-            )}>
-              {/* Premium Glass Highlights */}
-              <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent pointer-events-none" />
-              <div className="absolute -inset-full bg-gradient-to-r from-transparent via-white/10 to-transparent group-hover:animate-shine pointer-events-none" />
-
-              {/* Internal Aura */}
-              <div className={clsx(
-                "absolute inset-0 opacity-20 blur-sm",
-                isDark ? "bg-amber-400" : "bg-amber-300"
-              )} />
-
-              <div className="relative flex items-center justify-center">
-                <ExclamationTriangleIcon className={clsx(
-                  "w-6 h-6 transform transition-all duration-500 group-hover:scale-125 group-hover:rotate-12",
-                  "text-amber-500 drop-shadow-[0_0_12px_rgba(245,158,11,0.8)]",
-                  "animate-pulse"
-                )} />
-
-                {/* Ring animation */}
-                <div className="absolute inset-0 w-full h-full border-2 border-amber-400/50 rounded-full animate-ping opacity-0 group-hover:opacity-100" />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Header: Avatar, Name, Actions */}
-        <div className="flex items-start justify-between mb-6">
-          <div className="flex items-center gap-4">
-            <div className="relative">
-              <button
-                onClick={() => onToggleVehicle(courier.id)}
-                className={clsx(
-                  'w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-300 relative overflow-hidden group/avatar shadow-sm',
-                  courier.vehicleType === 'car'
-                    ? isDark ? 'bg-gradient-to-br from-blue-500/20 to-blue-600/10 text-blue-400 border border-blue-500/20' : 'bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 border border-blue-100'
-                    : isDark ? 'bg-gradient-to-br from-orange-500/20 to-orange-600/10 text-orange-400 border border-orange-500/20' : 'bg-gradient-to-br from-orange-50 to-orange-100 text-orange-600 border border-orange-100'
-                )}
-                title="Змінити тип транспорту"
-              >
-                <TruckIcon className="w-8 h-8 relative z-10 transition-transform group-hover/avatar:scale-110 drop-shadow-sm" />
-              </button>
-              <div className={clsx(
-                'absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full border-[3px] shadow-sm',
-                isDark ? 'border-[#1e1e1e]' : 'border-white',
-                courier.isActive ? 'bg-green-500' : 'bg-red-500'
-              )}></div>
-            </div>
-
-            <div className="min-w-0">
-              <h3 className={clsx(
-                'text-[18px] font-black leading-tight truncate transition-colors mb-1.5 tracking-tight',
-                isDark ? 'text-gray-100 group-hover:text-blue-400' : 'text-gray-900 group-hover:text-blue-600'
-              )}>
-                {courier.name}
-              </h3>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => onToggleStatus(courier.id)}
-                  className={clsx(
-                    'text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg border transition-all shadow-sm',
-                    courier.isActive
-                      ? isDark ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20' : 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100'
-                      : isDark ? 'bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20' : 'bg-red-50 text-red-700 border-red-100 hover:bg-red-100'
-                  )}
-                >
-                  {courier.isActive ? 'Активний' : 'Неактивний'}
-                </button>
-                <div className={clsx(
-                  'text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg border',
-                  isDark ? 'bg-white/5 text-gray-400 border-white/5' : 'bg-gray-50 text-gray-500 border-gray-100'
-                )}>
-                  {courier.vehicleType === 'car' ? 'Авто' : 'Мото'}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 translate-x-2 group-hover:translate-x-0">
-            <button
-              onClick={() => onEdit(courier)}
-              className={clsx(
-                'p-2.5 rounded-xl transition-all active:scale-95',
-                isDark ? 'hover:bg-white/10 text-gray-500 hover:text-white' : 'hover:bg-blue-50 text-gray-400 hover:text-blue-600'
-              )}
-            >
-              <PencilIcon className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => onDelete(courier.id)}
-              className={clsx(
-                'p-2.5 rounded-xl transition-all active:scale-95',
-                isDark ? 'hover:bg-red-500/20 text-gray-500 hover:text-red-400' : 'hover:bg-red-50 text-gray-400 hover:text-red-500'
-              )}
-            >
-              <TrashIcon className="w-4 h-4" />
-            </button>
-          </div>
->>>>>>> Stashed changes
         </div>
         <span className={clsx(
           "text-[9px] font-medium uppercase tracking-wider px-2 py-0.5 rounded",
@@ -262,22 +149,8 @@ export const CourierCard = memo(({
                 ? (isDark ? "text-emerald-400" : "text-emerald-600")
                 : (isDark ? "text-white" : "text-slate-900")
             )}>
-<<<<<<< Updated upstream
               {Math.floor(dist)}
               <span className="text-sm opacity-40">.{Math.round((dist % 1) * 10)}</span>
-=======
-              {(distanceDetails?.totalDistance || 0).toFixed(1)}
-              {distanceDetails?.isOptimized && (
-                <div className={clsx(
-                  "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[8px] font-black tracking-widest leading-none h-5",
-                  isDark ? "bg-blue-500/10 border-blue-500/30 text-blue-400" : "bg-blue-50 border-blue-200 text-blue-700 shadow-sm"
-                )}>
-                  <BoltIcon className="w-3 h-3" />
-                  ОПТИМІЗОВАНО
-                </div>
-              )}
-              <span className="text-[12px] font-bold opacity-40 ml-0.5">км</span>
->>>>>>> Stashed changes
             </div>
             <div className={clsx("text-[8px] font-semibold uppercase mt-1", isDark ? "text-slate-500" : "text-slate-400")}>
               км

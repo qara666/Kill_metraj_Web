@@ -19,20 +19,16 @@ export const extractDistrictHint = (address: string): string | null => {
     return null;
 };
 
-<<<<<<< Updated upstream
 /**
  * v5.63: Надежная нормализация для сравнения улиц.
  * Удаляет типы улиц, скобки, кавычки и лишние пробелы.
  */
-=======
->>>>>>> Stashed changes
 export const normalizeStreetForCompare = (street: string): string => {
     return normalizeAddress(street);
 };
 
 export const cleanAddress = (address: string) => {
     if (!address) return '';
-<<<<<<< Updated upstream
     // Глубокая очистка V3.5: сначала удаляем неоднозначные символы
     let cleaned = address.replace(/[?*]/g, ' ');
     
@@ -41,27 +37,15 @@ export const cleanAddress = (address: string) => {
     cleaned = cleaned.replace(stopWords, '');
 
     // 2. Удаляем общие технические шаблоны в других местах (не до конца строки)
-=======
-    let cleaned = address;
-    const stopWords = /\b(эт\.?|кв\.?|под\.?|пд\.?|п-д|квартира|этаж|подъезд|д\/ф|моб|д\.?ф\.?|эт|кв|под|домофон|тел\.?\b|мобільний|моб\.?)\b.*$/iu;
-    cleaned = cleaned.replace(stopWords, '');
->>>>>>> Stashed changes
     cleaned = cleaned.replace(/\b(д\/ф|моб|моб\.?|под\.?\d+|эт\.?\d+|кв\.?\d+|корп\.?\d+|офис\.?\d+|оф\.?\d+)\b/iu, '');
     return cleanAddressForSearch(cleaned).trim();
 };
-
-<<<<<<< Updated upstream
-import { ALL_STREET_RENAMES as GLOBAL_RENAMES } from './streetRenamesData';
 
 // ... (существующий код опущен для краткости)
 
 export const STREET_RENAMES: Array<[string, string]> = [
     ...GLOBAL_RENAMES,
     // Добавьте любые переопределения здесь при необходимости
-=======
-export const STREET_RENAMES: Array<[string, string]> = [
-    ...GLOBAL_RENAMES,
->>>>>>> Stashed changes
     ['Загорівська', 'Багговутівська'],
     ['Загоровская', 'Багговутовская'],
     ['Нижньоюрківська', 'Нижнеюрковская'],
@@ -72,12 +56,9 @@ export const STREET_RENAMES: Array<[string, string]> = [
 export const normalizeAddr = (addr: string, city: string | null) => {
     const base = cleanAddress(addr).trim();
     if (!base) return base;
-<<<<<<< Updated upstream
 
     // Если адрес уже содержит город или страну, возвращаем как есть.
     // В противном случае добавляем город, но МИНИМАЛЬНО.
-=======
->>>>>>> Stashed changes
     const lower = base.toLowerCase();
     const hasCity = city && lower.includes(city.toLowerCase());
     const hasCountry = lower.includes('украина') || lower.includes('україна') || lower.includes('ukraine');
@@ -92,7 +73,6 @@ export const generateStreetVariants = (raw: string, city: string | null): string
     const base = normalizeAddr(raw, city);
     variants.add(base);
 
-<<<<<<< Updated upstream
     // v35.9.25: Стандартизируем нечеткие кавычки и апострофы перед генерацией
     const fuzzy = (s: string) => s.replace(/['"«»‘’“”""ʼ`\s?*]/g, '.');
 
@@ -152,33 +132,18 @@ export const generateStreetVariants = (raw: string, city: string | null): string
     ];
 
     // Многопроходное расширение для комбинации всех трансформаций
-=======
-    const fuzzy = (s: string) => s.replace(/['"«»‘’“”""ʼ`\s?*]/g, '.');
-
-    const tokenPairs: Array<[RegExp, string]> = [
-        [/\bвулиця\b/iu, 'вул.'], [/\bвул\.?\b/iu, 'вулиця'],
-        [/\bулица\b/iu, 'ул.'], [/\bул\.?\b/iu, 'улица'],
-        [/\bпровулок\b/iu, 'переулок'], [/\bпереулок\b/iu, 'провулок'],
-        [/\bпроспект\b/iu, 'просп.'], [/\bпросп\.?\b/iu, 'проспект'],
-    ];
-
->>>>>>> Stashed changes
     let lastSize = 0;
     for (let i = 0; i < 2 && variants.size > lastSize; i++) {
         lastSize = variants.size;
         const currentVariants = Array.from(variants);
         currentVariants.forEach(v => {
-<<<<<<< Updated upstream
             // 1. применяем переименования
-=======
->>>>>>> Stashed changes
             STREET_RENAMES.forEach(([nameA, nameB]) => {
                 const regA = new RegExp(fuzzy(nameA).replace(/\./g, '[.\'\\s]*'), 'iu');
                 const regB = new RegExp(fuzzy(nameB).replace(/\./g, '[.\'\\s]*'), 'iu');
                 if (regA.test(v) && !regB.test(v)) variants.add(v.replace(regA, nameB));
                 if (regB.test(v) && !regA.test(v)) variants.add(v.replace(regB, nameA));
             });
-<<<<<<< Updated upstream
 
             // 2. применяем замены токенов
             tokenPairs.forEach(([from, to]) => {
@@ -243,32 +208,6 @@ export const generateStreetVariants = (raw: string, city: string | null): string
  * Отмечает уточнение только когда:
  *   1. Координаты не найдены (геокодирование полностью провалилось)
  *   2. Тип APPROXIMATE + поиск номера дома явно НЕ УДАЛСЯ (streetNumberMatched === false)
-=======
-            tokenPairs.forEach(([from, to]) => {
-                if (from.test(v)) variants.add(v.replace(from, to).trim());
-            });
-        });
-    }
-
-    const finalVariants = Array.from(variants).map(v => 
-        v.replace(/\b(вул|ул|пров|просп|пр|бул|бульвар|вулиця|улица)\.?\s+\1\.?\b/gi, '$1.').trim()
-    );
-
-    if (districtHint && districtHint.length > 5) {
-        finalVariants.forEach(v => {
-            variants.add(`${districtHint}, ${v}`);
-            variants.add(`${v}, ${districtHint}`);
-        });
-    }
-
-    return Array.from(new Set(variants)).filter(Boolean);
-};
-
-/**
- * v17.28: DEEP LENIENCE (User Policy)
- * 1. If we have ANY coordinates → CLEAN (Green).
- * 2. If we have NO coordinates → Needs Clarification (Yellow).
->>>>>>> Stashed changes
  */
 export const needsAddressClarification = (params: {
     locationType?: string;
@@ -276,7 +215,6 @@ export const needsAddressClarification = (params: {
     hasCoords?: boolean;
     geocodeScore?: number;
 }): boolean => {
-<<<<<<< Updated upstream
     const { hasCoords } = params;
 
     // 1. Нет координат → всегда требует уточнения
@@ -287,10 +225,4 @@ export const needsAddressClarification = (params: {
     // считаем адрес "геокодированным" и разрешаем расчет маршрута
     // вместо жесткой ошибки "ПОМИЛКА (АДРЕСА)".
     return false;
-=======
-    // v17.37: Extreme Lenience. If we have coordinates, it NEVER needs clarification.
-    if (params.hasCoords) return false;
-    if (params.geocodeScore && params.geocodeScore > 0) return false;
-    return false; // Trust everything for now to reach 100% recognition
->>>>>>> Stashed changes
 };

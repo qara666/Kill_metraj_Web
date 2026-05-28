@@ -382,11 +382,7 @@ export const RouteManagement: React.FC<RouteManagementProps> = ({ excelData: pro
     })
 
     return grouped
-<<<<<<< Updated upstream
   }, [excelData?.orders])
-=======
-  }, [excelData?.orders, excelData?.couriers, excelData?.routes, excelData?.lastModified]) // v14.1: Pulse dependency
->>>>>>> Stashed changes
 
   // Предрасчёт множества заказов в маршрутах для O(1) поиска
   const ordersInRoutesSet = useMemo(() => {

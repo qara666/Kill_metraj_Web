@@ -69,11 +69,7 @@ class DashboardFetcher {
         // Хранилище ETag: { deptId_date: etag }
         this.etagStore = new Map();
 
-<<<<<<< Updated upstream
-        // Конфигурация автоматического выключателя
-=======
         // Circuit Breaker Configuration (v18.4: Loosened for high availability)
->>>>>>> Stashed changes
         this.circuitBreaker = {
             state: 'CLOSED',
             failureCount: 0,
@@ -1136,3 +1132,4 @@ class DashboardFetcher {
 // simple_server.js уже регистрирует свои handlers с логгированием без немедленного выхода.
 
 module.exports = DashboardFetcher;
+

@@ -178,7 +178,6 @@ export const DashboardApiSection: React.FC = () => {
                 </div>
             </div>
 
-<<<<<<< Updated upstream
             {/* Controls */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{ 
@@ -198,62 +197,6 @@ export const DashboardApiSection: React.FC = () => {
                             cursor: 'pointer', padding: 0
                         }}
                     />
-=======
-            {/* v5.8: Robot Control Center (Centralized) */}
-            <div className={clsx(
-                'mt-6 pt-6 border-t-2 flex flex-col lg:flex-row items-center justify-between gap-4 relative z-10',
-                isDark ? 'border-blue-500/10' : 'border-blue-100'
-            )}>
-                <div className="flex items-center gap-3">
-                    <div className={clsx(
-                        'p-3.5 rounded-2xl shadow-lg transition-all duration-500 group-hover:scale-105',
-                        autoRoutingStatus.isActive 
-                            ? (isDark ? 'bg-blue-600 shadow-blue-500/20 text-white' : 'bg-blue-600 shadow-blue-500/30 text-white')
-                            : (isDark ? 'bg-indigo-900/20 text-indigo-400' : 'bg-indigo-50 text-indigo-600')
-                    )}>
-                        <CpuChipIcon className={clsx("w-6 h-6", autoRoutingStatus.isActive && "animate-pulse")} />
-                    </div>
-                    <div>
-                        <h3 className={clsx(
-                            'font-bold text-lg tracking-tight',
-                            isDark ? 'text-white' : 'text-gray-900'
-                        )}>
-                            Фоновый расчет заказов
-                        </h3>
-                        <div className="flex items-center gap-2 mt-0.5">
-                            <div className={clsx(
-                                "w-2 h-2 rounded-full",
-                                autoRoutingStatus.isActive ? "bg-green-500 animate-pulse" : "bg-gray-400"
-                            )} />
-                            <div className={clsx(
-                                'text-xs font-semibold uppercase tracking-wider',
-                                isDark ? 'text-gray-400' : 'text-gray-500'
-                            )}>
-                                {autoRoutingStatus.isActive
-                                    ? (
-                                            <div className="flex flex-col gap-1">
-                                                <div className="flex items-center gap-2">
-                                                    <span>
-                                                        {autoRoutingStatus.statusMessage || `АКТИВЕН • Заказы: ${autoRoutingStatus.processedCount}/${autoRoutingStatus.totalCount} • Курьеры: ${autoRoutingStatus.processedCouriers}/${autoRoutingStatus.totalCouriers}`}
-                                                    </span>
-                                                </div>
-                                            <div className="flex items-center gap-3 text-[10px] text-gray-500 font-medium">
-                                                {autoRoutingStatus.skippedInRoutes > 0 && <span className="text-emerald-600/70">В маршрутах: {autoRoutingStatus.skippedInRoutes}</span>}
-                                                {autoRoutingStatus.skippedGeocoding > 0 && <span className="text-red-500/70">Ошибка гео: {autoRoutingStatus.skippedGeocoding}</span>}
-                                                {autoRoutingStatus.skippedNoCourier > 0 && <span className="text-orange-500/70">Без курьера: {autoRoutingStatus.skippedNoCourier}</span>}
-                                            </div>
-                                        </div>
-                                    )
-                                    : 'Режим ожидания'}
-                            </div>
-                            {autoRoutingStatus.lastUpdate && (
-                                <span className="text-[10px] text-gray-400 ml-1">
-                                    • {format(autoRoutingStatus.lastUpdate, 'HH:mm:ss')}
-                                </span>
-                            )}
-                        </div>
-                    </div>
->>>>>>> Stashed changes
                 </div>
 
                 {isAdmin && (

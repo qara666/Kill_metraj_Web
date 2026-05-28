@@ -25,21 +25,6 @@ export const GridOrderCard = memo(({ order, isDark, isSelected, onSelect, isUnas
         const coords = (order as any).coords || {};
         const meta = (order as any).locationMeta || {};
 
-<<<<<<< Updated upstream
-=======
-        const locType = order.locationType || coords.locationType || raw.locationType;
-        const isRooftop = locType === 'ROOFTOP';
-        const isInterpolated = locType === 'RANGE_INTERPOLATED';
-        const streetMatched = order.streetNumberMatched ?? raw.streetNumberMatched ?? coords.streetNumberMatched;
-        
-        const needsClarification = needsAddressClarification({
-            locationType: locType,
-            streetNumberMatched: streetMatched,
-            hasCoords: !!(order.lat || coords.lat),
-            geocodeScore: (order as any).raw?.geocodeScore
-        });
-
->>>>>>> Stashed changes
         const badgesArr: React.ReactNode[] = [];
         
         (() => {
@@ -72,50 +57,6 @@ export const GridOrderCard = memo(({ order, isDark, isSelected, onSelect, isUnas
             );
         })();
 
-<<<<<<< Updated upstream
-=======
-        // 3. Street Match v42.1 (Lenient v17.29)
-        badgesArr.push(
-            <div key="street" className={clsx(
-                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
-                !needsClarification
-                    ? (isDark ? "bg-teal-500/10 border-teal-500/30 text-teal-400" : "bg-teal-50 border-teal-100 text-teal-700")
-                    : (isDark ? "bg-rose-500/10 border-rose-500/30 text-rose-400" : "bg-rose-50 border-rose-200 text-rose-700")
-            )}>
-                <MapIconSolid className="w-3.5 h-3.5 opacity-70" />
-                <span className="opacity-60 mr-0.5">ВУЛИЦЯ:</span>
-                {!needsClarification ? 'ТАК' : 'НІ'}
-            </div>
-        );
-
-        // 3.1 House Match v42.1 (Lenient v17.29)
-        badgesArr.push(
-            <div key="house" className={clsx(
-                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 transition-all duration-300 shadow-sm",
-                !needsClarification
-                    ? (isDark ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400" : "bg-cyan-50 border-cyan-100 text-cyan-700")
-                    : (isDark ? "bg-orange-500/10 border-orange-500/30 text-orange-400" : "bg-orange-50 border-orange-200 text-orange-700")
-            )}>
-                <HomeIconSolid className="w-3.5 h-3.5 opacity-70" />
-                <span className="opacity-60 mr-0.5">БУДИНОК:</span>
-                {!needsClarification ? 'ТАК' : 'НІ'}
-            </div>
-        );
-
-        // 6. Unverified Warning - v17.29 (Lenient)
-        if (needsClarification) {
-            badgesArr.push(
-                <div key="warning" className={clsx(
-                    "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 animate-pulse shadow-sm",
-                    isDark ? "bg-amber-500/10 border-amber-500/30 text-amber-500" : "bg-amber-50 border-amber-200 text-amber-700 shadow-amber-500/10"
-                )}>
-                    <ExclamationCircleIconSolid className="w-3.5 h-3.5" />
-                    УТОЧНИТИ АДРЕСУ
-                </div>
-            );
-        }
-
->>>>>>> Stashed changes
         return { 
             timeLabel, 
             statusProps, 

@@ -84,13 +84,7 @@ export const SCORE = {
   BUILDING_CLASS_BONUS: 3000,
 } as const
 
-<<<<<<< Updated upstream
 //  Haversine distance 
-=======
-const SCORE_STRICT_CITY_LOCKDOWN_RADIUS = 55000; // v17.36: Increased to 55km for Kyiv suburbs
-
-// ─── Haversine distance ────────────────────────────────────────────────────────
->>>>>>> Stashed changes
 
 export function distanceBetween(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
   try {
@@ -120,22 +114,7 @@ export function scoreCandidate(raw: RawGeoCandidate, opts: ScoringOptions): Scor
   let score = 0
   const coords = extractLatLng(raw.geometry.location)
   if (!coords) {
-<<<<<<< Updated upstream
-    return { raw, lat: 0, lng: 0, score: -Infinity, kmlZone: null, kmlHub: null, isTechnicalZone: false, isInsideZone: false, locationType: raw.geometry?.location_type }
-=======
-    return {
-      raw,
-      lat: 0,
-      lng: 0,
-      score: -Infinity,
-      kmlZone: null,
-      kmlHub: null,
-      isTechnicalZone: false,
-      isInsideZone: false,
-      hasGeoErrors: true, 
-      locationType: raw.geometry?.location_type
-    }
->>>>>>> Stashed changes
+    return { raw, lat: 0, lng: 0, score: -Infinity, kmlZone: null, kmlHub: null, isTechnicalZone: false, isInsideZone: false, locationType: raw.geometry?.location_type, hasGeoErrors: false }
   }
   const { lat, lng } = coords
 
@@ -155,7 +134,6 @@ export function scoreCandidate(raw: RawGeoCandidate, opts: ScoringOptions): Scor
   let isTech = false
   let isInside = false
 
-<<<<<<< Updated upstream
   const cityBiasLower = (opts.cityBias || '').toLowerCase();
   if (cityBiasLower === 'київ' || cityBiasLower === 'киев' || cityBiasLower === 'kyiv') {
     const KYIV_LAT = 50.4501; const KYIV_LNG = 30.5234;
@@ -168,42 +146,6 @@ export function scoreCandidate(raw: RawGeoCandidate, opts: ScoringOptions): Scor
       if (!belongsInZone) {
         score += SCORE.STRICT_CITY_LOCKDOWN;
         (raw as any)._rejectReason = `Hard city radius: ${distFromKyivKm.toFixed(1)}km from Kyiv center (>65km limit)`;
-=======
-  // v17.2.2: GLOBAL CITY RADIUS PRE-GUARD (Regional Shield)
-  // Catches macroscopic jumps (e.g. 700km to another oblast) before expensive checks.
-  const activeCityData = getCityBounds(opts.cityBias || '');
-  let distFromCenterKm = 0;
-  let belongsInAnyZone = false;
-  let cityMatch = false;
-  let isCertain = false;
-
-  if (activeCityData) {
-    const [cLng, cLat] = activeCityData.center;
-    distFromCenterKm = distanceBetween({ lat, lng }, { lat: cLat, lng: cLng }) / 1000;
-    
-    // v17.2.2: TRUST THE USER'S KML. If the candidate is in ANY defined KML zone 
-    // (even if currently unselected), it is NOT a mutant. This allows suburb planning.
-    belongsInAnyZone = opts.ctx.allPolygons.length > 0 && 
-      findZonesForLoc({ lat, lng }, opts.ctx.allPolygons, 0.01).length > 0;
-    
-    // Also trust if the address explicitly mentions the biased city
-    const addrLC = (raw.formatted_address || '').toLowerCase();
-    cityMatch = activeCityData.names.some(n => addrLC.includes(n));
-    
-    // Also trust perfect hits (exact street number) up to 200km
-    isCertain = !!((raw.geometry?.location_type === 'ROOFTOP' || 
-                       raw.address_components?.some((c: any) => c.types?.includes('street_number'))) && 
-                       distFromCenterKm < 200);
-    
-    // v17.2.2: Widened to 120km to prevent killing suburbs like Fastiv/Bila Tserkva
-    const maxRadius = activeCityData.lockdownRadiusKm || 120;
-    
-    if (distFromCenterKm > maxRadius) {
-      if (!belongsInAnyZone && !cityMatch && !isCertain) {
-        // FATAL LOCKDOWN: Truly in the wrong city or 200km+ deep anomaly
-        score += SCORE.STRICT_CITY_LOCKDOWN; // -15,000,000
-        (raw as any)._rejectReason = `Lockdown: ${distFromCenterKm.toFixed(1)}km from center (No KML/City Match)`;
->>>>>>> Stashed changes
       }
     }
   }
@@ -267,36 +209,6 @@ export function scoreCandidate(raw: RawGeoCandidate, opts: ScoringOptions): Scor
     }
   }
 
-<<<<<<< Updated upstream
-=======
-    // v45: If the candidate actually landed inside ANY KML zone or explicitly matched the city,
-    // we NEVER reject it for being far from center! Suburbs exist.
-    if (activeCityData && !isInside && !belongsInAnyZone && !cityMatch && !isCertain) {
-      const distToCity = distFromCenterKm * 1000; // back to meters
-      
-      // v17.2.2: Hard Regional Lockdown (Prevent >120km anomalies)
-      const lockdownLimit = (activeCityData.lockdownRadiusKm || 120) * 1000;
-      if (distToCity > lockdownLimit) {
-        score += SCORE.STRICT_CITY_LOCKDOWN;
-        (raw as any)._rejectReason = `Fatal anomaly: ${(distToCity/1000).toFixed(1)}km from ${opts.cityBias || 'center'} (Lockdown)`;
-      } else if (distToCity > 60000) { 
-        // Penalize but don't kill addresses between 60km and 120km if no KML matches
-        score += SCORE.CITY_RADIUS_VIOLATION; 
-        (raw as any)._rejectReason = `Severe distance: ${(distToCity/1000).toFixed(1)}km from center`;
-      } else if (distToCity > 30000) {
-        // Suspicious distance (30km+)
-        score += (opts.expectedDeliveryZone ? SCORE.SUSPICIOUS_DISTANCE * 5 : SCORE.SUSPICIOUS_DISTANCE);
-      }
-    }
-
-    // Still use hintPoint for proximity BONUSES, but not for REJECTIONS.
-    if (opts.hintPoint) {
-      // ... hint logic handled below in section 4
-    }
-
-  // 2.5 String match checks for KML Hub/Zone names
-  // If the formatted address contains the name of one of the active polygons/folders, reward it
->>>>>>> Stashed changes
   const fullAddr = (raw.formatted_address || '').toLowerCase()
   if (opts.ctx.activePolygons.length > 0) {
     for (const poly of opts.ctx.activePolygons) {
@@ -310,23 +222,8 @@ export function scoreCandidate(raw: RawGeoCandidate, opts: ScoringOptions): Scor
     if (streetNum) {
       const sNum = streetNum.toLowerCase().replace(/[^a-z0-9а-яієґ]/g, '')
       const eHouse = opts.expectedHouse.toLowerCase().replace(/[^a-z0-9а-яієґ]/g, '')
-<<<<<<< Updated upstream
       if (sNum === eHouse) score += SCORE.HOUSE_MATCH_EXACT
       else if (sNum.includes(eHouse) || eHouse.includes(sNum)) score += SCORE.FUZZY_HOUSE_MATCH
-=======
-
-      // v5.150: Handle suffixes like 15г vs 15-г or 15 Г
-      if (sNum === eHouse) {
-        score += SCORE.HOUSE_MATCH_EXACT
-      } else if (sNum.replace(/[а-яієґ]/g, '') === eHouse.replace(/[а-яієґ]/g, '')) {
-        // Same number, different or missing letter suffix
-        score += SCORE.HOUSE_MATCH_EXACT / 2
-      } else if (sNum.includes(eHouse) || eHouse.includes(sNum)) {
-        score += SCORE.FUZZY_HOUSE_MATCH
-      } else {
-        score += SCORE.HAS_STREET_NUMBER
-      }
->>>>>>> Stashed changes
     }
   }
 
@@ -351,183 +248,12 @@ export function scoreCandidate(raw: RawGeoCandidate, opts: ScoringOptions): Scor
 
   if (opts.cityBias) {
     const city = opts.cityBias.toLowerCase()
-<<<<<<< Updated upstream
     if (fullAddr.includes(city) || (city === 'киев' && fullAddr.includes('київ')) || (city === 'київ' && fullAddr.includes('киев'))) {
       score += SCORE.CITY_CONFIRMED + SCORE.CITY_EXACT_MATCH_BONUS
     }
   }
 
-  return { raw, lat, lng, score, kmlZone, kmlHub, isTechnicalZone: isTech, isInsideZone: isInside, streetNumberMatched: score >= SCORE.HOUSE_MATCH_EXACT, locationType: raw.geometry?.location_type }
-=======
-
-    // First check strict geospatial bounds
-    const isOut = !isInCityBounds(lat, lng, city, 0.05) 
-    
-    if (isOut && normalizeCityKey(city) !== null) {
-      score += SCORE.OUT_OF_BBOX_PENALTY
-    } else {
-      // Bonus for selected city (both spellings)
-      const isDirectMatch = addr.includes(city) || (city === 'киев' && addr.includes('київ')) || (city === 'київ' && addr.includes('киев'))
-      if (isDirectMatch) {
-        score += SCORE.CITY_CONFIRMED + SCORE.CITY_EXACT_MATCH_BONUS
-      } else {
-        // Check if the address contains a DIFFERENT city/suburb name than our bias
-        // Suburbs like Brovary, Boryspil etc. should be penalized if looking for Kyiv
-        // Check if the address contains a DIFFERENT city/suburb name than our bias
-        // Suburbs like Brovary, Boryspil etc. should be penalized if looking for Kyiv
-
-        const KYIV_SUBURBS = [
-          'софіївська', 'софиевская', 'борщагівка', 'борщаговка', 'вишневе', 'вишневое', 
-          'петропавлівська', 'петропавловская', 'чайки', 'крюківщина', 'крюковщина', 
-          'гатне', 'гатное', 'квітневе', 'квітневий', 'бровари', 'бровары', 'вишгород', 'вышгород',
-          'коцюбинське', 'коцюбинское', 'хотів', 'хотов', 'лісники', 'лесники',
-          'білогородка', 'белогородка', 'гореничі', 'гореничи', 'стоянка', 'тарасівка', 'тарасовка',
-          'святопетрівське', 'святопетровское', 'юрівка', 'юрьевка', 'ходосівка', 'ходосовка',
-          'обухів', 'обухов', 'українка', 'украинка', 'ірпінь', 'ирпень', 'буча', 'ворзель', 'гостомель',
-          'бориспіль', 'борисполь', 'щасливе', 'счастливое', 'проліски', 'пролески', 'чубинське', 'чубинское'
-        ]
-        const isKyivBias = city === 'киев' || city === 'київ'
-        const matchesSuburb = isKyivBias && KYIV_SUBURBS.some(s => addr.includes(s))
-        
-        // v35.9.26: Dynamic City Lockdown with Active KML Trust
-        const cityData = getCityBounds(city)
-        const validCityNames = cityData ? cityData.names : [city]
-        
-        // Deep check: formatted string + address components
-        const cityInString = validCityNames.some(cn => addr.includes(cn))
-        const cityInComponents = (raw.address_components || []).some(comp => {
-          const l = (comp.long_name || '').toLowerCase()
-          const s = (comp.short_name || '').toLowerCase()
-          return validCityNames.some(cn => l.includes(cn) || s.includes(cn))
-        })
-        const hasCurrentCity = cityInString || cityInComponents
-
-        if (matchesSuburb) {
-           score += SCORE.CITY_CONFIRMED + SCORE.CITY_EXACT_MATCH_BONUS;
-        }
-
-        // ABSOLUTE CITY LOCKDOWN
-        // v35.9.26: 3KM PROXIMITY TRUST
-        // If the point is outside an active zone, check if it's within 3km of ANY active zone.
-        let distToNearestActiveZone = Infinity
-        if (opts.ctx?.activePolygons) {
-           for (const p of opts.ctx.activePolygons) {
-             const center = (p as any)._center || (p.bounds ? { lat: (p.bounds.south + p.bounds.north) / 2, lng: (p.bounds.west + p.bounds.east) / 2 } : null)
-             if (center) {
-               const d = distanceBetween({ lat, lng }, center)
-               if (d < distToNearestActiveZone) distToNearestActiveZone = d
-             }
-           }
-        }
-        const isNearActiveZone = distToNearestActiveZone < 3000 // 3km limit per user request
-
-        // Lockdown logic
-        if (!hasCurrentCity && !matchesSuburb && !isInside && !isNearActiveZone) {
-           score += SCORE.CITY_MISMATCH_PENALTY;
-           (raw as any)._rejectReason = `Lockdown: Not in ${city} or known suburb, and >3km from active zones. (v35.9.26)`;
-        } else if ((isInside || isNearActiveZone) && !hasCurrentCity) {
-           // Soften the penalty for proximity but don't kill the candidate
-           if (!isInside) {
-             score -= 50000 
-             console.log(`[Геокодинг] SOFT LOCKDOWN: точка в 3км от зоны (дистанция=${Math.round(distToNearestActiveZone)}м). Уменьшаем штраф.`)
-           } else {
-             console.log(`[Геокодинг] LOCKDOWN BYPASS: точка в активной зоне "${kmlZone}". Полное доверие.`)
-           }
-        }
-      }
-    }
-  }
-
-  // 7. Street Name Validation (v35.9.5: Triple-Pass Slavic Sniper)
-  const candidateFull = (raw.formatted_address || '').toLowerCase()
-  // candidateRoute and candidateNormal unused after v35.9.11 word-boundary refactor
-
-  if (opts.requestedStreetNames && opts.requestedStreetNames.length > 0) {
-    let matchedRoot: string | null = null
-    const candidateTokens = candidateFull.replace(/[ʼ`]/g, "'").split(/[\s,.'ʼ`"\-]+/).map(t => slavicNormalize(t)).filter(t => t.length > 0)
-
-    for (const req of opts.requestedStreetNames) {
-        const reqNormal = slavicNormalize(req)
-        if (reqNormal.length < 3) continue 
-        
-        // Pass 1: Word-Boundary Match (v35.9.11)
-        if (candidateTokens.includes(reqNormal)) {
-            const hasExtraOrdinal = candidateFull.match(/\b\d+[\s\-]*(?:та|ша|га|ій|ий|ка)\b/i) && !req.match(/\d+(?:та|ша|га|ій|ий|ка)/i)
-            
-            if (hasExtraOrdinal) {
-                console.warn(`[RobustGeocode v35.9.14] ORDINAL COLLISION: "${candidateFull}" contains ordinal not in "${req}"`)
-                continue 
-            }
-
-            matchedRoot = req
-            break
-        }
-    }
-
-    if (!matchedRoot) {
-      // v2.3: Slavic Language Fallback (SLF) —
-      // If house number matches perfectly and it's in the correct city,
-      // we allow street mismatch to pass as a "soft" warning instead of a kill.
-      const expectedHouse = opts.expectedHouse?.toLowerCase().replace(/[^a-z0-9а-яієґ]/g, '')
-      const streetNum = (raw.address_components || []).find(c => c.types.includes('street_number'))?.long_name?.toLowerCase().replace(/[^a-z0-9а-яієґ]/g, '')
-      
-      const houseMatch = expectedHouse && streetNum === expectedHouse
-
-      if (isInside || houseMatch) {
-        score -= 150000 // v2.3: Reduced from -2.0M to allow candidate survival if house matches
-        console.warn(`[Геокодинг] SOFT STREET MISMATCH: точка в активной зоне или дом совпал (${streetNum}), но улица "${candidateFull}" не совпала с корнем. Это нормально для EN/UA перевода.`)
-      } else {
-        score += SCORE.STREET_NAME_MISMATCH
-        const missing = opts.requestedStreetNames.join('|')
-        ;(raw as any)._rejectReason = `Street mismatch. Expected one of [${missing}]`
-        console.error(`[RobustGeocode v35.9.13] FAIL: "${candidateFull}" vs Roots: [${missing}]`)
-      }
-    } else {
-      // v35.9.38: Silent mode for PASS logs to improve performance and clarity
-      // console.log(`[RobustGeocode v35.9.14] PASS: "${candidateFull}" (Root: "${matchedRoot}")`)
-    }
-  } else if (opts.requestedStreetNames && opts.expectedHouse) {
-      // v2.3: Silent log for Turbo mode
-      // console.log(`[RobustGeocode v35.9.5] INFO: Roots empty for "${candidateFull}"`)
-  }
-
-  const expectedHouseNormal = opts.expectedHouse?.toLowerCase().replace(/[^a-z0-9а-яієґ]/g, '')
-  const streetNumNormal = (raw.address_components || []).find(c => c.types.includes('street_number'))?.long_name?.toLowerCase().replace(/[^a-z0-9а-яієґ]/g, '')
-  
-  // v5.129: Also check formatted_address for the house number —
-  // Photon/Nominatim often omit address_components.street_number even when
-  // they return the correct address. A regex match against the display string
-  // prevents false "needs clarification" flags for most urban addresses.
-  let streetNumberMatched = !!expectedHouseNormal && streetNumNormal === expectedHouseNormal
-  if (!streetNumberMatched && expectedHouseNormal && raw.formatted_address) {
-    const addrLower = raw.formatted_address.toLowerCase()
-    // v17.27: HYPER-ROBUST HOUSE REGEX - Matches "13/14", "15а", "15-б", "15Б"
-    const escapedHouse = expectedHouseNormal.replace(/[\/\-\.]/g, '\\$&')
-    const houseRegex = new RegExp(`\\b${escapedHouse}[а-яієґa-z\\/\\-]*\\b`)
-      if (houseRegex.test(addrLower)) {
-        streetNumberMatched = true
-      }
-    }
-
-    // v17.36: Restore Fatal Distance Penalty (Iron Dome) with 55km radius
-    const distFromSearch = (raw as any)._dist || 0;
-    if (distFromSearch > SCORE_STRICT_CITY_LOCKDOWN_RADIUS) { 
-      score += SCORE.STRICT_CITY_LOCKDOWN;
-      console.error(`[Scoring] FATAL: Result too far from center (${(distFromSearch/1000).toFixed(1)}km). Rejecting.`);
-    }
-
-    // v17.36: MASSIVE TRUST - If score is boosted by HOUSE_MATCH, we don't flag as error
-    const hasGeoErrors = score < -1000000 || (!isInside && distFromSearch > 5000 && score < 1000000);
-
-    return { 
-      raw, lat, lng, score, kmlZone, kmlHub, 
-      isTechnicalZone: isTech, 
-      isInsideZone: isInside, 
-      hasGeoErrors,
-      streetNumberMatched, 
-      locationType: raw.geometry?.location_type 
-    }
->>>>>>> Stashed changes
+  return { raw, lat, lng, score, kmlZone, kmlHub, isTechnicalZone: isTech, isInsideZone: isInside, streetNumberMatched: score >= SCORE.HOUSE_MATCH_EXACT, locationType: raw.geometry?.location_type, hasGeoErrors: false }
 }
 
 export function isPerfectHit(candidate: ScoredCandidate, expectedHouse: string | null, requestedStreetNames?: string[]): boolean {

@@ -167,7 +167,6 @@ const OrderRecord = memo(({ order, orderIndex, route, isDark, onEditAddress, dra
               </div>
             )}
 
-<<<<<<< Updated upstream
             {!hasCoords && (
               <button 
                 onClick={(e) => { e.stopPropagation(); onEditAddress(order, route.id); }}
@@ -179,16 +178,6 @@ const OrderRecord = memo(({ order, orderIndex, route, isDark, onEditAddress, dra
                  <ExclamationCircleIcon className="w-4 h-4 animate-pulse group-hover/btn:animate-none" />
                  УТОЧНИТЬ
               </button>
-=======
-            {(!hasCoords) && (
-              <div className={clsx(
-                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[9px] font-black tracking-widest leading-none h-6 shadow-sm",
-                isDark ? "bg-amber-500/10 border-amber-500/30 text-amber-500" : "bg-amber-50 border-amber-200 text-amber-700 shadow-amber-500/10"
-              )}>
-                 <ExclamationCircleIcon className="w-3.5 h-3.5" />
-                 УТОЧНИТИ АДРЕСУ
-              </div>
->>>>>>> Stashed changes
             )}
           </div>
         </div>
@@ -232,7 +221,6 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
   const ordersCount = uniqueOrders.length;
   
   const metrics = useMemo(() => {
-<<<<<<< Updated upstream
     const rawDist = Number(route.totalDistance || route.totalDistanceKm || route.route_data?.totalDistance || 0);
     const rawDur = Number(route.totalDuration || route.totalDurationMin || route.route_data?.totalDuration || 0);
     
@@ -241,21 +229,6 @@ const RouteSummaryCard = memo(({ route, index, isDark, onEditAddress, onDeleteRo
     const baseDist = isActuallyOptimized ? rawDist : 0;
     const stopsBonus = ordersCount * 0.5;
     
-=======
-    // v17.36: Use real distance if available, fallback to 1.0 ONLY if distance is 0
-    const baseDist = (route.totalDistance && route.totalDistance > 0) ? route.totalDistance : 1.0;
-    let addDist = 0;
-    if (route.orders) {
-      let lastAddr = "";
-      route.orders.forEach((o: any) => {
-        const currentAddr = (o.address || "").trim().toLowerCase();
-        if (currentAddr !== lastAddr) {
-          addDist += 0.5;
-          lastAddr = currentAddr;
-        }
-      });
-    }
->>>>>>> Stashed changes
     return {
       total: baseDist + stopsBonus,
       physical: baseDist,

@@ -1,163 +1,165 @@
-# Kill Metraj — Полное развёртывание на сервере
+# ═══════════════════════════════════════════════════════════════
+# Kill Metraj — Деплой на сервер через Docker
+# ═══════════════════════════════════════════════════════════════
 
-## 1. Перенос проекта на сервер
+# 🚀 Быстрый старт (если Docker уже установлен)
+
+## Шаг 1: Скопируй проект на сервер
 
 ```bash
-# На локальной машине — запаковать проект (без node_modules и .env)
-cd /path/to/Kill_metraj_Web
-git push                      # если есть репозиторий
-# или
-tar czf km.tar.gz \
-  --exclude=node_modules \
-  --exclude=.git \
-  --exclude=backend/.env \
-  --exclude=frontend/node_modules \
-  --exclude=backend/routing-data/ukraine-latest.osm.pbf \
-  .
-ssh user@server
-scp km.tar.gz user@server:~/
+# Вариант А: через git
+git clone git@github.com:YOUR_ORG/Kill_metraj_Web.git ~/kill_metraj
+cd ~/kill_metraj
+
+# Вариант Б: через scp (с локальной машины)
+scp -r /Users/msun/Documents/GitHub/Kill_metraj_Web user@SERVER_IP:~/kill_metraj
 ```
 
-## 2. На сервере
+## Шаг 2: Настрой переменные окружения
 
 ```bash
-ssh user@server
-
-# Распаковать
-mkdir -p ~/Kill_metraj_Web
-cd ~/Kill_metraj_Web
-tar xzf ~/km.tar.gz
-
-# Установить Docker (если нет)
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
-# Выйти и зайти снова (или newgrp docker)
+cd ~/kill_metraj
+make setup          # создаст backend/.env из шаблона
+nano backend/.env   # заполни значения
 ```
 
-## 3. Настроить окружение
+**Обязательно заполни:**
+| Переменная | Что поставить |
+|---|---|
+| `DB_PASSWORD` | Любой сложный пароль |
+| `JWT_SECRET` | `openssl rand -hex 32` |
+| `SEED_ADMIN_PASSWORD` | Пароль для входа в систему |
+| `DOMAIN` | IP сервера или домен (например `192.168.1.100`) |
+| `EXTERNAL_API_KEY` | Ключ от Yaposhka API |
+
+## Шаг 3: Запусти
 
 ```bash
-cd ~/Kill_metraj_Web
-
-# Создать .env из продакшн-шаблона
-cp backend/.env.production backend/.env
-
-# ОБЯЗАТЕЛЬНО отредактировать:
-nano backend/.env
-# - DB_PASSWORD       — надёжный пароль
-# - JWT_SECRET         — сгенерировать: openssl rand -hex 32
-# - SETUP_SECRET       — сгенерировать: openssl rand -hex 32
-# - EXTERNAL_API_KEY   — из локального backend/.env
-# - SEED_ADMIN_PASSWORD — пароль админа
+make start
 ```
 
-## 4. Перенос базы данных
+Готово! Проект доступен по адресу: `http://YOUR_SERVER_IP`
 
-### На локальной машине:
+---
+
+# 📦 Перенести данные с локальной машины
+
+## Экспорт с локального Mac
+
 ```bash
-cd /path/to/Kill_metraj_Web
+# На локальном Mac (в папке проекта):
 ./scripts/export_db.sh
-# Файл появится в backup/kill_metraj_YYYY-MM-DD_HH-MM-SS.dump
-scp backup/*.dump user@server:~/Kill_metraj_Web/backup/latest.dump
+
+# Покажет что-то вроде:
+# ✓ Экспорт завершён: backup/yapiko_auto_km_2026-05-28_14-30-00.sql.dump
+# Размер: 45M
 ```
 
-### На сервере (уже после запуска стека):
+## Копирование дампа на сервер
+
 ```bash
-cd ~/Kill_metraj_Web
-./scripts/import_db.sh backup/latest.dump
+scp backup/yapiko_auto_km_*.dump user@SERVER_IP:~/kill_metraj/backup/
 ```
 
-## 5. Запуск
+## Импорт на сервере
 
-### Базовый стек (PostgreSQL + Redis + Backend + Frontend):
 ```bash
-./deploy.sh start
-```
-или напрямую:
-```bash
-docker compose -f docker-compose.prod.yml up -d --build
+# На сервере:
+cd ~/kill_metraj
+make import f=backup/yapiko_auto_km_2026-05-28_14-30-00.sql.dump
 ```
 
-### Полный стек (+ OSRM, Valhalla, Nominatim):
+---
+
+# 🐳 Что запускается в Docker
+
+| Контейнер | Описание | Порт |
+|---|---|---|
+| `km-caddy` | Reverse proxy, авто-HTTPS | 80, 443 |
+| `km-backend` | Node.js API | внутренний 5001 |
+| `km-frontend` | Nginx + React SPA | внутренний 80 |
+| `km-postgres` | PostgreSQL 16 | внутренний 5432 |
+| `km-redis` | Redis 7 | внутренний 6379 |
+
+---
+
+# 🔧 Управление сервером
+
 ```bash
-docker compose -f docker-compose.prod.yml --profile routing up -d --build
+make status          # статус всех контейнеров
+make logs            # логи backend
+make logs s=frontend # логи frontend
+make logs s=postgres # логи базы данных
+make restart         # перезапустить backend
+make stop            # остановить всё
+make start           # запустить снова
 ```
 
-### CDC стек (+ Kafka, Zookeeper, Debezium):
+## Обновление после изменений в коде
+
 ```bash
-docker compose -f docker-compose.prod.yml --profile cdc up -d --build
+cd ~/kill_metraj
+git pull             # получить новый код
+make build           # пересобрать и перезапустить
 ```
 
-### Всё сразу:
+---
+
+# 🖥️ Первый раз на чистом сервере (Ubuntu/Debian)
+
+Если Docker ещё не установлен:
+
 ```bash
-docker compose -f docker-compose.prod.yml --profile full up -d --build
+# Скопируй скрипт установки на сервер и запусти:
+scp scripts/server_setup.sh user@SERVER_IP:~/
+ssh user@SERVER_IP "sudo bash server_setup.sh"
 ```
 
-## 6. Настройка домена и HTTPS
+Скрипт автоматически:
+- Установит Docker и Docker Compose
+- Настроит firewall (порты 22, 80, 443)
+- Добавит пользователя в группу docker
 
-1. Настроить DNS: A-запись вашего домена → IP сервера
-2. В `.env` указать `DOMAIN=your-domain.com`
-3. Запустить стек — Caddy автоматически получит SSL-сертификат
+---
 
-Для проверки:
+# 🔒 HTTPS с доменом (опционально)
+
+Если у тебя есть домен (например `km.your-company.com`):
+
+1. Укажи домен в `backend/.env`:
+   ```
+   DOMAIN=km.your-company.com
+   FRONTEND_URL=https://km.your-company.com
+   ```
+
+2. Направь DNS A-запись домена на IP сервера
+
+3. Запусти — Caddy сам получит SSL сертификат от Let's Encrypt
+
+---
+
+# 🚨 Частые проблемы
+
+### Backend не стартует
 ```bash
-docker compose -f docker-compose.prod.yml logs caddy
+make logs s=backend  # смотри ошибки
+```
+Скорее всего: неправильный `DB_PASSWORD` или `EXTERNAL_API_KEY`
+
+### Нет доступа к сайту
+```bash
+make status          # все ли контейнеры Up?
+# Проверь firewall: порты 80 и 443 открыты?
 ```
 
-## 7. Управление
-
+### Сбросить всё и начать заново
 ```bash
-# Статус
+make clean           # ⚠️ УДАЛИТ ВСЕ ДАННЫЕ
+make start
+```
+
+### Посмотреть все контейнеры
+```bash
+docker ps -a
 docker compose -f docker-compose.prod.yml ps
-
-# Логи
-docker compose -f docker-compose.prod.yml logs -f backend
-docker compose -f docker-compose.prod.yml logs -f caddy
-
-# Рестарт сервиса
-docker compose -f docker-compose.prod.yml restart backend
-
-# Остановка всего
-docker compose -f docker-compose.prod.yml down
-
-# Обновление (пересборка)
-docker compose -f docker-compose.prod.yml up -d --build --force-recreate
 ```
-
-## 8. Бэкап и восстановление
-
-```bash
-# Экспорт БД
-./scripts/export_db.sh
-
-# Импорт
-./scripts/import_db.sh backup/filename.dump
-
-# Резервное копирование томов Docker
-docker run --rm -v km_postgres_data:/data -v $(pwd)/backup:/backup alpine \
-  tar czf /backup/postgres_data_$(date +%Y%m%d).tar.gz -C /data .
-```
-
-## Структура сервисов
-
-| Сервис | Контейнер | Внутренний порт | Внешний порт | Описание |
-|--------|-----------|----------------|-------------|----------|
-| Caddy | km-caddy | 80/443 | 80/443 | Reverse proxy + HTTPS |
-| Frontend | km-frontend | 80 | 127.0.0.1:8080 | Nginx + React SPA |
-| Backend | km-backend | 5001 | - | Express API |
-| PostgreSQL | km-postgres | 5432 | 127.0.0.1:5432 | База данных |
-| Redis | km-redis | 6379 | 127.0.0.1:6379 | Кэш |
-| OSRM* | km-osrm | 5000 | 127.0.0.1:5050 | Маршрутизация (авто) |
-| Valhalla* | km-valhalla | 8002 | 127.0.0.1:8002 | Маршрутизация (мультимод) |
-| Nominatim* | km-nominatim | 8080 | 127.0.0.1:8081 | Геокодинг |
-| Kafka* | km-kafka | 9092 | 127.0.0.1:9092 | CDC-события |
-| Debezium* | km-debezium | 8083 | 127.0.0.1:8083 | CDC-коннектор |
-
-* — опционально, требуют профиля `routing` / `cdc` / `full`
-
-## Важно
-
-- Все внешние порты (кроме 80/443) слушают только `127.0.0.1` — наружу торчит только Caddy
-- Caddy автоматически проксирует HTTPS, продлевает сертификаты
-- Для OSRM нужно предварительно подготовить данные (см. `backend/docker-compose.routing.yml`)
-- .env с секретами НЕ попадает в git (в `.gitignore`)

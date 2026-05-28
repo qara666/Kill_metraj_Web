@@ -1,10 +1,9 @@
 import { API_URL } from '../config/apiConfig'
-import { getCityBounds } from './robust-geocoding/cityBounds'
+import { getCityBounds, getActiveZoneBounds } from './robust-geocoding/cityBounds'
 
 /**
  * NominatimService — v17.4
  * Improved OpenStreetMap/Nominatim Geocoding for Ukrainian addresses.
-<<<<<<< Updated upstream
  *
  * Improvements:
  *   Proper location_type mapping (ROOFTOP / RANGE_INTERPOLATED / GEOMETRIC_CENTER)
@@ -28,32 +27,8 @@ async function rateLimitedFetch(url: string): Promise<Response> {
     });
     if (response.status === 429) {
         throw Object.assign(new Error('Nominatim 429'), { status: 429 });
-=======
- */
-
-export interface NominatimResult {
-    place_id: number
-    licence: string
-    osm_type: string
-    osm_id: number
-    boundingbox: string[]
-    lat: string
-    lon: string
-    display_name: string
-    class: string
-    type: string
-    importance: number
-    address?: {
-        house_number?: string
-        road?: string
-        city?: string
-        town?: string
-        state?: string
-        postcode?: string
-        country?: string
-        country_code?: string
->>>>>>> Stashed changes
     }
+    return response;
 }
 
 const UA_ABBREV: Array<[string, string]> = [
@@ -176,10 +151,7 @@ function expandUkrAbbrev(address: string, cityBias?: string): string {
     return result.replace(/\s+/g, ' ').trim()
 }
 
-<<<<<<< Updated upstream
 //  Map OSM type to our location_type 
-=======
->>>>>>> Stashed changes
 function mapLocationType(r: NominatimResult): 'ROOFTOP' | 'RANGE_INTERPOLATED' | 'GEOMETRIC_CENTER' | 'APPROXIMATE' {
     const { type, class: cls, address } = r
     if (address?.house_number) return 'ROOFTOP'
@@ -190,10 +162,7 @@ function mapLocationType(r: NominatimResult): 'ROOFTOP' | 'RANGE_INTERPOLATED' |
     return 'GEOMETRIC_CENTER'
 }
 
-<<<<<<< Updated upstream
 //  Convert Nominatim result to RawGeoCandidate-compatible format 
-=======
->>>>>>> Stashed changes
 function toRawCandidate(r: NominatimResult): any {
     const locationType = mapLocationType(r)
     const addressComponents: Array<{ types: string[]; long_name: string; short_name: string }> = []
@@ -230,7 +199,6 @@ function toRawCandidate(r: NominatimResult): any {
     }
 }
 
-<<<<<<< Updated upstream
 //  Types 
 
 export interface NominatimResult {
@@ -259,30 +227,11 @@ export interface NominatimResult {
 
 //  Service 
 
-import { getCityBounds, getActiveZoneBounds } from './robust-geocoding/cityBounds'
 
-=======
-async function rateLimitedFetch(url: string): Promise<Response> {
-    const proxyUrl = `${API_URL}/api/proxy/geocoding?url=${encodeURIComponent(url)}`;
-    try {
-        const response = await fetch(proxyUrl, {
-            headers: { 'Accept-Language': 'uk,ru,en' }
-        });
-        return response;
-    } catch (e: any) {
-        if (e.name === 'AbortError') {
-            return { ok: false, status: 499, json: async () => ([]) } as any;
-        }
-        throw e;
-    }
-}
-
->>>>>>> Stashed changes
 export class NominatimService {
     private static readonly BASE_URL = 'https://nominatim.openstreetmap.org/search'
     private static readonly REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse'
 
-<<<<<<< Updated upstream
     static async geocode(address: string, cityBias?: string, activePolygons?: any[]): Promise<any[]> {
         const expanded = expandUkrAbbrev(address, cityBias)
         const city = cityBias || 'Київ'
@@ -317,14 +266,14 @@ export class NominatimService {
             query = `${query}, Україна`
         }
 
-        const results = await this._query(query, viewbox, bounded)
+        const results = await this._query(query)
         if (results.length > 0) return results
 
         // Strategy 2: street-only (strip apartment/floor info)
         const streetOnly = expanded.split(',')[0].trim();
         if (streetOnly.length > 5 && streetOnly !== expanded) {
             const q2 = `${streetOnly}, ${city}, Україна`;
-            const results2 = await this._query(q2, viewbox, bounded);
+            const results2 = await this._query(q2);
             if (results2.length > 0) return results2;
         }
 
@@ -341,27 +290,11 @@ export class NominatimService {
             .replace(/узвіз/gi, 'спуск')
         if (ruVariants !== expanded) {
             const q3 = `${ruVariants}, ${city}, Україна`;
-            const results3 = await this._query(q3, viewbox, bounded);
+            const results3 = await this._query(q3);
             if (results3.length > 0) return results3;
         }
 
         return []
-=======
-    static async geocode(address: string, cityBias?: string, silent?: boolean): Promise<any[]> {
-        const expanded = expandUkrAbbrev(address)
-        const city = cityBias || 'Київ'
-        
-        const q = `${expanded}, ${city}, Україна`
-        const results = await this._query(q, silent)
-        
-        if (results.length === 0 && expanded.includes('(')) {
-            const clean = expanded.replace(/\(.*?\)/g, '').replace(/\s+/g, ' ').trim()
-            const altQ = `${clean}, ${city}, Україна`
-            return this._query(altQ, silent)
-        }
-        
-        return results
->>>>>>> Stashed changes
     }
 
     private static async _query(q: string, silent?: boolean): Promise<any[]> {
@@ -386,7 +319,6 @@ export class NominatimService {
             }
             url.searchParams.append('accept-language', 'uk,ru')
 
-<<<<<<< Updated upstream
             const response = await rateLimitedFetch(url.toString())
             if (!response.ok) throw new Error(`Nominatim ${response.status}`)
 
@@ -402,13 +334,7 @@ export class NominatimService {
                 .sort((a: NominatimResult, b: NominatimResult) => (b.importance || 0) - (a.importance || 0))
                 .map(toRawCandidate)
             
-            nominatimCache.set(cacheKey, candidates);
             return candidates;
-=======
-            const response = await rateLimitedFetch(url.toString() + `&_cb=${Date.now()}`)
-            const items: NominatimResult[] = await response.json().catch(() => []);
-            return (items || []).sort((a, b) => b.importance - a.importance).map(toRawCandidate);
->>>>>>> Stashed changes
         } catch (error: any) {
             // v17.28: Instant fail-over for 429 to keep UI 'momentary'
             if (error.message.includes('429')) {

@@ -1,75 +1,84 @@
 #!/usr/bin/env bash
-# ═══════════════════════════════════════════════════════════
-# Kill Metraj — Import PostgreSQL dump → Docker container
-# ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Kill Metraj — Import DB dump into running Docker container
+# ═══════════════════════════════════════════════════════════════
 # Использование:
-#   ./scripts/import_db.sh kill_metraj_2026-05-28.dump
-#
-# Должно быть запущено на сервере, где запущен km-postgres.
-# ═══════════════════════════════════════════════════════════
-
+#   ./scripts/import_db.sh backup/my_dump.dump
+#   make import f=backup/my_dump.dump
+# ═══════════════════════════════════════════════════════════════
 set -euo pipefail
+
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
+info()  { echo -e "${GREEN}[✓]${NC} $*"; }
+warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
+error() { echo -e "${RED}[✗]${NC} $*"; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SCRIPT_DIR"
 
-DUMP_FILE="${1:-}"
-if [ -z "$DUMP_FILE" ]; then
-    echo "Ошибка: укажите файл дампа"
-    echo "  Использование: $0 <dump_file>"
-    echo "  Пример: $0 backup/kill_metraj_2026-05-28.dump"
-    exit 1
-fi
-
-if [ ! -f "$DUMP_FILE" ]; then
-    echo "Ошибка: файл не найден: $DUMP_FILE"
-    exit 1
-fi
-
 # Загружаем переменные
 if [ -f backend/.env ]; then
-    set -a
-    source backend/.env
-    set +a
+    set -a; source backend/.env; set +a
 fi
 
 DB_NAME="${DB_NAME:-kill_metraj}"
 DB_USER="${DB_USER:-postgres}"
-DB_PASSWORD="${DB_PASSWORD:-changeme_in_production}"
-CONTAINER="km-postgres"
+DB_PASSWORD="${DB_PASSWORD:-}"
 
-# Проверяем, запущен ли контейнер
-if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER}$"; then
-    echo "Ошибка: контейнер ${CONTAINER} не запущен."
-    echo "  Запустите: docker compose -f docker-compose.prod.yml up -d postgres"
-    exit 1
+DUMP_FILE="${1:-}"
+
+if [ -z "$DUMP_FILE" ]; then
+    error "Укажи файл дампа!\n  Использование: $0 backup/file.dump\n  или: make import f=backup/file.dump"
 fi
 
-echo "→ Импорт ${DUMP_FILE} в ${DB_NAME} (контейнер ${CONTAINER})"
+if [ ! -f "$DUMP_FILE" ]; then
+    error "Файл не найден: $DUMP_FILE"
+fi
 
-export PGPASSWORD="$DB_PASSWORD"
+info "Импорт: $DUMP_FILE → БД: $DB_NAME"
 
-if [[ "$DUMP_FILE" == *.dump ]]; then
-    # Custom format (pg_dump -Fc)
-    pg_restore \
-        -h localhost \
-        -p 5432 \
-        -U "$DB_USER" \
-        -d "$DB_NAME" \
-        --no-owner \
-        --no-acl \
-        --clean \
-        --if-exists \
-        -v \
-        "$DUMP_FILE" 2>&1 | tail -20
+# Определяем — запущен ли Docker контейнер postgres
+POSTGRES_CONTAINER="km-postgres"
+
+if docker ps --format '{{.Names}}' | grep -q "^${POSTGRES_CONTAINER}$"; then
+    info "Найден Docker контейнер $POSTGRES_CONTAINER — импортирую внутрь него"
+
+    # Копируем дамп в контейнер
+    docker cp "$DUMP_FILE" "${POSTGRES_CONTAINER}:/tmp/import.dump"
+
+    # Восстанавливаем
+    docker exec -e PGPASSWORD="$DB_PASSWORD" "$POSTGRES_CONTAINER" \
+        pg_restore \
+            -U "$DB_USER" \
+            -d "$DB_NAME" \
+            --no-owner --no-acl \
+            --clean --if-exists \
+            --verbose \
+            /tmp/import.dump \
+        && info "Импорт завершён!" \
+        || warn "pg_restore вернул ненулевой код (обычно это нормально для --clean)"
+
+    # Удаляем временный файл
+    docker exec "$POSTGRES_CONTAINER" rm -f /tmp/import.dump
+
 else
-    # Plain SQL
-    psql \
-        -h localhost \
-        -p 5432 \
+    warn "Docker контейнер $POSTGRES_CONTAINER не запущен. Пробую локальный PostgreSQL..."
+
+    if ! command -v pg_restore &>/dev/null; then
+        error "pg_restore не найден. Установи PostgreSQL клиент или запусти контейнеры: make start"
+    fi
+
+    export PGPASSWORD="$DB_PASSWORD"
+    pg_restore \
+        -h "${DB_HOST:-localhost}" \
+        -p "${DB_PORT:-5432}" \
         -U "$DB_USER" \
         -d "$DB_NAME" \
-        -f "$DUMP_FILE"
+        --no-owner --no-acl \
+        --clean --if-exists \
+        "$DUMP_FILE" \
+    && info "Импорт завершён!" \
+    || warn "pg_restore вернул ненулевой код"
 fi
 
-echo "✓ Импорт завершён!"
+info "Готово! Перезапусти backend: make restart"

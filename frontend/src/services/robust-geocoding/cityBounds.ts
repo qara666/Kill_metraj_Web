@@ -29,13 +29,9 @@ export interface CityBBox {
  * Extending ~20–30km from city center to cover all delivery zones.
  */
 export const CITY_BOUNDS: Record<string, CityBBox> = {
-<<<<<<< Updated upstream
   //  КИЇВ (KYIV) 
   // Covers: Kyiv city + Bucha, Irpin, Hostomel, Boryspil, Vyshhorod,
   //         Vasylkiv, Boyarka, Vyshneveyi, Brovary, Baryshivka
-=======
-  // ─── КИЇВ (KYIV) ─────────────────────────────────────────────────────────
->>>>>>> Stashed changes
   'київ': {
     bbox: [50.15, 30.15, 50.68, 31.05],
     viewbox: '30.15,50.15,31.05,50.68',
@@ -46,12 +42,8 @@ export const CITY_BOUNDS: Record<string, CityBBox> = {
     lockdownRadiusKm: 120,
   },
 
-<<<<<<< Updated upstream
   //  ХАРКІВ (KHARKIV) 
   // Covers: Kharkiv city + Mala Danylivka, Derhachi, Lisopark, Chuhuiv, Merefa
-=======
-  // ─── ХАРКІВ (KHARKIV) ────────────────────────────────────────────────────
->>>>>>> Stashed changes
   'харків': {
     bbox: [49.87, 36.09, 50.14, 36.48],
     viewbox: '36.09,49.87,36.48,50.14',
@@ -62,12 +54,8 @@ export const CITY_BOUNDS: Record<string, CityBBox> = {
     lockdownRadiusKm: 120,
   },
 
-<<<<<<< Updated upstream
   //  ПОЛТАВА (POLTAVA) 
   // Covers: Poltava city + Machukhivka, Rozkishne, Ivashky, Pidlisnivka
-=======
-  // ─── ПОЛТАВА (POLTAVA) ───────────────────────────────────────────────────
->>>>>>> Stashed changes
   'полтава': {
     bbox: [49.45, 34.30, 49.75, 34.85],
     viewbox: '34.30,49.45,34.85,49.75',
@@ -78,12 +66,8 @@ export const CITY_BOUNDS: Record<string, CityBBox> = {
     lockdownRadiusKm: 120,
   },
 
-<<<<<<< Updated upstream
   //  ОДЕСА (ODESA) 
   // Covers: Odesa city + Chornomorsk, Yuzhne, Teplodar, Bilhorod-Dnistrovskyi suburb area
-=======
-  // ─── ОДЕСА (ODESA) ───────────────────────────────────────────────────────
->>>>>>> Stashed changes
   'одеса': {
     bbox: [46.31, 30.60, 46.56, 30.84],
     viewbox: '30.60,46.31,30.84,46.56',
@@ -103,6 +87,7 @@ export const CITY_BOUNDS: Record<string, CityBBox> = {
     names: ['дніпро', 'днепр', 'dnipro', 'dnepropetrovsk', 'дніпропетровськ', 'днепропетровск'],
     center: [35.0500, 48.4647],
     radiusKm: 25,
+    lockdownRadiusKm: 120,
   },
 }
 
@@ -181,5 +166,6 @@ export function getActiveZoneBounds(polygons: Array<{ path?: Array<{ lat: number
     names: [],
     center: [sumLng / pointCount, sumLat / pointCount],
     radiusKm: 5,
+    lockdownRadiusKm: 120,
   };
 }

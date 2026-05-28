@@ -115,10 +115,10 @@ export async function calculateTurboRace(
   const engine1 = osrmUrl && isEngineAvailable('yapiko_osrm')
     ? (async () => {
         const { YapikoOSRMService } = await import('./YapikoOSRMService');
-        const r = await YapikoOSRMService.getFastDistance(points, osrmUrl!);
-        if (!r || r.distanceM <= 0) throw new Error('Yapiko: empty');
-        if (!valid(r.distanceM)) throw new Error(`Yapiko: anomaly ${(r.distanceM/1000).toFixed(1)}km`);
-        return { feasible: true as const, totalDistance: r.distanceM, totalDuration: r.durationS, usedEngine: 'yapiko_osrm' as const };
+        const r = await YapikoOSRMService.calculateRoute(points, osrmUrl!);
+        if (!r || !r.feasible || r.totalDistance == null || r.totalDistance <= 0) throw new Error('Yapiko: empty');
+        if (!valid(r.totalDistance)) throw new Error(`Yapiko: anomaly ${(r.totalDistance/1000).toFixed(1)}km`);
+        return { feasible: true as const, totalDistance: r.totalDistance, totalDuration: r.totalDuration, usedEngine: 'yapiko_osrm' as const };
       })()
     : Promise.reject('no-yapiko');
 
@@ -184,15 +184,28 @@ export async function calculateTurboRace(
       })()
     : Promise.reject('osrm_public-disabled');
 
-<<<<<<< Updated upstream
-    // Считаем  (haversine) дистанцию через все точки для проверки на адекватность
-    // v5.128: SINGLE LEG ANOMALY SHIELD
-    // If any single leg is > 35km straight-line, it's definitely a geocoding error (Makariv vs Kyiv)
+    // TurboRace: Custom Promise.any to avoid TS error
+    let winner: any;
+    try {
+      winner = await new Promise((resolve, reject) => {
+        let errCount = 0;
+        const promises = [engine1, engine2, engine3];
+        promises.forEach(p => p.then(resolve).catch(() => {
+          errCount++;
+          if (errCount === promises.length) reject(new Error('All failed'));
+        }));
+      });
+    } catch {
+      console.warn(`[TurboRace] All engines failed`);
+      return { feasible: false };
+    }
+
+    // Calculate straight-line distance for anomaly detection
     let maxSingleLegStraightKm = 0;
-    let straightLineKm = 0;
+    let localStraightLineKm = 0;
     for (let i = 0; i < points.length - 1; i++) {
         const d = calculateDistance(points[i], points[i+1]) / 1000;
-        straightLineKm += d;
+        localStraightLineKm += d;
         if (d > maxSingleLegStraightKm) maxSingleLegStraightKm = d;
     }
 
@@ -201,36 +214,14 @@ export async function calculateTurboRace(
         return { feasible: false };
     }
 
-    // v5.129: ANOMALY SHIELD — ratio restored to x3.5 (city hub routes regularly exceed x2.5)
-    const maxDist = options.maxDistanceKm || 100;
-    const dynamicMaxDist = Math.max(maxDist, straightLineKm * 3.5 + 5); 
-    
+    const dynamicMaxDist = Math.max(maxDist, localStraightLineKm * 3.5 + 5);
+    const distKm = winner.totalDistance / 1000;
+
     if (distKm > maxDist * 1.5 || distKm > dynamicMaxDist) {
-      console.warn(`[TurboRace]  АНОМАЛИЯ ОТКЛОНЕНА: Длина ${distKm.toFixed(1)} км (прямая ~${straightLineKm.toFixed(1)} км). Лимиты: ${maxDist}/${dynamicMaxDist.toFixed(1)} км.`);
+      console.warn(`[TurboRace]  АНОМАЛИЯ ОТКЛОНЕНА: Длина ${distKm.toFixed(1)} км (прямая ~${localStraightLineKm.toFixed(1)} км). Лимиты: ${maxDist}/${dynamicMaxDist.toFixed(1)} км.`);
       return { feasible: false };
     }
 
-=======
-  // Promise.any polyfill — resolves with first success, rejects if ALL fail
-  const firstSuccess = (promises: Promise<any>[]): Promise<any> =>
-    new Promise<any>((resolve, reject) => {
-      let remaining = promises.length;
-      const errors: any[] = [];
-      promises.forEach((p, i) => {
-        p.then(resolve).catch(err => {
-          errors[i] = err;
-          if (--remaining === 0) reject(new Error('All engines failed: ' + errors.map(String).join(', ')));
-        });
-      });
-    });
-
-  try {
-    const winner = await firstSuccess([engine1, engine2, engine3]);
-    const distKm = (winner.totalDistance || 0) / 1000;
-    if (options.verbose !== false) {
-      console.log(`[TurboRace] 🏎️ WINNER: ${winner.usedEngine} in ${Date.now() - startTime}ms (${distKm.toFixed(1)} km, прямая ~${straightLineKm.toFixed(1)} km)`);
-    }
->>>>>>> Stashed changes
     return {
       feasible: true,
       totalDistance: winner.totalDistance,
@@ -238,13 +229,7 @@ export async function calculateTurboRace(
       usedEngine: winner.usedEngine,
       legs: (winner as any).legs,
     };
-  } catch {
-    // All engines rejected
-    console.warn(`[TurboRace] ❌ Все движки завершились с ошибкой за ${Date.now() - startTime}ms`);
-    return { feasible: false };
   }
-
-}
 
 /**
  * Fallback version (sequential) — used when TurboRace is not desired.
@@ -262,7 +247,6 @@ export async function calculateRouteWithFallback(
     ? { yapikoOsrmUrl: options.yapikoOsrmUrl }
     : localStorageUtils.getAllSettings();
 
-<<<<<<< Updated upstream
   const osrmUrl = (settings.yapikoOsrmUrl || '').trim();
 
   // 
@@ -339,11 +323,4 @@ export async function calculateRouteWithFallback(
   }
 
   return { feasible: false };
-=======
-  return calculateTurboRace(points, {
-    yapikoOsrmUrl: settings.yapikoOsrmUrl,
-    maxDistanceKm: options.maxDistanceKm,
-    verbose: options.verbose,
-  });
->>>>>>> Stashed changes
 }

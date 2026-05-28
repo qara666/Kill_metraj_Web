@@ -64,9 +64,6 @@ function socketCorsOrigin(origin, callback) {
 
 const io = new Server(httpServer, {
   cors: {
-<<<<<<< Updated upstream
-    origin: socketCorsOrigin,
-=======
     origin: (origin, callback) => {
       // Allow local development (v17.16: Explicitly support multiple Vite ports)
       if (!origin || origin.startsWith('http://localhost') || origin === FRONTEND_URL || origin === 'http://localhost:5174') {
@@ -78,7 +75,6 @@ const io = new Server(httpServer, {
       }
       callback(new Error('Not allowed by CORS'));
     },
->>>>>>> Stashed changes
     methods: ['GET', 'POST'],
     credentials: true
   },
@@ -229,32 +225,9 @@ const cors = require('cors');
 // app.set('trust proxy', 1); // Trust first hop
 app.set('trust proxy', true); // Trust all hops on Render/Cloudflare
 
-<<<<<<< Updated upstream
-const corsOptions = {
-  origin: (origin, callback) => {
-    const allowedOrigins = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
-
-    if (!origin || origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')) {
-      return callback(null, true);
-    }
-    if (origin === FRONTEND_URL) {
-      return callback(null, true);
-    }
-    if (origin.endsWith('.onrender.com')) {
-      return callback(null, true);
-    }
-    if (allowedOrigins.length > 0 && allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    logger.warn('[CORS] Blocked origin:', { origin });
-    callback(null, false);
-  },
-=======
 // CORS configuration for Render and local development (v17.6: Hardened Private Network Support)
 const corsOptions = {
   origin: true, 
->>>>>>> Stashed changes
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: [
@@ -269,32 +242,6 @@ const corsOptions = {
   optionsSuccessStatus: 204
 };
 
-<<<<<<< Updated upstream
-const explicitAllow = (origin) => {
-  const allowedOrigins = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
-  if (!origin) return true;
-  if (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')) return true;
-  if (origin === FRONTEND_URL) return true;
-  if (origin.endsWith('.onrender.com')) return true;
-  if (allowedOrigins.length > 0 && allowedOrigins.includes(origin)) return true;
-  return false;
-};
-
-// Пользовательское промежуточное ПО для явной обработки CORS Preflight
-// Выполняется ДО основного CORS промежуточного ПО для гарантии ответа 204
-app.use((req, res, next) => {
-  if (req.method === 'OPTIONS') {
-    const origin = req.headers.origin;
-    
-    if (explicitAllow(origin)) {
-      res.header('Access-Control-Allow-Origin', origin || '*');
-      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-API-KEY, X-Requested-With, Accept, Origin, User-Agent');
-      res.header('Access-Control-Allow-Credentials', 'true');
-      res.header('Access-Control-Max-Age', '86400');
-      return res.sendStatus(204);
-    }
-=======
 // v17.26: FINAL HARDENED CORS & OPTIONS HANDLER
 // Ensures all browser preflights (including Private Network) pass without blocks.
 app.use((req, res, next) => {
@@ -310,7 +257,6 @@ app.use((req, res, next) => {
 
   if (req.method === 'OPTIONS') {
     return res.status(204).send();
->>>>>>> Stashed changes
   }
   next();
 });
@@ -333,68 +279,6 @@ app.get('/api/health', (req, res) => {
  * 
  */
 
-<<<<<<< Updated upstream
-// ===== CIRCUIT BREAKER для геокодинг провайдеров =====
-// Если провайдер упал N раз подряд — пропускаем его BREAKER_COOLDOWN_MS
-const BREAKER_FAIL_THRESHOLD = 15;    // 15 ошибок → разомкнуть
-const BREAKER_COOLDOWN_MS = 2 * 60 * 1000; // 2 минуты
-const _providerFailCounts = {}; // domain -> { fails, openedAt }
-
-function isProviderCircuitOpen(url) {
-  try {
-    const domain = new URL(url).hostname;
-    const state = _providerFailCounts[domain];
-    if (!state || state.fails < BREAKER_FAIL_THRESHOLD) return false;
-    if (Date.now() - state.openedAt > BREAKER_COOLDOWN_MS) {
-      // Cooldown истёк — полусброс
-      state.fails = Math.floor(BREAKER_FAIL_THRESHOLD / 2);
-      state.openedAt = Date.now();
-      return false;
-    }
-    return true; // цепь разомкнута
-  } catch { return false; }
-}
-
-function recordProviderFailure(url) {
-  try {
-    const domain = new URL(url).hostname;
-    const state = _providerFailCounts[domain] || { fails: 0, openedAt: 0 };
-    state.fails++;
-    if (state.fails >= BREAKER_FAIL_THRESHOLD) state.openedAt = Date.now();
-    _providerFailCounts[domain] = state;
-  } catch {}
-}
-
-function recordProviderSuccess(url) {
-  try {
-    const domain = new URL(url).hostname;
-    if (_providerFailCounts[domain]) _providerFailCounts[domain].fails = 0;
-  } catch {}
-}
-
-// ===== CONCURRENCY LIMITER — макс 30 параллельных внешних запросов =====
-let _activeExternalRequests = 0;
-const MAX_CONCURRENT_GEO = 30;
-const _geoQueue = [];
-
-function withConcurrencyLimit(fn) {
-  return new Promise((resolve, reject) => {
-    const run = async () => {
-      _activeExternalRequests++;
-      try { resolve(await fn()); }
-      catch (e) { reject(e); }
-      finally {
-        _activeExternalRequests--;
-        if (_geoQueue.length > 0) _geoQueue.shift()();
-      }
-    };
-    if (_activeExternalRequests < MAX_CONCURRENT_GEO) run();
-    else _geoQueue.push(run);
-  });
-}
-
-// СЛОЙ 1: LRU Кэш — 2000 entries, 6 hour TTL
-=======
 // LAYER 1: LRU Cache — 2000 entries, 6 hour TTL
 // Persistent DB Fix: We store geocoding results in a JSON file to survive restarts
 const GEO_DB_PATH = path.join(__dirname, 'geocoding_db.json');
@@ -423,7 +307,6 @@ function saveGeoDb() {
 // Initial load
 loadGeoDb();
 
->>>>>>> Stashed changes
 const GEOCODING_CACHE = new Map(); // url -> { data, ts }
 // Hydrate in-memory cache from persistent DB
 Object.entries(GEO_DB).forEach(([key, value]) => {
@@ -461,11 +344,7 @@ function setCachedGeocode(cacheKey, data) {
 // СЛОЙ 2: Дедупликация в полете — map from cacheKey to pending Promise
 const IN_FLIGHT = new Map();
 
-<<<<<<< Updated upstream
-// СЛОЙ 3: Очередь ограничения Nominatim — max 1 req/sec server-wide
-=======
 // LAYER 3: Global rate queues
->>>>>>> Stashed changes
 let _lastNominatimServerCall = 0;
 let _nominatimServerQueue = [];
 let _nominatimProcessing = false;
@@ -568,25 +447,8 @@ app.get('/api/proxy/geocoding', async (req, res) => {
       res.setHeader('X-Geocache', 'DEDUP');
       return res.json(data);
     } catch (error) {
-<<<<<<< Updated upstream
-      const status = error.response?.status || 500;
-      if (status === 429) {
-        res.setHeader('X-Geocode-Error', 'Nominatim-RateLimit-Dedup');
-      } else {
-        res.setHeader('X-Geocode-Error', 'Proxy-Failure-Dedup');
-      }
-      return res.status(200).json([]); // Успешно возвращаем пустой массив
-=======
-       // headers already set by cors middleware
        return res.status(error.response?.status || 500).json({ error: 'Proxy request failed', message: error.message });
->>>>>>> Stashed changes
     }
-  }
-
-  // CIRCUIT BREAKER: если провайдер мёртв — немедленно вернуть [] без внешнего вызова
-  if (isProviderCircuitOpen(url)) {
-    res.setHeader('X-Geocode-Error', 'CircuitBreaker-Open');
-    return res.status(200).json([]);
   }
 
   // LAYER 3: Make the actual request
@@ -594,14 +456,6 @@ app.get('/api/proxy/geocoding', async (req, res) => {
   const isPhoton = targetUrl.toLowerCase().includes('photon');
   const isNominatim = isNominatimUrl(targetUrl);
 
-<<<<<<< Updated upstream
-  const doFetch = async () => {
-    try {
-      const response = await axios.get(url, {
-        timeout: 8000,
-        headers: {
-          'User-Agent': 'KillMetraj_DeliveryApp/2.0 (contact@killmetraj.ua)',
-=======
   const doFetch = async (retryCount = 0, overrideUrl = null) => {
     const currentUrl = overrideUrl || targetUrl;
     try {
@@ -613,52 +467,10 @@ app.get('/api/proxy/geocoding', async (req, res) => {
         timeout: 45000, // v17.18: Increased timeout for massive global sync batches
         headers: {
           'User-Agent': 'KillMetraj_DeliveryApp/3.0 (contact@killmetraj.ua)',
->>>>>>> Stashed changes
           'Referer': 'https://killmetraj.ua/',
           'Accept-Language': 'uk,ru,en'
         }
       });
-<<<<<<< Updated upstream
-      recordProviderSuccess(url);
-      return response.data;
-    } catch (err) {
-      try {
-        const urlObj = new URL(url);
-        const q = urlObj.searchParams.get('q');
-        if (q) {
-          const turboGeoEnhanced = require('./workers/turboGeoEnhanced');
-          const result = await turboGeoEnhanced.enhancedGeocode(q, '');
-          if (result) {
-            if (url.includes('photon')) {
-              return {
-                features: [{
-                  geometry: { coordinates: [result.lng, result.lat] },
-                  properties: { name: result.display, osm_value: result.type || 'house' }
-                }]
-              };
-            } else {
-              return [{
-                lat: result.lat.toString(),
-                lon: result.lng.toString(),
-                display_name: result.display,
-                type: result.type || 'house',
-                importance: result.confidence
-              }];
-            }
-          }
-        }
-      } catch (e) {
-        // Fallback failed, throw original error
-      }
-      throw err;
-    }
-  };
-
-  // Nominatim → rate limiter; всё остальное → concurrency limiter
-  const wrappedFetch = isNominatimUrl(url)
-    ? enqueueNominatimFetch(doFetch)
-    : withConcurrencyLimit(doFetch);
-=======
       return response.data;
     } catch (error) {
       const status = error.response?.status || 500;
@@ -716,28 +528,19 @@ app.get('/api/proxy/geocoding', async (req, res) => {
     fetchPromise = enqueueNominatimFetch(doFetch);
   } else {
     fetchPromise = doFetch();
-  }
->>>>>>> Stashed changes
-
-  IN_FLIGHT.set(cacheKey, wrappedFetch);
+  IN_FLIGHT.set(cacheKey, fetchPromise);
 
   try {
-    const data = await wrappedFetch;
+    const data = await fetchPromise;
     setCachedGeocode(cacheKey, data);
     res.setHeader('X-Geocache', 'MISS');
     res.json(data);
   } catch (error) {
     const status = error.response?.status || 500;
-<<<<<<< Updated upstream
-    // Записываем провал только для сетевых ошибок и таймаутов (не 401/403)
-    if (!error.response || status >= 500) {
-      recordProviderFailure(url);
-=======
     const errorData = error.response?.data;
     
     console.error(`[Proxy] FAIL (${status}): ${targetUrl} | Message: ${error.message}`);
     
-    // v17.16: Graceful error for 429 to prevent UI panic
     if (status === 429) {
       return res.status(200).json({ 
         status: 'rate_limit_backoff', 
@@ -747,24 +550,11 @@ app.get('/api/proxy/geocoding', async (req, res) => {
       });
     }
 
-    if (status !== 429) { 
-      logger.error('Geocoding proxy request failed', {
-        url: cacheKey,
-        status,
-        error: error.message
-      });
->>>>>>> Stashed changes
-    }
-    if (status === 429) {
-      res.setHeader('X-Geocode-Error', 'Nominatim-RateLimit');
-      return res.status(200).json([]);
-    }
     if (status === 401 || status === 403) {
-      // Неверный ключ — записываем как постоянный сбой провайдера
-      recordProviderFailure(url); recordProviderFailure(url); recordProviderFailure(url);
       res.setHeader('X-Geocode-Error', 'API-Key-Invalid');
       return res.status(200).json([]);
     }
+    
     logger.error('Geocoding proxy request failed', { url: cacheKey, status, error: error.message });
     res.setHeader('X-Geocode-Error', 'Proxy-Failure');
     res.status(200).json([]);
@@ -1219,12 +1009,6 @@ httpServer.listen(PORT, '0.0.0.0', () => {
       logger.error(' [INIT] Failed to initialize daily TurboCalculator scheduler', err);
     }
 
-<<<<<<< Updated upstream
-    } catch (globalInitErr) {
-      logger.error(' [INIT] FATAL initialization error', globalInitErr);
-    }
-  })();
-=======
     // Start Order Calculator worker for background route calculation
     try {
       const { orderCalculator } = require('./workers/orderCalculator');
@@ -1243,7 +1027,7 @@ httpServer.listen(PORT, '0.0.0.0', () => {
   } catch (grpcError) {
     logger.error('Не удалось запустить gRPC сервер', grpcError);
   }
->>>>>>> Stashed changes
+  })();
 });
 
 /**
@@ -2155,11 +1939,6 @@ const shutdown = async () => {
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
-<<<<<<< Updated upstream
-//  Error Handling (в самом конце, после всех маршрутов)
-app.use(notFoundHandler);
-app.use(errorHandler);
-=======
 
 // v16.1: Start the background order calculator worker
 try {
@@ -2170,9 +1949,4 @@ try {
   logger.error('[Worker] Failed to start Order Calculator:', err.message);
 }
 
-// Start the server
-httpServer.listen(PORT, () => {
-  logger.info(`Сервер запущен на порту ${PORT}`);
-  logger.info(`Уровень логирования: ${process.env.LOG_LEVEL || 'info'}`);
-});
->>>>>>> Stashed changes
+// Start the server (Moved to line 880)

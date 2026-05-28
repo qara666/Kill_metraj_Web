@@ -114,38 +114,22 @@ export const localStorageUtils = {
       localStorage.setItem(key, serialized)
     } catch (error: any) {
       if (error.name === 'QuotaExceededError' || error.message?.includes('quota')) {
-<<<<<<< Updated upstream
         console.warn(` localStorage переполнен для ключа "${key}". Попытка очистки...`)
         // Пробуем очистить старые данные (v23.0 Smart Headroom)
-=======
-        console.warn(`⚠️ localStorage переполнен для ключа "${key}". Попытка очистки...`)
->>>>>>> Stashed changes
         try {
           const criticalKeys = ['km_settings', 'km_courier_vehicle_map']
           const allKeys = Object.keys(localStorage)
           
-<<<<<<< Updated upstream
           // v23.0: Очищаем только необходимое, сохраняя самые свежие данные
-=======
-          // Count cache items to avoid clearing everything
->>>>>>> Stashed changes
           const kmKeys = allKeys.filter(k => k.startsWith('km_') && !criticalKeys.includes(k))
           
           let removedCount = 0;
           for (const k of kmKeys) {
-<<<<<<< Updated upstream
             try {
               localStorage.removeItem(k)
               removedCount++;
               if (removedCount >= 15) break; // Достаточно места освобождено
             } catch { }
-=======
-              try {
-                  localStorage.removeItem(k)
-                  removedCount++;
-                  if (removedCount >= 15) break; // Keep some old data alive, just clear headroom
-              } catch { }
->>>>>>> Stashed changes
           }
           
           // Пробуем сохранить снова

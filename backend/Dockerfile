@@ -4,18 +4,21 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 
 WORKDIR /app
 
+# ── Install ALL deps (dev + prod) ────────────────────────────
 FROM base AS deps
 
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --prod=false
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
+# ── Production image ─────────────────────────────────────────
 FROM base AS production
 
+# Copy node_modules from deps and prune to prod-only
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --prod
+COPY --from=deps /app/node_modules /app/node_modules
 
-COPY --from=deps /app/node_modules/.pnpm /app/node_modules/.pnpm
-COPY --from=deps /app/node_modules/.modules.yaml /app/node_modules/
+# Prune devDependencies (no build scripts triggered)
+RUN pnpm prune --prod 2>/dev/null || true
 
 COPY . .
 

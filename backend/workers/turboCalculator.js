@@ -43,9 +43,16 @@ const pRetry = async (fn, options = {}) => {
     const { retries = 3, minTimeout = 1000 } = options;
     for (let i = 0; i <= retries; i++) {
         try { return await fn(); } catch (err) {
+            if (err.name === 'AbortError') throw err;
             if (i === retries) throw err;
             await new Promise(r => setTimeout(r, minTimeout * Math.pow(2, i)));
         }
+    }
+};
+pRetry.AbortError = class AbortError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'AbortError';
     }
 };
 

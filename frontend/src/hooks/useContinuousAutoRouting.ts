@@ -7,23 +7,20 @@ import { toast } from 'react-hot-toast';
 import { normalizeCourierName, getCourierName } from '../utils/data/courierName';
 import { useDashboardStore } from '../stores/useDashboardStore';
 import { getStableOrderId } from '../utils/data/orderId';
-<<<<<<< Updated upstream
 import { normalizeDateToIso } from '../utils/data/dateUtils';
+import { needsAddressClarification } from '../utils/data/addressUtils';
 import { YapikoOSRMService } from '../services/YapikoOSRMService';
 import { ValhallaService } from '../services/valhallaService';
 import { calculateDistance } from '../utils/geoUtils';
 import { useRouteCalculationStore } from '../stores/useRouteCalculationStore';
 import { API_URL } from '../config/apiConfig';
-=======
-import { RobustRoutingService } from '../services/RobustRoutingService';
-import { needsAddressClarification } from '../utils/data/addressUtils';
->>>>>>> Stashed changes
 
 export function useContinuousAutoRouting() {
     const { excelData, updateExcelData } = useExcelData();
     const { groupingConfig } = useRouteCalculationStore();
     const isProcessingRef = useRef(false);
     const processedGroupSignatures = useRef<Set<string>>(new Set());
+    const processedRefinements = useRef<Set<string>>(new Set());
     
     const excelDataRef = useRef(excelData);
     const updateExcelDataRef = useRef(updateExcelData);
@@ -63,8 +60,15 @@ export function useContinuousAutoRouting() {
                     return o.courierName || o.courierId || o.courier || '';
                 };
 
-<<<<<<< Updated upstream
-                const eligibleOrders = currentData.orders.filter((o: any) => {
+                const totalSystemCouriers = currentData.couriers?.length || 0;
+                const courierNamesWithRoutes = new Map<string, number>();
+                let skippedGeocoding = 0;
+                let skippedInRoutes = 0;
+                let skippedNoCourier = 0;
+                const seenSolo = new Set<string>();
+                const soloGeoOrders: any[] = [];
+                const routeTasks: { actualCourierName: string; groupOrders: any[]; groupSignature: string; windowLabel: string }[] = [];
+                let eligibleOrders = currentData.orders.filter((o: any) => {
                     const status = String(o.status || '').toLowerCase();
                     // Исключить полностью отменённые/удалённые/переданные заказы
                     const isCanceled = [
@@ -77,28 +81,22 @@ export function useContinuousAutoRouting() {
                 });
 
                 // Расчёт статуса
-=======
->>>>>>> Stashed changes
                 const processedOrderIds = new Set<string>();
                 const normForced = forcedCourierName ? normalizeCourierName(forcedCourierName) : null;
 
                 (currentData.routes || []).forEach((r: any) => {
-<<<<<<< Updated upstream
                     const rCourier = normalizeCourierName(getCourierName(r.courier));
                     // v7.2: Если принудительный пересчет для курьера - НЕ добавляем его заказы в processed,
                     // чтобы они попали в новый цикл группировки.
                     if (normForced && rCourier === normForced) return;
 
-=======
-                    if (r.hasGeoErrors || !r.isOptimized) return;
->>>>>>> Stashed changes
                     (r.orders || []).forEach((o: any) => {
                         const oid = getStableOrderId(o);
                         if (oid) processedOrderIds.add(oid);
                     });
                 });
 
-                const eligibleOrders = currentData.orders.filter((o: any) => {
+                eligibleOrders = currentData.orders.filter((o: any) => {
                     const status = String(o.status || '').toLowerCase();
                     const isCanceled = ['отменен', 'отмена', 'удален', 'скасований', 'скасовано', 'canceled', 'cancelled', 'deleted'].includes(status);
                     if (isCanceled) return false;
@@ -118,7 +116,6 @@ export function useContinuousAutoRouting() {
 
                 if (eligibleOrders.length === 0) return;
 
-<<<<<<< Updated upstream
                 setAutoRoutingStatus({ 
                     totalCount: currentData.orders.length, 
                     totalCouriers: totalSystemCouriers,
@@ -136,19 +133,6 @@ export function useContinuousAutoRouting() {
 
                 // Grouping
                 const groupsMap = groupAllOrdersByTimeWindow(eligibleOrders, currentData.couriers, groupingConfig);
-                const eligibleGroups: any[] = [];
-                for (const [courierId, timeGroups] of Array.from(groupsMap.entries())) {
-                    for (const group of timeGroups) {
-                        const actualCourierName = group.courierName && group.courierName !== 'Неизвестный курьер' 
-                            ? group.courierName 
-                            : courierId;
-=======
-                const groupsMap = groupAllOrdersByTimeWindow(eligibleOrders, currentData.couriers);
-                const routeTasks: any[] = [];
-                const soloGeoOrders: any[] = [];
-                const seenSolo = new Set<string>();
->>>>>>> Stashed changes
-
                 for (const [courierNameKey, timeGroups] of Array.from(groupsMap.entries())) {
                     const isUnassigned = courierNameKey.toLowerCase().includes('unassigned') || 
                                        courierNameKey === 'неназначенные' ||
@@ -182,7 +166,6 @@ export function useContinuousAutoRouting() {
 
                 if (routeTasks.length === 0 && soloGeoOrders.length === 0) return;
 
-<<<<<<< Updated upstream
                 // === П0: ПРИОРИТЕТ — addressGeo из FO API ===
                 // Каждый заказ имеет GPS координаты от FO (Lat="..." Long="...") в поле addressGeo.
                 // Это самые точные координаты — без API вызовов, мгновенно, бесплатно.
@@ -259,7 +242,7 @@ export function useContinuousAutoRouting() {
                 // Проход 1: Быстрый турбо-батч для всех некодированных заказов
                 const allOrdersToGeocode = eligibleOrders.filter((o: any) => !o.coords?.lat);
                 
-                const applyGeoResult = (o: any, res: any) => {
+                const applyGeoResult = async (o: any, res: any) => {
                     // P0.5: Fallback к addressGeo GPS если geocoder тоже не нашел ничего в секторе
                     if (!res?.best && o._addressGeoCandidate) {
                         o.coords = o._addressGeoCandidate;
@@ -267,30 +250,6 @@ export function useContinuousAutoRouting() {
                         o.geocodeScore = 0.7;
                         return;
                     }
-=======
-                const totalTasks = routeTasks.length + (soloGeoOrders.length > 0 ? 1 : 0);
-                let completedTasks = 0;
-                let processedOrdersCount = 0;
-                const updatedNames = new Set<string>();
-
-                const updateProgress = () => {
-                    const totalSysCouriers = Array.from(groupsMap.keys()).filter((k: any) => {
-                        const sk = String(k).toLowerCase();
-                        return !sk.includes('unassigned') && !sk.includes('неназначенные') && !sk.includes('неизвестный');
-                    }).length;
-
-                    setAutoRoutingStatus({ 
-                        totalCount: currentData.orders.length, 
-                        processedCount: processedOrdersCount,
-                        totalCouriers: totalSysCouriers,
-                        processedCouriers: updatedNames.size,
-                        statusMessage: `Обработка: ${completedTasks}/${totalTasks} задач`,
-                        lastUpdate: Date.now() 
-                    });
-                };
-
-                const applyGeoResult = async (o: any, res: any) => {
->>>>>>> Stashed changes
                     if (res?.best?.raw?.geometry?.location) {
                         const loc = res.best.raw.geometry.location;
                         o.coords = { lat: Number(loc.lat), lng: Number(loc.lng) };
@@ -309,7 +268,6 @@ export function useContinuousAutoRouting() {
                     }
                 };
 
-<<<<<<< Updated upstream
                 if (allOrdersToGeocode.length > 0) {
                     // Проход 1: Турбо (быстро, покрывает ~80% адресов)
                     const batchRequests = allOrdersToGeocode.map(o => ({
@@ -388,77 +346,30 @@ export function useContinuousAutoRouting() {
                     groupSignature: string;
                 }> = [];
 
-                for (const [actualCourierName, courierGroups] of courierToGroupsMap.entries()) {
+                for (const [actualCourierName, courierGroups] of groupsMap.entries()) {
                     for (const group of courierGroups) {
-                        const { orders } = group;
+                        const groupOrders = group.orders || [];
                         const MAX_ORDERS = 20;
-                        for (let i = 0; i < orders.length; i += MAX_ORDERS) {
-                            const chunkOrders = orders.slice(i, i + MAX_ORDERS);
+                        for (let i = 0; i < groupOrders.length; i += MAX_ORDERS) {
+                            const chunkOrders = groupOrders.slice(i, i + MAX_ORDERS);
                             const groupSignature = chunkOrders
                                 .map((o: any) => `${getStableOrderId(o)}_${o.address}_${actualCourierName}`)
                                 .sort()
                                 .join('|');
                             const chunkOrderIds = chunkOrders.map((o: any) => getStableOrderId(o)).sort().join('|');
-=======
-                // v18.2: EMERGENCY SEQUENTIAL PROCESSING (Fixes Login Timeout)
-                if (routeTasks.length > 0) {
-                    toast(`🔄 Планирую ${routeTasks.length} маршрутов...`, { id: 'autoroute-progress' });
-                    
-                    for (const task of routeTasks) {
-                        if (!autoRoutingStatusRef.current.isActive) break;
-                        const { actualCourierName, groupOrders, groupSignature, windowLabel } = task;
-                        
-                        try {
-                            // 1. Geocoding Refinement
-                            const stillMissing = groupOrders.filter((o: any) => !o.coords?.lat);
-                            if (stillMissing.length > 0) {
-                                for (const o of stillMissing) {
-                                    const result = await robustGeocodingService.geocode(o.address, { 
-                                        turbo: false,
-                                        silent: true,
-                                        expectedDeliveryZone: o.deliveryZone || o.kmlZone
-                                    });
-                                    if (result?.best) await applyGeoResult(o, result);
-                                }
-                            }
-
-                            // 2. Prepare Points
-                            const hasGeoErrors = groupOrders.some((o: any) => !o.coords?.lat || o.coords.lat === 0);
-                            const sLat = parseFloat(settings?.defaultStartLat || '');
-                            const sLng = parseFloat(settings?.defaultStartLng || '');
-                            const hubPoint = (!isNaN(sLat) && !isNaN(sLng) && sLat !== 0) ? { lat: sLat, lng: sLng } : null;
-
-                            const points: any[] = [];
-                            if (hubPoint) points.push(hubPoint);
-                            groupOrders.forEach((o: any) => {
-                                if (o.coords?.lat && o.coords.lat !== 0) {
-                                    points.push({ lat: Number(o.coords.lat), lng: Number(o.coords.lng) });
-                                }
-                            });
->>>>>>> Stashed changes
-                            
-                            const eLat = parseFloat(settings?.defaultEndLat || settings?.defaultStartLat || '');
-                            const eLng = parseFloat(settings?.defaultEndLng || settings?.defaultStartLng || '');
-                            if (!isNaN(eLat) && !isNaN(eLng) && eLat !== 0) points.push({ lat: eLat, lng: eLng });
 
                             const newRoute: any = {
                                 id: `autoroute_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
                                 courier: actualCourierName,
-                                orders: JSON.parse(JSON.stringify(groupOrders)),
-                                windowLabel,
+                                orders: JSON.parse(JSON.stringify(chunkOrders)),
+                                windowLabel: group.windowLabel,
                                 totalDistance: 0,
                                 totalDuration: 0,
                                 isOptimized: false,
                                 createdAt: Date.now(),
                                 isAutoGenerated: true,
-                                hasGeoErrors
+                                hasGeoErrors: false
                             };
-
-<<<<<<< Updated upstream
-                            if (existingRoute) {
-                                processedGroupSignatures.current.add(groupSignature);
-                                continue;
-                            }
 
                             routingTasks.push({ actualCourierName, chunkOrders, groupSignature });
                         }
@@ -476,8 +387,8 @@ export function useContinuousAutoRouting() {
                         const task = taskQueue.shift();
                         if (!task) break;
                         const { actualCourierName, chunkOrders, groupSignature } = task;
-                    
-                    try {
+
+                        try {
                         const newRoute: any = {
                             id: `autoroute_${Date.now()}_rnd${Math.floor(Math.random() * 10000)}`,
                             courier: actualCourierName,
@@ -638,61 +549,36 @@ export function useContinuousAutoRouting() {
                                         newRoute.startAddress = settings.defaultStartAddress || `${sLat}, ${sLng}`;
                                         newRoute.endAddress = settings.defaultEndAddress || newRoute.startAddress;
                                     }
-=======
-                            // 3. Routing
-                            if (points.length >= 2) {
-                                try {
-                                    const res = await RobustRoutingService.calculateOptimizedRoute(points);
-                                    const baseDistanceKm = (res.totalDistance || 0) / 1000;
-                                    const bonusDistanceKm = groupOrders.length * 0.5;
-                                    
-                                    newRoute.totalDistance = parseFloat((baseDistanceKm + bonusDistanceKm).toFixed(2));
-                                    newRoute.totalDuration = Math.round((res.totalDuration || 0) / 60);
-                                    newRoute.isOptimized = res.feasible;
-                                } catch (routingErr) {
-                                    console.warn('[Robot] Routing failed:', routingErr);
-                                    newRoute.totalDistance = 1.0 + (groupOrders.length * 0.5);
-                                    newRoute.isOptimized = false;
->>>>>>> Stashed changes
                                 }
                             }
 
-                            // 4. Update Global State
-                            updateExcelDataRef.current((prev: any) => {
-                                if (!prev) return prev;
-                                const chunkIds = new Set(groupOrders.map((o: any) => getStableOrderId(o)));
-                                const nonMatchingRoutes = (prev.routes || []).filter((r: any) => 
-                                    !r.isAutoGenerated || !r.orders.some((ro: any) => chunkIds.has(getStableOrderId(ro)))
-                                );
-                                const orderMap = new Map();
-                                groupOrders.forEach((o: any) => orderMap.set(getStableOrderId(o), { ...o }));
-                                const updatedOrders = (prev.orders || []).map((o: any) => orderMap.get(getStableOrderId(o)) || o);
-                                return { ...prev, orders: updatedOrders, routes: [...nonMatchingRoutes, newRoute], lastModified: Date.now() };
-                            }, true);
+                             // 4. Update Global State
+                             updateExcelDataRef.current((prev: any) => {
+                                 if (!prev) return prev;
+                                 const chunkIds = new Set(chunkOrders.map((o: any) => getStableOrderId(o)));
+                                 const nonMatchingRoutes = (prev.routes || []).filter((r: any) => 
+                                     !r.isAutoGenerated || !r.orders.some((ro: any) => chunkIds.has(getStableOrderId(ro)))
+                                 );
+                                 const orderMap = new Map();
+                                 chunkOrders.forEach((o: any) => orderMap.set(getStableOrderId(o), { ...o }));
+                                 const updatedOrders = (prev.orders || []).map((o: any) => orderMap.get(getStableOrderId(o)) || o);
+                                 return { ...prev, orders: updatedOrders, routes: [...nonMatchingRoutes, newRoute], lastModified: Date.now() };
+                             }, true);
 
                             processedGroupSignatures.current.add(groupSignature);
                             updatedNames.add(actualCourierName);
-                            processedOrdersCount += groupOrders.length;
-                            completedTasks++;
-                            updateProgress();
 
                             // v18.2: CRITICAL SAFETY SLEEP (Break between OSRM hits)
                             await new Promise(res => setTimeout(res, 250));
+                        }
 
                         } catch (taskErr) {
                             console.error('[Robot] Task failed:', groupSignature, taskErr);
                         }
-<<<<<<< Updated upstream
-                    } catch (e) {
-                        console.error(`[AutoRouting] Parallel task fail:`, e);
-                    }
-=======
->>>>>>> Stashed changes
                     }
                     toast.dismiss('autoroute-progress');
                 }
 
-<<<<<<< Updated upstream
                 if (batchUpdates.size > 0) {
                     updateExcelDataRef.current((prev: any) => {
                         let nO = [...(prev?.orders || [])];
@@ -742,22 +628,6 @@ export function useContinuousAutoRouting() {
 
                     if (updatedNames.size > 0) {
                         toast.success(`Рассчитано: ${Array.from(updatedNames).join(', ')}`, { icon: '' });
-=======
-                if (soloGeoOrders.length > 0) {
-                    for (const o of soloGeoOrders.slice(0, 30)) {
-                        if (!autoRoutingStatusRef.current.isActive) break;
-                        const result = await robustGeocodingService.geocode(o.address, { turbo: false, silent: true });
-                        if (result?.best) {
-                            await applyGeoResult(o, result);
-                            updateExcelDataRef.current((prev: any) => ({
-                                ...prev,
-                                orders: prev.orders.map((po: any) => getStableOrderId(po) === getStableOrderId(o) ? { ...o } : po)
-                            }), true);
-                            processedOrdersCount++;
-                            updateProgress();
-                            await new Promise(r => setTimeout(r, 100));
-                        }
->>>>>>> Stashed changes
                     }
                 }
 
@@ -765,7 +635,6 @@ export function useContinuousAutoRouting() {
                     toast.success(`Робот: Оновив ${updatedNames.size} кур'єрів`, { icon: '🤖' });
                 }
 
-<<<<<<< Updated upstream
                 // Refinement Pass
                 try {
                     const needsRef = currentData.orders.filter((o: any) => {
@@ -825,13 +694,9 @@ export function useContinuousAutoRouting() {
 
             } catch (err) {
                 console.error('[AutoRouting] Critical failure:', err);
-=======
-            } catch (globalErr) {
-                console.error('[AutoRouting] Crash:', globalErr);
->>>>>>> Stashed changes
             } finally {
                 isProcessingRef.current = false;
-                setAutoRoutingStatus({ statusMessage: 'Ожидание новых данных', lastUpdate: Date.now() });
+                setAutoRoutingStatus({ lastUpdate: Date.now() });
             }
         };
     }, [robustGeocodingService, setAutoRoutingStatus]); // Add minimal dependencies
@@ -851,7 +716,6 @@ export function useContinuousAutoRouting() {
         };
     }, [autoRoutingStatus.isActive]);
 
-<<<<<<< Updated upstream
     // Manual triggers listener (always active)
     useEffect(() => {
         const forceHandler = async (e: any) => {
@@ -909,8 +773,6 @@ export function useContinuousAutoRouting() {
     }, []);
 
     // Structural trigger
-=======
->>>>>>> Stashed changes
     const lastSigRef = useRef('');
     useEffect(() => {
         if (!autoRoutingStatus.isActive || !excelData?.orders) return;

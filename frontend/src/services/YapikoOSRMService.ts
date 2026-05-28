@@ -65,13 +65,8 @@ export class YapikoOSRMService {
     const normalizedUrl = baseUrl.trim().replace(/\/+$/, '');
     const profile = profileType === 'car' ? 'driving' : (profileType || 'driving');
     
-<<<<<<< Updated upstream
     // Используем toFixed(7) для максимальной точности координат в OSRM
     const coordsStr = locations.map(l => `${Number(l.lng).toFixed(7)},${Number(l.lat).toFixed(7)}`).join(';');
-=======
-    // Use toFixed(7) for maximum coordinate precision in OSRM
-    const coordsStr = uniqueLocations.map(l => `${Number(l.lng).toFixed(7)},${Number(l.lat).toFixed(7)}`).join(';');
->>>>>>> Stashed changes
     
     // Пробуем несколько профилей если нужно, но основной — запрошенный
     const tryProfiles = [profile];
@@ -103,19 +98,6 @@ export class YapikoOSRMService {
 
           const route = data.routes[0];
           
-<<<<<<< Updated upstream
-=======
-          // v17.21: ZERO-TOLERANCE for 0-meter routes between different locations.
-          if (route.distance === 0 && uniqueLocations.length >= 2) {
-              console.warn(`[YapikoOSRM] ❌ Ошибка: Дистанция 0 м для ${uniqueLocations.length} точек. Маршрут невозможен.`);
-              lastError = 'Zero distance route';
-              continue;
-          }
-
-          const distKm = route.distance / 1000;
-          const distLog = distKm < 1 ? `${Math.round(route.distance)} м` : `${distKm.toFixed(2)} км`;
-          console.debug(`[YapikoOSRM] ✅ Успех (${p}): ${distLog} | Точек: ${uniqueLocations.length}`);
->>>>>>> Stashed changes
 
           const legs: OSRMLeg[] = (route.legs || []).map((leg: any, idx: number) => ({
             distance: { 
@@ -147,27 +129,7 @@ export class YapikoOSRMService {
   }
 
   /**
-<<<<<<< Updated upstream
    * Расчёт матрицы расстояний/времени для набора точек.
-=======
-   * Calculate ONLY the distance and duration (Lightweight)
-   */
-  static async getFastDistance(
-    locations: { lat: number; lng: number }[],
-    baseUrl: string,
-    profileType: string = 'driving'
-  ): Promise<{ distanceM: number; durationS: number } | null> {
-    const res = await this.calculateRoute(locations, baseUrl, profileType);
-    if (!res.feasible || res.totalDistance === undefined) return null;
-    return {
-      distanceM: res.totalDistance,
-      durationS: res.totalDuration || 0
-    };
-  }
-
-  /**
-   * Calculate a distance/duration matrix for a set of points.
->>>>>>> Stashed changes
    */
   static async getMatrix(
     sources: { lat: number; lng: number }[],
