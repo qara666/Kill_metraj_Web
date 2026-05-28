@@ -1,0 +1,113 @@
+src/components/route/RouteManagement.tsx(477,24): error TS2802: Type 'Set<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+src/hooks/useSmartAddressCorrection.ts(7,63): error TS2307: Cannot find module '@/services/addressZoneValidator' or its corresponding type declarations.
+src/hooks/useSmartAddressCorrection.ts(8,88): error TS2307: Cannot find module '@/services/addressZoneValidator' or its corresponding type declarations.
+src/utils/data/addressUtils.ts(77,35): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(78,34): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(79,30): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(80,28): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(81,27): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(82,27): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(83,33): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(84,32): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(85,38): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(86,37): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(87,26): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(88,25): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(89,26): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(90,25): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(91,28): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(92,27): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(93,36): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(94,34): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(95,29): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(96,28): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(97,28): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(98,27): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(99,28): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(100,27): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(101,29): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(102,27): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(103,31): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(104,29): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(105,27): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(106,26): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(107,28): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(108,27): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(109,24): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(110,42): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(111,28): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(112,27): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(113,33): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(114,28): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(115,36): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(116,38): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(117,31): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(118,37): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(121,35): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(122,34): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(123,27): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(124,26): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(127,31): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(128,31): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(129,31): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(130,34): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(131,33): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(132,37): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(133,27): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(134,36): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(135,36): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(136,40): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(137,30): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(138,29): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(139,37): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(140,35): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(141,35): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(142,38): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(143,37): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(144,36): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(145,45): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(146,36): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(147,35): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(150,33): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(151,32): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(152,36): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(153,30): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(154,29): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(155,38): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(156,32): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(157,31): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(158,30): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(159,30): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(162,36): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(163,35): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(164,33): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(165,27): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(166,26): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(167,31): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(168,30): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(224,23): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(225,23): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(226,22): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(227,22): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(228,25): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(229,24): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(230,25): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(231,25): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(232,22): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(233,22): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(234,23): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(244,40): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(245,42): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(246,41): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(247,34): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(248,35): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(252,29): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/data/addressUtils.ts(252,78): error TS1501: This regular expression flag is only available when targeting 'es6' or later.
+src/utils/maps/geocodeCache.ts(149,24): error TS2802: Type 'Set<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+src/utils/maps/googleMapsLoader.ts(38,27): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+src/utils/maps/googleMapsLoader.ts(38,39): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/utils/maps/ukraineTrafficAPI.ts(88,26): error TS2802: Type 'MapIterator<[string, { averageSpeed: number; typicalCongestion: number; timestamp: number; }]>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+src/utils/routes/routeOptimizationCache.ts(98,32): error TS2802: Type 'MapIterator<[string, CachedDistance]>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+src/utils/routes/routeOptimizationHelpers.ts(494,36): error TS2802: Type 'MapIterator<[string, Order[]]>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+src/utils/routes/routeOptimizationHelpers.ts(501,44): error TS2802: Type 'MapIterator<[string, Order[]]>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+src/utils/routes/routeOptimizationHelpers.ts(1068,26): error TS2802: Type 'MapIterator<[string, { feasible: boolean; legs?: any[]; totalDuration?: number; totalDistance?: number; timestamp: number; }]>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.

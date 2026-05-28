@@ -1,0 +1,159 @@
+/**
+ * Robust Geocoding Service — Shared Types
+ *
+ * All interfaces used across the robust-geocoding module.
+ */
+
+//  Raw Google Maps result shape 
+
+export interface RawGeoCandidate {
+  formatted_address: string
+  geometry: {
+    location: {
+      lat: number | (() => number)
+      lng: number | (() => number)
+    }
+    location_type: 'ROOFTOP' | 'RANGE_INTERPOLATED' | 'GEOMETRIC_CENTER' | 'APPROXIMATE'
+  }
+  address_components?: Array<{ long_name: string; short_name: string; types: string[] }>
+  place_id?: string
+  types?: string[]
+  _source?: string
+}
+
+//  Scored geocoding candidate 
+
+export interface ScoredCandidate {
+  raw: RawGeoCandidate
+  /** Normalised latitude */
+  lat: number
+  /** Normalised longitude */
+  lng: number
+  /** Composite quality score (higher = better) */
+  score: number
+  /** Name of the KML delivery zone this point falls in (or null) */
+  kmlZone: string | null
+  /** Folder / hub name of the KML zone */
+  kmlHub: string | null
+  /** Whether this point is inside a *technical* auto-unload zone */
+  isTechnicalZone: boolean
+  /** Whether this point is inside any active delivery zone */
+  isInsideZone: boolean
+  /** Whether the house number was an exact match */
+  streetNumberMatched?: boolean
+  /** Google location type (ROOFTOP, etc.) */
+  locationType?: string
+  /** Whether any fatal geocoding flags (out of zone, lockdown) were triggered */
+  hasGeoErrors: boolean
+  /** v16.7: Convenience field for display */
+  formatted_address?: string
+  /** v16.7: Origin engine Name */
+  _source?: string
+}
+
+//  KML Zone context 
+
+export interface KmlPolygonData {
+  /** Internal key: "folderName:name" */
+  key: string
+  name: string
+  folderName: string
+  /** Pre-built Google maps Polygon object, set by the zone loader */
+  googlePoly?: any
+  /** Pre-built LatLngBounds for quick AABB rejection */
+  bounds?: any
+  /** Raw path array (fallback if googlePoly not available) */
+  path?: Array<{ lat: number; lng: number }>
+}
+
+/** Injected by the app context once KML data is loaded */
+export interface KmlZoneContext {
+  /** ALL polygons (delivery + technical) */
+  allPolygons: KmlPolygonData[]
+  /** Only the polygons that are active/selected in the current planning session */
+  activePolygons: KmlPolygonData[]
+  /** Zone keys that are currently selected */
+  selectedZoneKeys: string[]
+}
+
+//  Options and Results 
+
+export interface RobustGeocodeOptions {
+  /**
+   * Expected delivery zone from FastOperator. If provided and matches the KML zone,
+   * the candidate gets a massive score bonus.
+   */
+  expectedDeliveryZone?: string | null
+
+  /**
+   * If true, skips the disambiguation modal and auto-picks the best candidate.
+   * Use for background/distance calculations.
+   */
+  silent?: boolean
+
+  /**
+   * Hint coordinate to bias scoring (e.g. centre of the route).
+   */
+  hintPoint?: { lat: number; lng: number }
+
+  /**
+   * City string to append when normalising variants (e.g. "Киев").
+   * Defaults to the value in settings.cityBias.
+   */
+  cityBias?: string
+
+  /**
+   * Max number of street-variant expansions to try before falling back.
+   * Defaults to all variants.
+   */
+  maxVariants?: number
+
+  /**
+   * Skip exhaustive research when a reasonable candidate is already found.
+   * Default: true (saves API calls).
+   */
+  skipExhaustiveIfGoodHit?: boolean
+
+  /**
+   * Pre-resolved canonical address string from server (v35.9.40).
+   */
+  addressGeoStr?: string
+
+  /**
+   * v37: Turbo Instant Mode.
+   * If true, the service will return the first "good enough" result immediately
+   * with minimal validaton and ultra-short timeouts (1.5s).
+   */
+  turbo?: boolean
+
+  /**
+   * v37: Internal optimization. Skip complex address normalization if the input
+   * is already considered clean or comes from a trusted source.
+   */
+  skipNormalization?: boolean
+
+  /**
+   * v5.106: Force city prefix in query.
+   * If true, the service will prepend the cityBias to the query string to
+   * ensure high-quality matching (prevents cross-city "jumping").
+   */
+  forceCityBias?: boolean
+  /**
+   * v16.2: Strict Engine Routing.
+   * If provided, the service will ONLY use this provider and skip others.
+   */
+  provider?: 'photon' | 'nominatim' | string;
+}
+
+export interface RobustGeocodeResult {
+  /** Best candidate after scoring, or null if nothing found */
+  best: ScoredCandidate | null
+  /** All candidates collected during the search */
+  allCandidates: ScoredCandidate[]
+  /** Address string that ultimately produced the best hit */
+  resolvedVariant: string | null
+  /** Whether the result came from cache */
+  fromCache: boolean
+  /** Whether this result is considered definitive and should not be re-searched (v36) */
+  isLocked?: boolean
+}

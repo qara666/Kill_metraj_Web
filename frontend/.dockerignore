@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.vite/
+.DS_Store
+*.log
+.env
+render_env.txt
+fix_brace.py
+parse_*.cjs
+parse_*.js
+parse_*.py
+.frontend.out.log

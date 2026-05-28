@@ -1,0 +1,25 @@
+{
+    "name": "dashboard-connector",
+    "config": {
+        "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+        "tasks.max": "1",
+        "database.hostname": "host.docker.internal",
+        "database.port": "5432",
+        "database.user": "msun",
+        "database.password": "1234",
+        "database.dbname": "yapiko_auto_km",
+        "database.server.name": "dbserver1",
+        "table.include.list": "public.api_dashboard_cache",
+        "plugin.name": "pgoutput",
+        "publication.autocreate.mode": "filtered",
+        "slot.name": "debezium_dashboard_slot",
+        "topic.prefix": "kill_metraj",
+        "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+        "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+        "key.converter.schemas.enable": "false",
+        "value.converter.schemas.enable": "false",
+        "transforms": "unwrap",
+        "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+        "transforms.unwrap.drop.tombstones": "false"
+    }
+}

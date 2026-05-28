@@ -1,0 +1,321 @@
+# ═══════════════════════════════════════════════════════════
+# Kill Metraj — Production Docker Stack
+# ───────────────────────────────────────────────────────────
+# Запуск: docker compose -f docker-compose.prod.yml up -d
+# Остановка: docker compose -f docker-compose.prod.yml down
+# ═══════════════════════════════════════════════════════════
+
+services:
+  # ── Reverse Proxy (Caddy — авто HTTPS) ──────────────────
+  caddy:
+    image: caddy:2-alpine
+    container_name: km-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      frontend:
+        condition: service_healthy
+    networks:
+      - km-network
+
+  # ── PostgreSQL ───────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: km-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-kill_metraj}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-kill_metraj}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - km-network
+
+  # ── Redis ────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: km-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - km-network
+
+  # ── Backend API ──────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: km-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+      PORT: 5001
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-kill_metraj}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      REDIS_ENABLED: "true"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      EXTERNAL_API_KEY: ${EXTERNAL_API_KEY:-}
+      EXTERNAL_API_URL: ${EXTERNAL_API_URL:-}
+      FRONTEND_URL: ${FRONTEND_URL:-https://${DOMAIN:-localhost}}
+      CACHE_MAX_ENTRIES: "20"
+      CACHE_MAX_SIZE_MB: "8"
+      # Routing — self-hosted (доступны по именам сервисов)
+      SELF_HOST_OSRM_URL: http://osrm:5000
+      SELF_HOST_VALHALLA_URL: http://valhalla:8002
+      NOMINATIM_URL: http://nominatim:8080
+      # Remote fallback
+      REMOTE_OSRM_URL: ${REMOTE_OSRM_URL:-http://116.204.153.171:5050}
+      REMOTE_VALHALLA_URL: ${REMOTE_VALHALLA_URL:-http://valhalla.yapiko.kh.ua}
+      YAPIKO_OSRM_URL: ${YAPIKO_OSRM_URL:-http://116.204.153.171:5050}
+      AUTO_ROUTE_API_KEY: ${AUTO_ROUTE_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - km-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5001/health/readiness"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+  # ── Frontend (Nginx SPA) ─────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ""
+    container_name: km-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - km-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  # ╔════════════════════════════════════════════════════════╗
+  # ║   Опциональные сервисы                                ║
+  # ║   Раскомментируйте нужные или используйте профили     ║
+  # ╚════════════════════════════════════════════════════════╝
+
+  # ── OSRM (автомобильная маршрутизация) ──────────────────
+  # docker compose -f docker-compose.prod.yml --profile routing up -d
+  osrm:
+    profiles: ["routing", "full"]
+    image: osrm/osrm-backend:latest
+    container_name: km-osrm
+    ports:
+      - "127.0.0.1:5050:5000"
+    volumes:
+      - ./backend/routing-data:/data
+    command: osrm-routed --algorithm mld /data/ukraine-latest.osrm
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5000/route/v1/driving/30.5234,50.4501;30.5240,50.4510?overview=false | grep -q routes || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - km-network
+
+  # ── Valhalla (мультимодальная маршрутизация) ────────────
+  valhalla:
+    profiles: ["routing", "full"]
+    image: ghcr.io/gis-ops/docker-valhalla/valhalla:latest
+    container_name: km-valhalla
+    ports:
+      - "127.0.0.1:8002:8002"
+    environment:
+      - tile_urls=https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
+      - build_elevation=False
+      - serve_tiles=True
+      - use_tiles_ignore_pbf=True
+    volumes:
+      - valhalla_data:/custom_files
+    restart: unless-stopped
+    networks:
+      - km-network
+
+  # ── Nominatim (геокодинг) ────────────────────────────────
+  nominatim:
+    profiles: ["routing", "full"]
+    image: mediagis/nominatim:4.5
+    container_name: km-nominatim
+    ports:
+      - "127.0.0.1:8081:8080"
+    environment:
+      - PBF_URL=https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
+      - REPLICATION_URL=https://download.geofabrik.de/europe/ukraine-updates/
+      - IMPORT_WIKIPEDIA=false
+      - IMPORT_US_POSTCODES=false
+      - NOMINATIM_PASSWORD=${NOMINATIM_PASSWORD:-localpass}
+    volumes:
+      - nominatim_data:/var/lib/postgresql/16/main
+    shm_size: 1gb
+    restart: unless-stopped
+    networks:
+      - km-network
+
+  # ── ZooKeeper (для Kafka) ────────────────────────────────
+  zookeeper:
+    profiles: ["cdc", "full"]
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: km-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "127.0.0.1:2181:2181"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+    networks:
+      - km-network
+
+  # ── Kafka (CDC-события) ─────────────────────────────────
+  kafka:
+    profiles: ["cdc", "full"]
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: km-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "127.0.0.1:9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://127.0.0.1:9092,PLAINTEXT_INTERNAL://kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    networks:
+      - km-network
+
+  # ── Debezium (CDC PostgreSQL → Kafka) ───────────────────
+  debezium:
+    profiles: ["cdc", "full"]
+    image: debezium/connect:2.5
+    container_name: km-debezium
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9093
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: debezium_configs
+      OFFSET_STORAGE_TOPIC: debezium_offsets
+      STATUS_STORAGE_TOPIC: debezium_statuses
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    networks:
+      - km-network
+
+  # ── Kafka UI (мониторинг) ────────────────────────────────
+  kafka-ui:
+    profiles: ["cdc", "full"]
+    image: provectuslabs/kafka-ui:latest
+    container_name: km-kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "127.0.0.1:8082:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: kill-metraj
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9093
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    networks:
+      - km-network
+
+# ═══════════════════════════════════════════════════════════
+# Volumes
+# ═══════════════════════════════════════════════════════════
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  valhalla_data:
+    driver: local
+  nominatim_data:
+    driver: local
+  zookeeper_data:
+    driver: local
+  zookeeper_logs:
+    driver: local
+  kafka_data:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
+
+# ═══════════════════════════════════════════════════════════
+# Networks
+# ═══════════════════════════════════════════════════════════
+networks:
+  km-network:
+    driver: bridge

@@ -1,0 +1,37 @@
+
+> kill-metraj-frontend@1.0.0 build
+> tsc && vite build
+
+src/components/route/RouteManagement.tsx(5,3): error TS6133: 'PlusIcon' is declared but its value is never read.
+src/components/route/RouteManagement.tsx(195,57): error TS2339: Property 'settings' does not exist on type 'ExcelDataContextType'.
+src/components/route/RouteManagement.tsx(195,67): error TS2339: Property 'activeCityId' does not exist on type 'ExcelDataContextType'.
+src/components/route/RouteManagement.tsx(195,81): error TS2339: Property 'apiSyncStatus' does not exist on type 'ExcelDataContextType'.
+src/components/route/RouteManagement.tsx(195,96): error TS2339: Property 'triggerApiManualSync' does not exist on type 'ExcelDataContextType'.
+src/components/route/RouteManagement.tsx(271,17): error TS2554: Expected 2 arguments, but got 1.
+src/components/route/RouteManagement.tsx(416,23): error TS2554: Expected 3 arguments, but got 2.
+src/components/route/RouteManagement.tsx(422,26): error TS2554: Expected 3 arguments, but got 2.
+src/components/route/RouteManagement.tsx(435,24): error TS2554: Expected 3 arguments, but got 2.
+src/components/route/RouteManagement.tsx(439,71): error TS2339: Property 'name' does not exist on type '{ zoneName: string; hubName: string; }'.
+src/components/route/RouteManagement.tsx(439,90): error TS2339: Property 'name' does not exist on type '{ zoneName: string; hubName: string; }'.
+src/components/route/RouteManagement.tsx(457,49): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/route/RouteManagement.tsx(458,38): error TS2339: Property 'orders' does not exist on type 'Route'.
+src/components/route/RouteManagement.tsx(460,108): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/route/RouteManagement.tsx(521,7): error TS2353: Object literal may only specify known properties, and 'orders' does not exist in type 'Route'.
+src/components/route/RouteManagement.tsx(577,59): error TS2339: Property 'orders' does not exist on type 'Route'.
+src/components/route/RouteManagement.tsx(750,32): error TS2554: Expected 2 arguments, but got 1.
+src/components/route/RouteManagement.tsx(888,116): error TS2554: Expected 2 arguments, but got 1.
+src/components/route/RouteManagement.tsx(892,64): error TS2322: Type 'string | Courier | undefined' is not assignable to type 'ReactNode'.
+  Type 'Courier' is not assignable to type 'ReactNode'.
+src/components/route/RouteManagement.tsx(893,106): error TS2345: Argument of type 'string | number' is not assignable to parameter of type 'number'.
+  Type 'string' is not assignable to type 'number'.
+src/components/route/RouteManagement.tsx(893,147): error TS2345: Argument of type 'string | number' is not assignable to parameter of type 'number'.
+  Type 'string' is not assignable to type 'number'.
+src/components/route/RouteManagement.tsx(897,52): error TS2339: Property 'isOptimized' does not exist on type 'Route'.
+src/components/route/RouteManagement.tsx(899,62): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/route/RouteManagement.tsx(904,28): error TS2339: Property 'orders' does not exist on type 'Route'.
+src/components/route/RouteManagement.tsx(918,26): error TS2339: Property 'isOptimized' does not exist on type 'Route'.
+src/components/route/RouteManagement.tsx(966,13): error TS2322: Type 'string | number | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.

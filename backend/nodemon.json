@@ -1,0 +1,13 @@
+{
+  "watch": ["src", "workers", "simple_server.js"],
+  "ext": "js,json",
+  "ignore": ["src/**/*.test.js", "node_modules", "logs/*.log"],
+  "exec": "node simple_server.js",
+  "env": {
+    "NODE_ENV": "development"
+  }
+}
+
+
+
+

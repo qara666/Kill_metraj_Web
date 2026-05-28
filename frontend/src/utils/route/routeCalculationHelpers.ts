@@ -1,0 +1,1037 @@
+import type { Order, CourierRouteStatus, RouteCalculationMode, GroupingConfig } from '../../types';
+import { DEFAULT_GROUPING_CONFIG } from '../../types';
+import { isOrderCompleted } from '../data/orderStatus';
+import { getPlannedTime, getArrivalTime, getKitchenTime, getExecutionTime, getPickupTime } from '../data/timeUtils';
+import { haversineDistance } from '../routes/routeOptimizationHelpers';
+import { normalizeCourierName } from '../data/courierName';
+import { getStableOrderId } from '../data/orderId';
+
+// v7.x: Гео-вспомогательные функции для расчёта расстояния от центра группы
+function calculateGroupCenter(orders: Order[]): { lat: number; lng: number } | null {
+    if (!orders || orders.length === 0) return null;
+    const ordersWithCoords = orders.filter(o => o.coords && o.coords.lat && o.coords.lng);
+    if (ordersWithCoords.length === 0) return null;
+    
+    const sumLat = ordersWithCoords.reduce((sum, o) => sum + (o.coords?.lat || 0), 0);
+    const sumLng = ordersWithCoords.reduce((sum, o) => sum + (o.coords?.lng || 0), 0);
+    
+    return {
+        lat: sumLat / ordersWithCoords.length,
+        lng: sumLng / ordersWithCoords.length
+    };
+}
+
+function calculateMaxDistanceFromCenter(orders: Order[], center: { lat: number; lng: number }): number {
+    if (!orders || orders.length === 0 || !center) return 0;
+    let maxDist = 0;
+    orders.forEach(o => {
+        if (o.coords && o.coords.lat && o.coords.lng) {
+            const dist = haversineDistance(center.lat, center.lng, o.coords.lat, o.coords.lng);
+            if (dist > maxDist) maxDist = dist;
+        }
+    });
+    return maxDist;
+}
+
+// ============================================
+// ТИПЫ ДЛЯ ГРУППИРОВКИ ПО ВРЕМЕННЫМ ОКНАМ
+// ============================================
+
+export interface TimeWindowGroup {
+    id: string;                 // Уникальный ID группы
+    courierId: string;
+    courierName: string;
+    windowStart: number;        // timestamp начала окна (по доставке)
+    windowEnd: number;          // timestamp конца окна (по доставке)
+    windowLabel: string;        // Читаемый формат "12:00-12:15"
+    orders: Order[];
+    isReadyForCalculation: boolean;
+    arrivalStart?: number;      // Когда "прилетел" первый заказ
+    arrivalEnd?: number;        // Когда "прилетел" последний заказ
+    splitReason?: string;       // Причина разделения (Phase 4.1)
+    predictedDepartureAt?: number; // Прогноз выезда (Phase 4.2)
+    manualGroupId?: string;     // ID ручной группы (Phase 4.7)
+}
+
+// ============================================
+// ФУНКЦИИ ГРУППИРОВКИ ПО ВРЕМЕННЫМ ОКНАМ
+// ============================================
+
+const DEFAULT_WINDOW_MINUTES = 30; // только метка для отображения, группировка использует PROXIMITY_MINUTES
+
+// v7.x: Обновлено для соответствия бэкенду — окно 20 минут
+const PROXIMITY_MINUTES = 20;           // v7.x: Скользящее окно пошагово — синхронизировано с бэкендом turboGroupingHelpers.js
+const MAX_DELIVERY_SPAN_MINUTES = 90;   // v8.1: Макс. span доставки в одной группе — синхронизировано с бэкендом
+
+/**
+ * Получает ключ временного окна для timestamp
+ * Округляет вниз до ближайшего окна (например, 12:07 -> 12:00 для 15-минутного окна)
+ */
+export function getTimeWindowKey(timestamp: number, windowMinutes: number = DEFAULT_WINDOW_MINUTES): string {
+    const date = new Date(timestamp);
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    const windowStart = Math.floor(minutes / windowMinutes) * windowMinutes;
+    return `${hours.toString().padStart(2, '0')}:${windowStart.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Получает границы временного окна для timestamp
+ */
+export function getTimeWindowBounds(
+    timestamp: number,
+    windowMinutes: number = DEFAULT_WINDOW_MINUTES
+): { start: number; end: number; label: string } {
+    const date = new Date(timestamp);
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    const windowStartMinutes = Math.floor(minutes / windowMinutes) * windowMinutes;
+    const windowEndMinutes = windowStartMinutes + windowMinutes;
+
+    const startDate = new Date(date);
+    startDate.setMinutes(windowStartMinutes, 0, 0);
+
+    const endDate = new Date(date);
+    endDate.setMinutes(windowEndMinutes, 0, 0);
+
+    const startLabel = `${hours.toString().padStart(2, '0')}:${windowStartMinutes.toString().padStart(2, '0')}`;
+    const endHours = windowEndMinutes >= 60 ? hours + 1 : hours;
+    const endMins = windowEndMinutes >= 60 ? windowEndMinutes - 60 : windowEndMinutes;
+    const endLabel = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
+
+    return {
+        start: startDate.getTime(),
+        end: endDate.getTime(),
+        label: `${startLabel}-${endLabel}`
+    };
+}
+
+// Константы удалены — теперь в начале файла
+
+/**
+ * Форматирует диапазон времени в читаемый формат
+ */
+function formatTimeRange(startTime: number, endTime: number): string {
+    if (!startTime || !endTime) return 'Без времени';
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+    const startLabel = `${start.getHours().toString().padStart(2, '0')}:${start.getMinutes().toString().padStart(2, '0')}`;
+    const endLabel = `${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}`;
+    return startLabel === endLabel ? startLabel : `${startLabel}-${endLabel}`;
+}
+
+/**
+ * Создает новую группу для заказа
+ */
+function createNewGroup(
+    courierId: string,
+    courierName: string,
+    order: Order,
+    planned: number,
+    arrival: number,
+    _index: number,
+    splitReason?: string
+): TimeWindowGroup {
+    const kitchen = getKitchenTime(order);
+    const anchorTime = getExecutionTime(order) || planned;
+    
+    const group: TimeWindowGroup = {
+        id: `group-${courierId}-${order.id}-${planned}`,
+        courierId,
+        courierName,
+        windowStart: planned,
+        windowEnd: planned,
+        windowLabel: formatTimeRange(planned, planned),
+        orders: [order],
+        isReadyForCalculation: true,
+        arrivalStart: arrival,
+        arrivalEnd: arrival,
+        splitReason,
+        // Сохраняем якорь первой точки для проверки условий
+        predictedDepartureAt: kitchen ? kitchen + 5 * 60 * 1000 : undefined
+    };
+
+    // Сохраняем firstAnchor, firstCoords, firstZone для проверки условий разбиения
+    (group as any).firstAnchor = anchorTime;
+    (group as any).firstCoords = order.coords || null;
+    (group as any).firstZone = order.deliveryZone || '';
+    (group as any).lastKitchen = kitchen || undefined;
+
+    return group;
+}
+
+
+
+/**
+ * Создает группу для ручного объединения (Phase 4.7)
+ */
+function createManualGroup(
+    courierId: string,
+    courierName: string,
+    orders: Order[],
+    manualGroupId: string
+): TimeWindowGroup {
+    const plannedTimes = orders.map(o => getPlannedTime(o)).filter((t): t is number => !!t);
+    const arrivalTimes = orders.map(o => getArrivalTime(o)).filter((t): t is number => !!t);
+
+    const minPlanned = plannedTimes.length > 0 ? Math.min(...plannedTimes) : 0;
+    const maxPlanned = plannedTimes.length > 0 ? Math.max(...plannedTimes) : 0;
+
+    const group: TimeWindowGroup = {
+        id: `manual-${manualGroupId}`,
+        courierId,
+        courierName,
+        windowStart: minPlanned,
+        windowEnd: maxPlanned,
+        windowLabel: plannedTimes.length > 0 ? formatTimeRange(minPlanned, maxPlanned) : 'Ручная группа',
+        orders,
+        isReadyForCalculation: true,
+        arrivalStart: arrivalTimes.length > 0 ? Math.min(...arrivalTimes) : undefined,
+        arrivalEnd: arrivalTimes.length > 0 ? Math.max(...arrivalTimes) : undefined,
+        manualGroupId
+    };
+
+    updatePredictedDeparture(group);
+    return group;
+}
+
+/**
+ * Расчет времени выезда для группы (Phase 4.2)
+ * Основан на самом позднем времени готовности заказа + 5 мин на упаковку.
+ * Учитываем статус "Собран" — такие заказы уже готовы.
+ */
+export function updatePredictedDeparture(group: TimeWindowGroup): void {
+    const kitchenTimes = group.orders
+        .filter(o => o.status !== 'Собран') // Если собран, он уже готов
+        .map(o => getKitchenTime(o))
+        .filter((t): t is number => !!t);
+
+    if (kitchenTimes.length > 0) {
+        const maxKitchen = Math.max(...kitchenTimes);
+        group.predictedDepartureAt = maxKitchen + 5 * 60 * 1000;
+    } else {
+        // Если все заказы "Собран" или нет времени кухни - считаем что можно выезжать прямо сейчас
+        group.predictedDepartureAt = Date.now();
+    }
+}
+
+/**
+ * Группирует заказы курьера по гибридной логике:
+ * 1. Основной фактор: близость времени поступления (arrival/creation time)
+ * 2. Дополнительный фильтр: близость планового времени доставки
+ */
+export function groupOrdersByTimeWindow(
+    orders: Order[],
+    courierId: string,
+    courierName: string,
+    arrivalProximityMinutes: number = PROXIMITY_MINUTES,
+    maxDeliverySpanMinutes: number = MAX_DELIVERY_SPAN_MINUTES
+): TimeWindowGroup[] {
+    if (!orders || orders.length === 0) return [];
+
+    // ШАГ 0: Дедупликация заказов по стабильному ID ДО обработки (исправление v5.139)
+    // Используем getStableOrderId, который обрабатывает _id, orderNumber и хэш адреса
+    const seenIds = new Set<string>();
+    const uniqueOrders: Order[] = [];
+    for (const order of orders) {
+        const sid = getStableOrderId(order);
+        if (!sid) {
+            // Заказы без ID — оставляем (краевой случай)
+            uniqueOrders.push(order);
+        } else if (!seenIds.has(sid)) {
+            seenIds.add(sid);
+            uniqueOrders.push(order);
+        }
+    }
+    
+    // Отладка: логируем, если найдены дубликаты
+    if (uniqueOrders.length < orders.length) {
+        console.warn(`[groupOrdersByTimeWindow]  Removed ${orders.length - uniqueOrders.length} duplicate orders`);
+    }
+
+    const noTimeOrders: Order[] = [];
+    const ordersWithData: Array<{ order: Order; planned: number; arrival: number; kitchen?: number; execution?: number }> = [];
+
+    // Разделяем заказы
+    uniqueOrders.forEach(order => {
+        // Пробуем получить плановое время из разных источников
+        let plannedTime = getPlannedTime(order);
+
+        // Время готовности на кухне - важный фактор для FO
+        const kitchenTime = getKitchenTime(order);
+
+        // Пробуем получить время поступления (создания)
+        let arrivalTime = getArrivalTime(order);
+        
+        // v5.182: Время исполнения для завершенных заказов
+        const executionTime = getExecutionTime(order);
+
+        // ВАЖНО: Если время поступления отсутствует, используем плановое время или время кухни как прокси
+        if (!arrivalTime) {
+            arrivalTime = plannedTime || kitchenTime;
+        }
+
+        if (!plannedTime) {
+            // Если дедлайна нет, пробуем использовать время кухни + 60 мин как дедлайн
+            if (kitchenTime) {
+                plannedTime = kitchenTime + 60 * 60 * 1000;
+            } else if (arrivalTime) {
+                // v5.127: Последний запасной вариант: arrival + 30 мин
+                plannedTime = arrivalTime + 30 * 60 * 1000;
+            } else {
+                console.warn(`[Grouping] Order #${order.orderNumber} (ID: ${order.id}) lacks ANY time anchor (planned/kitchen/arrival/completion). Status: ${order.status}. Falling to 'no time' group.`);
+                noTimeOrders.push(order);
+                return;
+            }
+        }
+
+        const plannedTs = plannedTime;
+        const arrivalTs = arrivalTime || plannedTime;
+
+        if (plannedTs === null || isNaN(plannedTs)) {
+            noTimeOrders.push(order);
+            return;
+        }
+
+        const finalPlannedTs: number = plannedTs;
+        const finalArrivalTs: number = arrivalTs || finalPlannedTs;
+
+        ordersWithData.push({
+            order,
+            planned: finalPlannedTs,
+            arrival: finalArrivalTs,
+            kitchen: kitchenTime || undefined,
+            execution: executionTime || undefined
+        });
+    });
+
+    // v5.182: Используем executionTime (для завершённых) или planned как якорь — НЕ arrival/createdAt
+    // Это соответствует поведению бэкенда turboGroupingHelpers
+    const ordersWithAnchor = ordersWithData.map(item => ({
+        ...item,
+        anchorTime: item.execution || item.planned
+    }));
+
+    // Сортируем по опорному времени (anchorTime)
+    ordersWithAnchor.sort((a, b) => {
+        if (a.anchorTime !== b.anchorTime) return a.anchorTime - b.anchorTime;
+        return (a.kitchen || 0) - (b.kitchen || 0);
+    });
+
+    const groups: TimeWindowGroup[] = [];
+    const manualGroupsMap = new Map<string, Order[]>();
+    const ordersForAuto: Array<{ order: Order; planned: number; arrival: number; kitchen?: number; anchorTime: number }> = [];
+
+    // НОВАЯ ЛОГИКА: Разделяем только ручные и остальные
+    ordersWithAnchor.forEach(item => {
+        if (item.order.manualGroupId) {
+            if (!manualGroupsMap.has(item.order.manualGroupId)) {
+                manualGroupsMap.set(item.order.manualGroupId, []);
+            }
+            manualGroupsMap.get(item.order.manualGroupId)!.push(item.order);
+        } else {
+            ordersForAuto.push(item);
+        }
+    });
+
+    // 1. Создаем группы для ручных заказов
+    manualGroupsMap.forEach((mOrders, mgId) => {
+        groups.push(createManualGroup(courierId, courierName, mOrders, mgId));
+    });
+
+    // Определение типа курьера (назначенный или нет)
+    const isAssignedCourier = courierId && courierId !== 'unassigned' && courierId !== 'unassigned_auto' && courierId !== 'Неизвестный курьер' && courierId !== 'НЕ НАЗНАЧЕНО' && courierId !== 'ПО';
+    let currentGroup: TimeWindowGroup | null = null;
+
+    const isOrderActiveOrCompleted = (o: Order) => {
+        const s = String(o?.status || o?.deliveryStatus || '').toLowerCase();
+        return s.includes('доставляется') || s.includes('в пути') || 
+               s.includes('завершен') || s.includes('виконано') || 
+               s.includes('доставлен') || s.includes('completed') ||
+               s.includes('доставляється');
+    };
+
+    // 2. Группируем автоматические заказы
+    ordersForAuto.forEach(({ order, planned, arrival, kitchen, anchorTime }) => {
+        const isActiveOrCompleted = isAssignedCourier && isOrderActiveOrCompleted(order);
+        const effectiveWindowMs = isActiveOrCompleted ? (40 * 60 * 1000) : (arrivalProximityMinutes * 60 * 1000); // окно 40 мин для активных/завершённых
+        const deliverySpanMs = isActiveOrCompleted ? (120 * 60 * 1000) : (maxDeliverySpanMinutes * 60 * 1000); // span 2 часа для активных/завершённых
+
+        
+        if (!currentGroup) {
+            // Создаем новую группу для первого заказа
+            currentGroup = createNewGroup(courierId, courierName, order, planned, arrival, groups.length, '');
+            if (kitchen) (currentGroup as any).lastKitchen = kitchen;
+            (currentGroup as any).firstAnchor = anchorTime;
+            (currentGroup as any).lastAnchor = anchorTime; // v8.1: скользящее окно
+        } else {
+            // v8.1: 5 условий, скользящее окно от lastAnchor (зеркалит бэкенд v8.1)
+            const lastAnchor = (currentGroup as any).lastAnchor || (currentGroup as any).firstAnchor;
+            const firstOrder = currentGroup.orders[0];
+            
+            // Условие 1: Близость по времени — СКОЛЬЗЯЩЕЕ от последнего добавленного заказа (не первого)
+            const anchorDiff = anchorTime - lastAnchor;
+            const timeWithinProximity = anchorDiff >= 0 && anchorDiff <= effectiveWindowMs;
+            
+            // Условие 2: SLA / span доставки <= MAX_DELIVERY_SPAN_MINUTES
+            const minDelivery = Math.min(currentGroup.windowStart, planned);
+            const maxDelivery = Math.max(currentGroup.windowEnd, planned);
+            const deliverySpan = maxDelivery - minDelivery;
+            const deliveryFits = deliverySpan <= deliverySpanMs;
+            
+            // Условие 3: География — v7.x: расчёт расстояния от центра группы
+            let distanceOk = true;
+            let distanceToFirst = 0;
+            if (order.coords && firstOrder.coords) {
+                // Расстояние от первого заказа (исходная логика)
+                distanceToFirst = haversineDistance(
+                    order.coords.lat, order.coords.lng,
+                    firstOrder.coords.lat, firstOrder.coords.lng
+                );
+                
+                // v7.x: Вычисляем центр группы + макс. расстояние от центра (более гибко)
+                const allOrdersForCenter = [...currentGroup.orders, order];
+                const center = calculateGroupCenter(allOrdersForCenter);
+                
+                if (center) {
+                    // Вычисление макс. расстояния от центра для ВСЕХ заказов в группе
+                    const maxDistFromCenter = calculateMaxDistanceFromCenter(allOrdersForCenter, center);
+                    
+                    // v7.x: Используем более мягкую из двух стратегий
+                    const MAX_CENTER_DISTANCE = 30; // км
+                    const MAX_FIRST_DISTANCE = 25; // км (немного увеличено с 20)
+                    
+                    const centerBasedOk = maxDistFromCenter <= MAX_CENTER_DISTANCE;
+                    const firstBasedOk = distanceToFirst <= MAX_FIRST_DISTANCE;
+                    
+                    distanceOk = centerBasedOk || firstBasedOk;
+                } else {
+                    // Невозможно вычислить центр — используем исходную логику
+                    distanceOk = distanceToFirst <= 25;
+                }
+            }
+            
+            // Условие 4: Район — МЯГКО для назначенных курьеров (они покрывают несколько зон)
+            let districtOk = true;
+            const orderZone = order.deliveryZone || '';
+            const groupZone = firstOrder.deliveryZone || '';
+            if (!isAssignedCourier && orderZone && groupZone && orderZone !== groupZone) {
+                districtOk = false;
+            }
+            
+            // Условие 5: Разрыв готовности кухни (<= 45 мин для неназначенных)
+            let kitchenGapOk = true;
+            if (!isAssignedCourier && kitchen) {
+                const prevKitchen = (currentGroup as any).lastKitchen;
+                if (prevKitchen) {
+                    const kitchenDiff = Math.abs(kitchen - prevKitchen);
+                    kitchenGapOk = kitchenDiff <= (45 * 60 * 1000);
+                }
+            }
+            
+            // Определяем причину разбиения (приоритет: время, SLA, гео, район, готовность)
+            // v7.x: Обновлена причина гео-разбиения с новой логикой от центра
+            let newSplitReason = '';
+            if (!timeWithinProximity) newSplitReason = `Время (${Math.round(anchorDiff / 60000)} мин > ${(effectiveWindowMs/60000).toFixed(0)})`;
+            else if (!deliveryFits) newSplitReason = `SLA (${Math.round(deliverySpan / 60000)} мин > ${(deliverySpanMs/60000).toFixed(0)})`;
+            else if (!distanceOk) newSplitReason = `Гео (от центра >30км или от первого >25км)`;
+            else if (!districtOk) newSplitReason = `Район (${orderZone} ≠ ${groupZone})`;
+            else if (!isAssignedCourier && !kitchenGapOk) newSplitReason = 'Готовность (>45м)';
+
+            if (newSplitReason === '') {
+                // Заказ подходит
+                currentGroup.orders.push(order);
+                currentGroup.windowStart = Math.min(currentGroup.windowStart, planned);
+                currentGroup.windowEnd = Math.max(currentGroup.windowEnd, planned);
+                currentGroup.windowLabel = formatTimeRange(currentGroup.windowStart, currentGroup.windowEnd);
+                
+                currentGroup.arrivalEnd = Math.max(currentGroup.arrivalEnd || 0, arrival);
+                (currentGroup as any).lastAnchor = anchorTime; // v8.1: продвинуть скользящее окно
+                if (kitchen) (currentGroup as any).lastKitchen = kitchen;
+                updatePredictedDeparture(currentGroup);
+            } else {
+                // Заказ не подходит - закрываем текущую группу и начинаем новую
+                const oldGroup = currentGroup as TimeWindowGroup;
+                const isAllCompleted = oldGroup.orders.every((o: Order) => isOrderCompleted(o.status));
+                if (isAllCompleted && isAssignedCourier) oldGroup.splitReason = 'Завершён';
+
+                groups.push(oldGroup);
+                currentGroup = createNewGroup(
+                    courierId,
+                    courierName,
+                    order,
+                    planned,
+                    arrival,
+                    groups.length,
+                    newSplitReason
+                );
+                // firstCoords и firstZone уже устанавливаются в createNewGroup
+            }
+        }
+    });
+
+    if (currentGroup) {
+        const finalGroup = currentGroup as TimeWindowGroup;
+        const isAllCompleted = finalGroup.orders.every((o: Order) => isOrderCompleted(o.status));
+        if (isAllCompleted && isAssignedCourier) finalGroup.splitReason = 'Завершён';
+        groups.push(finalGroup);
+    }
+
+    // Добавляем группу для заказов без времени
+    if (noTimeOrders.length > 0) {
+        groups.push({
+            id: `${courierId}-no-time`,
+            courierId,
+            courierName,
+            windowStart: 0,
+            windowEnd: 0,
+            windowLabel: 'Без времени',
+            orders: noTimeOrders,
+            isReadyForCalculation: false
+        });
+    }
+
+    // Сортируем заказы внутри каждой группы по plannedTime
+    groups.forEach(group => {
+        group.orders.sort((a, b) => {
+            const timeA = getPlannedTime(a) || a.plannedTime || 0;
+            const timeB = getPlannedTime(b) || b.plannedTime || 0;
+            const tsA = typeof timeA === 'number' ? timeA : new Date(timeA).getTime();
+            const tsB = typeof timeB === 'number' ? timeB : new Date(timeB).getTime();
+            return tsA - tsB;
+        });
+    });
+
+    // Сортируем группы по времени начала окна
+    return groups.sort((a, b) => a.windowStart - b.windowStart);
+}
+
+function clusterByPickupTime(
+    orders: Order[],
+    courierId: string,
+    courierName: string,
+    config?: Partial<{
+        pickupProximityMinutes: number;
+        pickupMaxSpanMinutes: number;
+        maxCenterDistanceKm: number;
+    }>
+): TimeWindowGroup[] {
+    const proximityMinutes = config?.pickupProximityMinutes ?? 15;
+    const maxSpanMinutes = config?.pickupMaxSpanMinutes ?? 90;
+    const maxCenterKm = config?.maxCenterDistanceKm ?? 30;
+
+    if (!orders || orders.length === 0) return [];
+
+    const withPickup: Array<{ order: Order; pickup: number }> = [];
+    const withoutPickup: Order[] = [];
+    orders.forEach(order => {
+        const pickup = getPickupTime(order);
+        if (pickup) {
+            withPickup.push({ order, pickup });
+        } else {
+            withoutPickup.push(order);
+        }
+    });
+
+    withPickup.sort((a, b) => a.pickup - b.pickup);
+
+    const proximityMs = proximityMinutes * 60 * 1000;
+    const maxSpanMs = maxSpanMinutes * 60 * 1000;
+
+    const clusters: Array<{ orders: Order[]; pickupStart: number; pickupEnd: number }> = [];
+    let currentCluster: { orders: Order[]; pickupStart: number; pickupEnd: number } | null = null;
+
+    withPickup.forEach(({ order, pickup }) => {
+        if (!currentCluster) {
+            currentCluster = { orders: [order], pickupStart: pickup, pickupEnd: pickup };
+        } else {
+            const gapFromLast = pickup - currentCluster.pickupEnd;
+            const spanFromStart = pickup - currentCluster.pickupStart;
+
+            let geoOk = true;
+            if (order.coords && currentCluster.orders.length > 0) {
+                const allForCenter = [...currentCluster.orders, order];
+                const center = calculateGroupCenter(allForCenter);
+                if (center) {
+                    const maxDist = calculateMaxDistanceFromCenter(allForCenter, center);
+                    geoOk = maxDist <= 30;
+                }
+            }
+
+            if (gapFromLast <= proximityMs && spanFromStart <= maxSpanMs && geoOk) {
+                currentCluster.orders.push(order);
+                currentCluster.pickupEnd = pickup;
+            } else {
+                clusters.push(currentCluster);
+                currentCluster = { orders: [order], pickupStart: pickup, pickupEnd: pickup };
+            }
+        }
+    });
+    if (currentCluster) clusters.push(currentCluster);
+
+    const groups: TimeWindowGroup[] = clusters.map((cluster, idx) => {
+        const plannedTimes = cluster.orders.map(o => getPlannedTime(o)).filter((t): t is number => t !== null);
+        const minPlanned = plannedTimes.length > 0 ? Math.min(...plannedTimes) : cluster.pickupStart;
+        const maxPlanned = plannedTimes.length > 0 ? Math.max(...plannedTimes) : cluster.pickupEnd;
+
+        return {
+            id: `pickup-${courierId}-${idx}-${cluster.pickupStart}`,
+            courierId,
+            courierName,
+            windowStart: minPlanned,
+            windowEnd: maxPlanned,
+            windowLabel: formatTimeRange(minPlanned, maxPlanned),
+            orders: cluster.orders,
+            isReadyForCalculation: true,
+            arrivalStart: cluster.pickupStart,
+            arrivalEnd: cluster.pickupEnd,
+            _pickupClustered: true,
+        } as TimeWindowGroup;
+    });
+
+    if (withoutPickup.length > 0) {
+        const fallbackGroups = groupOrdersByTimeWindow(withoutPickup, courierId, courierName);
+        groups.push(...fallbackGroups.filter(g => !g.windowLabel?.includes('Без времени')));
+    }
+
+    return groups.sort((a, b) => a.windowStart - b.windowStart);
+}
+
+function postMergeGroups(
+    groups: TimeWindowGroup[],
+    courierName: string,
+    config?: Partial<{
+        postMergeMaxSpanMinutes: number;
+        mergeDistanceKm: number;
+        activeCourierDeliverySpanMinutes: number;
+        postMergeEnabled: boolean;
+        postMergeStrategy: {
+            singletonRescue: boolean;
+            samePickup: boolean;
+            pickupNear: boolean;
+            deliverySpanPlus: boolean;
+            singletonHighSpan: boolean;
+        };
+    }>
+): TimeWindowGroup[] {
+    if (!groups || groups.length <= 1) return groups;
+
+    const enabled = config?.postMergeEnabled ?? true;
+    if (enabled === false) return groups;
+
+    const strategy = config?.postMergeStrategy || {
+        singletonRescue: true,
+        samePickup: true,
+        pickupNear: true,
+        deliverySpanPlus: true,
+        singletonHighSpan: true,
+    };
+    const postMergeMaxSpanMs = (config?.postMergeMaxSpanMinutes ?? 120) * 60 * 1000;
+    const mergeDistKm = config?.mergeDistanceKm ?? 30;
+    const safeMergeMaxSpanMs = (config?.activeCourierDeliverySpanMinutes ?? 120) * 60 * 1000;
+    const samePickupThresholdMs = 3 * 60 * 1000;
+
+    function extractGroupPickups(group: TimeWindowGroup): number[] {
+        return group.orders
+            .map(o => getPickupTime(o))
+            .filter((t): t is number => t !== null);
+    }
+
+    function checkGeo(allOrders: Order[]): boolean {
+        const withCoords = allOrders.filter(o => o.coords?.lat && o.coords?.lng);
+        if (withCoords.length < 2) return true;
+        const center = calculateGroupCenter(allOrders);
+        if (!center) return true;
+        return calculateMaxDistanceFromCenter(allOrders, center) <= mergeDistKm;
+    }
+
+    function mergeInto(target: TimeWindowGroup, source: TimeWindowGroup): void {
+        target.orders = [...target.orders, ...source.orders];
+        target.windowStart = Math.min(target.windowStart, source.windowStart);
+        target.windowEnd = Math.max(target.windowEnd, source.windowEnd);
+        target.windowLabel = formatTimeRange(target.windowStart, target.windowEnd);
+        target.arrivalStart = Math.min(target.arrivalStart ?? Infinity, source.arrivalStart ?? Infinity) || target.arrivalStart;
+        target.arrivalEnd = Math.max(target.arrivalEnd ?? 0, source.arrivalEnd ?? 0);
+        if (!(target as any)._mergedFrom) (target as any)._mergedFrom = [];
+        (target as any)._mergedFrom.push(source.id);
+        (target as any)._postMerged = true;
+    }
+
+    function pickupOverlapScore(groupA: TimeWindowGroup, groupB: TimeWindowGroup): number {
+        const pA = extractGroupPickups(groupA);
+        const pB = extractGroupPickups(groupB);
+        if (pA.length === 0 && pB.length === 0) return 0;
+        if (pA.length === 0 || pB.length === 0) return 0.1;
+
+        const minA = Math.min(...pA), maxA = Math.max(...pA);
+        const minB = Math.min(...pB), maxB = Math.max(...pB);
+        const overlapStart = Math.max(minA, minB);
+        const overlapEnd = Math.min(maxA, maxB);
+        const overlap = overlapEnd - overlapStart;
+
+        if (overlap > 0) return 1.0;
+        const gap = overlapStart - overlapEnd;
+        if (gap <= samePickupThresholdMs) return 0.95;
+        if (gap <= 10 * 60 * 1000) return 0.7;
+        if (gap <= 20 * 60 * 1000) return 0.4;
+        return 0;
+    }
+
+    function deliverySpanScore(groupA: TimeWindowGroup, groupB: TimeWindowGroup): number {
+        const span = Math.max(groupA.windowEnd, groupB.windowEnd) - Math.min(groupA.windowStart, groupB.windowStart);
+        if (span > postMergeMaxSpanMs) return 0;
+        return Math.max(0, 1 - (span / postMergeMaxSpanMs));
+    }
+
+    let result = groups.map(g => ({ ...g, orders: [...g.orders] }));
+
+    let changed = true;
+    let pass = 0;
+    while (changed && pass < 3) {
+        changed = false;
+        pass++;
+        const next: TimeWindowGroup[] = [];
+        let i = 0;
+        while (i < result.length) {
+            if (i === result.length - 1) {
+                next.push(result[i]);
+                break;
+            }
+
+            const a = result[i];
+            const b = result[i + 1];
+
+            const isSingleton = a.orders.length === 1 || b.orders.length === 1;
+            const pScore = pickupOverlapScore(a, b);
+            const dScore = deliverySpanScore(a, b);
+            const allOrders = [...a.orders, ...b.orders];
+            const geo = checkGeo(allOrders);
+            const mergedSpan = Math.max(a.windowEnd, b.windowEnd) - Math.min(a.windowStart, b.windowStart);
+            const withinSafeSpan = mergedSpan <= safeMergeMaxSpanMs;
+
+            let doMerge = false;
+            let _reason = '';
+
+            if (!geo) {
+                doMerge = false;
+            } else if (pScore >= 0.95 && strategy.samePickup) {
+                doMerge = true;
+                _reason = 'same-pickup';
+            } else if (pScore >= 0.7 && withinSafeSpan && strategy.pickupNear) {
+                doMerge = true;
+                _reason = 'pickup-near';
+            } else if (isSingleton && pScore >= 0.4 && withinSafeSpan && strategy.singletonRescue) {
+                doMerge = true;
+                _reason = 'singleton-rescue';
+            } else if (dScore > 0.6 && pScore >= 0.4 && withinSafeSpan && strategy.deliverySpanPlus) {
+                doMerge = true;
+                _reason = 'delivery-span+pickup';
+            } else if (isSingleton && dScore > 0.8 && geo && strategy.singletonHighSpan) {
+                doMerge = true;
+                _reason = 'singleton-high-span';
+            }
+
+            if (doMerge) {
+                mergeInto(a, b);
+                changed = true;
+                i += 2;
+                next.push(a);
+            } else {
+                next.push(a);
+                i++;
+            }
+        }
+        result = next;
+    }
+
+    return result;
+}
+
+/**
+ * Группирует заказы всех курьеров по временным окнам
+ */
+export function groupAllOrdersByTimeWindow(
+    orders: Order[],
+    couriers: any[],
+    groupingConfig: Partial<GroupingConfig> = DEFAULT_GROUPING_CONFIG,
+    proximityMinutes: number = PROXIMITY_MINUTES,
+    maxDeliverySpan: number = MAX_DELIVERY_SPAN_MINUTES
+): Map<string, TimeWindowGroup[]> {
+    const config = { ...DEFAULT_GROUPING_CONFIG, ...groupingConfig };
+    const result = new Map<string, TimeWindowGroup[]>();
+    const getOrderId = (o: any) => o.id || o.orderNumber || o.orderId || '';
+
+    // 1. Сначала группируем по сырым курьерам (как в Excel)
+    const ordersByRawCourier = groupOrdersByCourier(orders);
+    
+    // 2. Объединяем их по нормализованной личности
+    interface CourierConsolidation { id: string; name: string; orders: Map<string, Order> }
+    const consolidatedMap = new Map<string, CourierConsolidation>();
+    
+    ordersByRawCourier.forEach((courierOrders, rawId) => {
+        const normalizedName = normalizeCourierName(rawId);
+<<<<<<< Updated upstream
+        // Надёжное сопоставление: поиск по ID или нормализованному имени
+=======
+>>>>>>> Stashed changes
+        const courier = couriers.find(c => 
+            String(c._id || c.id) === String(rawId) ||
+            normalizeCourierName(c.name || c.id) === normalizedName
+        );
+        
+        const finalId = courier?._id || courier?.id || rawId;
+        const finalName = courier?.name || rawId || 'Неизвестный курьер';
+        
+        const existing = consolidatedMap.get(finalId) || { id: finalId, name: finalName, orders: new Map<string, Order>() };
+        
+        // Deduplicate order IDs during consolidation
+        courierOrders.forEach(o => {
+            const oid = getOrderId(o);
+            if (oid) {
+                // If duplicate, pick the one with most info (coords)
+                const already = existing.orders.get(oid);
+                if (!already || (!already.lat && (o.lat || (o as any).coords?.lat))) {
+                    existing.orders.set(oid, o);
+                }
+            }
+        });
+        
+        consolidatedMap.set(finalId, existing);
+    });
+
+    // 3. Для каждого консолидированного курьера группируем по времени
+    consolidatedMap.forEach((info) => {
+<<<<<<< Updated upstream
+        const hasActiveOrCompleted = info.orders.some(o => {
+            const s = String(o?.status || o?.deliveryStatus || '').toLowerCase();
+            return s.includes('доставля') || s.includes('в пути') || s.includes('исполнен') ||
+                   s.includes('виконан') || s.includes('завер') || s.includes('доставлен') ||
+                   s.includes('выполнен') || s.includes('completed');
+        });
+        const hasPickupData = info.orders.some(o => getPickupTime(o) !== null);
+
+        let timeGroups: TimeWindowGroup[];
+        if (hasActiveOrCompleted && hasPickupData) {
+            timeGroups = clusterByPickupTime(info.orders, info.id, info.name, {
+                pickupProximityMinutes: config.pickupProximityMinutes,
+                pickupMaxSpanMinutes: config.pickupMaxSpanMinutes,
+                maxCenterDistanceKm: config.maxCenterDistanceKm,
+            });
+        } else {
+            timeGroups = groupOrdersByTimeWindow(
+                info.orders,
+                info.id,
+                info.name,
+                proximityMinutes,
+                maxDeliverySpan
+            );
+        }
+        timeGroups = postMergeGroups(timeGroups, info.name, {
+            postMergeMaxSpanMinutes: config.postMergeMaxSpanMinutes,
+            mergeDistanceKm: config.mergeDistanceKm,
+            activeCourierDeliverySpanMinutes: config.activeCourierDeliverySpanMinutes,
+            postMergeEnabled: config.postMergeEnabled,
+            postMergeStrategy: config.postMergeStrategy,
+        });
+=======
+        const uniqueOrders = Array.from(info.orders.values());
+        const timeGroups = groupOrdersByTimeWindow(
+            uniqueOrders,
+            info.id,
+            info.name,
+            proximityMinutes,
+            maxDeliverySpan
+        );
+>>>>>>> Stashed changes
+        result.set(normalizeCourierName(info.name), timeGroups);
+    });
+
+    return result;
+}
+
+/**
+ * Форматирует время из timestamp в читаемый формат
+ */
+export function formatTimeLabel(timestamp: number): string {
+    if (!timestamp) return '--:--';
+    const date = new Date(timestamp);
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    return `${hours}:${minutes}`;
+}
+
+// ============================================
+// СУЩЕСТВУЮЩИЕ ФУНКЦИИ (ОСТАВЛЕНЫ ДЛЯ СОВМЕСТИМОСТИ)
+// ============================================
+
+/**
+ * Подсчитывает количество заказов для конкретного курьера
+ */
+export function countCourierOrders(courierId: string, orders: Order[]): number {
+    if (!orders || !courierId) return 0;
+
+    return orders.filter((order) => {
+        const orderCourierId =
+            order.courier?._id ||
+            order.courier?.id ||
+            order.courierId ||
+            order.courier;
+
+        return orderCourierId === courierId;
+    }).length;
+}
+
+/**
+ * Группирует заказы по курьерам
+ */
+export function groupOrdersByCourier(orders: Order[]): Map<string, Order[]> {
+    const grouped = new Map<string, Order[]>();
+
+    if (!orders) return grouped;
+
+    orders.forEach((order) => {
+        const courierId =
+            order.courier?._id ||
+            order.courier?.id ||
+            order.courierId ||
+            order.courier;
+
+        if (courierId) {
+            const existing = grouped.get(courierId) || [];
+            grouped.set(courierId, [...existing, order]);
+        }
+    });
+
+    return grouped;
+}
+
+/**
+ * Определяет, нужно ли запускать автоматический расчет
+ */
+export function shouldTriggerCalculation(
+    status: CourierRouteStatus,
+    mode: RouteCalculationMode
+): boolean {
+    if (mode.mode !== 'automatic') return false;
+    if (status.ordersCount === 0) return false;
+
+    if (status.ordersCount >= mode.autoTriggerThreshold && status.needsRecalculation) {
+        return true;
+    }
+
+    if (status.hasActiveRoute && mode.recalculateOnAdd && status.needsRecalculation) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Создает статус курьера на основе данных о заказах и маршрутах
+ */
+export function createCourierStatus(
+    courierId: string,
+    courierName: string,
+    orders: Order[],
+    routes: any[],
+    previousStatus?: CourierRouteStatus
+): CourierRouteStatus {
+    const ordersCount = countCourierOrders(courierId, orders);
+    const activeRoute = routes.find(
+        (r) => (r.courier?._id || r.courier?.id || r.courier) === courierId && r.isActive
+    );
+
+    let needsRecalculation = false;
+
+    if (previousStatus) {
+        needsRecalculation = previousStatus.ordersCount !== ordersCount;
+    } else {
+        needsRecalculation = ordersCount > 0;
+    }
+
+    return {
+        courierId,
+        courierName,
+        ordersCount,
+        hasActiveRoute: !!activeRoute,
+        routeId: activeRoute?._id || activeRoute?.id,
+        lastCalculated: previousStatus?.lastCalculated,
+        needsRecalculation,
+    };
+}
+
+
+/**
+ * Возвращает правильное окончание для слова "заказ" (Русский)
+ */
+export function getOrdersEnding(count: number): string {
+    const lastDigit = count % 10;
+    const lastTwoDigits = count % 100;
+
+    if (lastTwoDigits >= 11 && lastTwoDigits <= 14) {
+        return 'ов';
+    }
+
+    if (lastDigit === 1) {
+        return '';
+    }
+
+    if (lastDigit >= 2 && lastDigit <= 4) {
+        return 'а';
+    }
+
+    return 'ов';
+}
+
+/**
+ * Повертає правильну форму слова "замовлення" (Українська)
+ */
+export function getOrdersUkSuffix(count: number): string {
+    const lastDigit = count % 10;
+    const lastTwoDigits = count % 100;
+
+    if (lastTwoDigits >= 11 && lastTwoDigits <= 14) {
+        return 'замовлень';
+    }
+
+    if (lastDigit === 1) {
+        return 'замовлення';
+    }
+
+    if (lastDigit >= 2 && lastDigit <= 4) {
+        return 'замовлення';
+    }
+
+    return 'замовлень';
+}
+
+/**
+ * Форматирует сообщение о статусе расчета
+ */
+export function getCalculationStatusMessage(
+    status: CourierRouteStatus,
+    mode: RouteCalculationMode
+): string {
+    if (mode.mode === 'manual') {
+        return `${status.ordersCount} заказ${getOrdersEnding(status.ordersCount)}`;
+    }
+
+    const remaining = mode.autoTriggerThreshold - status.ordersCount;
+
+    if (remaining > 0) {
+        return `Автоматический расчет через ${remaining} заказ${getOrdersEnding(remaining)}`;
+    }
+
+    return `Готово к автоматическому расчету`;
+}
+
+/**
+ * Вычисляет прогресс до автоматического расчета (0-100%)
+ */
+export function calculateProgressToAutoTrigger(
+    ordersCount: number,
+    threshold: number
+): number {
+    if (threshold === 0) return 100;
+    return Math.min(100, (ordersCount / threshold) * 100);
+}

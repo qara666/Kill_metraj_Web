@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package kill_metraj;
+
+// Dashboard Service
+service DashboardService {
+  rpc GetLatestData (GetDashboardRequest) returns (DashboardResponse);
+}
+
+// Courier Service
+service CourierService {
+  rpc ListCouriers (ListCouriersRequest) returns (ListCouriersResponse);
+  rpc GetCourier (GetCourierRequest) returns (CourierResponse);
+  rpc CreateCourier (CreateCourierRequest) returns (CourierResponse);
+}
+
+// Messages
+message GetDashboardRequest {
+  string division_id = 1;
+}
+
+message DashboardResponse {
+  bool success = 1;
+  string payload_json = 2; // Simplified for initial version
+  string created_at = 3;
+}
+
+message ListCouriersRequest {
+  string division_id = 1;
+}
+
+message ListCouriersResponse {
+  bool success = 1;
+  repeated CourierInfo couriers = 2;
+}
+
+message GetCourierRequest {
+  string id = 1;
+}
+
+message CreateCourierRequest {
+  string username = 1;
+  string password = 2;
+  string division_id = 3;
+}
+
+message CourierResponse {
+  bool success = 1;
+  CourierInfo courier = 2;
+  string error = 3;
+}
+
+message CourierInfo {
+  string id = 1;
+  string username = 2;
+  string role = 3;
+  string division_id = 4;
+  bool is_active = 5;
+}

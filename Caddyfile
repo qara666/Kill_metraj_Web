@@ -1,0 +1,57 @@
+# ═══════════════════════════════════════════════════════════
+# Kill Metraj — Caddy Reverse Proxy Config
+# ───────────────────────────────────────────────────────────
+# Замените DOMAIN на ваш реальный домен (или оставьте :80
+# для HTTP без HTTPS — для разработки).
+#
+# Переменная {DOMAIN} подставляется из .env.prod
+# ═══════════════════════════════════════════════════════════
+
+{$DOMAIN:localhost} {
+    # ── Frontend (SPA) ─────────────────────────────────────
+    reverse_proxy frontend:80 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # ── API proxy ──────────────────────────────────────────
+    handle_path /api/* {
+        reverse_proxy backend:5001 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # ── WebSocket ──────────────────────────────────────────
+    handle_path /socket.io/* {
+        reverse_proxy backend:5001 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up Connection {http.request.header.Connection}
+            header_up Upgrade {http.request.header.Upgrade}
+        }
+    }
+
+    # ── Health ─────────────────────────────────────────────
+    handle_path /health/* {
+        reverse_proxy backend:5001
+    }
+
+    # ── Metrics ────────────────────────────────────────────
+    @metrics {
+        path /metrics
+        remote_ip 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+    }
+    handle @metrics {
+        reverse_proxy backend:5001
+    }
+
+    # ── Logs ───────────────────────────────────────────────
+    log {
+        output file /data/access.log
+        format json
+    }
+}

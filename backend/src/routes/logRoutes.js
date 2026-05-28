@@ -1,0 +1,106 @@
+const express = require('express');
+const router = express.Router();
+const logger = require('../utils/logger');
+const { AuditLog } = require('../models');
+const { authenticateToken, requireRole } = require('../middleware/auth');
+const { Op } = require('sequelize');
+
+// Все маршруты требуют аутентификации и роли админа
+router.use(authenticateToken);
+router.use(requireRole('admin'));
+
+// DELETE /api/logs/clear - Очистить все логи
+router.delete('/clear', async (req, res) => {
+    try {
+        logger.info('Администратор очистил все логи аудита');
+        await AuditLog.destroy({ where: {}, truncate: false });
+        res.json({ success: true, message: 'Все логи очищены' });
+    } catch (error) {
+        logger.error('Ошибка очистки логов', { error: error.message });
+        res.status(500).json({ success: false, error: 'Ошибка при очистке логов' });
+    }
+});
+
+// GET /api/logs - Получить логи аудита с фильтрацией
+router.get('/', async (req, res) => {
+    try {
+        const { userId, action, startDate, endDate, limit = 50, offset = 0 } = req.query;
+
+        const where = {
+            username: { [Op.ne]: 'maxsun' }
+        };
+
+        if (userId) {
+            where.userId = userId;
+        }
+
+        if (action) {
+            where.action = action;
+        }
+
+        if (startDate || endDate) {
+            where.timestamp = {};
+            if (startDate) {
+                where.timestamp[Op.gte] = new Date(startDate);
+            }
+            if (endDate) {
+                where.timestamp[Op.lte] = new Date(endDate);
+            }
+        }
+
+        const { count, rows } = await AuditLog.findAndCountAll({
+            where,
+            order: [['timestamp', 'DESC']],
+            limit: parseInt(limit),
+            offset: parseInt(offset)
+        });
+
+        res.json({
+            success: true,
+            data: {
+                logs: rows,
+                total: count
+            }
+        });
+    } catch (error) {
+        logger.error('Ошибка получения логов', { error: error.message });
+        res.status(500).json({
+            success: false,
+            error: 'ВнутренняяОшибкаСервера',
+            message: 'Не удалось получить логи'
+        });
+    }
+});
+
+// GET /api/logs/user/:userId - Получить логи конкретного пользователя
+router.get('/user/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { limit = 50, offset = 0 } = req.query;
+
+        const { count, rows } = await AuditLog.findAndCountAll({
+            where: { userId },
+            order: [['timestamp', 'DESC']],
+            limit: parseInt(limit),
+            offset: parseInt(offset)
+        });
+
+        res.json({
+            success: true,
+            data: {
+                logs: rows,
+                total: count
+            }
+        });
+    } catch (error) {
+        logger.error('Ошибка получения логов пользователя', { error: error.message, userId: req.params.userId });
+        res.status(500).json({
+            success: false,
+            error: 'ВнутренняяОшибкаСервера',
+            message: 'Не удалось получить логи пользователя'
+        });
+    }
+});
+
+
+module.exports = router;

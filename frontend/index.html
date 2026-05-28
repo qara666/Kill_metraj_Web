@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="uk">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="apple-touch-icon" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#2563eb" />
+  <title>Авто рассчет км для курьеров</title>
+  <meta name="description" content="Упрощение для админов составление маршруты и рассчет км" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="dns-prefetch" href="https://fonts.googleapis.com">
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <style>
+    /* Critical CSS for initial paint */
+    html { font-family: system-ui, -apple-system, sans-serif; }
+    #root { min-height: 100vh; }
+  </style>
+  <script>
+    window.addEventListener('error', (e) => {
+      const isModuleError =
+        e.message?.toLowerCase().includes('importing a module script failed') ||
+        e.message?.toLowerCase().includes('chunkloaderror') ||
+        (e.target && e.target.tagName === 'SCRIPT' && e.target.src && e.target.src.includes('/assets/'));
+      if (isModuleError) {
+        const lastReload = sessionStorage.getItem('last_module_reload');
+        const now = Date.now();
+        if (!lastReload || (now - parseInt(lastReload)) > 10000) {
+          sessionStorage.setItem('last_module_reload', now.toString());
+          window.location.reload();
+        }
+      }
+    }, true);
+  </script>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
+</html>

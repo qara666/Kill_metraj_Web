@@ -1,0 +1,4 @@
+{"error":"Unknown constraint error","level":"error","message":"Ошибка синхронизации базы данных","service":"kill-metraj-backend","timestamp":"2026-05-28 12:58:16"}
+{"level":"error","message":"[TurboCalculator]  SUSPICIOUS ROUTE: ВАЩУК АНАСТАСІЯ [11:02 - 11:02] 963.6km for 1 order(s). Evicting cache to force re-geocode next run.","service":"kill-metraj-backend","timestamp":"2026-05-28 12:58:34"}
+{"level":"error","message":"[TurboCalculator]  SUSPICIOUS ROUTE: МАРКІН МАКСИМ [12:30 - 12:30] 953.27km for 1 order(s). Evicting cache to force re-geocode next run.","service":"kill-metraj-backend","timestamp":"2026-05-28 12:58:45"}
+{"level":"error","message":"[TurboCalculator]  SUSPICIOUS ROUTE: ВДОВЕНКО МАКСИМ [12:13 - 12:13] 959.69km for 1 order(s). Evicting cache to force re-geocode next run.","service":"kill-metraj-backend","timestamp":"2026-05-28 13:10:26"}

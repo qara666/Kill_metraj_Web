@@ -1,0 +1,100 @@
+services:
+  # Backend Service
+  - type: web
+    name: yapiko-auto-km-backend
+    env: node
+    plan: free
+    buildCommand: cd backend && pnpm install
+    startCommand: cd backend && node simple_server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20.x
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5001
+      - key: GRPC_PORT
+        value: 50051
+      - key: DASHBOARD_FETCH_INTERVAL
+        value: 300000  # 5 minutes for production
+      - key: DASHBOARD_DATA_RETENTION_DAYS
+        value: 7
+      - key: REDIS_ENABLED
+        value: "true"
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: yapiko-auto-km-redis
+          property: connectionString
+      - key: CDC_ENABLED
+        value: "false"
+      - key: DASHBOARD_MOCK_MODE
+        value: "false"
+      - key: EXTERNAL_API_URL
+        value: "http://app.yaposhka.kh.ua:4999/api/v1/dashboard"
+      - key: DASHBOARD_API_URL
+        value: "http://app.yaposhka.kh.ua:4999"
+      - key: DASHBOARD_DEPARTMENT_ID
+        value: "100000052"
+      - key: DB_ALTER_SYNC
+        value: "true"  # Enable to sync schema and add missing columns (allowedTabs)
+      - key: SETUP_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: yapiko-auto-km-db
+          property: connectionString
+      - key: EXTERNAL_API_KEY
+        value: "KMFh23298&23201)8172^&21Vs@gfgsd"
+      - key: JWT_SECRET
+        sync: false  # Keep existing secret, don't regenerate
+      - key: KAFKA_BROKER
+        sync: false
+      - key: GOOGLE_GEOCODE_API_KEY
+        sync: false
+      - key: GOOGLE_ROUTES_API_KEY
+        sync: false
+      - key: PHOTON_URL
+        value: "https://photon.komoot.io"
+      - key: YAPIKO_OSRM_URL
+        value: "http://116.204.153.171:5050"
+      - key: OSRM_URL
+        value: "http://116.204.153.171:5050"
+
+  # Frontend Service (Static Site)
+  - type: web
+    name: yapiko-auto-km-frontend-live
+    env: static
+    # v5.182: REMOVED plan: free. 
+    # For web services with env: static (Static Sites), Render Blueprints do not allow the 'plan' field.
+    # They are implicitly free.
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: NODE_VERSION
+        value: 20.x
+      - key: NODE_OPTIONS
+        value: "--max-old-space-size=4096"
+      - key: VITE_API_URL
+        value: https://yapiko-auto-km-backend.onrender.com
+
+  # Redis Service
+  - type: redis
+    name: yapiko-auto-km-redis
+    plan: free
+    ipAllowList: [] # Only allow internal Render traffic
+
+databases:
+  - name: yapiko-auto-km-db
+    plan: free
+    databaseName: kill_metraj
+    user: km_admin
+
+version: "1"

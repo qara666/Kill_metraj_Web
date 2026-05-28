@@ -1,0 +1,303 @@
+/**
+ * ValhallaService — Primary Routing Engine
+ *
+ * Uses Valhalla (MIT-license, OSM-based) via the public FOSSGIS server.
+ * Docs: https://valhalla.github.io/valhalla/api/turn-by-turn/api-reference/
+ *
+ * Features:
+ *   Completely free, no API key needed
+ *   Real road distances (not Haversine)
+ *   Supports auto, motorcycle, motor_scooter costing
+ *   Ukrainian roads (full planet OSM data)
+ *   Returns distances in km → we convert to meters for consistency
+ */
+
+import { localStorageUtils } from '../utils/ui/localStorage'
+
+export type ValhallaCostingModel = 'auto' | 'motorcycle' | 'motor_scooter' | 'pedestrian' | 'bicycle'
+
+export interface ValhallaLeg {
+  distance: { text: string; value: number }   // value in METERS
+  duration: { text: string; value: number }   // value in seconds
+  start_location?: { lat: number; lng: number }
+  end_location?: { lat: number; lng: number }
+}
+
+export interface ValhallaRouteResult {
+  feasible: boolean
+  legs?: ValhallaLeg[]
+  totalDuration?: number    // seconds
+  totalDistance?: number    // METERS
+  shape?: string            // encoded polyline (precision=6)
+}
+
+//  Public FOSSGIS server, fair-use policy (same as OSRM/Nominatim) 
+const VALHALLA_BASE_URL = 'https://valhalla1.openstreetmap.de'
+
+//  In-memory dedup cache (key = ordered lat/lon pairs) 
+const _routeCache = new Map<string, ValhallaRouteResult>()
+const MAX_CACHE_SIZE = 500
+const CACHE_TTL_MS = 30 * 60 * 1000 // 30 min
+const _cacheTimestamps = new Map<string, number>()
+
+function _makeCacheKey(locations: { lat: number; lng: number }[], costing: string): string {
+  return `${costing}:` + locations.map(l => `${l.lat.toFixed(5)},${l.lng.toFixed(5)}`).join('|')
+}
+
+function _clearOldCache(): void {
+  if (_routeCache.size < MAX_CACHE_SIZE) return
+  const now = Date.now()
+  for (const [k, ts] of _cacheTimestamps) {
+    if (now - ts > CACHE_TTL_MS) {
+      _routeCache.delete(k)
+      _cacheTimestamps.delete(k)
+    }
+  }
+}
+
+export class ValhallaService {
+  /**
+   * Get the vehicle costing model from user settings.
+   */
+  static getCostingModel(): ValhallaCostingModel {
+    try {
+      const settings = localStorageUtils.getAllSettings()
+      return (settings.vehicleType as ValhallaCostingModel) || 'auto'
+    } catch {
+      return 'auto'
+    }
+  }
+
+  private static getBackendBaseUrl(): string | null {
+    if (typeof window === 'undefined') return null;
+    const hostname = window.location.hostname;
+    const protocol = window.location.protocol;
+
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return `${protocol}//${hostname}:5001`; // Default dev backend port
+    }
+
+    if (hostname.includes('onrender.com')) {
+      if (hostname === 'yapiko-auto-km-frontend-live.onrender.com') {
+        return 'https://yapiko-auto-km-backend.onrender.com';
+      }
+      return `https://${hostname.replace('frontend', 'backend')}`;
+    }
+    return null;
+  }
+
+  private static getMaybeProxiedUrl(targetUrl: string): string {
+    const backendBase = this.getBackendBaseUrl();
+    if (backendBase) {
+      return `${backendBase}/api/proxy/routing?url=${encodeURIComponent(targetUrl)}`;
+    }
+    return targetUrl;
+  }
+
+  /**
+   * Calculate a route between an ordered list of waypoints.
+   * Returns distances in METERS (to be consistent with the rest of the codebase).
+   */
+  static async calculateRoute(
+    locations: { lat: number; lng: number }[],
+    costing?: ValhallaCostingModel
+  ): Promise<ValhallaRouteResult> {
+    if (locations.length < 2) {
+      return { feasible: false }
+    }
+
+    const costingModel = costing || this.getCostingModel()
+    const cacheKey = _makeCacheKey(locations, costingModel)
+
+    //  In-memory cache check 
+    const cached = _routeCache.get(cacheKey)
+    if (cached) {
+      const age = Date.now() - (_cacheTimestamps.get(cacheKey) || 0)
+      if (age < CACHE_TTL_MS) return cached
+    }
+
+    // v18.3: Filter out any NaN/garbage coordinates and deduplicate
+    const uniqueLocations = locations
+      .filter(l => !isNaN(l.lat) && !isNaN(l.lng) && Math.abs(l.lat) > 0.1 && Math.abs(l.lng) > 0.1)
+      .filter((loc, idx, self) => 
+        idx === 0 || !(Math.abs(loc.lat - self[idx-1].lat) < 0.00001 && Math.abs(loc.lng - self[idx-1].lng) < 0.00001)
+      );
+
+    if (uniqueLocations.length < 2) {
+      return { feasible: true, totalDistance: 0, totalDuration: 0, legs: [] };
+    }
+
+    const valhallaLocations = uniqueLocations.map((loc, idx) => ({
+      lat: loc.lat,
+      lon: loc.lng,
+      // Use 'break' for all points if small route (<5), otherwise 'through' for middle points
+      type: (idx === 0 || idx === uniqueLocations.length - 1 || uniqueLocations.length < 5) ? 'break' : 'through'
+    }))
+
+    const payload = {
+      locations: valhallaLocations,
+      costing: costingModel,
+      // Metric units — length is km, time is seconds
+      units: 'km',
+      directions_type: 'none',   // skip verbose turn-by-turn text → faster
+    }
+
+    const targetUrl = `${VALHALLA_BASE_URL}/route`;
+    const finalUrl = this.getMaybeProxiedUrl(targetUrl);
+
+    try {
+<<<<<<< Updated upstream
+      const { API_URL } = await import('../config/apiConfig')
+      const targetUrl = `${VALHALLA_BASE_URL}/route`
+      const proxyUrl = `${API_URL}/api/proxy/valhalla?url=${encodeURIComponent(targetUrl)}`
+
+      const response = await fetch(proxyUrl, {
+=======
+      const response = await fetch(finalUrl, {
+>>>>>>> Stashed changes
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(10000) // 10 second timeout for quality
+      })
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => response.statusText)
+        console.warn(`[Valhalla] route failed ${response.status}: ${errText}`)
+        return { feasible: false }
+      }
+
+      const data = await response.json()
+      const trip = data.trip
+
+      if (!trip || trip.status !== 0) {
+        console.warn('[Маршрут] Проблема с результатом Valhalla:', trip?.status_message)
+        return { feasible: false }
+      }
+
+<<<<<<< Updated upstream
+      //  Map legs 
+      // Each leg is between two consecutive "break" locations.
+      // trip.legs[i].summary.length is in KM (we requested units: 'km')
+      // trip.legs[i].summary.time is in seconds.
+=======
+      // ── Map legs ────────────────────────────────────────────────────────────
+>>>>>>> Stashed changes
+      const legs: ValhallaLeg[] = (trip.legs || []).map((leg: any, idx: number) => {
+        const distanceKm: number = leg.summary?.length ?? 0
+        const distanceM = Math.round(distanceKm * 1000)   // → Meters
+        const durationS: number = Math.round(leg.summary?.time ?? 0)
+
+        return {
+          distance: {
+            value: distanceM,
+            text: distanceM >= 1000
+              ? `${(distanceM / 1000).toFixed(1)} км`
+              : `${distanceM} м`
+          },
+          duration: {
+            value: durationS,
+            text: durationS >= 3600
+              ? `${Math.floor(durationS / 3600)} ч ${Math.round((durationS % 3600) / 60)} мин`
+              : `${Math.round(durationS / 60)} мин`
+          },
+          start_location: locations[idx]
+            ? { lat: locations[idx].lat, lng: locations[idx].lng }
+            : undefined,
+          end_location: locations[idx + 1]
+            ? { lat: locations[idx + 1].lat, lng: locations[idx + 1].lng }
+            : undefined,
+        }
+      })
+
+      // Total summary from the trip
+      const totalDistanceM = Math.round((trip.summary?.length ?? 0) * 1000)   // km → m
+      const totalDurationS = Math.round(trip.summary?.time ?? 0)
+      const shape = trip.legs?.[0]?.shape ?? undefined
+
+      const result: ValhallaRouteResult = {
+        feasible: true,
+        legs,
+        totalDistance: totalDistanceM,
+        totalDuration: totalDurationS,
+        shape,
+      }
+
+      //  Cache the result 
+      _clearOldCache()
+      _routeCache.set(cacheKey, result)
+      _cacheTimestamps.set(cacheKey, Date.now())
+
+      return result
+    } catch (error: any) {
+      if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+        // Silence timeouts/aborts for clean console. RobustRoutingService handles the fallback silently.
+      } else {
+        // Only log truly unexpected fatal errors
+        console.warn('[Маршрут] Ошибка Valhalla:', error?.message ?? error)
+      }
+      return { feasible: false }
+    }
+  }
+
+  /**
+   * Quick point-to-point distance estimate using matrix (single leg).
+   */
+  static async getPointDistance(
+    from: { lat: number; lng: number },
+    to: { lat: number; lng: number },
+    costing?: ValhallaCostingModel
+  ): Promise<{ distanceM: number; durationS: number } | null> {
+    const result = await this.calculateRoute([from, to], costing)
+    if (!result.feasible || !result.totalDistance) return null
+    return { distanceM: result.totalDistance, durationS: result.totalDuration ?? 0 }
+  }
+
+  /**
+   * Valhalla Distance Matrix (Many-to-Many)
+   */
+  static async getMatrix(
+    sources: { lat: number; lng: number }[],
+    targets: { lat: number; lng: number }[],
+    costing?: ValhallaCostingModel
+  ): Promise<{ distance: number; duration: number }[][] | null> {
+    const costingModel = costing || this.getCostingModel()
+
+    const payload = {
+      sources: sources.map(s => ({ lat: s.lat, lon: s.lng })),
+      targets: targets.map(t => ({ lat: t.lat, lon: t.lng })),
+      costing: costingModel,
+      units: 'km'
+    }
+
+    const targetUrl = `${VALHALLA_BASE_URL}/sources_to_targets`;
+    const finalUrl = this.getMaybeProxiedUrl(targetUrl);
+
+    try {
+      const response = await fetch(finalUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15_000)
+      })
+
+      if (!response.ok) {
+        console.warn(`[Valhalla Matrix] failed: ${response.status}`)
+        return null
+      }
+
+      const data = await response.json()
+      if (!data.sources_to_targets) return null
+
+      return data.sources_to_targets.map((row: any[]) => 
+        row.map(cell => ({
+          distance: Math.round((cell.distance || 0) * 1000), // m
+          duration: Math.round(cell.time || 0)             // s
+        }))
+      )
+    } catch (err) {
+      console.warn('[Маршрут] Ошибка матрицы Valhalla:', err)
+      return null
+    }
+  }
+}
